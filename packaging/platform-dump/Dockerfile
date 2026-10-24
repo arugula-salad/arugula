@@ -1,6 +1,7 @@
 # The platform's nightly dump (M145, docs/control-ops.md "The nightly
-# dump"): a scheduled machine in the arugula-platform app that runs
-# /platform-dump once a day and exits. pg_dump 17 from Postgres's own image
+# dump"): a scheduled machine in the arugula-platform app that starts
+# /platform-dump every hour; it dumps once the newest dump is 20 h old, so
+# about once a day, and exits. pg_dump 17 from Postgres's own image
 # (the cluster is Fly Managed Postgres 17; pg_dump must be at least the
 # server's major version), age to encrypt to the recipients' public keys,
 # curl to put it in R2 (SigV4), jq for the record beside it. The

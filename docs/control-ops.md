@@ -1510,8 +1510,10 @@ and key, M161). The platform runs in one of two ways, from the same binaries:
   rollback): inside the hub, as one Fly app. Production runs this way
   until M141's window.
 - **Out of process** (`ARUGULA_PLATFORM=http://arugula-platform.internal:7700`, and through Flycast, `http://arugula-platform.flycast:7700`, from M145):
-  its own Fly app, `arugula-platform` (`packaging/platform/fly.toml`), with
-  its own volume (`platform_data` at `/data`, `platform.db`). The hub is
+  its own Fly app, `arugula-platform` (`packaging/platform/fly.toml`), on
+  its own Fly Managed Postgres (`arugula-platform-db`, from M145), with no
+  volume (Arugula #72; it had `platform_data` at `/data` for `platform.db` until
+  then). The hub is
   its gateway: every route `crates/control/routes.toml` gives
   `process = "platform"` stays on `control.arugula.io` ("Platform paths
   stay on control.arugula.io forever"), and the hub forwards it (M140,
@@ -1525,7 +1527,7 @@ and key, M161). The platform runs in one of two ways, from the same binaries:
 | Image | `packaging/control/Dockerfile` | `packaging/platform/Dockerfile` |
 | Public | `control.arugula.io` (`[http_service]`, 7690) | nothing: one service, for Flycast, on a private IPv6 only (M144) |
 | Private | its internal API, `[::]:7691` (`HubPort` for the platform) | `[::]:7700` (the forwarded routes, and `PlatformPort` for the hub) |
-| Volume | `control_data` (10 GB) | `platform_data` |
+| Volume | `control_data` (10 GB) | none: Postgres, `arugula-platform-db` (`platform_data` until Arugula #72) |
 | Health | `/control.json` through the proxy | `/platform.json`, the Flycast service's check |
 | Logs | `fly logs -a illogical-control` | `fly logs -a arugula-platform` |
 
@@ -1611,7 +1613,8 @@ succeeds, deploying nothing, and the hub deploys as before. Hotfix:
 `fly deploy --image registry.fly.io/arugula-platform:vX.Y.Z`. An older
 platform starts on a database whose migrations it doesn't know only while
 all of them are additive (M142, "Checking a migration on a copy" below);
-past one that isn't, restore `platform.db` too. A platform
+past one that isn't, restore the database too ("Restoring the platform's
+Postgres"). A platform
 deploy restarts no relay socket; pages' chat streams reconnect and
 resync.
 
@@ -2071,11 +2074,14 @@ at a restart each; unset to turn them off.
 
 ### Two platform machines (M144)
 
-On Postgres the platform runs two machines; on SQLite exactly one
-(`packaging/platform/fly.toml`, "Two modes"). `scripts/ci-platform-deploy`
-refuses to deploy more than one machine without the
-`ARUGULA_PLATFORM_DATABASE_URL` secret, since each would have a database
-of its own. A deploy replaces one machine at a time (`[deploy] strategy =
+The hosted platform is Postgres only, on two machines with no volume
+(`packaging/platform/fly.toml`; Arugula #72 dropped the volumes). SQLite is still
+the platform's default where you run your own, as one machine, but not
+here: a file on a machine with no volume would be lost on its next
+restart. So `fly.toml` sets `ARUGULA_PLATFORM_REQUIRE_POSTGRES=1`, and the
+platform refuses to start unless `ARUGULA_PLATFORM_DATABASE_URL` names
+Postgres; `scripts/ci-platform-deploy` refuses to deploy while the app has
+no such secret. A deploy replaces one machine at a time (`[deploy] strategy =
 "rolling"`), each waiting for `/platform.json`, which answers 503 while the
 machine can't reach its database and says whether it leads
 (`{"database": true, "leader": false, ...}`). A stopping machine takes no
@@ -2801,6 +2807,12 @@ backs it up.
 
 #### Rolling back
 
+**History.** Since Arugula #72 dropped the volumes (below), there's no
+`platform.db` to go back to, and neither M1 (`e820d61a6e41d8`) nor M2
+exists any more: rolling back means restoring Fly's backup or a nightly
+dump ("Restoring the platform's Postgres"). What follows is how the window
+could be rolled back while the file was kept.
+
 At each point, from where it went wrong. `M` is the machine with the
 original volume (M1). Always pause before the platform changes database:
 two cloud workers on two databases would both drive Managoat.
@@ -2855,7 +2867,12 @@ two cloud workers on two databases would both drive Managoat.
 
 #### The 14 days after
 
-`/data/platform.db` on M's volume is the rollback for 14 days. Nothing
+**History.** These were the 14 days the file was kept, from the window
+(2026-10-21) to Arugula #72. Jake let it go early, on 2026-10-23, with the nightly
+dump and a `--secrets` drill passing; "Dropping the volumes (Arugula #72)" below
+is what replaced it.
+
+`/data/platform.db` on M's volume was the rollback for 14 days. Nothing
 writes it any more, and its portable checksums stay `before.txt`'s. To see
 that now and then:
 
@@ -2867,7 +2884,110 @@ diff <(sums before.txt) <(sums later.txt) && echo untouched
 Never destroy M1's volume in those 14 days, and never scale down by
 destroying M1. A rollback after the 14 days restores a nightly dump instead
 ("Restoring the platform's Postgres"). After the 14 days a follow-up deletes
-the file and the volumes (filed from M145's PR).
+the file and the volumes (filed from M145's PR as #1202, now Arugula #72).
+
+#### Dropping the volumes (Arugula #72)
+
+`packaging/platform/fly.toml` has no `[[mounts]]` and no
+`ARUGULA_PLATFORM_DB` from Arugula #72's PR, but production's two machines still
+have their `platform_data` volumes until these steps run: M1
+(`e820d61a6e41d8`) has `vol_vxmqw0lkjn5lqkw4`, holding the old
+`platform.db`, and M2 has the empty `vol_vwnoj2xk09y2qm1v`. Run them
+after the PR merges and **before the next release tag**: until then, a
+tag's `platform` job fails (the hub's deploy doesn't), for the reason in
+step 2.
+
+**What `fly deploy` does with a config without mounts** on machines that
+have a volume (flyctl 0.4.104, the version CI pins; read in its source,
+`internal/command/deploy/machines.go`'s `validateVolumeConfig` and
+`machines_launchinput.go`):
+- A machine's volume can't be detached in place. flyctl prints `Warning!
+  machine … has a volume mounted but app config does not specify a
+  volume`, asks `Do you still want to continue and detach the volume? This
+  will replace the machine.` for each such machine, and on yes **replaces**
+  it: destroys the old machine (killed, without the SIGTERM hand-back) and
+  launches a new one, with a new id and no volume. With `[deploy]
+  strategy = "rolling"` it does one machine at a time and waits for each
+  new one's checks, so the other serves throughout. Cloud jobs the killed
+  machine held go to the other when their leases run out (120 s).
+- **It has to be answered in a terminal.** Without a TTY, flyctl stops
+  before touching anything, with `yes flag must be specified when not
+  running interactively`, and `--yes` doesn't answer it (the prompt doesn't
+  read the flag). That is why CI can't do this step, and why a tag's deploy
+  fails until it's done. Run it in a real terminal, or an Arugula pane,
+  never in a non-interactive shell.
+- The volumes stay, unattached, until they're destroyed (step 4).
+
+**The steps** (the lead's, from a checkout of `main` with Arugula #72 merged, where
+arugula's `.infisical.json` is):
+
+1. **Pre-checks.** The dump is fresh, two machines serve, the app is on
+   Postgres, and the volumes are as above:
+
+   ```
+   scripts/platform-restore-drill --age                                    # on geek
+   fly status -a arugula-platform                                          # two app machines, started, checks passing
+   fly secrets list -a arugula-platform | grep -c ARUGULA_PLATFORM_DATABASE_URL   # 1
+   fly volumes list -a arugula-platform                                    # the two volumes, attached to M1 and M2
+   ```
+
+2. **The files, and the deploy without mounts.** Nothing deletes the
+   files first: the image has no shell (and no `rm`), and `fly ssh sftp
+   shell` has only `cd`, `ls`, `get`, `put` and `chmod`. Destroying the
+   volume (step 4) deletes them, along with `platform.db-wal`,
+   `platform.db-shm` and `.platform.db-litestream`. Redeploy the image the
+   platform already runs, with the new `fly.toml`, and answer **y** to
+   both machines' question:
+
+   ```
+   T=$(fly status -a arugula-platform --json | jq -r '[.Machines[] | select(.config.metadata.fly_process_group == "app") | .image_ref.tag] | unique | .[]')
+   echo "$T"                                     # one tag, e.g. v0.60.11
+   (cd packaging/platform && fly deploy --image "registry.fly.io/arugula-platform:$T" --ha=false --no-public-ips)
+   scripts/ci-platform-deploy check "$T"         # every app machine on $T, checks passing
+   ```
+
+   If the deploy stops partway (one machine replaced, the other not), run
+   the same deploy again: the replaced machine updates in place, and the
+   other is asked about again.
+
+3. **Check.** Two app machines with new ids and no mounts, the dump
+   machine untouched beside them, both volumes unattached, and the
+   window's post-checks (chat lists, a room reads, post, a Cloud turn):
+
+   ```
+   fly machine list -a arugula-platform --json |
+     jq -r '.[] | "\(.id) \(.config.metadata.fly_process_group // .config.metadata.role) \(.state) mounts=\(.config.mounts // [] | length)"'
+   fly volumes list -a arugula-platform          # ATTACHED VM empty on both
+   ```
+
+4. **Destroy both volumes.** Fly keeps a deleted volume's snapshots until
+   their retention runs out (5 days by default), so the old file's last
+   copies are gone 5 days after this:
+
+   ```
+   fly volumes destroy vol_vxmqw0lkjn5lqkw4 vol_vwnoj2xk09y2qm1v -a arugula-platform
+   fly volumes list -a arugula-platform          # none
+   ```
+
+5. **The old Litestream generations** under the bucket's `platform/`
+   prefix (the trailing slash matters: `platform-pg/` holds the dumps).
+   `LITESTREAM_*` stay on the app: the nightly dump uses them.
+
+   ```
+   i() { infisical secrets get "$1" --env prod --path /illogical/control --plain --silent; }
+   export AWS_ACCESS_KEY_ID=$(i LITESTREAM_ACCESS_KEY_ID) AWS_SECRET_ACCESS_KEY=$(i LITESTREAM_SECRET_ACCESS_KEY) AWS_DEFAULT_REGION=auto
+   E=$(i LITESTREAM_ENDPOINT) B=$(i LITESTREAM_BUCKET)
+   aws --endpoint-url "$E" s3 ls --recursive "s3://$B/platform/" | head    # Litestream's generations/… only
+   aws --endpoint-url "$E" s3 rm --recursive "s3://$B/platform/"
+   aws --endpoint-url "$E" s3 ls "s3://$B/platform-pg/" | tail -n 3       # the dumps, untouched
+   unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+   ```
+
+6. **After.** The dump and the drill still pass: `fly machine start <dump
+   id> -a arugula-platform`, its `platform-dump: ok` (or `skipped`, once
+   the dump's image has the gate), then `scripts/platform-restore-drill`
+   on geek. Then Arugula #72 is done: neither machine has a volume, a deploy is
+   clean, and rolling back means "Restoring the platform's Postgres".
 
 ### Hosted workspaces' template
 
@@ -2964,8 +3084,10 @@ with the link. **Control holds ciphertext only and can't read it.**
 ### Backups (Litestream to Cloudflare R2)
 
 The hub backs up `control.db`, and the platform (M141) its own
-`platform.db` while it runs on that file (on Postgres, from M145, "The
-nightly dump" below backs it up instead), the same way (`arugula_control_common::backup`): each with
+`platform.db` while it runs on that file (where you run your own:
+hosted control's platform is on Postgres with no volume since Arugula #72, so it
+runs no Litestream and its image doesn't carry it; "The nightly dump"
+below backs it up), the same way (`arugula_control_common::backup`): each with
 its own `LITESTREAM_*` secrets, under its own path in the bucket
 (`LITESTREAM_PATH`, `control` and `platform` unless set; the platform
 refuses `control`). The steps below are the hub's; the platform's are the
@@ -3042,8 +3164,9 @@ restored into a new cluster with `fly mpg restore`), but those live with
 Fly. The nightly dump is the platform's copy outside Fly: a `pg_dump`,
 encrypted, in R2, kept 30 days.
 
-**Where it runs:** a scheduled Fly machine in the `arugula-platform` app
-(`fly machine run --schedule daily`). It isn't one of the app's process
+**Where it runs:** a scheduled Fly machine in the `arugula-platform` app,
+started every hour (`--schedule hourly`, "Hourly, and the gate" below),
+that dumps about once a day. It isn't one of the app's process
 groups, so `fly deploy`, `fly scale` and `ci-platform-deploy`'s checks
 leave it alone (they count only `fly_process_group == "app"`). It has no
 service, so Flycast never sends it a call. It skips DNS registration, so
@@ -3057,8 +3180,8 @@ service, so Flycast never sends it a call. It skips DNS registration, so
   build's, so they read the tables the platform has. After each platform
   deploy, `scripts/ci-platform-deploy dump` builds the image from the
   release's binary, pushes it as `registry.fly.io/arugula-platform:dump-vX.Y.Z`,
-  and moves the dump machine onto it with `--skip-start`. It never fails a
-  deploy. If the two builds ever differ, the dump says so in its log and
+  and moves the dump machine onto it with `--schedule hourly --skip-start`,
+  so every deploy also asserts the schedule. It never fails a deploy. If the two builds ever differ, the dump says so in its log and
   runs on.
 - **Considered and not chosen:**
   - *A separate app:* fewer secrets on the machine, but its image would
@@ -3071,8 +3194,30 @@ service, so Flycast never sends it a call. It skips DNS registration, so
     the database URL and an org token, and the data would pass through
     GitHub's runner.
 
-**What it does** (`packaging/platform-dump/dump.sh`, once a day, then it
+**Hourly, and the gate** (since 2026-10-23). The machine was first
+`--schedule daily`, and the dump ran once, by hand, on 2026-10-21 at
+06:39Z, and then never again until someone noticed two days later. The
+cause: a `fly machine update` restarts Fly's schedule clock, and every
+platform deploy runs one (`ci-platform-deploy dump`, above). A daily run
+comes due only 24 h after the last update, and no two platform deploys had
+been 24 h apart since. So:
+- **The machine starts every hour.** A deploy delays a run by an hour at
+  most, however often deploys come.
+- **A run dumps only when one is due.** It first reads
+  `platform-pg/latest.json` from R2 (the same SigV4 `curl` it puts with).
+  While that dump is younger than `ARUGULA_DUMP_EVERY_HOURS` (20), it logs
+  `platform-dump: skipped: the newest dump is Nh old (…)` and exits 0. A
+  `latest.json` that's missing, unreadable, or without a time (or with a
+  time ahead of the machine's clock) means dump, with a warning: a dump
+  too many is cheap, a missed one isn't. With 20, dumps land about 20 to
+  21 h apart, well inside the drill's 26 h `--age` limit.
+- **`ARUGULA_DUMP_EVERY_HOURS=0`** dumps on every run (the testnet
+  rehearsal sets it).
+
+**What it does** (`packaging/platform-dump/dump.sh`, once a run, then it
 exits):
+0. **The gate** (above): skip while the newest dump is younger than
+   `ARUGULA_DUMP_EVERY_HOURS`.
 1. **The migration check:** `arugula-platform migrations` on the database,
    read-only. A database this build would migrate fails the run.
 2. **One snapshot:** a `psql` session exports a snapshot and holds it
@@ -3105,8 +3250,8 @@ exits):
 - **The recipients:** `ARUGULA_DUMP_RECIPIENTS`, the machine's env (age
   public keys aren't secret). It can take more than one.
 - **Optional:** `ARUGULA_DUMP_PING_URL` (below), `ARUGULA_DUMP_PREFIX`
-  (`platform-pg`), `ARUGULA_DUMP_KEEP_DAYS` (30) and
-  `ARUGULA_DUMP_KEEP_NEWEST` (3).
+  (`platform-pg`), `ARUGULA_DUMP_KEEP_DAYS` (30),
+  `ARUGULA_DUMP_KEEP_NEWEST` (3) and `ARUGULA_DUMP_EVERY_HOURS` (20).
 - **Decided (lead, 2026-10-21):** R2 through the app's Litestream token,
   the database as `fly-user` through the app's URL, and one age key, in
   Infisical. The overrides above stay for if that changes.
@@ -3126,8 +3271,8 @@ token (*Object Read & Write*) has.
 **Noticing a failed or missing dump.** Nothing in this repository alerts
 today: "A spend alert" is Fly's billing, and home-cloud's Signal alerts
 watch the house. So, in order of effort:
-- **Every run** ends with `platform-dump: ok` or `platform-dump: FAILED at
-  …`, and exits non-zero on failure. See
+- **Every run** ends with `platform-dump: ok`, `platform-dump: skipped:
+  …` or `platform-dump: FAILED at …`, and exits non-zero on failure. See
   `fly logs -a arugula-platform --machine <dump id> --no-tail`, and the
   exit code in `fly machine status <dump id> -a arugula-platform`.
 - **The newest dump's age:** `scripts/platform-restore-drill --age` reads
@@ -3135,10 +3280,20 @@ watch the house. So, in order of effort:
 - **Decided (lead, 2026-10-21): those two, checked by hand.** Run
   `scripts/platform-restore-drill --age` now and then, and after anything
   touching the platform's app.
-- **If that changes:** a dead man's switch, which also notices a run that
-  never happened. Set `ARUGULA_DUMP_PING_URL` on the machine. It follows
-  healthchecks.io's convention: `<url>/start`, then `<url>` on success, or
-  `<url>/fail` with the failing step.
+- **Recommended (2026-10-23): a dead man's switch.** Checking by hand
+  missed two days without a dump, because nothing fails when a run never
+  happens. `ARUGULA_DUMP_PING_URL` is **unset today**. Set it on the
+  machine; it follows healthchecks.io's convention: `<url>/start`, then
+  `<url>` on success, or `<url>/fail` with the failing step. A skipped run
+  pings `<url>` too (a dump younger than 20 h is in R2), so the check can
+  expect a ping every hour: a period of 1 hour with a grace of 2 notices
+  within about 3 hours that the machine stopped running, and every failed
+  run alerts at once. `fly machine update` keeps the rest of the config:
+
+  ```
+  fly machine update <dump id> -a arugula-platform --skip-start -y \
+    --env ARUGULA_DUMP_PING_URL=https://hc-ping.com/<uuid>
+  ```
 
 **Making it** (once, after the window's flip; the lead's steps):
 
@@ -3190,7 +3345,7 @@ watch the house. So, in order of effort:
 
    ```
    fly machine run registry.fly.io/arugula-platform:dump-vX.Y.Z -a arugula-platform \
-     --name platform-dump --region iad --schedule daily --restart no \
+     --name platform-dump --region iad --schedule hourly --restart no \
      --vm-size shared-cpu-1x --vm-memory 512 --skip-dns-registration \
      --metadata role=platform-dump \
      --env ARUGULA_DUMP_RECIPIENTS="$(cat platform-dump.pub)"
@@ -3207,8 +3362,45 @@ watch the house. So, in order of effort:
    scripts/platform-restore-drill                                               # on geek: the drill, below
    ```
 
-**What it costs:** a shared-cpu-1x for under a minute a day, which is
-cents. In R2, a dump of today's data is tens of KB; at R2's $0.015 a
+**What it costs:** a shared-cpu-1x for under a minute a day, plus 23
+starts a day of a few seconds that read `latest.json` and stop, which is
+cents.
+
+**Moving the machine to hourly** (once, after the gate's PR; the lead's).
+Never set `hourly` on an image whose `dump.sh` has no gate: it would dump
+every hour.
+- **By the next release, with nothing to run:** its `platform` job pushes
+  `dump-vX.Y.Z` with the gate and passes `--schedule hourly`. Check it,
+  then within the hour see a `skipped` or `ok` line:
+
+  ```
+  fly machine list -a arugula-platform --json |
+    jq '.[] | select(.config.metadata.role == "platform-dump") | {id, image: .config.image, schedule: .config.schedule}'
+  fly logs -a arugula-platform --machine <dump id> --no-tail | grep platform-dump | tail -n 3
+  ```
+
+  Until then the machine is still `daily`, so start it by hand if the
+  newest dump passes 20 h (`scripts/platform-restore-drill --age`).
+- **Before a release, by hand:** the running dump image with this
+  checkout's `dump.sh` laid over it (the same `arugula-platform`), then
+  the same update CI runs:
+
+  ```
+  D=<dump id>
+  img=$(fly machine list -a arugula-platform --json | jq -r --arg d "$D" '.[] | select(.id == $d) | .config.image')
+  echo "$img"                                   # registry.fly.io/arugula-platform:dump-vX.Y.Z
+  ctx=$(mktemp -d)
+  install -m 755 packaging/platform-dump/dump.sh "$ctx/dump.sh"
+  printf 'FROM %s\nCOPY dump.sh /platform-dump\n' "$img" > "$ctx/Dockerfile"
+  fly auth docker
+  docker build -q -t "$img-gate" "$ctx" && docker push -q "$img-gate"
+  fly machine update "$D" -a arugula-platform --image "$img-gate" --schedule hourly --skip-start -y
+  fly machine start "$D" -a arugula-platform
+  fly logs -a arugula-platform --machine "$D" --no-tail | grep platform-dump | tail -n 1   # skipped: the newest dump is Nh old
+  ```
+
+  The next release moves it onto that release's own `dump-vX.Y.Z`, still
+  hourly. In R2, a dump of today's data is tens of KB; at R2's $0.015 a
 GB-month, 30 of them cost nothing to speak of.
 
 ### Restoring the platform's Postgres
@@ -3278,8 +3470,7 @@ $38 + $2.80 is about **$40.80/month**. The plan includes Fly's backups,
 pooling and failover. The rest of M145 adds:
 - the second platform machine (shared-cpu-1x, 512 MB, about $3 a month
   running all the time);
-- its empty 1 GB volume (about $0.15, until the 14-day follow-up drops the
-  volumes);
+- its empty 1 GB volume (about $0.15, until Arugula #72 drops the volumes);
 - the dump machine (cents);
 - the dumps in R2 (cents).
 

@@ -28,10 +28,18 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1:7700", env = "ARUGULA_PLATFORM_LISTEN")]
     listen: SocketAddr,
 
-    /// The platform's own SQLite database. Until M141 moves the platform's
-    /// tables into it, it starts empty.
+    /// The platform's SQLite database, when ARUGULA_PLATFORM_DATABASE_URL
+    /// doesn't name Postgres: the default for running your own and for
+    /// development. Hosted control is on Postgres, with no volume (Arugula #72),
+    /// and never opens it.
     #[arg(long, default_value = "platform.db", env = "ARUGULA_PLATFORM_DB")]
     db: PathBuf,
+
+    /// Refuse to start unless ARUGULA_PLATFORM_DATABASE_URL names
+    /// Postgres. Hosted control's `fly.toml` sets it: its machines have no
+    /// volume, so a SQLite file there would be lost on the next restart.
+    #[arg(long, env = "ARUGULA_PLATFORM_REQUIRE_POSTGRES", value_parser = clap::builder::FalseyValueParser::new())]
+    require_postgres: bool,
 
     /// The hub's internal API (its `--internal-listen`), on the private
     /// network: `http://illogical-control.internal:7691` on Fly.
@@ -115,8 +123,9 @@ struct Args {
     #[arg(long, default_value = "https://us.i.posthog.com", env = "POSTHOG_HOST")]
     posthog_host: String,
 
-    /// Off-site backup with Litestream (M141), as the hub's, under its own
-    /// path in the bucket (`platform` unless LITESTREAM_PATH says).
+    /// Off-site backup of the SQLite file with Litestream (M141), as the
+    /// hub's, under its own path in the bucket (`platform` unless
+    /// LITESTREAM_PATH says). Never on Postgres.
     #[command(flatten)]
     backup: arugula_control_common::backup::Litestream,
 
@@ -173,7 +182,7 @@ async fn run() -> anyhow::Result<()> {
         .collect();
     let cfg = Config { public_url, sites, relay_free_bytes: a.relay_free_mb * 1_000_000 };
     let http = arugula_control_common::roots::client(std::time::Duration::from_secs(15))?;
-    let analytics = match a.posthog_api_key.filter(|k| !k.is_empty()) {
+    let analytics = match a.posthog_api_key.clone().filter(|k| !k.is_empty()) {
         Some(k) => Analytics::start(k, &a.posthog_host, http.clone()),
         None => {
             info!("no POSTHOG_API_KEY: product analytics are off");
@@ -184,12 +193,7 @@ async fn run() -> anyhow::Result<()> {
     // The hub's backup is under `control`: two databases replicating to one
     // path would ruin both.
     anyhow::ensure!(a.backup.path.as_deref() != Some("control"), "LITESTREAM_PATH=control is the hub's backup");
-    // Litestream backs up the SQLite file; Postgres has its own backups
-    // (M145's nightly dump).
-    let backup = match a.database.postgres() {
-        true => None,
-        false => arugula_control_common::backup::Backup::new(&a.backup, &a.db, "platform")?,
-    };
+    let backup = backup(&a)?;
     if let Some(b) = &backup {
         b.restore_if_missing().await?;
     }
@@ -259,6 +263,21 @@ async fn run() -> anyhow::Result<()> {
         b.stop().await;
     }
     Ok(())
+}
+
+/// Litestream for the SQLite file, or nothing on Postgres, which has its
+/// own backups (M145's nightly dump). On Postgres it touches nothing on
+/// disk: hosted control's machines have no `/data` (Arugula #72).
+fn backup(a: &Args) -> anyhow::Result<Option<arugula_control_common::backup::Backup>> {
+    if a.database.postgres() {
+        return Ok(None);
+    }
+    anyhow::ensure!(
+        !a.require_postgres,
+        "ARUGULA_PLATFORM_REQUIRE_POSTGRES is set but ARUGULA_PLATFORM_DATABASE_URL doesn't name Postgres: \
+         this platform has no volume for a SQLite file (docs/control-ops.md, \"The platform\")"
+    );
+    arugula_control_common::backup::Backup::new(&a.backup, &a.db, "platform")
 }
 
 /// `GET /platform.json`: up, its version, its database answering, and
@@ -332,5 +351,31 @@ mod tests {
         assert!(!parse(None));
         let flag = super::Args::try_parse_from(["arugula-platform", "--hub", "http://hub", "--key", "00", "--paused"]);
         assert!(flag.unwrap().paused);
+    }
+
+    /// Hosted control (Arugula #72): on Postgres the platform needs no `/data`.
+    /// With Litestream's bucket set (the nightly dump reads the app's
+    /// `LITESTREAM_*`) and `--db` under a directory that doesn't exist, it
+    /// still starts no backup and writes nothing there. Without Postgres,
+    /// `--require-postgres` stops it rather than start on a file.
+    #[test]
+    fn postgres_needs_no_volume() {
+        use clap::Parser;
+        let dir = std::env::temp_dir().join(format!("arugula-platform-no-data-{}", std::process::id()));
+        let db = dir.join("platform.db");
+        let db = db.to_str().unwrap();
+        let base = ["arugula-platform", "--hub", "http://hub", "--key", "00", "--litestream-bucket", "b", "--db", db];
+        let pg = super::Args::try_parse_from(base.iter().copied().chain([
+            "--platform-database-url",
+            "postgresql://u@db.flycast/p",
+            "--require-postgres",
+        ]))
+        .unwrap();
+        assert!(super::backup(&pg).unwrap().is_none());
+        assert!(!dir.exists(), "nothing is written beside --db on Postgres");
+        let file = super::Args::try_parse_from(base.iter().copied().chain(["--require-postgres"])).unwrap();
+        let err = super::backup(&file).err().expect("refused without Postgres").to_string();
+        assert!(err.contains("ARUGULA_PLATFORM_REQUIRE_POSTGRES"), "{err}");
+        assert!(!dir.exists());
     }
 }

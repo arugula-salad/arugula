@@ -87,6 +87,9 @@ services:
       ARUGULA_PLATFORM_DATABASE_URL: postgres://postgres:testnet@postgres:5432/platform
       ARUGULA_DUMP_RECIPIENTS: ${ARUGULA_TESTNET_DUMP_RECIPIENTS:?window2.sh sets it}
       ARUGULA_DUMP_PLATFORM_URL: http://platform:7700/platform.json
+      # Every run dumps: the rehearsal runs it back to back. Production
+      # skips while the newest dump is younger than 20 h (the gate step).
+      ARUGULA_DUMP_EVERY_HOURS: "0"
       LITESTREAM_BUCKET: backups
       LITESTREAM_ENDPOINT: http://s3:8080
       LITESTREAM_ACCESS_KEY_ID: testnet-key

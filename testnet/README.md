@@ -288,7 +288,9 @@ order:
    database password. Then the job's own retention: old dumps seeded at 35,
    40, 45 and 60 days, and the next run keeps the newest 3 and deletes the
    rest older than 30 days; a run whose listing is refused (a `curl` in
-   front of the real one) still exits 0 with its dump in;
+   front of the real one) still exits 0 with its dump in; and the gate: a
+   run with `ARUGULA_DUMP_EVERY_HOURS=20` right after a dump skips, exits
+   0 and puts nothing (the other runs set it to 0, so each one dumps);
 8. rollback after people wrote on Postgres: one machine, the hub back on
    `platform`, Postgres copied back over the file (checked against a
    second copy), the platform back on its file, and the new work there.
