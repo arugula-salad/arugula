@@ -56,7 +56,7 @@ export function SettingsPage() {
                 <button class="control-linkish" data-open-appearance onClick={openAppearance}>
                   Appearance…
                 </button>
-                <span class="dim">This device's palette, finish and corners.</span>
+                <span class="dim">This device's palette, finish, corners and chat density.</span>
               </li>
               {billing?.billing && (
                 <li>

@@ -329,6 +329,7 @@ test("reactions: Alice and Bob react to one message, each sees both live; a long
   await expect(onPhone.locator('[data-reaction="👍"]')).toHaveClass(/mine/);
   // Deleting the message drops its reactions: only its tombstone is left.
   await msg.hover();
+  await msg.locator("[data-msg-more]").click();
   await msg.locator("[data-msg-delete]").click();
   await expect(room.locator(`[data-msg="${seq}"]`)).toContainText("This message was deleted.", { timeout: 15_000 });
   await expect(room.locator(`[data-msg="${seq}"] [data-reaction]`)).toHaveCount(0);
@@ -362,6 +363,82 @@ test("pictures come through control, and a teammate's dot shows them around, awa
   // The phone's width holds with pictures and dots in it.
   expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   aliceChat = await alice.context().newPage();
+});
+
+test("polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a scrolled-up room offers the newest, compact rows are one line", async () => {
+  test.setTimeout(90_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const box = room.locator(".thread-compose textarea");
+  await box.fill("first draft");
+  await box.press("Enter");
+  const mine = room.locator(".thread-msg.mine").last();
+  await expect(mine).toContainText("first draft", { timeout: 15_000 });
+
+  // ↑ in the empty box opens my last message for editing; Esc leaves it alone.
+  await box.focus();
+  await box.press("ArrowUp");
+  const edit = room.locator(".msg-edit textarea");
+  await expect(edit).toBeFocused();
+  await expect(edit).toHaveValue("first draft");
+  await edit.press("Escape");
+  await expect(room.locator(".msg-edit")).toHaveCount(0);
+  await expect(box).toBeFocused();
+  await expect(mine).toContainText("first draft");
+  // ... and saves on Enter.
+  await box.press("ArrowUp");
+  await edit.fill("second draft");
+  await edit.press("Enter");
+  await expect(mine).toContainText("second draft", { timeout: 15_000 });
+  await expect(mine).toContainText("(edited)");
+  // With something written, ↑ is the caret's.
+  await box.fill("x");
+  await box.press("ArrowUp");
+  await expect(room.locator(".msg-edit")).toHaveCount(0);
+  await box.fill("");
+
+  // The toolbar: quick emoji, the picker, ⋯ with quote, link, edit, delete.
+  // Thread, save, unread and pin wait for their features: no dead buttons.
+  await mine.hover();
+  await expect(mine.locator("[data-tool-quick]")).toHaveCount(3);
+  await expect(mine.locator("[data-msg-thread], [data-msg-save]")).toHaveCount(0);
+  await mine.locator("[data-msg-more]").click();
+  await expect(mine.locator("[data-msg-menu] [data-msg-reply], [data-msg-menu] [data-msg-link], [data-msg-menu] [data-msg-edit], [data-msg-menu] [data-msg-delete]")).toHaveCount(4);
+  await aliceChat.keyboard.press("Escape");
+  await expect(mine.locator("[data-msg-menu]")).toHaveCount(0);
+
+  // A mention is an accent bar and a tint, not the amber band.
+  const mention = room.locator(".thread-msg.for-me").first();
+  if (await mention.count()) {
+    const shadow = await mention.evaluate((el) => getComputedStyle(el).boxShadow);
+    const accent = await aliceChat.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
+    expect(shadow.length).toBeGreaterThan(4);
+    expect(accent).not.toBe("");
+  }
+
+  // Scrolled up, Bob's new message is "↓ 1 new message"; the button and Esc go down.
+  for (let i = 0; i < 40; i++) await aliceChat.evaluate((r) => window.__arugula.chat.post(r, `filler ${Date.now()}`).then(() => 0), general);
+  const list = room.locator(".thread-list");
+  await list.evaluate((el) => (el.scrollTop = 0));
+  await expect(room.locator("[data-jump-newest]")).toBeVisible();
+  await platform(bob, "/chat");
+  await bob.evaluate((r) => window.__arugula.chat.post(r, "while you were up there").then(() => 0), general);
+  await expect(room.locator("[data-jump-newest]")).toContainText("1 new message", { timeout: 15_000 });
+  await room.locator("[data-jump-newest]").click();
+  await expect(room.locator("[data-jump-newest]")).toHaveCount(0);
+  await expect(room.locator(".thread-msg").last()).toContainText("while you were up there");
+  await list.evaluate((el) => (el.scrollTop = 0));
+  await aliceChat.keyboard.press("Escape");
+  await expect(room.locator("[data-jump-newest]")).toHaveCount(0);
+
+  // Compact: no pictures, and a row's time, name and text share a line.
+  await aliceChat.evaluate(() => (document.documentElement.dataset.density = "compact"));
+  const row = room.locator(".thread-msg.first").last();
+  await expect(row.locator(".msg-avatar")).toBeHidden();
+  const [t, n, x] = await Promise.all(["compact-time", "thread-name", "md"].map((c) => row.locator(`.${c}`).first().boundingBox()));
+  expect(Math.abs(t!.y - n!.y)).toBeLessThan(12);
+  expect(Math.abs(n!.y - x!.y)).toBeLessThan(12);
+  await aliceChat.evaluate(() => (document.documentElement.dataset.density = "cozy"));
 });
 
 test("a mention pushes, and the push's tap opens the room at the message", async () => {

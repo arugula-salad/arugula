@@ -110,6 +110,7 @@ test("chat on the platform page: Alice makes #general and mentions Bob, who answ
   // A message's link is the platform page's, by id.
   await page.locator(".thread-msg").last().hover();
   await alice.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: app });
+  await page.locator(".thread-msg").last().locator("[data-msg-more]").click();
   await page.locator(".thread-msg").last().locator("[data-msg-link]").click();
   const copied = await alice.evaluate(() => navigator.clipboard.readText());
   expect(copied).toMatch(new RegExp(`^${app}/p/prj_[0-9a-f]+-acme/chat/ch_[0-9a-f]+-general\\?msg=\\d+$`));

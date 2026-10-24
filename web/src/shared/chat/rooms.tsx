@@ -603,7 +603,7 @@ function useRoomKeys(rooms: ChatRoom[], picked: string | null, markAll: () => vo
         const idx = at < 0 ? (down ? i - 1 : n - i) : (((at + (down ? i : -i)) % n) + n) % n;
         const r = rooms[idx];
         if (idx === at) return;
-        if (!e.shiftKey || r.unread) return nav.openRoom(r.id);
+        if (!e.shiftKey || counted(r)) return nav.openRoom(r.id);
       }
     };
     addEventListener("keydown", key, true);
