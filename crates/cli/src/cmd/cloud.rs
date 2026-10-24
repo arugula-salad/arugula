@@ -179,8 +179,10 @@ pub enum PreviewCmd {
 
 #[derive(clap::Subcommand)]
 pub enum KeyCmd {
-    /// Set the project's key for a provider, from stdin. Anthropic's may
-    /// be a Claude subscription's token from `claude setup-token`.
+    /// Set the project's key for a provider, from stdin.
+    ///
+    /// Anthropic's may be a Claude subscription's token from `claude
+    /// setup-token`.
     Set {
         #[arg(value_parser = ["anthropic", "openai"])]
         provider: String,
