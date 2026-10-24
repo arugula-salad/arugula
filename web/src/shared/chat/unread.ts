@@ -20,7 +20,7 @@ export function counted(r: ChatRoom): number {
 }
 
 /** Whether the chat page's sidebar lists a room (`groupsOf` in
- * platform/chat/rooms.tsx): a team's channels and DMs, the threads on
+ * shared/chat/rooms.tsx): a team's channels and DMs, the threads on
  * panes and sessions, and archives. */
 export function listedInChat(r: ChatRoom): boolean {
   switch (r.kind) {

@@ -162,7 +162,7 @@ behind control's own `chat` flag, the account's or a team's
 (`POST /api/flags`); the API is under `/api/chat`
 (`crates/platform/src/chat.rs`, control's platform since M138), and the
 pages read it in
-`web/src/shared/chat-store.ts`, `web/src/platform/chat/rooms.tsx` and
+`web/src/shared/chat-store.ts`, `web/src/shared/chat/rooms.tsx` and
 `web/src/shared/chat/room.tsx`. The Chat page is the platform page's
 (`app.arugula.io`, M153); control's page keeps each pane's and session's
 thread beside it and links to the rest, and since M155 draws no chat page
