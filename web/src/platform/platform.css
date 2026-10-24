@@ -71,19 +71,14 @@ html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
 
 .platform-section {
   margin: 0;
-  padding: 20px 24px;
+  /* The panel is the frame's width; what's in it keeps the old column's
+     reading width, 880px, centred: the side padding grows to take the
+     rest, so headings, stats and lists all share one column. */
+  padding: 20px max(24px, calc((100% - 880px) / 2));
   box-sizing: border-box;
   border: 1px solid var(--chrome-line);
   border-radius: 5px;
   background: var(--bg);
-}
-
-/* The panel is the frame's width; what's in it keeps a reading width,
-   the old column's, centred in it as the column was. Any rule of a
-   page's own says otherwise. */
-:where(.platform-section) > * {
-  max-width: 880px;
-  margin-inline: auto;
 }
 
 .platform-section + .platform-section {
