@@ -4,7 +4,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { agentLines, authorLabel } from "../src/shared/chat/agents.ts";
-import { COMMAND_POWERS, deployGrant, liveOver, machinesOf, powersFor, RUN_POWERS } from "../src/platform/settings/grants.ts";
+import {
+  cellKey,
+  cellOf,
+  COLUMNS,
+  COMMAND_POWERS,
+  deployGrant,
+  liveOver,
+  machinesOf,
+  matrixOf,
+  powersFor,
+  reaching,
+  RUN_POWERS,
+} from "../src/platform/settings/grants.ts";
 
 const msg = (over) => ({ author: "a1", name: "Jake", agent: null, ...over });
 
@@ -85,4 +97,58 @@ test("the runs and commands switches read only their own grants, and the convers
   assert.deepEqual(ids(liveOver(grants, "d1", p, RUN_POWERS)), ["g2"]);
   assert.deepEqual(ids(liveOver(grants, "d1", p, COMMAND_POWERS)), ["g4"]);
   assert.deepEqual(RUN_POWERS, ["runs.read", "runs.start"]);
+});
+
+test("a project's matrix on /settings: a row per machine, a switch per column, partial grants said", () => {
+  const g = (id, machine, power, kind = "project", scope = "prj_1", live = true) => ({
+    id,
+    subject: { kind: "daemon", id: machine, name: machine },
+    power,
+    scope: { kind, id: scope },
+    live,
+  });
+  const grants = [
+    g("g1", "d1", "threads.read"),
+    g("g2", "d1", "threads.post"),
+    g("g3", "d1", "issues.write"),
+    g("g4", "d1", "runs.read"),
+    g("g5", "d1", "deploys.plan"),
+    g("g6", "d2", "threads.read"),
+    g("g7", "d2", "runs.command"),
+    g("g8", "d2", "runs.start", "project", "prj_1", false),
+    g("g9", "d2", "threads.read", "account", "a1"),
+    g("g10", "d2", "threads.post", "account", "a1"),
+    g("g11", "d3", "cloud.drive", "account", "a1"),
+  ];
+  const p = { kind: "project", id: "prj_1", name: "Acme" };
+  assert.deepEqual(COLUMNS, ["threads", "runs", "commands", "deploys"]);
+  // All three conversation powers is on; one of the two runs powers is partial.
+  assert.deepEqual(cellOf(grants, "d1", p, "threads"), { on: true, only: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "runs"), { on: true, only: ["runs.read"] });
+  assert.deepEqual(cellOf(grants, "d1", p, "commands"), { on: false, only: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "deploys"), { on: true, only: null });
+  assert.deepEqual(cellOf(grants, "d2", p, "threads"), { on: true, only: ["threads.read"] });
+  assert.deepEqual(cellOf(grants, "d2", p, "runs"), { on: false, only: null }, "a revoked runs.start is off");
+  assert.deepEqual(cellOf(grants, "d2", p, "commands"), { on: true, only: null });
+  // Your DMs: read and post is all there is.
+  const dms = { kind: "account", name: "Your DMs" };
+  assert.deepEqual(cellOf(grants, "d2", dms, "threads"), { on: true, only: null });
+  assert.deepEqual(cellOf(grants, "d3", dms, "threads"), { on: false, only: null }, "cloud.drive isn't a DM switch");
+
+  const machines = machinesOf(grants);
+  const rows = matrixOf(grants, machines, p, COLUMNS);
+  assert.deepEqual(
+    rows.map((r) => r.machine.id),
+    ["d1", "d2", "d3"],
+  );
+  assert.deepEqual(
+    rows[2].cells.map((c) => c.on),
+    [false, false, false, false],
+  );
+  assert.equal(reaching(rows), 2, "d3 has nothing on in prj_1");
+  assert.equal(reaching(matrixOf(grants, machines, dms, ["threads"])), 1);
+  assert.equal(reaching(matrixOf(grants, machines, { kind: "project", id: "prj_2", name: "" }, COLUMNS)), 0);
+
+  assert.equal(cellKey("d1", p, "deploys"), "d1/prj_1/deploys");
+  assert.equal(cellKey("d1", dms, "threads"), "d1/dms/threads");
 });

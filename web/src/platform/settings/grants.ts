@@ -61,3 +61,41 @@ export function machinesOf(grants: Grant[]): { id: string; name: string }[] {
 export function deployGrant(grants: Grant[], machine: string, project: string): Grant | undefined {
   return grants.find((g) => g.live && g.subject.id === machine && g.power === DEPLOYS_PLAN && g.scope.kind === "project" && g.scope.id === project);
 }
+
+/** A column of a project's matrix on /settings (./agents): one switch per
+ * machine. Threads & issues is the conversation one (`powersFor`), runs and
+ * commands are M216's, deploys M218's. Your DMs have only the first. */
+export type Column = "threads" | "runs" | "commands" | "deploys";
+
+/** A project's columns, in the matrix's order. */
+export const COLUMNS: Column[] = ["threads", "runs", "commands", "deploys"];
+
+/** One switch: on while any of its grants is live, and `only` the powers it
+ * holds when that's some but not all of what it gives (a partial grant,
+ * shown as "only threads.read"). */
+export interface Cell {
+  on: boolean;
+  only: string[] | null;
+}
+
+/** What one machine's switch in one column over a scope reads of the
+ * grants. Deploys is one grant, so it's never partial. */
+export function cellOf(grants: Grant[], machine: string, s: AgentScope, column: Column): Cell {
+  if (column === "deploys") return { on: !!deployGrant(grants, machine, s.id ?? ""), only: null };
+  const powers = column === "runs" ? RUN_POWERS : column === "commands" ? COMMAND_POWERS : undefined;
+  const live = liveOver(grants, machine, s, powers);
+  const all = (powers ?? powersFor(s.kind)).every((p) => live.some((g) => g.power === p));
+  return { on: live.length > 0, only: live.length > 0 && !all ? live.map((g) => g.power) : null };
+}
+
+/** A scope's matrix: a row per machine, a cell per column. */
+export function matrixOf(grants: Grant[], machines: { id: string; name: string }[], s: AgentScope, columns: Column[]) {
+  return machines.map((machine) => ({ machine, cells: columns.map((c) => cellOf(grants, machine.id, s, c)) }));
+}
+
+/** How many of a matrix's machines have any switch on: its card's count. */
+export const reaching = (rows: { cells: Cell[] }[]) => rows.filter((r) => r.cells.some((c) => c.on)).length;
+
+/** A switch's key, for its busy state and its `data-agent-cell`:
+ * machine/project/column, or machine/dms/threads for your DMs. */
+export const cellKey = (machine: string, s: AgentScope, column: Column) => `${machine}/${s.id ?? "dms"}/${column}`;
