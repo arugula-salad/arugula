@@ -19,7 +19,11 @@ export type Preview =
   | { kind: "object"; url: string; what: string; title: string; state: string; tone: Tone; who: string | null; at: number }
   | { kind: "web"; url: string; site: string; title: string; description: string; image: string | null };
 
-const REFRESH = 30_000;
+// Polled, not pushed: a card's object changes in tables that know nothing of
+// chat, and finding the rooms whose messages link to it would be a search of
+// message text at every issue, run and deploy change. The cards are small
+// reads of tables we already have, so a gentler minute does.
+const REFRESH = 60_000;
 const enc = encodeURIComponent;
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
