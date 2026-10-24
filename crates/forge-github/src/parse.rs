@@ -524,6 +524,11 @@ mod tests {
         green.item = item(&raw, "cli/cli");
         let w = attention(&green, &me_as("happysnaker", &[]), 0);
         assert!(matches!(&w[..], [Want::Done { why, .. }] if why == "checks green"), "{w:?}");
+        // GitHub still working it out (a base that moved): not done yet.
+        raw["mergeable"] = Value::Null;
+        raw["mergeable_state"] = json!("unknown");
+        green.item = item(&raw, "cli/cli");
+        assert!(attention(&green, &me_as("happysnaker", &[]), 0).is_empty(), "unknown isn't mergeable");
     }
 
     #[test]

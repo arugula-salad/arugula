@@ -236,7 +236,11 @@ fn model_item(s: &Sources) -> Item {
         draft: i.draft,
         labels: names(&i.labels),
         assignees: names(&i.assignees),
-        mergeable: (i.merge_state.as_deref() == Some("dirty")).then_some(false),
+        mergeable: match i.merge_state.as_deref() {
+            Some("dirty") => Some(false),
+            m if can_merge(m) => Some(true),
+            _ => None,
+        },
         blocked: !can_merge(i.merge_state.as_deref()),
         // A team is `org/slug`, which no login can be.
         requested: names(&i.reviewers)
