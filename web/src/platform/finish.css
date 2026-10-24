@@ -3,8 +3,9 @@
    The bar is the shell's .bar, the dialogs its .prompt and .menu, the
    buttons its .primary, so those come from style.css as they are; this
    is the frame behind the pages (.platform, and .chat, which covers it on
-   the chat page), the place you're on, the cards and forms, the lists'
-   rows, and what floats over them. Only the platform page loads it. */
+   the chat page), the cards and forms, the lists' rows, and what floats
+   over them. The bar's places take no finish, as the shell's head's
+   don't. Only the platform page loads it. */
 
 /* A floating thing's shadow (the toast's): black at two-thirds is a smudge
    on a light palette, so it's lighter there. */
@@ -63,12 +64,6 @@ html[data-finish="aqua"] .platform-ws-head {
   box-shadow: inset 0 -1px 0 #0003;
 }
 
-/* The place you're on is the platform's selected tab. */
-html[data-finish="aqua"] .platform-bar .place.here {
-  background: linear-gradient(#fff4, #fff0 60%), var(--raised);
-  box-shadow: inset 0 1px 0 #fff6, 0 0 0 1px #0002;
-}
-
 html[data-finish="aqua"] .chat-row.selected {
   color: var(--on-color);
   background: linear-gradient(#fff5, #fff0 50%, #0000 51%, #fff2), var(--accent);
@@ -113,11 +108,6 @@ html[data-finish="brushed"] .chat-side {
 
 html[data-finish="brushed"] .platform-ws-head {
   box-shadow: inset 0 1px 0 #fff3, inset 0 -1px 0 #0004;
-}
-
-html[data-finish="brushed"] .platform-bar .place.here {
-  background: var(--grain), linear-gradient(#fff2, #fff0), var(--raised);
-  box-shadow: inset 0 1px 0 #fff4, inset 1px 0 0 #fff1, inset -1px 0 0 #0002;
 }
 
 html[data-finish="brushed"] .chat-row.selected,
@@ -188,11 +178,6 @@ html[data-finish="glass"] .chat-side {
 html[data-finish="glass"] .chat-details {
   background: color-mix(in srgb, var(--bg) 70%, transparent);
   backdrop-filter: blur(12px);
-}
-
-html[data-finish="glass"] .platform-bar .place.here {
-  background: color-mix(in srgb, var(--raised) 70%, transparent);
-  box-shadow: inset 0 1px 0 #fff2;
 }
 
 html[data-finish="glass"] .chat-row.selected,
