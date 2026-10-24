@@ -12,6 +12,8 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
+import { toneClass } from "../swarm";
+import { Section } from "./section";
 
 export type ProductLink = {
   client: string;
@@ -65,36 +67,56 @@ export function LinkedProducts() {
   };
   if (links === null) return err ? <p class="control-error">{err}</p> : null;
   return (
-    <>
-      <h2>Linked products</h2>
-      <p class="dim">
-        Products you let sign you in with Arugula, and your accounts there linked to this one by your GitHub account's number, never its name.
-        Unlinking takes effect the next time that product checks; it links again only if you sign in to it through Arugula again, which asks you
-        first.
-      </p>
-      {links.length === 0 && <p class="dim" data-linked-none>No products linked yet.</p>}
+    <Section
+      id="linked"
+      title="Linked products"
+      lede="Products you let sign you in with Arugula. Linking alone grants them nothing here."
+      more={
+        <p>
+          Your accounts there are linked to this one by your GitHub account's number, never its name. Unlinking takes effect the next time
+          that product checks; it links again only if you sign in to it through Arugula again, which asks you first.
+        </p>
+      }
+    >
+      {links.length === 0 && (
+        <p class="dim" data-linked-none>
+          No products linked yet.
+        </p>
+      )}
       {links.length > 0 && (
-        <ul class="platform-list" data-linked-products>
+        <ul class="platform-list sw-cards settings-cards" data-linked-products>
           {links.map((l) => {
             const since = l.linked ?? l.granted;
+            // The bar: whether an account of yours there is linked, or it only signs you in.
             return (
-              <li key={l.client} data-linked-product={l.client}>
-                <strong>{l.product}</strong>
-                {l.user ? (l.name ? <> as {l.name}</> : <> (linked)</>) : <span class="dim"> signs you in, no account linked there</span>}{" "}
-                {since ? <span class="dim">since {new Date(since).toLocaleDateString()}</span> : null}{" "}
-                <button class="control-linkish" data-unlink={l.client} disabled={busy === l.client} onClick={() => void unlink(l)}>
-                  Unlink
-                </button>
+              <li key={l.client} class={`sw-card ${toneClass(l.user ? "accent" : "muted")}`} data-linked-product={l.client}>
+                <div class="sw-head">
+                  <b class="sw-name">{l.product}</b>
+                  <button
+                    class="control-linkish settings-card-act"
+                    data-unlink={l.client}
+                    disabled={busy === l.client}
+                    onClick={() => void unlink(l)}
+                  >
+                    Unlink
+                  </button>
+                </div>
+                <span class="dim">
+                  {l.user ? (l.name ? <>Linked as {l.name}</> : "Linked") : "Signs you in, no account linked there"}
+                  {since ? <> · since {new Date(since).toLocaleDateString()}</> : null}
+                </span>
                 {l.projects !== undefined && (
-                  <label class="platform-mirror">
+                  <label class="settings-switch">
                     <input
                       type="checkbox"
+                      role="switch"
+                      class="sw-switch"
                       data-linked-projects={l.client}
                       checked={l.projects}
                       disabled={busy === l.client}
                       onChange={() => void sees(l)}
-                    />{" "}
-                    Let {l.product} see my projects and my role in each, and keep its apps in the ones I edit
+                    />
+                    <span>Let {l.product} see my projects and my role in each, and keep its apps in the ones I edit</span>
                   </label>
                 )}
               </li>
@@ -103,6 +125,6 @@ export function LinkedProducts() {
         </ul>
       )}
       {err ? <p class="control-error">{err}</p> : null}
-    </>
+    </Section>
   );
 }

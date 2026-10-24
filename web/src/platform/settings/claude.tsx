@@ -8,6 +8,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { session } from "../session";
+import { Section } from "./section";
 
 interface Client {
   client: string;
@@ -61,47 +62,65 @@ export function ClaudeSettings({ me }: { me?: string }) {
   };
   return (
     <div data-claude-settings>
-      <h2>Claude</h2>
-      {clients && clients.length > 0 && (
-        <>
-          <p class="dim">
-            Apps that use Claude through Arugula for you. One you let calls Claude in your name, on your projects' keys or on
-            Arugula's key within your monthly cap. One that can name who pays may also spend your own key for people you sponsor or
-            visit. None can until you let it, and stopping it takes effect on its next call.
-          </p>
-          <ul class="platform-list" data-claude-clients>
+      <Section
+        id="claude"
+        title="Claude"
+        lede="Apps that use Claude through Arugula for you, and what your own key spent. None can until you let it."
+        more={
+          clients && clients.length > 0 ? (
+            <p>
+              One you let calls Claude in your name, on your projects' keys or on Arugula's key within your monthly cap. One that can name
+              who pays may also spend your own key for people you sponsor or visit. Stopping it takes effect on its next call.
+            </p>
+          ) : null
+        }
+      >
+        {clients && clients.length > 0 && (
+          <ul class="platform-list settings-switches" data-claude-clients>
             {clients.map((c) => (
               <li key={c.client}>
-                <label class="platform-mirror">
-                  <input type="checkbox" data-claude-client={c.client} checked={c.allowed} disabled={busy} onChange={() => void flip(c)} />{" "}
-                  Let <b>{c.client}</b> use Claude for me
-                  {c.names_payers ? <span class="dim"> (it can spend my own key for people it names)</span> : null}
+                <label class="settings-switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    class="sw-switch"
+                    data-claude-client={c.client}
+                    checked={c.allowed}
+                    disabled={busy}
+                    onChange={() => void flip(c)}
+                  />
+                  <span>
+                    Let <b>{c.client}</b> use Claude for me
+                    {c.names_payers ? <span class="dim"> (it can spend my own key for people it names)</span> : null}
+                  </span>
                 </label>
               </li>
             ))}
           </ul>
-        </>
-      )}
-      {paid && paid.lines.length > 0 && (
-        <>
-          <p class="dim" data-claude-paid>
-            Spent on your own key in {paid.month} (UTC), at Anthropic's list prices: {dollars(paid.usd)}.
-          </p>
-          <ul class="platform-list">
-            {paid.lines.map((l) => (
-              <li key={`${l.project}-${l.account}-${l.client}`}>
-                {l.account === me ? "You" : l.account ? accountName(l.account) : "a deleted account"}
-                {l.client ? <span class="dim"> · through {l.client}</span> : null} · {dollars(l.usd)}
-                <span class="dim">
-                  {" "}
-                  · {l.calls} {l.calls === 1 ? "call" : "calls"} in {projectName(l.project)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {err && <p class="control-error">{err}</p>}
+        )}
+        {paid && paid.lines.length > 0 && (
+          <>
+            <div class="sw-stats" data-claude-paid>
+              <span>
+                <b>{dollars(paid.usd)}</b> spent on your own key in {paid.month} (UTC), at Anthropic's list prices
+              </span>
+            </div>
+            <ul class="platform-list settings-spend">
+              {paid.lines.map((l) => (
+                <li key={`${l.project}-${l.account}-${l.client}`}>
+                  {l.account === me ? "You" : l.account ? accountName(l.account) : "a deleted account"}
+                  {l.client ? <span class="dim"> · through {l.client}</span> : null} · <span class="sw-mono">{dollars(l.usd)}</span>
+                  <span class="dim">
+                    {" "}
+                    · {l.calls} {l.calls === 1 ? "call" : "calls"} in {projectName(l.project)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {err && <p class="control-error">{err}</p>}
+      </Section>
     </div>
   );
 }

@@ -12,6 +12,8 @@ import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { session } from "../session";
+import { toneClass } from "../swarm";
+import { Section } from "./section";
 
 type TokenGrant = { id: string; power: string; project: { id: string; name: string | null }; live: boolean };
 export type AgentToken = {
@@ -137,19 +139,22 @@ export function AgentTokens() {
     await load();
   };
   return (
-    <>
-      <h2>Agents with no machine</h2>
-      <p class="dim">
-        A token for an agent that runs somewhere without Arugula, reaching your projects through the platform's MCP endpoint
-        {url ? (
-          <>
-            {" "}
-            (<code data-agent-mcp-url>{url}</code>)
-          </>
-        ) : null}
-        . It acts as your agent, labelled with the token's name, never past what you can do. It never approves anything: a deploy it plans
-        waits for an owner's phone or browser.
-      </p>
+    <Section
+      id="tokens"
+      title="Agents with no machine"
+      lede="Tokens for agents that run somewhere without Arugula, reaching your projects through the platform's MCP endpoint."
+      more={
+        <p>
+          A token's agent acts as yours, labelled with the token's name, never past what you can do. It never approves anything: a deploy
+          it plans waits for an owner's phone or browser.
+        </p>
+      }
+    >
+      {url ? (
+        <p class="settings-endpoint">
+          <span class="dim">Endpoint</span> <code data-agent-mcp-url>{url}</code>
+        </p>
+      ) : null}
       {made && (
         <div class="deploy-form agent-token-made" data-agent-token-made>
           <h3>
@@ -178,33 +183,37 @@ export function AgentTokens() {
         </div>
       )}
       {tokens.length === 0 && !making && <p class="dim">No agent tokens yet.</p>}
-      <ul class="platform-list agent-tokens">
-        {tokens.map((t) => (
-          <li key={t.id} data-agent-token={t.id} class={t.live ? "" : "dim"}>
-            <strong>
-              <bdi>{t.name}</bdi>
-            </strong>{" "}
-            <span class="dim">{reachOf(t)}</span>{" "}
-            <span class="dim">
-              {t.live ? (t.last_used_at ? `used ${ago(t.last_used_at)}` : "never used") : `revoked ${ago(t.revoked_at ?? 0)}`}
-            </span>{" "}
-            <button class="control-linkish" data-agent-token-calls-open={t.id} onClick={() => setOpen(open === t.id ? "" : t.id)}>
-              {open === t.id ? "Hide calls" : "Calls"}
-            </button>
-            {t.live && (
-              <>
-                {" "}
-                <button class="control-linkish" data-agent-token-revoke={t.id} onClick={() => void revoke(t.id)}>
-                  Revoke
-                </button>
-              </>
-            )}
-            {open === t.id && <Calls id={t.id} />}
-          </li>
-        ))}
-      </ul>
+      {tokens.length > 0 && (
+        <ul class="platform-list sw-cards settings-cards agent-tokens">
+          {/* The bar: live, or revoked. */}
+          {tokens.map((t) => (
+            <li key={t.id} data-agent-token={t.id} class={`sw-card ${toneClass(t.live ? "accent" : "muted")}`}>
+              <div class="sw-head">
+                <b class="sw-name">
+                  <bdi>{t.name}</bdi>
+                </b>
+                <span class="settings-card-act">
+                  <button class="control-linkish" data-agent-token-calls-open={t.id} onClick={() => setOpen(open === t.id ? "" : t.id)}>
+                    {open === t.id ? "Hide calls" : "Calls"}
+                  </button>
+                  {t.live && (
+                    <button class="control-linkish" data-agent-token-revoke={t.id} onClick={() => void revoke(t.id)}>
+                      Revoke
+                    </button>
+                  )}
+                </span>
+              </div>
+              <span class="sw-mono agent-token-reach">{reachOf(t)}</span>
+              <span class="dim">
+                {t.live ? (t.last_used_at ? `Used ${ago(t.last_used_at)}` : "Never used") : `Revoked ${ago(t.revoked_at ?? 0)}`}
+              </span>
+              {open === t.id && <Calls id={t.id} />}
+            </li>
+          ))}
+        </ul>
+      )}
       {!making ? (
-        <button data-agent-token-new onClick={() => setMaking(true)}>
+        <button class="settings-btn" data-agent-token-new onClick={() => setMaking(true)}>
           New agent token
         </button>
       ) : (
@@ -265,6 +274,6 @@ export function AgentTokens() {
         </form>
       )}
       {err ? <p class="control-error">{err}</p> : null}
-    </>
+    </Section>
   );
 }
