@@ -54,17 +54,14 @@
    in the fonts' wide fallbacks, capitals shout, so only the section
    headings are uppercase, as the swarm's are.
 
-   The swarm's fonts aren't loaded on any page (no @font-face, no font
-   link): the stacks fall back to what the machine has, Arial Narrow
-   (Liberation Sans Narrow on Linux) or a plain sans for the headings, the
-   system's sans, and JetBrains Mono where it's installed, else the
-   system's monospace. Motion is the swarm's: a card comes in once, and
+   The fonts are the swarm's own stacks; shared/fonts.css self-hosts them,
+   the mono one as "Arugula Mono" so terminals keep theirs. Motion is the swarm's: a card comes in once, and
    glows while it's hovered or focused. */
 
 .platform {
   --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
   --f-ui: "Instrument Sans", system-ui, sans-serif;
-  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --f-mono: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
 }
 
 .platform .sw-page {
