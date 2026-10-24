@@ -620,6 +620,9 @@ fn a_hosted_agent_holds_the_credential_its_turn_says() {
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
         .env("ARUGULA_CONTROL_URL", &url)
         .env("FAKE_ACP_DIR", &sessions)
+        // No `runner` user here: never `kill -1` as one (on CI, that's the
+        // Actions runner's own user).
+        .env("ARUGULA_HOSTED_RUN_USER", "")
         .env("ANTHROPIC_API_KEY", "sk-test")
         .env_remove("CLAUDE_CONFIG_DIR")
         .env("RUST_LOG", "info")
