@@ -32,7 +32,9 @@
 //! - **Native notifications** (S25: a webview has no push): a thread
 //!   follows the daemon's state, notifies when a pane starts needing you and
 //!   no window has focus, and a click opens that pane. The needs-you count
-//!   goes on the dock badge (macOS) and the tray.
+//!   goes on the dock badge (macOS) and the tray. And what control would
+//!   push this device, while the app runs, once control's page turns
+//!   *Notify this device* on (`notices.rs`).
 //! - **Every machine, through Arugula cloud** (M48, #159): once this
 //!   machine is joined, the window is control's own client, signed in
 //!   through the person's browser (`cloud.rs`). A join (or a leave) while
@@ -99,7 +101,9 @@
 //!   `window.__arugulaApp` and uses the app's window permissions
 //!   (capabilities/default.json).
 //! - **The local files**: the state directory's `listen` (the address) and
-//!   `local-token`.
+//!   `local-token`, and `control.json`'s `cert.device` (this machine on
+//!   control, so a relayed copy of its own pane's notification isn't shown
+//!   twice, `notices.rs`).
 //! - **The service install**: `arugulad install`, which copies itself to
 //!   `~/.local/bin` (Windows: `%LOCALAPPDATA%\Programs\arugula`), keeps the
 //!   flags the last install wrote and (re)starts the service: the systemd
@@ -115,6 +119,7 @@ mod daemon;
 mod finder;
 mod frames;
 mod links;
+mod notices;
 mod panics;
 mod platform;
 mod profile;
@@ -582,11 +587,12 @@ fn open_outside(url: &tauri::Url) {
 fn allow_control(app: &AppHandle) {
     static ALLOWED: Mutex<Vec<String>> = Mutex::new(Vec::new());
     let mut allowed = ALLOWED.lock().unwrap();
+    let control = cloud::control().and_then(|c| c.parse::<tauri::Url>().ok()).map(|c| c.origin().ascii_serialization());
     for origin in platform::window_origins(cloud::control().as_deref(), cloud::platform().as_ref()) {
         if allowed.contains(&origin) {
             continue;
         }
-        let cap = tauri::ipc::CapabilityBuilder::new(format!("control-{}", allowed.len()))
+        let mut cap = tauri::ipc::CapabilityBuilder::new(format!("control-{}", allowed.len()))
             .remote(format!("{origin}/*"))
             .window("*")
             .permission("core:window:allow-minimize")
@@ -594,6 +600,13 @@ fn allow_control(app: &AppHandle) {
             .permission("core:window:allow-internal-toggle-maximize")
             .permission("core:window:allow-close")
             .permission("core:window:allow-start-dragging");
+        // Control's page turns the app's notifications on and off
+        // (`notices.rs`); the platform page doesn't.
+        if control.as_deref() == Some(origin.as_str()) {
+            for p in notices::PERMISSIONS {
+                cap = cap.permission(p);
+            }
+        }
         match app.add_capability(cap) {
             Ok(()) => allowed.push(origin),
             Err(e) => eprintln!("arugula: letting {origin} use its window: {e}"),
@@ -924,13 +937,15 @@ async fn retry(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), Strin
 // ---- notifications
 
 /// What a notification's click opens.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Click {
     Pane(u32),
     /// Getting started's cloud step, to join control again (#325).
     JoinAgain,
     /// Getting started's agents step, to install an adapter (#335).
     Agents,
+    /// What control pushed (`notices.rs`).
+    Notice(notices::Tap),
 }
 
 impl Click {
@@ -941,6 +956,7 @@ impl Click {
             Click::Pane(pane) => open_pane(app, pane),
             Click::JoinAgain => daemon::getting_started(app, "cloud"),
             Click::Agents => daemon::getting_started(app, "agents"),
+            Click::Notice(tap) => tap.open(app),
         }
     }
 }
@@ -950,13 +966,21 @@ fn notify(app: &AppHandle, click: Click, title: String, body: String) {
     std::thread::spawn(move || {
         // Windows: a toast under the app's own id (its Start menu shortcut,
         // which the installer makes, carries it). A click opens
-        // `arugula://pane/N`, which comes back to this app (one instance)
-        // as a link, from the popup or the Action Center alike.
+        // `arugula://pane/N` (or a notice's `arugula://notice?to=…`), which
+        // comes back to this app (one instance) as a link, from the popup or
+        // the Action Center alike.
         #[cfg(windows)]
-        if let Click::Pane(pane) = click
-            && let Err(e) = toast(&app.config().identifier, &title, &body, pane)
         {
-            eprintln!("arugula: a notification: {e}");
+            let launch = match &click {
+                Click::Pane(pane) => Some(format!("arugula://pane/{pane}")),
+                Click::Notice(tap) => Some(tap.link()),
+                _ => None,
+            };
+            if let Some(launch) = launch
+                && let Err(e) = toast(&app.config().identifier, &title, &body, &launch)
+            {
+                eprintln!("arugula: a notification: {e}");
+            }
         }
         #[cfg(target_os = "linux")]
         {
@@ -991,9 +1015,9 @@ fn notify(app: &AppHandle, click: Click, title: String, body: String) {
     });
 }
 
-/// A Windows toast whose click opens `arugula://pane/{pane}`.
+/// A Windows toast whose click opens `launch` (an `arugula://` link).
 #[cfg(windows)]
-fn toast(app_id: &str, title: &str, body: &str, pane: u32) -> windows::core::Result<()> {
+fn toast(app_id: &str, title: &str, body: &str, launch: &str) -> windows::core::Result<()> {
     use windows::{
         Data::Xml::Dom::XmlDocument,
         UI::Notifications::{ToastNotification, ToastNotificationManager},
@@ -1001,7 +1025,8 @@ fn toast(app_id: &str, title: &str, body: &str, pane: u32) -> windows::core::Res
     };
     let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
     let xml = format!(
-        r#"<toast activationType="protocol" launch="arugula://pane/{pane}"><visual><binding template="ToastGeneric"><text>{}</text><text>{}</text></binding></visual></toast>"#,
+        r#"<toast activationType="protocol" launch="{}"><visual><binding template="ToastGeneric"><text>{}</text><text>{}</text></binding></visual></toast>"#,
+        esc(launch),
         esc(title),
         esc(body)
     );
@@ -1009,6 +1034,15 @@ fn toast(app_id: &str, title: &str, body: &str, pane: u32) -> windows::core::Res
     doc.LoadXml(&HSTRING::from(xml))?;
     let toast = ToastNotification::CreateToastNotification(&doc)?;
     ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(app_id))?.Show(&toast)
+}
+
+/// The local daemon's panes that need you now, as `watch` last saw them.
+static NEEDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+/// Whether this machine's pane `pane` needs you now (its own notification
+/// covers it, `notices.rs`).
+fn needs_you(pane: u32) -> bool {
+    NEEDS.lock().unwrap().contains(&pane)
 }
 
 fn set_count(app: &AppHandle, count: usize) {
@@ -1084,6 +1118,7 @@ fn watch_once(app: &AppHandle) -> anyhow::Result<()> {
             }
         }
         set_count(app, now.values().filter(|n| **n).count());
+        *NEEDS.lock().unwrap() = now.iter().filter(|(_, n)| **n).map(|(p, _)| *p).collect();
         seen = Some(now);
     }
 }
@@ -1152,7 +1187,11 @@ fn main() {
         compat::compat_skip,
         cloud::cloud_status,
         cloud::cloud_signin,
-        cloud::cloud_local
+        cloud::cloud_local,
+        notices::notices_keys,
+        notices::notices_start,
+        notices::notices_stop,
+        notices::notices_state
     ]);
     builder
         .menu(|app| {
@@ -1343,6 +1382,7 @@ fn main() {
             }
             let handle = app.handle().clone();
             std::thread::Builder::new().name("watch".into()).spawn(move || watch(handle))?;
+            notices::resume(app.handle());
             let handle = app.handle().clone();
             std::thread::Builder::new().name("join".into()).spawn(move || follow_join(handle))?;
             if !cfg!(windows) {

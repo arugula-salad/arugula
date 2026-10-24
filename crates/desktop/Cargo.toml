@@ -30,6 +30,12 @@ ureq = { version = "3", features = ["json"] }
 # Signing in binds the browser's yes to this app: a verifier only it holds.
 getrandom = "0.4"
 sha2 = "0.10"
+# What control pushes this device (notices.rs): RFC 8291, opened here with
+# the subscription's key, as a browser would.
+aes-gcm = "0.10"
+base64 = "0.22"
+hkdf = "0.12"
+p256 = { version = "0.13", features = ["ecdh"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # For click handling, which tauri-plugin-notification doesn't expose on desktop.

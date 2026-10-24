@@ -50,6 +50,8 @@
 #   - `session_or_client`: a session (or a CLI device), or a registered
 #     client's credential, which the platform checks itself
 #     (`hosted::broker::clients`, M231);
+#   - `push_listen`: a live push subscription's listen token, as a bearer,
+#     which only its subscribe answered (`push_live.rs`);
 #   - `client`: a registered client's credential only (M236,
 #     `Authorization: Bearer`, checked by the platform as M231's are), on
 #     the client's own `/api/client/...` routes.
@@ -727,6 +729,14 @@ path = "/api/push/prefs"
 process = "hub"
 auth = "session"
 clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/push/live/{id}"
+process = "hub"
+auth = "push_listen"
+clients = ["app"]
+note = "Server-Sent Events: what control would hand a push service for a live subscription (the desktop app's, which has none), still encrypted for it. The listen token its subscribe answered, as a bearer; ends when the subscription or its device goes."
 
 [[route]]
 method = "GET"

@@ -34,6 +34,13 @@ export function tauriWindow(): {
   return (t?.window?.getCurrentWindow?.() as ReturnType<typeof tauriWindow>) ?? null;
 }
 
+/** The app's commands, when the page may call them (control's page may
+ * call the app's notifications', crates/desktop/src/notices.rs). */
+export function tauriInvoke(): (<T>(cmd: string, args?: Record<string, unknown>) => Promise<T>) | null {
+  const t = (globalThis as { __TAURI__?: { core?: { invoke?: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T> } } }).__TAURI__;
+  return desktopApp() && t?.core?.invoke ? t.core.invoke : null;
+}
+
 /** A new window of the app, showing `pane` (or the same layout). */
 export function openInNewWindow(pane?: number) {
   window.open(pane === undefined ? "/" : `/#pane=${pane}`, "_blank");

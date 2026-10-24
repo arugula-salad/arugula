@@ -20,7 +20,9 @@
 //! always go.
 //!
 //! Endpoints are only the browsers' push services (so control can't be
-//! made to post anywhere else), plus `--push-host` for tests.
+//! made to post anywhere else), plus `--push-host` for tests, and control's
+//! own live endpoints, where a device with no push service (the desktop
+//! app) listens while it runs (`push_live.rs`).
 
 use std::sync::Arc;
 
@@ -160,6 +162,9 @@ impl Vapid {
 
 /// An endpoint at a real push service (or one allowed for tests).
 pub(crate) fn allowed_endpoint(app: &App, endpoint: &str) -> bool {
+    if crate::push_live::is_live(app, endpoint) {
+        return true;
+    }
     let Ok(u) = url::Url::parse(endpoint) else { return false };
     let Some(host) = u.host_str() else { return false };
     let hostport = match u.port() {
@@ -193,12 +198,20 @@ pub async fn subscribe(State(app): State<Arc<App>>, s: Session, Json(b): Json<Su
     let mut ds: Vec<String> = app.db.daemons(&s.account)?.into_iter().map(|d| d.id).collect();
     ds.extend(crate::teams::reachable(&app, &s.account)?);
     app.relay.nudge(&ds);
-    app.analytics.capture(&s.account, "push turned on", json!({ "service": push_service(&sub.endpoint) }));
+    app.analytics.capture(&s.account, "push turned on", json!({ "service": push_service(&app, &sub.endpoint) }));
+    // A live endpoint: the token its device listens with (`push_live.rs`),
+    // in this answer only.
+    if crate::push_live::is_live(&app, &sub.endpoint) {
+        return Ok(Json(json!({ "listen": app.live.token(&app, &sub.endpoint)? })));
+    }
     Ok(Json(json!({})))
 }
 
 /// Which push service an endpoint is at (its host), never the endpoint.
-fn push_service(endpoint: &str) -> String {
+fn push_service(app: &App, endpoint: &str) -> String {
+    if crate::push_live::is_live(app, endpoint) {
+        return "live".into();
+    }
     url::Url::parse(endpoint).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default()
 }
 
@@ -208,6 +221,10 @@ pub struct Unsubscribe {
 }
 
 pub async fn unsubscribe(State(app): State<Arc<App>>, s: Session, Json(b): Json<Unsubscribe>) -> R {
+    // Only the account's own: another's live streams stay open.
+    if app.db.push_sub_account(&b.endpoint)?.as_deref() == Some(s.account.as_str()) {
+        app.live.close(&b.endpoint);
+    }
     app.db.drop_push_sub(&b.endpoint, Some(&s.account))?;
     app.analytics.capture(&s.account, "push turned off", json!({}));
     Ok(Json(json!({})))
@@ -255,6 +272,10 @@ const HOUR: u32 = 3600;
 /// Post an encrypted notification with control's VAPID signature; its
 /// push service's status. A subscription that's gone is forgotten.
 async fn post(app: &App, endpoint: &str, body: Vec<u8>, ttl: u32, urgency: Option<&str>) -> Result<u16, ApiError> {
+    // A live endpoint: its device's open stream, not a push service.
+    if crate::push_live::is_live(app, endpoint) {
+        return Ok(app.live.send(endpoint, body));
+    }
     let url = url::Url::parse(endpoint).map_err(|_| err(StatusCode::BAD_REQUEST, "endpoint"))?;
     // RFC 8292: the push resource's origin, with its port if it has one.
     let audience = url.origin().ascii_serialization();

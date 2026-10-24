@@ -42,6 +42,7 @@ export async function registerWorker(
 }
 
 export async function pushState(): Promise<PushState> {
+  if (backend?.state) return backend.state();
   if (!isSecureContext) return "insecure";
   if (!supported()) return ios() && !standalone() ? "install" : "unsupported";
   if (Notification.permission === "denied") return "denied";
@@ -63,20 +64,68 @@ export interface PushPrefs {
 }
 
 /** In control mode, subscribing goes to control instead (M21), and the
- * account chooses what it's pushed about. */
-let backend: {
+ * account chooses what it's pushed about. In the desktop app, which has no
+ * Web Push, the app shows what control pushes while it runs instead
+ * (`desktopPush`): its own `state`, and a `note` that says when. */
+export interface PushBackend {
   enable(): Promise<PushState>;
   disable(): Promise<PushState>;
   prefs(): Promise<PushPrefs>;
   setPrefs(p: Partial<PushPrefs>): Promise<PushPrefs>;
-} | null = null;
-export function setPushBackend(b: typeof backend) {
+  state?(): Promise<PushState>;
+  note?: string;
+}
+let backend: PushBackend | null = null;
+const backendChanged = new Set<() => void>();
+export function setPushBackend(b: PushBackend | null) {
   backend = b;
+  backendChanged.forEach((fn) => fn());
+}
+/** Hear when another backend takes over (the desktop app's, once it answers). */
+export function onPushBackend(fn: () => void) {
+  backendChanged.add(fn);
 }
 
 /** What control pushes about, or null off control. */
 export const pushPrefs = () => backend?.prefs() ?? Promise.resolve(null);
 export const setPushPrefs = (p: Partial<PushPrefs>) => backend?.setPrefs(p) ?? Promise.resolve(null);
+/** When this device is notified, if not always ("while the app is open"). */
+export const pushNote = () => backend?.note ?? null;
+
+/** The desktop app's notifications (crates/desktop/src/notices.rs): the app
+ * makes the subscription's keys and keeps them, control takes it at its own
+ * live endpoint (signed by this device, as any subscription is) and answers
+ * the token the app listens with, and the app holds the stream open while
+ * it runs. */
+export function desktopPush(
+  invoke: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>,
+  control: {
+    subscribe(sub: { endpoint: string; p256dh: string; auth: string }): Promise<{ listen?: string }>;
+    unsubscribe(endpoint: string): Promise<unknown>;
+    prefs(): Promise<PushPrefs>;
+    setPrefs(p: Partial<PushPrefs>): Promise<PushPrefs>;
+  },
+): PushBackend {
+  return {
+    note: "while the app is open",
+    state: async () => ((await invoke<string>("notices_state")) === "on" ? "on" : "off"),
+    enable: async () => {
+      const k = await invoke<{ id: string; p256dh: string; auth: string }>("notices_keys");
+      const endpoint = `${location.origin}/api/push/live/${k.id}`;
+      const { listen } = await control.subscribe({ endpoint, p256dh: k.p256dh, auth: k.auth });
+      if (!listen) throw new Error("control didn't take the app's subscription");
+      await invoke("notices_start", { endpoint, listen });
+      return "on";
+    },
+    disable: async () => {
+      const endpoint = await invoke<string | null>("notices_stop");
+      if (endpoint) await control.unsubscribe(endpoint).catch(() => {});
+      return "off";
+    },
+    prefs: () => control.prefs(),
+    setPrefs: (p) => control.setPrefs(p),
+  };
+}
 
 export async function enablePush(): Promise<PushState> {
   if (backend) return backend.enable();
