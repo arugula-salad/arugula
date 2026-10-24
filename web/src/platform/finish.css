@@ -1,0 +1,218 @@
+/* The finishes on the platform page: what shared/style.css's Aqua, Brushed
+   metal and Glass do to the shell's frame, done to the platform's own.
+   The bar is the shell's .bar, the dialogs its .prompt and .menu, the
+   buttons its .primary, so those come from style.css as they are; this
+   is the frame behind the pages (.platform, and .chat, which covers it on
+   the chat page), the cards and forms, the lists' rows, and what floats
+   over them. The bar's places take no finish, as the shell's head's
+   don't. Only the platform page loads it. */
+
+/* A floating thing's shadow (the toast's): black at two-thirds is a smudge
+   on a light palette, so it's lighter there. */
+:root {
+  --platform-shadow: #000a;
+}
+
+html[data-scheme="light"] {
+  --platform-shadow: #0003;
+}
+
+/* The repo and secret fields had the browser's own grey, which grey
+   placeholders barely read on: they take the dialogs' fields' look
+   (style.css's .prompt input) under every finish. Placeholders are
+   --subtle, which reads on the letterbox where --dim doesn't (Latte). */
+.platform-link-repo input {
+  padding: 4px 8px;
+  color: var(--fg);
+  background: var(--letterbox);
+  border: 1px solid var(--raised-hover);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.platform input::placeholder,
+.platform textarea::placeholder {
+  color: var(--subtle);
+}
+
+/* On a dark palette --subtle is nearly the typed text's brightness, so an
+   empty field looked filled; --dim reads there. */
+html[data-scheme="dark"] .platform input::placeholder,
+html[data-scheme="dark"] .platform textarea::placeholder {
+  color: var(--dim);
+}
+
+/* -- Aqua: pinstripes behind the pages, a lit bar (style.css's .bar),
+      lit panels, a gel on what's picked */
+
+html[data-finish="aqua"] .platform,
+html[data-finish="aqua"] .chat {
+  background: repeating-linear-gradient(
+    var(--bg) 0 2px,
+    color-mix(in srgb, var(--bg) 90%, var(--fg)) 2px 4px
+  );
+}
+
+/* A page's section is the platform's pane area (style.css's .tab-area
+   under each finish). Fixed to the window, its stripes line up with the
+   frame's, so a section with no fill of its own shows no seam. */
+html[data-finish="aqua"] .platform-section {
+  background: repeating-linear-gradient(
+    var(--bg) 0 2px,
+    color-mix(in srgb, var(--bg) 90%, var(--fg)) 2px 4px
+  ) fixed;
+}
+
+/* A hosted workspace's head is its bar. */
+html[data-finish="aqua"] .platform-ws-head {
+  background:
+    linear-gradient(#fff5, #fff1 50%, #0000 51%, #0001),
+    var(--surface);
+  box-shadow: inset 0 -1px 0 #0003;
+}
+
+html[data-finish="aqua"] .chat-row.selected {
+  color: var(--on-color);
+  background: linear-gradient(#fff5, #fff0 50%, #0000 51%, #fff2), var(--accent);
+}
+
+html[data-finish="aqua"] .platform-card,
+html[data-finish="aqua"] .deploy-card,
+html[data-finish="aqua"] .deploy-form,
+html[data-finish="aqua"] .run-start {
+  background: linear-gradient(#fff2, #fff0 30px), var(--surface);
+  box-shadow: 0 1px 3px #0003, 0 0 0 1px #0001;
+}
+
+html[data-finish="aqua"] .chat-switcher,
+html[data-finish="aqua"] .platform-toast {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: 0 10px 30px #0006, 0 0 0 1px #0002;
+}
+
+html[data-finish="aqua"] .chat-switcher li.picked {
+  color: var(--on-color);
+  background: linear-gradient(#fff5, #fff0 50%, #0000 51%, #fff2), var(--accent);
+}
+
+/* -- Brushed metal: grain behind the pages and on the heads and panels,
+      bevelled buttons, rows etched apart */
+
+html[data-finish="brushed"] .platform,
+html[data-finish="brushed"] .chat {
+  background: var(--grain), linear-gradient(#fff1, #0001), var(--bg);
+}
+
+html[data-finish="brushed"] .platform-section {
+  background: var(--grain) fixed, linear-gradient(#fff1, #0001) fixed, var(--bg);
+}
+
+html[data-finish="brushed"] .platform-ws-head,
+html[data-finish="brushed"] .chat-side {
+  background: var(--grain), linear-gradient(#fff2, #0001), var(--surface);
+}
+
+html[data-finish="brushed"] .platform-ws-head {
+  box-shadow: inset 0 1px 0 #fff3, inset 0 -1px 0 #0004;
+}
+
+html[data-finish="brushed"] .chat-row.selected,
+html[data-finish="brushed"] .chat-switcher li.picked {
+  color: var(--fg);
+  background: var(--grain), linear-gradient(#fff3, #0001), color-mix(in srgb, var(--accent) 25%, var(--surface));
+}
+
+/* A card is solid metal with a bevelled top: grain under its dim text read
+   as busy, so the grain stays behind the cards. */
+html[data-finish="brushed"] .platform-card,
+html[data-finish="brushed"] .deploy-card,
+html[data-finish="brushed"] .deploy-form,
+html[data-finish="brushed"] .run-start {
+  background: linear-gradient(#fff2, #fff0 40px, #0001), var(--surface);
+  box-shadow: inset 0 1px 0 #fff3, 0 1px 2px #0004;
+}
+
+html[data-finish="brushed"] .chat-switcher,
+html[data-finish="brushed"] .platform-toast {
+  background: var(--grain), linear-gradient(#fff2, #fff0 40px, #0001), var(--raised);
+  box-shadow: inset 0 1px 0 #fff3, 0 12px 36px #0008, 0 0 0 1px #0003;
+}
+
+/* Every button bevelled, as style.css does the dialogs': the deploy
+   links that are buttons, too. */
+html[data-finish="brushed"] .platform .button:not(.primary),
+html[data-finish="brushed"] .deploy-roll-back {
+  background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--raised);
+  border-color: color-mix(in srgb, var(--raised) 60%, #000);
+  box-shadow: inset 0 1px 0 #fff6, 0 1px 1px #0004;
+}
+
+/* A row's divider is a groove: its line, and a light edge under it. */
+html[data-finish="brushed"] .platform-drafts li,
+html[data-finish="brushed"] .platform-inbox-list li,
+html[data-finish="brushed"] .run-spec-list > li {
+  box-shadow: 0 1px 0 #ffffff14;
+}
+
+/* -- Glass: a soft glow behind the pages; the bar (style.css's .bar), the
+      heads, the side list and the panels are frosted panes over it */
+
+html[data-finish="glass"] .platform,
+html[data-finish="glass"] .chat {
+  background:
+    radial-gradient(ellipse at 10% 90%, color-mix(in srgb, var(--accent) 35%, transparent), transparent 50%),
+    radial-gradient(ellipse at 90% 15%, color-mix(in srgb, var(--info) 30%, transparent), transparent 50%),
+    radial-gradient(ellipse at 60% 60%, color-mix(in srgb, var(--pink) 18%, transparent), transparent 55%),
+    var(--bg);
+}
+
+/* A section is see-through, a frosted pane over the glow. No
+   backdrop-filter: it would trap a dialog drawn inside the section (the
+   plan's Modal is position: fixed), and the glow under it is smooth, so
+   a blur wouldn't show. */
+html[data-finish="glass"] .platform-section {
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  box-shadow: inset 0 1px 0 #fff2;
+}
+
+html[data-finish="glass"] .platform-ws-head,
+html[data-finish="glass"] .chat-side {
+  background: color-mix(in srgb, var(--surface) 65%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+html[data-finish="glass"] .chat-details {
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+html[data-finish="glass"] .chat-row.selected,
+html[data-finish="glass"] .chat-switcher li.picked {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* On the page the glow behind a card is smooth, so it needs no blur to
+   frost: see-through is enough, and cheaper with many cards. */
+html[data-finish="glass"] .platform-card,
+html[data-finish="glass"] .deploy-card,
+html[data-finish="glass"] .deploy-form,
+html[data-finish="glass"] .run-start {
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+  box-shadow: inset 0 1px 0 #fff2;
+}
+
+/* Mostly opaque: the switcher sits on its backdrop's blur, which bounds
+   its own, so at .menu's 62% the room's lines read through its text. */
+html[data-finish="glass"] .chat-switcher,
+html[data-finish="glass"] .platform-toast {
+  background: color-mix(in srgb, var(--raised) 90%, transparent);
+  backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow: inset 0 1px 0 #fff2, 0 0 0 1px #fff1, 0 16px 40px #0006;
+}
+
+html[data-finish="glass"] .chat-switcher-back {
+  background: #0003;
+  backdrop-filter: blur(3px);
+}

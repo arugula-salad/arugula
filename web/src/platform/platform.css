@@ -154,7 +154,7 @@
   border-radius: 999px;
   background: var(--surface);
   color: var(--fg);
-  box-shadow: 0 12px 40px #000a;
+  box-shadow: 0 12px 40px var(--platform-shadow);
 }
 
 @media (max-width: 600px) {
@@ -358,7 +358,7 @@
 
 .agent-token-calls .agent-call-refused,
 .agent-token-calls .agent-call-failed {
-  color: var(--danger, #c33);
+  color: var(--danger);
 }
 
 .agent-token-warning,
