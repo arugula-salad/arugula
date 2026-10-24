@@ -28,6 +28,8 @@
 //                    the passkeys between runs (a passkey brought back
 //                    signs in, but without PRF); a fresh browser without it
 //   --size WxH       viewport [1280x800]; --scale N  device pixel ratio [1]
+//   --phone          a phone: touch, a mobile viewport (as an iPhone; with
+//                    --size 390x844 --scale 3 for one)
 //   --headed         show the window
 //   --init JS        run JS in each page before its own scripts: say,
 //                    `window.__arugulaTelemetry = true`, so the usage
@@ -58,12 +60,13 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { chromium, type BrowserContext, type CDPSession, type Locator, type Page } from "@playwright/test";
 
-const usage = "usage: dev-browser [--passkey] [--login NAME] [--profile DIR] [--size WxH] [--scale N] [--headed] [--init JS] URL [STEPS]";
+const usage = "usage: dev-browser [--passkey] [--login NAME] [--profile DIR] [--size WxH] [--scale N] [--phone] [--headed] [--init JS] URL [STEPS]";
 const args = process.argv.slice(2);
-const opt: { passkey: boolean; login?: string; profile?: string; size: string; scale: number; headed: boolean; init?: string } = {
+const opt: { passkey: boolean; login?: string; profile?: string; size: string; scale: number; phone: boolean; headed: boolean; init?: string } = {
   passkey: false,
   size: "1280x800",
   scale: 1,
+  phone: false,
   headed: false,
 };
 const rest: string[] = [];
@@ -75,6 +78,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === "--profile") opt.profile = resolve(val());
   else if (a === "--size") opt.size = val();
   else if (a === "--scale") opt.scale = Number(val());
+  else if (a === "--phone") opt.phone = true;
   else if (a === "--headed") opt.headed = true;
   else if (a === "--init") opt.init = val();
   else if (a === "-h" || a === "--help") die(usage, 0);
@@ -93,6 +97,7 @@ function die(msg: string, code = 1): never {
 // The system Chrome, as the e2e specs use; Playwright's own if there's none.
 const launch = { headless: !opt.headed, channel: "chrome" };
 const viewport = { width, height };
+const mobile = opt.phone ? { hasTouch: true, isMobile: true } : {};
 let ctx: BrowserContext;
 try {
   ctx = await open(launch);
@@ -102,10 +107,10 @@ try {
 async function open(l: { headless: boolean; channel?: string }): Promise<BrowserContext> {
   if (opt.profile) {
     mkdirSync(opt.profile, { recursive: true });
-    return chromium.launchPersistentContext(join(opt.profile, "chrome"), { ...l, viewport, deviceScaleFactor: opt.scale });
+    return chromium.launchPersistentContext(join(opt.profile, "chrome"), { ...l, viewport, deviceScaleFactor: opt.scale, ...mobile });
   }
   const b = await chromium.launch(l);
-  return b.newContext({ viewport, deviceScaleFactor: opt.scale });
+  return b.newContext({ viewport, deviceScaleFactor: opt.scale, ...mobile });
 }
 if (opt.init) await ctx.addInitScript(opt.init);
 const page: Page = ctx.pages()[0] ?? (await ctx.newPage());
