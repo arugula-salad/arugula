@@ -65,8 +65,13 @@ pub struct Message {
 /// (`Last-Event-ID`, M144): a page that missed more resyncs.
 pub const CHAT_EVENTS_KEPT: u64 = 10_000;
 
+/// How long a `typing` row is kept (#111): well past the 6 s it's worth
+/// sending, so a machine that is a few seconds behind still finds it.
+pub const TYPING_KEPT_MS: u64 = 15_000;
+
 /// One of chat's live events, to add (M144): `live` with the event's JSON
-/// in `body` (and `to`, whom only it goes to), or `changed`, empty.
+/// in `body` (and `to`, whom only it goes to), `typing` (a `live` body that
+/// only streams hear, and only while it's fresh), or `changed`, empty.
 pub struct NewChatEvent<'a> {
     pub kind: &'a str,
     pub body: &'a str,
@@ -81,6 +86,7 @@ pub struct ChatEvent {
     pub kind: String,
     pub body: String,
     pub to: Option<String>,
+    pub at: u64,
 }
 
 pub struct NewMessage<'a> {
@@ -718,9 +724,9 @@ impl Db {
     /// Chat's live events after `after`, oldest first, at most `limit`.
     pub fn chat_events_after(&self, after: u64, limit: u32) -> Result<Vec<ChatEvent>> {
         self.c().query_map(
-            "SELECT seq, kind, body, to_account FROM chat_events WHERE seq > ?1 ORDER BY seq LIMIT ?2",
+            "SELECT seq, kind, body, to_account, at FROM chat_events WHERE seq > ?1 ORDER BY seq LIMIT ?2",
             params![after, limit],
-            |r| Ok(ChatEvent { seq: r.get(0)?, kind: r.get(1)?, body: r.get(2)?, to: r.get(3)? }),
+            |r| Ok(ChatEvent { seq: r.get(0)?, kind: r.get(1)?, body: r.get(2)?, to: r.get(3)?, at: r.get(4)? }),
         )
     }
 
@@ -737,6 +743,16 @@ impl Db {
         self.c().execute(
             "DELETE FROM chat_events WHERE seq <= (SELECT max(seq) FROM chat_events) - ?1",
             params![CHAT_EVENTS_KEPT],
+        )
+    }
+
+    /// Drop typing rows older than [`TYPING_KEPT_MS`]: they're only ever
+    /// worth a few seconds, so they go far sooner than the window of real
+    /// events and never crowd it. How many went.
+    pub fn prune_typing(&self, now: u64) -> Result<usize> {
+        self.c().execute(
+            "DELETE FROM chat_events WHERE kind = 'typing' AND at < ?1",
+            params![now.saturating_sub(TYPING_KEPT_MS)],
         )
     }
 

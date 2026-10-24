@@ -1,9 +1,11 @@
 //! The typing indicator (#111): a page pings while its composer's text
-//! changes, and the room's other open readers hear it. Nothing is kept:
-//! the ping isn't a `chat_events` row, so it isn't replayed to a stream
-//! that resumes, and on a platform running on several machines only the
-//! readers whose stream is on the machine that got the ping hear it. A
-//! page shows a name for [`wire::TYPING_MS`] after its last ping.
+//! changes, and the room's other open readers hear it. A ping is a
+//! short-lived `chat_events` row (kind `typing`), so it crosses machines as
+//! messages do (M144): a reader whose stream is on the platform's other
+//! machine hears it. It's sent only while fresh ([`wire::TYPING_MS`]), never
+//! replayed to a stream that resumes (`Hub::missed` reads `live` rows only),
+//! and pruned within seconds (`Db::prune_typing`). A page shows a name for
+//! [`wire::TYPING_MS`] after its last ping.
 
 use super::*;
 
@@ -13,9 +15,9 @@ use super::*;
 const GAP_MS: u64 = 1_000;
 
 impl Hub {
-    /// Tell this machine's streams that `account` is typing in `room`.
+    /// Tell every machine's streams that `account` is typing in `room`.
     /// Whether it was sent (a ping inside the gap isn't).
-    fn typing(&self, room: &str, account: &str, name: &str, now: u64) -> bool {
+    fn typing(&self, db: &Db, room: &str, account: &str, name: &str, now: u64) -> bool {
         {
             let mut t = self.typed.lock().unwrap();
             if t.len() > 50_000 {
@@ -28,8 +30,12 @@ impl Hub {
             t.insert(key, now);
         }
         let ev = ChatLive::Typing { room: room.to_owned(), account: account.to_owned(), name: name.to_owned() };
-        // `n: 0`: not an event of the log, so no stream numbers it.
-        let _ = self.tx.send(Arc::new(Out { n: 0, ev, to: None }));
+        let body = data(&ev);
+        let e = NewChatEvent { kind: "typing", body: &body, to: None, at: now };
+        if let Err(e) = db.add_chat_event(&e) {
+            tracing::warn!(error = %e, "chat: keeping a typing ping");
+        }
+        self.catch_up(db);
         true
     }
 
@@ -52,7 +58,7 @@ pub async fn typing(
         return Err(err(StatusCode::CONFLICT, "you can't write here"));
     }
     let name = name_of(&app, &s.account).await?;
-    app.chat.typing(&room.id, &s.account, &name, now_ms());
+    app.chat.typing(&app.db, &room.id, &s.account, &name, now_ms());
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -62,15 +68,44 @@ mod tests {
 
     #[test]
     fn a_ping_goes_to_other_streams_and_not_twice_in_a_second() {
+        let db = Db::test();
         let hub = Hub::default();
         let mut rx = hub.tx.subscribe();
-        assert!(hub.typing("ch_1", "a1", "Alex", 10_000));
-        assert!(!hub.typing("ch_1", "a1", "Alex", 10_500), "inside the gap");
-        assert!(hub.typing("ch_2", "a1", "Alex", 10_500), "another room");
-        assert!(hub.typing("ch_1", "a1", "Alex", 11_000));
+        let now = now_ms();
+        assert!(hub.typing(&db, "ch_1", "a1", "Alex", now));
+        assert!(!hub.typing(&db, "ch_1", "a1", "Alex", now + 500), "inside the gap");
+        assert!(hub.typing(&db, "ch_2", "a1", "Alex", now + 500), "another room");
+        assert!(hub.typing(&db, "ch_1", "a1", "Alex", now + 1_000));
         let first = rx.try_recv().unwrap();
         assert_eq!(first.n, 0, "not numbered: nothing replays it");
         assert!(matches!(&first.ev, ChatLive::Typing { room, account, .. } if room == "ch_1" && account == "a1"));
+    }
+
+    #[test]
+    fn a_machine_that_was_away_hears_only_fresh_pings_and_old_ones_are_pruned() {
+        let db = Db::test();
+        let a = Hub::default();
+        let b = Hub::default();
+        let mut rx = b.tx.subscribe();
+        let now = now_ms();
+        let ping = |room: &str, at: u64| {
+            let ev = ChatLive::Typing { room: room.into(), account: "a1".into(), name: "Alex".into() };
+            db.add_chat_event(&NewChatEvent { kind: "typing", body: &data(&ev), to: None, at }).unwrap();
+        };
+        ping("ch_old", now - wire::TYPING_MS - 1_000);
+        // Another machine's ping reaches this one through the table.
+        assert!(a.typing(&db, "ch_new", "a1", "Alex", now));
+        b.catch_up(&db);
+        let heard = rx.try_recv().unwrap();
+        assert!(matches!(&heard.ev, ChatLive::Typing { room, .. } if room == "ch_new"));
+        assert!(rx.try_recv().is_err(), "a stale ping isn't sent");
+        // A resume reads `live` rows only.
+        let (oldest, _) = db.chat_event_bounds().unwrap();
+        assert!(a.missed(&db, &format!("c-{}", oldest - 1)).is_none_or(|(_, outs)| outs.is_empty()));
+        // The stale one goes; the fresh one stays for a while.
+        assert_eq!(db.prune_typing(now + 1).unwrap(), 1);
+        assert_eq!(db.chat_events_after(0, 10).unwrap().len(), 1);
+        assert_eq!(db.prune_typing(now + crate::db::chat::TYPING_KEPT_MS + 1).unwrap(), 1);
     }
 
     #[test]
