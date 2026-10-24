@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { dragTo, menu, open, paneEl, screen, text, type as typeIn } from "./helpers";
+import { dragTo, menu, open, paneEl, screen, text, type as typeIn, sheetTab } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 import { labs } from "./labs";
@@ -131,7 +131,10 @@ test.describe("phone", () => {
   test("a VM tab's splits share its machine; a local split runs here", async ({ page }) => {
     test.skip(!token, "no wisp token on this host");
     await open(page);
-    const sheet = () => page.locator(".sheet-button").click();
+    const sheet = async () => {
+      await page.locator(".sheet-button").click();
+      await sheetTab(page, "More");
+    };
     vmA = await next(page, async () => {
       await sheet();
       await page.getByRole("button", { name: "New VM tab" }).click();

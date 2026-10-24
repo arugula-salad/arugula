@@ -715,63 +715,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: #0008;
 }
 
-.sheet {
-  position: absolute;
-  top: var(--bar-h);
-  left: 0;
-  right: 0;
-  max-height: 80%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 10px 10px 14px;
-  background: var(--surface);
-  border-radius: 0 0 14px 14px;
-  box-shadow: 0 10px 30px #000a;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 15px;
-}
-
-/* A wide window in the phone layout: a column, not a banner. */
-@media (min-width: 560px) {
-  .sheet {
-    right: auto;
-    width: 520px;
-    border-radius: 0 0 14px 0;
-  }
-}
-
-/* Sections: a heading over a rule, so where one ends is plain. */
-.sheet > section {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.sheet > section + section,
-.sheet > section + .sheet-actions,
-.sheet > .sheet-actions + section {
-  margin-top: 6px;
-  padding-top: 8px;
-  border-top: 1px solid var(--divider);
-}
-
-.sheet h2 {
-  margin: 2px 4px 6px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--dim);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.sheet h3 {
-  margin: 6px 4px 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--dim);
-}
+/* The sheet's shell, its tabs and the sections inside: phone-sheet.css. */
 
 .sheet-item {
   display: flex;

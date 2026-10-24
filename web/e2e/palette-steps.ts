@@ -2,7 +2,7 @@
 // WebKit (palette.webkit.spec.ts), on a desktop and a phone.
 
 import { expect, type Page } from "@playwright/test";
-import { active, paneEl, panes, ready, reset, tabsInSession, text, type as typeIn } from "./helpers";
+import { active, paneEl, panes, ready, reset, tabsInSession, text, type as typeIn, sheetTab } from "./helpers";
 
 const palette = (page: Page) => page.getByRole("dialog", { name: "Command palette" });
 const filter = (page: Page) => palette(page).getByRole("textbox", { name: "Command" });
@@ -149,6 +149,7 @@ export async function desktop(page: Page, mod: "Control" | "Meta" = "Control") {
 export async function phone(page: Page) {
   await reset(page);
   await page.locator(".sheet-button").click();
+  await sheetTab(page, "More");
   await page.getByRole("button", { name: "Commands" }).click();
   await expect(palette(page)).toBeVisible();
   const box = (await palette(page).locator(".palette").boundingBox())!;

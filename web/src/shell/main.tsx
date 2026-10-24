@@ -17,6 +17,7 @@ import "./shell-chrome.css";
 import "./pane-chrome.css";
 import "./interaction-chrome.css";
 import "./block-chrome.css";
+import "./phone-sheet.css";
 import { apply as applyAppearance } from "../shared/appearance";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { Client } from "./client";

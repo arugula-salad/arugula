@@ -1,0 +1,145 @@
+/* The phone sheet (☰ in the phone bar): a panel that scrolls over a tab bar
+   pinned at the bottom of the open sheet. Here is what it opens on; Machines
+   is the hosts; More is the rest, grouped. The look is the swarm's: display
+   headings, mono labels, a segmented control (.swarm-seg). */
+
+.sheet {
+  --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-mono: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+  position: absolute;
+  top: var(--bar-h);
+  left: 0;
+  right: 0;
+  /* A fixed height, so the tab bar stays where the thumb found it when the
+     tabs differ in length. */
+  height: 80%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 10px 30px #000a;
+  font-size: 15px;
+}
+
+/* A wide window in the phone layout: a column, not a banner. */
+@media (min-width: 560px) {
+  .sheet {
+    right: auto;
+    width: 520px;
+    border-radius: 0 0 14px 0;
+  }
+}
+
+.sheet-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sheet-panel > * {
+  flex: none;
+}
+
+/* Sections: a heading over a rule, so where one ends is plain. */
+.sheet-panel section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sheet-panel > * + * {
+  margin-top: 6px;
+}
+
+.sheet-group {
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+
+.sheet-panel > .sheet-group:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.sheet h2 {
+  margin: 2px 4px 6px;
+  font: 700 11px/1.2 var(--f-mono);
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.sheet h3 {
+  margin: 6px 4px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+}
+
+/* "You" holds the notifications and the account, which keep their own
+   headings: those read as sub-headings under it. */
+.sheet-you section h2 {
+  margin-top: 8px;
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+
+.sheet-you > .sheet-actions {
+  margin-top: 8px;
+}
+
+/* Close pane and Close tab: the danger styling the old bottom block had. */
+.sheet-actions .danger {
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent);
+}
+
+/* The tab bar: a segmented control, three targets across the width. */
+.sheet-tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  margin: 0 10px 10px;
+  padding: 3px;
+  border: 1px solid var(--divider);
+  border-radius: 999px;
+  background: var(--bg);
+}
+
+.sheet-tabs button {
+  position: relative;
+  flex: 1;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: var(--dim);
+  font: 500 12px/1 var(--f-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  touch-action: manipulation;
+}
+
+.sheet-tabs button[aria-selected="true"] {
+  background: var(--fg);
+  color: var(--bg);
+}
+
+.sheet-tab-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 2px;
+}
+
+.sheet-tabs button[aria-selected="true"] .sheet-tab-dot {
+  background: var(--danger);
+}

@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { paneEl, ready, text, type as typeIn } from "./helpers";
+import { paneEl, ready, text, type as typeIn, sheetTab } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 import type { PaneId } from "../src/shared/proto";
 import { labs } from "./labs";
@@ -241,7 +241,10 @@ test.describe("phone", () => {
   const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
   test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
 
-  const sheet = (page: Page) => page.locator(".sheet-button").click();
+  const sheet = async (page: Page) => {
+    await page.locator(".sheet-button").click();
+    await sheetTab(page, "More");
+  };
 
   test("local: from the sheet, browse and open a pane there", async ({ page }) => {
     await onHost(page, "home");

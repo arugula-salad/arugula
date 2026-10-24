@@ -12,7 +12,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFile
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { open, text, closeContexts } from "./helpers";
+import { open, text, closeContexts, sheetTab } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 import { deliver, FakePush, tap } from "./phones";
@@ -104,6 +104,7 @@ type File = { watching: boolean; text: string; line: number | null; rev: number 
 async function changesToFile(page: Page, term: PaneId, path: string, lineText: string) {
   const before = (await panesOf(page)).map((p) => p.id);
   await page.locator(".sheet-button").click();
+  await sheetTab(page, "More");
   await page.locator("[data-changes]").click();
   const diff = await newPane(page, "diff", before);
   await expect.poll(() => activePane(page)).toBe(diff);
@@ -239,6 +240,7 @@ test.describe("on this host", () => {
       await context.grantPermissions(["notifications"]);
       await open(page);
       await page.locator(".sheet-button").click();
+      await sheetTab(page, "More");
       await page.getByRole("button", { name: "Notify this device" }).click();
       await expect(page.getByRole("button", { name: "Notify this device" })).toHaveAttribute("aria-pressed", "true");
       expect((await push.next("pixel", (p) => p.pane === 0)).body).toBe("Notifications work.");

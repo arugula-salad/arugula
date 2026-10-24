@@ -2,7 +2,7 @@
 // and the phone's sheet. #96: what a phone that can't be notified is told.
 
 import { devices, expect, test } from "@playwright/test";
-import { reset, closeContexts } from "./helpers";
+import { reset, closeContexts, sheetTab } from "./helpers";
 
 test.afterAll(closeContexts);
 
@@ -95,6 +95,7 @@ test.describe("phone", () => {
     await reset(page);
     await expect(page.getByRole("dialog", { name: "Getting started" })).toBeHidden();
     await page.locator(".sheet-button").click();
+    await sheetTab(page, "More");
     await page.getByRole("button", { name: "Getting started" }).click();
     await expect(page.getByRole("dialog", { name: "Getting started" })).toBeVisible();
   });
@@ -110,6 +111,7 @@ test.describe("phone", () => {
     const hint = page.locator("[data-install-hint]");
     await expect(hint).toContainText("Add it to your Home Screen");
     await page.locator(".sheet-button").click();
+    await sheetTab(page, "More");
     await expect(page.locator("[data-notify-blocked]")).toHaveText(/^Add it to your Home Screen first \(Share › Add to Home Screen\), then open it from there\.$/);
     await expect(page.getByRole("button", { name: "Notify this device" })).toHaveCount(0);
     await page.locator(".sheet-backdrop").click({ position: { x: 5, y: 600 } });
@@ -125,6 +127,7 @@ test.describe("phone", () => {
     await page.addInitScript(() => Object.defineProperty(Notification, "permission", { get: () => "denied" }));
     await reset(page);
     await page.locator(".sheet-button").click();
+    await sheetTab(page, "More");
     await expect(page.locator("[data-notify-blocked]")).toHaveText("Notifications are blocked for this site in your browser's settings.");
   });
 });

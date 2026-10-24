@@ -13,6 +13,7 @@ import { Device } from "../fixtures/device.ts";
 import { fakeGithub } from "../fixtures/fakes.ts";
 import { ANY, controlPort, daemonPort } from "./ports";
 import { labs } from "./labs";
+import { sheetTab } from "./helpers";
 
 let control = "";
 let joinedUrl = "";
@@ -171,6 +172,7 @@ test("on a phone, with no sessions, the header opens the sheet with the machines
   await expect.poll(() => sessions(page)).toBe(0);
   await expect(page.locator(".empty")).toContainText("No sessions on");
   await page.locator(".phone-bar .sheet-button").click();
+  await sheetTab(page, "Machines");
   await expect(page.locator(".sheet-hosts")).toContainText("mini");
   await page.locator(".sheet-backdrop").click({ position: { x: 380, y: 750 } });
   await page.getByRole("button", { name: "New session" }).click();
