@@ -5,7 +5,7 @@
 import { OPS, opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
-import { disablePush, enablePush, ios, pushPrefs, pushState, setPushPrefs, standalone, type PushPrefs, type PushState } from "../push";
+import { disablePush, enablePush, ios, onPushBackend, pushNote, pushPrefs, pushState, setPushPrefs, standalone, type PushPrefs, type PushState } from "../push";
 import type { MenuItem } from "../../shared/ui/menu";
 import { CopyText } from "../../shared/ui/copy";
 import { openGettingStarted } from "./welcome";
@@ -14,11 +14,15 @@ let push: PushState = "unsupported";
 /** What control pushes the account about; null off control, or not yet asked. */
 let prefs: PushPrefs | null = null;
 const listeners = new Set<() => void>();
-void pushState().then((s) => {
-  push = s;
-  listeners.forEach((fn) => fn());
-  if (s === "on") void loadPrefs();
-});
+/** Ask again when another backend takes over (the desktop app's). */
+const reload = () =>
+  void pushState().then((s) => {
+    push = s;
+    listeners.forEach((fn) => fn());
+    if (s === "on") void loadPrefs();
+  });
+reload();
+onPushBackend(reload);
 
 async function loadPrefs() {
   prefs = await pushPrefs().catch(() => null);
@@ -91,7 +95,9 @@ export function notificationItems(client: Client): MenuItem[] {
   // Plain http: the fix is Tailscale, a button in Getting started's phone step.
   if (push === "insecure") return [{ label: `${blocked}…`, run: () => openGettingStarted("phone") }];
   if (blocked) return [{ label: blocked, disabled: true, run: () => {} }];
-  const device: MenuItem = { label: "Notify this device", checked: push === "on", run: () => void toggle(client) };
+  // The desktop app's: only while it runs (crates/desktop/src/notices.rs).
+  const note = pushNote();
+  const device: MenuItem = { label: note ? `Notify this device (${note})` : "Notify this device", checked: push === "on", run: () => void toggle(client) };
   // On control, what to push about, for every device that's on. Notices
   // about the account (a device waiting, a new agent token) always go.
   const p = push === "on" ? prefs : null;

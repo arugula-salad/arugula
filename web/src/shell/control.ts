@@ -1963,13 +1963,14 @@ export class ControlSession {
     return api<{ account: string; name: string; root: string }>(`/api/people?login=${encodeURIComponent(login)}`);
   }
 
-  /** Hand control a push subscription, signed by this device (M21). */
-  async subscribePush(sub: { endpoint: string; p256dh: string; auth: string }) {
+  /** Hand control a push subscription, signed by this device (M21). A live
+   * one (the desktop app's) is answered with the token it listens with. */
+  async subscribePush(sub: { endpoint: string; p256dh: string; auth: string }): Promise<{ listen?: string }> {
     const s = { v: 1, account: this.account, device: this.keys.id, endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth, at: Date.now(), sig: "" };
     // Frozen (#504): signed.
     const body = `illogical push v1\naccount ${s.account}\ndevice ${s.device}\nendpoint ${s.endpoint}\np256dh ${s.p256dh}\nauth ${s.auth}\nat ${s.at}\n`;
     s.sig = await signText(this.keys, body);
-    await api("/api/push/subscribe", { sub: s });
+    return api<{ listen?: string }>("/api/push/subscribe", { sub: s });
   }
 
   async unsubscribePush(endpoint: string) {

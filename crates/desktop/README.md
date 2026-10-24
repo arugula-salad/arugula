@@ -9,7 +9,10 @@ releases on its own (#388). It depends on `arugula-proto` by path.
 
 Start with `src/main.rs`, then `src/service.rs` and `src/updates.rs`.
 `src/daemon.rs` is the *Daemon* menu (tray, app menu, Dock) and the
-notification when control drops this machine. Only the app's own pages,
+notification when control drops this machine. `src/notices.rs` shows what
+control would push this device (chat, the machines' panes, projects), while
+the app runs, once control's page turns *Notify this device* on: a webview
+has no Web Push. Only the app's own pages,
 the daemon's, control's and the platform page's stay in the window; other
 sites go to the browser.
 `src/frames.rs` is why a block's frame stays too, and `src/platform.rs`

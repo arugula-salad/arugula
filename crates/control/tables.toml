@@ -327,7 +327,7 @@ name = "push_subs"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to."
+what = "A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to. The desktop app's is at control's own live endpoint, with the hash of the token it listens with and when it last did."
 with_account = "deleted"
 seen_by = ["litestream"]
 

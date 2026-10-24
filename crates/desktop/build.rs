@@ -10,6 +10,11 @@ fn main() {
         "cloud_status",
         "cloud_signin",
         "cloud_local",
+        // Control's page, for the app's notifications (notices.rs).
+        "notices_keys",
+        "notices_start",
+        "notices_stop",
+        "notices_state",
     ])))
     .expect("tauri-build");
 }

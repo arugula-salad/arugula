@@ -83,6 +83,9 @@ mod previews;
 #[cfg(test)]
 mod previews_wire;
 mod push;
+mod push_live;
+#[cfg(test)]
+mod push_live_tests;
 #[cfg(test)]
 mod push_notices;
 mod relay;
@@ -408,6 +411,8 @@ pub struct App {
     pub sends: forge_send::Starts,
     pub limits: limit::Limits,
     pub vapid: push::Vapid,
+    /// Live push endpoints' open streams (`push_live.rs`).
+    pub live: push_live::Live,
     /// Control's hosted key (M178): it signs the hosted machines enrolled
     /// under a project's delegation, and nothing else.
     pub hosted_key: arugula_e2e::hosted::HostedKey,
@@ -536,6 +541,7 @@ impl App {
             sends: Default::default(),
             limits: limit::Limits::new(None),
             vapid,
+            live: Default::default(),
             hosted_key,
             github_app: None,
             forge: Default::default(),
@@ -658,6 +664,7 @@ fn routes() -> Routes {
         .route("/api/push/subscribe", post(push::subscribe))
         .route("/api/push/unsubscribe", post(push::unsubscribe))
         .route("/api/push/prefs", get(push::prefs).post(push::set_prefs))
+        .route("/api/push/live/{id}", get(push_live::live))
         .route(wire::PUSH_SUBS, get(push::daemon_subs))
         .route(wire::PUSH, post(push::daemon_send))
         .route("/api/doc-links", get(doc_links::list))
@@ -1139,6 +1146,7 @@ async fn run() -> anyhow::Result<()> {
         sends: Default::default(),
         limits: limit::Limits::new(a.trust_proxy_header),
         vapid,
+        live: Default::default(),
         hosted_key,
         github_app,
         forge: Default::default(),

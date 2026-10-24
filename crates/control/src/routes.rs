@@ -57,6 +57,7 @@ enum Auth {
     ClientSecret,
     SessionOrClient,
     Client,
+    PushListen,
 }
 
 #[derive(Deserialize, PartialEq)]

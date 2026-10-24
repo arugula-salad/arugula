@@ -27,7 +27,7 @@ import { directory } from "./hosts";
 import { App } from "./ui/app";
 import { remotes } from "./blocks";
 import { measureCell } from "./ui/cells";
-import { enableControlPush, registerWorker, setPushBackend } from "./push";
+import { desktopPush, enableControlPush, registerWorker, setPushBackend } from "./push";
 import { ControlSession, detectControl, restoreInvite, showMoving } from "./control";
 import { useControl } from "./trust/common";
 import { ControlGate } from "./trust/gate";
@@ -42,7 +42,7 @@ import { SwarmView } from "./swarm/view";
 import { AppBar, setAccount } from "./ui/app-bar";
 import { fakeSwarm } from "./swarm/fake";
 import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
-import { setupDesktop } from "../shared/desktop";
+import { setupDesktop, tauriInvoke } from "../shared/desktop";
 import { installKeys } from "./ui/keys";
 import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
@@ -113,6 +113,22 @@ if (session) {
     prefs: () => session.pushPrefs(),
     setPrefs: (p) => session.setPushPrefs(p),
   });
+  // The desktop app has no Web Push: it shows what control pushes itself,
+  // while it runs, once it says it can (an app from before doesn't).
+  const invoke = tauriInvoke();
+  if (invoke)
+    void invoke("notices_state").then(
+      () =>
+        setPushBackend(
+          desktopPush(invoke, {
+            subscribe: (sub) => session.subscribePush(sub),
+            unsubscribe: (endpoint) => session.unsubscribePush(endpoint),
+            prefs: () => session.pushPrefs(),
+            setPrefs: (p) => session.setPushPrefs(p),
+          }),
+        ),
+      () => {},
+    );
   session.subscribe(() => {
     directory.setControl(
       session.daemons.map((d) => ({
@@ -405,6 +421,17 @@ const openPane = (pane: number, daemon?: string, share = false) => {
 (window as { __arugulaPage?: boolean }).__arugulaPage = true;
 // A pane opened on the home daemon from elsewhere (a sandbox shell).
 window.addEventListener("arugula:open-pane", (e) => openPane((e as CustomEvent<number>).detail));
+// A click on what control pushed, in the desktop app, with control's page
+// already open (crates/desktop/src/notices.rs): as the service worker's
+// messages do (push.ts).
+window.addEventListener("arugula:notice", (e) => {
+  const d = ((e as CustomEvent).detail ?? {}) as { pane?: unknown; daemon?: unknown; card?: unknown; hash?: unknown; refresh?: unknown };
+  const daemon = typeof d.daemon === "string" && /^[0-9a-f]+$/.test(d.daemon) ? d.daemon : undefined;
+  if (d.refresh === true) dispatchEvent(new Event("arugula:control-refresh"));
+  else if (typeof d.hash === "string" && /^chat=[a-z]{2}_[0-9a-f]+(?:&msg=-?\d+)?$/.test(d.hash)) location.hash = d.hash;
+  else if (typeof d.pane === "number" && d.card === true) location.hash = `swarm=${daemon ? `${daemon}.` : ""}${d.pane}`;
+  else if (typeof d.pane === "number") openPane(d.pane, daemon);
+});
 // A push's Share (#237) adds `&share`: the share picker opens over it.
 // An older daemon's mention push (before M125) adds `&thread=…`: the pane
 // opens, and its room is in chat.
