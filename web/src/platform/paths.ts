@@ -10,6 +10,7 @@
 //   /p/:project/chat               its chat
 //   /p/:project/chat/:room         a room in it (`?msg=N`: at that message)
 //   /p/:project/chat/activity      Activity
+//   /p/:project/chat/saved         Saved for later
 //   /p/:project/chat/search?q=…    search
 //   /p/:project/issues             its issues (M201): `?state=closed`,
 //                                  `?q=…`, `?label=…`, `?assignee=…` narrow it
@@ -39,7 +40,7 @@
 // project once it knows the reader's, and puts the full path in their place.
 //
 //   /chat, /chat/:room             chat (the first team's), a room in it
-//   /chat/activity, /chat/search?q=…
+//   /chat/activity, /chat/saved, /chat/search?q=…
 //   /issues/:issue                 an issue (`?msg=N`: at that comment)
 //   /runs/:run                     a run (a push for one that failed)
 //
@@ -53,7 +54,7 @@ export type Route =
   | { page: "issue"; project: string; issue: string; msg?: number }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
   | { page: "run"; project: string; run: string; msg?: number }
-  | { page: "chat"; project: string; room?: string; msg?: number; view?: "activity" | "search"; q?: string }
+  | { page: "chat"; project: string; room?: string; msg?: number; view?: "activity" | "saved" | "search"; q?: string }
   | { page: "dm"; room: string; msg?: number }
   | { page: "workspaces"; project: string }
   | { page: "workspace"; project: string; workspace: string }
@@ -64,7 +65,7 @@ export type Route =
   | { page: "settings" }
   | { page: "deploy"; deploy: string }
   /** An id-only address, to be put where it belongs (`resolve`). */
-  | { page: "find"; what: "chat"; room?: string; msg?: number; view?: "activity" | "search"; q?: string }
+  | { page: "find"; what: "chat"; room?: string; msg?: number; view?: "activity" | "saved" | "search"; q?: string }
   | { page: "find"; what: "issue"; issue: string; msg?: number }
   | { page: "find"; what: "run"; run: string; msg?: number }
   | { page: "missing"; path: string };
@@ -119,7 +120,7 @@ export function parse(path: string, search = ""): Route {
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
   if (parts[0] === "chat" && parts.length <= 2) {
     if (parts.length === 1) return { page: "find", what: "chat" };
-    if (parts[1] === "activity") return { page: "find", what: "chat", view: "activity" };
+    if (parts[1] === "activity" || parts[1] === "saved") return { page: "find", what: "chat", view: parts[1] };
     if (parts[1] === "search") return { page: "find", what: "chat", view: "search", q: q.get("q") ?? "" };
     const room = idOf(parts[1]);
     return room ? { page: "find", what: "chat", room, ...msg } : missing;
@@ -157,7 +158,7 @@ export function parse(path: string, search = ""): Route {
   }
   if (parts[2] === "chat") {
     if (parts.length === 3) return { page: "chat", project };
-    if (parts.length === 4 && parts[3] === "activity") return { page: "chat", project, view: "activity" };
+    if (parts.length === 4 && (parts[3] === "activity" || parts[3] === "saved")) return { page: "chat", project, view: parts[3] };
     if (parts.length === 4 && parts[3] === "search") return { page: "chat", project, view: "search", q: q.get("q") ?? "" };
     const room = parts.length === 4 ? idOf(parts[3]) : null;
     return room ? { page: "chat", project, room, ...msg } : missing;
@@ -213,7 +214,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/p/${s(r.project)}`;
     case "chat": {
       const base = `/p/${s(r.project)}/chat`;
-      if (r.view === "activity") return `${base}/activity`;
+      if (r.view === "activity" || r.view === "saved") return `${base}/${r.view}`;
       if (r.view === "search") return `${base}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
       return r.room ? `${base}/${s(r.room)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}` : base;
     }
@@ -260,7 +261,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/deploys/${r.deploy}`;
     case "find":
       if (r.what === "chat") {
-        if (r.view === "activity") return "/chat/activity";
+        if (r.view === "activity" || r.view === "saved") return `/chat/${r.view}`;
         if (r.view === "search") return `/chat/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
         return r.room ? `/chat/${s(r.room)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}` : "/chat";
       }

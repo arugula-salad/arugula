@@ -10,7 +10,7 @@ import { current, go, pathOf, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { toast } from "./toast";
 
-const chatIn = (view?: "activity" | "search", q?: string): Route | null => {
+const chatIn = (view?: "activity" | "saved" | "search", q?: string): Route | null => {
   const project = routeProject() ?? session.personal()?.id;
   return project ? { page: "chat", project, view, q } : null;
 };

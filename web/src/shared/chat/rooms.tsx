@@ -19,6 +19,7 @@ import { MaintenanceNote } from "../ui/maintenance-note";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import type { ChatRoute } from "./route";
+import { SavedView } from "./saved";
 import { RoomActivityView, RoomSearchView, SearchField, openSwitcher, useSwitcherOpen, closeSwitcher } from "./find";
 import { MsgAvatar } from "./avatar";
 import { WebPreviewsSwitch } from "./previews";
@@ -216,6 +217,7 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
 
   const order = groups.flatMap((g) => (collapsed.has(g.key) ? [] : g.rooms));
   useRoomKeys(order, picked?.id ?? null, () => void store.readAll(), nav);
+  const savedTodo = store.savedTodo();
   const mentions = store.rooms.reduce((n, r) => n + (r.mentions ? 1 : 0), 0);
 
   const toggle = (key: string) => toggleGroup(store, key, api.toast);
@@ -277,6 +279,11 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
           <span class="chat-label">Activity</span>
           {mentions > 0 && <span class="chat-count mention">{mentions}</span>}
         </button>
+        <button class={`chat-row chat-saved${route.view === "saved" ? " selected" : ""}`} data-chat-saved onClick={() => nav.openChatView("saved")}>
+          <span class="chat-sigil">★</span>
+          <span class="chat-label">Saved</span>
+          {savedTodo > 0 && <span class="chat-count">{savedTodo}</span>}
+        </button>
       </div>
       {groups.length === 0 && (
         <p class="chat-none" data-chat-no-team>
@@ -337,6 +344,8 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
   const view = route.view ? (
     route.view === "activity" ? (
       <RoomActivityView store={store} phone={phone} />
+    ) : route.view === "saved" ? (
+      <SavedView phone={phone} />
     ) : (
       <RoomSearchView store={store} q={route.q ?? ""} phone={phone} />
     )

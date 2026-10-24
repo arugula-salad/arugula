@@ -22,6 +22,8 @@ import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
 import { TypingLine } from "./typing";
 import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
+// Saved items (#116) fill the toolbar's save, mark-unread and reminder hooks.
+import "./saved-hooks";
 import { EmojiPicker } from "./emoji-picker";
 import { MessagePreviews } from "./previews";
 import { hookFor, itemsOf, MsgItems, MsgMenu } from "./msg-actions";
@@ -263,6 +265,8 @@ export function RoomBody({
   if (newFrom.current === undefined && msgs) {
     newFrom.current = room.unread > 0 ? (msgs.find((m) => m.seq > room.read && !chat.mine(m))?.seq ?? null) : null;
   }
+  // Marked unread from a message (#116): the line is there, and stays.
+  const newAt = chat.heldAt(room.id) ?? newFrom.current;
 
   useEffect(() => {
     chat.load(room.id).catch((e: Error) => setError(e.message));
@@ -332,8 +336,11 @@ export function RoomBody({
   const current = chat.room(room.id) ?? room;
   useEffect(() => {
     // Scrolled up, what's below isn't read yet: the button says so.
-    if (last !== undefined && atBottom && document.visibilityState === "visible" && (current.unread > 0 || last > current.read)) void chat.read(room.id, last);
-  }, [room.id, last, current.unread, atBottom]);
+    // A room marked unread on purpose (#116) stays so while it's open.
+    const held = chat.heldAt(room.id) !== undefined;
+    if (last !== undefined && atBottom && !held && document.visibilityState === "visible" && (current.unread > 0 || last > current.read))
+      void chat.read(room.id, last);
+  }, [room.id, last, current.unread, atBottom, chat.heldAt(room.id)]);
   // Esc: read it all, and to the newest. Not when something else is using
   // Esc (a menu, a picker, an edit, the mention list, a dialog), and Shift+Esc
   // is everything (rooms.tsx).
@@ -393,11 +400,11 @@ export function RoomBody({
             const m = row.m;
             // A message follows on from the one before it, unless something
             // else came between them.
-            const prev = !newDay && before?.m && m.seq !== newFrom.current ? before.m : undefined;
+            const prev = !newDay && before?.m && m.seq !== newAt ? before.m : undefined;
             return (
               <Fragment key={m.seq}>
                 {dayLine}
-                {m.seq === newFrom.current && (
+                {m.seq === newAt && (
                   <div class="msg-new" role="separator" data-new-line>
                     <span>New</span>
                   </div>

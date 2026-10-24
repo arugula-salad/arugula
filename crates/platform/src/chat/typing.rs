@@ -92,7 +92,7 @@ mod tests {
             let ev = ChatLive::Typing { room: room.into(), account: "a1".into(), name: "Alex".into() };
             db.add_chat_event(&NewChatEvent { kind: "typing", body: &data(&ev), to: None, at }).unwrap();
         };
-        ping("ch_old", now - wire::TYPING_MS - 1_000);
+        ping("ch_old", now - crate::db::chat::TYPING_KEPT_MS - 1_000);
         // Another machine's ping reaches this one through the table.
         assert!(a.typing(&db, "ch_new", "a1", "Alex", now));
         b.catch_up(&db);

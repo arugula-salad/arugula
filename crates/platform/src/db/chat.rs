@@ -89,6 +89,19 @@ pub struct ChatEvent {
     pub at: u64,
 }
 
+/// One of an account's saved messages (#116).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedRow {
+    pub room: String,
+    pub seq: i64,
+    pub saved_at: u64,
+    pub done: Option<u64>,
+    pub remind_at: Option<u64>,
+    pub reminded: bool,
+}
+
+pub use arugula_control_wire::chat::SAVED_MAX;
+
 pub struct NewMessage<'a> {
     pub author: &'a str,
     pub at: u64,
@@ -806,6 +819,98 @@ impl Db {
         )? > 0)
     }
 
+    /// Move a read mark to `seq`, forward or back (mark as unread, #116).
+    pub fn set_chat_read_to(&self, room: &str, account: &str, seq: i64) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO chat_reads (room, account, seq) VALUES (?1, ?2, ?3)
+             ON CONFLICT (room, account) DO UPDATE SET seq = excluded.seq",
+            params![room, account, seq],
+        )?;
+        Ok(())
+    }
+
+    /// Save a message for `account` (#116), or save it again: `done` is
+    /// undone, the reminder replaced and armed. Past [`SAVED_MAX`] the
+    /// oldest done items go, then the oldest.
+    pub fn save_chat_message(
+        &self,
+        account: &str,
+        room: &str,
+        seq: i64,
+        at: u64,
+        remind_at: Option<u64>,
+    ) -> Result<()> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        tx.execute(
+            "INSERT INTO chat_saved (account, room, seq, saved_at, remind_at, reminded) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (account, room, seq) DO UPDATE
+             SET done_at = NULL, remind_at = excluded.remind_at, reminded = excluded.reminded",
+            params![account, room, seq, at, remind_at, false],
+        )?;
+        tx.execute(
+            "DELETE FROM chat_saved WHERE account = ?1 AND (room, seq) IN (
+                 SELECT room, seq FROM chat_saved WHERE account = ?1
+                 ORDER BY (done_at IS NOT NULL), saved_at DESC LIMIT 1000000 OFFSET ?2)",
+            params![account, SAVED_MAX as i64],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Mark a saved message done or not. Whether it was saved.
+    pub fn set_chat_saved_done(&self, account: &str, room: &str, seq: i64, done: Option<u64>) -> Result<bool> {
+        Ok(self.c().execute(
+            "UPDATE chat_saved SET done_at = ?4 WHERE account = ?1 AND room = ?2 AND seq = ?3",
+            params![account, room, seq, done],
+        )? > 0)
+    }
+
+    /// Stop keeping a saved message. Whether it was saved.
+    pub fn unsave_chat_message(&self, account: &str, room: &str, seq: i64) -> Result<bool> {
+        Ok(self.c().execute(
+            "DELETE FROM chat_saved WHERE account = ?1 AND room = ?2 AND seq = ?3",
+            params![account, room, seq],
+        )? > 0)
+    }
+
+    /// An account's saved messages: to do first, newest saved first, then
+    /// the done ones, newest done first.
+    pub fn chat_saved(&self, account: &str) -> Result<Vec<SavedRow>> {
+        self.c().query_map(
+            "SELECT room, seq, saved_at, done_at, remind_at, reminded FROM chat_saved WHERE account = ?1
+             ORDER BY (done_at IS NOT NULL), coalesce(done_at, saved_at) DESC, seq DESC",
+            params![account],
+            |r| {
+                Ok(SavedRow {
+                    room: r.get(0)?,
+                    seq: r.get(1)?,
+                    saved_at: r.get(2)?,
+                    done: r.get(3)?,
+                    remind_at: r.get(4)?,
+                    reminded: r.get(5)?,
+                })
+            },
+        )
+    }
+
+    /// Reminders due by `now` that nobody has sent yet, claimed: each is
+    /// marked reminded in the same statement that returns it, so of two
+    /// machines running the check one gets it. Done items don't remind.
+    pub fn claim_chat_reminders(&self, now: u64, limit: u32) -> Result<Vec<(String, String, i64)>> {
+        self.c().query_map(
+            "UPDATE chat_saved SET reminded = ?3
+             WHERE (account, room, seq) IN (
+                 SELECT account, room, seq FROM chat_saved
+                 WHERE remind_at IS NOT NULL AND remind_at <= ?1 AND reminded = ?4 AND done_at IS NULL
+                 ORDER BY remind_at LIMIT ?2)
+             AND reminded = ?4
+             RETURNING account, room, seq",
+            params![now, limit, true, false],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    }
+
     pub fn set_chat_muted(&self, room: &str, account: &str, muted: bool) -> Result<()> {
         self.c().execute(
             "INSERT INTO chat_reads (room, account, muted) VALUES (?1, ?2, ?3)
@@ -1045,7 +1150,7 @@ pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::
     let ids: Vec<String> =
         tx.query_map(&format!("SELECT id FROM chat_rooms WHERE {cond}"), params![arg], |r| r.get(0))?;
     for id in ids {
-        for table in ["chat_messages", "chat_reads", "chat_members", "chat_reactions"] {
+        for table in ["chat_messages", "chat_reads", "chat_members", "chat_reactions", "chat_saved"] {
             tx.execute(&format!("DELETE FROM {table} WHERE room = ?1"), params![id])?;
         }
         tx.execute("DELETE FROM chat_rooms WHERE id = ?1", params![id])?;
@@ -1111,6 +1216,7 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     tx.execute("DELETE FROM chat_reads WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_keywords WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM notify_prefs WHERE account = ?1", params![account])?;
+    tx.execute("DELETE FROM chat_saved WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_members WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_presence WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_sidebars WHERE account = ?1", params![account])?;

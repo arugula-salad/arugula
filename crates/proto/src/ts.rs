@@ -109,7 +109,13 @@ fn generate() -> String {
         c.visit::<ChatTeamSettings>();
         c.visit::<ChatBeat>();
         c.visit::<ChatPresence>();
+        c.visit::<ChatSaved>();
+        c.visit::<ChatUnread>();
+        c.visit::<ChatSave>();
+        c.visit::<ChatSavedDone>();
     }
+    // The platform page's projects (M150).
+    c.visit::<arugula_control_wire::projects::Projects>();
     {
         use arugula_control_wire::chat_sidebar::*;
         c.visit::<ChatSidebar>();

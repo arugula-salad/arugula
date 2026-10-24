@@ -1219,6 +1219,41 @@ clients = ["page"]
 
 [[route]]
 method = "POST"
+path = "/api/chat/rooms/{id}/unread"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/saved"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/chat/rooms/{id}/messages/{seq}/saved"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PATCH"
+path = "/api/chat/rooms/{id}/messages/{seq}/saved"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "DELETE"
+path = "/api/chat/rooms/{id}/messages/{seq}/saved"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
 path = "/api/chat/rooms/{id}/typing"
 process = "platform"
 auth = "session"

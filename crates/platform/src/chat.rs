@@ -101,6 +101,7 @@ pub(crate) mod agent_threads;
 pub(crate) mod alerts;
 mod link_fetch;
 pub(crate) mod objects;
+pub(crate) mod saved;
 pub(crate) mod people;
 pub mod previews;
 pub(crate) mod reactions;
@@ -1005,11 +1006,11 @@ impl Hub {
                     // A ping of #111: sent while it's fresh, not replayed
                     // after (a machine that was away, a stream that resumes).
                     "typing" => {
-                        if now_ms().saturating_sub(e.at) <= wire::TYPING_MS {
-                            if let Ok(ev) = serde_json::from_str::<ChatLive>(&e.body) {
-                                // `n: 0`: not numbered, so no stream keeps its place by it.
-                                let _ = self.tx.send(Arc::new(Out { n: 0, ev, to: None }));
-                            }
+                        if now_ms().saturating_sub(e.at) <= wire::TYPING_MS
+                            && let Ok(ev) = serde_json::from_str::<ChatLive>(&e.body)
+                        {
+                            // `n: 0`: not numbered, so no stream keeps its place by it.
+                            let _ = self.tx.send(Arc::new(Out { n: 0, ev, to: None }));
                         }
                     }
                     _ => self.changed(),
@@ -1206,8 +1207,8 @@ impl Live {
             | ChatLive::Reacted { room, .. }
             | ChatLive::Read { room, .. }
             | ChatLive::Object { room, .. } => self.rooms.contains(room),
-            // Sidebar is told to its account only (`out.to`).
-            ChatLive::Hello { .. } | ChatLive::Sidebar {} | ChatLive::Resync {} | ChatLive::Typing { .. } => true,
+            // Sidebar and Saved are told to their account only (`out.to`).
+            ChatLive::Hello { .. } | ChatLive::Sidebar {} | ChatLive::Saved {} | ChatLive::Resync {} | ChatLive::Typing { .. } => true,
         };
         ok.then(|| Event::default().id(self.app().chat.id(out.n)).data(data(&out.ev)))
     }
@@ -2562,6 +2563,9 @@ pub fn start(app: &Arc<Platform>) {
                 tracing::warn!(error = %e, "chat: pruning typing");
             }
             // Held with the rest of the background work for a window.
+            if !p.is_paused() {
+                saved::remind(&p).await;
+            }
             if pruned.elapsed() >= Duration::from_secs(60) && !p.is_paused() {
                 if let Err(e) = p.db.prune_chat_events() {
                     tracing::warn!(error = %e, "chat: pruning live events");

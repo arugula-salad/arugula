@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn typing_reaches_others_with_the_room_open_and_is_never_stored() {
+    async fn typing_reaches_others_with_the_room_open_and_is_never_replayed() {
         let hub = Arc::new(TestHub::default());
         let (app, base) = serve(hub.clone()).await;
         seed(&app, &hub);
@@ -322,6 +322,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(!a.lock().unwrap().contains("typing"), "not to the typist");
         assert_eq!(call(&base, "x", "POST", typing, None).await.0, 403, "chat is off for x");
-        assert_eq!(app.db.chat_events_after(0, 100).unwrap().iter().filter(|e| e.body.contains("typing")).count(), 0);
+        // Kept for the platform's other machines, as `typing` rows, and not
+        // sent again to a stream that resumes.
+        let rows = app.db.chat_events_after(0, 100).unwrap();
+        assert!(rows.iter().filter(|e| e.body.contains("typing")).all(|e| e.kind == "typing"));
+        assert_eq!(rows.iter().filter(|e| e.kind == "typing").count(), 2);
+        assert!(app.chat.missed(&app.db, "c-0").is_none_or(|(_, outs)| outs.is_empty()));
     }
 }

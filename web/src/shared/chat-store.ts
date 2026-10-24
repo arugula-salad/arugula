@@ -23,6 +23,8 @@ import type {
   ChatRoomDetail,
   ChatRooms,
   ChatSidebar,
+  ChatSaved,
+  ChatSavedItem,
   ChatTargetKind,
   NotifyLevel,
 } from "./proto";
@@ -108,6 +110,12 @@ export class ChatStore {
    * fetched: only what the stream said in the last few seconds. */
   private typers = new Map<string, { room: string; account: string; name: string; until: number }>();
   private typed = new Map<string, number>();
+  /** Saved for later (#116): null until control has said. */
+  saved: ChatSavedItem[] | null = null;
+  /** Rooms I marked unread from a message (or another page of mine did),
+   * and the message: while the room stays open its "New" line is there and
+   * nothing reads it again. Leaving the room lets go. */
+  private held = new Map<string, number>();
 
   /** Whether control has signed this page in (so chat is only off). */
   get signedIn(): boolean {
@@ -179,6 +187,8 @@ export class ChatStore {
     this.stream = null;
     this.rooms = [];
     this.sidebar = emptySidebar();
+    this.saved = null;
+    this.held.clear();
     this.loaded.clear();
     this.detail.clear();
     presence.stop();
@@ -269,6 +279,7 @@ export class ChatStore {
       case "hello":
         this.stream = ev.stream;
         this.tellOpen(true);
+        void this.loadSaved();
         // Anything missed while there was no stream.
         this.roomsSoon();
         void this.loadSidebar();
@@ -292,7 +303,10 @@ export class ChatStore {
         return;
       case "read": {
         const r = this.room(ev.room);
-        if (r && ev.seq > r.read) {
+        if (r && ev.seq !== r.read) {
+          // Backwards is another page marking a message unread (#116):
+          // this one, if it shows the room, keeps it unread too.
+          if (ev.seq < r.read) this.held.set(ev.room, ev.seq + 1);
           this.rooms = this.rooms.map((x) => (x.id === ev.room ? { ...x, read: ev.seq } : x));
           this.emit();
         }
@@ -306,11 +320,15 @@ export class ChatStore {
         this.detail.delete(ev.room);
         this.roomsSoon();
         return;
+      case "saved":
+        void this.loadSaved();
+        return;
       case "typing":
         this.typers.set(`${ev.room} ${ev.account}`, { ...ev, until: Date.now() + TYPING_MS });
         this.emit();
         return;
       case "resync":
+        void this.loadSaved();
         this.typers.clear();
         this.objectChanged();
         this.loaded.clear();
@@ -328,6 +346,7 @@ export class ChatStore {
    * for it. A hidden page has none open. */
   setOpen(room: string | null) {
     if (room === this.open) return;
+    if (this.open) this.held.delete(this.open);
     this.open = room;
     this.tellOpen();
   }
@@ -470,6 +489,62 @@ export class ChatStore {
     this.rooms = this.rooms.map((x) => (x.id === id ? { ...x, read: Math.max(x.read, seq), unread: 0, mentions: 0 } : x));
     this.emit();
     await call("POST", `/api/chat/rooms/${enc(id)}/read`, { seq }).catch(() => {});
+  }
+
+  /** Mark a message unread (#116): the room's read mark goes to just
+   * before it, here and on my other pages. The room stays unread while it's
+   * open (`held`), with its "New" line at the message. */
+  async markUnread(id: string, seq: number) {
+    this.held.set(id, seq);
+    try {
+      this.took(await call<ChatRoom>("POST", `/api/chat/rooms/${enc(id)}/unread`, { seq }));
+    } catch (e) {
+      this.held.delete(id);
+      throw e;
+    }
+  }
+
+  /** The message my "New" line is at in a room I marked unread, while it's
+   * open. */
+  heldAt(id: string): number | undefined {
+    return this.held.get(id);
+  }
+
+  // ---- saved for later (#116)
+
+  async loadSaved() {
+    try {
+      this.saved = (await call<ChatSaved>("GET", "/api/chat/saved")).items;
+      this.emit();
+    } catch {
+      // Chat off, or control away: as it was.
+    }
+  }
+
+  isSaved(room: string, seq: number): boolean {
+    return !!this.saved?.some((i) => i.room === room && i.seq === seq && i.done === null);
+  }
+
+  /** What's saved and not done: the Saved view's count. */
+  savedTodo(): number {
+    return this.saved?.filter((i) => i.done === null).length ?? 0;
+  }
+
+  /** Save a message, with a reminder at `remindAt` (ms) if given; saving
+   * it again changes the reminder and takes it out of Done. */
+  async save(room: string, seq: number, remindAt?: number) {
+    await call("PUT", `/api/chat/rooms/${enc(room)}/messages/${seq}/saved`, remindAt === undefined ? {} : { remind_at: remindAt });
+    await this.loadSaved();
+  }
+
+  async savedDone(room: string, seq: number, done: boolean) {
+    await call("PATCH", `/api/chat/rooms/${enc(room)}/messages/${seq}/saved`, { done });
+    await this.loadSaved();
+  }
+
+  async unsave(room: string, seq: number) {
+    await call("DELETE", `/api/chat/rooms/${enc(room)}/messages/${seq}/saved`);
+    await this.loadSaved();
   }
 
   /** Everything the chat page lists read, as its button counts it. The

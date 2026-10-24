@@ -437,6 +437,61 @@ pub struct ChatRead {
     pub seq: i64,
 }
 
+/// `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read
+/// mark goes to just before it, backwards if need be (#116). The answer is
+/// the room, as the reader now sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatUnread {
+    pub seq: i64,
+}
+
+/// `PUT /api/chat/rooms/{id}/messages/{seq}/saved`: save the message for
+/// later (again: it changes the reminder, and un-does "done"). `remind_at`
+/// (ms since the epoch, in the future, at most [`SAVED_REMIND_MAX_MS`] away)
+/// is when to push the reader once.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatSave {
+    #[serde(default)]
+    pub remind_at: Option<u64>,
+}
+
+/// `PATCH .../saved`: mark a saved message done, or not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatSavedDone {
+    pub done: bool,
+}
+
+/// How far ahead a reminder may be set, and how many items one account
+/// keeps (the oldest done ones go first).
+pub const SAVED_REMIND_MAX_MS: u64 = 366 * 24 * 3_600_000;
+pub const SAVED_MAX: usize = 500;
+
+/// One saved message, with its room (the reader still sees it).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatSavedItem {
+    pub room: String,
+    pub seq: i64,
+    pub saved_at: u64,
+    /// When it was marked done.
+    pub done: Option<u64>,
+    /// When it will push the reader (or did: `reminded`).
+    pub remind_at: Option<u64>,
+    pub reminded: bool,
+    pub message: ChatMessage,
+}
+
+/// `GET /api/chat/saved`: the reader's saved messages in rooms they still
+/// see, the ones to do newest saved first, then the done ones.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatSaved {
+    pub items: Vec<ChatSavedItem>,
+}
+
 /// `POST /api/chat/rooms/{id}/mute`: no pushes from this room.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -706,6 +761,10 @@ pub enum ChatLive {
     /// The reader's sidebar changed (another of their pages; #120): fetch
     /// it again. Only they hear it.
     Sidebar {},
+    /// The reader's saved messages changed (#116: another of their pages
+    /// saved, finished or removed one, or a reminder came due): read them
+    /// again. Sent to that account only.
+    Saved {},
     Resync {},
 }
 
