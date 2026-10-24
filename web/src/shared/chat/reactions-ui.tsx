@@ -4,7 +4,7 @@
 // quick set, tooltips and the optimistic update are in ./reactions.ts.
 
 import type { ComponentChildren } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
 import { EmojiPicker } from "./emoji-picker";
@@ -108,7 +108,21 @@ export function ReactMenu({
   children?: ComponentChildren;
 }) {
   const [more, setMore] = useState(false);
+  // The picker opens below the menu unless the room under it is short (the
+  // last message: it would grow the list's scroll area) and above has more.
+  const [above, setAbove] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const menu = root.current;
+    const picker = menu?.querySelector<HTMLElement>(".emoji-picker");
+    if (!menu || !picker || matchMedia("(max-width: 600px)").matches) return;
+    const m = menu.getBoundingClientRect();
+    const list = menu.closest(".thread-list")?.getBoundingClientRect();
+    const h = picker.offsetHeight + 4;
+    const below = Math.min(list?.bottom ?? innerHeight, innerHeight) - m.bottom;
+    const over = m.top - Math.max(list?.top ?? 0, 0);
+    setAbove(below < h && over > below);
+  }, [more]);
   useDismiss(root, close, "[data-react-button]");
   const choose = (emoji: string) => {
     toggle(room, m, emoji, setError);
@@ -130,7 +144,7 @@ export function ReactMenu({
           …
         </button>
       )}
-      {more && <EmojiPicker pick={choose} close={close} />}
+      {more && <EmojiPicker pick={choose} close={close} above={above} />}
       {children && <div class="react-menu-items">{children}</div>}
     </div>
   );

@@ -10,7 +10,7 @@ import { findEmoji, recentEmoji, rememberEmoji, useEmoji } from "./emoji";
 
 /** `pick`: the character chosen (already remembered as recent). `close`:
  * Escape, a click outside, or the same button again is the caller's too. */
-export function EmojiPicker({ pick, close }: { pick: (char: string) => void; close: () => void }) {
+export function EmojiPicker({ pick, close, above }: { pick: (char: string) => void; close: () => void; above?: boolean }) {
   const table = useEmoji(true);
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<number | "recent">(() => (recentEmoji().length ? "recent" : 0));
@@ -50,7 +50,7 @@ export function EmojiPicker({ pick, close }: { pick: (char: string) => void; clo
 
   return (
     <div
-      class="emoji-picker"
+      class={above ? "emoji-picker above" : "emoji-picker"}
       ref={root}
       role="dialog"
       aria-label="Emoji"
