@@ -111,6 +111,7 @@ fn notify(
             app.db.notice_inbox(&account, n.item, reason, now)?;
         }
         if quiet.contains(&account)
+            || !crate::notify::notice_goes(app, &account)
             || !app.inbox.may_push(&account, n.item, now)
             || app.limits.check_account(INBOX_PUSHES, &account).is_err()
         {

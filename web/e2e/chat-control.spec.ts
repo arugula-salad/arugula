@@ -474,3 +474,41 @@ test("an issue's link unfurls into a card for those who can see it, follows the 
   await again.locator("[data-link-card-remove]").click();
   await expect(again.locator("[data-link-card]")).toHaveCount(0);
 });
+
+test("a channel is quiet until its bell says all, and a snooze shows Alice a moon on Bob", async () => {
+  const quiet = await alice.evaluate((tm) => window.__arugula.chat.newChannel(tm, "quiet").then((r) => r.id), team);
+  await platform(bob, "/chat");
+  const list = bob.locator("[data-chat-control]");
+  const row = list.locator(`[data-chat-room="${quiet}"]`);
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  // Mentions only is the channel default: a plain message pushes nobody, and
+  // the row is bold with no count.
+  const plain = await alice.evaluate((r) => window.__arugula.chat.post(r, "no mention here"), quiet);
+  expect(plain.pushed).toEqual([]);
+  await expect(row).toHaveClass(/unread/, { timeout: 15_000 });
+  await expect(row.locator(".chat-count")).toHaveCount(0);
+  // The bell sets it to every message; the next one pushes him.
+  await row.click();
+  await list.locator("[data-room-bell]").click();
+  await menuItem(bob, "All messages").click();
+  await expect(list.locator("[data-room-bell]")).toHaveAttribute("data-room-level", "all");
+  const loud = await alice.evaluate((r) => window.__arugula.chat.post(r, "now with feeling"), quiet);
+  expect(loud.pushed).toEqual([{ account: bobAccount, why: "message" }]);
+  // A phone's bell fits the width.
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  // Pausing for an hour: the bell is a moon, and Alice's DM row with him
+  // shows one too.
+  await list.locator("[data-room-bell]").click();
+  await menuItem(bob, "1 hour").click();
+  await expect(list.locator("[data-room-bell]")).toHaveText("🌙");
+  const dm = await alice.evaluate(([tm, b]) => window.__arugula.chat.newDm(tm, b).then((r) => r.id), [team, bobAccount]);
+  await platform(alice, "/chat");
+  await expect(alice.locator(`[data-chat-control] [data-chat-room="${dm}"] [data-dnd]`)).toBeVisible({ timeout: 15_000 });
+  const held = await alice.evaluate((r) => window.__arugula.chat.post(r, "are you there?"), dm);
+  expect(held.pushed).toEqual([]);
+});
+
+/** A menu's item by its label (`openMenu`'s layer). */
+function menuItem(p: Page, label: string) {
+  return p.locator(".menu .menu-item", { hasText: label }).first();
+}

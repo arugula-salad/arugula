@@ -446,7 +446,10 @@ pub async fn recompute(p: &Platform, repo_id: u64, numbers: &[u64], quiet: bool)
 async fn push(p: &Platform, s: &Sources, to: Vec<(String, Vec<String>)>, now: u64) {
     let i = &s.item;
     for (account, whys) in to {
-        if !p.inbox.may_push(&account, &i.id, now) || p.limits.check_account(INBOX_PUSHES, &account).is_err() {
+        if !crate::notify::notice_goes(p, &account)
+            || !p.inbox.may_push(&account, &i.id, now)
+            || p.limits.check_account(INBOX_PUSHES, &account).is_err()
+        {
             continue;
         }
         let msg = json!({

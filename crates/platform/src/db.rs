@@ -49,6 +49,7 @@ mod legacy;
 pub mod link_previews;
 pub mod migrate;
 pub mod mirror;
+pub mod notify;
 pub mod objects;
 pub mod pg;
 pub mod planter;

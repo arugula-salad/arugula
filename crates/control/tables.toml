@@ -566,8 +566,18 @@ name = "chat_reads"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A person's read mark in a room, and whether they muted it."
+what = "A person's read mark in a room, and how loud they chose it (all, mentions or nothing; none is their default)."
 why_asleep = "Unread counts and pushes, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "notify_prefs"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A person's notification settings (#113, #115): their default levels for channels, DMs and followed threads, a snooze, quiet hours by weekday with their time zone, and whether do not disturb covers every push. No message text."
+why_asleep = "Chat's pushes are decided from it with every machine asleep but the platform's."
 with_account = "deleted"
 seen_by = ["litestream"]
 

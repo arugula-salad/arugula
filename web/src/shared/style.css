@@ -7231,6 +7231,14 @@ button.thread-quote:hover {
   opacity: 0.6;
 }
 
+/* The moon on a DM whose other person paused notifications (#115). */
+.chat-dnd {
+  flex: none;
+  margin-left: 4px;
+  font-size: 11px;
+  line-height: 1;
+}
+
 .chat-sigil.chat-dm-pic {
   width: 16px;
   --msg-gutter: 16px;

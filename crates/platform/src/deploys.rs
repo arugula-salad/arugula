@@ -732,7 +732,10 @@ async fn push_owners(app: &Platform, by: &Actor, d: &Deploy, env: &Environment, 
         "tag": format!("deploy-{}", d.id),
         "control": true,
     });
-    let to: Vec<String> = to.into_iter().filter(|a| !matches!(by, Actor::Person(me) if me == a)).collect();
+    let to: Vec<String> = to
+        .into_iter()
+        .filter(|a| !matches!(by, Actor::Person(me) if me == a) && crate::notify::notice_goes(app, a))
+        .collect();
     let hub = app.hub.clone();
     let id = d.id.clone();
     tokio::spawn(async move {

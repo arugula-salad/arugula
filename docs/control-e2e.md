@@ -1508,10 +1508,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 115 tables in two planes ("Two planes, two trust rules"):
+Control's database has 116 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (44 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (71 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (72 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1575,7 +1575,8 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `chat_members` | metadata | A DM's two people, and an archive's readers. | People talk with every machine asleep. | yes |  |
 | `chat_messages` | **plaintext** | A chat message, in plain text (a native issue's comments are its thread's messages), with the lines its author quoted from a pane and who it mentions. One an agent wrote under its machine's threads.post grant (M197) keeps the machine's owner as its author and names the machine, shown as "<owner>'s agent on <machine>"; revoking the grant leaves it labelled. | People talk with every machine asleep. | partly: those in its rooms that go, go; the rest stay blank, with no author and no agent's label, and it's taken out of mentions. |  |
 | `chat_fts` | **plaintext** | The full-text index of chat messages and their quotes (SQLite FTS5; on Postgres it's a generated column of chat_messages). | Control searches chat itself, with every machine asleep. | partly: as chat_messages: it's rebuilt from them, and merged when an account goes so blanked words leave it. |  |
-| `chat_reads` | metadata | A person's read mark in a room, and whether they muted it. | Unread counts and pushes, with every machine asleep. | yes |  |
+| `chat_reads` | metadata | A person's read mark in a room, and how loud they chose it (all, mentions or nothing; none is their default). | Unread counts and pushes, with every machine asleep. | yes |  |
+| `notify_prefs` | metadata | A person's notification settings (#113, #115): their default levels for channels, DMs and followed threads, a snooze, quiet hours by weekday with their time zone, and whether do not disturb covers every push. No message text. | Chat's pushes are decided from it with every machine asleep but the platform's. | yes |  |
 | `chat_events` | metadata | Chat's live events, numbered (M144): a room and a message number that changed, a read mark that moved (and whose), or that who sees what may have changed. Never a message's text. Every machine of the platform sends its open pages the ones after the last it sent, and a page that dropped resumes from them. The newest 10,000 are kept. | Open pages hear of messages, edits and read marks through control alone, with every machine asleep. | partly: its read marks' events lose its name (they stay as nameless markers, so the numbers hold); events about rooms name no one and go with the oldest. |  |
 | `chat_readers` | metadata | Who may read the thread on a pane or a session, as its machine last said. | A pane's thread stays readable while its machine sleeps. | partly: its machines' rows go, and it's taken off the rest. |  |
 | `doc_links` | metadata | A Shared Doc link: its id, the machine that shared it, its version, size and parts, and how often it opened. | A shared Doc opens while the machine that shared it sleeps. | yes |  |

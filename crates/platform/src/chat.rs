@@ -65,10 +65,10 @@ use std::{
 
 use arugula_control_common::{ApiError, err, refusal};
 use arugula_control_wire::chat::{
-    self as wire, ChatEdit, ChatFound, ChatHit, ChatKind, ChatLive, ChatMessage, ChatMessages, ChatMessagesQuery,
-    ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget, ChatPane, ChatPerson, ChatPost, ChatPosted,
-    ChatPushWhy, ChatPushed, ChatReaction, ChatReactor, ChatRead, ChatReaderList, ChatReaders, ChatReadersStored,
-    ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms, ChatSearchQuery,
+    self as wire, ChatEdit, ChatFound, ChatHit, ChatKind, ChatLevel, ChatLive, ChatMessage, ChatMessages,
+    ChatMessagesQuery, ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget, ChatPane, ChatPerson, ChatPost,
+    ChatPosted, ChatPushWhy, ChatPushed, ChatReaction, ChatReactor, ChatRead, ChatReaderList, ChatReaders,
+    ChatReadersStored, ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms, ChatSearchQuery, NotifyLevel,
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -515,7 +515,49 @@ fn new_id(prefix: &str) -> String {
 fn listed(app: &Platform, facts: &Facts, account: &str, room: &Room, from: u64) -> anyhow::Result<ChatRoom> {
     let mark = app.db.chat_mark(&room.id, account)?;
     let counts = app.db.chat_unread(&room.id, account, mark.0, from)?;
-    listed_as(app, facts, account, room, mark, counts)
+    let mut r = listed_as(app, facts, account, room, mark, counts)?;
+    with_levels(app, account, std::slice::from_mut(&mut r))?;
+    Ok(r)
+}
+
+/// What each room is set to for `account` (#113): their own choice, else
+/// their default for its kind; and whether a DM's other person has
+/// notifications paused (#115). One statement for the levels and one for
+/// the people, whatever the page's size.
+fn with_levels(app: &Platform, account: &str, rooms: &mut [ChatRoom]) -> anyhow::Result<()> {
+    let ids: Vec<&str> = rooms.iter().map(|r| r.id.as_str()).collect();
+    let own = app.db.chat_levels_for(account, &ids)?;
+    let prefs = app.db.notify_prefs(account)?;
+    for r in rooms.iter_mut() {
+        let kind = match r.kind {
+            ChatKind::Dm => "dm",
+            ChatKind::Channel => "channel",
+            _ => "thread",
+        };
+        let chosen = own.get(&r.id).copied();
+        r.level = chosen.unwrap_or_else(|| crate::notify::default_level(&prefs, kind));
+        r.level_own = chosen.is_some();
+        // The old flag reads the same as `nothing`.
+        r.muted = r.level == NotifyLevel::Nothing;
+    }
+    let others: Vec<String> = rooms.iter().filter_map(|r| r.with.as_ref().map(|w| w.account.clone())).collect();
+    let paused = paused_among(app, &others)?;
+    for w in rooms.iter_mut().filter_map(|r| r.with.as_mut()) {
+        w.dnd = paused.contains(&w.account);
+    }
+    Ok(())
+}
+
+/// Which of these accounts have notifications paused now (#115).
+fn paused_among(app: &Platform, accounts: &[String]) -> anyhow::Result<HashSet<String>> {
+    let now = now_ms();
+    Ok(app
+        .db
+        .notify_prefs_of(accounts)?
+        .into_iter()
+        .filter(|(_, p)| crate::notify::paused(p, now))
+        .map(|(a, _)| a)
+        .collect())
 }
 
 /// [`listed`], with the reader's mark (and whether they muted it) and the
@@ -530,11 +572,11 @@ fn listed_as(
     (unread, mentions): (u64, u64),
 ) -> anyhow::Result<ChatRoom> {
     let with = if room.kind == "dm" {
-        facts
-            .members(app, &room.id)?
-            .into_iter()
-            .find(|a| a != account)
-            .map(|a| ChatPerson { name: facts.people.get(&a).map(|p| p.name.clone()).unwrap_or_default(), account: a })
+        facts.members(app, &room.id)?.into_iter().find(|a| a != account).map(|a| ChatPerson {
+            name: facts.people.get(&a).map(|p| p.name.clone()).unwrap_or_default(),
+            account: a,
+            dnd: false,
+        })
     } else {
         None
     };
@@ -554,9 +596,23 @@ fn listed_as(
         unread,
         mentions,
         muted,
+        // The reader's own and default levels are filled in by
+        // [`with_levels`], for a page of rooms at once.
+        level: if muted { NotifyLevel::Nothing } else { NotifyLevel::Mentions },
+        level_own: muted,
         archived: room.archived.is_some(),
         writable: writable(app, facts, room, account)?,
     })
+}
+
+/// Mark the people who have notifications paused.
+fn with_dnd(app: &Platform, people: &mut [ChatPerson]) -> anyhow::Result<()> {
+    let ids: Vec<String> = people.iter().map(|p| p.account.clone()).collect();
+    let paused = paused_among(app, &ids)?;
+    for p in people {
+        p.dnd = paused.contains(&p.account);
+    }
+    Ok(())
 }
 
 /// Names and pane chips, asked of the hub once per answer.
@@ -1254,6 +1310,7 @@ pub async fn rooms(State(app): State<Arc<Platform>>, s: Person) -> J<ChatRooms> 
         let n = counts.get(&r.id).copied().unwrap_or((0, 0));
         rooms.push(listed_as(&app, &facts, &s.account, r, mark(&r.id), n)?);
     }
+    with_levels(&app, &s.account, &mut rooms)?;
     Ok(Json(ChatRooms { rooms }))
 }
 
@@ -1455,8 +1512,10 @@ pub async fn room(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<St
     let names = app.cache.accounts(&*app.hub, &audience).await?;
     let people = audience
         .into_iter()
-        .map(|a| ChatPerson { name: names.get(&a).map(|x| x.name.clone()).unwrap_or_default(), account: a })
+        .map(|a| ChatPerson { name: names.get(&a).map(|x| x.name.clone()).unwrap_or_default(), account: a, dnd: false })
         .collect();
+    let mut people: Vec<ChatPerson> = people;
+    with_dnd(&app, &mut people)?;
     let agents = room_agents(&app, &facts, &room).await?;
     Ok(Json(ChatRoomDetail { room: listed(&app, &facts, &s.account, &room, from)?, people, agents }))
 }
@@ -1636,7 +1695,23 @@ pub async fn mute(
 ) -> J<ChatRoom> {
     gate(&app, &s.account).await?;
     let (room, from, facts) = room_for(&app, &s.account, &id).await?;
-    app.db.set_chat_muted(&room.id, &s.account, b.muted)?;
+    // The old switch, kept for callers that have it: muting is the
+    // `nothing` level, and unmuting goes back to the default.
+    app.db.set_chat_level(&room.id, &s.account, b.muted.then_some(NotifyLevel::Nothing))?;
+    Ok(Json(listed(&app, &facts, &s.account, &room, from)?))
+}
+
+/// `POST /api/chat/rooms/{id}/level`: what I'm notified of in this room,
+/// or (none) my default for rooms like it.
+pub async fn level(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path(id): Path<String>,
+    Json(b): Json<ChatLevel>,
+) -> J<ChatRoom> {
+    gate(&app, &s.account).await?;
+    let (room, from, facts) = room_for(&app, &s.account, &id).await?;
+    app.db.set_chat_level(&room.id, &s.account, b.level)?;
     Ok(Json(listed(&app, &facts, &s.account, &room, from)?))
 }
 
@@ -1792,8 +1867,11 @@ pub(crate) async fn post_full(
 /// hub's TTL, as control's own notices always have (M122).
 const PUSHES: PushOptions = PushOptions { ttl: None, any_subscription: true };
 
-/// Push a new message to whom it's for (S41 q4): mentions, and the other
-/// person in a DM. Not the author, nobody with the room open or muted, and
+/// Push a new message to whom it's for (S41 q4): mentions, the other
+/// person in a DM, and (#113) whoever set the room, or their default for
+/// rooms like it, to every message; each by their level for the room
+/// ([`crate::notify`]), and nobody while they've paused notifications
+/// (#115). Not the author, nobody with the room open or muted, and
 /// nobody twice a minute for one room. The hub sends them
 /// ([`HubPort::push_with`](crate::HubPort::push_with)), in the
 /// background: a failure is only logged.
@@ -1825,6 +1903,28 @@ async fn push(
                 to.push((a.clone(), ChatPushWhy::Dm));
             }
         }
+    }
+    // Everyone else in a channel who asked for every message there (#113):
+    // by their level for the room, else their default.
+    if !inboxed && room.kind != "dm" {
+        for a in people {
+            if a != author && !named.contains(a) {
+                to.push((a.clone(), ChatPushWhy::Message));
+            }
+        }
+    }
+    // Their levels and do not disturb (#113, #115). One statement each for
+    // everyone, whatever the channel's size.
+    if !to.is_empty() {
+        let accounts: Vec<String> = to.iter().map(|(a, _)| a.clone()).collect();
+        let own = app.db.chat_levels_in(&room.id, &accounts)?;
+        let prefs = app.db.notify_prefs_of(&accounts)?;
+        let (now, fresh) = (now_ms(), crate::db::notify::Prefs::default());
+        to.retain(|(a, why)| {
+            // The sender's "notify anyway" isn't on a post yet: only the
+            // decision knows it.
+            crate::notify::chat_push(prefs.get(a).unwrap_or(&fresh), &room.kind, own.get(a).copied(), *why, now, false)
+        });
     }
     if to.is_empty() && !(inboxed && !named.is_empty()) {
         return Ok(vec![]);
@@ -1873,6 +1973,7 @@ async fn push(
             ChatPushWhy::Mention => format!("{me} mentioned you in {place}"),
             ChatPushWhy::Keyword => format!("{me} wrote a word you watch in {place}"),
             ChatPushWhy::Dm => format!("{me} wrote to you"),
+            ChatPushWhy::Message => format!("{me} in {place}"),
         };
         let msg = json!({
             "chat": { "room": room.id, "seq": seq },

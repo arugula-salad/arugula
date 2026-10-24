@@ -1054,6 +1054,7 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     tx.execute("UPDATE chat_rooms SET created_by = '' WHERE created_by = ?1", params![account])?;
     tx.execute("DELETE FROM chat_reads WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_keywords WHERE account = ?1", params![account])?;
+    tx.execute("DELETE FROM notify_prefs WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_members WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_presence WHERE account = ?1", params![account])?;
     // Its own live events (its read marks) keep their numbers, naming no one.

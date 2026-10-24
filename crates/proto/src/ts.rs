@@ -99,6 +99,9 @@ fn generate() -> String {
         c.visit::<ChatReact>();
         c.visit::<ChatRead>();
         c.visit::<ChatMute>();
+        c.visit::<ChatLevel>();
+        c.visit::<NotifyPrefs>();
+        c.visit::<NotifySet>();
         c.visit::<ChatFound>();
         c.visit::<ChatOpen>();
         c.visit::<ChatLive>();
