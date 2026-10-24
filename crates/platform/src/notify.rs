@@ -95,7 +95,9 @@ pub fn chat_push(
     if !lets(level, why) {
         return false;
     }
-    !paused(prefs, at) || (anyway && room_kind == "dm" && why == ChatPushWhy::Dm)
+    // In a DM the other person is `Mention` when named and `Dm` when not:
+    // "anyway" is for the message either way.
+    !paused(prefs, at) || (anyway && room_kind == "dm" && matches!(why, ChatPushWhy::Dm | ChatPushWhy::Mention))
 }
 
 /// Whether the platform's other (non-chat) notice goes to `account` now:

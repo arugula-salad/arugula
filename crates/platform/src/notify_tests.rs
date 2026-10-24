@@ -90,6 +90,7 @@ fn notify_anyway_gets_a_dm_through_but_not_a_muted_room() {
     let p = Prefs { snooze_until: Some(now + 1000), ..Prefs::default() };
     assert!(chat_push(&p, "dm", None, Why::Dm, now, true));
     assert!(!chat_push(&p, "dm", Some(L::Nothing), Why::Dm, now, true));
+    assert!(chat_push(&p, "dm", None, Why::Mention, now, true), "named in a DM is still a DM");
     assert!(!chat_push(&p, "channel", None, Why::Mention, now, true), "only a DM's sender may");
 }
 
@@ -255,6 +256,32 @@ async fn a_dm_pushes_everything_until_its_level_says_nothing() {
     assert_eq!(pushes(&hub, 1).await.len(), 1);
     call(&base, "b", "POST", &format!("/api/chat/rooms/{id}/level"), Some(json!({ "level": "nothing" }))).await;
     assert_eq!(say(&base, "a", &id, "still there?").await["pushed"], json!([]));
+}
+
+/// "Notify anyway" on a post pushes a DM's paused other person, for that
+/// message only (the push gap then holds the next), and does nothing in a
+/// channel or for a post that doesn't ask.
+#[tokio::test]
+async fn notify_anyway_pushes_a_paused_dm_once_and_only_there() {
+    let (hub, _, base) = setup().await;
+    let (_, dm) = call(&base, "a", "POST", "/api/chat/teams/t/dms", Some(json!({ "with": "b" }))).await;
+    let id = dm["id"].as_str().unwrap().to_owned();
+    let until = now_ms() + 3600 * 1000;
+    call(&base, "b", "POST", "/api/notify/prefs", Some(json!({ "snooze_until": until }))).await;
+    let post = |room: String, text: &'static str, anyway: bool| {
+        let base = base.clone();
+        async move {
+            let body = json!({ "text": text, "notify_anyway": anyway });
+            call(&base, "a", "POST", &format!("/api/chat/rooms/{room}/messages"), Some(body)).await.1
+        }
+    };
+    assert_eq!(post(id.clone(), "hello?", false).await["pushed"], json!([]));
+    let v = post("ch_general".into(), "@b hi", true).await;
+    assert_eq!(v["pushed"], json!([]), "a channel has no such thing: {v}");
+    assert_eq!(pushes(&hub, 1).await.len(), 0);
+    let v = post(id.clone(), "it's urgent", true).await;
+    assert_eq!(v["pushed"], json!([{ "account": "b", "why": "dm" }]), "{v}");
+    assert_eq!(pushes(&hub, 1).await.len(), 1);
 }
 
 /// Snooze an hour: a DM in that hour doesn't push, and once it has ended

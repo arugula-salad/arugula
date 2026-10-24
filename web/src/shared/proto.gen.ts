@@ -396,7 +396,13 @@ pane?: ChatPaneRef, quote?: string,
  * the poster's own, for this room, not attached before. A message may
  * be only files.
  */
-files?: Array<string>, };
+files?: Array<string>, 
+/**
+ * "Notify anyway" (#115): in a DM, push the other person though they
+ * have paused notifications. For this message only; anywhere else it
+ * does nothing.
+ */
+notify_anyway?: boolean, };
 
 export type ChatPosted = { seq: number, 
 /**

@@ -1932,6 +1932,7 @@ pub(crate) async fn post_full(
         &named,
         &extra.keyword,
         &people,
+        b.notify_anyway.unwrap_or(false),
     )
     .await?;
     Ok(ChatPosted { seq, mentions: stored, unreached, pushed })
@@ -1964,6 +1965,7 @@ async fn push(
     named: &[String],
     keyed: &[String],
     people: &[String],
+    anyway: bool,
 ) -> anyhow::Result<Vec<ChatPushed>> {
     let inboxed = room.kind == "object" && room.target.as_deref().and_then(crate::inbox::thread_reason).is_some();
     let mut to: Vec<(String, ChatPushWhy)> = named
@@ -1995,9 +1997,7 @@ async fn push(
         let prefs = app.db.notify_prefs_of(&accounts)?;
         let (now, fresh) = (now_ms(), crate::db::notify::Prefs::default());
         to.retain(|(a, why)| {
-            // The sender's "notify anyway" isn't on a post yet: only the
-            // decision knows it.
-            crate::notify::chat_push(prefs.get(a).unwrap_or(&fresh), &room.kind, own.get(a).copied(), *why, now, false)
+            crate::notify::chat_push(prefs.get(a).unwrap_or(&fresh), &room.kind, own.get(a).copied(), *why, now, anyway)
         });
     }
     if to.is_empty() && !(inboxed && !named.is_empty()) {
