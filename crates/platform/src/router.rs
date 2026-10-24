@@ -60,6 +60,12 @@ fn routes() -> Routes {
         )
         .route("/api/chat/rooms/{id}/read", post(chat::read))
         .route("/api/chat/rooms/{id}/mute", post(chat::mute))
+        .route("/api/chat/rooms/{id}/unread", post(chat::saved::unread))
+        .route("/api/chat/saved", get(chat::saved::list))
+        .route(
+            "/api/chat/rooms/{id}/messages/{seq}/saved",
+            axum::routing::put(chat::saved::save).patch(chat::saved::done).delete(chat::saved::unsave),
+        )
         .route("/api/chat/rooms/{id}/typing", post(chat::typing::typing))
         .route("/api/chat/keywords", get(chat::alerts::keywords).put(chat::alerts::set_keywords))
         .route("/api/chat/teams/{team}/settings", get(chat::alerts::team_settings).put(chat::alerts::set_team_settings))

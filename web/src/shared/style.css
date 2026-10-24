@@ -11636,3 +11636,73 @@ html[data-workspace="new"] .thread-panel {
   object-fit: cover;
   border-radius: 50%;
 }
+
+/* The message menu and Saved for later (#116). */
+.msg-menu-wrap {
+  position: relative;
+  display: flex;
+}
+
+.msg-tools .msg-saved.on {
+  color: var(--warn, var(--accent));
+}
+
+.msg-menu {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+}
+
+.msg-tools .msg-menu button {
+  width: auto;
+  height: auto;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: var(--fg);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.saved-item {
+  list-style: none;
+}
+
+.saved-item.done .chat-hit {
+  opacity: 0.6;
+}
+
+.saved-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 12px 8px 46px;
+  font-size: 12px;
+}
+
+.saved-actions button {
+  padding: 2px 8px;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  color: var(--dim);
+}
+
+.saved-actions button:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+.saved-note {
+  margin-right: auto;
+  color: var(--dim);
+}

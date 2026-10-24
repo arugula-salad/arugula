@@ -19,9 +19,9 @@ const changed = () => listeners.forEach((fn) => fn());
 addEventListener("hashchange", changed);
 
 /** Activity, or search results for `q` (M75), on the platform page. */
-export function openChatView(view: "activity" | "search", q = "") {
+export function openChatView(view: "activity" | "saved" | "search", q = "") {
   closeThread();
-  openPlatform(view === "activity" ? "/chat/activity" : `/chat/search${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+  openPlatform(view === "search" ? `/chat/search${q ? `?q=${encodeURIComponent(q)}` : ""}` : `/chat/${view}`);
 }
 
 /** Chat, on the platform page (M153). */

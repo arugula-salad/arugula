@@ -12,14 +12,14 @@ import { authorLabel } from "./agents";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 import type { ChatRoute } from "./route";
 
-function when(at: number): string {
+export function when(at: number): string {
   const d = new Date(at);
   return new Date().toDateString() === d.toDateString()
     ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-function ViewHead({ title, sub, phone }: { title: string; sub?: string; phone: boolean }) {
+export function ViewHead({ title, sub, phone }: { title: string; sub?: string; phone: boolean }) {
   const { nav } = usePlatformApi();
   return (
     <header class="chat-head">
@@ -68,7 +68,7 @@ function RoomHits({ store, hits }: { store: ChatStore; hits: { room: string; m: 
   );
 }
 
-function whereOf(r: ChatRoom, api: PlatformApi): string {
+export function whereOf(r: ChatRoom, api: PlatformApi): string {
   const name = `${roomSigil(r)} ${roomLabel(r, api)}`;
   return r.machine ? `${name} · ${machineName(api, r.machine, r.machine_name ?? "")}` : name;
 }

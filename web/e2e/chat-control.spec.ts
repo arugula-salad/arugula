@@ -463,6 +463,60 @@ test("a mention pushes, and the push's tap opens the room at the message", async
   await expect.poll(async () => (await roomsOf(bob)).find((r) => r.id === deploys)?.mentions, { timeout: 15_000 }).toBe(0);
 });
 
+test("mark as unread brings the room back on another page; saved for later syncs, reminds, and is private", async () => {
+  test.setTimeout(120_000);
+  const room = await alice.evaluate((tm) => window.__arugula.chat.newChannel(tm, "later").then((r) => r.id), team);
+  for (const text of ["first thing", "second thing", "third thing"]) {
+    await alice.evaluate(([r, t]) => window.__arugula.chat.post(r, t), [room, text]);
+  }
+  // Bob's phone reads the room; a desktop-sized page of his is on the list.
+  await platform(bob, `/chat/${room}-later`);
+  const phone = bob.locator("[data-chat-control]");
+  await expect(phone.locator(".thread-msg", { hasText: "third thing" })).toBeVisible({ timeout: 15_000 });
+  const desk = await bob.context().newPage();
+  await desk.setViewportSize({ width: 1280, height: 800 });
+  await platform(desk, "/chat");
+  const unreadOf = (p: Page) => p.evaluate((r) => window.__arugula.chat.room(r)?.unread, room);
+  await expect.poll(() => unreadOf(desk), { timeout: 15_000 }).toBe(0);
+
+  // Mark the second unread from its menu: the phone keeps its "New" line
+  // there, and the other page sees the room unread.
+  const second = phone.locator(".thread-msg", { hasText: "second thing" });
+  await second.hover();
+  await second.locator("[data-msg-more]").click();
+  await second.locator("[data-msg-unread]").click();
+  await expect(phone.locator("[data-new-line]")).toBeVisible();
+  await expect(second.locator("xpath=preceding-sibling::*[1]")).toHaveAttribute("data-new-line", "");
+  await expect.poll(() => unreadOf(desk), { timeout: 15_000 }).toBe(2);
+  await expect(desk.locator(`[data-chat-room="${room}"] .chat-count`)).toHaveText("2");
+  await expect.poll(() => unreadOf(bob), { timeout: 5_000 }).toBe(2);
+
+  // Save the third on the phone, with a reminder; it is in Saved on the desktop.
+  const third = phone.locator(".thread-msg", { hasText: "third thing" });
+  await third.hover();
+  await third.locator("[data-msg-more]").click();
+  await third.locator("[data-msg-remind-hour]").click();
+  await desk.locator("[data-chat-saved]").click();
+  const item = desk.locator("[data-chat-saved-view] [data-saved]", { hasText: "third thing" });
+  await expect(item).toBeVisible({ timeout: 15_000 });
+  await expect(item.locator(".saved-note")).toContainText("Reminder");
+  await expect(item).toHaveAttribute("data-saved", `${room}/3`);
+  // A plain save from the hover star, on the desktop, shows on the phone.
+  await desk.locator(`[data-chat-room="${room}"]`).click();
+  const first = desk.locator(".thread-msg", { hasText: "first thing" });
+  await first.hover();
+  await first.locator("[data-msg-save]").click();
+  await expect(phone.locator(".thread-msg", { hasText: "first thing" }).locator("[data-msg-save].on")).toBeVisible({ timeout: 15_000 });
+  // Done moves it down; Remove drops it. It is nobody else's: Alice has none.
+  await desk.locator("[data-chat-saved]").click();
+  await desk.locator('[data-saved$="/3"] [data-saved-done]').click();
+  await expect(desk.locator('[data-saved$="/3"].done')).toBeVisible({ timeout: 10_000 });
+  await desk.locator('[data-saved$="/1"] [data-saved-remove]').click();
+  await expect(desk.locator('[data-saved$="/1"]')).toHaveCount(0, { timeout: 10_000 });
+  expect(await alice.evaluate(async () => ((await (await fetch("/api/chat/saved")).json()) as { items: unknown[] }).items.length)).toBe(0);
+  await desk.close();
+});
+
 test("typing shows to the other reader and clears; @channel is offered; a keyword counts as a mention", async () => {
   test.setTimeout(90_000);
   const room = await alice.evaluate((tm) => window.__arugula.chat.newChannel(tm, "alerts").then((r) => r.id), team);

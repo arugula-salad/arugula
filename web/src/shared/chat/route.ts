@@ -6,7 +6,7 @@ export interface ChatRoute {
   /** M74: a message to show (a copied link). */
   msg?: number;
   /** M75: Activity (your mentions), or search results for `q`. */
-  view?: "activity" | "search";
+  view?: "activity" | "saved" | "search";
   q?: string;
   /** M123: a room in control's chat (`#chat=<room>`). */
   room?: string;

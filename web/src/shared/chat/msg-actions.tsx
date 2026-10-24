@@ -27,8 +27,15 @@ export interface MessageHook {
 }
 
 /** Set by the feature that owns the action: `thread` and `save` sit on the
- * toolbar itself, `unread` and `pin` in the ⋯ menu. */
-export const messageHooks: { thread?: MessageHook; save?: MessageHook; unread?: MessageHook; pin?: MessageHook } = {};
+ * toolbar itself, `unread`, the reminders and `pin` in the ⋯ menu. */
+export const messageHooks: {
+  thread?: MessageHook;
+  save?: MessageHook;
+  unread?: MessageHook;
+  remindHour?: MessageHook;
+  remindTomorrow?: MessageHook;
+  pin?: MessageHook;
+} = {};
 
 /** The hook for `id`, if it is set and applies here. */
 export function hookFor(id: keyof typeof messageHooks, c: MessageCtx): MessageHook | undefined {
@@ -59,6 +66,10 @@ export function itemsOf(
   out.push({ id: "link", label: o.copied ? "Copied" : "Copy link", icon: o.copied ? "✓" : "🔗", run: o.copy, data: "data-msg-link" });
   const unread = hookFor("unread", c);
   if (unread) out.push({ id: "unread", label: unread.label?.(c) ?? "Mark unread", icon: "◐", run: () => unread.run(c), data: "data-msg-unread" });
+  const hour = hookFor("remindHour", c);
+  if (hour) out.push({ id: "remind-hour", label: "Remind me in 1 hour", icon: "⏰", run: () => hour.run(c), data: "data-msg-remind-hour" });
+  const tomorrow = hookFor("remindTomorrow", c);
+  if (tomorrow) out.push({ id: "remind-tomorrow", label: "Remind me tomorrow", icon: "⏰", run: () => tomorrow.run(c), data: "data-msg-remind-tomorrow" });
   const pin = hookFor("pin", c);
   if (pin) out.push({ id: "pin", label: pin.label?.(c) ?? "Pin to the room", icon: "📌", run: () => pin.run(c), on: pin.on?.(c), data: "data-msg-pin" });
   if (o.edit) out.push({ id: "edit", label: "Edit message", icon: "✎", run: o.edit, data: "data-msg-edit" });

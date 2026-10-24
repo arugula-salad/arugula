@@ -215,7 +215,7 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
 
 /**
  * A message as the reader sees it.
@@ -511,6 +511,38 @@ agents: Array<ChatRoomAgent>, };
 export type ChatRooms = { rooms: Array<ChatRoom>, };
 
 /**
+ * `PUT /api/chat/rooms/{id}/messages/{seq}/saved`: save the message for
+ * later (again: it changes the reminder, and un-does "done"). `remind_at`
+ * (ms since the epoch, in the future, at most [`SAVED_REMIND_MAX_MS`] away)
+ * is when to push the reader once.
+ */
+export type ChatSave = { remind_at: number | null, };
+
+/**
+ * `GET /api/chat/saved`: the reader's saved messages in rooms they still
+ * see, the ones to do newest saved first, then the done ones.
+ */
+export type ChatSaved = { items: Array<ChatSavedItem>, };
+
+/**
+ * `PATCH .../saved`: mark a saved message done, or not.
+ */
+export type ChatSavedDone = { done: boolean, };
+
+/**
+ * One saved message, with its room (the reader still sees it).
+ */
+export type ChatSavedItem = { room: string, seq: number, saved_at: number, 
+/**
+ * When it was marked done.
+ */
+done: number | null, 
+/**
+ * When it will push the reader (or did: `reminded`).
+ */
+remind_at: number | null, reminded: boolean, message: ChatMessage, };
+
+/**
  * A section the account made.
  */
 export type ChatSection = { 
@@ -565,6 +597,13 @@ export type ChatTeamSettings = {
  * `@channel` and `@here` are for owners only.
  */
 broadcast_owners: boolean, };
+
+/**
+ * `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read
+ * mark goes to just before it, backwards if need be (#116). The answer is
+ * the room, as the reader now sees it.
+ */
+export type ChatUnread = { seq: number, };
 
 export type Check = { name: string, source: CheckSource, state: CheckState, allow_failure: boolean, 
 /**

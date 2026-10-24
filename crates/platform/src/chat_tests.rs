@@ -908,7 +908,9 @@ async fn a_typing_ping_on_one_machine_reaches_a_stream_on_the_other() {
         let at = text.find("\"stream\":\"").unwrap() + 10;
         text[at..].split('"').next().unwrap().to_owned()
     };
-    let (st, _) = call(&base_b, "b", "POST", "/api/chat/live/open", Some(json!({ "stream": stream, "room": "ch_general" }))).await;
+    let (st, _) =
+        call(&base_b, "b", "POST", "/api/chat/live/open", Some(json!({ "stream": stream, "room": "ch_general" })))
+            .await;
     assert_eq!(st, 200);
     let (st, _) = call(&base_a, "a", "POST", "/api/chat/rooms/ch_general/typing", None).await;
     assert_eq!(st, 204);

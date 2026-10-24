@@ -35,7 +35,7 @@ export interface ChatNav {
   /** A room, at message `msg`. */
   openRoom(room: string, msg?: number): void;
   /** Activity, or search results for `q`. */
-  openChatView(view: "activity" | "search", q?: string): void;
+  openChatView(view: "activity" | "saved" | "search", q?: string): void;
   /** A message's link, to copy. */
   roomLink(room: string, seq: number): string;
   /** Where the reader gives their machines' agents access to rooms (a
