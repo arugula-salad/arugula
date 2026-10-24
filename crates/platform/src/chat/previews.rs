@@ -482,12 +482,9 @@ async fn web_card(app: &Platform, url: &Url, fetch: bool) -> Option<Preview> {
         }
     };
     p.ok.then(|| Preview::Web {
-        image: p.image_url.as_ref().map(|_| {
-            format!(
-                "/api/chat/previews/image?page={}",
-                url::form_urlencoded::byte_serialize(key.as_bytes()).collect::<String>()
-            )
-        }),
+        // The page's own address for now: `previews` turns it into the
+        // proxy's path for the message the card is under ([`image_path`]).
+        image: p.image_url.as_ref().map(|_| key.clone()),
         url: key,
         site: p.site,
         title: p.title,
@@ -603,6 +600,12 @@ pub async fn previews(
         let cs: Vec<Preview> = ls
             .iter()
             .filter_map(|(u, _)| cards.get(u.as_str()).or_else(|| web_cards.get(u.as_str())).cloned())
+            .map(|mut c| {
+                if let Preview::Web { image: Some(page), .. } = &mut c {
+                    *page = image_path(&room.id, seq, page);
+                }
+                c
+            })
             .collect();
         if !cs.is_empty() {
             out.insert(seq, cs);
@@ -669,15 +672,26 @@ async fn team_role(app: &Platform, account: &str, team: &str) -> Result<TeamRole
     teams.get(team).and_then(|t| t.role(account)).ok_or_else(|| err(StatusCode::NOT_FOUND, "no such team"))
 }
 
+/// The proxy's path for a card's image, tied to the message it's under.
+fn image_path(room: &str, seq: i64, page: &str) -> String {
+    let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
+    format!("/api/chat/previews/image?room={}&seq={seq}&page={}", enc(room), enc(page))
+}
+
 #[derive(Deserialize)]
 pub struct ImageQuery {
+    room: String,
+    seq: i64,
     page: String,
 }
 
-/// `GET /api/chat/previews/image?page=<link>`: the image of a page that
-/// was read for a preview, fetched (guarded) the first time and kept.
-/// Only a page's cached read names an image address, so this is no open
-/// proxy; a reader's browser meets us, never the site.
+/// `GET /api/chat/previews/image?room=&seq=&page=<link>`: the image of a
+/// page that was read for a preview, fetched (guarded) the first time and
+/// kept. Only a page's cached read names an image address, so this is no
+/// open proxy; a reader's browser meets us, never the site. The reader
+/// must be able to see the message and it must carry the link (and its
+/// previews be on), or the answer would tell anyone signed in which pages
+/// have been read here.
 pub async fn image(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -685,6 +699,20 @@ pub async fn image(
 ) -> Result<Response, ApiError> {
     gate(&app, &s.account).await?;
     let gone = || err(StatusCode::NOT_FOUND, "no such image");
+    let (room, from, _) = room_for(&app, &s.account, &q.room).await.map_err(|_| gone())?;
+    let m = app.db.chat_message(&room.id, q.seq)?.ok_or_else(gone)?;
+    let web = match team_of(&app, &room).await? {
+        Some(t) => app.db.web_previews_on(&t)?,
+        None => true,
+    };
+    if m.deleted.is_some()
+        || m.at < from
+        || !web
+        || app.db.hidden_previews(&room.id, &[q.seq])?.contains(&q.seq)
+        || !links(&m.text).iter().any(|u| u.as_str() == q.page)
+    {
+        return Err(gone());
+    }
     let (image_url, have) = app.db.preview_image(&q.page)?.ok_or_else(gone)?;
     let (kind, bytes) = match have {
         Some(x) => x,
