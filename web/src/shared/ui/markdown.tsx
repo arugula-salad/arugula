@@ -45,7 +45,7 @@ type Ctx = ForgeInline & { embeds?: boolean; chat?: boolean; isMe?: IsMe; landed
  * draws a Doc's picture from its target (`assets/x.png`); a new function
  * draws the body again. `chat`: a chat message (#109): `:joy:` as emoji
  * (large when that's all there is), a copy button and colours on code, and
- * the tight spacing a one-line message needs (style.css `.md.chat`). */
+ * the tight spacing a one-line message needs (style.css `.md.md-chat`; not `.chat`, which is the chat page's own box). */
 export function Markdown({
   text,
   refs,
@@ -71,7 +71,7 @@ export function Markdown({
     [text, refs, embeds, image, chat, isMe, landed, table],
   );
   const jumbo = !!chat && onlyEmoji(text, table);
-  return <div class={chat ? (jumbo ? "md chat jumbo" : "md chat") : "md"}>{out}</div>;
+  return <div class={chat ? (jumbo ? "md md-chat md-jumbo" : "md md-chat") : "md"}>{out}</div>;
 }
 
 // Nobody is notified by what a body says, so no mention pill, unless it's
