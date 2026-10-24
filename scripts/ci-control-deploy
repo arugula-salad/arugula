@@ -6,15 +6,30 @@
 #   ci-control-deploy deploy TAG DIR   deploy DIR's arugula-control
 #                                      (x86_64 musl, `just static`) as
 #                                      packaging/control's image, labelled
-#                                      TAG, then `check` it
+#                                      TAG, then `check` it; unless nothing
+#                                      the hub is built from changed since
+#                                      the release it runs (`check` that one)
 #   ci-control-deploy check TAG        control answers /control.json, and
 #                                      every machine runs TAG's image with
 #                                      its health check passing (read-only)
 #
 # The image is built here, as `just control-deploy` builds it (fly deploy
 # --local-only, so it needs Docker). `deploy` leaves a newer release alone:
-# re-running an old tag's job doesn't take control back a version. The app
-# and its URL come from packaging/control/fly.toml; Fly's token is
+# re-running an old tag's job doesn't take control back a version.
+#
+# The hub holds every relayed terminal, and a deploy drops them all, so a
+# tag deploys it only when something it's built from changed since the
+# release it runs: DIR/hub-inputs (the `linux` job's `scripts/ci-hub-changed
+# inputs`) compared between that release's tag and TAG (`scripts/ci-hub-changed
+# diff`). Version numbers alone don't count. It deploys whenever it can't
+# tell: no hub-inputs, machines on different images, a hotfix's image
+# (`deployment-...`), a tag it can't fetch. ARUGULA_HUB_DEPLOY=always (the
+# repository variable of that name, in release.yml) deploys it anyway. A
+# skip says so in the job's summary and checks the release the hub runs. So
+# the hub's version can be older than the tag's: `fly releases -a
+# illogical-control` lists only the tags that deployed it.
+#
+# The app and its URL come from packaging/control/fly.toml; Fly's token is
 # FLY_API_TOKEN, a deploy token for the app. It calls `flyctl`, not `fly`:
 # setup-flyctl's tarball has no `fly` link (v0.53.0's deploy died on it).
 set -euo pipefail
@@ -48,6 +63,57 @@ check_once() {
     { echo "$url/control.json didn't answer as control"; return 1; }
 }
 
+# Lines for the job's summary (GitHub's step summary), when there is one.
+summary() {
+  [ -z "${GITHUB_STEP_SUMMARY:-}" ] || printf '%s\n' "$@" >>"$GITHUB_STEP_SUMMARY"
+}
+
+# A tag's commit here, fetched (alone, as a shallow checkout fetches) if
+# it isn't.
+have_tag() {
+  git rev-parse -q --verify "refs/tags/$1^{commit}" >/dev/null ||
+    git fetch -q --no-tags --depth=1 origin "+refs/tags/$1:refs/tags/$1" 2>/dev/null
+}
+
+# unchanged TAG DIR: succeeds when the hub needn't deploy for TAG, nothing
+# it's built from having changed since the release it runs; fails when it
+# must, or when that can't be told. Either way it prints why, on one line.
+unchanged() {
+  local tag=$1 dir=$2 tags now changed rc=0 n
+  if [ "${ARUGULA_HUB_DEPLOY:-}" = always ]; then
+    echo "ARUGULA_HUB_DEPLOY=always: deploying it whatever changed"
+    return 1
+  fi
+  tags=$(running | sort -u) || { echo "fly status failed: can't tell what the hub runs"; return 1; }
+  [ -n "$tags" ] || { echo "no machine runs: nothing to compare with"; return 1; }
+  [ "$(wc -l <<<"$tags")" = 1 ] || { echo "its machines run different images ($(paste -sd" " <<<"$tags")): deploying them all"; return 1; }
+  now=$tags
+  [[ $now =~ ^v[0-9] ]] || { echo "it runs $now, not a release's image (a hotfix?): deploying over it"; return 1; }
+  if [ "$now" = "$tag" ]; then
+    echo "It already runs $tag."
+    return 0
+  fi
+  [ -s "$dir/hub-inputs" ] || { echo "the build left no list of what the hub is built from ($dir/hub-inputs)"; return 1; }
+  have_tag "$now" || { echo "can't fetch $now, which it runs, to compare with"; return 1; }
+  have_tag "$tag" || { echo "can't fetch $tag to compare"; return 1; }
+  changed=$(scripts/ci-hub-changed diff "refs/tags/$now" "refs/tags/$tag" "$dir/hub-inputs" 2>&1) || rc=$?
+  case $rc in
+    0)
+      n=$(wc -l <<<"$changed")
+      echo "what it's built from changed since $now ($n): $(head -n 8 <<<"$changed" | paste -sd' ')$([ "$n" -le 8 ] || echo " ...")"
+      return 1
+      ;;
+    1)
+      echo "Nothing it's built from changed between $now and $tag ($(grep -cv '^#' "$dir/hub-inputs") inputs, version numbers aside)."
+      return 0
+      ;;
+    *)
+      echo "can't compare $now with $tag ($(tail -n 1 <<<"$changed")): deploying it"
+      return 1
+      ;;
+  esac
+}
+
 # Two minutes for the machines to settle: fly deploy has already waited for
 # the health check, so the first try usually passes.
 check() {
@@ -71,13 +137,23 @@ deploy() {
   fi
   # A newer release already running (a re-run of an older tag's job) stays.
   # A hotfix's label (deployment-...) isn't a version, so a tag deploys over it.
-  local now
+  local now why
   now=$(running | sort -V | tail -n 1)
   if [[ $now =~ ^v[0-9] ]] && [ "$now" != "$tag" ] &&
     [ "$(printf '%s\n%s\n' "$tag" "$now" | sort -V | tail -n 1)" = "$now" ]; then
     echo "::notice::control already runs $now, newer than $tag: not deployed"
     return 0
   fi
+  if why=$(unchanged "$tag" "$dir"); then
+    echo "::notice title=Hub not deployed::hub unchanged since $now: not deployed ($why)"
+    summary "### The hub: not deployed" "" \
+      "hub unchanged since $now: not deployed. $why" "" \
+      "To deploy it anyway, set the repository variable \`ARUGULA_HUB_DEPLOY\` to \`always\`, re-run this job, then unset it; or \`just control-deploy\` (docs/control-ops.md, \"Deploys\")."
+    check "$now"
+    return 0
+  fi
+  echo "deploying the hub: $why"
+  summary "### The hub: deploying $tag" "" "$why"
   local ctx
   ctx=$(mktemp -d)
   # shellcheck disable=SC2064 # $ctx now, not at exit
@@ -91,5 +167,5 @@ deploy() {
 case ${1:-} in
   deploy) shift; deploy "$@" ;;
   check) shift; check "$@" ;;
-  *) sed -n '5,12p' "$0" >&2; exit 2 ;;
+  *) sed -n '5,14p' "$0" >&2; exit 2 ;;
 esac

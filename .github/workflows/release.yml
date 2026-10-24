@@ -4,10 +4,11 @@
 # to the tag's release with SHA256SUMS, publish it as latest, bump the
 # Homebrew formula, send the editor extension to the marketplaces, build
 # the hosted workspace's E2B template (M177), and deploy the hosted
-# control from the x86_64 static build (M133), its platform first once
-# that's its own Fly app (M140). No
-# desktop app: it has its own release, app-v* tags (app-release.yml, #393),
-# and the daemon updates itself (#391).
+# control from the x86_64 static build (M133): its platform first (M140),
+# then its hub, only when something the hub is built from changed since
+# the release it runs (the control job). No desktop app: it has its own
+# release, app-v* tags (app-release.yml, #393), and the daemon updates
+# itself (#391).
 name: release
 on:
   push:
@@ -43,10 +44,17 @@ jobs:
       - run: just bootstrap
       - run: scripts/release check-version "$GITHUB_REF_NAME"
       - run: just static x86_64
+      # What the hub's arugula-control was built from (cargo's dep-info
+      # beside it, and the build's own files), for the control job to
+      # compare with the release the hub runs. If it can't be listed, the
+      # whole tree stands in for it, and the hub deploys.
+      - run: |
+          scripts/ci-hub-changed inputs "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release/arugula-control.d" >"$RUNNER_TEMP/hub-inputs" ||
+            { echo "::warning::the hub's inputs weren't listed: it deploys"; echo . >"$RUNNER_TEMP/hub-inputs"; }
       # Control's binaries, for the platform and control jobs' images, and
       # arugulad and arugula for the template job's (a tar keeps them
-      # executable).
-      - run: tar -cf "$RUNNER_TEMP/control-binaries.tar" -C "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" arugula-control arugulad arugula-platform arugula
+      # executable); the hub's inputs for the control job.
+      - run: tar -cf "$RUNNER_TEMP/control-binaries.tar" -C "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" arugula-control arugulad arugula-platform arugula -C "$RUNNER_TEMP" hub-inputs
       - uses: actions/upload-artifact@v4
         with:
           name: control-binaries
@@ -163,6 +171,17 @@ jobs:
   # group). GitHub's runner: Docker of its own. It waits for the platform's
   # deploy (the platform deploys first: a hub never forwards a route the
   # platform doesn't serve yet), but deploys whatever became of it.
+  #
+  # The hub holds every relayed terminal, and a deploy drops them all
+  # ("Control is two processes": the hub deploys rarely). So it deploys
+  # only when something it's built from changed since the release it runs:
+  # the linux job's hub-inputs, compared between that release's tag and
+  # this one (scripts/ci-hub-changed; version numbers alone don't count).
+  # Otherwise the job says "hub unchanged since vX: not deployed" in its
+  # summary and checks the hub on vX. It deploys whenever it can't tell. The
+  # repository variable ARUGULA_HUB_DEPLOY=always deploys it anyway: set it
+  # and re-run this job (then unset it). The release the M221 deploy driver
+  # pushes is a tag like any other, so the same rule holds for it.
   control:
     needs: [linux, platform]
     if: ${{ !cancelled() && needs.linux.result == 'success' }}
@@ -195,6 +214,7 @@ jobs:
       - run: scripts/ci-control-deploy deploy "$GITHUB_REF_NAME" "$RUNNER_TEMP/control"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          ARUGULA_HUB_DEPLOY: ${{ vars.ARUGULA_HUB_DEPLOY }}
 
   # Control's platform (arugula-platform, M140 #1157), from the same build,
   # before the hub. Until that Fly app exists there's no deploy token for

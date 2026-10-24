@@ -47,6 +47,11 @@
 #                                  the merge's messages: the arugula-release
 #                                  deploy driver's `Arugula-Deploy: dep_...`
 #                                  (M221), which runs this from a deploy's box.
+#   release blank PATH             the file PATH names (a Cargo.toml, Cargo.lock
+#                                  or THIRD_PARTY.md), read from stdin, with every
+#                                  arugula crate's version as @V@, so two copies
+#                                  that differ only by a bump match
+#                                  (scripts/ci-hub-changed)
 #
 # GH_TOKEN (upload, sums) writes releases (in CI, the job token with
 # contents: write; by hand, your gh login); HOMEBREW_TAP_KEY (homebrew) is
@@ -572,8 +577,12 @@ PY
     git push -q origin HEAD
     echo "formula bumped to $v"
     ;;
+  blank)
+    k=$(vers_kind "${2:?usage: release blank PATH}") || { echo "release blank: $2 isn't a Cargo.toml, Cargo.lock or THIRD_PARTY.md" >&2; exit 2; }
+    vers blank "$k"
+    ;;
   *)
-    sed -n '2,44p' "$0" >&2
+    sed -n '2,54p' "$0" >&2
     exit 2
     ;;
 esac

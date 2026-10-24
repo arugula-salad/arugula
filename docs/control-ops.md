@@ -208,7 +208,8 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     made from, at once. `POST /api/app/signout` signs that page out alone.
   - **Putting it live** (M158, hosted control; each step is Jake's go):
     1. Release, so the platform's binary (which embeds the page) and the
-       hub both carry it; the tag deploys the platform first, then the hub.
+       hub both carry it; the tag deploys the platform first, then the hub
+       (which it changed, so it deploys).
     2. DNS: a DNS-only CNAME `app.arugula.io` → `illogical-control.fly.dev`
        on Cloudflare (the zone's token), then `fly certs add app.arugula.io
        -a illogical-control` and wait for `fly certs show` to say Ready.
@@ -1018,11 +1019,51 @@ fly ssh console -a illogical-control -C "/arugula-control device-review --db /da
 ### Deploys
 
 Each release tag deploys control (M133, #1129). It's automatic, with no
-approval step.
+approval step. The platform deploys from every tag ("The platform"
+below); the hub, which holds every relayed terminal, only from a tag that
+changed something it's built from.
 
 - **The `control` job** in `.github/workflows/release.yml` runs as soon
-  as the `linux` job has built the tag's static binaries. It doesn't wait
-  for macOS, Windows or the release to be published.
+  as the `linux` job has built the tag's static binaries (and the
+  platform's job has ended). It doesn't wait for macOS, Windows or the
+  release to be published.
+- **Only when the hub changed.** A hub deploy drops every relayed
+  terminal for a few seconds, so the job first compares what this tag's
+  hub is built from with the release the hub runs now (`fly status`'s
+  image label, `vX`), and deploys nothing when they match. What the hub
+  is built from (`scripts/ci-hub-changed inputs`, run by the `linux` job
+  and handed over as `hub-inputs`): every workspace file rustc read to
+  build `arugula-control`, from cargo's dep-info beside the binary (all of
+  `crates/control`, `control-common`, `control-wire`, `core`, `e2e`,
+  `forge-github`, `proto` and `platform` that it compiles, `routes.toml`,
+  migrations; no tests), `web/`'s sources for the pages it embeds (less
+  the specs and dev servers), the platform's contract with the hub
+  (`HubPort`, `PlatformPort`, the signed internal calls, `routes.toml`)
+  whatever the hub compiles, every crate's `Cargo.toml`, `Cargo.toml`,
+  `Cargo.lock`, the toolchain and Zig pins, the setup action, the
+  `static`, `web` and `bootstrap` recipes, and `packaging/control`. A
+  bump's own changes (version numbers in the manifests and lock file,
+  THIRD_PARTY.md, release notes, the client fixtures) don't count. A
+  daemon-, docs- or desktop-only release leaves the hub alone.
+  - **It deploys whenever it can't tell:** no `hub-inputs`, machines on
+    different images, a hotfix's image (`deployment-…`), a tag it can't
+    fetch, a comparison that fails.
+  - **A skip is loud:** a notice and the job's summary say `hub unchanged
+    since vX: not deployed`, and the job checks that the hub answers and
+    every machine runs vX (`scripts/ci-control-deploy check vX`). A deploy's
+    summary lists what changed.
+  - **To deploy it anyway**, set the repository variable
+    `ARUGULA_HUB_DEPLOY` to `always` (`gh variable set ARUGULA_HUB_DEPLOY
+    -b always -R arugula-salad/arugula`), re-run the tag's `control` job,
+    and unset it again (`gh variable delete ARUGULA_HUB_DEPLOY -R
+    arugula-salad/arugula`). Or `just control-deploy` (Hotfixes, below).
+  - **So the hub's version lags the tag's.** The hub reports the version
+    it was built as (its user agent, PostHog's `$lib_version`), and `fly
+    releases -a illogical-control` lists only the tags that deployed it.
+    Nothing compares the hub's version with the newest release: daemons
+    and the app read `/control.json`'s capabilities, which carry no
+    version, and control's own page is embedded in the hub, so it changes
+    only when the hub deploys.
 - **The image** is built on GitHub's runner the way `just control-deploy`
   builds it: `packaging/control/Dockerfile` around `arugula-control` and
   `arugulad`, with `fly deploy --local-only`. It's labelled with the tag,
@@ -1030,14 +1071,17 @@ approval step.
   `registry.fly.io/illogical-control:vX.Y.Z`.
 - **After the deploy,** `scripts/ci-control-deploy` checks that
   `https://control.arugula.io/control.json` answers and that every machine
-  runs the tag's image with its health check passing. If either fails,
-  the job fails. To run the same check by hand:
-  `scripts/ci-control-deploy check vX.Y.Z`.
+  runs the tag's image with its health check passing (after a skip, the
+  image of the release it runs). If either fails, the job fails. To run
+  the same check by hand: `scripts/ci-control-deploy check vX.Y.Z`, with
+  the version the hub runs (`fly status -a illogical-control`).
 - **One deploy at a time.** A tag's deploy waits for the one before.
   With a third tag, the one waiting is dropped, since the newer tag
   deploys anyway.
 - **Re-running an older tag's job** doesn't take control back: if a newer
   release is already running, the job says so and deploys nothing.
+  Re-running the job of the tag it runs deploys nothing either, unless
+  `ARUGULA_HUB_DEPLOY=always`.
 - **The token** is the repository secret `FLY_API_TOKEN`, a deploy token
   for this app only. Without it the job fails and says so; control isn't
   deployed until it's set and the job is re-run. The one set on
@@ -1057,7 +1101,9 @@ approval step.
 - **Rolling back:** since a newer release stays (above), re-running an
   older tag's job won't do it. Deploy the older tag's image instead, from
   `packaging/control/`:
-  `fly deploy --image registry.fly.io/illogical-control:vX.Y.Z`.
+  `fly deploy --image registry.fly.io/illogical-control:vX.Y.Z`. Only
+  tags that deployed the hub have an image: pick one `fly releases -a
+  illogical-control` lists.
 
 ### Releasing Arugula as a deploy (M221)
 
@@ -1084,7 +1130,9 @@ commit of `arugula-salad/arugula`, by its full id. Its box:
    workflow's `publish` job succeeded and the release is out. It reports
    the tag, the commits, `scripts/release`'s blob id, the release's page,
    the workflow's run and the jobs that failed (today `template` and `extension` fail on every
-   release; they don't fail the deploy).
+   release; they don't fail the deploy). The release's `control` job
+   deploys the hub only when the hub changed, as for any tag
+   ("Deploys" above).
 
 **There's no roll back.** A bad release is fixed by a new patch release,
 deployed the same way.
@@ -1602,7 +1650,12 @@ tell it, and the hub tries again every 30 seconds.
 
 **Deploys.** A release tag deploys the platform first (release.yml's
 `platform` job), then the hub (`control`, which waits for it but deploys
-whatever became of it). `scripts/ci-platform-deploy` builds the platform's
+whatever became of it), the hub only when something it's built from
+changed since the release it runs ("Deploys" above). A hub method the
+platform will call ships in the hub a release ahead, which is a change
+to the hub, so that release deploys it; a change to the contract between
+the two (`HubPort`, `PlatformPort`, the signed calls, `routes.toml`)
+always deploys the hub. `scripts/ci-platform-deploy` builds the platform's
 image on GitHub's runner and checks every machine runs the tag with its
 health check passing. Then it builds the nightly dump's image around the
 same binary and moves the dump machine onto it ("The nightly dump"). It needs the repository secret
