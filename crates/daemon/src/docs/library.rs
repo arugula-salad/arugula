@@ -442,7 +442,9 @@ mod tests {
                 if p.is_dir() {
                     walk(root, &p, out);
                 } else {
-                    out.insert(p.strip_prefix(root).unwrap().display().to_string(), std::fs::read(&p).unwrap());
+                    // Keyed by `/` paths, whatever the platform's separator.
+                    let key = p.strip_prefix(root).unwrap().display().to_string().replace('\\', "/");
+                    out.insert(key, std::fs::read(&p).unwrap());
                 }
             }
         }
