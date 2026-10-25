@@ -88,7 +88,7 @@ test("a pinned PR looks as GitHub's does, read through Arugula control", async (
   await expect(el.locator('[data-review="approved"]')).toContainText("dan-gh");
   await expect(el.locator("[data-forge-timeline] .forge-event")).toHaveCount(3);
   await expect(el.locator("[data-forge-timeline]")).toContainText("dan-gh commented");
-  await expect(el.locator("[data-forge-pin-body]")).toContainText("stay on GitHub");
+  await expect(el.locator("[data-forge-pin-body]")).toContainText("No description to show here");
   const foot = el.locator("[data-forge-pin-read]");
   await expect(foot).toContainText("read through Arugula control");
   await expect(foot).toContainText("live (GitHub App)");

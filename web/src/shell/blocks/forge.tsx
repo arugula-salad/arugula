@@ -168,7 +168,7 @@ function Cols({ s, body, side }: { s: ForgeState; body: string; side: ComponentC
   const sides = side.filter(Boolean);
   const none = s.pin ? (
     <p class="dim" data-forge-pin-body>
-      The description and comments stay on GitHub: Arugula control keeps who did what, not what they wrote.
+      No description to show here: Arugula control hands over the text when it can, and this time it didn't have any.
     </p>
   ) : (
     <p class="dim">No description.</p>
