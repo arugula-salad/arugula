@@ -1,0 +1,130 @@
+//! #1486: `arugula hook` on `SessionStart` adds the Docs context where the
+//! daemon has `docs` on, in a pane, and nothing otherwise; and never keeps a
+//! session waiting for a daemon that doesn't answer. Against a fake daemon
+//! on a Unix socket that plays `flags.list`.
+
+#![cfg(unix)]
+
+use std::{
+    io::{BufRead, BufReader, Read, Write},
+    os::unix::net::UnixListener,
+    path::PathBuf,
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
+
+use arugula_proto::flags::DOCS_STEERING;
+use serde_json::{Value, json};
+
+/// How the fake daemon treats a request.
+#[derive(Clone, Copy)]
+enum Daemon {
+    /// Answers `flags.list` with `docs` on or off.
+    Docs(bool),
+    /// Accepts the connection and never answers.
+    Silent,
+    /// Nothing listens on the socket.
+    Gone,
+}
+
+fn flags(docs: bool) -> Value {
+    json!([
+        { "name": "chat", "title": "Chat", "about": "", "on": false, "default": false },
+        { "name": "docs", "title": "Docs", "about": "", "on": docs, "default": false },
+    ])
+}
+
+/// What `arugula hook` printed and how long it took, for `event` (as Claude
+/// Code sends it), in a pane or not, against `daemon`.
+fn hook(name: &str, daemon: Daemon, pane: Option<&str>, event: Value) -> (String, Duration, i32) {
+    let dir: PathBuf = std::env::temp_dir().join(format!("arugula-cli-hook-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let sock = dir.join("sock");
+    if !matches!(daemon, Daemon::Gone) {
+        let listener = UnixListener::bind(&sock).unwrap();
+        thread::spawn(move || {
+            for s in listener.incoming() {
+                let Ok(mut s) = s else { break };
+                thread::spawn(move || {
+                    let mut r = BufReader::new(s.try_clone().unwrap());
+                    loop {
+                        let mut l = String::new();
+                        if r.read_line(&mut l).unwrap_or(0) == 0 || l.trim().is_empty() {
+                            break;
+                        }
+                    }
+                    match daemon {
+                        Daemon::Docs(on) => {
+                            let out = flags(on).to_string();
+                            let _ = write!(
+                                s,
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{out}",
+                                out.len()
+                            );
+                        }
+                        _ => thread::sleep(Duration::from_secs(30)),
+                    }
+                });
+            }
+        });
+    }
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_arugula"));
+    cmd.arg("--socket").arg(&sock).arg("hook").env("ARUGULA_STATE_DIR", dir.join("state"));
+    for k in ["ARUGULA_PANE", "ARUGULA_SOCK", "CLAUDECODE", "AI_AGENT", "CLAUDE_PLUGIN_ROOT", "CLAUDE_CONFIG_DIR"] {
+        cmd.env_remove(k);
+    }
+    if let Some(p) = pane {
+        cmd.env("ARUGULA_PANE", p);
+    }
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let began = Instant::now();
+    let mut child = cmd.spawn().unwrap();
+    child.stdin.take().unwrap().write_all(event.to_string().as_bytes()).unwrap();
+    let mut out = String::new();
+    child.stdout.take().unwrap().read_to_string(&mut out).unwrap();
+    let status = child.wait().unwrap().code().unwrap_or(-1);
+    let took = began.elapsed();
+    let _ = std::fs::remove_dir_all(&dir);
+    (out, took, status)
+}
+
+fn start(source: &str) -> Value {
+    json!({ "hook_event_name": "SessionStart", "source": source, "session_id": "s" })
+}
+
+#[test]
+fn session_start_with_docs_on_adds_the_context_for_every_source() {
+    for source in ["startup", "resume", "clear", "compact"] {
+        let (out, _, code) = hook(&format!("on-{source}"), Daemon::Docs(true), Some("3"), start(source));
+        assert_eq!(code, 0);
+        let said: Value = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{source}: {e}: {out:?}"));
+        assert_eq!(
+            said,
+            json!({ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": DOCS_STEERING } }),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn session_start_prints_nothing_with_docs_off() {
+    let (out, _, code) = hook("off", Daemon::Docs(false), Some("3"), start("startup"));
+    assert_eq!((out.as_str(), code), ("", 0));
+}
+
+#[test]
+fn session_start_prints_nothing_outside_a_pane() {
+    let (out, _, code) = hook("nopane", Daemon::Docs(true), None, start("startup"));
+    assert_eq!((out.as_str(), code), ("", 0));
+}
+
+#[test]
+fn session_start_does_not_wait_for_a_daemon_that_does_not_answer() {
+    for (name, daemon) in [("silent", Daemon::Silent), ("gone", Daemon::Gone)] {
+        let (out, took, code) = hook(name, daemon, Some("3"), start("startup"));
+        assert_eq!((out.as_str(), code), ("", 0), "{name}");
+        assert!(took < Duration::from_millis(2500), "{name}: took {took:?}");
+    }
+}

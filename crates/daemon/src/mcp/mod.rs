@@ -313,16 +313,16 @@ answer), follow-ups (arugula inbox) and attention on cards; without them your qu
 `arugula hooks install` adds them: ask your person first (capabilities says whether yours are live). \
 Run each `arugula ...` command on its own, not in a pipeline or an `&&` chain, so the allow rules match it.";
 
-/// What the `docs` flag adds: the `doc` tool is listed only where it is on.
-const DOC_INSTRUCTIONS: &str = "doc to build a report, plan or write-up the user watches fill in beside your pane (when they want to show it to someone, ask with share: the user decides), ";
-
 /// The server's instructions: without the `docs` flag, they leave out the
-/// Doc. Chat isn't an agent's (#1095): nothing of it is here.
+/// Doc sentence (`flags::DOCS_STEERING`, which `arugula hook` also gives on
+/// `SessionStart`, #1486). Chat isn't an agent's (#1095): nothing of it is
+/// here.
 pub(crate) fn instructions(on: On) -> String {
-    let at = INSTRUCTIONS_BASE.find("history for what").expect("the instructions name history");
+    let at = INSTRUCTIONS_BASE.find("Claude Code hooks put").expect("the instructions name the hooks");
     let mut out = INSTRUCTIONS_BASE[..at].to_owned();
     if on.has(flags::DOCS) {
-        out.push_str(DOC_INSTRUCTIONS);
+        out.push_str(flags::DOCS_STEERING);
+        out.push(' ');
     }
     out.push_str(&INSTRUCTIONS_BASE[at..]);
     out

@@ -1,0 +1,5 @@
+I've been looking at why our CI takes 25 minutes. Write up what you'd change in the build pipeline as a short report for my team: the problem, three proposals with their tradeoffs, and a recommendation.
+Draft a plan for migrating our service config from YAML to TOML: steps, risks, a rollout order and a rollback. It's something I can send to Jake so he can sign off.
+Write a one-page write-up of the tradeoffs between SQLite and Postgres for a small internal tool, ending with a recommendation.
+Put together a post-mortem of an outage where the cache filled up and the API answered 500s for an hour: timeline, root cause, what we change. The whole engineering org will read it.
+Write a getting-started guide for the new hires joining my team on Monday: setting up a dev machine, the first week, who to ask for what.

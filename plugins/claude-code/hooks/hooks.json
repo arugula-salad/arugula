@@ -8,6 +8,7 @@
     ],
     "SessionStart": [
       { "hooks": [{ "type": "command", "command": "arugula inbox", "asyncRewake": true, "timeout": 86400 }] },
+      { "hooks": [{ "type": "command", "command": "arugula hook" }] },
       { "hooks": [{ "type": "command", "shell": "bash", "timeout": 10, "command": "command -v arugula >/dev/null 2>&1 || echo '{\"systemMessage\": \"Arugula plugin: the arugula CLI is not on PATH, so its MCP tools and hooks do nothing here. Install Arugula (https://arugula.io) or disable the plugin in /plugin.\"}'" }] }
     ],
     "PreToolUse": [

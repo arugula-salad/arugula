@@ -21,7 +21,14 @@
 //! turn, so waiting there would hold `claude -p` for the hook's 24 hours
 //! (#124).
 //!
-//! Outside an Arugula pane both do nothing.
+//! On `SessionStart` (startup, resume, `/clear` and compaction alike),
+//! `arugula hook` adds context instead: where the daemon has `docs` on, it
+//! prints `flags::DOCS_STEERING` as `additionalContext`, so Claude Code
+//! writes a report as a Doc, not an Artifact (#1486). It asks the daemon
+//! for at most [`FLAGS_WAIT`], because Claude Code waits for SessionStart
+//! hooks before a headless session's first turn.
+//!
+//! Outside an Arugula pane all of them do nothing.
 
 use std::{
     io::{Read, Write},
@@ -31,15 +38,20 @@ use std::{
 use serde_json::Value;
 
 use arugula_proto::{
-    api::{InboxAnswer, PermitAnswer},
-    op::ops::{PaneInbox, PanePermit},
+    api::{Empty, InboxAnswer, PermitAnswer},
+    flags::{self, DOCS_STEERING},
+    op::ops::{FlagsList, PaneInbox, PanePermit},
 };
 
-use crate::http::{Target, request, request_op, send_op};
+use crate::http::{Target, call, request, request_op, send_op};
 
 /// How long to keep asking a daemon that doesn't answer before leaving the
 /// permission to the terminal.
 const GIVE_UP: Duration = Duration::from_secs(60);
+
+/// The longest `SessionStart` waits for the daemon to say whether `docs` is
+/// on. A session must never wait on Arugula.
+const FLAGS_WAIT: Duration = Duration::from_secs(2);
 
 /// The pane and the hook's input, unless this is outside a pane, or the
 /// plugin's copy (`command` is the hook's) of one settings.json has too
@@ -56,9 +68,18 @@ fn stdin_hook(command: &str) -> Option<(u32, Value)> {
 }
 
 /// `arugula hook`: always exits 0; prints a decision only for a
-/// permission someone answered on a card.
+/// permission someone answered on a card, and the Doc context on
+/// `SessionStart` where `docs` is on.
 pub fn run(sock: Target) -> i32 {
     let Some((pane, hook)) = stdin_hook("arugula hook") else { return 0 };
+    if hook["hook_event_name"] == "SessionStart" {
+        if let Some(out) = session_start(&sock, FLAGS_WAIT) {
+            let mut stdout = std::io::stdout().lock();
+            let _ = writeln!(stdout, "{out}");
+            let _ = stdout.flush();
+        }
+        return 0;
+    }
     if hook["hook_event_name"] != "PermissionRequest" {
         let _ = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
         return 0;
@@ -88,6 +109,32 @@ pub fn run(sock: Target) -> i32 {
             return 0;
         }
         std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+/// What `SessionStart` prints, if the daemon says within `wait` that `docs`
+/// is on: Claude Code's `additionalContext`. Nothing when it is off, when
+/// the daemon doesn't answer in time, or when it answers something else.
+fn session_start(sock: &Target, wait: Duration) -> Option<Value> {
+    docs_on(sock, wait).then(|| {
+        serde_json::json!({
+            "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": DOCS_STEERING }
+        })
+    })
+}
+
+/// Whether the daemon has `docs` on, asked on a thread of its own so that a
+/// daemon that accepts and never answers still costs only `wait` (the thread
+/// ends with the process).
+fn docs_on(sock: &Target, wait: Duration) -> bool {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let sock = sock.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(call::<FlagsList>(&sock, &(), &Empty {}));
+    });
+    match rx.recv_timeout(wait) {
+        Ok(Ok(all)) => all.iter().any(|f| f.name == flags::DOCS && f.on),
+        _ => false,
     }
 }
 
