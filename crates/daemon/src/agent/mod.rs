@@ -162,6 +162,10 @@ pub struct Config {
     /// work is to be delivered (a pull request, say).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brief: Option<String>,
+    /// The git worktree this block owns (AR-2, #1476): closing the block
+    /// removes it only if nothing would be lost.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<crate::worktree::Owned>,
 }
 
 /// Where an opened conversation came from (M33). Until it's continued the

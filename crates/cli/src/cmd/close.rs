@@ -6,7 +6,10 @@ use crate::{
     hosts,
     util::{Pane, REMOTE},
 };
-use arugula_proto::{api::Empty, op::ops::ClosePane};
+use arugula_proto::{
+    api::{Empty, WorktreeFate},
+    op::ops::ClosePane,
+};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -33,7 +36,17 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 eprintln!("arugula: %{pane} on {host} stays open there: {e:#}");
             }
         }
-        call::<ClosePane>(&sock, &p.0, &Empty {})?;
+        let closed = call::<ClosePane>(&sock, &p.0, &Empty {})?;
+        // The block's worktree (AR-2): removed, or kept and why.
+        if let Some(w) = closed.worktree {
+            let why = w.why.map(|w| format!(": {w}")).unwrap_or_default();
+            eprintln!(
+                "arugula: {} worktree {} ({}){why}",
+                if w.outcome == WorktreeFate::Kept { "kept" } else { "removed" },
+                w.path,
+                w.branch
+            );
+        }
     }
     Ok(0)
 }

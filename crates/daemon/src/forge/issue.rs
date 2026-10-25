@@ -37,9 +37,6 @@
 //! with `block`).
 
 use super::*;
-// The worktree script is shared with `arugula issue agent` on a native
-// issue (M199).
-use arugula_core::worktree::SCRIPT as WORKTREE;
 use arugula_proto::{PaneId, api::HistoryKind, forge::Issue};
 
 /// The card's id for a new issue's draft.
@@ -386,13 +383,8 @@ impl ForgeBlock {
         };
         let branch = model::branch_for(number, &item.title);
         let runner = Runner::user(&self.ctx).await?;
-        let (out, _) = runner.sh(WORKTREE, &[dir.clone(), branch.clone(), base, repo.clone()]).await?;
-        let out = String::from_utf8_lossy(&out);
-        let last = out.lines().last().unwrap_or_default();
-        let Some((wt, base)) = last.strip_prefix("ok ").and_then(|r| r.rsplit_once(' ')) else {
-            return Err(last.strip_prefix("err ").unwrap_or(last).to_owned());
-        };
-        let (wt, base) = (wt.to_owned(), base.to_owned());
+        let made = crate::worktree::make(&runner, &dir, &branch, &base, &repo, false).await?;
+        let (wt, base) = (made.path, made.base);
         self.config.lock().unwrap().dir.get_or_insert(dir);
         // The issue and its agent in a tab of their own.
         if let Err(e) = self.ctx.own_tab(Some(format!("#{number}"))).await {
@@ -402,7 +394,11 @@ impl ForgeBlock {
         // of time (no "always allow" rules, no permission mode, not the
         // owner's own Claude Code settings), so what it wants to do comes to
         // the owner first.
-        let mut config = json!({ "agent": kind, "cwd": wt, "allow": [], "user_settings": false,
+        // The worktree is the block's too (AR-2): closing the block removes
+        // it only if nothing would be lost.
+        let owned =
+            crate::worktree::Owned { repo: made.repo, path: wt.clone(), branch: branch.clone(), base: base.clone() };
+        let mut config = json!({ "agent": kind, "cwd": wt, "allow": [], "user_settings": false, "worktree": owned,
             "prompt": prompt(&repo, &item, &branch, &base, args["prompt_extra"].as_str()) });
         for k in ["command", "model"] {
             if !args[k].is_null() {
@@ -741,6 +737,8 @@ fn new_ask(n: &NewIssue, repo: &str) -> Ask {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use arugula_core::worktree::SCRIPT as WORKTREE;
 
     /// A git repository with a commit on `main`, its own `origin`,
     /// and a worktree an illogical daemon made in `.illogical/worktrees/NAME`.
@@ -771,7 +769,7 @@ mod tests {
         let dir = repo_with_old_worktree("issue", "i7-thing", false);
         let d = dir.display().to_string();
         let out = std::process::Command::new("sh")
-            .args(["-c", WORKTREE, "sh", &d, "i7-thing", "main", "o/r"])
+            .args(["-c", WORKTREE, "sh", &d, "i7-thing", "main", "o/r", ""])
             .output()
             .unwrap();
         let out = String::from_utf8_lossy(&out.stdout);

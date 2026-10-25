@@ -414,6 +414,18 @@ pub struct StartAgentArgs {
     /// A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.
     #[serde(default)]
     pub chat: bool,
+    /// Work in a git worktree of its own that Arugula makes on a new branch, in the repo that holds cwd (`.claude/worktrees/BRANCH` where the repo keeps its worktrees, else `.arugula/worktrees/BRANCH`). Refused if the branch or worktree exists. The agent runs there; closing the block removes the worktree and branch only when nothing is uncommitted or unpushed and the branch is merged into its base, else keeps them and says why (close never forces).
+    #[serde(default)]
+    pub worktree: Option<WorktreeArgs>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct WorktreeArgs {
+    /// The new branch's name.
+    pub branch: String,
+    /// What to branch from, on origin. Default: the repo's default branch.
+    #[serde(default)]
+    pub base: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1308,7 +1320,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "start_agent",
             title: "Start an agent",
-            description: "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user.",
+            description: "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
             args: Args::One(schema_for_type::<StartAgentArgs>),
             read_only: false,
             destructive: false,
@@ -3937,7 +3949,15 @@ impl Call<'_> {
             AgentKind::Codex => "codex",
             AgentKind::Acp => "acp",
         };
+        let owned = match &a.worktree {
+            Some(w) => Some(self.make_worktree(&a, w, host.is_some()).await?),
+            None => None,
+        };
         let mut config = json!({ "agent": agent, "prompt": a.prompt });
+        if let Some(o) = &owned {
+            config["cwd"] = json!(o.path);
+            config["worktree"] = json!(o);
+        }
         if let Some(c) = &a.command {
             config["command"] = json!(c);
         }
@@ -3950,7 +3970,7 @@ impl Call<'_> {
         if let Some(t) = a.title.as_ref().filter(|t| !t.trim().is_empty()) {
             config["title"] = json!(t.trim());
         }
-        if let Some(c) = &a.cwd {
+        if let Some(c) = a.cwd.as_ref().filter(|_| a.worktree.is_none()) {
             config["cwd"] = json!(c);
         }
         // #163: a lead pre-authorizing what it hands out.
@@ -3984,13 +4004,53 @@ impl Call<'_> {
             host: if a.vm { None } else { host },
             local: false,
         };
-        let block = self.open(req).await?;
+        let block = match self.open(req).await {
+            Ok(b) => b,
+            Err(e) => {
+                // Nothing runs there: take back the worktree this made, by
+                // close's own rule (it's clean and at its base).
+                if let (Some(w), Ok(runner)) = (&owned, crate::worktree::local(self.app).await) {
+                    crate::worktree::settle(&runner, w).await;
+                }
+                return Err(e);
+            }
+        };
+        let tail =
+            owned.as_ref().map(|w| format!(", in worktree {} (branch {})", w.path, w.branch)).unwrap_or_default();
         done(
             format!(
-                "Started an agent in %{block}; wait on it (until needs_input or idle), then read_output for its transcript"
+                "Started an agent in %{block}{tail}; wait on it (until needs_input or idle), then read_output for its transcript"
             ),
             results::BlockOnly { block },
         )
+    }
+
+    /// `start_agent {worktree}`: the new branch's worktree, in the repo that
+    /// holds cwd (else the caller's pane's directory). Local only.
+    async fn make_worktree(
+        &self,
+        a: &StartAgentArgs,
+        w: &WorktreeArgs,
+        remote: bool,
+    ) -> Result<crate::worktree::Owned, String> {
+        if a.vm || remote || self.on_machine().await? {
+            return Err("worktree is for an agent on this machine: not a VM or another host's".into());
+        }
+        let branch = w.branch.trim();
+        if branch.is_empty() {
+            return Err("worktree needs a branch name".into());
+        }
+        let dir = match (&a.cwd, self.own_pane()) {
+            (Some(c), _) => c.clone(),
+            (None, Some(p)) => {
+                self.readable(p).await?.info.cwd.ok_or("worktree needs cwd: a directory inside a git repo")?
+            }
+            (None, None) => return Err("worktree needs cwd: a directory inside a git repo".into()),
+        };
+        let runner = crate::worktree::local(self.app).await?;
+        let base = w.base.as_deref().map(str::trim).unwrap_or_default();
+        let made = crate::worktree::make(&runner, &dir, branch, base, "", true).await?;
+        Ok(crate::worktree::Owned { repo: made.repo, path: made.path, branch: branch.to_owned(), base: made.base })
     }
 
     /// `start_agent {chat: true}`: a chat block, Claude Code with no tools.
@@ -4009,6 +4069,7 @@ impl Call<'_> {
             (a.permission_mode.is_some(), "permission_mode"),
             (a.user_settings, "user_settings"),
             (a.vm, "vm"),
+            (a.worktree.is_some(), "worktree"),
         ];
         if let Some((_, k)) = agent_only.iter().find(|(set, _)| *set) {
             return Err(format!("{k} is an agent's: a chat is Claude with no tools, in a folder of its own"));

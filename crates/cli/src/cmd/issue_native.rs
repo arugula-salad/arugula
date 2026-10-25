@@ -1025,7 +1025,7 @@ pub fn agent(
     let dir = crate::util::absolute(dir.as_deref().unwrap_or("."))?;
     let branch = branch_for(issue.number, &issue.title);
     let out = std::process::Command::new("sh")
-        .args(["-c", arugula_core::worktree::SCRIPT, "sh", &dir, &branch, "", ""])
+        .args(["-c", arugula_core::worktree::SCRIPT, "sh", &dir, &branch, "", "", ""])
         .output()
         .context("running sh for the worktree")?;
     let out = String::from_utf8_lossy(&out.stdout);

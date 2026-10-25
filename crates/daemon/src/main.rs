@@ -51,6 +51,7 @@ mod ide;
 mod install;
 mod run_logs;
 mod work;
+mod worktree;
 use arugula_mux::inventory;
 mod invite;
 use arugula_mux::keys;

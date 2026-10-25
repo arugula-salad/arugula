@@ -1051,7 +1051,7 @@
         "readOnlyHint": false,
         "title": "Close a pane"
       },
-      "description": "Close a pane or block, ending what runs in it.",
+      "description": "Close a pane or block, ending what runs in it. A block that owns a git worktree (start_agent with worktree, or an agent on an issue) has it removed, with its local branch, only if nothing is uncommitted or unpushed and the branch is merged into its base (or its squash-merged PR's head is exactly HEAD, which gh says); otherwise worktree says kept and why. Never forced.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -1086,6 +1086,50 @@
       },
       "name": "close",
       "outputSchema": {
+        "$defs": {
+          "WorktreeFate": {
+            "oneOf": [
+              {
+                "const": "removed",
+                "description": "The worktree and its local branch are gone.",
+                "type": "string"
+              },
+              {
+                "const": "kept",
+                "description": "Both stay; `why` says what stopped it.",
+                "type": "string"
+              }
+            ]
+          },
+          "WorktreeOutcome": {
+            "description": "What closing a block did to its worktree: removed, or kept with the\nreason. Arugula never removes one with uncommitted or unmerged work.",
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "outcome": {
+                "$ref": "#/$defs/WorktreeFate"
+              },
+              "path": {
+                "description": "The worktree, absolute.",
+                "type": "string"
+              },
+              "why": {
+                "description": "Why it was kept (or a note on removing it).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "branch",
+              "outcome"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
@@ -1094,6 +1138,16 @@
           },
           "summary": {
             "type": "string"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WorktreeOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1392,7 +1446,7 @@
         "readOnlyHint": false,
         "title": "Start an agent"
       },
-      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user.",
+      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
       "inputSchema": {
         "$defs": {
           "AgentKind": {
@@ -1427,6 +1481,26 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "WorktreeArgs": {
+            "properties": {
+              "base": {
+                "default": null,
+                "description": "What to branch from, on origin. Default: the repo's default branch.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "branch": {
+                "description": "The new branch's name.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "branch"
+            ],
+            "type": "object"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1518,6 +1592,17 @@
             "default": false,
             "description": "For claude: the user's Claude Code settings (allow and deny lists,\ndefault mode, CLAUDE.md), without their hooks.",
             "type": "boolean"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WorktreeArgs"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Work in a git worktree of its own that Arugula makes on a new branch, in the repo that holds cwd (`.claude/worktrees/BRANCH` where the repo keeps its worktrees, else `.arugula/worktrees/BRANCH`). Refused if the branch or worktree exists. The agent runs there; closing the block removes the worktree and branch only when nothing is uncommitted or unpushed and the branch is merged into its base, else keeps them and says why (close never forces)."
           }
         },
         "required": [
@@ -4677,7 +4762,7 @@
         "readOnlyHint": false,
         "title": "Close a pane"
       },
-      "description": "Close a pane or block, ending what runs in it.",
+      "description": "Close a pane or block, ending what runs in it. A block that owns a git worktree (start_agent with worktree, or an agent on an issue) has it removed, with its local branch, only if nothing is uncommitted or unpushed and the branch is merged into its base (or its squash-merged PR's head is exactly HEAD, which gh says); otherwise worktree says kept and why. Never forced.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -4712,6 +4797,50 @@
       },
       "name": "close",
       "outputSchema": {
+        "$defs": {
+          "WorktreeFate": {
+            "oneOf": [
+              {
+                "const": "removed",
+                "description": "The worktree and its local branch are gone.",
+                "type": "string"
+              },
+              {
+                "const": "kept",
+                "description": "Both stay; `why` says what stopped it.",
+                "type": "string"
+              }
+            ]
+          },
+          "WorktreeOutcome": {
+            "description": "What closing a block did to its worktree: removed, or kept with the\nreason. Arugula never removes one with uncommitted or unmerged work.",
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "outcome": {
+                "$ref": "#/$defs/WorktreeFate"
+              },
+              "path": {
+                "description": "The worktree, absolute.",
+                "type": "string"
+              },
+              "why": {
+                "description": "Why it was kept (or a note on removing it).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "branch",
+              "outcome"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
@@ -4720,6 +4849,16 @@
           },
           "summary": {
             "type": "string"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WorktreeOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5170,7 +5309,7 @@
         "readOnlyHint": false,
         "title": "Start an agent"
       },
-      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user.",
+      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
       "inputSchema": {
         "$defs": {
           "AgentKind": {
@@ -5205,6 +5344,26 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "WorktreeArgs": {
+            "properties": {
+              "base": {
+                "default": null,
+                "description": "What to branch from, on origin. Default: the repo's default branch.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "branch": {
+                "description": "The new branch's name.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "branch"
+            ],
+            "type": "object"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5309,6 +5468,17 @@
             "default": false,
             "description": "On a new throwaway VM of its own.",
             "type": "boolean"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WorktreeArgs"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Work in a git worktree of its own that Arugula makes on a new branch, in the repo that holds cwd (`.claude/worktrees/BRANCH` where the repo keeps its worktrees, else `.arugula/worktrees/BRANCH`). Refused if the branch or worktree exists. The agent runs there; closing the block removes the worktree and branch only when nothing is uncommitted or unpushed and the branch is merged into its base, else keeps them and says why (close never forces)."
           }
         },
         "required": [
@@ -8352,7 +8522,7 @@
         "readOnlyHint": false,
         "title": "Close a pane"
       },
-      "description": "Close a pane or block, ending what runs in it.",
+      "description": "Close a pane or block, ending what runs in it. A block that owns a git worktree (start_agent with worktree, or an agent on an issue) has it removed, with its local branch, only if nothing is uncommitted or unpushed and the branch is merged into its base (or its squash-merged PR's head is exactly HEAD, which gh says); otherwise worktree says kept and why. Never forced.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -8387,6 +8557,50 @@
       },
       "name": "close",
       "outputSchema": {
+        "$defs": {
+          "WorktreeFate": {
+            "oneOf": [
+              {
+                "const": "removed",
+                "description": "The worktree and its local branch are gone.",
+                "type": "string"
+              },
+              {
+                "const": "kept",
+                "description": "Both stay; `why` says what stopped it.",
+                "type": "string"
+              }
+            ]
+          },
+          "WorktreeOutcome": {
+            "description": "What closing a block did to its worktree: removed, or kept with the\nreason. Arugula never removes one with uncommitted or unmerged work.",
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "outcome": {
+                "$ref": "#/$defs/WorktreeFate"
+              },
+              "path": {
+                "description": "The worktree, absolute.",
+                "type": "string"
+              },
+              "why": {
+                "description": "Why it was kept (or a note on removing it).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "branch",
+              "outcome"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
@@ -8395,6 +8609,16 @@
           },
           "summary": {
             "type": "string"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WorktreeOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -8693,7 +8917,7 @@
         "readOnlyHint": false,
         "title": "Start an agent"
       },
-      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user.",
+      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
       "inputSchema": {
         "$defs": {
           "AgentKind": {
@@ -8728,6 +8952,26 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "WorktreeArgs": {
+            "properties": {
+              "base": {
+                "default": null,
+                "description": "What to branch from, on origin. Default: the repo's default branch.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "branch": {
+                "description": "The new branch's name.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "branch"
+            ],
+            "type": "object"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -8819,6 +9063,17 @@
             "default": false,
             "description": "For claude: the user's Claude Code settings (allow and deny lists,\ndefault mode, CLAUDE.md), without their hooks.",
             "type": "boolean"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WorktreeArgs"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Work in a git worktree of its own that Arugula makes on a new branch, in the repo that holds cwd (`.claude/worktrees/BRANCH` where the repo keeps its worktrees, else `.arugula/worktrees/BRANCH`). Refused if the branch or worktree exists. The agent runs there; closing the block removes the worktree and branch only when nothing is uncommitted or unpushed and the branch is merged into its base, else keeps them and says why (close never forces)."
           }
         },
         "required": [
@@ -11978,7 +12233,7 @@
         "readOnlyHint": false,
         "title": "Close a pane"
       },
-      "description": "Close a pane or block, ending what runs in it.",
+      "description": "Close a pane or block, ending what runs in it. A block that owns a git worktree (start_agent with worktree, or an agent on an issue) has it removed, with its local branch, only if nothing is uncommitted or unpushed and the branch is merged into its base (or its squash-merged PR's head is exactly HEAD, which gh says); otherwise worktree says kept and why. Never forced.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -12013,6 +12268,50 @@
       },
       "name": "close",
       "outputSchema": {
+        "$defs": {
+          "WorktreeFate": {
+            "oneOf": [
+              {
+                "const": "removed",
+                "description": "The worktree and its local branch are gone.",
+                "type": "string"
+              },
+              {
+                "const": "kept",
+                "description": "Both stay; `why` says what stopped it.",
+                "type": "string"
+              }
+            ]
+          },
+          "WorktreeOutcome": {
+            "description": "What closing a block did to its worktree: removed, or kept with the\nreason. Arugula never removes one with uncommitted or unmerged work.",
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "outcome": {
+                "$ref": "#/$defs/WorktreeFate"
+              },
+              "path": {
+                "description": "The worktree, absolute.",
+                "type": "string"
+              },
+              "why": {
+                "description": "Why it was kept (or a note on removing it).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "branch",
+              "outcome"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
@@ -12021,6 +12320,16 @@
           },
           "summary": {
             "type": "string"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WorktreeOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -12471,7 +12780,7 @@
         "readOnlyHint": false,
         "title": "Start an agent"
       },
-      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user.",
+      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
       "inputSchema": {
         "$defs": {
           "AgentKind": {
@@ -12506,6 +12815,26 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "WorktreeArgs": {
+            "properties": {
+              "base": {
+                "default": null,
+                "description": "What to branch from, on origin. Default: the repo's default branch.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "branch": {
+                "description": "The new branch's name.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "branch"
+            ],
+            "type": "object"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -12610,6 +12939,17 @@
             "default": false,
             "description": "On a new throwaway VM of its own.",
             "type": "boolean"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WorktreeArgs"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Work in a git worktree of its own that Arugula makes on a new branch, in the repo that holds cwd (`.claude/worktrees/BRANCH` where the repo keeps its worktrees, else `.arugula/worktrees/BRANCH`). Refused if the branch or worktree exists. The agent runs there; closing the block removes the worktree and branch only when nothing is uncommitted or unpushed and the branch is merged into its base, else keeps them and says why (close never forces)."
           }
         },
         "required": [
