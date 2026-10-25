@@ -1060,6 +1060,7 @@ impl Db {
                 state: s.seen_as().as_str().into(),
                 n: s.daemon_n,
                 prompts: prompts.iter().map(Prompt::wire).collect(),
+                actions: vec![],
             });
         }
         Ok(out)
