@@ -32,6 +32,7 @@ pub mod preview;
 pub mod project_grant;
 pub mod push;
 pub mod run;
+pub mod session;
 pub mod team;
 
 #[cfg(test)]

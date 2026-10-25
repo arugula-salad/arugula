@@ -245,7 +245,7 @@ async fn dial(up: WebSocketUpgrade) -> Response {
 
 async fn work(Axum(f): Axum<Fake>) -> Json<Work> {
     *f.pulls.lock().unwrap() += 1;
-    Json(Work { items: f.items.lock().unwrap().clone(), revokes: f.revokes.lock().unwrap().clone() })
+    Json(Work { items: f.items.lock().unwrap().clone(), revokes: f.revokes.lock().unwrap().clone(), sessions: vec![] })
 }
 
 async fn report(Axum(f): Axum<Fake>, Json(r): Json<Report>) -> Response {

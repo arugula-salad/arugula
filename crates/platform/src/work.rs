@@ -257,7 +257,7 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
             deploy,
         });
     }
-    Ok(Work { items, revokes })
+    Ok(Work { items, revokes, sessions: vec![] })
 }
 
 fn refused(why: impl Into<String>) -> Reported {
