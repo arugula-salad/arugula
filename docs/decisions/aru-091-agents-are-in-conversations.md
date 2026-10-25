@@ -104,11 +104,17 @@ grants ("Grants, not impersonation").
 - **Mentions are read, not pushed.** An `@` naming a machine or its agents is
   stored as a mention that `read_thread` returns over MCP. Nothing wakes or
   dispatches an agent in this step.
+- **Amended for hosted boxes** (thread = session, Arugula #129): `@arugula`
+  dispatches an agent session on the project's hosted box, and that
+  session's status card is the one card kind a timeline shows ("A thread's
+  agent session runs on the project's hosted box"). Agents on personal
+  machines are still never woken by other people's mentions.
 
 What stays removed (M121, M125, #1095): the daemon keeps no thread store, and
 MCP's thread and issue tools call the platform, signed by the machine (the
 platform's `Machine` extractor). Conversations don't come back as they were:
-no links to panes, no leads, no events or cards in a timeline, and no
+no links to panes, no leads, no events or cards in a timeline (but a
+session's status card, above), and no
 `conv-grants.json`. Messages an agent posted before M121 still read as the
 text they were kept with.
 
