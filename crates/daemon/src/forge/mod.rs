@@ -374,6 +374,8 @@ struct Pinned {
     down_since: Option<std::time::Instant>,
     /// When to look again for an item the mirror didn't have.
     look_again: Option<std::time::Instant>,
+    /// What the last `/content` read left (see [`pin::read`]).
+    content: Option<pin::Kept>,
 }
 
 /// M170: what the block knows of the platform's drafts, on a linked repo.
@@ -1520,8 +1522,10 @@ impl ForgeBlock {
                 }
             }
         };
-        match pin::read(&id, kind).await {
-            Ok(r) => {
+        let kept = self.pinned.lock().unwrap().content.clone();
+        match pin::read(&id, kind, kept.as_ref()).await {
+            Ok((r, kept)) => {
+                self.pinned.lock().unwrap().content = Some(kept);
                 self.show_pinned(&link, id, &r).await;
                 true
             }

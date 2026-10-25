@@ -14,10 +14,17 @@
 //!   /api/forge/items/{id}`, `…/checks`, `…/events`), as this machine for
 //!   its owner, through M165's viewer check, mapped onto the reader's model
 //!   so the block's attention, text and drafts work as they do on GitHub's
-//!   answers. What the mirror keeps is metadata: no description, comments
-//!   only as events that one was made, reviews without their text, and no
-//!   PRs that refer to an issue. "You" is the owner's GitHub login as the
-//!   platform has it, without their teams.
+//!   answers. What the mirror keeps is metadata, so the text comes from
+//!   `GET …/content` (M166): the description, the comments, reviews' text
+//!   and review comments. It can cost the platform a GitHub call, so it's
+//!   read when the block first reads and again when the events show
+//!   something new (their count or newest id changed), and what it said
+//!   last is kept otherwise ([`Kept`]). When it can't be read (not found,
+//!   refused, unreachable, an older control without the route) the block
+//!   shows the metadata alone, as before, with no error in place of the
+//!   text, and asks again when something is new or after [`LOOK_AGAIN`].
+//!   There are still no PRs that refer to an issue. "You" is the owner's
+//!   GitHub login as the platform has it, without their teams.
 //! - **Falling back.** The platform says it isn't linked (or the item is
 //!   gone): the pin goes and the block reads GitHub again. The platform
 //!   can't be reached: what it said last stays, marked stale, for
@@ -29,11 +36,11 @@
 //! (as M170 leaves them) until sending is the platform's (M168), and *Diff*
 //! and *Checkout* still fetch with the person's git.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use arugula_control_wire::{
     forge_ops::{Answer, Call, ItemRef, ItemView, Op},
-    projects::{ForgeCheck, ForgeChecks, ForgeEvent, ForgeEvents, ForgeItem, ForgeItems},
+    projects::{ForgeCheck, ForgeChecks, ForgeContent, ForgeEvent, ForgeEvents, ForgeItem, ForgeItems},
 };
 use arugula_proto::forge::Rerun;
 use reqwest::Method;
@@ -56,6 +63,28 @@ pub struct Read {
     pub item: ForgeItem,
     pub checks: Vec<ForgeCheck>,
     pub events: Vec<ForgeEvent>,
+    /// The text, when the platform gave it (now, or kept from before).
+    pub content: Option<ForgeContent>,
+}
+
+/// What the last `/content` read left, so the next poll can tell whether
+/// to ask again.
+#[derive(Debug, Clone)]
+pub struct Kept {
+    id: String,
+    /// The events it was asked at: how many, and the newest one's id.
+    seen: (usize, Option<String>),
+    /// What it said; `None` if it couldn't.
+    content: Option<ForgeContent>,
+    at: Instant,
+}
+
+impl Kept {
+    /// Whether `/content` is asked again: it never was for this item, the
+    /// events changed, or it failed and [`LOOK_AGAIN`] has passed.
+    fn stale(&self, id: &str, seen: &(usize, Option<String>)) -> bool {
+        self.id != id || self.seen != *seen || (self.content.is_none() && self.at.elapsed() >= LOOK_AGAIN)
+    }
 }
 
 /// The mirror's id for `repo#number`, when it has it as a `kind`: `None`
@@ -93,8 +122,10 @@ pub fn good_id(id: &str) -> bool {
     id.strip_prefix("fi_").is_some_and(|h| !h.is_empty() && h.len() <= 64 && h.bytes().all(|c| c.is_ascii_hexdigit()))
 }
 
-/// The item, its checks (a PR's) and its events.
-pub async fn read(id: &str, kind: ItemKind) -> Result<Read, Failed> {
+/// The item, its checks (a PR's) and its events, and its text: asked of
+/// `/content` only when `kept` (what the last read left) doesn't cover the
+/// events now. A `/content` that fails is no failure of the read.
+pub async fn read(id: &str, kind: ItemKind, kept: Option<&Kept>) -> Result<(Read, Kept), Failed> {
     if !good_id(id) {
         return Err(Failed::NotLinked);
     }
@@ -115,7 +146,18 @@ pub async fn read(id: &str, kind: ItemKind) -> Result<Read, Failed> {
     };
     let events: ForgeEvents =
         serde_json::from_value(get(format!("/api/forge/items/{id}/events")).await?).map_err(|e| parse("events", e))?;
-    Ok(Read { item, checks, events: events.events })
+    let seen = (events.events.len(), events.events.last().map(|e| e.id.clone()));
+    let kept = match kept {
+        Some(k) if !k.stale(id, &seen) => k.clone(),
+        _ => {
+            let content = get(format!("/api/forge/items/{id}/content"))
+                .await
+                .ok()
+                .and_then(|v| serde_json::from_value::<ForgeContent>(v).ok());
+            Kept { id: id.to_owned(), seen, content, at: Instant::now() }
+        }
+    };
+    Ok((Read { item, checks, events: events.events, content: kept.content.clone() }, kept))
 }
 
 /// An open PR from `branch` in the repo, by the mirror (an issue an agent
@@ -155,12 +197,14 @@ fn state(s: &str) -> ItemState {
 /// mirror doesn't keep).
 fn item(r: &Read) -> Item {
     let i = &r.item;
-    let comments = r.events.iter().filter(|e| matches!(e.kind.as_str(), "comment" | "review_comment")).count();
+    let comments =
+        events(r).iter().filter(|e| matches!(e.kind, EventKind::Commented | EventKind::ReviewComment)).count();
     let mut item = Item {
         kind: if i.kind == "issue" { ItemKind::Issue } else { ItemKind::Pr },
         number: i.number,
         url: url(&i.repo, &i.kind, i.number),
         title: i.title.clone(),
+        body: r.content.as_ref().and_then(|c| c.body.as_ref()).map(|b| b.body.clone()).unwrap_or_default(),
         author: i.author.clone().unwrap_or_default(),
         state: state(&i.state),
         draft: i.draft,
@@ -200,10 +244,28 @@ fn review_state(s: Option<&str>) -> ReviewState {
     }
 }
 
+/// A review's text, when `/content` has it: the review of that author at
+/// that time (the mirror's event ids aren't GitHub's).
+fn review_text(r: &Read, e: &ForgeEvent) -> Option<String> {
+    let author = e.actor.as_deref()?;
+    r.content.as_ref()?.comments.iter().find_map(|t| {
+        (t.kind == "review"
+            && t.created_at == e.at
+            && t.author.as_deref().is_some_and(|a| a.eq_ignore_ascii_case(author))
+            && !t.body.is_empty())
+        .then(|| t.body.clone())
+    })
+}
+
 /// The mirror's events in the timeline's words: oldest first, as GitHub's.
+/// With `/content`, comments and review comments are its (with their
+/// text) instead of the mirror's rows that one was made.
 fn events(r: &Read) -> Vec<Event> {
-    r.events
+    let texts = r.content.is_some();
+    let mut out: Vec<Event> = r
+        .events
         .iter()
+        .filter(|e| !(texts && matches!(e.kind.as_str(), "comment" | "review_comment")))
         .map(|e| {
             let (kind, what) = match e.kind.as_str() {
                 "comment" => (EventKind::Commented, None),
@@ -226,12 +288,32 @@ fn events(r: &Read) -> Vec<Event> {
                 kind,
                 what,
                 target: None,
-                body: None,
+                body: if kind == EventKind::Reviewed { review_text(r, e) } else { None },
                 commits: None,
                 force: false,
             }
         })
-        .collect()
+        .collect();
+    for t in r.content.iter().flat_map(|c| &c.comments) {
+        let kind = match t.kind.as_str() {
+            "comment" => EventKind::Commented,
+            "review_comment" => EventKind::ReviewComment,
+            _ => continue,
+        };
+        out.push(Event {
+            id: format!("gh-{}", t.id),
+            at: t.created_at as i64,
+            actor: t.author.clone(),
+            kind,
+            what: None,
+            target: None,
+            body: Some(t.body.clone()),
+            commits: None,
+            force: false,
+        });
+    }
+    out.sort_by_key(|e| e.at);
+    out
 }
 
 /// A pinned PR, as the block shows it.
@@ -263,7 +345,7 @@ pub fn pr(r: &Read) -> Pr {
             commit: None,
             stale: false,
             at: Some(e.at as i64),
-            body: None,
+            body: review_text(r, e),
             url: None,
         })
         .collect();
@@ -293,6 +375,8 @@ pub fn rerun(pr: &Pr) -> Option<Rerun> {
 
 #[cfg(test)]
 mod tests {
+    use arugula_control_wire::projects::ForgeText;
+
     use super::*;
 
     fn read() -> Read {
@@ -357,6 +441,21 @@ mod tests {
                     at: 4,
                 },
             ],
+            content: None,
+        }
+    }
+
+    fn text(kind: &str, id: u64, author: &str, body: &str, at: u64) -> ForgeText {
+        ForgeText {
+            kind: kind.into(),
+            id,
+            author: Some(author.into()),
+            body: body.into(),
+            path: None,
+            line: None,
+            reply_to: None,
+            created_at: at,
+            updated_at: at,
         }
     }
 
@@ -388,7 +487,8 @@ mod tests {
             [EventKind::Other, EventKind::Reviewed, EventKind::Commented]
         );
         assert_eq!(p.events[0].what.as_deref(), Some("opened it"));
-        assert!(p.events.iter().all(|e| e.body.is_none()), "no text");
+        assert!(p.events.iter().all(|e| e.body.is_none()), "no text without /content");
+        assert!(p.item.body.is_empty() && p.reviews[0].body.is_none());
 
         let me = model::Me { login: "alice-gh".into(), teams: vec![] };
         let wants = model::attention(&p, &me, 0);
@@ -398,6 +498,58 @@ mod tests {
         assert!(matches!(&model::attention(&p, &bob, 0)[0], model::Want::Review { .. }));
         let r = rerun(&p).unwrap();
         assert_eq!((r.api, r.url.as_deref()), (false, Some("https://github.com/acme/app/runs/1")));
+    }
+
+    /// `/content` gives the description, the comments (in place of the
+    /// mirror's rows that one was made) and the reviews' text.
+    #[test]
+    fn the_text_as_the_model() {
+        let mut r = read();
+        r.content = Some(ForgeContent {
+            item: "fi_0a".into(),
+            from: "github".into(),
+            body: Some(text("body", 7, "alice-gh", "Fixes the thing.", 1)),
+            comments: vec![
+                text("review", 20, "Bob-GH", "needs a test", 3),
+                text("comment", 21, "bob-gh", "ping @alice-gh", 4),
+                text("review_comment", 22, "bob-gh", "nit", 5),
+            ],
+        });
+        let p = pr(&r);
+        assert_eq!(p.item.body, "Fixes the thing.");
+        assert_eq!(p.item.comments, 2);
+        assert_eq!(p.reviews[0].body.as_deref(), Some("needs a test"));
+        assert_eq!(
+            p.events.iter().map(|e| (e.kind, e.body.as_deref())).collect::<Vec<_>>(),
+            [
+                (EventKind::Other, None),
+                (EventKind::Reviewed, Some("needs a test")),
+                (EventKind::Commented, Some("ping @alice-gh")),
+                (EventKind::ReviewComment, Some("nit")),
+            ]
+        );
+        assert_eq!(p.events[2].id, "gh-21");
+        let me = model::Me { login: "alice-gh".into(), teams: vec![] };
+        assert!(model::attention(&p, &me, 0).iter().any(|w| matches!(w, model::Want::Mention { .. })));
+        let text = model::ItemText::text(&p, "acme/app");
+        assert!(text.contains("Fixes the thing.") && text.contains("ping @alice-gh"), "{text}");
+
+        let i = issue(&r);
+        assert_eq!((i.item.body.as_str(), i.item.comments), ("Fixes the thing.", 2));
+    }
+
+    #[test]
+    fn content_is_asked_again_when_something_is_new() {
+        let seen = (3, Some("3".to_owned()));
+        let mut k = Kept { id: "fi_0a".into(), seen: seen.clone(), content: None, at: Instant::now() };
+        assert!(!k.stale("fi_0a", &seen), "a failure waits");
+        assert!(k.stale("fi_0b", &seen), "another item");
+        assert!(k.stale("fi_0a", &(4, Some("4".into()))), "a new event");
+        assert!(k.stale("fi_0a", &(3, Some("9".into()))), "a different newest one");
+        k.at = Instant::now() - LOOK_AGAIN;
+        assert!(k.stale("fi_0a", &seen), "a failure is tried again in time");
+        k.content = Some(ForgeContent { item: "fi_0a".into(), from: "github".into(), body: None, comments: vec![] });
+        assert!(!k.stale("fi_0a", &seen), "what it said stays");
     }
 
     #[test]

@@ -9,7 +9,10 @@
 //! - a restart with the platform down reads GitHub (never a blank block),
 //!   and keeps the pin for when it's back;
 //! - unlinked on the platform, the block reads GitHub again and drops the
-//!   pin.
+//!   pin;
+//! - the item's text comes from `/content`, asked once and again only when
+//!   the events show something new, and a `/content` that fails leaves the
+//!   metadata view.
 //!
 //! The platform's side of these reads is `arugula-platform`'s
 //! `forge::viewer_tests` and `forge::ops_tests`.
@@ -34,6 +37,7 @@ use serde_json::{Value, json};
 
 const PROJECT: &str = "prj_00000000000000000000000000000001";
 const ITEM: &str = "fi_000000000000000000000000000000a1";
+const ISSUE: &str = "fi_000000000000000000000000000000a2";
 
 #[derive(Clone, Default)]
 struct Fake {
@@ -46,6 +50,12 @@ struct Fake {
     github: Arc<Mutex<HashMap<String, u32>>>,
     /// The platform's item reads.
     reads: Arc<Mutex<u32>>,
+    /// `/content` answers (else a 404, as an older control).
+    content: Arc<Mutex<bool>>,
+    /// How many times `/content` was asked.
+    content_reads: Arc<Mutex<u32>>,
+    /// A second comment has been made on the items.
+    later: Arc<Mutex<bool>>,
 }
 
 impl Fake {
@@ -60,6 +70,9 @@ impl Fake {
     }
     fn reads(&self) -> u32 {
         *self.reads.lock().unwrap()
+    }
+    fn content_reads(&self) -> u32 {
+        *self.content_reads.lock().unwrap()
     }
 }
 
@@ -84,6 +97,14 @@ fn item() -> Value {
             "head_sha": "abc123", "base_ref": "main", "created_at": 1, "updated_at": 2 })
 }
 
+/// The mirror's row for `acme/app#3`, an issue.
+fn issue_row() -> Value {
+    json!({ "id": ISSUE, "repo": "acme/app", "number": 3, "kind": "issue", "state": "open",
+            "title": "an issue from the mirror", "labels": [], "author": "jake-gh", "assignees": [],
+            "reviewers": [], "draft": false, "merge_state": null, "head_ref": null,
+            "head_sha": null, "base_ref": null, "created_at": 1, "updated_at": 2 })
+}
+
 async fn about(State(f): State<Fake>) -> Json<Value> {
     let url = f.url.lock().unwrap().clone();
     Json(json!({ "control": true, "daemon_auth": 2, "url": url }))
@@ -103,31 +124,66 @@ async fn ops(State(f): State<Fake>, Json(b): Json<Value>) -> Response {
     if !f.up() {
         return down();
     }
-    let ours = f.linked() && b["repo"] == "acme/app" && b["number"] == 1 && b["op"] == "pr.get";
-    if !ours {
+    let row = match (b["number"].as_u64(), b["op"].as_str()) {
+        (Some(1), Some("pr.get")) => item(),
+        (Some(3), Some("issue.get")) => issue_row(),
+        _ => return none(),
+    };
+    if !f.linked() || b["repo"] != "acme/app" {
         return none();
     }
-    Json(json!({ "op": b["op"], "v": 1, "result": { "item": item(), "events": [], "drafts": [] } })).into_response()
+    Json(json!({ "op": b["op"], "v": 1, "result": { "item": row, "events": [], "drafts": [] } })).into_response()
 }
 
-/// `/api/forge/items/{id}`, `…/checks` and `…/events`.
+/// `/api/forge/items/{id}`, `…/checks`, `…/events` and `…/content`.
 async fn items(State(f): State<Fake>, uri: Uri) -> Response {
     if !f.up() {
         return down();
     }
     let rest = uri.path().trim_start_matches("/api/forge/items/");
     let (id, what) = rest.split_once('/').unwrap_or((rest, ""));
-    if !f.linked() || id != ITEM {
+    if !f.linked() || (id != ITEM && id != ISSUE) {
         return none();
     }
+    let issue = id == ISSUE;
     *f.reads.lock().unwrap() += 1;
+    let later = *f.later.lock().unwrap();
     Json(match what {
+        "" if issue => issue_row(),
         "" => item(),
+        "content" => {
+            *f.content_reads.lock().unwrap() += 1;
+            if !*f.content.lock().unwrap() {
+                return none();
+            }
+            let text = |kind: &str, id: u64, body: &str, at: u64| {
+                json!({ "kind": kind, "id": id, "author": "dan-gh", "body": body, "path": null,
+                        "line": null, "reply_to": null, "created_at": at, "updated_at": at })
+            };
+            let mut comments = vec![text("comment", 11, "the first comment says hello", 4)];
+            if later {
+                comments.push(text("comment", 12, "a later comment says more", 5));
+            }
+            let (item, body) = if issue { (ISSUE, "the issue's description") } else { (ITEM, "the PR's description") };
+            return Json(json!({ "item": item, "from": "github", "body": text("body", 1, body, 1), "comments": comments }))
+                .into_response();
+        }
         "checks" => json!({ "item": ITEM, "head_sha": "abc123", "checks": [
             { "kind": "check_run", "name": "build", "status": "completed", "conclusion": "success", "url": null, "updated_at": 2 }] }),
-        "events" => json!({ "item": ITEM, "events": [
-            { "id": "1", "kind": "review", "actor": "dan-gh", "review_state": "approved", "at": 3 },
-            { "id": "2", "kind": "comment", "actor": "dan-gh", "review_state": null, "at": 4 }] }),
+        "events" => {
+            let ev = |id: &str, kind: &str, state: Option<&str>, at: u64| {
+                json!({ "id": id, "kind": kind, "actor": "dan-gh", "review_state": state, "at": at })
+            };
+            let mut events = if issue {
+                vec![ev("1", "comment", None, 4)]
+            } else {
+                vec![ev("1", "review", Some("approved"), 3), ev("2", "comment", None, 4)]
+            };
+            if later {
+                events.push(ev("9", "comment", None, 5));
+            }
+            json!({ "item": id, "events": events })
+        }
         _ => return none(),
     })
     .into_response()
@@ -307,4 +363,80 @@ fn a_linked_repos_block_is_a_pin_and_calls_no_github() {
     assert!(f.github("acme/app") > calls);
     d.stop();
     assert!(!layout(&d).contains(ITEM), "the pin is gone");
+}
+
+/// The block's text, as `read_forge` and `read_output` give it.
+fn text(d: &arugula_testkit::Daemon, block: u64) -> String {
+    d.raw("GET", &format!("/api/panes/{block}/tail"), None).1
+}
+
+#[test]
+fn a_pins_text_comes_from_content_and_its_failure_leaves_the_metadata() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    *f.up.lock().unwrap() = true;
+    *f.linked.lock().unwrap() = true;
+    *f.content.lock().unwrap() = true;
+    let url = serve(&rt, f.clone());
+    let mut d = arugulad!("forgepinscontent")
+        .no_wisp()
+        .no_tailscale()
+        .env("ARUGULA_FORGE_POLL_MS", "200,200")
+        .env("ARUGULA_GITHUB_API", format!("{url}/github"))
+        .args(["--direct-url", "http://127.0.0.1:0"])
+        .wait_secs(30)
+        .start();
+    d.stop();
+    let path = gh(&d.state.join("bin"));
+    d.set_env("PATH", path);
+    enroll(&d.state, &url);
+    d.start();
+    let open = |kind: &str, url: &str| {
+        d.post("/api/blocks", json!({ "type": "forge", "config": { kind: url }, "local": true }))["block"]
+            .as_u64()
+            .unwrap()
+    };
+
+    // An issue: its description and comment are in the state and the text.
+    let issue = open("issue", "https://github.com/acme/app/issues/3");
+    d.wait_for("the issue's text", || text(&d, issue).contains("the first comment says hello"));
+    let t = text(&d, issue);
+    assert!(t.contains("the issue's description") && t.contains("read through Arugula control"), "{t}");
+    let s = state(&d, issue);
+    assert_eq!(s["issue"]["item"]["body"], "the issue's description");
+    assert_eq!(s["issue"]["item"]["comments"], 1);
+    assert_eq!(f.github("acme/app"), 0, "no GitHub call for the text either");
+
+    // Polls go on, and /content is not asked again while nothing is new.
+    let (reads, asked) = (f.reads(), f.content_reads());
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(f.reads() > reads + 2, "the metadata is read on every poll");
+    assert_eq!(f.content_reads(), asked, "the text is kept");
+
+    // A new comment makes the events change: asked again.
+    *f.later.lock().unwrap() = true;
+    d.wait_for("the later comment", || text(&d, issue).contains("a later comment says more"));
+    assert_eq!(f.content_reads(), asked + 1);
+
+    // A PR: the same, with its description.
+    let pr = open("pr", "https://github.com/acme/app/pull/1");
+    d.wait_for("the PR's text", || text(&d, pr).contains("the PR's description"));
+    assert!(text(&d, pr).contains("the first comment says hello"));
+    assert_eq!(state(&d, pr)["pr"]["item"]["body"], "the PR's description");
+    d.stop();
+
+    // /content failing (an older control): the metadata view, no error in
+    // place of the body.
+    *f.content.lock().unwrap() = false;
+    *f.later.lock().unwrap() = false;
+    d.start();
+    d.wait_for("the mirror's item", || title(&d, pr) == "from the mirror");
+    let s = state(&d, pr);
+    assert!(s["error"].is_null() && s["pr"]["item"]["body"] == "", "{s}");
+    assert_eq!(s["pr"]["item"]["comments"], 1, "the comment as an event");
+    let t = text(&d, pr);
+    assert!(!t.contains("description") && !t.contains("hello"), "{t}");
+    assert!(t.contains("from the mirror") && t.contains("dan-gh"), "{t}");
+    assert!(f.content_reads() > asked + 1, "it tried");
+    d.stop();
 }
