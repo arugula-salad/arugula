@@ -26,6 +26,6 @@ test("a pasted picture is named for when it was pasted; a real name stays", () =
 
 test("a file over the limit, or empty, is refused before it goes up", () => {
   assert.equal(tooBig({ size: MAX_FILE_BYTES }), null);
-  assert.match(tooBig({ size: MAX_FILE_BYTES + 1 }), /at most 25 MB/);
+  assert.match(tooBig({ size: MAX_FILE_BYTES + 1 }), /at most 10 MB/);
   assert.match(tooBig({ size: 0 }), /empty/);
 });

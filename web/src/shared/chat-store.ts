@@ -607,7 +607,10 @@ export class ChatStore {
           },
         );
         if (!r) return this.emit();
-        this.loaded.set(id, { list: merge(had.list, r.messages), older: last === undefined ? r.more : had.older });
+        // Into the list as it is now: a pin, reaction or edit may have
+        // landed in it while this was asked.
+        const now = this.loaded.get(id) ?? had;
+        this.loaded.set(id, { list: merge(now.list, r.messages), older: last === undefined ? r.more : now.older });
         this.sent(id, r.messages);
         this.took(r.room);
         if (last === undefined || !r.more) return;

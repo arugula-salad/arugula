@@ -585,7 +585,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .menu {
   position: fixed;
-  z-index: 50;
+  /* Over the phone's full-screen chat and pane threads (80): a menu opened
+     there would sit under them. */
+  z-index: 90;
   min-width: 190px;
   padding: 4px;
   background: var(--raised);
@@ -979,7 +981,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .prompt-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  /* Over menus (90) and the phone's full-screen chat (80). */
+  z-index: 95;
   display: grid;
   place-items: start center;
   padding-top: 15vh;
@@ -11545,6 +11548,7 @@ html[data-workspace="new"] .thread-panel {
 
 .link-card-remove:hover {
   color: var(--fg);
+}
 
 /* Pictures and presence (#112, #110). The picture sits over the letters
    and fades in once it has loaded. */
