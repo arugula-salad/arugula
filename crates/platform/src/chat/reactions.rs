@@ -86,6 +86,7 @@ pub(super) async fn set(
     };
     if changed {
         app.chat.publish(&app.db, ChatLive::Reacted { room: room.id.clone(), seq }, None);
+        threads::announce(app, &m);
     }
     let m = message_in(app, room, seq)?;
     let mut shower = Shower::of(app, account, &[&m]).await?;

@@ -126,6 +126,8 @@ mod tests {
                 mentions: &[],
                 agent: None,
                 via: None,
+                parent: None,
+                also: false,
             },
         )
         .unwrap()

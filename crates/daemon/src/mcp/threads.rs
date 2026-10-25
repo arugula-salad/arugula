@@ -52,6 +52,11 @@ pub struct ReadThreadArgs {
     /// name).
     #[serde(default)]
     pub mentions_only: bool,
+    /// Read the replies in the thread of this message (its seq) instead of
+    /// the room: a message listed with a thread says how many replies it
+    /// has. The message itself comes back as `parent`.
+    #[serde(default)]
+    pub thread: Option<i64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -84,6 +89,16 @@ pub struct PostThreadArgs {
     /// Take your reaction back (or unpin) instead of adding it.
     #[serde(default)]
     pub remove: bool,
+    /// Reply in the thread of this message (its seq) instead of posting in
+    /// the room: when you were asked in a thread, answer there. A reply to
+    /// a reply goes to the same thread's first message, so give that one's
+    /// seq (a reply's `parent`).
+    #[serde(default)]
+    pub parent: Option<i64>,
+    /// With `parent`: also send the reply to the room, as Slack's "Also send
+    /// to #channel" does.
+    #[serde(default)]
+    pub also: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -108,8 +123,8 @@ pub(crate) const READ_TOOL: &str = "read_thread";
 pub(crate) const POST_TOOL: &str = "post_thread";
 pub(crate) const SEARCH_TOOL: &str = "search_threads";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.";
-pub(crate) const POST_DESCRIPTION: &str = "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.";
+pub(crate) const POST_DESCRIPTION: &str = "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins. To answer in a thread (when you were asked in one: a message that says it is a reply in the thread of N), pass parent N, and also true to send it to the room too.";
 pub(crate) const SEARCH_DESCRIPTION: &str = "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.";
 
 /// What a refusal says to an agent.
@@ -159,6 +174,7 @@ fn message(m: &Value, mention: &str) -> Value {
         "text": m["text"], "quote": m["quote"], "deleted": m["deleted"].is_u64(), "reactions": m["reactions"],
         "files": m["files"],
         "pinned": m["pinned"], "system": m["system"],
+        "parent": m["parent"], "also": m["also"].as_bool().unwrap_or(false), "thread": m["thread"],
         "mentions_you": m["mentions"].as_array().is_some_and(|a| a.iter().any(|x| x == mention)),
     })
 }
@@ -181,6 +197,22 @@ fn files_of(m: &Value) -> String {
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// Where a message is in a thread, as one line (empty when it is in no
+/// thread): a reply says whose, a message with replies how many.
+fn thread_note(m: &Value) -> String {
+    match (m["parent"].as_i64(), m["thread"]["replies"].as_u64()) {
+        (Some(p), _) => {
+            format!("  [reply in the thread of {p}{}]", if m["also"] == true { ", also sent to the room" } else { "" })
+        }
+        (None, Some(n)) => format!(
+            "  [{n} repl{} in its thread: read_thread with thread {}]",
+            if n == 1 { "y" } else { "ies" },
+            m["seq"]
+        ),
+        _ => String::new(),
+    }
 }
 
 /// A message's reactions as one line (empty when none).
@@ -266,6 +298,9 @@ impl Call<'_> {
         if a.mentions_only {
             q.push(("mentions", "true".to_owned()));
         }
+        if let Some(t) = a.thread {
+            q.push(("thread", t.to_string()));
+        }
         let path = format!("{}?{}", agent_messages(a.room.trim()), query(&q));
         let v = self.threads_call(Method::GET, &path, None).await?;
         let me = self.mention();
@@ -287,12 +322,13 @@ impl Call<'_> {
                 let reacted = reactions_of(m);
                 let attached = files_of(m);
                 format!(
-                    "[{}] {}: {}{}{}",
+                    "[{}] {}: {}{}{}{}",
                     m["seq"],
                     m["by"].as_str().unwrap_or("?"),
                     m["text"].as_str().unwrap_or(""),
                     if attached.is_empty() { String::new() } else { format!("  [files: {attached}]") },
-                    if reacted.is_empty() { String::new() } else { format!("  [reactions: {reacted}]") }
+                    if reacted.is_empty() { String::new() } else { format!("  [reactions: {reacted}]") },
+                    thread_note(m)
                 ) + if m["pinned"] == true { "  [pinned]" } else { "" }
             })
             .collect();
@@ -307,19 +343,28 @@ impl Call<'_> {
         if !pins.is_empty() {
             about += &format!("\nPinned:\n{}", pins_line(&pins));
         }
+        let parent = (!v["parent"].is_null()).then(|| message(&v["parent"], &me));
         let summary = format!(
-            "{} ({}), {} message(s){}{about}{}",
+            "{} ({}), {} message(s){}{}{about}{}",
             room_name(room),
             room["id"].as_str().unwrap_or("?"),
             messages.len(),
             if a.mentions_only { " that mention you" } else { "" },
+            match (&parent, a.thread) {
+                (Some(p), Some(t)) => format!(
+                    " in the thread of {t} ({}: {})",
+                    p["by"].as_str().unwrap_or("?"),
+                    p["text"].as_str().unwrap_or("")
+                ),
+                _ => String::new(),
+            },
             if lines.is_empty() { String::new() } else { format!(":\n{}", lines.join("\n")) },
         );
         done(
             summary,
             json!({
                 "room": room, "messages": messages, "more": v["more"], "next_after_seq": next,
-                "topic": room["topic"], "description": room["description"], "pins": v["pins"],
+                "topic": room["topic"], "description": room["description"], "pins": v["pins"], "parent": parent,
             }),
         )
     }
@@ -355,10 +400,17 @@ impl Call<'_> {
             ids.push(self.upload_file(room, path).await?);
         }
         // Files only when there are some: the same body as before #107 otherwise.
-        let body = if ids.is_empty() { json!({ "text": a.text }) } else { json!({ "text": a.text, "files": ids }) };
+        let mut body = if ids.is_empty() { json!({ "text": a.text }) } else { json!({ "text": a.text, "files": ids }) };
+        if let Some(p) = a.parent {
+            body["parent"] = json!(p);
+            body["also"] = json!(a.also);
+        }
         let v = self.threads_call(Method::POST, &agent_messages(room), Some(body)).await?;
-        let mut summary =
-            format!("Posted as seq {} in {}, labelled as your person's agent on this machine", v["seq"], room);
+        let mut summary = format!(
+            "Posted as seq {}{} in {room}, labelled as your person's agent on this machine",
+            v["seq"],
+            a.parent.map_or(String::new(), |p| format!(" in the thread of {p}")),
+        );
         if !ids.is_empty() {
             summary += &format!(", with {} file(s)", ids.len());
         }

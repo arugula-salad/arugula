@@ -48,7 +48,7 @@ function RoomHits({ store, hits }: { store: ChatStore; hits: { room: string; m: 
         const unread = !!r && m.seq > r.read && !store.mine(m);
         return (
           <li key={`${room}/${m.seq}`}>
-            <button class={unread ? "chat-hit unread" : "chat-hit"} data-chat-hit={m.seq} data-hit-room={room} onClick={() => api.nav.openRoom(room, m.seq)}>
+            <button class={unread ? "chat-hit unread" : "chat-hit"} data-chat-hit={m.seq} data-hit-room={room} onClick={() => api.nav.openRoom(room, m.seq, m.parent)}>
               <span class="chat-hit-where">
                 <span>{r ? whereOf(r, api) : "a room"}</span>
                 <time>{when(m.at)}</time>

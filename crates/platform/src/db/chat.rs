@@ -59,6 +59,18 @@ pub struct Message {
     pub agent: Option<String>,
     /// The product that posted it for `author` (M237): a hud box's name.
     pub via: Option<String>,
+    /// A reply: the `seq` of its thread's first message (#106).
+    pub parent: Option<i64>,
+    /// A reply that was also sent to the channel: the room's list has it.
+    pub also: bool,
+}
+
+impl Message {
+    /// Whether the room's own list shows it: not a reply, or one that was
+    /// sent to the channel too.
+    pub fn in_main(&self) -> bool {
+        self.parent.is_none() || self.also
+    }
 }
 
 /// How many of chat's live events are kept for pages that resume
@@ -114,6 +126,10 @@ pub struct NewMessage<'a> {
     pub agent: Option<&'a str>,
     /// Posted by this product for `author` (M237): a hud box's name.
     pub via: Option<&'a str>,
+    /// A reply in the thread of this message (#106), and whether it is
+    /// also sent to the channel.
+    pub parent: Option<i64>,
+    pub also: bool,
 }
 
 /// A message brought in from a machine (M124): its number there, and the
@@ -158,8 +174,11 @@ pub struct Search<'a> {
 const NOT_SYSTEM: &str = "(chat_messages.via IS NULL OR chat_messages.via != 'system') AND NOT EXISTS (SELECT 1 FROM chat_system s WHERE s.room = chat_messages.room AND s.seq = chat_messages.seq)";
 
 const ROOM_COLS: &str = "id, scope, kind, name, machine, target, created_by, created, archived, last_seq";
-const MSG_COLS: &str =
-    "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported, agent, via";
+pub(super) const MSG_COLS: &str = "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported, agent, via, parent, also";
+
+/// What the room's own list holds: not the replies, unless sent to the
+/// channel too (#106).
+pub(super) const MAIN: &str = "(parent IS NULL OR also = TRUE)";
 
 fn room_row(r: &Row) -> Result<Room> {
     Ok(Room {
@@ -176,7 +195,7 @@ fn room_row(r: &Row) -> Result<Room> {
     })
 }
 
-fn msg_row(r: &Row) -> Result<Message> {
+pub(super) fn msg_row(r: &Row) -> Result<Message> {
     let mentions: String = r.get(8)?;
     Ok(Message {
         room: r.get(0)?,
@@ -193,6 +212,8 @@ fn msg_row(r: &Row) -> Result<Message> {
         imported: r.get(11)?,
         agent: r.get(12)?,
         via: r.get(13)?,
+        parent: r.get(14)?,
+        also: r.get(15)?,
     })
 }
 
@@ -443,19 +464,19 @@ impl Db {
         let n = i64::from(limit) + 1;
         let mut ms: Vec<Message> = match page {
             Page::After(after) => c.query_map(
-                &format!("SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3"),
+                &format!("SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq > ?2 AND {MAIN} ORDER BY seq LIMIT ?3"),
                 params![room, after, n],
                 msg_row,
             )?,
             Page::Before(before) => c.query_map(
                 &format!(
-                    "SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq < ?2 ORDER BY seq DESC LIMIT ?3"
+                    "SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq < ?2 AND {MAIN} ORDER BY seq DESC LIMIT ?3"
                 ),
                 params![room, before, n],
                 msg_row,
             )?,
             Page::Newest => c.query_map(
-                &format!("SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 ORDER BY seq DESC LIMIT ?2"),
+                &format!("SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND {MAIN} ORDER BY seq DESC LIMIT ?2"),
                 params![room, n],
                 msg_row,
             )?,
@@ -964,7 +985,7 @@ impl Db {
             &format!(
                 "SELECT count(*), CAST(coalesce(sum(CASE WHEN {mentioned} THEN 1 ELSE 0 END), 0) AS BIGINT)
                  FROM chat_messages WHERE room = ?1 AND seq > ?2 AND (author != ?3 OR agent IS NOT NULL) AND deleted IS NULL AND at >= ?4
-                 AND imported_id IS NULL AND {NOT_SYSTEM}"
+                 AND imported_id IS NULL AND {NOT_SYSTEM} AND {MAIN}"
             ),
             params![room, read, account, from],
             |r| Ok((r.get(0)?, r.get(1)?)),
@@ -1009,6 +1030,7 @@ impl Db {
                      AND m.deleted IS NULL AND m.at >= w.floor AND m.imported_id IS NULL
                      AND (m.via IS NULL OR m.via != 'system')
                      AND NOT EXISTS (SELECT 1 FROM chat_system s WHERE s.room = m.room AND s.seq = m.seq)
+                     AND (m.parent IS NULL OR m.also = TRUE)
                  GROUP BY w.room"
             ),
             params![account, asks],
@@ -1164,8 +1186,8 @@ pub(super) fn add_message_in(
         |r| r.get(0),
     )?;
     tx.execute(
-        "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, agent, via)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, agent, via, parent, also)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             room,
             seq,
@@ -1177,9 +1199,19 @@ pub(super) fn add_message_in(
             m.ref_pane,
             serde_json::to_string(m.mentions)?,
             m.agent,
-            m.via
+            m.via,
+            m.parent,
+            m.also
         ],
     )?;
+    if let Some(parent) = m.parent {
+        super::chat_threads::replied(tx, room, parent, seq, m)?;
+        // A reply read in its thread says nothing of the room's list: only
+        // one sent to the channel too is read there as well.
+        if !m.also {
+            return Ok(seq);
+        }
+    }
     if let Some((kind, target)) = system {
         tx.execute(
             "INSERT INTO chat_system (room, seq, kind, target) VALUES (?1, ?2, ?3, ?4)",
@@ -1215,6 +1247,7 @@ pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::
             "chat_topics",
             "chat_pins",
             "chat_system",
+            "chat_thread_reads",
         ] {
             tx.execute(&format!("DELETE FROM {table} WHERE room = ?1"), params![id])?;
         }
@@ -1287,6 +1320,7 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     tx.execute("UPDATE chat_topics SET author = '' WHERE author = ?1", params![account])?;
     tx.execute("DELETE FROM chat_pins WHERE author = ?1", params![account])?;
     tx.execute("DELETE FROM chat_reads WHERE account = ?1", params![account])?;
+    tx.execute("DELETE FROM chat_thread_reads WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_keywords WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM notify_prefs WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_saved WHERE account = ?1", params![account])?;
@@ -1347,6 +1381,8 @@ mod tests {
                 mentions,
                 agent: None,
                 via: None,
+                parent: None,
+                also: false,
             },
         )
         .unwrap()
@@ -1406,6 +1442,8 @@ mod tests {
                     mentions: &[],
                     agent: None,
                     via: None,
+                    parent: None,
+                    also: false,
                 },
             })
             .collect();

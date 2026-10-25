@@ -124,6 +124,8 @@ pub(crate) async fn announce(app: &Platform, rooms: &[Room], before: &Reach) {
                     mentions: &[],
                     agent: None,
                     via: Some(SYSTEM_VIA),
+                    parent: None,
+                    also: false,
                 },
             );
             match posted {

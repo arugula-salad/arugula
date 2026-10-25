@@ -427,6 +427,7 @@ test("polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a sc
   await mine.hover();
   await expect(mine.locator("[data-tool-quick]")).toHaveCount(3);
   await expect(mine.locator("[data-msg-save]")).toHaveCount(1);
+  await expect(mine.locator("[data-msg-thread]")).toHaveCount(1);
   await mine.locator("[data-msg-more]").click();
   await expect(mine.locator("[data-msg-menu] [data-msg-reply], [data-msg-menu] [data-msg-link], [data-msg-menu] [data-msg-edit], [data-msg-menu] [data-msg-delete]")).toHaveCount(4);
   // A press outside closes it. (So does Escape in a browser; this
@@ -745,6 +746,94 @@ test("a channel is quiet until its bell says all, and a snooze shows Alice a moo
   await expect(aliceChat.locator(`[data-chat-control] [data-chat-room="${dm}"] [data-dnd]`)).toBeVisible({ timeout: 15_000 });
   const held = await alice.evaluate((r) => window.__arugula.chat.post(r, "are you there?"), dm);
   expect(held.pushed).toEqual([]);
+});
+
+test("threads: Alice starts one, Bob answers from his phone, each sees it live; the footer, unread, the Threads view, a deleted parent", async () => {
+  test.setTimeout(120_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const { seq } = await say(aliceChat, general, "who takes the deploy?");
+  const msg = room.locator(`[data-msg="${seq}"]`);
+  await expect(msg).toBeVisible({ timeout: 15_000 });
+
+  // The toolbar's ↩ opens a thread beside the room, and its link names it.
+  await msg.hover();
+  await msg.locator("[data-msg-thread]").click();
+  const panel = aliceChat.locator(`[data-thread-panel="${seq}"]`);
+  await expect(panel).toBeVisible();
+  await expect(aliceChat).toHaveURL(new RegExp(`thread=${seq}`));
+  await expect(panel.locator(`[data-msg="${seq}"]`)).toContainText("who takes the deploy?");
+  const reply = panel.getByRole("textbox", { name: "Reply in thread" });
+  await reply.fill("not me");
+  await reply.press("Enter");
+  await expect(panel.locator(".thread-msg").last()).toContainText("not me", { timeout: 15_000 });
+  // The reply is the thread's, not the room's; the parent says it has one.
+  await expect(room.locator(".thread-msg", { hasText: "not me" })).toHaveCount(0);
+  await expect(msg.locator("[data-thread-footer]")).toContainText("1 reply", { timeout: 15_000 });
+
+  // Bob, on his phone, finds the footer and opens the thread: the whole screen.
+  await platform(bob, "/chat");
+  const list = bob.locator("[data-chat-control]");
+  await list.locator(`[data-chat-room="${general}"]`).click();
+  const onPhone = list.locator(`[data-msg="${seq}"]`);
+  await expect(onPhone.locator("[data-thread-footer]")).toContainText("1 reply", { timeout: 15_000 });
+  await onPhone.locator("[data-thread-footer]").click();
+  const sheet = bob.locator(`[data-thread-panel="${seq}"]`);
+  await expect(sheet).toBeVisible();
+  await expect(list.locator("[data-room-view]")).toHaveCount(0);
+  await expect(sheet.locator(".thread-msg").last()).toContainText("not me");
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
+
+  // He answers, and also sends it to the channel: both see it live, in the
+  // thread and in the room.
+  await sheet.locator("[data-thread-also] input").check();
+  const box = sheet.getByRole("textbox", { name: "Reply in thread" });
+  await box.fill("me, from the bus");
+  await box.press("Enter");
+  await expect(panel.locator(".thread-msg").last()).toContainText("me, from the bus", { timeout: 15_000 });
+  await expect(room.locator(".thread-msg", { hasText: "me, from the bus" })).toBeVisible();
+  await expect(msg.locator("[data-thread-footer]")).toContainText("2 replies");
+  await expect(panel.locator("[data-reply-also]")).toBeVisible();
+  // Back to the room, with the footer where the message is.
+  await sheet.locator("[data-thread-back]").click();
+  await expect(list.locator("[data-room-view]")).toBeVisible();
+  await expect(onPhone.locator("[data-thread-footer]")).toContainText("2 replies");
+
+  // Alice answers again; Bob follows (he replied), so it is unread for him in
+  // the Threads view and its badge, and not in the room.
+  await api(aliceChat, "POST", `/api/chat/rooms/${general}/messages`, { text: "ok, I will", parent: seq });
+  const threadsUnread = async () => ((await api(bob, "GET", "/api/chat")).body as { threads_unread: number }).threads_unread;
+  await expect.poll(threadsUnread, { timeout: 15_000 }).toBe(1);
+  await platform(bob, "/chat/threads");
+  const row = bob.locator(`[data-chat-threads-view] [data-thread-row="${seq}"]`);
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await expect(row.locator("[data-thread-row-unread]")).toHaveText("1");
+  await expect(row).toContainText("ok, I will");
+  // Opening it puts the New line before it, and reads the thread.
+  await row.click();
+  const opened = bob.locator(`[data-thread-panel="${seq}"]`);
+  await expect(opened.locator("[data-new-line]")).toBeVisible({ timeout: 15_000 });
+  await expect.poll(threadsUnread, { timeout: 15_000 }).toBe(0);
+  // A link to a reply names its thread, and opens it.
+  const replyLink = ((await api(bob, "GET", `/api/chat/rooms/${general}/messages?thread=${seq}`)).body as { messages: { seq: number }[] }).messages[0].seq;
+  await platform(bob, `/chat/${general}`);
+  await bob.goto(`${bob.url().split("?")[0]}?msg=${replyLink}&thread=${seq}`);
+  await expect(bob.locator(`[data-thread-panel="${seq}"] [data-msg="${replyLink}"]`)).toBeVisible({ timeout: 15_000 });
+
+  // Search finds a reply, and its hit opens the thread.
+  const found = ((await api(aliceChat, "GET", "/api/chat/search?q=bus")).body as { found: { message: { parent?: number } }[] }).found.map((h) => h.message.parent);
+  expect(found).toEqual([seq]);
+
+  // Alice unfollows from the panel; deleting the parent leaves its tombstone
+  // with the thread under it.
+  await panel.locator("[data-thread-follow]").click();
+  await expect(panel.locator("[data-thread-follow]")).toHaveText("Follow");
+  await msg.hover();
+  await msg.locator("[data-msg-more]").click();
+  await msg.locator("[data-msg-delete]").click();
+  await expect(room.locator(`[data-msg="${seq}"]`)).toContainText("This message was deleted.", { timeout: 15_000 });
+  await expect(room.locator(`[data-msg="${seq}"] [data-thread-footer]`)).toContainText("3 replies");
 });
 
 /** A menu's item by its label (`openMenu`'s layer). */

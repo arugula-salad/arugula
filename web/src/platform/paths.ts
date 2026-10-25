@@ -54,8 +54,8 @@ export type Route =
   | { page: "issue"; project: string; issue: string; msg?: number }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
   | { page: "run"; project: string; run: string; msg?: number }
-  | { page: "chat"; project: string; room?: string; msg?: number; view?: "activity" | "saved" | "search"; q?: string }
-  | { page: "dm"; room: string; msg?: number }
+  | { page: "chat"; project: string; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string }
+  | { page: "dm"; room: string; msg?: number; thread?: number }
   | { page: "workspaces"; project: string }
   | { page: "workspace"; project: string; workspace: string }
   | { page: "project-settings"; project: string; link?: string }
@@ -65,7 +65,7 @@ export type Route =
   | { page: "settings" }
   | { page: "deploy"; deploy: string }
   /** An id-only address, to be put where it belongs (`resolve`). */
-  | { page: "find"; what: "chat"; room?: string; msg?: number; view?: "activity" | "saved" | "search"; q?: string }
+  | { page: "find"; what: "chat"; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string }
   | { page: "find"; what: "issue"; issue: string; msg?: number }
   | { page: "find"; what: "run"; run: string; msg?: number }
   | { page: "missing"; path: string };
@@ -114,6 +114,9 @@ export function parse(path: string, search = ""): Route {
   const at = q.get("msg");
   // A message to show, when the link names one.
   const msg = at !== null && /^-?\d+$/.test(at) ? { msg: Number(at) } : {};
+  // #106: the thread a message is in, beside its room.
+  const inThread = q.get("thread");
+  const thread = inThread !== null && /^\d+$/.test(inThread) ? { thread: Number(inThread) } : {};
   const missing: Route = { page: "missing", path };
   if (parts.length === 0) return { page: "home" };
   if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox" };
@@ -121,9 +124,10 @@ export function parse(path: string, search = ""): Route {
   if (parts[0] === "chat" && parts.length <= 2) {
     if (parts.length === 1) return { page: "find", what: "chat" };
     if (parts[1] === "activity" || parts[1] === "saved") return { page: "find", what: "chat", view: parts[1] };
+    if (parts[1] === "threads") return { page: "find", what: "chat", view: "threads" };
     if (parts[1] === "search") return { page: "find", what: "chat", view: "search", q: q.get("q") ?? "" };
     const room = idOf(parts[1]);
-    return room ? { page: "find", what: "chat", room, ...msg } : missing;
+    return room ? { page: "find", what: "chat", room, ...msg, ...thread } : missing;
   }
   if (parts[0] === "issues" && parts.length === 2) {
     const issue = idOf(parts[1]);
@@ -142,7 +146,7 @@ export function parse(path: string, search = ""): Route {
   if (parts[0] === "deploys" && parts.length === 2 && /^dep_[0-9a-f]{32}$/.test(parts[1])) return { page: "deploy", deploy: parts[1] };
   if (parts[0] === "dm" && parts.length === 2) {
     const room = idOf(parts[1]);
-    return room ? { page: "dm", room, ...msg } : missing;
+    return room ? { page: "dm", room, ...msg, ...thread } : missing;
   }
   if (parts[0] !== "p" || parts.length < 2) return missing;
   const project = idOf(parts[1]);
@@ -159,9 +163,10 @@ export function parse(path: string, search = ""): Route {
   if (parts[2] === "chat") {
     if (parts.length === 3) return { page: "chat", project };
     if (parts.length === 4 && (parts[3] === "activity" || parts[3] === "saved")) return { page: "chat", project, view: parts[3] };
+    if (parts.length === 4 && parts[3] === "threads") return { page: "chat", project, view: "threads" };
     if (parts.length === 4 && parts[3] === "search") return { page: "chat", project, view: "search", q: q.get("q") ?? "" };
     const room = parts.length === 4 ? idOf(parts[3]) : null;
-    return room ? { page: "chat", project, room, ...msg } : missing;
+    return room ? { page: "chat", project, room, ...msg, ...thread } : missing;
   }
   if (parts[2] === "issues") return issueRoute(project, parts.slice(3), q, msg) ?? missing;
   if (parts[2] === "runs" && parts.length === 3) {
@@ -204,6 +209,12 @@ function issueRoute(project: string, rest: string[], q: URLSearchParams, msg: { 
  * its slug. */
 export type Names = (id: string) => string | null | undefined;
 
+/** A room's `?msg=N&thread=P`: the message to show, and the thread beside it (#106). */
+function at(r: { msg?: number; thread?: number }): string {
+  const q = [r.msg !== undefined ? `msg=${r.msg}` : "", r.thread !== undefined ? `thread=${r.thread}` : ""].filter(Boolean);
+  return q.length ? `?${q.join("&")}` : "";
+}
+
 /** The path for a route, with each id's current slug. */
 export function pathOf(r: Route, names: Names = () => null): string {
   const s = (id: string) => encodeURI(withSlug(id, names(id)));
@@ -214,9 +225,9 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/p/${s(r.project)}`;
     case "chat": {
       const base = `/p/${s(r.project)}/chat`;
-      if (r.view === "activity" || r.view === "saved") return `${base}/${r.view}`;
+      if (r.view === "activity" || r.view === "saved" || r.view === "threads") return `${base}/${r.view}`;
       if (r.view === "search") return `${base}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
-      return r.room ? `${base}/${s(r.room)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}` : base;
+      return r.room ? `${base}/${s(r.room)}${at(r)}` : base;
     }
     case "issues": {
       const q = new URLSearchParams();
@@ -242,7 +253,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "issue":
       return `/p/${s(r.project)}/issues/${s(r.issue)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
     case "dm":
-      return `/dm/${s(r.room)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
+      return `/dm/${s(r.room)}${at(r)}`;
     case "workspaces":
       return `/p/${s(r.project)}/workspaces`;
     case "workspace":
@@ -261,9 +272,9 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/deploys/${r.deploy}`;
     case "find":
       if (r.what === "chat") {
-        if (r.view === "activity" || r.view === "saved") return `/chat/${r.view}`;
+        if (r.view === "activity" || r.view === "saved" || r.view === "threads") return `/chat/${r.view}`;
         if (r.view === "search") return `/chat/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
-        return r.room ? `/chat/${s(r.room)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}` : "/chat";
+        return r.room ? `/chat/${s(r.room)}${at(r)}` : "/chat";
       }
       if (r.what === "issue") return `/issues/${s(r.issue)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
       return `/runs/${s(r.run)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;

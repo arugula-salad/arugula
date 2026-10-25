@@ -31,7 +31,7 @@ use axum::{
 
 use super::{
     Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, files, gate, in_team, listed_as,
-    objects, pins, post_as, reactions, rooms_seen, search_in,
+    objects, pins, post_as, reactions, rooms_seen, search_in, threads,
 };
 use crate::{
     Platform,
@@ -178,7 +178,9 @@ pub async fn rooms(State(app): State<Arc<Platform>>, d: Machine) -> J<AgentRooms
 
 /// `GET /api/daemon/chat/rooms/{id}/messages?after=N|before=N&limit=&mentions=`:
 /// a page, oldest first, as the owner reads it (`threads.read`); with
-/// `mentions`, only those that mention this machine's agents.
+/// `mentions`, only those that mention this machine's agents; with
+/// `thread`, the replies in the thread of that message (#106), and the
+/// message itself as `parent`.
 pub async fn messages(
     State(app): State<Arc<Platform>>,
     d: Machine,
@@ -195,14 +197,26 @@ pub async fn messages(
     };
     let limit = q.limit.unwrap_or(PAGE).clamp(1, MAX_PAGE);
     let me = mention_of(&d);
-    let (ms, more) = if q.mentions {
-        app.db.chat_mentioning(&room.id, &me, page, limit)?
-    } else {
-        app.db.chat_messages(&room.id, page, limit)?
+    // The replies in one thread (#106), and the message that starts it.
+    let (first, ms, more) = match q.thread {
+        Some(parent) => {
+            let (first, ms, more) = threads::page(&app, &room, from, parent, page, limit)?;
+            (Some(first), ms, more)
+        }
+        None => {
+            let (ms, more) = if q.mentions {
+                app.db.chat_mentioning(&room.id, &me, page, limit)?
+            } else {
+                app.db.chat_messages(&room.id, page, limit)?
+            };
+            (None, ms, more)
+        }
     };
     let ms: Vec<&Message> = ms.iter().filter(|m| m.at >= from).collect();
-    let shower = Shower::of(&app, &d.account, &ms).await?.for_agent(&d.daemon);
+    let all: Vec<&Message> = ms.iter().copied().chain(first.iter()).collect();
+    let shower = Shower::of(&app, &d.account, &all).await?.for_agent(&d.daemon);
     let messages = ms.into_iter().map(|m| shower.show(m)).collect();
+    let parent = first.as_ref().map(|m| shower.show(m));
     let facts = Facts::of(&app, Some(&d.account), &[&room]).await?;
     let scope = agent_scope(&app, &room, &d.account)?;
     let powers = thread_powers(&grants_of(&app, &d)?, scope.as_ref());
@@ -210,7 +224,7 @@ pub async fn messages(
     let pins = pins::pinned(&app, &d.account, Some(&d.daemon), &room, from).await?;
     let extras = pins::Extras::of(&app.db, &[&room])?;
     let room = shown(&app, &facts, &d.account, &room, powers, last, &extras)?;
-    Ok(Json(AgentMessages { room, messages, more, pins }))
+    Ok(Json(AgentMessages { room, messages, more, pins, parent }))
 }
 
 /// `POST /api/daemon/chat/rooms/{id}/messages`: an agent's post

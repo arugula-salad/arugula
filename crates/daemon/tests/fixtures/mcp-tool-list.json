@@ -3010,7 +3010,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -3050,6 +3050,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3103,10 +3112,15 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins. To answer in a thread (when you were asked in one: a message that says it is a reply in the thread of N), pass parent N, and also true to send it to the room too.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "also": {
+            "default": false,
+            "description": "With `parent`: also send the reply to the room, as Slack's \"Also send\nto #channel\" does.",
+            "type": "boolean"
+          },
           "emoji": {
             "default": null,
             "description": "The emoji to react with (or take back), for `react_to_seq`.",
@@ -3122,6 +3136,15 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "parent": {
+            "default": null,
+            "description": "Reply in the thread of this message (its seq) instead of posting in\nthe room: when you were asked in a thread, answer there. A reply to\na reply goes to the same thread's first message, so give that one's\nseq (a reply's `parent`).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "pin_seq": {
             "default": null,
@@ -6778,7 +6801,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -6818,6 +6841,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -6871,10 +6903,15 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins. To answer in a thread (when you were asked in one: a message that says it is a reply in the thread of N), pass parent N, and also true to send it to the room too.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "also": {
+            "default": false,
+            "description": "With `parent`: also send the reply to the room, as Slack's \"Also send\nto #channel\" does.",
+            "type": "boolean"
+          },
           "emoji": {
             "default": null,
             "description": "The emoji to react with (or take back), for `react_to_seq`.",
@@ -6890,6 +6927,15 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "parent": {
+            "default": null,
+            "description": "Reply in the thread of this message (its seq) instead of posting in\nthe room: when you were asked in a thread, answer there. A reply to\na reply goes to the same thread's first message, so give that one's\nseq (a reply's `parent`).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "pin_seq": {
             "default": null,
@@ -10265,7 +10311,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -10305,6 +10351,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -10358,10 +10413,15 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins. To answer in a thread (when you were asked in one: a message that says it is a reply in the thread of N), pass parent N, and also true to send it to the room too.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "also": {
+            "default": false,
+            "description": "With `parent`: also send the reply to the room, as Slack's \"Also send\nto #channel\" does.",
+            "type": "boolean"
+          },
           "emoji": {
             "default": null,
             "description": "The emoji to react with (or take back), for `react_to_seq`.",
@@ -10377,6 +10437,15 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "parent": {
+            "default": null,
+            "description": "Reply in the thread of this message (its seq) instead of posting in\nthe room: when you were asked in a thread, answer there. A reply to\na reply goes to the same thread's first message, so give that one's\nseq (a reply's `parent`).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "pin_seq": {
             "default": null,
@@ -14033,7 +14102,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -14073,6 +14142,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -14126,10 +14204,15 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins. To answer in a thread (when you were asked in one: a message that says it is a reply in the thread of N), pass parent N, and also true to send it to the room too.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "also": {
+            "default": false,
+            "description": "With `parent`: also send the reply to the room, as Slack's \"Also send\nto #channel\" does.",
+            "type": "boolean"
+          },
           "emoji": {
             "default": null,
             "description": "The emoji to react with (or take back), for `react_to_seq`.",
@@ -14145,6 +14228,15 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "parent": {
+            "default": null,
+            "description": "Reply in the thread of this message (its seq) instead of posting in\nthe room: when you were asked in a thread, answer there. A reply to\na reply goes to the same thread's first message, so give that one's\nseq (a reply's `parent`).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "pin_seq": {
             "default": null,
@@ -15932,7 +16024,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -15972,6 +16064,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -17536,7 +17637,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -17576,6 +17677,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [

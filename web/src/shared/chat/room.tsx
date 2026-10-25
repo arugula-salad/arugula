@@ -38,6 +38,7 @@ import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
 import { useChatShown } from "./shown";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
+import { ReplyTag, setThreadNav, ThreadFooter } from "./thread-ui";
 
 // ---- machines, by control's id for them
 
@@ -252,6 +253,11 @@ export function RoomBody({
   chip?: boolean;
 }) {
   useSubscribe((fn) => chat.subscribe(fn));
+  // "Reply in thread" opens the thread where this room is shown (#106).
+  const { nav } = usePlatformApi();
+  useEffect(() => {
+    setThreadNav(nav);
+  }, [nav]);
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<PaneQuote | undefined>(initialQuote);
   const [dropping, setDropping] = useState(false);
@@ -464,12 +470,15 @@ export function RoomBody({
   );
 }
 
-// The composer's handle for "Quote in reply" (one is shown at a time).
-const composeRef: { current: { reply(text: string): void; focus(): void; attach(files: File[]): void } | null } = { current: null };
+// The composer's handle for "Quote in reply" (one is shown at a time), and
+// the thread panel's own beside it (#106).
+type ComposeHandle = { current: { reply(text: string): void; focus(): void; attach(files: File[]): void } | null };
+const composeRef: ComposeHandle = { current: null };
+export const threadComposeRef: ComposeHandle = { current: null };
 
 /** One message: its author and time, its text, the pane it names, and its
  * tools (quote in reply, copy link, edit and delete for its author). */
-function RoomMessage({
+export function RoomMessage({
   room,
   m,
   prev,
@@ -477,6 +486,7 @@ function RoomMessage({
   setError,
   editing,
   setEditing,
+  inThread = false,
 }: {
   room: ChatRoom;
   m: ChatMessage;
@@ -485,6 +495,8 @@ function RoomMessage({
   setError: (e: string | null) => void;
   editing: boolean;
   setEditing: (on: boolean) => void;
+  /** Shown in a thread's panel (#106): no thread of its own to open there. */
+  inThread?: boolean;
 }) {
   const head =
     !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
@@ -500,10 +512,10 @@ function RoomMessage({
   const [panel, setPanel] = useState<"react" | "menu" | "sheet" | null>(null);
   const may = mayReact(room, m);
   const name = authorLabel(m);
-  const link = usePlatformApi().nav.roomLink(room.id, m.seq);
+  const link = usePlatformApi().nav.roomLink(room.id, m.seq, m.parent);
   const close = useCallback(() => setPanel(null), []);
   const ctx = { room, m };
-  const thread = hookFor("thread", ctx);
+  const thread = inThread ? undefined : hookFor("thread", ctx);
   const save = hookFor("save", ctx);
   const items = itemsOf(ctx, {
     quote: room.writable ? () => reply(m.text || m.quote || "") : undefined,
@@ -539,6 +551,7 @@ function RoomMessage({
         <div class="msg-gutter" />
         <div class="msg-body">
           <p class="thread-text dim">This message was deleted.</p>
+          {!inThread && <ThreadFooter room={room} m={m} />}
         </div>
       </div>
     );
@@ -588,6 +601,7 @@ function RoomMessage({
             <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>
           </div>
         )}
+        {!editing && <ReplyTag room={room} m={m} inThread={inThread} />}
         {editing ? (
           <EditBox
             text={m.text}
@@ -616,6 +630,7 @@ function RoomMessage({
           </div>
         )}
         <ReactionChips room={room} m={m} open={() => setPanel("react")} setError={setError} />
+        {!inThread && <ThreadFooter room={room} m={m} />}
       </div>
       <div class={panel === "react" || panel === "menu" ? "msg-tools open" : "msg-tools"} role="toolbar" aria-label="Message actions">
         {may && (
@@ -796,7 +811,7 @@ function mentionables(api: PlatformApi, room: string): Mentionable[] {
   return out;
 }
 
-function RoomCompose({
+export function RoomCompose({
   room,
   phone,
   quote,
@@ -804,6 +819,7 @@ function RoomCompose({
   setError,
   name,
   editLast,
+  thread,
 }: {
   room: ChatRoom;
   phone: boolean;
@@ -813,8 +829,13 @@ function RoomCompose({
   name: string;
   /** Edit my last message (↑ in an empty box), if I have one. */
   editLast?: () => void;
+  /** Writes a reply in the thread of this message (#106), with a draft of
+   * its own and "Also send to the channel". */
+  thread?: { parent: number };
 }) {
-  const key = `chat.draft:room:${room.id}`;
+  const key = thread ? `chat.draft:thread:${room.id}:${thread.parent}` : `chat.draft:room:${room.id}`;
+  const handle = thread ? threadComposeRef : composeRef;
+  const [also, setAlso] = useState(false);
   const [text, setText] = useState(() => draftOf(key));
   const [sending, setSending] = useState(false);
   const [pick, setPick] = useState(0);
@@ -829,7 +850,7 @@ function RoomCompose({
   // Quoting reads a pane on a machine of yours: none, no button.
   const api = usePlatformApi();
   useSubscribe((fn) => api.subscribe(fn));
-  const canQuote = !!api.quote?.can();
+  const canQuote = !thread && !!api.quote?.can();
   const QuotePicker = api.quote?.Picker;
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => keepDraft(key, text), [key, text]);
@@ -843,7 +864,7 @@ function RoomCompose({
     el.style.height = `${Math.min(el.scrollHeight, innerHeight * 0.4)}px`;
   }, [text]);
   useEffect(() => {
-    composeRef.current = {
+    handle.current = {
       reply(q: string) {
         setText((t) => `${q.split("\n").map((l) => `> ${l}`).join("\n")}\n${t}`);
         input.current?.focus();
@@ -852,7 +873,7 @@ function RoomCompose({
       attach: files.add,
     };
     return () => {
-      composeRef.current = null;
+      handle.current = null;
     };
   }, [files.add]);
 
@@ -939,10 +960,13 @@ function RoomCompose({
     setError(null);
     setMissed([]);
     try {
-      const posted = await chat.post(room.id, text, quote, files.ids, paused && anyway);
+      const posted = thread
+        ? await chat.reply(room.id, thread.parent, text, also, files.ids)
+        : await chat.post(room.id, text, quote, files.ids, paused && anyway);
       setMissed(posted.unreached.map((w) => `Nobody here called ${w} can read this room`));
       setText("");
       setQuote(undefined);
+      setAlso(false);
       files.clear();
       setAnyway(false);
     } catch (e) {
@@ -962,7 +986,7 @@ function RoomCompose({
         void send();
       }}
     >
-      <TypingLine room={room.id} />
+      {!thread && <TypingLine room={room.id} />}
       {missed.map((n) => (
         <p key={n} class="thread-note unreached">
           {n}
@@ -1043,8 +1067,8 @@ function RoomCompose({
           ref={input}
           rows={1}
           value={text}
-          aria-label={`Message ${name}`}
-          placeholder={`Message ${name}`}
+          aria-label={thread ? "Reply in thread" : `Message ${name}`}
+          placeholder={thread ? "Reply…" : `Message ${name}`}
           onBlur={(e) => {
             const t = e.currentTarget as HTMLTextAreaElement;
             at.current = { from: t.selectionStart, to: t.selectionEnd };
@@ -1061,7 +1085,7 @@ function RoomCompose({
             const v = (e.target as HTMLTextAreaElement).value;
             setText(v);
             // Never while it's empty; the store holds it to one in 3 s.
-            if (v.trim()) chat.typing(room.id);
+            if (v.trim() && !thread) chat.typing(room.id);
           }}
           onKeyDown={(e) => {
             const n = options.length || emojis.length;
@@ -1114,6 +1138,12 @@ function RoomCompose({
           </svg>
         </button>
       </div>
+      {thread && (
+        <label class="thread-also" data-thread-also>
+          <input type="checkbox" checked={also} onChange={(e) => setAlso((e.currentTarget as HTMLInputElement).checked)} />
+          Also send to {room.kind === "channel" ? `#${room.name}` : room.kind === "dm" ? "the conversation" : "the room"}
+        </label>
+      )}
     </form>
   );
 }

@@ -100,6 +100,10 @@ fn generate() -> String {
         c.visit::<ChatPins>();
         c.visit::<ChatTopicSet>();
         c.visit::<ChatRead>();
+        c.visit::<ChatThreadRead>();
+        c.visit::<ChatFollow>();
+        c.visit::<ChatThreads>();
+        c.visit::<ChatThreadItem>();
         c.visit::<ChatMute>();
         c.visit::<ChatLevel>();
         c.visit::<NotifyPrefs>();

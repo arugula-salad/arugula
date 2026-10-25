@@ -35,6 +35,7 @@ import { reacted } from "./chat/reactions";
 import { chatUnread, listedInChat } from "./chat/unread";
 import { presence } from "./chat/presence";
 import { emptySidebar } from "./chat/sidebar";
+import { ThreadState } from "./chat/thread-state";
 
 /** A refusal from control's chat API: its status, and `reason`
  * (`chat_off`, or `maintenance` for a window that outlasted the wait,
@@ -122,6 +123,16 @@ export class ChatStore {
    * and the message: while the room stays open its "New" line is there and
    * nothing reads it again. Leaving the room lets go. */
   private held = new Map<string, number>();
+  /** Reply threads (#106): the ones open, and the Threads view's list. */
+  readonly threads = new ThreadState(
+    (m, p, b) => call(m, p, b),
+    () => this.emit(),
+    (room, parent) => this.replace(room, parent),
+    (m) => this.mine(m),
+  );
+  /** Unread replies in the threads I follow, and how many mention me: the
+   * Threads view's badge. Not counted in `unread()`: Activity's is apart. */
+  threadsUnread = { n: 0, mentions: 0 };
 
   /** Whether control has signed this page in (so chat is only off). */
   get signedIn(): boolean {
@@ -206,6 +217,7 @@ export class ChatStore {
     this.on = true;
     presence.start();
     this.rooms = r.rooms;
+    this.threadsUnread = { n: r.threads_unread ?? 0, mentions: r.threads_mentions ?? 0 };
     this.emit();
   }
 
@@ -291,6 +303,7 @@ export class ChatStore {
         void this.loadSidebar();
         for (const room of this.loaded.keys()) void this.newer(room);
         for (const room of this.pinned.keys()) void this.loadPins(room);
+        this.threads.reloadAll();
         this.objectChanged();
         return;
       case "object":
@@ -310,6 +323,13 @@ export class ChatStore {
         return;
       case "pinned":
         if (this.pinned.has(ev.room) || this.loaded.has(ev.room)) void this.loadPins(ev.room);
+        return;
+      case "reply":
+      case "threadread":
+        // A thread moved (#106): its first message's summary in the room's
+        // list, the thread if it's open, and my Threads badge.
+        if (this.loaded.has(ev.room)) void this.refetch(ev.room, ev.parent);
+        this.threads.heard(ev);
         this.roomsSoon();
         return;
       case "read": {
@@ -341,6 +361,7 @@ export class ChatStore {
       case "resync":
         void this.loadSaved();
         this.typers.clear();
+        this.threads.clear();
         this.objectChanged();
         this.loaded.clear();
         this.detail.clear();
@@ -367,14 +388,24 @@ export class ChatStore {
     this.tellOpen();
   }
 
+  /** The thread open beside it (#106): replies in it aren't pushed for. */
+  private openThread: number | null = null;
+  setOpenThread(parent: number | null) {
+    if (parent === this.openThread) return;
+    this.openThread = parent;
+    this.tellOpen();
+  }
+
   private told: string | undefined = undefined;
   private tellOpen(force = false) {
     if (!this.stream) return;
     const rooms = document.visibilityState === "visible" ? [...new Set(this.open.values())] : [];
-    const key = rooms.join(" ");
+    // The thread is the first room's (the one a page shows first).
+    const thread = rooms.length ? this.openThread : null;
+    const key = `${rooms.join(" ")}|${thread ?? ""}`;
     if (!force && key === this.told) return;
     this.told = key;
-    void call("POST", "/api/chat/live/open", { stream: this.stream, room: rooms[0] ?? null, more: rooms.slice(1) }).catch(() => {});
+    void call("POST", "/api/chat/live/open", { stream: this.stream, room: rooms[0] ?? null, more: rooms.slice(1), ...(thread !== null ? { thread } : {}) }).catch(() => {});
   }
 
   // ---- typing (#111)
@@ -662,6 +693,16 @@ export class ChatStore {
     return posted;
   }
 
+  /** Reply in the thread of message `parent` (#106). Sent to the channel too
+   * (`also`), the room's list reads it back as well. */
+  async reply(id: string, parent: number, text: string, also: boolean, files?: string[] | null): Promise<ChatPosted> {
+    const posted = await this.threads.post(id, parent, text, also, files);
+    if (also && this.loaded.has(id)) await this.newer(id);
+    // The first message's summary, in the room's list.
+    if (this.loaded.has(id)) void this.refetch(id, parent);
+    return posted;
+  }
+
   async edit(id: string, seq: number, text: string) {
     const m = await call<ChatMessage>("PATCH", `/api/chat/rooms/${enc(id)}/messages/${seq}`, { text });
     this.replace(id, m);
@@ -675,7 +716,7 @@ export class ChatStore {
   /** React to a message with `emoji`, or take mine back (#104). It shows at
    * once and the server's answer replaces it; a refusal puts it back. */
   async react(id: string, seq: number, emoji: string, on: boolean) {
-    const was = this.loaded.get(id)?.list.find((m) => m.seq === seq);
+    const was = this.loaded.get(id)?.list.find((m) => m.seq === seq) ?? this.threads.find(id, seq);
     if (was) this.replace(id, reacted(was, emoji, on, this.me));
     const path = `/api/chat/rooms/${enc(id)}/messages/${seq}/reactions`;
     try {
@@ -687,8 +728,10 @@ export class ChatStore {
   }
 
   private replace(id: string, m: ChatMessage) {
+    this.threads.replace(id, m);
     const had = this.loaded.get(id);
-    if (!had) return;
+    // A reply is in the room's list only when it was sent there too.
+    if (!had || (m.parent !== undefined && !m.also && !had.list.some((x) => x.seq === m.seq))) return this.emit();
     this.loaded.set(id, { ...had, list: merge(had.list, [m]) });
     this.emit();
   }

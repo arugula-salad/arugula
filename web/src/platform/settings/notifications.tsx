@@ -54,7 +54,7 @@ export function NotificationSettings() {
   const mine = rows ?? rowsOf(p.quiet);
   const zone = tz ?? p.tz;
   const run = (patch: Parameters<typeof setNotify>[0]) => setNotify(patch).then(() => setErr(""), (e: Error) => setErr(e.message));
-  const level = (key: "channels" | "dms", label: string) => (
+  const level = (key: "channels" | "dms" | "threads", label: string) => (
     <li>
       <label>
         {label}{" "}
@@ -77,7 +77,7 @@ export function NotificationSettings() {
       hooks={{ "data-notify-settings": "" }}
       more={
         <p>
-          Each room's bell overrides the defaults here. "Mentions only" still pushes a DM. Pausing holds back pushes only: unread counts and the
+          Each room's bell overrides the defaults here, except that a thread you follow goes by its own line: its replies push you unless you chose "Mentions only" (a mention in it still does) or silenced the room. "Mentions only" still pushes a DM. Pausing holds back pushes only: unread counts and the
           moon others see on your avatar carry on. Quiet hours follow the time zone chosen here, not the device's, so travelling doesn't move
           them.
         </p>
@@ -86,6 +86,7 @@ export function NotificationSettings() {
       <ul class="platform-list settings-rows">
         {level("channels", "Channels")}
         {level("dms", "Direct messages")}
+        {level("threads", "Threads you follow")}
         <li>
           <strong>{p.paused ? (snoozed && p.snooze_until ? `Paused ${untilText(p.snooze_until)}` : "Paused by your quiet hours") : "Not paused"}</strong>{" "}
           {snoozePresets().map((s) => (

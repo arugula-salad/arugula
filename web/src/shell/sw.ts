@@ -99,7 +99,7 @@ interface Msg {
   /** Control's own (#104): a device or a person waits for approval. */
   control?: boolean;
   /** M123: control's chat: the room and message a push is about. */
-  chat?: { room: string; seq: number };
+  chat?: { room: string; seq: number; parent?: number };
   /** The platform's: an inbox item (M171), a deploy (M218), a hosted
    * workspace. Read by `platformTap`. */
   inbox?: unknown;

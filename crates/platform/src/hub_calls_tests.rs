@@ -300,9 +300,12 @@ async fn timing(base: &str, who: &str, path: &str) -> String {
 /// Postgres), read from the platform's own `Server-Timing`, so the header
 /// and the guard are one. The seed: a's five machines (all with grants),
 /// team t's channel and thirty pane threads, b reading fifteen of them.
-/// `/api/chat` is six: the reader's notification defaults and their DM
-/// people's pauses (#113, #115) are one more, and the rooms' topics, pin
-/// counts and topic rules (#119) one more, whatever the page's size.
+/// `/api/chat` is seven: the reader's notification defaults and their DM
+/// people's pauses (#113, #115) are one more, the rooms' topics, pin counts
+/// and topic rules (#119) one more, and the unread in the threads they follow
+/// (#106) one more (a per-account sum over `chat_thread_reads`, a different
+/// shape from the per-room reads `chat_marks` and `chat_room_extras` carry),
+/// whatever the page's size.
 #[tokio::test]
 async fn statements_per_request() {
     let hub = Arc::new(TestHub::default());
@@ -311,7 +314,7 @@ async fn statements_per_request() {
     crate::cache::catch_up(&app).await.unwrap();
     let mut said = vec![];
     for (who, path, most) in
-        [("a", "/api/grants", 1), ("b", "/api/chat", 6), ("a", "/api/workspaces", 3), ("a", "/api/billing", 2)]
+        [("a", "/api/grants", 1), ("b", "/api/chat", 7), ("a", "/api/workspaces", 3), ("a", "/api/billing", 2)]
     {
         timing(&base, who, path).await;
         let h = timing(&base, who, path).await;

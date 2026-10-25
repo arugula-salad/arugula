@@ -19,7 +19,7 @@ const changed = () => listeners.forEach((fn) => fn());
 addEventListener("hashchange", changed);
 
 /** Activity, or search results for `q` (M75), on the platform page. */
-export function openChatView(view: "activity" | "saved" | "search", q = "") {
+export function openChatView(view: "activity" | "saved" | "search" | "threads", q = "") {
   closeThread();
   openPlatform(view === "search" ? `/chat/search${q ? `?q=${encodeURIComponent(q)}` : ""}` : `/chat/${view}`);
 }
@@ -31,9 +31,10 @@ export function openChat() {
 }
 
 /** M123: a room in control's chat, at message `msg`, on the platform page. */
-export function openRoom(room: string, msg?: number) {
+export function openRoom(room: string, msg?: number, thread?: number) {
   closeThread();
-  openPlatform(`/chat/${room}${msg !== undefined ? `?msg=${msg}` : ""}`);
+  const q = [msg !== undefined ? `msg=${msg}` : "", thread !== undefined ? `thread=${thread}` : ""].filter(Boolean).join("&");
+  openPlatform(`/chat/${room}${q ? `?${q}` : ""}`);
 }
 
 /** Whether this page offers chat: control's (M123), when its `chat` flag

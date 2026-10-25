@@ -732,6 +732,16 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "chat_thread_reads"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Which reply threads a person follows (#106): the room and the thread's first message, whether they follow it, and how far they have read it. Private to them; never the message's text."
+why_asleep = "Followed threads and their unread come from control alone, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "chat_events"
 plane = "platform"
 process = "platform"

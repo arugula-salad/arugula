@@ -207,6 +207,12 @@ width?: number, height?: number, url: string, };
  */
 export type ChatFileKind = "image" | "video" | "audio" | "file";
 
+/**
+ * `POST /api/chat/rooms/{id}/threads/{seq}/follow`: follow the thread, or
+ * stop. Answers its first message.
+ */
+export type ChatFollow = { following: boolean, };
+
 export type ChatFound = { found: Array<ChatHit>, };
 
 export type ChatHit = { room: string, message: ChatMessage, };
@@ -237,7 +243,7 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
 
 /**
  * A message as the reader sees it.
@@ -303,17 +309,34 @@ pinned: boolean,
  * the topic or pinned a message. Drawn dim and centered; never
  * counted unread, pushed, edited or reacted to.
  */
-system?: ChatSystem, };
+system?: ChatSystem, 
+/**
+ * A reply (#106): the number of its thread's first message. The
+ * room's list has it only with `also`; the thread has it always.
+ */
+parent?: number, 
+/**
+ * A reply that was also sent to the channel.
+ */
+also: boolean, 
+/**
+ * The thread of replies this message starts, once it has any.
+ */
+thread?: ChatThread, };
 
 export type ChatMessages = { room: ChatRoom, 
 /**
- * Oldest first.
+ * Oldest first. With `thread`, its replies.
  */
 messages: Array<ChatMessage>, 
 /**
  * There are more in the direction asked.
  */
-more: boolean, };
+more: boolean, 
+/**
+ * With `thread`: the message that starts it, deleted or not.
+ */
+parent?: ChatMessage, };
 
 /**
  * `POST /api/chat/rooms/{id}/mute`: no pushes from this room.
@@ -337,7 +360,12 @@ export type ChatNewDm = { with: string, };
  * open. A page with several chat blocks (#123) has several: `room` is the
  * first and `more` the rest.
  */
-export type ChatOpen = { stream: string, room: string | null, more?: Array<string>, };
+export type ChatOpen = { stream: string, room: string | null, more?: Array<string>, 
+/**
+ * The thread open beside the room (#106), by its first message's
+ * number: replies in it aren't pushed for.
+ */
+thread?: number, };
 
 /**
  * `POST /api/chat/targets`: the thread about a pane or a session, or an
@@ -402,7 +430,17 @@ files?: Array<string>,
  * have paused notifications. For this message only; anywhere else it
  * does nothing.
  */
-notify_anyway?: boolean, };
+notify_anyway?: boolean, 
+/**
+ * A reply in the thread of this message (#106): the number of a
+ * message of the room that is not itself a reply.
+ */
+parent?: number, 
+/**
+ * With `parent`: also send it to the channel, as Slack's checkbox
+ * does. The room's list shows it too.
+ */
+also?: boolean, };
 
 export type ChatPosted = { seq: number, 
 /**
@@ -439,7 +477,7 @@ export type ChatPresent = { account: string, state: PresenceState, };
 /**
  * Why control pushed someone.
  */
-export type ChatPushWhy = "mention" | "dm" | "keyword" | "message";
+export type ChatPushWhy = "mention" | "dm" | "keyword" | "message" | "thread";
 
 export type ChatPushed = { account: string, why: ChatPushWhy, };
 
@@ -586,7 +624,13 @@ agents: Array<ChatRoomAgent>, };
 /**
  * `GET /api/chat`: every room the reader sees.
  */
-export type ChatRooms = { rooms: Array<ChatRoom>, };
+export type ChatRooms = { rooms: Array<ChatRoom>, 
+/**
+ * Unread replies in the threads the reader follows, and how many
+ * mention them (#106): the Threads view's badge, which the rooms'
+ * own counts leave out.
+ */
+threads_unread: number, threads_mentions: number, };
 
 /**
  * `PUT /api/chat/rooms/{id}/messages/{seq}/saved`: save the message for
@@ -693,6 +737,56 @@ broadcast_owners: boolean,
  * Only owners set a channel's topic (#119).
  */
 topic_owners: boolean, };
+
+/**
+ * The replies to a message, as one reader sees them (#106).
+ */
+export type ChatThread = { 
+/**
+ * Replies not deleted, and when the newest was written (ms).
+ */
+replies: number, last: number, 
+/**
+ * Who replied, the newest first, at most [`THREAD_REPLIERS`].
+ */
+repliers: Array<ChatPerson>, 
+/**
+ * The reader follows the thread. Always false to an agent.
+ */
+following: boolean, 
+/**
+ * The reader's mark in the thread (a room number), and the replies
+ * after it that aren't theirs (only while they follow), and how many
+ * of those mention them.
+ */
+read: number, unread: number, mentions: number, };
+
+/**
+ * One thread the reader follows, in [`ChatThreads`].
+ */
+export type ChatThreadItem = { room: string, 
+/**
+ * The message that starts it, with its [`ChatThread`].
+ */
+parent: ChatMessage, 
+/**
+ * The newest reply, for the list's preview.
+ */
+latest: ChatMessage | null, };
+
+/**
+ * `POST /api/chat/rooms/{id}/threads/{seq}/read`: read the thread up to
+ * here (a room number; it only moves forward). Answers the thread's first
+ * message, with its [`ChatThread`].
+ */
+export type ChatThreadRead = { seq: number, };
+
+/**
+ * `GET /api/chat/threads`: the threads the reader follows in rooms they
+ * see, the most recently active first (at most [`THREADS_LISTED`]), and
+ * all their unread: the badge on the Threads view.
+ */
+export type ChatThreads = { threads: Array<ChatThreadItem>, unread: number, mentions: number, };
 
 /**
  * `PUT /api/chat/rooms/{id}/topic`: what a channel's members (or, when
@@ -2109,7 +2203,7 @@ export type NotifyPrefs = {
  */
 channels: NotifyLevel, dms: NotifyLevel, 
 /**
- * Followed threads (they come with following).
+ * Replies in the threads the person follows (#106).
  */
 threads: NotifyLevel, 
 /**

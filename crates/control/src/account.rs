@@ -648,6 +648,8 @@ mod tests {
                 mentions,
                 agent: None,
                 via: None,
+                parent: None,
+                also: false,
             };
             chat.add_chat_message(room, &m).unwrap();
         };

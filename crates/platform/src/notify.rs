@@ -6,9 +6,11 @@
 //!
 //! - A room's level is the person's own choice for it, else their default
 //!   for its kind: DMs all, channels mentions. Panes', sessions' and
-//!   objects' threads are mentions too until following exists (the
-//!   `threads` default is for the threads a person follows, and is kept
-//!   now so that setting doesn't have to move later).
+//!   objects' threads are mentions too.
+//! - A reply in a thread the person follows (#106) goes by their `threads`
+//!   default (all, unless they changed it), not the room's level, except
+//!   that a room they set to `nothing` stays silent. A mention in the reply
+//!   is pushed as anywhere.
 //! - `mentions` lets through a mention and a DM; `all` every message;
 //!   `nothing` none.
 //! - Do not disturb holds chat's pushes back, whatever the level (unreads
@@ -33,12 +35,20 @@ pub fn default_level(prefs: &Prefs, room_kind: &str) -> NotifyLevel {
     match room_kind {
         "dm" => prefs.dms,
         "channel" => prefs.channels,
-        // The hook for followed threads (`prefs.threads`).
+        // The pushes of followed threads are their own (`thread_level`).
         _ => NotifyLevel::Mentions,
     }
 }
 
-/// Whether a level lets a push of this reason through.
+/// The level for a reply in a thread the person follows (#106): their
+/// default for followed threads, unless they set this room to nothing.
+pub fn thread_level(prefs: &Prefs, own: Option<NotifyLevel>) -> NotifyLevel {
+    if own == Some(NotifyLevel::Nothing) { NotifyLevel::Nothing } else { prefs.threads }
+}
+
+/// Whether a level lets a push of this reason through. A followed thread's
+/// reply ([`ChatPushWhy::Thread`]) is for `all`: at `mentions` only the
+/// mentions in it go, as `Mention` pushes.
 pub fn lets(level: NotifyLevel, why: ChatPushWhy) -> bool {
     match level {
         NotifyLevel::All => true,
@@ -91,7 +101,10 @@ pub fn chat_push(
     at: u64,
     anyway: bool,
 ) -> bool {
-    let level = own.unwrap_or_else(|| default_level(prefs, room_kind));
+    let level = match why {
+        ChatPushWhy::Thread => thread_level(prefs, own),
+        _ => own.unwrap_or_else(|| default_level(prefs, room_kind)),
+    };
     if !lets(level, why) {
         return false;
     }

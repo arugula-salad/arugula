@@ -37,8 +37,8 @@ export function PlatformPage() {
   if (s === null) return <Shell><p class="platform-section dim">Loading…</p></Shell>;
   if (s === "signed-out") return <SignIn />;
   if (typeof s === "object") return <Shell><p class="platform-section control-error">{s.error}</p></Shell>;
-  if (r.page === "chat") return <><ChatPage route={{ room: r.room, msg: r.msg, view: r.view, q: r.q }} /><Toast /></>;
-  if (r.page === "dm") return <><ChatPage route={{ room: r.room, msg: r.msg }} /><Toast /></>;
+  if (r.page === "chat") return <><ChatPage route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q }} /><Toast /></>;
+  if (r.page === "dm") return <><ChatPage route={{ room: r.room, msg: r.msg, thread: r.thread }} /><Toast /></>;
   return <Shell>{body(r, lost)}</Shell>;
 }
 

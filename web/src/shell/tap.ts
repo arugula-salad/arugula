@@ -9,10 +9,12 @@
 /** A chat push from control (M123): `chat: {room, seq}`, opened on the chat
  * page at that message. Anything that isn't a room's id opens nothing. */
 export function chatTap(n: { chat?: unknown }): string | undefined {
-  const c = n.chat as { room?: unknown; seq?: unknown } | undefined;
+  const c = n.chat as { room?: unknown; seq?: unknown; parent?: unknown } | undefined;
   if (!c || typeof c.room !== "string" || !/^[a-z]{2}_[0-9a-f]{8,32}$/.test(c.room)) return undefined;
   const msg = typeof c.seq === "number" && Number.isInteger(c.seq) ? `&msg=${c.seq}` : "";
-  return `/#chat=${c.room}${msg}`;
+  // A reply in a thread (#106) opens the thread.
+  const thread = typeof c.parent === "number" && Number.isInteger(c.parent) ? `&thread=${c.parent}` : "";
+  return `/#chat=${c.room}${msg}${thread}`;
 }
 
 /** A push's Share (#237): the pane, with its session's share picker open. */
@@ -44,10 +46,14 @@ export function platformTap(n: { chat?: unknown; inbox?: unknown; deploy?: unkno
   if (h && typeof h.project === "string" && /^prj_[0-9a-f]{32}$/.test(h.project) && typeof h.workspace === "string" && /^hw_[0-9a-f]{32}$/.test(h.workspace)) {
     return `/p/${h.project}/workspaces/${h.workspace}`;
   }
-  const c = n.chat as { room?: unknown; seq?: unknown } | undefined;
+  const c = n.chat as { room?: unknown; seq?: unknown; parent?: unknown } | undefined;
   if (c && typeof c.room === "string" && /^[a-z]{2}_[0-9a-f]{8,32}$/.test(c.room)) {
-    const msg = typeof c.seq === "number" && Number.isInteger(c.seq) ? `?msg=${c.seq}` : "";
-    return `/chat/${c.room}${msg}`;
+    const q = [
+      typeof c.seq === "number" && Number.isInteger(c.seq) ? `msg=${c.seq}` : "",
+      // A reply in a thread (#106) opens the thread.
+      typeof c.parent === "number" && Number.isInteger(c.parent) ? `thread=${c.parent}` : "",
+    ].filter(Boolean);
+    return `/chat/${c.room}${q.length ? `?${q.join("&")}` : ""}`;
   }
   // M171: something on a linked repo wants you: the inbox. M202: a native
   // issue opens itself (at the message, for a mention in its thread); a

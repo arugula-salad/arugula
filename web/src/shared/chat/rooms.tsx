@@ -24,6 +24,9 @@ import { RoomActivityView, RoomSearchView, SearchField } from "./find";
 import { MsgAvatar } from "./avatar";
 import { WebPreviewsSwitch } from "./previews";
 import { AboutButton, editDescription, editTopic, PinsButton, TopicLine } from "./pins-ui";
+import { ThreadPanel } from "./thread-panel";
+import { ThreadsView } from "./threads-view";
+import { badge } from "./threads";
 import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
 import { AgentsChip } from "./agents-chip";
 import { newSection, openGroupMenu, openRoomMenu, RoomStar, toggleGroup } from "./sections";
@@ -302,6 +305,15 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
           <span class="chat-label">Saved</span>
           {savedTodo > 0 && <span class="chat-count">{savedTodo}</span>}
         </button>
+        <button
+          class={`chat-row chat-activity${route.view === "threads" ? " selected" : ""}${store.threadsUnread.n ? " unread" : ""}`}
+          data-chat-threads
+          onClick={() => nav.openChatView("threads")}
+        >
+          <span class="chat-sigil">↩</span>
+          <span class="chat-label">Threads</span>
+          {store.threadsUnread.n > 0 && <span class={store.threadsUnread.mentions ? "chat-count mention" : "chat-count"}>{badge(store.threadsUnread.n, store.threadsUnread.mentions)}</span>}
+        </button>
       </div>
       {groups.length === 0 && (
         <p class="chat-none" data-chat-no-team>
@@ -364,11 +376,13 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
       <RoomActivityView store={store} phone={phone} />
     ) : route.view === "saved" ? (
       <SavedView phone={phone} />
+    ) : route.view === "threads" ? (
+      <ThreadsView store={store} phone={phone} />
     ) : (
       <RoomSearchView store={store} q={route.q ?? ""} phone={phone} />
     )
   ) : picked ? (
-    <RoomView key={picked.id} store={store} room={picked} phone={phone} focus={route.msg} />
+    <RoomView key={picked.id} store={store} room={picked} phone={phone} focus={route.msg} thread={route.thread} />
   ) : missing ? (
     <div class="chat-thread chat-empty" data-room-missing>
       That room isn't one you can read (or it's gone).
@@ -393,7 +407,7 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
         <MaintenanceNote />
         {picked ? (
           <div class="chat-body">
-            <RoomView key={picked.id} store={store} room={picked} phone={phone} focus={route.msg} pinned />
+            <RoomView key={picked.id} store={store} room={picked} phone={phone} focus={route.msg} pinned thread={route.thread} />
           </div>
         ) : (
           <div class="chat-thread chat-empty" data-room-missing>
@@ -491,7 +505,21 @@ function topicOf(r: ChatRoom, api: PlatformApi): string {
   }
 }
 
-function RoomView({ store, room, phone, focus, pinned }: { store: ChatStore; room: ChatRoom; phone: boolean; focus?: number; pinned?: boolean }) {
+function RoomView({
+  store,
+  room,
+  phone,
+  focus,
+  pinned,
+  thread,
+}: {
+  store: ChatStore;
+  room: ChatRoom;
+  phone: boolean;
+  focus?: number;
+  pinned?: boolean;
+  thread?: number;
+}) {
   const [details, setDetails] = useState(detailsOpen && !phone);
   const api = usePlatformApi();
   const { nav, toast } = api;
@@ -512,6 +540,16 @@ function RoomView({ store, room, phone, focus, pinned }: { store: ChatStore; roo
     if (room.kind === "pane") return api.goToPane(room.machine, room.target, null);
     api.goToSession(room.machine);
   };
+  // A thread open beside the room (#106): the whole screen on a phone. The
+  // room's own `&msg=` is the room's unless it's a reply in that thread.
+  const closeThread = () => nav.openRoom(room.id);
+  if (thread !== undefined && phone) {
+    return (
+      <div class="chat-main">
+        <ThreadPanel key={thread} store={store} room={room} parent={thread} phone focus={focus} close={closeThread} />
+      </div>
+    );
+  }
   return (
     <div class="chat-main">
       <section class="chat-thread" aria-label={name} data-room-view={room.id}>
@@ -567,9 +605,13 @@ function RoomView({ store, room, phone, focus, pinned }: { store: ChatStore; roo
             </button>
           )}
         </header>
-        <RoomBody room={room} phone={phone} focus={focus} name={name} chip />
+        <RoomBody room={room} phone={phone} focus={thread === undefined ? focus : undefined} name={name} chip />
       </section>
-      {details && <RoomDetails store={store} room={room} close={toggleDetails} />}
+      {thread !== undefined ? (
+        <ThreadPanel key={thread} store={store} room={room} parent={thread} phone={false} focus={focus} close={closeThread} />
+      ) : (
+        details && <RoomDetails store={store} room={room} close={toggleDetails} />
+      )}
     </div>
   );
 }

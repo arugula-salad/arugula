@@ -154,6 +154,13 @@ pub struct ChatRoom {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatRooms {
     pub rooms: Vec<ChatRoom>,
+    /// Unread replies in the threads the reader follows, and how many
+    /// mention them (#106): the Threads view's badge, which the rooms'
+    /// own counts leave out.
+    #[serde(default)]
+    pub threads_unread: u64,
+    #[serde(default)]
+    pub threads_mentions: u64,
 }
 
 /// `GET /api/chat/rooms/{id}`: a room and who sees it (whom `@` reaches).
@@ -264,6 +271,18 @@ pub struct ChatMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub system: Option<ChatSystem>,
+    /// A reply (#106): the number of its thread's first message. The
+    /// room's list has it only with `also`; the thread has it always.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub parent: Option<i64>,
+    /// A reply that was also sent to the channel.
+    #[serde(default)]
+    pub also: bool,
+    /// The thread of replies this message starts, once it has any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub thread: Option<ChatThread>,
 }
 
 /// One attached file, as the reader sees it. `url` is control's, for the
@@ -367,6 +386,28 @@ pub struct ChatPin {
 pub struct ChatPins {
     pub pins: Vec<ChatPin>,
 }
+
+/// The replies to a message, as one reader sees them (#106).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatThread {
+    /// Replies not deleted, and when the newest was written (ms).
+    pub replies: u32,
+    pub last: u64,
+    /// Who replied, the newest first, at most [`THREAD_REPLIERS`].
+    pub repliers: Vec<ChatPerson>,
+    /// The reader follows the thread. Always false to an agent.
+    pub following: bool,
+    /// The reader's mark in the thread (a room number), and the replies
+    /// after it that aren't theirs (only while they follow), and how many
+    /// of those mention them.
+    pub read: i64,
+    pub unread: u64,
+    pub mentions: u64,
+}
+
+/// How many repliers a [`ChatThread`] names.
+pub const THREAD_REPLIERS: usize = 5;
 
 /// One emoji on a message, as the reader sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -478,16 +519,24 @@ pub struct ChatMessagesQuery {
     pub before: Option<i64>,
     #[serde(default)]
     pub limit: Option<u32>,
+    /// Read the replies in the thread of this message instead of the
+    /// room's list (#106).
+    #[serde(default)]
+    pub thread: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatMessages {
     pub room: ChatRoom,
-    /// Oldest first.
+    /// Oldest first. With `thread`, its replies.
     pub messages: Vec<ChatMessage>,
     /// There are more in the direction asked.
     pub more: bool,
+    /// With `thread`: the message that starts it, deleted or not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub parent: Option<ChatMessage>,
 }
 
 /// `POST /api/chat/teams/{team}/channels`: owners and editors make them.
@@ -555,6 +604,16 @@ pub struct ChatPost {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub notify_anyway: Option<bool>,
+    /// A reply in the thread of this message (#106): the number of a
+    /// message of the room that is not itself a reply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub parent: Option<i64>,
+    /// With `parent`: also send it to the channel, as Slack's checkbox
+    /// does. The room's list shows it too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub also: Option<bool>,
 }
 
 /// Why control pushed someone.
@@ -568,6 +627,8 @@ pub enum ChatPushWhy {
     Keyword,
     /// A message in a room the person set to every message (#113).
     Message,
+    /// A reply in a thread the person follows (#106).
+    Thread,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -660,6 +721,48 @@ pub struct ChatSaved {
     pub items: Vec<ChatSavedItem>,
 }
 
+/// `POST /api/chat/rooms/{id}/threads/{seq}/read`: read the thread up to
+/// here (a room number; it only moves forward). Answers the thread's first
+/// message, with its [`ChatThread`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatThreadRead {
+    pub seq: i64,
+}
+
+/// `POST /api/chat/rooms/{id}/threads/{seq}/follow`: follow the thread, or
+/// stop. Answers its first message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatFollow {
+    pub following: bool,
+}
+
+/// One thread the reader follows, in [`ChatThreads`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatThreadItem {
+    pub room: String,
+    /// The message that starts it, with its [`ChatThread`].
+    pub parent: ChatMessage,
+    /// The newest reply, for the list's preview.
+    pub latest: Option<ChatMessage>,
+}
+
+/// `GET /api/chat/threads`: the threads the reader follows in rooms they
+/// see, the most recently active first (at most [`THREADS_LISTED`]), and
+/// all their unread: the badge on the Threads view.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatThreads {
+    pub threads: Vec<ChatThreadItem>,
+    pub unread: u64,
+    pub mentions: u64,
+}
+
+/// The most threads one [`ChatThreads`] lists.
+pub const THREADS_LISTED: usize = 100;
+
 /// `POST /api/chat/rooms/{id}/mute`: no pushes from this room.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -735,7 +838,7 @@ pub struct NotifyPrefs {
     /// Levels for rooms with none of their own (#113).
     pub channels: NotifyLevel,
     pub dms: NotifyLevel,
-    /// Followed threads (they come with following).
+    /// Replies in the threads the person follows (#106).
     pub threads: NotifyLevel,
     /// Snoozed until (ms since the epoch), while that's ahead.
     pub snooze_until: Option<u64>,
@@ -812,6 +915,11 @@ pub struct ChatOpen {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub more: Option<Vec<String>>,
+    /// The thread open beside the room (#106), by its first message's
+    /// number: replies in it aren't pushed for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub thread: Option<i64>,
 }
 
 /// How a person's presence shows to the teammates who see it: `active` (a
@@ -914,6 +1022,22 @@ pub enum ChatLive {
     /// again. No room list changes with it.
     Reacted {
         room: String,
+        seq: i64,
+    },
+    /// A reply in a thread was written, edited, deleted or reacted to
+    /// (#106): read the thread again (the replies after the newest it has,
+    /// and the message at `parent`, whose summary moved). A reply also sent
+    /// to the channel is announced as a [`Message`](Self::Message) too.
+    Reply {
+        room: String,
+        parent: i64,
+        seq: i64,
+    },
+    /// The reader's own mark in a thread moved (another of their pages), or
+    /// they followed or unfollowed it.
+    ThreadRead {
+        room: String,
+        parent: i64,
         seq: i64,
     },
     /// A room appeared, changed or went: reload the rooms.
@@ -1180,6 +1304,10 @@ pub struct AgentMessagesQuery {
     pub limit: Option<u32>,
     #[serde(default)]
     pub mentions: bool,
+    /// The replies in the thread of this message instead of the room's
+    /// list (#106).
+    #[serde(default)]
+    pub thread: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1190,4 +1318,7 @@ pub struct AgentMessages {
     /// The room's pinned messages, the newest pin first (#119).
     #[serde(default)]
     pub pins: Vec<ChatPin>,
+    /// With `thread`: the message that starts it.
+    #[serde(default)]
+    pub parent: Option<ChatMessage>,
 }

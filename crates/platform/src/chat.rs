@@ -109,6 +109,7 @@ pub mod previews;
 pub(crate) mod reactions;
 pub(crate) mod saved;
 pub(crate) mod sidebar;
+pub(crate) mod threads;
 pub(crate) mod typing;
 
 type J<T> = Result<Json<T>, ApiError>;
@@ -656,6 +657,8 @@ struct Shower {
     files: HashMap<(String, i64), Vec<ChatFileRow>>,
     /// Which are system lines or pinned (#119).
     marks: pins::Marks,
+    /// The threads these messages start (#106), for the reader.
+    threads: HashMap<(String, i64), threads::Summary>,
     /// Who is reading: a reaction is "mine" when it is this account's and
     /// this agent's ("" for the person), so an agent sees its own apart
     /// from its owner's.
@@ -668,8 +671,10 @@ impl Shower {
         let reactions = reactions_of(&app.db, ms)?;
         let files = files::files_of(&app.db, ms)?;
         let marks = pins::Marks::of(&app.db, ms)?;
+        let threads = threads::summaries(&app.db, reader, ms)?;
         let mut authors: Vec<String> = ms.iter().map(|m| m.author.clone()).filter(|a| !a.is_empty()).collect();
         authors.extend(reactions.values().flatten().map(|r| r.account.clone()));
+        authors.extend(threads.values().flat_map(|t| t.repliers.iter().cloned()));
         authors.sort();
         authors.dedup();
         let mut machines: Vec<String> =
@@ -708,7 +713,16 @@ impl Shower {
                 (m, (name, opens))
             })
             .collect();
-        Ok(Self { names, machines, agents, reactions, files, marks, reader: (reader.to_owned(), String::new()) })
+        Ok(Self {
+            names,
+            machines,
+            agents,
+            reactions,
+            files,
+            marks,
+            threads,
+            reader: (reader.to_owned(), String::new()),
+        })
     }
 
     /// Read as the agent on `machine` (for its owner `reader`).
@@ -753,6 +767,16 @@ impl Shower {
                 .collect(),
             pinned: self.marks.pinned(m),
             system: self.marks.system(m),
+            parent: m.parent,
+            also: m.also,
+            thread: self.threads.get(&(m.room.clone(), m.seq)).map(|t| {
+                let named = |a: &str| ChatPerson {
+                    account: a.to_owned(),
+                    name: self.names.get(a).cloned().unwrap_or_default(),
+                    dnd: false,
+                };
+                t.shown(named, !self.reader.1.is_empty())
+            }),
         }
     }
 
@@ -971,6 +995,8 @@ struct StreamInfo {
     account: String,
     /// The rooms its page shows (more than one with several chat blocks).
     open: Vec<String>,
+    /// The thread open beside it (#106).
+    thread: Option<i64>,
 }
 
 impl Default for Hub {
@@ -1120,6 +1146,13 @@ impl Hub {
         self.streams.lock().unwrap().values().any(|s| s.account == account && s.open.iter().any(|r| r == room))
     }
 
+    /// Whether `account` has the thread `parent` of `room` open (#106).
+    fn has_open_thread(&self, account: &str, room: &str, parent: i64) -> bool {
+        self.streams.lock().unwrap().values().any(|s| {
+            s.account == account && s.open.first().map(String::as_str) == Some(room) && s.thread == Some(parent)
+        })
+    }
+
     /// Whether `account` may be pushed for `room` now (and note it). Per
     /// machine (M144): with two, a room's pushes are at most one a
     /// [`PUSH_GAP_MS`] from each.
@@ -1233,6 +1266,8 @@ impl Live {
             | ChatLive::Changed { room, .. }
             | ChatLive::Reacted { room, .. }
             | ChatLive::Pinned { room }
+            | ChatLive::Reply { room, .. }
+            | ChatLive::ThreadRead { room, .. }
             | ChatLive::Read { room, .. }
             | ChatLive::Object { room, .. } => self.rooms.contains(room),
             // Sidebar and Saved are told to their account only (`out.to`).
@@ -1270,7 +1305,7 @@ pub async fn live(
         if streams.values().filter(|x| x.account == s.account).count() >= STREAMS_PER_ACCOUNT {
             return Err(err(StatusCode::TOO_MANY_REQUESTS, "too many open chat pages; close some"));
         }
-        streams.insert(id.clone(), StreamInfo { account: s.account.clone(), open: Vec::new() });
+        streams.insert(id.clone(), StreamInfo { account: s.account.clone(), open: Vec::new(), thread: None });
     }
     // A page that opened is a person who's here: seen now, active at the
     // page's first beat (it says whether it's in use).
@@ -1350,6 +1385,7 @@ pub async fn open(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Cha
         .filter(|x| x.account == s.account)
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such stream"))?;
     st.open = b.room.iter().chain(b.more.iter().flatten()).cloned().collect();
+    st.thread = b.room.as_ref().and(b.thread);
     Ok(Json(b))
 }
 
@@ -1375,7 +1411,8 @@ pub async fn rooms(State(app): State<Arc<Platform>>, s: Person) -> J<ChatRooms> 
     }
     let own = marks.iter().filter_map(|(id, m)| m.2.map(|l| (id.clone(), l))).collect();
     with_levels(&app, &s.account, &mut rooms, Some(own))?;
-    Ok(Json(ChatRooms { rooms }))
+    let (threads_unread, threads_mentions) = threads::totals(&app, &s.account, &seen).await?;
+    Ok(Json(ChatRooms { rooms, threads_unread, threads_mentions }))
 }
 
 /// A channel's name: one lowercase word of letters, digits, `-` and `_`.
@@ -1796,11 +1833,20 @@ pub async fn messages(
         (None, Some(b)) => Page::Before(b),
         (None, None) => Page::Newest,
     };
-    let (ms, more) = app.db.chat_messages(&room.id, page, q.limit.unwrap_or(PAGE).clamp(1, MAX_PAGE))?;
+    let limit = q.limit.unwrap_or(PAGE).clamp(1, MAX_PAGE);
+    if let Some(parent) = q.thread {
+        let (first, ms, more) = threads::page(&app, &room, from, parent, page, limit)?;
+        let all: Vec<&Message> = std::iter::once(&first).chain(ms.iter()).collect();
+        let shower = Shower::of(&app, &s.account, &all).await?;
+        let messages = ms.iter().map(|m| shower.show(m)).collect();
+        let room = listed(&app, &facts, &s.account, &room, from)?;
+        return Ok(Json(ChatMessages { room, messages, more, parent: Some(shower.show(&first)) }));
+    }
+    let (ms, more) = app.db.chat_messages(&room.id, page, limit)?;
     let ms: Vec<&Message> = ms.iter().filter(|m| m.at >= from).collect();
     let shower = Shower::of(&app, &s.account, &ms).await?;
     let messages = ms.into_iter().map(|m| shower.show(m)).collect();
-    Ok(Json(ChatMessages { room: listed(&app, &facts, &s.account, &room, from)?, messages, more }))
+    Ok(Json(ChatMessages { room: listed(&app, &facts, &s.account, &room, from)?, messages, parent: None, more }))
 }
 
 fn sizes(text: &str, quote: Option<&str>) -> Result<(), ApiError> {
@@ -1848,7 +1894,7 @@ pub(crate) async fn post_full(
 ) -> Result<ChatPosted, ApiError> {
     let s = Person { account: author.to_owned() };
     gate(app, &s.account).await?;
-    let (room, _, facts) = room_for(app, &s.account, id).await?;
+    let (room, from, facts) = room_for(app, &s.account, id).await?;
     if watching(app, &facts, &s.account, &room)? {
         return Err(refusal(
             StatusCode::FORBIDDEN,
@@ -1858,6 +1904,18 @@ pub(crate) async fn post_full(
     }
     if !writable(app, &facts, &room, &s.account)? {
         return Err(err(StatusCode::CONFLICT, "this room is read-only"));
+    }
+    // A reply goes under a message that starts a thread: one that isn't a
+    // reply, brought in or blank with nothing under it (a deleted message
+    // with a thread keeps taking replies).
+    if let Some(p) = b.parent {
+        let first = threads::parent_in(app, &room, from, p)?;
+        if first.imported.is_some() {
+            return Err(err(StatusCode::CONFLICT, "an archive's messages are read-only"));
+        }
+        if first.deleted.is_some() && app.db.chat_thread_repliers(&room.id, p, p)?.is_empty() {
+            return Err(err(StatusCode::CONFLICT, "that message was deleted"));
+        }
     }
     let text = b.text.trim();
     let quote = b.quote.as_deref().filter(|q| !q.trim().is_empty());
@@ -1911,18 +1969,33 @@ pub(crate) async fn post_full(
             mentions: &stored,
             agent: agent.map(|a| a.machine.as_str()),
             via,
+            parent: b.parent,
+            also: b.parent.is_some() && b.also.unwrap_or(false),
         },
     )?;
     if !attach.is_empty() {
         let ids: Vec<String> = attach.into_iter().map(|f| f.id).collect();
         app.db.attach_chat_files(&room.id, seq, &s.account, &ids)?;
     }
-    app.chat.publish(&app.db, ChatLive::Message { room: room.id.clone(), seq }, None);
+    // A reply changes its thread, and the room's list only when it was also
+    // sent to the channel.
+    let also = b.parent.is_some() && b.also.unwrap_or(false);
+    if let Some(parent) = b.parent {
+        app.chat.publish(&app.db, ChatLive::Reply { room: room.id.clone(), parent, seq }, None);
+    }
+    if b.parent.is_none() || also {
+        app.chat.publish(&app.db, ChatLive::Message { room: room.id.clone(), seq }, None);
+    }
+    let thread = match b.parent {
+        Some(parent) => Some(ThreadPush { parent, also, followers: app.db.chat_thread_followers(&room.id, parent)? }),
+        None => None,
+    };
     let pushed = push(
         app,
         &facts,
         &room,
         (&s.account, agent, via),
+        thread,
         seq,
         if text.is_empty() && quote.is_none() {
             &files_label
@@ -1936,6 +2009,14 @@ pub(crate) async fn post_full(
     )
     .await?;
     Ok(ChatPosted { seq, mentions: stored, unreached, pushed })
+}
+
+/// A reply being pushed (#106): its thread, whether it was also sent to the
+/// channel, and who follows the thread now.
+struct ThreadPush {
+    parent: i64,
+    also: bool,
+    followers: Vec<String>,
 }
 
 /// How chat's pushes go: to every subscription the account has, with the
@@ -1960,6 +2041,7 @@ async fn push(
     facts: &Facts,
     room: &Room,
     (author, agent, via): (&str, Option<&AgentPrincipal>, Option<&str>),
+    thread: Option<ThreadPush>,
     seq: i64,
     text: &str,
     named: &[String],
@@ -1981,11 +2063,20 @@ async fn push(
         }
     }
     // Everyone else in a channel who asked for every message there (#113):
-    // by their level for the room, else their default.
-    if !inboxed && room.kind != "dm" {
+    // by their level for the room, else their default. A reply only in its
+    // thread isn't a message of the channel: its followers hear it below.
+    if !inboxed && room.kind != "dm" && thread.as_ref().is_none_or(|t| t.also) {
         for a in people {
             if a != author && !named.contains(a) {
                 to.push((a.clone(), ChatPushWhy::Message));
+            }
+        }
+    }
+    // The thread's followers (#106), at their level for followed threads.
+    if let Some(t) = thread.as_ref().filter(|_| !inboxed) {
+        for a in &t.followers {
+            if a != author && !to.iter().any(|(x, _)| x == a) {
+                to.push((a.clone(), ChatPushWhy::Thread));
             }
         }
     }
@@ -2034,11 +2125,23 @@ async fn push(
     let now = now_ms();
     let mut out = Vec::new();
     let mut sends = Vec::new();
+    // A reply only in its thread is quiet for those with that thread open,
+    // not for everyone with the room open, and is its own push to a person
+    // within the minute.
+    let replying = thread.as_ref().filter(|t| !t.also);
+    let gap_key = match replying {
+        Some(t) => format!("{}#{}", room.id, t.parent),
+        None => room.id.clone(),
+    };
     for (account, why) in to {
+        let open = match replying {
+            Some(t) => app.chat.has_open_thread(&account, &room.id, t.parent),
+            None => app.chat.has_open(&account, &room.id),
+        };
         if account == author
             || app.db.chat_mark(&room.id, &account)?.1
-            || app.chat.has_open(&account, &room.id)
-            || !app.chat.may_push(&account, &room.id, now)
+            || open
+            || !app.chat.may_push(&account, &gap_key, now)
         {
             continue;
         }
@@ -2048,10 +2151,11 @@ async fn push(
             ChatPushWhy::Keyword => format!("{me} wrote a word you watch in {place}"),
             ChatPushWhy::Dm => format!("{me} wrote to you"),
             ChatPushWhy::Message => format!("{me} in {place}"),
+            ChatPushWhy::Thread => format!("{me} replied in a thread in {place}"),
         };
         let msg = json!({
-            "chat": { "room": room.id, "seq": seq },
-            "title": title, "body": body, "tag": format!("chat-{}", room.id), "control": true,
+            "chat": { "room": room.id, "seq": seq, "parent": thread.as_ref().map(|t| t.parent) },
+            "title": title, "body": body, "tag": format!("chat-{}", gap_key.replace('#', "-t")), "control": true,
         });
         sends.push((account.clone(), msg));
         out.push(ChatPushed { account, why });
@@ -2122,6 +2226,7 @@ pub async fn edit(
     named.extend(agent_mentions(&app, &facts, &room, &mut unreached, None).await?);
     app.db.edit_chat_message(&room.id, seq, text, &named, now_ms())?;
     app.chat.publish(&app.db, ChatLive::Changed { room: room.id.clone(), seq }, None);
+    threads::announce(&app, &m);
     Ok(Json(shown(&app, &s.account, &message_in(&app, &room, seq)?).await?))
 }
 
@@ -2156,6 +2261,7 @@ pub async fn delete(
         if was_pinned {
             app.chat.publish(&app.db, ChatLive::Pinned { room: room.id.clone() }, None);
         }
+        threads::announce(&app, &m);
     }
     Ok(Json(shown(&app, &s.account, &message_in(&app, &room, seq)?).await?))
 }
@@ -2443,6 +2549,8 @@ async fn import(
                 mentions,
                 agent: None,
                 via: None,
+                parent: None,
+                also: false,
             },
         })
         .collect();

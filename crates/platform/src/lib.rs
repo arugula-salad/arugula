@@ -61,6 +61,8 @@ mod chat_previews_tests;
 mod chat_reactions_tests;
 #[cfg(test)]
 mod chat_tests;
+#[cfg(test)]
+mod chat_threads_tests;
 pub mod clients;
 #[cfg(test)]
 mod clients_tests;

@@ -54,7 +54,10 @@ function build(client: Client): PlatformApi {
       // The platform page's address for it, else the shell's old one, which
       // goes there once control has a platform page (M154).
       openGrants: () => openPlatform("/settings"),
-      roomLink: (room, seq) => platformHref(`/chat/${room}?msg=${seq}`) ?? `${location.origin}${location.pathname}${location.search}#chat=${room}&msg=${seq}`,
+      roomLink: (room, seq, thread) => {
+        const on = thread !== undefined ? `&thread=${thread}` : "";
+        return platformHref(`/chat/${room}?msg=${seq}${on}`) ?? `${location.origin}${location.pathname}${location.search}#chat=${room}&msg=${seq}${on}`;
+      },
     },
     machine(id) {
       const h = hostOf(id);

@@ -1529,10 +1529,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 130 tables in two planes ("Two planes, two trust rules"):
+Control's database has 131 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (44 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (86 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (87 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1612,6 +1612,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `chat_reads` | metadata | A person's read mark in a room, and how loud they chose it (all, mentions or nothing; none is their default). | Unread counts and pushes, with every machine asleep. | yes |  |
 | `notify_prefs` | metadata | A person's notification settings (#113, #115): their default levels for channels, DMs and followed threads, a snooze, quiet hours by weekday with their time zone, and whether do not disturb covers every push. No message text. | Chat's pushes are decided from it with every machine asleep but the platform's. | yes |  |
 | `chat_saved` | metadata | The messages a person saved for later (#116): which room and message number, when, whether it's done, and when to remind them once. Private to them; never the message's text. | Saved lists and reminder pushes come from control alone, with every machine asleep. | yes |  |
+| `chat_thread_reads` | metadata | Which reply threads a person follows (#106): the room and the thread's first message, whether they follow it, and how far they have read it. Private to them; never the message's text. | Followed threads and their unread come from control alone, with every machine asleep. | yes |  |
 | `chat_events` | metadata | Chat's live events, numbered (M144): a room and a message number that changed, a read mark that moved (and whose), or that who sees what may have changed, and who is typing in a room (#111: a short-lived row, pruned within seconds). Never a message's text. Every machine of the platform sends its open pages the ones after the last it sent, and a page that dropped resumes from them. The newest 10,000 are kept. | Open pages hear of messages, edits and read marks through control alone, with every machine asleep. | partly: its read marks' events lose its name (they stay as nameless markers, so the numbers hold); events about rooms name no one and go with the oldest. |  |
 | `chat_readers` | metadata | Who may read the thread on a pane or a session, as its machine last said. | A pane's thread stays readable while its machine sleeps. | partly: its machines' rows go, and it's taken off the rest. |  |
 | `doc_links` | metadata | A Shared Doc link: its id, the machine that shared it, its version, size and parts, and how often it opened. | A shared Doc opens while the machine that shared it sleeps. | yes |  |

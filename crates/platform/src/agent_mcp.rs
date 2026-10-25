@@ -513,8 +513,13 @@ impl Agent {
     }
 
     async fn read_thread(&self, a: ReadThread) -> Out {
-        let q =
-            AgentMessagesQuery { after: a.after_seq, before: a.before_seq, limit: a.limit, mentions: a.mentions_only };
+        let q = AgentMessagesQuery {
+            after: a.after_seq,
+            before: a.before_seq,
+            limit: a.limit,
+            mentions: a.mentions_only,
+            thread: a.thread,
+        };
         let r = agent_threads::messages(self.state(), self.me(), Path(a.room.clone()), Query(q)).await?.0;
         let lines: Vec<String> = r
             .messages
@@ -537,7 +542,17 @@ impl Agent {
                 let reacted =
                     if rs.is_empty() { String::new() } else { format!("  [reactions: {}]", reactions_line(&rs)) };
                 let pinned = if v["pinned"] == true { "  [pinned]" } else { "" };
-                format!("[{}] {by}: {}{reacted}{pinned}", v["seq"], v["text"].as_str().unwrap_or_default())
+                // A reply says whose thread it is in; a message with replies
+                // says how many (read them with `thread`).
+                let threaded = match (v["parent"].as_i64(), v["thread"]["replies"].as_u64()) {
+                    (Some(p), _) => format!(
+                        "  [reply in the thread of {p}{}]",
+                        if v["also"] == true { ", also sent to the channel" } else { "" }
+                    ),
+                    (None, Some(n)) => format!("  [{n} repl{} in its thread]", if n == 1 { "y" } else { "ies" }),
+                    _ => String::new(),
+                };
+                format!("[{}] {by}: {}{reacted}{pinned}{threaded}", v["seq"], v["text"].as_str().unwrap_or_default())
             })
             .collect();
         let mut about = String::new();
@@ -550,7 +565,8 @@ impl Agent {
         if !r.pins.is_empty() {
             about += &format!("Pinned:\n{}\n", pins_line(&r.pins));
         }
-        let text = format!("{about}{} message(s) in {}:\n{}", lines.len(), a.room, lines.join("\n"));
+        let of = a.thread.map_or(String::new(), |t| format!(" in the thread of {t}"));
+        let text = format!("{about}{} message(s) in {}{of}:\n{}", lines.len(), a.room, lines.join("\n"));
         let project = r.room.project.clone();
         Ok(Done { text, value: to_value(&r), project, note: format!("read {}", a.room) })
     }
@@ -594,7 +610,7 @@ impl Agent {
             );
             return Ok(Done { text, value: to_value(&m), project: None, note: format!("pinned in {}", a.room) });
         }
-        let b = ChatPost { text: a.text, ..Default::default() };
+        let b = ChatPost { text: a.text, parent: a.parent, also: a.also.then_some(true), ..Default::default() };
         let r = agent_threads::post(self.state(), self.me(), Path(a.room.clone()), Json(b)).await?.0;
         let v = to_value(&r);
         let text = format!("Posted in {} as {}'s agent on {}: {v}", a.room, self.owner, token_label(&self.token.name));
@@ -1044,6 +1060,8 @@ struct ReadThread {
     limit: Option<u32>,
     #[serde(default)]
     mentions_only: bool,
+    #[serde(default)]
+    thread: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -1059,6 +1077,10 @@ struct PostThread {
     pin_seq: Option<i64>,
     #[serde(default)]
     remove: bool,
+    #[serde(default)]
+    parent: Option<i64>,
+    #[serde(default)]
+    also: bool,
 }
 
 #[derive(Deserialize)]

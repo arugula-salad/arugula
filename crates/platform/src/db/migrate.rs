@@ -372,6 +372,12 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0046_chat_topics_pins.sql"),
         additive: true,
     },
+    Migration {
+        version: 47,
+        name: "chat_threads",
+        sql: include_str!("../../migrations/sqlite/0047_chat_threads.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -652,6 +658,12 @@ const POSTGRES: &[Migration] = &[
         version: 46,
         name: "chat_topics_pins",
         sql: include_str!("../../migrations/postgres/0046_chat_topics_pins.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 47,
+        name: "chat_threads",
+        sql: include_str!("../../migrations/postgres/0047_chat_threads.sql"),
         additive: true,
     },
 ];

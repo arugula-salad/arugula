@@ -370,3 +370,23 @@ fn the_migration_carries_muted_over_to_nothing() {
     };
     assert_eq!((level("r1").as_deref(), level("r2")), (Some("nothing"), None));
 }
+
+/// A reply in a followed thread goes by the thread default (#106), apart
+/// from the room's level, which only a `nothing` for the room overrides.
+#[test]
+fn a_followed_threads_reply_goes_by_the_thread_default() {
+    let now = at("2026-10-26T12:00:00Z");
+    let p = Prefs::default();
+    // Channels are on mentions, and a thread's replies still go (all).
+    assert!(chat_push(&p, "channel", None, Why::Thread, now, false));
+    assert!(chat_push(&p, "channel", Some(L::Mentions), Why::Thread, now, false));
+    assert!(!chat_push(&p, "channel", Some(L::Nothing), Why::Thread, now, false), "a muted room stays quiet");
+    let quiet = Prefs { threads: L::Mentions, ..Prefs::default() };
+    assert!(!chat_push(&quiet, "channel", None, Why::Thread, now, false), "mentions in it come as mentions");
+    assert!(chat_push(&quiet, "channel", None, Why::Mention, now, false));
+    let off = Prefs { threads: L::Nothing, ..Prefs::default() };
+    assert!(!chat_push(&off, "dm", Some(L::All), Why::Thread, now, false));
+    // Not while paused.
+    let snoozed = Prefs { snooze_until: Some(now + 60_000), ..Prefs::default() };
+    assert!(!chat_push(&snoozed, "channel", None, Why::Thread, now, false));
+}

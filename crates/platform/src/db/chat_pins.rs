@@ -233,7 +233,19 @@ impl Db {
 /// A system line's message: `author` did it (`agent` on its machine, for
 /// its owner), and `text` says what.
 fn line<'a>(author: &'a str, at: u64, agent: Option<&'a str>, text: &'a str) -> NewMessage<'a> {
-    NewMessage { author, at, text, quote: None, ref_machine: None, ref_pane: None, mentions: &[], agent, via: None }
+    NewMessage {
+        author,
+        at,
+        text,
+        quote: None,
+        ref_machine: None,
+        ref_pane: None,
+        mentions: &[],
+        agent,
+        via: None,
+        parent: None,
+        also: false,
+    }
 }
 
 /// A message's pin goes with its content.
@@ -276,6 +288,8 @@ mod tests {
                 mentions: &[],
                 agent: None,
                 via: None,
+                parent: None,
+                also: false,
             },
         )
         .unwrap()
