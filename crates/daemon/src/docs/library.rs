@@ -175,6 +175,8 @@ pub fn search(
 /// A Doc folder the old layout holds: whose block it is, and where.
 struct Old {
     pane: PaneId,
+    /// Whether it is in `blocks/` (an open block) and not `closed/`.
+    open: bool,
     /// The block's folder (`blocks/<id>` or `closed/<id>-<ms>`).
     block: PathBuf,
 }
@@ -209,23 +211,40 @@ fn migrate_inner(state_dir: &Path, copy: Copy) -> Result<(), String> {
         return Ok(());
     }
     private_dir(&root).map_err(|e| format!("can't make the Doc library: {e}"))?;
-    let (olds, mut ids) = scan(state_dir);
+    let (olds, mut known) = scan(state_dir);
     let mut moved = Vec::new();
     // Copy, check, write `meta.json`: for every Doc before anything is removed.
     for old in &olds {
         let title = layout_title(state_dir, old.pane);
         match copy_in(state_dir, old, title.as_deref(), copy) {
             Ok(id) => {
-                ids.insert(old.pane, id);
+                known.insert(old.block.clone(), (old.pane, old.open, id));
                 moved.push(old);
             }
             Err(e) => return Err(format!("block %{}: {e}", old.pane)),
         }
     }
-    // The blocks' configs and the links now say which Doc is whose.
-    if !ids.is_empty() {
-        map_layout(state_dir, &ids)?;
-        super::link::map_blocks(state_dir, &ids)?;
+    // The blocks' configs and the links now say which Doc is whose. A saved
+    // block is an open one (`blocks/`). A link names a pane, and pane ids are
+    // unique unless the layout was ever lost: it is mapped only when exactly
+    // one folder, open or closed, has that pane id.
+    let open: HashMap<PaneId, String> =
+        known.values().filter(|(_, open, _)| *open).map(|(p, _, id)| (*p, id.clone())).collect();
+    let mut per_pane: HashMap<PaneId, Vec<&String>> = HashMap::new();
+    for (pane, _, id) in known.values() {
+        per_pane.entry(*pane).or_default().push(id);
+    }
+    let mut links = HashMap::new();
+    for (pane, ids) in per_pane {
+        if let [id] = ids[..] {
+            links.insert(pane, id.clone());
+        } else {
+            warn!(pane, "more than one Doc folder has this block id; a link naming it is left unmapped");
+        }
+    }
+    if !known.is_empty() {
+        map_layout(state_dir, &open)?;
+        super::link::map_blocks(state_dir, &links)?;
     }
     for old in moved {
         if let Err(e) = std::fs::remove_dir_all(old.block.join(OLD)) {
@@ -234,13 +253,13 @@ fn migrate_inner(state_dir: &Path, copy: Copy) -> Result<(), String> {
     }
     write_atomic(&root.join(MARKER), now_ms().to_string().as_bytes())
         .map_err(|e| format!("can't write the migration's marker: {e}"))?;
-    info!(docs = ids.len(), "moved the Docs into the library");
+    info!(docs = known.len(), "moved the Docs into the library");
     Ok(())
 }
 
 /// The block folders with an old-layout Doc, and the Doc ids earlier passes
-/// gave blocks (by block).
-fn scan(state_dir: &Path) -> (Vec<Old>, HashMap<PaneId, String>) {
+/// gave block folders: `(pane, open, id)` by folder.
+fn scan(state_dir: &Path) -> (Vec<Old>, HashMap<PathBuf, (PaneId, bool, String)>) {
     let (mut olds, mut ids) = (Vec::new(), HashMap::new());
     for sub in ["blocks", "closed"] {
         let Ok(entries) = std::fs::read_dir(state_dir.join(sub)) else { continue };
@@ -251,10 +270,10 @@ fn scan(state_dir: &Path) -> (Vec<Old>, HashMap<PaneId, String>) {
             if let Some(id) = std::fs::read_to_string(block.join(POINTER)).ok().map(|s| s.trim().to_owned())
                 && is_id(&id)
             {
-                ids.insert(pane, id);
+                ids.insert(block.clone(), (pane, sub == "blocks", id));
             }
             if block.join(OLD).is_dir() {
-                olds.push(Old { pane, block });
+                olds.push(Old { pane, open: sub == "blocks", block });
             }
         }
     }
@@ -611,6 +630,28 @@ mod tests {
         assert!(migrate(&state));
         let plan = list(&state).into_iter().find(|m| m.title == "Plan").unwrap();
         assert_eq!(std::fs::read(root(&state).join(plan.id).join("s1.md")).unwrap(), b"The words of Plan.");
+        std::fs::remove_dir_all(state).unwrap();
+    }
+
+    /// Pane ids are unique unless the layout was ever lost. If an open block
+    /// and a closed one share an id, the open block gets its own Doc, both
+    /// Docs survive, and the link is not mapped to either (it would publish
+    /// one Doc under the other's link).
+    #[test]
+    fn a_pane_id_open_and_closed_keeps_both_docs_and_maps_no_link_to_the_wrong_one() {
+        let state = old_state("collide");
+        // Block 3 is open and shared; a closed block 3 turns up too.
+        std::fs::create_dir_all(state.join("closed/3-123")).unwrap();
+        old_doc(&state.join("closed/3-123"), "Stranger");
+        assert!(migrate(&state));
+        let docs = list(&state);
+        assert_eq!(docs.len(), 4, "{docs:?}");
+        let by = |t: &str| docs.iter().find(|m| m.title == t).unwrap().id.clone();
+        assert_eq!(doc_of(&state, 3), Some(by("Plan")), "the open block has its own Doc");
+        let links = super::super::link::by_doc(&state);
+        assert!(!links.contains_key(&by("Stranger")) && !links.contains_key(&by("Plan")), "{links:?}");
+        let left = super::super::link::get(&state, "aaaaaaaabbbbbbbbccccccccdddddddd").unwrap().unwrap();
+        assert_eq!((left.doc, left.block), (None, Some(3)), "kept as it was, for a key-only unshare");
         std::fs::remove_dir_all(state).unwrap();
     }
 
