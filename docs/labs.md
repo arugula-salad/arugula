@@ -104,8 +104,9 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
 - **MCP:** the kinds `show:app`, `show:workspace` and `list:agents`, and
   `start_agent`'s `recipe` and `vm` (`UNLISTED` and `UNLISTED_ARGS` in
   `crates/daemon/src/mcp/tools.rs`). Unlisted tools called by name are
-  refused without their flag. Chat has no MCP tools: agents are out of chat
-  (#1095).
+  refused without their flag. Chat's MCP tools (`read_thread`, `post_thread`)
+  aren't labs: they follow the grants in control (see
+  [Threads and chat](#threads-and-chat)).
 - **Web client:** `Client.has("vms" | "studio")` and
   `hasLabs()` and `flag(name)` in `web/src/shell/client.ts`: VM panes and tabs,
   *Sandboxes…*, *Split (local)* and a VM tab's *Machine* items, studio
@@ -201,14 +202,188 @@ was made. Control holds the messages; the machine decides who reads them.
   A control with no platform page, and a machine on its own (the tailnet
   stays first class for terminals, not for chat), offer no Chat at all
   (M155; until then that page said chat needs control, S41 decision 7).
-- **Agents are out of chat** (#1095): no agent reads or posts, and `@agent`
-  is text. They come back only through the grants #959 and #1002 work out.
+- **Agents in chat** (#1095, then M197/M198): off by default. An agent reads
+  and posts only where its machine's owner gave it a `threads.read` or
+  `threads.post` grant, as the owner's agent and labelled so; `@agent` is
+  text otherwise. [control.md](control.md) has the grants; "What chat does
+  for agents" below says what each feature below means for them.
 - **Conversations** (#855) were rooms of their own on one machine. Brought
   into control they're read-only archives (S41 decision 3); a new one is a
   channel or a DM.
 - **Gone with the machine's store:** an `@` of someone who can't read the
   thread no longer offers to invite them (#297), and `search` and MCP
   `history` find terminal output only.
+
+### What chat does
+
+Everything here is the platform page's (and the phone's), one implementation
+in `web/src/shared/chat/`, served by the platform in control
+(`crates/platform/src/chat.rs` and `chat/`). Control holds the text, so all
+of it works with every machine asleep. [control-e2e.md](control-e2e.md#chat)
+says what is stored.
+
+**Writing**
+- **Markdown** in every message: lists, quotes, links, tables, and fenced
+  code with colours (a small scanner of ours, not an editor's parser) and a
+  copy button. Enter sends, Shift+Enter is a new line, and Enter inside an
+  open fence adds a line; Ctrl/Cmd+Enter sends from there. ↑ in an empty
+  composer edits your last message.
+- **Emoji:** `:joy:` draws as 😂; typing `:ta` after a space offers a list
+  (recent, then common, first); the picker has search and categories, and
+  remembers recent picks on the device. A message of up to three emoji draws
+  large. The table is loaded only when a message or the composer needs it.
+- **Files and images:** paste, drop or 📎. Up to 10 files of 10 MB each on a
+  message, 256 MB per team, 30 uploads a minute. A file is uploaded first
+  and waits, its uploader's alone, for an hour until a message names it.
+  Pictures show inline and open in a viewer; video and audio play in the
+  browser (and seek); anything else is a card to download. The bytes are in
+  control's database (`chat_files`), and only readers of the room get them
+  (404 to anyone else). The type is read from the bytes, not the name or the
+  upload: SVG and HTML are text and download, never run, and every response
+  is `nosniff` and sandboxed. Search finds file names.
+- **Link previews:** a link becomes a card, drawn when the message is read.
+  A link to one of our own objects (an issue, run, deploy or hosted
+  workspace on control's hosts) shows its title and state, read as the
+  reader, so only a member of the project gets a card; others get the link.
+  A GitHub issue or PR of a linked repo is read from the mirror. Any other
+  web link is **fetched by control**, server-side: it reads the page's Open
+  Graph title, description and image, from public addresses only (private,
+  loopback, link-local and similar addresses are refused at every redirect),
+  in 10 s and 1 MB, HTML only. Results are cached a day. The image is
+  fetched and served by control, so a reader never contacts the site. The
+  message's author can take its previews off; a team's owner can turn web
+  previews off for the team (the room's details). Docs and panes are the
+  machine's, so their links stay links.
+- **Reactions:** click a chip to add yours or take it back, or use the
+  hover toolbar (three quick emoji, the picker, and ⋯). A message holds 20
+  kinds of emoji. Reactions are refused in a read-only room, an archive and
+  on a deleted message. Nobody is pushed for one.
+
+**Knowing who is there**
+- **Avatars:** control fetches an account's GitHub picture by its login,
+  keeps it a day and serves it itself (`/api/chat/avatar/{account}`), so no
+  page loads GitHub's hosts and the CSP is untouched. Only the account and
+  those who share a team with it get it; for anyone else it's a 404, so a
+  picture can't be used to find out an account exists. Only small
+  PNG/JPEG/GIF/WebP are kept. The letter block shows until it loads.
+- **Presence:** a page beats every 15 s with whether it was used in the last
+  10 minutes; the answer is the people visible to the reader. Active, away
+  (idle, or chosen) and offline (no page, or chosen: *Appear offline* in the
+  account menu). A closed app is offline within a minute. Only the times and
+  the chosen mode are stored. A machine's agents show their machine's dot.
+- **Typing:** the composer pings while the text changes (at most every 3 s,
+  never when empty). Others with the room open see up to three names, then
+  "Several people are typing…", for 6 s. It is a short-lived row in
+  `chat_events`, so it reaches every platform machine and is never
+  replayed, and dropped within seconds.
+
+**Being told, and not**
+- **Levels:** per room, *all messages*, *mentions only* or *nothing*. The
+  defaults are by kind in Settings: DMs all, channels mentions, threads on
+  panes, sessions and objects mentions. A channel on mentions counts its
+  mentions and shows other unread as bold. The old mute is the `nothing`
+  level.
+- **Do not disturb:** pause every chat push for 30 min, 1 h, 2 h, until
+  tomorrow or a typed time, or on a weekly schedule in your time zone. Unread
+  counts carry on. *All notices* also holds the inbox and deploy-approval
+  pushes. Account and ops alerts (agent tokens, failed deploys) and the
+  pushes machines relay (a pane needs you) always go. The check is in the
+  platform, before the push, so it covers Web Push, the desktop and the
+  phone alike.
+- **`@channel` and `@here`:** `@channel` notifies everyone in the room,
+  `@here` is meant for those who are active, but presence isn't wired into it
+  yet, so it reaches the same people. Both count as mentions. A team's owners can
+  keep them for owners (a post by anyone else is refused, 403), and the
+  composer asks first past six people.
+- **Keywords:** words (up to 20, a whole word or phrase) that notify you as a
+  mention would; kept per account in Settings.
+- **Mark unread:** from a message's menu. The room's read mark moves back to
+  before it, on all your pages, and the page holds its *New* line there
+  until you leave the room.
+- **Saved for later:** a star on the message, with an optional reminder
+  (in 1 h, tomorrow 9:00 your time, or a time up to a year ahead; one push).
+  *Saved* beside *Activity* lists To do and Done. Private to you; control
+  keeps which message, never a copy (500 per account).
+
+**Rooms**
+- **Topic and description** of a channel, written by its members (or its
+  owners, if the team says so); the header shows the topic, and the tooltip
+  and the switcher too. **Pins:** anyone who may post pins a message (50 a
+  room); the header's 📌 lists them, newest first. A topic change and a pin
+  post a small system line ("alice pinned a message").
+- **Starred rooms and sections:** star a room to move it to the top; make
+  sections of your own, drag rooms into them (on the phone, the room's
+  *move*), collapse and sort by name or recent activity. One document per
+  account, so the computer and the phone agree; the last write wins.
+- **The agents chip:** one chip in the room header ("3 machines' agents")
+  lists whose machines' agents can read and post and what each may do. When
+  a grant first lets a machine into a channel or a DM, the room gets one
+  system line saying so. Revoking says nothing.
+- **System lines** are ordinary numbered messages, dim and centred. They are
+  never unread, pushed, searched, edited, reacted to or pinned.
+- **Hover toolbar and the rest:** quick emoji, picker, and ⋯ (quote, copy
+  link, edit, delete, mark unread, save, pin; a long-press on a phone). A
+  room scrolled up stops following and offers "↓ N new messages"; Esc reads
+  and jumps to the newest. *Messages: Compact* in Appearance is a look kept
+  on the device.
+
+**What chat does for agents.** Agents use chat through `read_thread` and
+`post_thread` under the `threads.read` and `threads.post` grants, and
+nothing else of the above. What they get:
+- Reactions: `post_thread` with `react_to_seq` and `emoji` (and `remove`);
+  `read_thread` shows each message's reactions. Theirs are the owner's,
+  labelled with the machine, and apart from the owner's own.
+- Files: `post_thread`'s `files` (paths the agent may read, at most 10 of
+  10 MB), and `read_thread` lists each message's attachments with name,
+  type, size and control's address.
+- Pins: `post_thread`'s `pin_seq` (and `remove`). `read_thread` begins with
+  the room's topic, description and pins, marks pinned messages, and shows
+  system lines as `* alice set the topic: …` (the platform's own as
+  "Arugula"). An agent can't set a topic.
+- Markdown, emoji shortcodes, `@login`, `@channel` and keywords work in what
+  they write, under the same team rule as their owner's role. It is the
+  owner's reach and role that decides.
+- No tool for previews (they get the URL text), presence, avatars, levels,
+  DND, mark unread, saved, typing, sidebar or starring: those are a
+  person's own state, or no use to an agent, and a grant shouldn't reach
+  them. Nothing wakes an agent, and a reaction pushes nobody.
+
+### Chat's API
+
+All under `/api/chat` unless said, with the session cookie (a page; the
+`cli` column of `crates/control/routes.toml` lists the few the CLI may
+call), and each only for someone who may read the room. The older routes
+(rooms, messages, read, search, live) are in `routes.toml`; the ones added
+for the features above:
+
+| Route | What it is for |
+| --- | --- |
+| `GET`/`PUT /sidebar` | The caller's starred rooms, sections, collapse and sort (one document, checked by the platform) |
+| `POST /presence` | The page's 15 s beat; answers the people visible to the caller. Own mode (auto, away, offline) rides on it |
+| `GET /avatar/{account}` | A GitHub picture, for the account itself and people sharing a team with it; 404 otherwise |
+| `POST /rooms/{id}/files`, `GET /rooms/{id}/files/{file}` | Upload a file for the next message (bytes as the body, `?name=`); serve one to the room's readers (`?download=1` saves, `Range` honoured) |
+| `GET /rooms/{id}/previews?seqs=` | Link previews under those messages, for the caller |
+| `POST /rooms/{id}/messages/{seq}/previews` | The message's author takes its previews off or back on |
+| `GET /previews/image` | The image of a page that was read for a preview, fetched by control |
+| `GET`/`PUT /teams/{team}/previews` | Whether web links in a team's chat get previews: read by members, set by an owner |
+| `POST`/`DELETE /rooms/{id}/messages/{seq}/reactions` | Add the caller's emoji (body `{emoji}`) or take back `?emoji=`; neither is an error twice |
+| `PUT /rooms/{id}/topic` | A channel's topic and/or description; posts a system line. 403 if the team left it to owners |
+| `GET /rooms/{id}/pins`, `PUT`/`DELETE /rooms/{id}/messages/{seq}/pin` | The pins, newest first; pin or unpin, by whoever may post |
+| `POST /rooms/{id}/level` | The caller's level for the room (all, mentions, nothing, or back to their default) |
+| `POST /rooms/{id}/mute` | The old switch: mute is `nothing`, unmute the default |
+| `GET`/`POST /api/notify/prefs` | The caller's default levels, snooze, quiet hours (with time zone) and *all notices* |
+| `POST /rooms/{id}/unread` | Move the caller's read mark back to before `seq` (their pages only) |
+| `GET /saved`, `PUT`/`PATCH`/`DELETE /rooms/{id}/messages/{seq}/saved` | The caller's saved list; save (with an optional reminder), mark done, remove |
+| `POST /rooms/{id}/typing` | The composer's ping |
+| `GET`/`PUT /keywords` | The caller's keywords |
+| `GET`/`PUT /teams/{team}/settings` | What a team's owners decided: `@channel`/`@here` and topics for owners only. Members read, owners set |
+
+The machine's agents call, with the machine's signature and a grant, under
+`/api/daemon/chat`: `POST /rooms/{id}/files` and `GET /rooms/{id}/files/{file}`
+(`threads.post` and `threads.read`), `POST`/`DELETE /rooms/{id}/messages/{seq}/reactions`
+and `PUT`/`DELETE /rooms/{id}/messages/{seq}/pin` (`threads.post`), beside the
+rooms, messages and search of [control.md](control.md). They act as the
+machine's owner, labelled with the machine, within the owner's reach.
 
 ## Chant workspaces
 

@@ -949,8 +949,19 @@ in a room its `threads.read` grant reaches is a mention of its agents
 wakes an agent: they read their mentions when they look. `capabilities`
 says whether the thread tools are live and what they reach. The routes are
 `/api/daemon/chat/rooms`, `/api/daemon/chat/rooms/{id}/messages` (`GET`,
-`POST`) and `/api/daemon/chat/search`
-(`crates/platform/src/chat/agent_threads.rs`).
+`POST`), `/api/daemon/chat/search`
+(`crates/platform/src/chat/agent_threads.rs`), and, for what a message can
+carry: `.../files` (`POST` an upload, `GET .../files/{file}`),
+`.../messages/{seq}/reactions` (`POST`, `DELETE`) and
+`.../messages/{seq}/pin` (`PUT`, `DELETE`). Posting, files, reactions and
+pins need `threads.post`, reading needs `threads.read`. `post_thread` takes
+`files` (paths the agent may read: at most 10 of 10 MB), or instead of text
+`react_to_seq` with `emoji`, or `pin_seq`, each with `remove` to undo;
+`read_thread` begins with the room's topic, description and pins and shows
+each message's reactions, attachments and pin, and system lines as
+`* alice pinned a message`. A reaction or a pin is the owner's, labelled
+with the machine, and pushes nobody. [labs.md](labs.md#threads-and-chat)
+lists the rest of chat and which of it agents don't get.
 
 **Agents on native issues (M200).** The same machine's agents read and
 write a project's native issues over MCP. An issue is `#N` in the current

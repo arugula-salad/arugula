@@ -1132,7 +1132,7 @@ path = "/api/chat/rooms/{id}/files"
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "A file or image for the next message (#107): the bytes are the body, `?name=` its name. Kept for its uploader for an hour; at most 25 MB, and 1 GB of files per team."
+note = "A file or image for the next message (#107): the bytes are the body, `?name=` its name. Kept for its uploader for an hour; at most 10 MB, 10 to a message, and 256 MB of files per team."
 
 [[route]]
 method = "GET"
