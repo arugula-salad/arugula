@@ -18,6 +18,9 @@
 //! - `hw_`: a hosted workspace (step 5's M179), in its project, until
 //!   it's deleted.
 //! - `run_`: a run (step 7's M210), in its project (M215).
+//! - `ses_`: an agent session (M254), in its project. Its own thread is
+//!   the one it was asked in; this is the thread on the session as an
+//!   object, for a link to it to name and preview.
 //! - Anything else: no such object.
 //!
 //! **Who sees one:** the third rule beside a team's roster and a machine's
@@ -76,6 +79,7 @@ enum Prefix {
     Mirrored,
     Hosted,
     Run,
+    Session,
 }
 
 fn prefix(target: &str) -> Option<Prefix> {
@@ -88,12 +92,13 @@ fn prefix(target: &str) -> Option<Prefix> {
         "fi" => Some(Prefix::Mirrored),
         "hw" => Some(Prefix::Hosted),
         "run" => Some(Prefix::Run),
+        "ses" => Some(Prefix::Session),
         _ => None,
     }
 }
 
 /// Whether `target` is an object's global id by its shape (`iss_…`,
-/// `fi_…`, `hw_…`, `run_…`), not a room's: an agent names an object's
+/// `fi_…`, `hw_…`, `run_…`, `ses_…`), not a room's: an agent names an object's
 /// thread by it (M198).
 pub(super) fn is_object(target: &str) -> bool {
     prefix(target).is_some()
@@ -130,6 +135,11 @@ pub(super) fn find(app: &Platform, targets: &[&str]) -> anyhow::Result<HashMap<S
     for (id, project) in app.db.run_places(&runs)? {
         let short = id.trim_start_matches("run_").chars().take(8).collect::<String>();
         out.insert(id, Object { project, name: format!("run {short}"), guard: Guard::Members });
+    }
+    let sessions: Vec<&str> = of(Prefix::Session).collect();
+    for (id, project, _) in app.db.session_places(&sessions)? {
+        let short = id.trim_start_matches("ses_").chars().take(8).collect::<String>();
+        out.insert(id, Object { project, name: format!("session {short}"), guard: Guard::Members });
     }
     Ok(out)
 }
@@ -247,6 +257,7 @@ mod tests {
         assert_eq!(prefix("fi_00ff"), Some(Prefix::Mirrored));
         assert_eq!(prefix("hw_9d81"), Some(Prefix::Hosted));
         assert_eq!(prefix("run_9d81"), Some(Prefix::Run));
+        assert_eq!(prefix("ses_9d81"), Some(Prefix::Session));
         for bad in ["cw_9d81", "prj_1", "iss_", "fi", "fi_a-b", "_x", "", &format!("fi_{}", "a".repeat(65))] {
             assert_eq!(prefix(bad), None, "{bad}");
         }

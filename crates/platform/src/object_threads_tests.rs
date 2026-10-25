@@ -373,3 +373,31 @@ async fn an_agent_comments_on_a_hosted_workspace() {
     let (st, v) = call(&base, "b", "GET", &format!("/api/chat/rooms/{}/messages", room.id), None).await;
     assert_eq!((st, &v["messages"][0]["agent"]["machine"]), (200, &json!("geek")), "{v}");
 }
+
+/// An agent session (M254) is an object too: its project's members open
+/// the thread on it by its id, and anyone else gets 404.
+#[tokio::test]
+async fn a_session_is_an_object_its_projects_members_open() {
+    use crate::db::sessions::{NewPrompt, NewSession, Source};
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let (team, _) = seed(&app, &hub);
+    let ws = workspace(&app, &team);
+    let new = NewSession {
+        project: &team,
+        room: "room_1",
+        parent_seq: 1,
+        asker: "a",
+        workspace: &ws,
+        repo: Some("o/public"),
+        slug: "fix-it",
+        prompt: NewPrompt { author: "a", source: Source::Member, association: None, text: "fix it" },
+    };
+    let (s, _) = app.db.create_session(&new, 10).unwrap().unwrap();
+    let (st, room) = open(&base, "b", &s.id).await;
+    assert_eq!(st, 200, "{room}");
+    let short: String = s.id.trim_start_matches("ses_").chars().take(8).collect();
+    assert_eq!((&room["name"], &room["project"]), (&json!(format!("session {short}")), &json!(team)));
+    assert_eq!(open(&base, "c", &s.id).await.0, 404);
+    assert_eq!(open(&base, "a", "ses_0123456789abcdef").await.0, 404);
+}
