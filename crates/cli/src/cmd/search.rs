@@ -35,7 +35,10 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     for h in &hits {
         let cmd = h.command.as_ref().map(|c| format!("  ({c})")).unwrap_or_default();
         let host = h.host.as_ref().map(|h| format!("{h}:")).unwrap_or_default();
-        println!("{host}%{}@{}: {}{cmd}", h.pane, h.offset, h.line);
+        match &h.doc {
+            Some(doc) => println!("{host}doc {doc}@{}: {}", h.offset, h.line),
+            None => println!("{host}%{}@{}: {}{cmd}", h.pane, h.offset, h.line),
+        }
     }
     Ok(0)
 }

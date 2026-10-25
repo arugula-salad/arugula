@@ -153,6 +153,7 @@ pub fn search(store: &StateDir, kinds: &BlockKinds, re: &Regex, since_ms: Option
                         line: line.to_owned(),
                         command: None,
                         host: None,
+                        doc: None,
                     });
                     if hits.len() >= limit {
                         return hits;
@@ -210,7 +211,7 @@ pub fn search_log(
                 .rev()
                 .find(|c| c.start <= line_end && c.end.is_none_or(|e| at < e))
                 .and_then(|c| c.text.clone());
-            hits.push(SearchHit { pane, open, offset: at, line: line.to_owned(), command, host: None });
+            hits.push(SearchHit { pane, open, offset: at, line: line.to_owned(), command, host: None, doc: None });
             if hits.len() >= limit {
                 return true;
             }

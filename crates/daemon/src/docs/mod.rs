@@ -1,10 +1,14 @@
 //! Doc blocks (#962, #963): a document an agent builds beside its pane, an
 //! outline first and then one section at a time, that people watch fill in.
 //!
-//! Config `{title}`. The daemon holds the Doc and the agent only talks to
-//! it through MCP's `doc`; disk is persistence, not transport. In the
-//! block's own directory, `doc/`:
+//! Config `{doc, title, share_ask?}`. The block is a view onto one Doc in
+//! the library ([`library`], #1493): `doc` is its id, and the files are in
+//! `<state>/docs/<doc>/`, not in the block's folder, so closing the block
+//! leaves the Doc and any block can open it again. The daemon holds the Doc
+//! and the agent only talks to it through MCP's `doc`; disk is persistence,
+//! not transport. In the Doc's folder:
 //!
+//! - `meta.json`: `{id, title, made, updated, by}`, which [`library`] keeps;
 //! - `doc.json`: `{title, sections: [{id, heading, intent}]}`, written once
 //!   by `doc_outline`;
 //! - `sN.md`: the Markdown of each section that was filled.
@@ -47,6 +51,7 @@
 mod ask;
 mod assets;
 mod embeds;
+pub mod library;
 pub mod link;
 
 use std::{
@@ -77,8 +82,6 @@ const HEADING_MAX: usize = 200;
 /// A section's intent, in characters.
 const INTENT_MAX: usize = 500;
 
-/// The folder inside the block's directory.
-const FOLDER: &str = "doc";
 const OUTLINE: &str = "doc.json";
 
 pub struct DocKind;
@@ -89,27 +92,43 @@ impl BlockKind for DocKind {
             arugula_mux::labs::flag(&ctx.state_dir, arugula_proto::flags::DOCS)?;
         }
         let config: Config = serde_json::from_value(config).map_err(|e| format!("doc config: {e}"))?;
-        let dir = ctx.dir.join(FOLDER);
-        let mut link = Link::none(ctx.state_dir.clone(), ctx.id);
+        let id = match config.doc {
+            Some(id) => id,
+            // Only a layout from before the library has none, and the
+            // start-up migration gives it one: if it couldn't, the files
+            // are where they were, and the block says so.
+            None if ctx.restoring => {
+                return Err("this Doc hasn't been moved into the Doc library yet (see the daemon's log); \
+                            its files are kept, and the next start tries again"
+                    .into());
+            }
+            // Opened with a title alone (the generic `POST /api/blocks`):
+            // its Doc is made now.
+            None => library::make(&ctx.state_dir, &config.title, "unknown")?.id,
+        };
+        let dir = library::dir(&ctx.state_dir, &id)?;
+        if !dir.is_dir() {
+            return Err(format!("no Doc {id} in the library (docs list has them)"));
+        }
+        let mut link = Link::none(ctx.state_dir.clone(), id);
         link.remote = link::remote();
         let own = ctx.clone();
-        let doc = Doc::with_link(dir, config.title, ctx.restoring, link, Arc::new(move || ctx.changed()));
+        // The Doc's files are read back whenever it is opened, not only on
+        // a restart.
+        let doc = Doc::with_link(dir, config.title, true, link, Arc::new(move || ctx.changed()));
         doc.attach(own, config.share_ask);
         Ok(doc)
     }
 
-    fn stored_text(&self, dir: &Path) -> Option<String> {
-        let folder = dir.join(FOLDER);
-        if !folder.join(OUTLINE).is_file() {
-            return None;
-        }
-        let loaded = load(&folder).ok()?;
-        Some(markdown(&loaded.title, &loaded.entries))
-    }
+    // No `stored_text`: the library is searched on its own
+    // ([`library::search`]), once per Doc however many blocks have shown it.
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct Config {
+    /// The Doc in the library this block shows.
+    #[serde(default)]
+    doc: Option<String>,
     #[serde(default)]
     title: String,
     /// #1067: an agent's ask to share, kept across a restart.
@@ -202,7 +221,7 @@ pub struct Doc {
 impl Doc {
     #[cfg(test)]
     pub fn new(dir: PathBuf, title: String, restoring: bool, changed: Changed) -> Arc<Doc> {
-        Doc::with_link(dir, title, restoring, Link::none(PathBuf::new(), 0), changed)
+        Doc::with_link(dir, title, restoring, Link::none(PathBuf::new(), String::new()), changed)
     }
 
     pub fn with_link(dir: PathBuf, title: String, restoring: bool, link: Link, changed: Changed) -> Arc<Doc> {
@@ -228,6 +247,12 @@ impl Doc {
             shares: tokio::sync::Mutex::new(()),
             card: Default::default(),
         })
+    }
+
+    /// The Doc changed on disk: its `meta.json` says when (and its title).
+    async fn touched(&self, title: Option<String>) {
+        let dir = self.dir.clone();
+        let _ = tokio::task::spawn_blocking(move || library::touch(&dir, title.as_deref())).await;
     }
 
     /// `doc_outline`: the sections, once.
@@ -274,6 +299,7 @@ impl Doc {
         let dir = self.dir.clone();
         let bytes = serde_json::to_vec_pretty(&outline).map_err(|e| e.to_string())?;
         write(dir, OUTLINE, bytes).await?;
+        self.touched(Some(outline.title.clone())).await;
         let ids: Vec<Value> = planned.iter().map(|s| json!({ "id": s.id, "heading": s.heading })).collect();
         {
             let mut st = self.state.lock().unwrap();
@@ -330,6 +356,7 @@ impl Doc {
             }
         }
         write(self.dir.clone(), &format!("{section}.md"), md.as_bytes().to_vec()).await?;
+        self.touched(None).await;
         {
             let mut st = self.state.lock().unwrap();
             let Some(e) = st.entries.iter_mut().find(|e| e.id == section) else { return Err("the Doc changed".into()) };
@@ -369,6 +396,7 @@ impl Doc {
         }
         let size = bytes.len() as u64;
         write(self.dir.join(assets::FOLDER), name, bytes).await?;
+        self.touched(None).await;
         let rev = {
             let mut st = self.state.lock().unwrap();
             let old = st.assets.iter().position(|a| a.name == name);
@@ -596,6 +624,10 @@ impl Block for Doc {
 
     fn config(&self) -> Value {
         let mut v = json!({ "title": self.state.lock().unwrap().title });
+        // A Doc made without the library (a test's) has no id.
+        if !self.link.doc.is_empty() {
+            v["doc"] = json!(self.link.doc);
+        }
         if let Some(asked) = self.asked_json() {
             v["share_ask"] = asked;
         }
@@ -711,6 +743,9 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+
+    /// Where a test's Doc keeps its files under its temp dir.
+    const FOLDER: &str = "doc";
 
     fn temp(name: &str) -> PathBuf {
         let dir =
@@ -975,9 +1010,6 @@ mod tests {
         fill(&d, "s1", "Body one.\n").await.unwrap();
         let want = "# Plan\n\n## H1\n\nBody one.\n\n## H2\n\n_(coming: what 2 holds)_\n";
         assert_eq!(d.text(), want);
-        // A closed block's folder: history and search read the same.
-        assert_eq!(DocKind.stored_text(&dir).as_deref(), Some(want));
-        assert_eq!(DocKind.stored_text(&temp("none")), None);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -1044,11 +1076,27 @@ mod tests {
             assert!(e.contains("arugulad flags docs on"), "{e}");
         }
         arugula_proto::flags::set(&state, arugula_proto::flags::DOCS, true).unwrap();
+        // A refusal made no Doc; without Labs there is no flag to refuse it.
+        let kept = library::list(&state).len();
+        assert_eq!(kept, usize::from(!crate::labs::BUILT));
         let (new, _seen) = ctx(&state, false);
-        assert_eq!(DocKind.create(new, config.clone()).map(|b| b.kind()).unwrap(), BlockType::Doc);
+        let made = DocKind.create(new, config.clone()).unwrap();
+        assert_eq!(made.kind(), BlockType::Doc);
+        // Opened with a title alone, its Doc is made in the library now.
+        let doc = made.config()["doc"].as_str().unwrap().to_owned();
+        let listed = library::list(&state);
+        assert_eq!(listed.len(), kept + 1);
+        assert!(listed.iter().any(|m| m.id == doc));
         arugula_proto::flags::set(&state, arugula_proto::flags::DOCS, false).unwrap();
         let (back, _seen) = ctx(&state, true);
-        assert_eq!(DocKind.create(back, config).map(|b| b.kind()).unwrap(), BlockType::Doc, "restored with it off");
+        let back = DocKind.create(back, json!({ "doc": doc, "title": "Report" })).unwrap();
+        assert_eq!(back.kind(), BlockType::Doc, "restored with it off");
+        assert_eq!(back.config()["doc"], doc.as_str());
+        // A saved block with no Doc is from before the library: the
+        // migration gives it one, and until it has, the block says so.
+        let (old, _seen) = ctx(&state, true);
+        let e = DocKind.create(old, config).err().expect("no Doc to show");
+        assert!(e.contains("hasn't been moved"), "{e}");
         std::fs::remove_dir_all(state).unwrap();
     }
 
@@ -1066,9 +1114,11 @@ mod tests {
             }
             n
         };
+        let id = library::make(&state, "Plan", "test").unwrap().id;
         for (at_ms, raised) in [(now_ms(), 1), (1, 0)] {
             let (ctx, _seen, sent) = ctx_with_cmds(&state, true);
-            let config = json!({ "title": "Plan", "share_ask": { "at_ms": at_ms, "by": "mcp:claude-code" } });
+            let config =
+                json!({ "doc": id, "title": "Plan", "share_ask": { "at_ms": at_ms, "by": "mcp:claude-code" } });
             let doc = DocKind.create(ctx, config).unwrap();
             tokio::time::sleep(std::time::Duration::from_millis(400)).await;
             assert_eq!(asks(sent), raised, "an ask made at {at_ms}");
@@ -1233,7 +1283,6 @@ mod tests {
         fill(&d, "s2", "The flow:\n\n![The flow, in boxes](assets/flow.png)\n").await.unwrap();
         let want = "# Plan\n\n## H1\n\nBefore.\n\n## H2\n\nThe flow:\n\n[image: The flow, in boxes]\n";
         assert_eq!(d.text(), want);
-        assert_eq!(DocKind.stored_text(&dir).as_deref(), Some(want));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -1311,9 +1360,13 @@ mod share_tests {
         *,
     };
 
+    const FOLDER: &str = "doc";
+
     /// A key that can be found by eye in anything it leaks into.
     const MARKER: [u8; 32] = *b"ARUGULA-MARKER-KEY-0123456789ABC";
     const ID: &str = "abcdefabcdefabcdefabcdefabcdefab";
+    /// A Doc id.
+    const ID16: &str = "0123456789abcdef";
 
     struct Setup {
         dir: PathBuf,
@@ -1345,7 +1398,7 @@ mod share_tests {
     fn at(dir: &Path, fake: Option<Arc<Fake>>, restoring: bool) -> (Arc<Doc>, Arc<AtomicUsize>) {
         let state_dir = dir.join("state");
         std::fs::create_dir_all(&state_dir).unwrap();
-        let mut link = Link::none(state_dir, 7);
+        let mut link = Link::none(state_dir, ID16.into());
         link.remote = fake.map(|f| f as Arc<dyn link::Remote>);
         link.seam = Some(Seam { key: Some(MARKER), id: Some(ID.into()), part_max: Some(512), counted_nonces: false });
         let pushes = Arc::new(AtomicUsize::new(0));
@@ -1525,6 +1578,11 @@ mod share_tests {
             }
         }
         let sink = Sink(logs.clone());
+        // With one dispatcher in the process, tracing works out a new
+        // callsite's interest from the registering thread's default alone:
+        // another test's thread that reaches "shared a Doc" first would
+        // switch it off for this one. A second dispatcher makes it ask all.
+        let _both = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
         let _log = tracing::subscriber::set_default(
             tracing_subscriber::fmt()
                 .with_max_level(tracing::Level::TRACE)

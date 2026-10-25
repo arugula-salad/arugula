@@ -16,6 +16,12 @@
 //!   log line, not an error. Control only ever holds ciphertext.
 //! - **The URL** is `<viewer>/<id>#k=<key, base64url>`.
 //!
+//! **A link belongs to a Doc in the library** (#1493), not to a block: every
+//! lookup goes by the Doc's id (`Entry::doc`), so a Doc that was closed and
+//! opened in another block has its menu back. `Entry::block` is the old key:
+//! read, so the start-up migration can map it to a Doc, and not written by a
+//! new share.
+//!
 //! A version is `served + 1` on each Update, kept in the store. Control
 //! refusing one as `stale` is the daemon's store being behind; it says so
 //! once and doesn't loop. A 404 for a link we hold means it was unshared
@@ -112,8 +118,15 @@ pub struct Entry {
     pub key: String,
     /// The version control serves.
     pub ver: u64,
-    /// The Doc block that made it (it may have closed since).
-    pub block: PaneId,
+    /// The Doc in the library that made it (#1493): every lookup goes by
+    /// this. Empty only in an entry from before the library that no
+    /// migration has mapped yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc: Option<String>,
+    /// The Doc block that made it, in an entry from before the library.
+    /// Read so the migration can map it to `doc`; never written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block: Option<PaneId>,
     pub title: String,
     pub made: u64,
     pub updated: u64,
@@ -157,10 +170,37 @@ pub fn get(dir: &Path, id: &str) -> Result<Option<Entry>, String> {
     Ok(read_all(dir)?.remove(id))
 }
 
-/// The link a Doc block made, if it still has one.
-pub fn of_block(dir: &Path, pane: PaneId) -> Option<(String, Entry)> {
+/// The link a Doc in the library has, if it still has one.
+pub fn of_doc(dir: &Path, doc: &str) -> Option<(String, Entry)> {
     let _g = store_lock();
-    read_all(dir).ok()?.into_iter().find(|(_, e)| e.block == pane)
+    read_all(dir).ok()?.into_iter().find(|(_, e)| e.doc.as_deref() == Some(doc))
+}
+
+/// Every link that has a Doc, by Doc id: `(link id, entry)`.
+pub fn by_doc(dir: &Path) -> BTreeMap<String, (String, Entry)> {
+    let _g = store_lock();
+    let all = read_all(dir).unwrap_or_default();
+    all.into_iter().filter_map(|(id, e)| Some((e.doc.clone()?, (id, e)))).collect()
+}
+
+/// The migration (#1493): give each link an entry from a Doc block a Doc,
+/// from `docs` (block to Doc id). Whether the file changed. A link whose
+/// block isn't in `docs` is left as it is.
+pub fn map_blocks(dir: &Path, docs: &std::collections::HashMap<PaneId, String>) -> Result<bool, String> {
+    let _g = store_lock();
+    let mut all = read_all(dir)?;
+    let mut changed = false;
+    for e in all.values_mut().filter(|e| e.doc.is_none()) {
+        if let Some(doc) = e.block.and_then(|b| docs.get(&b)) {
+            e.doc = Some(doc.clone());
+            e.block = None;
+            changed = true;
+        }
+    }
+    if changed {
+        write_all(dir, &all)?;
+    }
+    Ok(changed)
 }
 
 fn put(dir: &Path, id: &str, e: Entry) -> Result<(), String> {
@@ -270,12 +310,12 @@ fn random<const N: usize>() -> [u8; N] {
 
 // ------------------------------------------------------------------- link
 
-/// A Doc block's way to share: where the keys are, which block it is, and
-/// control.
+/// A Doc's way to share: where the keys are, which Doc in the library it
+/// is, and control.
 #[derive(Clone)]
 pub struct Link {
     pub state_dir: PathBuf,
-    pub pane: PaneId,
+    pub doc: String,
     pub remote: Option<Arc<dyn Remote>>,
     /// Tests fix the key, the id, the nonces and the size of a part.
     #[cfg(test)]
@@ -338,10 +378,10 @@ fn refused(status: u16, v: &Value) -> String {
 }
 
 impl Link {
-    pub fn none(state_dir: PathBuf, pane: PaneId) -> Self {
+    pub fn none(state_dir: PathBuf, doc: String) -> Self {
         Link {
             state_dir,
-            pane,
+            doc,
             remote: None,
             #[cfg(test)]
             seam: None,
@@ -390,9 +430,9 @@ impl Link {
         Box::new(random::<12>)
     }
 
-    /// The link this block made, if it has one.
+    /// The link this Doc has, if it has one.
     pub fn current(&self) -> Option<(String, Entry)> {
-        of_block(&self.state_dir, self.pane)
+        of_doc(&self.state_dir, &self.doc)
     }
 
     /// Whether this control can keep Docs, or why not, for a menu to say.
@@ -412,7 +452,8 @@ impl Link {
         let mut entry = Entry {
             key: URL_SAFE_NO_PAD.encode(key),
             ver: 0,
-            block: self.pane,
+            doc: Some(self.doc.clone()),
+            block: None,
             title: title.to_owned(),
             made: now,
             updated: now,

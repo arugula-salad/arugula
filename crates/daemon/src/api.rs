@@ -21,11 +21,11 @@ use arugula_proto::{
     },
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConversationOpen, ConversationsList,
-        DocLinkDelete, DocLinkGet, FlagSet, FlagsList, HostedSetupGet, ListPanes, MachineReset, MachinesList,
-        NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers,
-        PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend,
-        PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet,
-        ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
+        DocDelete, DocLinkDelete, DocLinkGet, DocOpen, DocsList, FlagSet, FlagsList, HostedSetupGet, ListPanes,
+        MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection,
+        PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts, PaneProcess,
+        PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList,
+        ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
     },
 };
 use axum::{
@@ -84,6 +84,9 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<RulesForgetAll>()
         .op::<RuleForget>()
         .op::<DocLinkGet>()
+        .op::<DocsList>()
+        .op::<DocOpen>()
+        .op::<DocDelete>()
         .op::<DocLinkDelete>()
         .op::<PaneWait>()
         .op::<ShellEnvGet>()
@@ -1687,12 +1690,18 @@ async fn search(State(app): AppState, Query(q): Query<SearchQuery>) -> Res<Respo
     let kinds = app.mux.kinds.clone();
     let limit = q.limit.unwrap_or(100);
     let synced = app.synced.clone();
-    let hits = tokio::task::spawn_blocking(move || match &q.host {
+    let docs_re = re.clone();
+    let host = q.host.clone();
+    let mut hits = tokio::task::spawn_blocking(move || match &q.host {
         Some(host) => synced.search(host, &re, since, limit),
         None => history::search(&store, &kinds, &re, since, limit),
     })
     .await
     .unwrap_or_default();
+    // The Doc library's lines (#1493) follow this machine's panes'.
+    if host.is_none() {
+        hits.extend(crate::ops::docs::search_library(&app, docs_re, since, limit.saturating_sub(hits.len())).await);
+    }
     Ok(Json(hits).into_response())
 }
 
