@@ -5039,6 +5039,8 @@ mod tests {
         assert!(with.len() > without.len() && plain == without);
         assert!(with.contains(flags::DOCS_STEERING) && !without.contains("Artifact"), "{with}");
         assert!(with.contains("not an Artifact") && with.contains("`doc share`"), "{with}");
+        // Both steer a new issue to native issues.
+        assert!(with.contains(flags::ISSUES_STEERING) && without.contains(flags::ISSUES_STEERING), "{without}");
         // Both say when to show a PR (AR-7).
         assert!(with.contains("show it (kind pr)") && without.contains("show it (kind pr)"), "{without}");
     }
