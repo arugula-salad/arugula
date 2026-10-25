@@ -28,8 +28,12 @@ let app = "";
 let general = "";
 let ops = "";
 let dm = "";
+let section = "";
 
 async function platform(p: Page, path: string) {
+  // In front: a page behind another of its browser's gets no frames, so what
+  // waits for one (a render, a caret) waits until something else draws.
+  await p.bringToFront();
   await p.goto(`${app}${path}`);
   await expect(p.locator("[data-chat-control]")).toBeVisible({ timeout: 15_000 });
 }
@@ -95,11 +99,11 @@ test("Alice stars #general, makes Ops and fills it by drag and by menu", async (
   await aliceChat.locator(".prompt input").fill("Ops");
   await aliceChat.locator(".prompt input").press("Enter");
   await expect(page.locator("[data-chat-group] h2", { hasText: "Ops" })).toBeVisible();
-  const section = (await groupsOf(aliceChat)).filter((g) => g && !g.includes("/") && g !== "starred")[0]!;
+  section = (await groupsOf(aliceChat)).filter((g) => g && !g.includes("/") && g !== "starred")[0]!;
   // By drag: #ops onto the section. By menu: the DM.
   await page.locator(`[data-chat-room="${ops}"]`).dragTo(page.locator(`[data-chat-group="${section}"]`));
   await page.locator(`[data-chat-room="${dm}"]`).click({ button: "right" });
-  await aliceChat.getByRole("menuitem", { name: "Ops" }).click();
+  await aliceChat.getByRole("menuitemradio", { name: "Ops" }).click();
   await expect.poll(() => rooms(aliceChat, section)).toEqual(expect.arrayContaining([ops, dm]));
   expect(await rooms(aliceChat, `${team}/channels`)).toEqual([]);
   expect(await groupsOf(aliceChat)).toEqual(["starred", section, `${team}/channels`, `${team}/dms`]);
@@ -109,16 +113,21 @@ test("Alice stars #general, makes Ops and fills it by drag and by menu", async (
   await expect(page.locator(`[data-chat-group="${section}"] [data-chat-room]`)).toHaveCount(0);
 });
 
-test("Bob's phone has the same order, and Ops collapsed", async () => {
+test("Bob's sidebar is his own, and his phone stars a room", async () => {
   await platform(bob, "/chat");
   const list = bob.locator("[data-chat-control]");
-  const section = (await groupsOf(bob)).filter((g) => g && !g.includes("/") && g !== "starred")[0]!;
-  await expect.poll(() => groupsOf(bob)).toEqual(["starred", section, `${team}/channels`, `${team}/dms`]);
-  expect(await rooms(bob, "starred")).toEqual([general]);
-  await expect(list.locator(`[data-chat-group="${section}"] [data-chat-room]`)).toHaveCount(0);
-  // Bob's own sidebar is his: Alice's arrangement isn't his.
+  // Alice's star and section are hers: Bob has the built-in groups.
+  await expect.poll(() => groupsOf(bob)).toEqual([`${team}/channels`, `${team}/dms`]);
+  // From the room's header on the phone (it has no drag).
+  await list.locator(`[data-chat-room="${general}"]`).click();
+  await list.locator("[data-room-star]").click();
+  await expect(list.locator("[data-room-star]")).toHaveAttribute("aria-pressed", "true");
+  // Back to the list (on a phone the room has the screen).
+  await platform(bob, "/chat");
+  await expect.poll(() => groupsOf(bob)).toEqual(["starred", `${team}/channels`, `${team}/dms`]);
   await bob.reload();
   await expect(list.locator("[data-chat-group]").first()).toBeVisible({ timeout: 15_000 });
+  expect(await rooms(bob, "starred")).toEqual([general]);
   // The phone does not overflow sideways.
   expect(await bob.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
