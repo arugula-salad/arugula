@@ -17,9 +17,7 @@ import type { ComponentChildren } from "preact";
 import { useMemo } from "preact/hooks";
 import { Chart } from "./chart";
 import { Drawing } from "./drawing";
-import { SHORTCODE, onlyEmoji, useEmoji, withEmoji } from "../chat/emoji";
 import { bodyLines, readFence } from "./embeds";
-import { CodeBlock } from "./codeblock";
 import { inline, type ForgeInline, type IsMe } from "./markup";
 
 const ITEM = /^( *)([-*+]|\d+[.)])\s+(.*)$/;
@@ -38,14 +36,25 @@ const startsBlock = (l: string) => DETAILS.test(l) || DETAILS_END.test(l) || FEN
 /** What the blocks need besides the lines: `refs` for `inline()`,
  * whether a chart or svg fence is more than code, and, for a thread's
  * message, its @mentions as `Markup` marks them. */
-type Ctx = ForgeInline & { embeds?: boolean; chat?: boolean; isMe?: IsMe; landed?: (token: string) => boolean };
+type Ctx = ForgeInline & { embeds?: boolean; chat?: ChatKit; isMe?: IsMe; landed?: (token: string) => boolean };
+
+/** What a chat message adds (#109, #105), from `shared/chat/chat-markdown`:
+ * the renderer itself loads none of it, so a Doc's share page carries no
+ * emoji table, highlighter or storage. */
+export interface ChatKit {
+  /** What plain text becomes (`:joy:` as 😂). */
+  text?: (s: string) => string;
+  /** The message is only emoji: draw it large. */
+  jumbo: boolean;
+  /** A fenced block, with colours and a copy button. */
+  Code: (p: { code: string; lang: string }) => ComponentChildren;
+}
 
 /** `refs`: where a `#N` goes (`…/issues/`), or null for text (GitLab).
  * `embeds`: charts and drawings (a Doc's; a forge's body is code). `image`:
  * draws a Doc's picture from its target (`assets/x.png`); a new function
- * draws the body again. `chat`: a chat message (#109): `:joy:` as emoji
- * (large when that's all there is), a copy button and colours on code, and
- * the tight spacing a one-line message needs (style.css `.md.md-chat`; not `.chat`, which is the chat page's own box). */
+ * draws the body again. `chat`: a chat message's kit (#109; `ChatMarkdown`
+ * gives it): emoji, code with colours and a copy button, and the tight spacing a one-line message needs (style.css `.md.md-chat`; not `.chat`, which is the chat page's own box). */
 export function Markdown({
   text,
   refs,
@@ -59,19 +68,16 @@ export function Markdown({
   refs: string | null;
   embeds?: boolean;
   image?: ForgeInline["image"];
-  chat?: boolean;
+  chat?: ChatKit;
   isMe?: IsMe;
   landed?: (token: string) => boolean;
 }) {
-  // The shortcode table comes only for a text that has one.
-  const table = useEmoji(!!chat && SHORTCODE.test(text));
   // A poll that changes nothing hands back the same text: don't parse it again.
   const out = useMemo(
-    () => blocks(bodyLines(text), { refs, embeds, image, chat, isMe, landed, text: chat && table ? (s) => withEmoji(s, table) : undefined }),
-    [text, refs, embeds, image, chat, isMe, landed, table],
+    () => blocks(bodyLines(text), { refs, embeds, image, chat, isMe, landed, text: chat?.text }),
+    [text, refs, embeds, image, chat, isMe, landed],
   );
-  const jumbo = !!chat && onlyEmoji(text, table);
-  return <div class={chat ? (jumbo ? "md md-chat md-jumbo" : "md md-chat") : "md"}>{out}</div>;
+  return <div class={chat ? (chat.jumbo ? "md md-chat md-jumbo" : "md md-chat") : "md"}>{out}</div>;
 }
 
 // Nobody is notified by what a body says, so no mention pill, unless it's
@@ -84,7 +90,7 @@ function fenced(lines: string[], i: number, strip: number, k: number, fx: Ctx): 
   const code = f.code.join("\n");
   if (fx.embeds && f.lang === "chart") return { node: <Chart key={k} source={code} />, next: f.next };
   if (fx.embeds && f.lang === "svg") return { node: <Drawing key={k} svg={code} alt={f.alt} />, next: f.next };
-  if (fx.chat) return { node: <CodeBlock key={k} code={code} lang={f.lang ?? ""} />, next: f.next };
+  if (fx.chat) return { node: <fx.chat.Code key={k} code={code} lang={f.lang ?? ""} />, next: f.next };
   return { node: <pre key={k}>{code}</pre>, next: f.next };
 }
 

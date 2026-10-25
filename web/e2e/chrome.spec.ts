@@ -206,7 +206,7 @@ test.describe("on a computer", () => {
     await expect(page.locator(".app-bar")).toHaveCount(0);
     await expect(page.locator("html")).toHaveAttribute("data-palette", "latte");
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance") ?? "null"));
-    expect(saved).toEqual({ palette: "latte", finish: "flat", corners: "square" });
+    expect(saved).toEqual({ palette: "latte", finish: "flat", corners: "square", density: "cozy" });
     // Appearance has no switch any more.
     await page.locator("[data-account-menu]").click();
     await page.getByRole("menuitem", { name: "Appearance…" }).click();
@@ -217,7 +217,7 @@ test.describe("on a computer", () => {
     await expect(page.locator("html")).toHaveAttribute("data-finish", "flat");
     await expect(page.locator("html")).toHaveAttribute("data-corners", "soft");
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance")!)))
-      .toEqual({ palette: "slate", finish: "flat", corners: "soft" });
+      .toEqual({ palette: "slate", finish: "flat", corners: "soft", density: "cozy" });
 
     // Nobody's pick: Slate, in a dark scheme.
     const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });

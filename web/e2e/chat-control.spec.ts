@@ -845,6 +845,8 @@ test("threads: Alice starts one, Bob answers from his phone, each sees it live; 
   // with the thread under it.
   await panel.locator("[data-thread-follow]").click();
   await expect(panel.locator("[data-thread-follow]")).toHaveText("Follow");
+  // At this width the panel lies over the room's right side, where ⋯ is.
+  await panel.locator("[data-thread-close]").click();
   await msg.hover();
   await msg.locator("[data-msg-more]").click();
   await msg.locator("[data-msg-delete]").click();
@@ -987,6 +989,8 @@ test("private channels, the browser, leaving, and a group DM of three (#117, #11
   // #general is Alice's and Bob's, public: Carol sees it, and joins.
   await carol.locator('[data-browse-channel="general"] [data-browse-join]').click();
   await expect(hers.locator("[data-room-view] .chat-title")).toContainText("general", { timeout: 15_000 });
+  // Back on her list (a phone's room has the screen), it's hers now.
+  await platform(carol, "/chat");
   await expect(hers.locator(`[data-chat-room="${general}"]`)).toBeVisible();
   await platform(carol, `/chat/${plans}`);
   await expect(carol.locator("[data-room-missing]")).toBeVisible({ timeout: 15_000 });
@@ -994,6 +998,7 @@ test("private channels, the browser, leaving, and a group DM of three (#117, #11
   // Leaving #general takes it from her list, and it stays in the browser.
   await platform(carol, `/chat/${general}`);
   await hers.locator("[data-room-leave]").click();
+  await platform(carol, "/chat");
   await expect(hers.locator(`[data-chat-room="${general}"]`)).toHaveCount(0, { timeout: 15_000 });
   await hers.locator(`[data-room-browse="${team}/channels"]`).click();
   await expect(carol.locator('[data-browse-channel="general"] [data-browse-join]')).toBeVisible();
@@ -1005,7 +1010,7 @@ test("private channels, the browser, leaving, and a group DM of three (#117, #11
   for (const who of ["bob", "carol"]) await aliceChat.locator("[data-new-dm] li", { hasText: who }).locator("input").check();
   await aliceChat.locator("[data-dm-start]").click();
   const trio = page.locator("[data-room-view]");
-  await expect(trio.locator(".chat-title")).toContainText("bob, carol", { timeout: 15_000 });
+  await expect(trio.locator(".chat-title")).toContainText(/bob, carol|carol, bob/, { timeout: 15_000 });
   const trioId = (await trio.getAttribute("data-room-view"))!;
   const trioBox = trio.getByRole("textbox").first();
   await trioBox.fill("hello, the three of us");

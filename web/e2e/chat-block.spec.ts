@@ -63,6 +63,13 @@ test("a team with chat on, a machine of Alice's, and #ops", async ({ browser }) 
   await expect.poll(() => live(alice, ["alices"]), { timeout: 30_000 }).toBe(true);
   await show(alice, "alices");
   ops = await alice.evaluate(async (tm) => (await window.__arugula.chat.newChannel(tm, "ops")).id, team);
+  // A channel is its members' (#118): Bob is added to #ops.
+  const bobAccount = await alice.evaluate(() => window.__arugula.control!.teams[0].roster.members.find((m) => m.name === "bob")!.account);
+  const added = await alice.evaluate(
+    async ([r, b]) => (await fetch(`/api/chat/rooms/${r}/members`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accounts: [b] }) })).status,
+    [ops, bobAccount] as const,
+  );
+  expect(added).toBe(200);
   await expect.poll(() => bob.evaluate((r) => !!window.__arugula.chat.room(r), ops), { timeout: 15_000 }).toBe(true);
   const run = await call(alice, "POST", "/api/run", { command: "echo MEAN-TEST-FAILED; sleep 600" });
   expect(run.status, JSON.stringify(run.body)).toBe(200);

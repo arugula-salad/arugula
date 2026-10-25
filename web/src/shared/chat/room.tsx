@@ -18,7 +18,7 @@ import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
 import { AgentsChip } from "./agents-chip";
 import { authorLabel, isSystemLine } from "./agents";
-import { Markdown } from "../ui/markdown";
+import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
 import { TypingLine } from "./typing";
@@ -620,7 +620,7 @@ export function RoomMessage({
             }}
           />
         ) : (
-          m.text && <Markdown text={m.text} refs={null} chat isMe={chat.isMe} landed={landed} />
+          m.text && <ChatMarkdown text={m.text} isMe={chat.isMe} landed={landed} />
         )}
         {m.edited !== null && !editing && <span class="thread-tag" title={new Date(m.edited).toLocaleString()}>(edited)</span>}
         <PinnedMark m={m} />

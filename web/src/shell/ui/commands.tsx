@@ -9,6 +9,7 @@ import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from ".
 import { askText, type MenuItem } from "../../shared/ui/menu";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, shareSession } from "./people";
+import { hasChat } from "./places";
 import { newRemote, openChanges, openEditor, openIssue, openPort, openPr, openWorkspace, pinChatRoom, openTeamChat, remoteHosts } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
@@ -84,8 +85,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     { label: mine ? "Open a port on this machine…" : "Open a port…", run: () => void openPort(client, { split: id, host: mine?.id, local: !mine }) },
     { label: "Start an agent…", run: () => startAgent(client, { split: id, from: id }) },
     { label: "Start a chat", run: () => void client.newChat({ split: id, from: id }) },
-    // #123: the team's chat beside it, or one room of it.
-    ...(!client.state?.roles
+    // #123: the team's chat beside it, or one room of it, where chat is on.
+    ...(!client.state?.roles && hasChat()
       ? [
           { label: "Team chat", run: () => void openTeamChat(client, { from: id }) } as MenuItem,
           { label: "Pin a chat room…", run: () => void pinChatRoom(client, { from: id }) } as MenuItem,
@@ -196,7 +197,7 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
     // M35: a studio app's box, in a tab of its own. The owner's.
     ...(!client.state?.roles && client.has("studio") ? [{ label: "Open a studio app…", run: () => pickApp(client, { session }) } as MenuItem] : []),
     // #123: the team's chat, in a tab of its own.
-    ...(!client.state?.roles ? [{ label: "Team chat", run: () => void openTeamChat(client, { session }) } as MenuItem] : []),
+    ...(!client.state?.roles && hasChat() ? [{ label: "Team chat", run: () => void openTeamChat(client, { session }) } as MenuItem] : []),
     // M36: a pull request, in a tab of its own.
     ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { session }) } as MenuItem] : []),
     // M37: an issue, in a tab of its own.
