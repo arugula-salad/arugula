@@ -133,6 +133,18 @@ pub struct ChatRoom {
     /// Whether the reader may post here now (a DM whose other person left
     /// the team, an archive, an archived channel: no).
     pub writable: bool,
+    /// What people wrote about a channel (#119); empty when nobody has.
+    #[serde(default)]
+    pub topic: String,
+    #[serde(default)]
+    pub description: String,
+    /// How many messages are pinned.
+    #[serde(default)]
+    pub pins: u32,
+    /// Whether the reader may set the topic: a team can leave it to its
+    /// owners.
+    #[serde(default)]
+    pub topic_writable: bool,
 }
 
 /// `GET /api/chat`: every room the reader sees.
@@ -241,6 +253,15 @@ pub struct ChatMessage {
     /// Empty for a deleted message: its files went with it.
     #[serde(default)]
     pub files: Vec<ChatFile>,
+    /// Pinned (#119).
+    #[serde(default)]
+    pub pinned: bool,
+    /// Not something said but something that happened (#119): `author` set
+    /// the topic or pinned a message. Drawn dim and centered; never
+    /// counted unread, pushed, edited or reacted to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub system: Option<ChatSystem>,
 }
 
 /// One attached file, as the reader sees it. `url` is control's, for the
@@ -297,6 +318,54 @@ pub struct ChatUploadQuery {
     pub name: String,
 }
 
+/// What a system line tells of (#119).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatSystem {
+    /// `topic` (its `text` is the new topic, empty when cleared),
+    /// `description` (likewise), `pin` or `unpin`.
+    pub kind: String,
+    /// The pinned message's number, for `pin` and `unpin`.
+    pub target: Option<i64>,
+}
+
+/// The longest topic and description (#119), in characters.
+pub const MAX_TOPIC: usize = 250;
+pub const MAX_DESCRIPTION: usize = 1000;
+
+/// `PUT /api/chat/rooms/{id}/topic`: what a channel's members (or, when
+/// the team says so, its owners) write about it. What's left out stays;
+/// an empty one clears it. Each change posts a system line. Answers the room.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatTopicSet {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub topic: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub description: Option<String>,
+}
+
+/// One pinned message, in `GET /api/chat/rooms/{id}/pins` (#119).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatPin {
+    pub message: ChatMessage,
+    /// Who pinned it, and when.
+    pub by: String,
+    pub by_name: String,
+    pub at: u64,
+}
+
+/// `GET /api/chat/rooms/{id}/pins`: the room's pins, the newest first,
+/// as the reader sees the messages.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatPins {
+    pub pins: Vec<ChatPin>,
+}
+
 /// One emoji on a message, as the reader sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -318,6 +387,33 @@ pub struct ChatReactor {
     pub account: String,
     pub name: String,
     pub agent: Option<ChatAgent>,
+}
+
+/// What a system line says after its author's name, for an agent to read:
+/// `set the topic: ship friday`, `pinned message 12`.
+pub fn system_text(s: &ChatSystem, text: &str) -> String {
+    let at = s.target.map(|t| format!("message {t}")).unwrap_or_else(|| "a message".into());
+    match s.kind.as_str() {
+        "topic" if text.is_empty() => "cleared the topic".into(),
+        "topic" => format!("set the topic: {text}"),
+        "description" => "changed the description".into(),
+        "pin" => format!("pinned {at}"),
+        "unpin" => format!("unpinned {at}"),
+        other => other.to_owned(),
+    }
+}
+
+/// A room's pins for an agent to read, the newest pin first: `[12] Sam:
+/// freeze starts friday (pinned by Jake)`.
+pub fn pins_line(pins: &[ChatPin]) -> String {
+    pins.iter()
+        .map(|p| {
+            let by = if p.by_name.is_empty() { "someone" } else { p.by_name.as_str() };
+            let name = if p.message.name.is_empty() { "someone" } else { p.message.name.as_str() };
+            format!("[{}] {name}: {} (pinned by {by})", p.message.seq, p.message.text)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// A message's reactions in one line for an agent to read: `👍 2 (Sam,
@@ -583,6 +679,9 @@ pub const KEYWORD_CHARS: usize = 60;
 pub struct ChatTeamSettings {
     /// `@channel` and `@here` are for owners only.
     pub broadcast_owners: bool,
+    /// Only owners set a channel's topic (#119).
+    #[serde(default)]
+    pub topic_owners: bool,
 }
 
 /// How much of a room reaches the reader's pushes, and how its unread shows
@@ -788,6 +887,12 @@ pub enum ChatLive {
         room: String,
         seq: i64,
     },
+    /// A message was pinned or unpinned, or a pinned one deleted (#119):
+    /// read the room's pins and the room again. (A topic changing is
+    /// [`ChatLive::Room`].)
+    Pinned {
+        room: String,
+    },
     /// A message was edited or deleted: fetch it again.
     Changed {
         room: String,
@@ -987,6 +1092,12 @@ pub fn agent_reactions(room: &str, seq: i64) -> String {
     format!("{AGENT_ROOMS}/{room}/messages/{seq}/reactions")
 }
 
+/// An agent's pin of message `seq` (`threads.post`): `PUT` pins it, `DELETE`
+/// unpins; answered the [`ChatMessage`].
+pub fn agent_pin(room: &str, seq: i64) -> String {
+    format!("{AGENT_ROOMS}/{room}/messages/{seq}/pin")
+}
+
 /// How a message's `mentions` names a machine's agents: `machine:` and the
 /// machine's id. An `@` and the machine's name (`@geek`, `@geek's agent`)
 /// mentions them where their `threads.read` grant reaches the room. Nobody is
@@ -1025,6 +1136,11 @@ pub struct AgentRoom {
     pub powers: Vec<String>,
     /// Whether its agents may post here now.
     pub writable: bool,
+    /// A channel's topic and description (#119).
+    #[serde(default)]
+    pub topic: String,
+    #[serde(default)]
+    pub description: String,
 }
 
 /// A scope a machine's agent grants reach.
@@ -1059,4 +1175,7 @@ pub struct AgentMessages {
     pub room: AgentRoom,
     pub messages: Vec<ChatMessage>,
     pub more: bool,
+    /// The room's pinned messages, the newest pin first (#119).
+    #[serde(default)]
+    pub pins: Vec<ChatPin>,
 }

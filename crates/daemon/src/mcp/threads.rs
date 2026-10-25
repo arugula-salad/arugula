@@ -18,8 +18,8 @@
 use std::time::Duration;
 
 use arugula_control_wire::chat::{
-    AGENT_ROOMS, AGENT_SEARCH, ChatReaction, MAX_FILE_BYTES, MAX_FILES, SYSTEM_VIA, agent_files, agent_messages,
-    agent_reactions, reactions_line,
+    AGENT_ROOMS, AGENT_SEARCH, ChatPin, ChatReaction, ChatSystem, MAX_FILE_BYTES, MAX_FILES, SYSTEM_VIA, agent_files,
+    agent_messages, agent_pin, agent_reactions, pins_line, reactions_line, system_text,
 };
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
@@ -76,7 +76,12 @@ pub struct PostThreadArgs {
     /// The emoji to react with (or take back), for `react_to_seq`.
     #[serde(default)]
     pub emoji: Option<String>,
-    /// Take your reaction back instead of adding it.
+    /// Pin this message (its seq) instead of posting: as your person's
+    /// agent, needing the same threads.post grant. The room says so in a
+    /// small note.
+    #[serde(default)]
+    pub pin_seq: Option<i64>,
+    /// Take your reaction back (or unpin) instead of adding it.
     #[serde(default)]
     pub remove: bool,
 }
@@ -103,8 +108,8 @@ pub(crate) const READ_TOOL: &str = "read_thread";
 pub(crate) const POST_TOOL: &str = "post_thread";
 pub(crate) const SEARCH_TOOL: &str = "search_threads";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). Nothing wakes you on a mention: read them when you look.";
-pub(crate) const POST_DESCRIPTION: &str = "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 25 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.";
+pub(crate) const POST_DESCRIPTION: &str = "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins.";
 pub(crate) const SEARCH_DESCRIPTION: &str = "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.";
 
 /// What a refusal says to an agent.
@@ -153,6 +158,7 @@ fn message(m: &Value, mention: &str) -> Value {
         "seq": m["seq"], "at": m["at"], "by": by(m), "author": m["author"], "agent": m["agent"], "via": m["via"],
         "text": m["text"], "quote": m["quote"], "deleted": m["deleted"].is_u64(), "reactions": m["reactions"],
         "files": m["files"],
+        "pinned": m["pinned"], "system": m["system"],
         "mentions_you": m["mentions"].as_array().is_some_and(|a| a.iter().any(|x| x == mention)),
     })
 }
@@ -270,6 +276,14 @@ impl Call<'_> {
         let lines: Vec<String> = messages
             .iter()
             .map(|m| {
+                if let Ok(s) = serde_json::from_value::<ChatSystem>(m["system"].clone()) {
+                    return format!(
+                        "[{}] * {} {}",
+                        m["seq"],
+                        m["by"].as_str().unwrap_or("?"),
+                        system_text(&s, m["text"].as_str().unwrap_or(""))
+                    );
+                }
                 let reacted = reactions_of(m);
                 let attached = files_of(m);
                 format!(
@@ -279,18 +293,35 @@ impl Call<'_> {
                     m["text"].as_str().unwrap_or(""),
                     if attached.is_empty() { String::new() } else { format!("  [files: {attached}]") },
                     if reacted.is_empty() { String::new() } else { format!("  [reactions: {reacted}]") }
-                )
+                ) + if m["pinned"] == true { "  [pinned]" } else { "" }
             })
             .collect();
+        let pins: Vec<ChatPin> = serde_json::from_value(v["pins"].clone()).unwrap_or_default();
+        let mut about = String::new();
+        if let Some(t) = room["topic"].as_str().filter(|t| !t.is_empty()) {
+            about += &format!("\nTopic: {t}");
+        }
+        if let Some(d) = room["description"].as_str().filter(|d| !d.is_empty()) {
+            about += &format!("\nDescription: {d}");
+        }
+        if !pins.is_empty() {
+            about += &format!("\nPinned:\n{}", pins_line(&pins));
+        }
         let summary = format!(
-            "{} ({}), {} message(s){}{}",
+            "{} ({}), {} message(s){}{about}{}",
             room_name(room),
             room["id"].as_str().unwrap_or("?"),
             messages.len(),
             if a.mentions_only { " that mention you" } else { "" },
             if lines.is_empty() { String::new() } else { format!(":\n{}", lines.join("\n")) },
         );
-        done(summary, json!({ "room": room, "messages": messages, "more": v["more"], "next_after_seq": next }))
+        done(
+            summary,
+            json!({
+                "room": room, "messages": messages, "more": v["more"], "next_after_seq": next,
+                "topic": room["topic"], "description": room["description"], "pins": v["pins"],
+            }),
+        )
     }
 
     /// `post_thread`.
@@ -310,6 +341,12 @@ impl Call<'_> {
             return done(format!("{what} {emoji} on seq {seq} in {room}, as your person's agent on this machine"), v);
         }
         let room = a.room.trim();
+        if let Some(seq) = a.pin_seq {
+            let method = if a.remove { Method::DELETE } else { Method::PUT };
+            let v = self.threads_call(method, &agent_pin(room, seq), None).await?;
+            let what = if a.remove { "Unpinned" } else { "Pinned" };
+            return done(format!("{what} seq {seq} in {room}, as your person's agent on this machine"), v);
+        }
         if a.files.len() > MAX_FILES {
             return Err(format!("a message carries at most {MAX_FILES} files"));
         }

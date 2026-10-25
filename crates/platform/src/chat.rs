@@ -104,6 +104,7 @@ pub(crate) mod files;
 mod link_fetch;
 pub(crate) mod objects;
 pub(crate) mod people;
+pub(crate) mod pins;
 pub mod previews;
 pub(crate) mod reactions;
 pub(crate) mod saved;
@@ -521,7 +522,7 @@ fn new_id(prefix: &str) -> String {
 fn listed(app: &Platform, facts: &Facts, account: &str, room: &Room, from: u64) -> anyhow::Result<ChatRoom> {
     let mark = app.db.chat_mark(&room.id, account)?;
     let counts = app.db.chat_unread(&room.id, account, mark.0, from)?;
-    let mut r = listed_as(app, facts, account, room, mark, counts)?;
+    let mut r = listed_as(app, facts, account, room, mark, counts, &pins::Extras::of(&app.db, &[room])?)?;
     with_levels(app, account, std::slice::from_mut(&mut r), None)?;
     Ok(r)
 }
@@ -591,7 +592,10 @@ fn listed_as(
     room: &Room,
     (read, muted): (i64, bool),
     (unread, mentions): (u64, u64),
+    extras: &pins::Extras,
 ) -> anyhow::Result<ChatRoom> {
+    let writable = writable(app, facts, room, account)?;
+    let (topic, description, pins, topic_writable) = extras.of_room(facts, room, account, writable);
     let with = if room.kind == "dm" {
         facts.members(app, &room.id)?.into_iter().find(|a| a != account).map(|a| ChatPerson {
             name: facts.people.get(&a).map(|p| p.name.clone()).unwrap_or_default(),
@@ -622,7 +626,11 @@ fn listed_as(
         level: if muted { NotifyLevel::Nothing } else { NotifyLevel::Mentions },
         level_own: muted,
         archived: room.archived.is_some(),
-        writable: writable(app, facts, room, account)?,
+        writable,
+        topic,
+        description,
+        pins,
+        topic_writable,
     })
 }
 
@@ -646,6 +654,8 @@ struct Shower {
     reactions: HashMap<(String, i64), Vec<Reaction>>,
     /// The files on these messages (#107), in the order they were chosen.
     files: HashMap<(String, i64), Vec<ChatFileRow>>,
+    /// Which are system lines or pinned (#119).
+    marks: pins::Marks,
     /// Who is reading: a reaction is "mine" when it is this account's and
     /// this agent's ("" for the person), so an agent sees its own apart
     /// from its owner's.
@@ -657,6 +667,7 @@ impl Shower {
         let hub = &*app.hub;
         let reactions = reactions_of(&app.db, ms)?;
         let files = files::files_of(&app.db, ms)?;
+        let marks = pins::Marks::of(&app.db, ms)?;
         let mut authors: Vec<String> = ms.iter().map(|m| m.author.clone()).filter(|a| !a.is_empty()).collect();
         authors.extend(reactions.values().flatten().map(|r| r.account.clone()));
         authors.sort();
@@ -697,11 +708,11 @@ impl Shower {
                 (m, (name, opens))
             })
             .collect();
-        Ok(Self { names, machines, agents, reactions, files, reader: (reader.to_owned(), String::new()) })
+        Ok(Self { names, machines, agents, reactions, files, marks, reader: (reader.to_owned(), String::new()) })
     }
 
     /// Read as the agent on `machine` (for its owner `reader`).
-    pub(super) fn as_agent(mut self, machine: &str) -> Self {
+    pub(super) fn for_agent(mut self, machine: &str) -> Self {
         self.reader.1 = machine.to_owned();
         self
     }
@@ -740,6 +751,8 @@ impl Shower {
                 .flatten()
                 .map(|f| files::shown(f, !self.reader.1.is_empty()))
                 .collect(),
+            pinned: self.marks.pinned(m),
+            system: self.marks.system(m),
         }
     }
 
@@ -1218,6 +1231,7 @@ impl Live {
             ChatLive::Message { room, .. }
             | ChatLive::Changed { room, .. }
             | ChatLive::Reacted { room, .. }
+            | ChatLive::Pinned { room }
             | ChatLive::Read { room, .. }
             | ChatLive::Object { room, .. } => self.rooms.contains(room),
             // Sidebar and Saved are told to their account only (`out.to`).
@@ -1352,10 +1366,11 @@ pub async fn rooms(State(app): State<Arc<Platform>>, s: Person) -> J<ChatRooms> 
     let asks: Vec<UnreadAsk<'_>> =
         seen.iter().map(|(r, from)| UnreadAsk { room: &r.id, read: mark(&r.id).0, from: *from }).collect();
     let counts = app.db.chat_unread_in(&s.account, &asks)?;
+    let extras = pins::Extras::of(&app.db, &seen.iter().map(|(r, _)| r).collect::<Vec<_>>())?;
     let mut rooms = Vec::new();
     for (r, _) in &seen {
         let n = counts.get(&r.id).copied().unwrap_or((0, 0));
-        rooms.push(listed_as(&app, &facts, &s.account, r, mark(&r.id), n)?);
+        rooms.push(listed_as(&app, &facts, &s.account, r, mark(&r.id), n, &extras)?);
     }
     let own = marks.iter().filter_map(|(id, m)| m.2.map(|l| (id.clone(), l))).collect();
     with_levels(&app, &s.account, &mut rooms, Some(own))?;
@@ -2072,6 +2087,9 @@ pub async fn edit(
     gate(&app, &s.account).await?;
     let (room, _, facts) = room_for(&app, &s.account, &id).await?;
     let m = message_in(&app, &room, seq)?;
+    if pins::is_system(&app, &room, seq)? {
+        return Err(err(StatusCode::FORBIDDEN, "a note of what happened in the room isn't edited"));
+    }
     if m.author != s.account || m.deleted.is_some() {
         return Err(err(StatusCode::FORBIDDEN, "only its author edits a message"));
     }
@@ -2117,6 +2135,9 @@ pub async fn delete(
     gate(&app, &s.account).await?;
     let (room, _, facts) = room_for(&app, &s.account, &id).await?;
     let m = message_in(&app, &room, seq)?;
+    if pins::is_system(&app, &room, seq)? {
+        return Err(err(StatusCode::FORBIDDEN, "a note of what happened in the room isn't deleted"));
+    }
     let may = m.author == s.account
         || match room.scope.split_once(':') {
             Some(("team", team)) => facts.role(team, &s.account) == Some(TeamRole::Owner),
@@ -2128,8 +2149,12 @@ pub async fn delete(
         return Err(err(StatusCode::FORBIDDEN, "only its author, or an owner, deletes a message"));
     }
     if m.deleted.is_none() {
+        let was_pinned = !app.db.chat_pinned_among(&room.id, seq, seq)?.is_empty();
         app.db.delete_chat_message(&room.id, seq, now_ms())?;
         app.chat.publish(&app.db, ChatLive::Changed { room: room.id.clone(), seq }, None);
+        if was_pinned {
+            app.chat.publish(&app.db, ChatLive::Pinned { room: room.id.clone() }, None);
+        }
     }
     Ok(Json(shown(&app, &s.account, &message_in(&app, &room, seq)?).await?))
 }

@@ -167,7 +167,7 @@ async fn an_agent_reacts_with_threads_post_apart_from_its_owner() {
     let for_a = seen(&base, "a", seq).await;
     assert_eq!(for_a[0]["mine"], true);
     // The agent reads them, its own marked, not the owner's.
-    let (_, v) = geek(&base, "GET", &format!("/api/daemon/chat/rooms/ch_general/messages"), None).await;
+    let (_, v) = geek(&base, "GET", "/api/daemon/chat/rooms/ch_general/messages", None).await;
     assert_eq!(v["messages"][0]["reactions"][0]["mine"], true, "{v}");
 
     // Taking back the agent's leaves the owner's.

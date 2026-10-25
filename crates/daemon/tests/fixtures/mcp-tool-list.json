@@ -2996,7 +2996,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -3089,7 +3089,7 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 25 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -3109,6 +3109,15 @@
             },
             "type": "array"
           },
+          "pin_seq": {
+            "default": null,
+            "description": "Pin this message (its seq) instead of posting: as your person's\nagent, needing the same threads.post grant. The room says so in a\nsmall note.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "react_to_seq": {
             "default": null,
             "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
@@ -3120,7 +3129,7 @@
           },
           "remove": {
             "default": false,
-            "description": "Take your reaction back instead of adding it.",
+            "description": "Take your reaction back (or unpin) instead of adding it.",
             "type": "boolean"
           },
           "room": {
@@ -6741,7 +6750,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -6834,7 +6843,7 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 25 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -6854,6 +6863,15 @@
             },
             "type": "array"
           },
+          "pin_seq": {
+            "default": null,
+            "description": "Pin this message (its seq) instead of posting: as your person's\nagent, needing the same threads.post grant. The room says so in a\nsmall note.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "react_to_seq": {
             "default": null,
             "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
@@ -6865,7 +6883,7 @@
           },
           "remove": {
             "default": false,
-            "description": "Take your reaction back instead of adding it.",
+            "description": "Take your reaction back (or unpin) instead of adding it.",
             "type": "boolean"
           },
           "room": {
@@ -10205,7 +10223,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -10298,7 +10316,7 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 25 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -10318,6 +10336,15 @@
             },
             "type": "array"
           },
+          "pin_seq": {
+            "default": null,
+            "description": "Pin this message (its seq) instead of posting: as your person's\nagent, needing the same threads.post grant. The room says so in a\nsmall note.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "react_to_seq": {
             "default": null,
             "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
@@ -10329,7 +10356,7 @@
           },
           "remove": {
             "default": false,
-            "description": "Take your reaction back instead of adding it.",
+            "description": "Take your reaction back (or unpin) instead of adding it.",
             "type": "boolean"
           },
           "room": {
@@ -13950,7 +13977,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -14043,7 +14070,7 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 25 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -14063,6 +14090,15 @@
             },
             "type": "array"
           },
+          "pin_seq": {
+            "default": null,
+            "description": "Pin this message (its seq) instead of posting: as your person's\nagent, needing the same threads.post grant. The room says so in a\nsmall note.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "react_to_seq": {
             "default": null,
             "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
@@ -14074,7 +14110,7 @@
           },
           "remove": {
             "default": false,
-            "description": "Take your reaction back instead of adding it.",
+            "description": "Take your reaction back (or unpin) instead of adding it.",
             "type": "boolean"
           },
           "room": {
@@ -15840,7 +15876,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -17444,7 +17480,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {

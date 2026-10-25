@@ -441,6 +441,66 @@ test("polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a sc
   await aliceChat.evaluate(() => (document.documentElement.dataset.density = "cozy"));
 });
 
+test("topic and pins: Alice sets a topic and pins two messages, Bob sees both live and the pin list jumps to the message", async () => {
+  test.setTimeout(90_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const first = await aliceChat.evaluate((r) => window.__arugula.chat.post(r, "the runbook lives in the wiki").then((p) => p.seq), general);
+  const second = await aliceChat.evaluate((r) => window.__arugula.chat.post(r, "freeze starts friday").then((p) => p.seq), general);
+  // Bob, on his phone, has the room open.
+  await platform(bob, "/chat");
+  const list = bob.locator("[data-chat-control]");
+  await list.locator(`[data-chat-room="${general}"]`).click();
+  await expect(list.locator(`[data-msg="${second}"]`)).toBeVisible({ timeout: 15_000 });
+
+  // Alice writes the topic in the header; Bob's header replaces its computed line.
+  await expect(room.locator("[data-chat-topic]")).not.toHaveAttribute("data-topic-set", "");
+  await room.locator("[data-topic-add]").click();
+  await aliceChat.locator(".prompt input").fill("Ship on Fridays");
+  await aliceChat.locator(".prompt input").press("Enter");
+  await expect(room.locator("[data-chat-topic][data-topic-set]")).toHaveText("Ship on Fridays");
+  await expect(list.locator("[data-chat-topic][data-topic-set]")).toHaveText("Ship on Fridays", { timeout: 15_000 });
+  // A small system line says who, in both rooms; it is nobody's unread.
+  await expect(list.locator('[data-system="topic"]')).toContainText("set the topic: Ship on Fridays");
+  await expect(room.locator('[data-system="topic"]')).toContainText("set the topic: Ship on Fridays");
+
+  // Alice pins both from the messages' menus.
+  for (const seq of [first, second]) {
+    const msg = room.locator(`[data-msg="${seq}"]`);
+    await msg.hover();
+    await msg.locator("[data-msg-pin]").click();
+    await expect(msg.locator("[data-pinned-mark]")).toBeVisible();
+  }
+  await expect(room.locator("[data-pins-count]")).toHaveText("2");
+  // Bob has the count and the marks live, and a phone's width holds.
+  await expect(list.locator("[data-pins-count]")).toHaveText("2", { timeout: 15_000 });
+  await expect(list.locator(`[data-msg="${first}"] [data-pinned-mark]`)).toBeVisible();
+  await expect(list.locator('[data-system="pin"]')).toHaveCount(2);
+
+  // Bob opens the pins (newest first) and jumps to the older one.
+  await list.locator("[data-chat-pins]").click();
+  const pins = list.locator("[data-chat-pins-card] [data-pin]");
+  await expect(pins).toHaveCount(2);
+  await expect(pins.first()).toHaveAttribute("data-pin", String(second));
+  const card = await list.locator("[data-chat-pins-card]").boundingBox();
+  expect(card!.x + card!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
+  await pins.nth(1).locator("[data-pin-jump]").click();
+  await expect(bob).toHaveURL(new RegExp(`msg=${first}`));
+  await expect(list.locator(`[data-msg="${first}"]`)).toBeVisible();
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+  // Unpinning is live too, and the system line says so.
+  await list.locator("[data-chat-pins]").click();
+  await list.locator(`[data-pin="${first}"] [data-pin-remove]`).click();
+  await expect(room.locator("[data-pins-count]")).toHaveText("1", { timeout: 15_000 });
+  await expect(room.locator('[data-system="unpin"]')).toHaveCount(1);
+  // Deleting a pinned message drops its pin.
+  const msg = room.locator(`[data-msg="${second}"]`);
+  await msg.hover();
+  await msg.locator("[data-msg-delete]").click();
+  await expect(room.locator("[data-chat-pins]")).toHaveCount(0, { timeout: 15_000 });
+});
+
 test("a mention pushes, and the push's tap opens the room at the message", async () => {
   // A room Bob doesn't have open, and wasn't pushed for in the last minute
   // (control pushes once a minute per room).

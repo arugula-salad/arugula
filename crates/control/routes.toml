@@ -1198,6 +1198,38 @@ clients = ["page"]
 note = "Takes the caller's `?emoji=` back; none to take back is not an error."
 
 [[route]]
+method = "PUT"
+path = "/api/chat/rooms/{id}/topic"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A channel's topic and/or description (#119); a change posts a system line. A team can leave it to its owners."
+
+[[route]]
+method = "GET"
+path = "/api/chat/rooms/{id}/pins"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The room's pinned messages, the newest pin first."
+
+[[route]]
+method = "PUT"
+path = "/api/chat/rooms/{id}/messages/{seq}/pin"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Pins the message (anyone who may post); pinning twice is not an error. Posts a system line."
+
+[[route]]
+method = "DELETE"
+path = "/api/chat/rooms/{id}/messages/{seq}/pin"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Unpins it; none to take off is not an error."
+
+[[route]]
 method = "POST"
 path = "/api/chat/rooms/{id}/read"
 process = "platform"
@@ -1367,6 +1399,22 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "An agent's reaction (`threads.post`), its owner's and labelled with the machine; nobody is woken."
+
+[[route]]
+method = "PUT"
+path = "/api/daemon/chat/rooms/{id}/messages/{seq}/pin"  # wire::chat::agent_pin
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "An agent pins a message (`threads.post`), as its owner, labelled with the machine."
+
+[[route]]
+method = "DELETE"
+path = "/api/daemon/chat/rooms/{id}/messages/{seq}/pin"  # wire::chat::agent_pin
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Unpins it."
 
 [[route]]
 method = "DELETE"

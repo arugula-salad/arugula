@@ -16,6 +16,8 @@ import type {
   ChatMessages,
   ChatPaneRef,
   ChatPerson,
+  ChatPin,
+  ChatPins,
   ChatPost,
   ChatPosted,
   ChatRoom,
@@ -99,6 +101,8 @@ export class ChatStore {
   stream: string | null = null;
   private loaded = new Map<string, Loaded>();
   private detail = new Map<string, ChatRoomDetail>();
+  /** Rooms' pins (#119), once asked for: kept current by the stream. */
+  private pinned = new Map<string, ChatPin[]>();
   private fetching = new Map<string, Promise<void>>();
   private es: EventSource | null = null;
   private open: string | null = null;
@@ -284,6 +288,7 @@ export class ChatStore {
         this.roomsSoon();
         void this.loadSidebar();
         for (const room of this.loaded.keys()) void this.newer(room);
+        for (const room of this.pinned.keys()) void this.loadPins(room);
         this.objectChanged();
         return;
       case "object":
@@ -300,6 +305,10 @@ export class ChatStore {
       case "reacted":
         // Only the message: no room's count or order moved.
         if (this.loaded.has(ev.room)) void this.refetch(ev.room, ev.seq);
+        return;
+      case "pinned":
+        if (this.pinned.has(ev.room) || this.loaded.has(ev.room)) void this.loadPins(ev.room);
+        this.roomsSoon();
         return;
       case "read": {
         const r = this.room(ev.room);
@@ -333,6 +342,7 @@ export class ChatStore {
         this.objectChanged();
         this.loaded.clear();
         this.detail.clear();
+        this.pinned.clear();
         this.roomsSoon();
         void this.loadSidebar();
         this.emit();
@@ -664,6 +674,39 @@ export class ChatStore {
     if (!had) return;
     this.loaded.set(id, { ...had, list: merge(had.list, [m]) });
     this.emit();
+  }
+
+  // ---- topic and pins (#119)
+
+  /** A room's pins, newest first, as loaded (`undefined` until they are). */
+  pinsOf(id: string): ChatPin[] | undefined {
+    return this.pinned.get(id);
+  }
+
+  /** Ask for a room's pins, and mark its loaded messages pinned or not. */
+  async loadPins(id: string) {
+    const r = await call<ChatPins>("GET", `/api/chat/rooms/${enc(id)}/pins`).catch(() => null);
+    if (!r) return;
+    this.pinned.set(id, r.pins);
+    const had = this.loaded.get(id);
+    if (had) {
+      const set = new Set(r.pins.map((p) => p.message.seq));
+      this.loaded.set(id, { ...had, list: had.list.map((m) => (m.pinned === set.has(m.seq) ? m : { ...m, pinned: set.has(m.seq) })) });
+    }
+    this.emit();
+  }
+
+  /** Pin a message, or take its pin off. The stream tells every page,
+   * this one too; the answer shows it here at once. */
+  async pin(id: string, seq: number, on: boolean) {
+    const path = `/api/chat/rooms/${enc(id)}/messages/${seq}/pin`;
+    this.replace(id, await call<ChatMessage>(on ? "PUT" : "DELETE", path));
+    void this.loadPins(id);
+  }
+
+  /** Write a channel's topic and/or description (what's left out stays). */
+  async setTopic(id: string, change: { topic?: string; description?: string }) {
+    return this.took(await call<ChatRoom>("PUT", `/api/chat/rooms/${enc(id)}/topic`, change));
   }
 
   /** Search the rooms I see (words, `mea*`, `in:#ch`, `from:@login`,

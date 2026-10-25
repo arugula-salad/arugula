@@ -54,6 +54,9 @@ pub(super) async fn set(
     if m.at < from {
         return Err(err(StatusCode::NOT_FOUND, "no such message"));
     }
+    if on && super::pins::is_system(app, room, seq)? {
+        return Err(err(StatusCode::CONFLICT, "react to what was said, not to a note of what happened"));
+    }
     if on && m.deleted.is_some() {
         return Err(err(StatusCode::CONFLICT, "that message was deleted"));
     }
@@ -87,7 +90,7 @@ pub(super) async fn set(
     let m = message_in(app, room, seq)?;
     let mut shower = Shower::of(app, account, &[&m]).await?;
     if let Some(a) = agent {
-        shower = shower.as_agent(&a.machine);
+        shower = shower.for_agent(&a.machine);
     }
     Ok(shower.show(&m))
 }

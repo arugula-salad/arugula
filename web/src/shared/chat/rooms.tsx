@@ -23,6 +23,7 @@ import { SavedView } from "./saved";
 import { RoomActivityView, RoomSearchView, SearchField, openSwitcher, useSwitcherOpen, closeSwitcher } from "./find";
 import { MsgAvatar } from "./avatar";
 import { WebPreviewsSwitch } from "./previews";
+import { AboutButton, editDescription, editTopic, PinsButton, TopicLine } from "./pins-ui";
 import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
 import { AgentsChip } from "./agents-chip";
 import { newSection, openGroupMenu, openRoomMenu, RoomStar, toggleGroup } from "./sections";
@@ -237,7 +238,7 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
         class={`chat-row${r.id === picked?.id ? " selected" : ""}${bold(r) ? " unread" : ""}${r.last ? "" : " quiet"}${r.archived || r.level === "nothing" ? " muted" : ""}${dragging === r.id ? " dragging" : ""}`}
         data-chat-room={r.id}
         data-room-kind={r.kind}
-        title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}` : r.kind === "dm" ? `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
+        title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}${r.topic ? `\n${r.topic}` : ""}` : r.kind === "dm" ? `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
         draggable={!phone}
         onDragStart={(e) => {
           e.dataTransfer?.setData("text/x-arugula-room", r.id);
@@ -491,8 +492,10 @@ function RoomView({ store, room, phone, focus }: { store: ChatStore; room: ChatR
               <span class="chat-title-sigil">{roomSigil(room)}</span>
               {label}
             </strong>
-            <span data-chat-topic>{topicOf(room, api)}</span>
+            <TopicLine room={room} fallback={topicOf(room, api)} toast={toast} />
           </div>
+          <PinsButton room={room} toast={toast} />
+          <AboutButton room={room} toast={toast} />
           {!phone && people.length > 0 && (
             <button class="chat-members" title={people.map((p) => p.name).join(", ")} onClick={() => !details && toggleDetails()}>
               {people.slice(0, 3).map((p) => (
@@ -558,6 +561,19 @@ function RoomDetails({ store, room, close }: { store: ChatStore; room: ChatRoom;
               ? `On ${machineName(api, room.machine, room.machine_name ?? "")}. Who reads this thread is whom the machine says may read its ${room.kind}.`
               : `${machineName(api, room.machine, room.machine_name ?? "Its machine")} is asleep. Its thread is still here.`}
           </p>
+        )}
+        {room.kind === "channel" && (room.topic || room.description || room.topic_writable) && (
+          <div class="chat-about" data-chat-about-panel>
+            <h3>About</h3>
+            <p class={room.topic ? "" : "dim"}>{room.topic || "No topic yet."}</p>
+            {room.description && <p class="chat-pop-text">{room.description}</p>}
+            {room.topic_writable && (
+              <div class="thread-offer-buttons">
+                <button onClick={() => void editTopic(store, room, toast)}>{room.topic ? "Change topic" : "Set topic"}</button>
+                <button onClick={() => void editDescription(store, room, toast)}>{room.description ? "Change description" : "Add description"}</button>
+              </div>
+            )}
+          </div>
         )}
         <h3>People</h3>
         {people.length === 0 && <p class="chat-none">Just you, so far.</p>}
@@ -650,6 +666,7 @@ function RoomSwitcher({ rooms }: { rooms: ChatRoom[] }) {
             >
               <span class="chat-sigil">{roomSigil(r)}</span>
               <span class="chat-label">{roomLabel(r, api)}</span>
+              {r.kind === "channel" && r.topic && <span class="chat-switcher-host">{r.topic}</span>}
               {r.machine_name && <span class="chat-switcher-host">{machineName(api, r.machine, r.machine_name)}</span>}
               {r.unread ? <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.unread}</span> : null}
             </li>

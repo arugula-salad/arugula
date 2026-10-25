@@ -29,6 +29,9 @@ import { MessagePreviews } from "./previews";
 import { hookFor, itemsOf, MsgItems, MsgMenu } from "./msg-actions";
 import { QUICK } from "./reactions";
 import { AttachButton, AttachChips, dragsFiles, filesOf, MessageFiles, useAttachments } from "./files-ui";
+import { PinnedMark, SystemLine } from "./pins-ui";
+// Pins (#119) fill the ⋯ menu's pin hook.
+import "./pins-hooks";
 import { longPress, mayReact, ReactionChips, ReactMenu } from "./reactions-ui";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
@@ -265,7 +268,7 @@ export function RoomBody({
   // room opened (not mine), kept while it stays open.
   const newFrom = useRef<number | null | undefined>(undefined);
   if (newFrom.current === undefined && msgs) {
-    newFrom.current = room.unread > 0 ? (msgs.find((m) => m.seq > room.read && !chat.mine(m))?.seq ?? null) : null;
+    newFrom.current = room.unread > 0 ? (msgs.find((m) => m.seq > room.read && !chat.mine(m) && !m.system)?.seq ?? null) : null;
   }
   // Marked unread from a message (#116): the line is there, and stays.
   const newAt = chat.heldAt(room.id) ?? newFrom.current;
@@ -408,7 +411,7 @@ export function RoomBody({
             const m = row.m;
             // A message follows on from the one before it, unless something
             // else came between them.
-            const prev = !newDay && before?.m && m.seq !== newAt ? before.m : undefined;
+            const prev = !newDay && before?.m && !before.m.system && !m.system && m.seq !== newAt ? before.m : undefined;
             return (
               <Fragment key={m.seq}>
                 {dayLine}
@@ -521,6 +524,7 @@ function RoomMessage({
       </div>
     );
   }
+  if (m.system) return <SystemLine room={room} m={m} />;
   if (m.deleted !== null) {
     return (
       <div class="thread-msg first deleted" data-msg={m.seq}>
@@ -594,6 +598,7 @@ function RoomMessage({
           m.text && <Markdown text={m.text} refs={null} chat isMe={chat.isMe} landed={landed} />
         )}
         {m.edited !== null && !editing && <span class="thread-tag" title={new Date(m.edited).toLocaleString()}>(edited)</span>}
+        <PinnedMark m={m} />
         <MessageFiles files={m.files} />
         {!editing && m.text && <MessagePreviews room={room.id} seq={m.seq} text={m.text} mine={owned} />}
         {m.pane && <PaneChip pane={m.pane} quote={m.quote} />}

@@ -64,6 +64,9 @@ fn routes() -> Routes {
             "/api/chat/rooms/{id}/messages/{seq}/reactions",
             post(chat::reactions::add).delete(chat::reactions::remove),
         )
+        .route("/api/chat/rooms/{id}/topic", axum::routing::put(chat::pins::set_topic))
+        .route("/api/chat/rooms/{id}/pins", get(chat::pins::list))
+        .route("/api/chat/rooms/{id}/messages/{seq}/pin", axum::routing::put(chat::pins::pin).delete(chat::pins::unpin))
         .route("/api/chat/rooms/{id}/read", post(chat::read))
         .route("/api/chat/rooms/{id}/mute", post(chat::mute))
         .route("/api/chat/rooms/{id}/unread", post(chat::saved::unread))
@@ -93,6 +96,10 @@ fn routes() -> Routes {
         .route(
             "/api/daemon/chat/rooms/{id}/messages/{seq}/reactions",
             post(chat::agent_threads::react).delete(chat::agent_threads::unreact),
+        )
+        .route(
+            "/api/daemon/chat/rooms/{id}/messages/{seq}/pin",
+            axum::routing::put(chat::agent_threads::pin).delete(chat::agent_threads::unpin),
         )
         .route(arugula_control_wire::chat::AGENT_SEARCH, get(chat::agent_threads::search))
         .route("/api/grants", get(grants::list).post(grants::give))
