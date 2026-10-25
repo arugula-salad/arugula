@@ -264,15 +264,24 @@ pub struct TurnStat {
     cost_base: Option<f64>,
 }
 
-/// A prompt waiting for the agent: its text, and images (M71) by name in
-/// the block's folder.
+/// A prompt waiting for the agent: its text, images (M71) by name in the
+/// block's folder, and whose it is when that isn't the block's owner
+/// (M29): the transcript says so when it's sent, not when it's queued, so
+/// a follow-up queued mid-turn is credited to its own author (M255).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Queued {
     pub text: String,
     pub images: Vec<String>,
+    pub by: Option<String>,
 }
 
 impl Queued {
+    /// Whether `sent` (a `session/prompt` as the log has it, which names
+    /// nobody) is this prompt.
+    fn is(&self, sent: &Queued) -> bool {
+        self.text == sent.text && self.images == sent.images
+    }
+
     /// What the block shows of it while it waits.
     fn label(&self) -> String {
         match self.images.len() {
@@ -632,7 +641,21 @@ impl Inner {
     /// while the agent is down survives a daemon restart; sending it takes
     /// it off (see `session/prompt` in `on_out`).
     fn enqueue(&mut self, q: &Queued, front: bool) {
-        self.note(json!({ "e": "queue", "text": q.text, "images": q.images, "front": front }));
+        let mut e = json!({ "e": "queue", "text": q.text, "images": q.images, "front": front });
+        if let Some(by) = &q.by {
+            e["by"] = json!(by);
+        }
+        self.note(e);
+    }
+
+    /// Send `q` as a turn's prompt, `blocks` its content. Whose it is goes
+    /// in the transcript first (M29), now that it's this turn's (M255).
+    fn send_prompt(&mut self, q: &Queued, blocks: Vec<Value>) {
+        if let Some(by) = &q.by {
+            self.note(json!({ "e": "from", "by": by }));
+        }
+        let session = self.session();
+        self.request("session/prompt", json!({ "sessionId": session, "prompt": blocks }));
     }
 
     /// The MCP servers a session gets: the block's own, and Arugula's
@@ -726,8 +749,11 @@ impl Inner {
     fn on_note(&mut self, e: &Value, at: u64) {
         match e["e"].as_str().unwrap_or("") {
             "queue" => {
-                let q =
-                    Queued { text: e["text"].as_str().unwrap_or_default().to_owned(), images: strings(&e["images"]) };
+                let q = Queued {
+                    text: e["text"].as_str().unwrap_or_default().to_owned(),
+                    images: strings(&e["images"]),
+                    by: e["by"].as_str().map(str::to_owned),
+                };
                 match e["front"].as_bool() {
                     Some(true) => self.queue.push_front(q),
                     _ => self.queue.push_back(q),
@@ -896,11 +922,11 @@ impl Inner {
                             .filter_map(|c| c["text"].as_str())
                             .collect::<Vec<_>>()
                             .join("\n");
-                        let sent = Queued { text, images: blocks.iter().filter_map(image).collect() };
-                        if self.queue.front() == Some(&sent) {
+                        let sent = Queued { text, images: blocks.iter().filter_map(image).collect(), by: None };
+                        if self.queue.front().is_some_and(|q| q.is(&sent)) {
                             self.queue.pop_front();
                         }
-                        let Queued { text, images } = sent;
+                        let Queued { text, images, .. } = sent;
                         self.t.user(&text, images, at);
                         self.prompt_id = Some(id);
                         self.result_in = false;
@@ -1015,7 +1041,8 @@ impl Inner {
                         self.carry_run = self.turns.pop().and_then(|t| t.run);
                         if let Some(Entry::User { text, images, .. }) = self.t.entries.last().cloned() {
                             self.t.entries.pop();
-                            fx.push(Effect::Retry(Queued { text, images }));
+                            // Whose it is was said as it went the first time.
+                            fx.push(Effect::Retry(Queued { text, images, by: None }));
                         }
                     }
                     (Purpose::Prompt, result) => {
@@ -1547,7 +1574,7 @@ impl Agent {
             return;
         }
         if let Some(p) = inner.cfg.prompt.take() {
-            inner.enqueue(&Queued { text: p, images: vec![] }, false);
+            inner.enqueue(&Queued { text: p, images: vec![], by: None }, false);
         }
         if inner.cfg.import.is_some() {
             if let Some(t) = inner.cfg.import.as_ref().and_then(|i| i.title.clone()) {
@@ -2677,7 +2704,6 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
         }
         return;
     }
-    let session = g.session();
     let mut prompt = vec![];
     if !q.text.is_empty() {
         prompt.push(json!({ "type": "text", "text": q.text }));
@@ -2708,7 +2734,7 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
         prompt.push(chant::turn_block(c, &run));
         g.next_run = g.carry_run.is_none().then_some(run);
     }
-    g.request("session/prompt", json!({ "sessionId": session, "prompt": prompt }));
+    g.send_prompt(&q, prompt);
     start_run(ctx, g, &q.text);
 }
 
@@ -2960,13 +2986,11 @@ impl Agent {
         if text.is_empty() && files.is_empty() {
             return Err("send needs {\"text\": …}".into());
         }
-        let mut q = Queued { text: text.to_owned(), images: vec![] };
+        // A follow-up from someone (M29): the transcript says whose as it's
+        // sent (`send_prompt`).
+        let mut q = Queued { text: text.to_owned(), images: vec![], by: by.map(str::to_owned) };
         attach(&self.ctx, &mut q, &files)?;
         let mut g = self.inner.lock().unwrap();
-        if let Some(by) = by {
-            // A follow-up from someone (M29): the transcript says whose.
-            g.note(json!({ "e": "from", "by": by }));
-        }
         if matches!(g.status, Status::Exited | Status::Stopped) {
             self.continue_import(&mut g)?;
         }
