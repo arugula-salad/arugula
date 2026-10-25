@@ -3,7 +3,7 @@
 // are in palette-steps.ts, shared with palette.spec.ts.
 
 import { devices, test } from "@playwright/test";
-import { desktop, phone } from "./palette-steps";
+import { desktop, docs, phone } from "./palette-steps";
 
 // Playwright's WebKit stops loading the page once the service worker is
 // registered (real Safari doesn't), so none here.
@@ -15,6 +15,10 @@ test("Ctrl+Shift+P opens the palette from a terminal; it runs every pane-menu ac
 
 test("Cmd+Shift+P does too", async ({ page }) => {
   await desktop(page, "Meta");
+});
+
+test("Docs opens the Docs page, and a Doc that was closed opens by its title", async ({ page }) => {
+  await docs(page, "Meta");
 });
 
 test.describe("on an iPhone", () => {

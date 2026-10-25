@@ -1027,9 +1027,19 @@ export type Dir = "row" | "column";
 export type DocLinkUrl = { url: string, };
 
 /**
- * `POST /api/docs/open` (#1493): a Doc from the library in a block.
+ * `POST /api/docs/open` (#1493): a Doc from the library in a block. Exactly
+ * one of `id` and `link` names it.
  */
-export type DocOpenRequest = { id: string, session?: string | null, split?: number | null, };
+export type DocOpenRequest = { 
+/**
+ * The Doc's id (`docs.list` has them).
+ */
+id?: string | null, 
+/**
+ * A link's id, as control's Shared Docs lists it (#1494): the Doc that
+ * link shares.
+ */
+link?: string | null, session?: string | null, split?: number | null, };
 
 /**
  * The block that shows the Doc: the one that had it open, or a new one.

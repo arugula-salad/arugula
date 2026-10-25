@@ -129,7 +129,17 @@ pub(crate) async fn open_doc(
     // One at a time, so two opens of one Doc can't both find none.
     static ONE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _one = ONE.lock().await;
-    let meta = checked(app, &req.id)?;
+    let id =
+        match (req.id, req.link) {
+            (Some(id), None) => id,
+            // A link names its Doc; one from before the library may not.
+            (None, Some(link)) => link::get(app.control.state_dir(), &link)
+                .map_err(OpError::Failed)?
+                .and_then(|e| e.doc)
+                .ok_or_else(|| OpError::Status(StatusCode::NOT_FOUND, "this link's Doc isn't in the library".into()))?,
+            _ => return Err(OpError::Status(StatusCode::BAD_REQUEST, "give exactly one of id and link".into())),
+        };
+    let meta = checked(app, &id)?;
     if let Some(block) = open_blocks(app).await.get(&meta.id) {
         return Ok((*block, false));
     }

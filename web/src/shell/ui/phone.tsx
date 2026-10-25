@@ -3,6 +3,7 @@
 // keyboard lacks.
 
 import { openAgentsPage } from "./agents-route";
+import { openDocsPage } from "./docs-route";
 import { useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../client";
 import { EXPIRE_TITLE, gateKey } from "../../shared/proto";
@@ -296,6 +297,11 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                   {owner && client.flag("agents") && (
                     <button data-open-agents onClick={act(() => openAgentsPage())}>
                       Agents
+                    </button>
+                  )}
+                  {owner && client.flag("docs") && (
+                    <button data-open-docs onClick={act(() => openDocsPage())}>
+                      Docs
                     </button>
                   )}
                   {active !== undefined && owner && (

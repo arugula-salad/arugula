@@ -8,6 +8,7 @@
 // own, fetched when one is picked.
 
 export { AgentsPage } from "./ui/agents-page";
+export { DocsPage } from "./ui/docs-page";
 export { AppsLayer, pickApp } from "./ui/apps";
 export { SandboxesLayer, openSandboxes } from "./ui/sandboxes";
 export { agentsBlock } from "./blocks/agents";

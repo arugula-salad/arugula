@@ -183,6 +183,49 @@ fn opening_an_open_doc_is_the_same_pane_and_two_opens_at_once_make_one() {
     assert_eq!(rows(d).iter().filter(|r| r["title"] == "Same").count(), 2);
 }
 
+/// `doc.open` takes a link's id (control's Shared Docs lists those) for the
+/// Doc id: the shared Doc's block, closed or open; exactly one of the two;
+/// and a link that names no Doc or no link at all is a 404.
+#[test]
+fn opening_by_link_finds_the_shared_doc_and_wants_exactly_one_of_id_and_link() {
+    let w = World::new(&[]);
+    let (d, doc) = (&w.d, w.doc);
+    let id = id_of(d, doc);
+    let url = call(d, doc, "doc_share", json!({}))["url"].as_str().unwrap().to_owned();
+    let link = url[..url.find("#k=").unwrap()].rsplit('/').next().unwrap().to_owned();
+    let by_link = |body: Value| d.raw("POST", "/api/docs/open", Some(body));
+
+    // Open: the block it is in. Closed: a new block, with its menu back.
+    let (status, text) = by_link(json!({ "link": link }));
+    assert_eq!(status, 200, "{text}");
+    assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["pane"], doc);
+    close(d, doc);
+    let (status, text) = by_link(json!({ "link": link }));
+    assert_eq!(status, 200, "{text}");
+    let block = serde_json::from_str::<Value>(&text).unwrap()["pane"].as_u64().unwrap();
+    assert_ne!(block, doc);
+    assert_eq!(row_of(d, block)["id"], id.as_str());
+    assert!(d.state(block)["shared"].is_object());
+
+    // Both, or neither, is the caller's mistake; no such link is not found.
+    for body in [json!({ "id": id, "link": link }), json!({})] {
+        let (status, text) = by_link(body);
+        assert_eq!(status, 400, "{text}");
+        assert!(text.contains("exactly one of id and link"), "{text}");
+    }
+    assert_eq!(by_link(json!({ "link": "0".repeat(32) })).0, 404);
+
+    // An entry from before the library, which no migration mapped: its Doc
+    // isn't in the library.
+    let path = d.state.join("doc-links.json");
+    let mut links: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    links[&link].as_object_mut().unwrap().remove("doc");
+    std::fs::write(&path, serde_json::to_vec(&links).unwrap()).unwrap();
+    let (status, text) = by_link(json!({ "link": link }));
+    assert_eq!(status, 404, "{text}");
+    assert!(text.contains("this link's Doc isn't in the library"), "{text}");
+}
+
 /// An agent lists, opens and fills; it can't delete (no such kind, and the
 /// owner's CLI with the agent header is refused).
 #[test]

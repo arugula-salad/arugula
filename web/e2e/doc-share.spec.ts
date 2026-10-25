@@ -486,6 +486,49 @@ test.describe("the owner's menus", () => {
     await menuHas(page, block, "Share link…");
   });
 
+  test("a shared Doc whose pane closed is on the Docs page and reopens with its share menu; Delete says its link stops working, unshares and removes it", async ({ page }) => {
+    const d = await doc(r);
+    const url = await share(r, d);
+    const meta = async () => (await fetch(`${url.split("#")[0]}/data/meta`)).status;
+    await page.goto(r.mini);
+    const first = page.locator(`[data-doc-block="${d}"]`);
+    await expect(first.locator(".doc-title")).toBeVisible({ timeout: 20_000 });
+    await menuHas(page, first, "Unshare");
+    await page.keyboard.press("Escape");
+
+    // Close the pane, as a person does; the Doc stays, and is shared still.
+    await menu(page, first, "Close pane");
+    await expect(first).toHaveCount(0);
+    await page.locator(".ws-rail [data-open-docs]").click();
+    const listed = async () => ((await (await fetch(`${r.mini}/api/docs`)).json()) as { id: string; open?: number | null; shared?: object | null }[]);
+    const id = (await listed()).find((x) => x.shared && x.open == null)!.id;
+    const mine = page.locator(`[data-doc="${id}"]`);
+    await expect(mine.locator("[data-doc-shared]")).toBeVisible();
+    await mine.locator("[data-open-doc]").click();
+
+    // Reopened: its content, and its share menu is back, not Share link….
+    await expect(page.locator("[data-docs-page]")).toHaveCount(0);
+    const now = await page.evaluate(() => window.__arugula.client.active()!);
+    expect(now).not.toBe(d);
+    const block = page.locator(`[data-doc-block="${now}"]`);
+    await expect(block.locator(".doc-title")).toHaveText(`Report ${MARK}`);
+    await expect(block.locator('[data-section="s1"]')).toContainText(`Findings ${MARK}`);
+    await menuHas(page, block, "Update shared copy");
+    await expect(page.getByRole("menuitem", { name: "Share link…" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // Delete warns about the link, then unshares it at control and removes the Doc.
+    await page.locator(".ws-rail [data-open-docs]").click();
+    await page.locator(`[data-doc="${id}"] [data-delete-doc]`).click();
+    await expect(page.locator("[data-delete-shared]")).toHaveText("Its link stops working.");
+    expect(await meta()).toBe(200);
+    await page.locator("[data-confirm-remove]").click();
+    await expect(page.locator(`[data-doc="${id}"]`)).toHaveCount(0);
+    await expect.poll(meta).toBe(404);
+    expect((await listed()).some((x) => x.id === id)).toBe(false);
+    await expect(block).toHaveCount(0);
+  });
+
   test("an agent on the owner's CLI can't share, update, unshare or read a link back", async () => {
     const d = await doc(r);
     await share(r, d);
@@ -585,6 +628,32 @@ test.describe("Shared Docs… in the account menu", () => {
     await expect.poll(() => page.evaluate((b) => JSON.stringify(window.__arugula.client.blocks.get(b)?.state?.["shared"] ?? null), d)).toBe("null");
   });
 
+  test("Open on a row opens the Doc on its machine, and lands on its pane", async () => {
+    const d = await doc(r);
+    const url = await share(r, d);
+    const id = new URL(url).pathname.split("/").at(-1)!;
+    // Closed on its machine: the Doc is in its library, in no pane.
+    await r.post(`/api/panes/${d}/close`, {});
+    await onControl();
+    await open();
+    const row = page.locator(`[data-shared-doc="${id}"]`);
+    await expect(row.locator("[data-open-shared-doc]")).toBeEnabled();
+    await row.locator("[data-open-shared-doc]").click();
+
+    // The panel is gone and the pane in front is the Doc's block, with its title.
+    await expect(page.locator("[data-shared-docs]")).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.__arugula.client.info(window.__arugula.client.active() ?? -1)?.type)).toBe("doc");
+    const pane = await page.evaluate(() => window.__arugula.client.active()!);
+    expect(pane).not.toBe(d);
+    const block = page.locator(`[data-doc-block="${pane}"]`);
+    await expect(block.locator(".doc-title")).toHaveText(`Report ${MARK}`);
+    await expect(block.locator('[data-section="s1"]')).toContainText(`Findings ${MARK}`);
+    const library = (await (await fetch(`${r.mini}/api/docs`)).json()) as { open?: number | null; shared?: object | null }[];
+    expect(library.filter((x) => x.open === pane && x.shared)).toHaveLength(1);
+    // The next test goes on from the panel, as the last one left it.
+    await open();
+  });
+
   test("with its machine offline Copy link is off, saying so, and Unshare goes through control", async () => {
     const d = await doc(r);
     const url = await share(r, d);
@@ -604,6 +673,8 @@ test.describe("Shared Docs… in the account menu", () => {
     await expect(row).toBeVisible();
     await expect(row.locator("[data-copy-doc-link]")).toBeDisabled();
     await expect(row.locator("[data-copy-doc-link]")).toHaveAttribute("title", "its machine is offline");
+    await expect(row.locator("[data-open-shared-doc]")).toBeDisabled();
+    await expect(row.locator("[data-open-shared-doc]")).toHaveAttribute("title", "its machine is offline");
     await row.locator("[data-unshare-doc]").click();
     await page.locator("[data-confirm-remove]").click();
     await expect(row).toHaveCount(0);

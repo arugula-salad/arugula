@@ -3,11 +3,14 @@
 // dates and a rough count of opens, and nothing of what it says; the link
 // itself (it holds the key) is on the machine that made it. So Copy link
 // asks that machine, while it's online, and Unshare asks it too (it clears
-// the Doc's block) or, when it can't be reached, control's own delete.
+// the Doc's block) or, when it can't be reached, control's own delete. Open
+// (#1494) asks the machine for the Doc's block by the link's id (control has
+// no Doc id), and shows that pane there, as the swarm opens a pane on its host.
 
 import { useEffect, useState } from "preact/hooks";
 import type { ControlSession } from "../control";
 import { opPath, OPS } from "../ops";
+import type { DocOpenRequest, DocOpened } from "../../shared/proto";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import { getFleet } from "./hosts";
@@ -71,6 +74,21 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
     }
   };
 
+  const openIt = async (r: Row) => {
+    const d = machine(r)!;
+    setNote("");
+    try {
+      const res = await getFleet()!.request(d.name, OPS["doc.open"].method, opPath("doc.open"), { link: r.id } satisfies DocOpenRequest);
+      const v = await res.json<Partial<DocOpened> & { error?: string }>().catch(() => null);
+      if (!res.ok || typeof v?.pane !== "number") throw new Error(v?.error ?? `${d.name} said ${res.status}`);
+      setErr("");
+      getFleet()!.open(d.name, v.pane);
+      close();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+
   const unshare = async (r: Row) => {
     setRemoving(null);
     setNote("");
@@ -109,6 +127,9 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
                 {size(r.size)} · shared {when(r.made)} · updated {when(r.updated)} · {opened(r.opens)}
               </span>
             </span>
+            <button data-open-shared-doc disabled={!machine(r)} title={machine(r) ? undefined : OFFLINE} onClick={() => void openIt(r)}>
+              Open
+            </button>
             <button data-copy-doc-link disabled={!machine(r)} title={machine(r) ? undefined : OFFLINE} onClick={() => void copy(r)}>
               Copy link
             </button>

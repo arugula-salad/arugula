@@ -3258,7 +3258,7 @@ impl<'a> Call<'a> {
         crate::labs::flag(self.app.control.state_dir(), flags::DOCS)?;
         let (beside, host) = self.beside(a.beside.as_ref()).await?;
         confine(self.on_machine().await?, host.is_some())?;
-        let req = DocOpenRequest { id: a.doc.clone(), session: None, split: beside };
+        let req = DocOpenRequest { id: Some(a.doc.clone()), link: None, session: None, split: beside };
         let (block, made) =
             crate::ops::docs::open_doc(self.app, None, req).await.map_err(crate::ops::OpError::sentence)?;
         let unclaimed = match self.app.mux.api(Api::Panes).await {
