@@ -15,6 +15,8 @@ import { controlOrigin, session } from "./session";
 import { signOut } from "./signin";
 import { names } from "./links";
 import { chat } from "../shared/chat-store";
+import { AccountPicture } from "../shared/chat/avatar";
+import { presenceItems } from "../shared/chat/presence";
 import { PlaceUnread } from "./thread-unread";
 
 /** The project the route is in, else the reader's own. */
@@ -55,6 +57,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       // This device's look, as in the shell's settings menu; on arugula.io
       // the two pages share it.
       { label: "Appearance…", run: openAppearance },
+      // Who's around (#110): chat's people see this, and only they.
+      ...presenceItems(),
       { label: "Your machines, devices and teams ↗", run: () => location.assign(controlOrigin()) },
       "separator",
       // This page only: the hub's session, on control's page, stays.
@@ -119,6 +123,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         <button class="account-button platform-me" title={me.login ? `Signed in as ${me.login}` : "Signed in"} aria-label={`Account: ${me.login || me.name}`} data-signed-in-as onClick={account}>
           <span class="account-avatar" aria-hidden="true">
             {(me.login || me.name || "?").slice(0, 1).toUpperCase()}
+            <AccountPicture />
           </span>
           <span class="account-login">{me.login || me.name}</span> <span class="caret">▾</span>
         </button>

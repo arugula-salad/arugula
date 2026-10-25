@@ -24,6 +24,8 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}/chat/ch_0123456789abcdef-general`, "?msg=12"), { page: "chat", project: P, room: "ch_0123456789abcdef", msg: 12 });
   assert.deepEqual(parse(`/p/${P}/chat/ch_0123456789abcdef`, "?msg=-3"), { page: "chat", project: P, room: "ch_0123456789abcdef", msg: -3 });
   assert.deepEqual(parse(`/p/${P}/chat/activity`), { page: "chat", project: P, view: "activity" });
+  assert.deepEqual(parse(`/p/${P}/chat/saved`), { page: "chat", project: P, view: "saved" });
+  assert.equal(pathOf({ page: "chat", project: P, view: "saved" }), `/p/${P}/chat/saved`);
   assert.deepEqual(parse(`/p/${P}/chat/search`, "?q=from%3A%40sam"), { page: "chat", project: P, view: "search", q: "from:@sam" });
   assert.deepEqual(parse("/dm/dm_00aa11bb22cc33dd-sam"), { page: "dm", room: "dm_00aa11bb22cc33dd" });
   assert.deepEqual(parse(`/p/${P}/workspaces/hw_0123456789abcdef0123456789abcdef-app`), { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" });

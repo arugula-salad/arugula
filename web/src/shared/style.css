@@ -585,7 +585,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .menu {
   position: fixed;
-  z-index: 50;
+  /* Over the phone's full-screen chat and pane threads (80): a menu opened
+     there would sit under them. */
+  z-index: 90;
   min-width: 190px;
   padding: 4px;
   background: var(--raised);
@@ -979,7 +981,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .prompt-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  /* Over menus (90) and the phone's full-screen chat (80). */
+  z-index: 95;
   display: grid;
   place-items: start center;
   padding-top: 15vh;
@@ -6697,9 +6700,16 @@ button.diff-why-run {
   }
 }
 
+/* Mentions me (#121): a tint of the accent and a bar on the left, which
+   reads the same on Latte as on the dark palettes (the amber it was is a
+   beige band on Latte). The bar follows the row's own corners. */
 .thread-msg.for-me {
-  background: color-mix(in srgb, var(--warn) 8%, transparent);
-  box-shadow: inset 2px 0 0 var(--warn);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.thread-msg.for-me:hover {
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
 }
 
 .msg-gutter {
@@ -6729,8 +6739,14 @@ button.diff-why-run {
   visibility: hidden;
   padding-top: 3px;
   font-size: 10px;
+  font-variant-numeric: tabular-nums;
   color: var(--dim);
   white-space: nowrap;
+}
+
+/* The head's own time is in its line; the gutter's copy is for compact rows. */
+.compact-time {
+  display: none;
 }
 
 .thread-msg:hover .msg-hover-time {
@@ -6865,8 +6881,170 @@ button.diff-why-run {
   display: flex;
 }
 
+.msg-tools.open {
+  display: flex;
+}
+
 .msg-tools:empty {
   display: none !important;
+}
+
+.msg-tools .msg-quick {
+  font-size: 14px;
+}
+
+.msg-tools button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--fg);
+}
+
+/* The ⋯ menu (#121), where the react menu opens: under the toolbar. */
+.msg-menu {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+}
+
+.msg-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.msg-item:hover,
+.msg-item:focus-visible {
+  background: var(--raised);
+}
+
+.msg-item[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.msg-item.danger {
+  color: var(--danger);
+}
+
+.msg-item-icon {
+  width: 16px;
+  text-align: center;
+  color: var(--dim);
+}
+
+.msg-item.danger .msg-item-icon {
+  color: inherit;
+}
+
+/* The long-press sheet's items sit under the emoji row. */
+.react-menu.with-items {
+  flex-wrap: wrap;
+}
+
+.react-menu-items {
+  display: flex;
+  flex: 1 0 100%;
+  flex-direction: column;
+}
+
+.react-menu.with-items > button + .react-menu-items,
+.react-menu.with-items > .react-menu-items:not(:first-child) {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--divider);
+}
+
+/* "↓ 3 new messages", floating over the bottom of a list scrolled up. The
+   wrapper has no height, so the list's scroll size is the same with it. */
+.jump-newest {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  height: 0;
+  text-align: center;
+}
+
+.jump-newest button {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-color);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
+}
+
+/* Compact rows (#121, Appearance → Messages): IRC's, one line each: time,
+   name, text. No pictures; a run's name is on its first line only. The
+   head's name floats so the text beside it wraps under it. */
+:root[data-density="compact"] .thread-msg {
+  grid-template-columns: 52px 1fr;
+  column-gap: 6px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+:root[data-density="compact"] .thread-msg.first {
+  margin-top: 2px;
+  padding-top: 0;
+}
+
+:root[data-density="compact"] .thread-msg .msg-avatar,
+:root[data-density="compact"] .thread-head time {
+  display: none;
+}
+
+:root[data-density="compact"] .thread-msg .compact-time {
+  display: block;
+}
+
+:root[data-density="compact"] .thread-msg .msg-hover-time {
+  visibility: visible;
+  padding-top: 0;
+  line-height: 1.7;
+  text-align: right;
+}
+
+:root[data-density="compact"] .msg-gutter {
+  justify-content: flex-end;
+}
+
+:root[data-density="compact"] .thread-head {
+  float: left;
+  margin-right: 6px;
+  line-height: 1.7;
+}
+
+:root[data-density="compact"] .thread-text {
+  margin: 0;
+  line-height: 1.7;
+}
+
+:root[data-density="compact"] .msg-body > .reactions,
+:root[data-density="compact"] .msg-body > .thread-quote,
+:root[data-density="compact"] .msg-body > .msg-edit {
+  clear: both;
+}
+
+:root[data-density="compact"] .thread-msg.deleted .msg-hover-time {
+  visibility: hidden;
 }
 
 .msg-tools button {
@@ -6879,6 +7057,141 @@ button.diff-why-run {
 .msg-tools button:hover {
   background: var(--raised);
   color: var(--fg);
+}
+
+/* Reactions (#104): chips under a message, and the menu that adds one. */
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  background: var(--raised);
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.reaction:hover:not(:disabled) {
+  border-color: var(--dim);
+}
+
+.reaction:disabled {
+  cursor: default;
+}
+
+.reaction.mine {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--fg);
+}
+
+.reaction-emoji {
+  font-size: 14px;
+}
+
+.reaction.add {
+  padding: 1px 7px;
+  opacity: 0;
+}
+
+.thread-msg:hover .reaction.add,
+.reaction.add:focus-visible {
+  opacity: 1;
+}
+
+.react-menu {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+}
+
+.react-menu > button {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.react-menu > button:hover,
+.react-menu > button:focus-visible {
+  background: var(--raised);
+}
+
+.react-menu > button.mine {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.react-menu > .more {
+  color: var(--dim);
+}
+
+/* The picker opens below the menu, in the message's column, or above it
+   when there's no room below (the newest message). */
+.react-menu .emoji-picker {
+  top: calc(100% + 4px);
+  right: 0;
+  bottom: auto;
+}
+
+.react-menu .emoji-picker.above {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+@media (pointer: coarse) {
+  .thread-msg {
+    -webkit-touch-callout: none;
+  }
+
+  .reaction.add {
+    opacity: 1;
+  }
+}
+
+/* On a phone the menu is a sheet along the bottom, under a long-press. */
+@media (max-width: 600px) {
+  .react-menu {
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    justify-content: space-around;
+    padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
+    border-width: 1px 0 0;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .react-menu > button {
+    width: 44px;
+    height: 44px;
+    font-size: 24px;
+  }
+
+  /* Over the sheet, as the composer's is over its box. */
+  .react-menu .emoji-picker {
+    top: auto;
+    right: 0;
+    bottom: 0;
+  }
 }
 
 .thread-quote {
@@ -6933,7 +7246,7 @@ button.thread-quote:hover {
 
 .compose-box {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto auto;
   align-items: end;
   border: 1px solid var(--raised-hover);
   border-radius: 8px;
@@ -6981,7 +7294,7 @@ button.thread-quote:hover {
 
 /* M123: control's chat. The composer's "Quote a pane" beside Send. */
 .compose-box.with-tools {
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto auto;
 }
 
 .compose-tool {
@@ -7102,6 +7415,36 @@ button.thread-quote:hover {
   opacity: 0.6;
 }
 
+/* The moon on a DM whose other person paused notifications (#115). */
+.chat-dnd {
+  flex: none;
+  margin-left: 4px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* "Notify anyway" over the composer of a DM whose person paused (#115). */
+.thread-note.compose-paused {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 4px 12px;
+  border-top: 0;
+  font-size: 12px;
+}
+
+.compose-paused button {
+  background: none;
+  padding: 2px 4px;
+  color: var(--accent);
+  font-size: inherit;
+}
+
+.compose-paused button[aria-pressed="true"] {
+  font-weight: 600;
+}
+
 .chat-sigil.chat-dm-pic {
   width: 16px;
   --msg-gutter: 16px;
@@ -7145,6 +7488,36 @@ button.thread-quote:hover {
 .mention-pick li span:last-child {
   color: inherit;
   opacity: 0.7;
+}
+
+.mention-pick .mention-all {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--divider);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mention-pick li.picked .mention-all {
+  background: var(--surface);
+  color: var(--accent);
+}
+
+/* Reserves its line, so the box doesn't jump when a name comes. */
+.typing-line {
+  flex: none;
+  min-height: 1.4em;
+  margin: 0;
+  padding: 0 12px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.4em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mention-pick .msg-avatar {
@@ -7233,6 +7606,64 @@ button.thread-quote:hover {
 
 .chat-bar {
   align-items: center;
+}
+
+/* Team chat as a block (#123): the same .chat, in the slot instead of over
+   the window. A narrow slot gets the phone's layout (.chat.phone), without
+   the phone's own full-window position and safe-area padding. */
+.chat-block {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.block-team-chat .chat,
+.block-team-chat .chat.phone {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.chat-block-bar {
+  display: flex;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.chat-block-bar .chat-search {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat.pinned .chat-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.chat-block-needs {
+  margin: auto;
+  max-width: 34em;
+  padding: 24px;
+  text-align: center;
+  color: var(--dim);
+}
+
+.chat-block-needs h3 {
+  margin: 0 0 8px;
+  color: var(--fg);
+}
+
+.tab .chat-count {
+  flex: none;
 }
 
 .chat-search {
@@ -7732,6 +8163,29 @@ input.chat-search {
   line-height: 1.2;
 }
 
+/* Sections and stars (#120): a group's options show on hover (always on a
+   phone, which has no hover), and a group takes a dragged room. */
+.chat-section .chat-group-menu {
+  opacity: 0;
+}
+
+.chat-section:hover .chat-group-menu,
+.chat-section .chat-group-menu:focus-visible,
+.chat.phone .chat-section .chat-group-menu {
+  opacity: 1;
+}
+
+.chat-list section.chat-drop {
+  border-radius: 6px;
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.chat-row.dragging {
+  opacity: 0.5;
+}
+
 .chat-inline-link {
   color: var(--accent);
 }
@@ -7850,6 +8304,23 @@ input.chat-search {
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* A phone's room header has more buttons than width (pins, about, star,
+   move, bell, leave): the back button and the room's name keep the first
+   row, and the buttons wrap onto a row of their own under it. */
+.chat.phone .chat-head {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.chat.phone .chat-head .chat-title {
+  flex: 1 1 calc(100% - 48px);
+}
+
+.chat.phone .chat-head > :not(.chat-back):not(.chat-title):first-of-type,
+.chat.phone .chat-head .chat-title + * {
+  margin-left: auto;
 }
 
 .chat-title strong,
@@ -10101,6 +10572,11 @@ html[data-workspace="new"] :is(.chat, .swarm, .swarm-shell > .bar) {
   left: var(--rail-w, 56px);
 }
 
+/* Not a chat block (#123): it's in its slot, not beside the rail. */
+html[data-workspace="new"] .block-team-chat .chat {
+  left: auto;
+}
+
 html[data-workspace="new"] #status {
   top: 52px;
 }
@@ -10726,15 +11202,1015 @@ html[data-workspace="new"] .thread-panel {
   letter-spacing: 0.04em;
 }
 
-.room-agents {
-  flex: none;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--divider);
+/* A line the platform wrote in a room (#122): an agent grant reached it.
+   Plain text, between the messages, not one of them. */
+.msg-system {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 0 20px;
   color: var(--teal);
   font-size: 12px;
   line-height: 1.4;
 }
 
-.room-agents p {
+.msg-system time {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+/* Whose agents reach a room (#122): one chip in its header, and a popover. */
+.agents-chip {
+  position: relative;
+  flex: none;
+}
+
+.agents-chip-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: auto;
+  padding: 0 8px;
+  color: var(--teal);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.chat.phone .agents-chip-text {
+  display: none;
+}
+
+.agents-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--letterbox) 45%, transparent);
+  font-size: 13px;
+}
+
+.agents-pop-lede {
+  margin: 0 0 8px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.agents-pop h3 {
+  margin: 8px 0 2px;
+  font-size: 13px;
+}
+
+.agents-pop ul {
   margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agents-pop li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+}
+
+.agents-pop-machine {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agents-pop-does {
+  flex: none;
+  color: var(--teal);
+}
+
+.agents-pop-link {
+  margin-top: 10px;
+  padding: 0;
+  color: var(--accent);
+}
+
+.agents-pop-link:hover {
+  text-decoration: underline;
+}
+
+/* The chip on a line of its own, over an issue's, a run's or a drawer's thread. */
+.room-agents {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--divider);
+}
+
+/* Chat's Markdown (#109): a message is a line of talk, not a document.
+   Blocks sit close, a one-line message is one line, and the pieces that
+   need room (a quote, a list, a table) get just enough. */
+.md.md-chat {
+  line-height: 1.46;
+  margin: 1px 0;
+}
+
+.md.md-chat p,
+.md.md-chat ul,
+.md.md-chat ol,
+.md.md-chat blockquote,
+.md.md-chat .md-code,
+.md.md-chat .md-table {
+  margin: 0 0 4px;
+}
+
+.md.md-chat h1,
+.md.md-chat h2,
+.md.md-chat h3 {
+  margin: 6px 0 2px;
+}
+
+.md.md-chat ul,
+.md.md-chat ol {
+  padding-left: 1.3em;
+}
+
+.md.md-chat li {
+  margin: 0;
+}
+
+.md.md-chat a {
+  color: var(--info);
+}
+
+.md.md-chat code {
+  border: 1px solid var(--divider);
+  background: var(--letterbox);
+  color: var(--peach);
+}
+
+.md.md-chat blockquote {
+  border-left-color: var(--raised-hover);
+}
+
+.md.md-chat table {
+  font-size: 12px;
+}
+
+.md.md-chat.md-jumbo > p {
+  font-size: 32px;
+  line-height: 1.2;
+}
+
+/* A fenced block with its copy button, shown on hover (always on a touch screen). */
+.md-code {
+  position: relative;
+}
+
+.md-code pre {
+  margin: 0;
+  padding-right: 54px;
+  background: var(--letterbox);
+}
+
+.md-code .copy-button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+}
+
+.md-code:hover .copy-button,
+.md-code:focus-within .copy-button {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .md-code .copy-button {
+    opacity: 1;
+  }
+}
+
+.md pre .hl-k {
+  color: var(--accent);
+}
+
+.md pre .hl-s {
+  color: var(--ok);
+}
+
+.md pre .hl-n {
+  color: var(--peach);
+}
+
+.md pre .hl-c {
+  color: var(--dim);
+  font-style: italic;
+}
+
+/* Emoji (#105): the autocomplete reuses the mention list's box. */
+.emoji-pick .emoji-char {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.emoji-picker {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% + 4px);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  height: 340px;
+  max-height: 60dvh;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+}
+
+.emoji-search {
+  flex: none;
+  margin: 8px 8px 4px;
+  padding: 6px 10px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--letterbox);
+  border: 1px solid var(--raised-hover);
+  border-radius: 6px;
+  outline: none;
+}
+
+.emoji-search:focus {
+  border-color: var(--dim);
+}
+
+.emoji-cats {
+  flex: none;
+  display: flex;
+  overflow-x: auto;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.emoji-cats button {
+  flex: none;
+  padding: 4px 7px;
+  font-size: 16px;
+  line-height: 1.3;
+  border-bottom: 2px solid transparent;
+  opacity: 0.6;
+}
+
+.emoji-cats button[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  opacity: 1;
+}
+
+.emoji-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  align-content: start;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.emoji-grid button {
+  height: 36px;
+  font-size: 22px;
+  line-height: 1;
+  border-radius: 6px;
+}
+
+.emoji-grid button:hover,
+.emoji-grid button:focus-visible {
+  background: var(--raised);
+}
+
+.emoji-note {
+  grid-column: 1 / -1;
+  margin: 8px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+/* On a phone the picker is a sheet along the bottom of the screen. */
+@media (max-width: 600px) {
+  .emoji-picker {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    height: 45dvh;
+    border-radius: 12px 12px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .emoji-grid button {
+    height: 42px;
+  }
+}
+
+/* Link previews under a message (#108). */
+.link-cards {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 6px 0 2px;
+  max-width: 100%;
+}
+
+.link-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 440px;
+  padding: 8px 10px;
+  border: 1px solid var(--divider);
+  border-left: 3px solid var(--raised-hover);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.link-card:hover {
+  border-left-color: var(--accent);
+  background: var(--letterbox);
+}
+
+.link-card.web {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.link-card-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.link-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.link-card-what {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-card-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.link-card-desc,
+.link-card-meta {
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.link-card-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.link-card-image {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--letterbox);
+}
+
+.link-card-state {
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.link-card-state.tone-open {
+  color: var(--ok);
+}
+
+.link-card-state.tone-done {
+  color: var(--accent);
+}
+
+.link-card-state.tone-bad {
+  color: var(--danger);
+}
+
+.link-card-state.tone-wait {
+  color: var(--warn);
+}
+
+.link-card-state.tone-off {
+  color: var(--dim);
+}
+
+.link-card-remove {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.link-card-remove:hover {
+  color: var(--fg);
+}
+
+/* Pictures and presence (#112, #110). The picture sits over the letters
+   and fades in once it has loaded. */
+.msg-avatar {
+  position: relative;
+}
+
+.msg-avatar img {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.msg-avatar img.loaded {
+  opacity: 1;
+}
+
+.avatar-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* A dot's ring is the surface behind it, so it reads on any row. */
+.presence-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 30%;
+  min-width: 6px;
+  max-width: 10px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 2px solid var(--bg);
+  background: var(--dim);
+}
+
+.presence-dot.presence-active,
+.presence-dot.presence-online {
+  background: var(--ok);
+}
+
+.presence-dot.presence-away {
+  background: var(--warn);
+}
+
+.presence-dot.presence-offline {
+  background: transparent;
+  border-color: var(--dim);
+}
+
+/* An agent: its owner's picture, round, with the machine's badge. */
+.avatar-wrap.by-agent .msg-avatar {
+  border-radius: 50%;
+}
+
+.avatar-badge {
+  position: absolute;
+  left: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid var(--bg);
+  background: var(--teal);
+  color: var(--on-color);
+  font-size: 9px;
+  line-height: 1;
+}
+
+.chat-sigil.chat-dm-pic .avatar-badge {
+  display: none;
+}
+
+.account-avatar {
+  position: relative;
+  overflow: hidden;
+}
+
+.account-picture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* The message menu and Saved for later (#116). */
+.msg-menu-wrap {
+  position: relative;
+  display: flex;
+}
+
+.msg-tools .msg-saved.on {
+  color: var(--warn, var(--accent));
+}
+
+.msg-menu {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+}
+
+.msg-tools .msg-menu button {
+  width: auto;
+  height: auto;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: var(--fg);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.saved-item {
+  list-style: none;
+}
+
+.saved-item.done .chat-hit {
+  opacity: 0.6;
+}
+
+.saved-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 12px 8px 46px;
+  font-size: 12px;
+}
+
+.saved-actions button {
+  padding: 2px 8px;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  color: var(--dim);
+}
+
+.saved-actions button:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+.saved-note {
+  margin-right: auto;
+  color: var(--dim);
+}
+
+/* Files and images in chat (#107). */
+.thread-list.dropping,
+.thread-compose.dropping .compose-box {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+
+.attach-chips {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attach-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--raised-hover);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.attach-chip img {
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.attach-chip.failed {
+  border-color: var(--danger);
+}
+
+.attach-chip.failed .attach-size {
+  color: var(--danger);
+}
+
+.attach-chip .attach-name {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attach-size {
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.attach-chip progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  appearance: none;
+  border: 0;
+  background: none;
+  accent-color: var(--accent);
+}
+
+.attach-chip progress::-webkit-progress-bar {
+  background: none;
+}
+
+.attach-chip progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+.attach-chip progress::-moz-progress-bar {
+  background: var(--accent);
+}
+
+.attach-chip button {
+  color: var(--dim);
+  padding: 0 2px;
+}
+
+.attach-chip button:hover {
+  color: var(--fg);
+}
+
+.attach-kind {
+  display: grid;
+  flex: none;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--subtle);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.msg-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  margin: 6px 0 2px;
+}
+
+.msg-image {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--surface);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.msg-image img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(100%, 360px);
+  max-height: 320px;
+  object-fit: contain;
+}
+
+.msg-media {
+  margin: 0;
+  max-width: min(100%, 420px);
+}
+
+.msg-media video {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  border-radius: 6px;
+  background: var(--letterbox);
+}
+
+.msg-media audio {
+  display: block;
+  width: min(100%, 320px);
+}
+
+.msg-media figcaption {
+  margin-top: 2px;
+  color: var(--dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: min(100%, 320px);
+  padding: 8px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.msg-file .attach-kind {
+  width: 36px;
+  height: 36px;
+}
+
+.msg-file-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.msg-file-text b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-file-text span {
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.msg-file-get {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--dim);
+}
+
+.msg-file-get:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+.image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--letterbox) 88%, transparent);
+  cursor: zoom-out;
+}
+
+.image-viewer img {
+  min-height: 0;
+  max-width: 100%;
+  max-height: calc(100% - 48px);
+  object-fit: contain;
+  cursor: default;
+}
+
+.image-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+  color: var(--fg);
+}
+
+.image-viewer-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-viewer-bar a {
+  color: var(--accent);
+}
+
+/* A channel's topic and its pins (#119): the header's topic and the cards
+ * under its buttons, and the dim centered line a topic change or a pin
+ * leaves in the room. */
+.chat-title .chat-topic {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  color: var(--dim);
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-title .chat-topic:hover {
+  color: var(--fg);
+}
+
+.chat-title .chat-topic.add {
+  display: inline;
+  color: var(--accent);
+}
+
+.chat-pop-wrap {
+  position: relative;
+  flex: none;
+}
+
+.chat-pop-wrap .chat-info {
+  width: auto;
+  min-width: 30px;
+  padding: 0 7px;
+}
+
+.chat-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  width: min(360px, 90vw);
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+  font-size: 13px;
+}
+
+.chat-pop p {
+  margin: 6px 0;
+}
+
+.chat-pop-text {
+  color: var(--dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-pop-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chat-pop-buttons button {
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--raised);
+  font-size: 12px;
+}
+
+.chat-pop-buttons button:hover {
+  background: var(--raised-hover);
+}
+
+.chat-pins {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-pins li {
+  padding: 8px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.chat-pin-who {
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.chat-pin-text {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.chat-about p {
+  margin: 4px 0;
+}
+
+.msg-system {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 5px;
+  padding: 6px 16px;
+  color: var(--dim);
+  font-size: 12px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.msg-system b {
+  font-weight: 600;
+}
+
+.msg-system a {
+  color: var(--accent);
+}
+
+.msg-system time {
+  opacity: 0.7;
+}
+
+.pinned-mark {
+  margin-left: 6px;
+}
+
+/* On a phone the cards span the screen under the header. */
+@media (max-width: 600px) {
+  .chat-pop-wrap {
+    position: static;
+  }
+
+  .chat-pop {
+    position: fixed;
+    top: 54px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
 }

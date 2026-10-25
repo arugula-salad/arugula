@@ -92,22 +92,23 @@ async fn an_agent_lists_reads_searches_and_posts_where_granted() {
 
     // The agent reads the room, and only what mentions it.
     let (st, v) = geek(&base, "GET", &general, None).await;
-    assert_eq!((st, v["messages"].as_array().map(Vec::len)), (200, Some(2)), "{v}");
-    assert_eq!((&v["room"]["last"], &v["room"]["last_mention"]), (&json!(2), &json!(1)));
+    assert_eq!((st, v["messages"].as_array().map(Vec::len)), (200, Some(4)), "{v}");
+    // Two lines first: the grants said so in the room (#122).
+    assert_eq!((&v["room"]["last"], &v["room"]["last_mention"]), (&json!(4), &json!(3)));
     let (_, v) = geek(&base, "GET", &format!("{general}?mentions=true"), None).await;
     let texts: Vec<&Value> = v["messages"].as_array().unwrap().iter().map(|m| &m["text"]).collect();
     assert_eq!(texts, [&json!("@geek-box's agent: look")]);
-    let (_, v) = geek(&base, "GET", &format!("{general}?after=1"), None).await;
-    assert_eq!(v["messages"][0]["seq"], 2, "paged by seq: {v}");
+    let (_, v) = geek(&base, "GET", &format!("{general}?after=3"), None).await;
+    assert_eq!(v["messages"][0]["seq"], 4, "paged by seq: {v}");
     let (_, v) = geek(&base, "GET", AGENT_ROOMS, None).await;
-    assert_eq!(v["rooms"][0]["last_mention"], 1);
+    assert_eq!(v["rooms"][0]["last_mention"], 3);
 
     // It answers, labelled as a's agent; a DM it only reads it can't post in.
     let (st, posted) = geek(&base, "POST", &general, say("on it, @b")).await;
     assert_eq!(st, 200, "{posted}");
     assert_eq!(posted["mentions"], json!(["b"]));
     let (_, v) = call(&base, "b", "GET", "/api/chat/rooms/ch_general/messages", None).await;
-    let m = &v["messages"][2];
+    let m = &v["messages"][4];
     assert_eq!((&m["author"], &m["text"]), (&json!("a"), &json!("on it, @b")));
     assert_eq!(m["agent"], json!({ "machine": "geek", "machine_name": "geek-box" }));
     let (st, v) = geek(&base, "POST", &agent_messages("dm_ab"), say("hi")).await;
@@ -160,7 +161,8 @@ async fn an_agent_is_mentioned_only_where_it_reaches() {
     let (st, v) = call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@geek-box hi")).await;
     assert_eq!((st, &v["mentions"], &v["unreached"]), (200, &json!([]), &json!(["geek-box"])), "no grant yet");
 
-    // Posting alone isn't enough: it couldn't read the mention.
+    // Posting alone isn't enough: it couldn't read the mention. (Each grant
+    // says so in the room, a line of its own: that is why the numbers below skip.)
     call(&base, "a", "POST", "/api/grants", give("geek", THREADS_POST, json!({ "kind": "project", "id": t }))).await;
     let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@geek-box hi")).await;
     assert_eq!((&v["mentions"], &v["unreached"]), (&json!([]), &json!(["geek-box"])), "post only: {v}");
@@ -173,7 +175,7 @@ async fn an_agent_is_mentioned_only_where_it_reaches() {
     let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/dm_bx/messages", say("@geek-box?")).await;
     assert_eq!(v["unreached"], json!(["geek-box"]), "a's grant doesn't reach b and x's DM");
 
-    let (st, v) = call(&base, "b", "PATCH", "/api/chat/rooms/ch_general/messages/3", say("@a only")).await;
+    let (st, v) = call(&base, "b", "PATCH", "/api/chat/rooms/ch_general/messages/5", say("@a only")).await;
     assert_eq!((st, &v["mentions"]), (200, &json!(["a"])), "{v}");
     let (_, v) = geek(&base, "GET", &format!("{}?mentions=true", agent_messages("ch_general")), None).await;
     assert_eq!(v["messages"], json!([]), "{v}");

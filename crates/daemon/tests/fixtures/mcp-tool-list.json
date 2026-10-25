@@ -1220,7 +1220,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -1255,7 +1255,7 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation, chat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
             "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -1285,7 +1285,8 @@
               "file",
               "pr",
               "issue",
-              "conversation"
+              "conversation",
+              "chat"
             ],
             "type": "string"
           },
@@ -1306,6 +1307,11 @@
               "string",
               "null"
             ]
+          },
+          "pinned": {
+            "default": false,
+            "description": "chat: With room: a block for that room alone, without the sidebar, to leave beside a terminal (a deploy channel beside the deploy).",
+            "type": "boolean"
           },
           "port": {
             "description": "port: The port, on the machine the pane runs on.",
@@ -1345,6 +1351,14 @@
           "rev_b": {
             "default": null,
             "description": "changes: With rev_a: the range rev_a..rev_b instead of the working tree.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "chat: A room to open on, by its id (read_thread and search_threads give them): team chat opens on it, with the sidebar. Default: the newest unread room.",
             "type": [
               "string",
               "null"
@@ -2996,7 +3010,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -3036,6 +3050,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3089,22 +3112,75 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins. To answer in a thread (when you were asked in one: a message that says it is a reply in the thread of N), pass parent N, and also true to send it to the room too.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "also": {
+            "default": false,
+            "description": "With `parent`: also send the reply to the room, as Slack's \"Also send\nto #channel\" does.",
+            "type": "boolean"
+          },
+          "emoji": {
+            "default": null,
+            "description": "The emoji to react with (or take back), for `react_to_seq`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "default": [],
+            "description": "Files to attach: paths on this machine that you may read (a\nscreenshot, a log), each up to 25 MB, at most 10. They show in the\nroom as pictures, players or file cards. A message may be only files.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "parent": {
+            "default": null,
+            "description": "Reply in the thread of this message (its seq) instead of posting in\nthe room: when you were asked in a thread, answer there. A reply to\na reply goes to the same thread's first message, so give that one's\nseq (a reply's `parent`).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pin_seq": {
+            "default": null,
+            "description": "Pin this message (its seq) instead of posting: as your person's\nagent, needing the same threads.post grant. The room says so in a\nsmall note.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "react_to_seq": {
+            "default": null,
+            "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": false,
+            "description": "Take your reaction back (or unpin) instead of adding it.",
+            "type": "boolean"
+          },
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
-            "description": "The message, in markdown; @login mentions a person there.",
+            "default": "",
+            "description": "The message, in markdown; @login mentions a person there. Not\nneeded to react.",
             "type": "string"
           }
         },
         "required": [
-          "room",
-          "text"
+          "room"
         ],
         "title": "PostThreadArgs",
         "type": "object"
@@ -4770,7 +4846,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -4821,7 +4897,7 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation, app, workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation, chat, app, workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
             "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -4860,6 +4936,7 @@
               "pr",
               "issue",
               "conversation",
+              "chat",
               "app",
               "workspace"
             ],
@@ -4882,6 +4959,11 @@
               "string",
               "null"
             ]
+          },
+          "pinned": {
+            "default": false,
+            "description": "chat: With room: a block for that room alone, without the sidebar, to leave beside a terminal (a deploy channel beside the deploy).",
+            "type": "boolean"
           },
           "port": {
             "description": "port: The port, on the machine the pane runs on.",
@@ -4929,6 +5011,14 @@
           "rev_b": {
             "default": null,
             "description": "changes: With rev_a: the range rev_a..rev_b instead of the working tree.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "chat: A room to open on, by its id (read_thread and search_threads give them): team chat opens on it, with the sidebar. Default: the newest unread room.",
             "type": [
               "string",
               "null"
@@ -6711,7 +6801,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -6751,6 +6841,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -6804,22 +6903,75 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins. To answer in a thread (when you were asked in one: a message that says it is a reply in the thread of N), pass parent N, and also true to send it to the room too.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "also": {
+            "default": false,
+            "description": "With `parent`: also send the reply to the room, as Slack's \"Also send\nto #channel\" does.",
+            "type": "boolean"
+          },
+          "emoji": {
+            "default": null,
+            "description": "The emoji to react with (or take back), for `react_to_seq`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "default": [],
+            "description": "Files to attach: paths on this machine that you may read (a\nscreenshot, a log), each up to 25 MB, at most 10. They show in the\nroom as pictures, players or file cards. A message may be only files.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "parent": {
+            "default": null,
+            "description": "Reply in the thread of this message (its seq) instead of posting in\nthe room: when you were asked in a thread, answer there. A reply to\na reply goes to the same thread's first message, so give that one's\nseq (a reply's `parent`).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pin_seq": {
+            "default": null,
+            "description": "Pin this message (its seq) instead of posting: as your person's\nagent, needing the same threads.post grant. The room says so in a\nsmall note.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "react_to_seq": {
+            "default": null,
+            "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": false,
+            "description": "Take your reaction back (or unpin) instead of adding it.",
+            "type": "boolean"
+          },
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
-            "description": "The message, in markdown; @login mentions a person there.",
+            "default": "",
+            "description": "The message, in markdown; @login mentions a person there. Not\nneeded to react.",
             "type": "string"
           }
         },
         "required": [
-          "room",
-          "text"
+          "room"
         ],
         "title": "PostThreadArgs",
         "type": "object"
@@ -8369,7 +8521,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -8404,7 +8556,7 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation, chat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
             "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -8434,7 +8586,8 @@
               "file",
               "pr",
               "issue",
-              "conversation"
+              "conversation",
+              "chat"
             ],
             "type": "string"
           },
@@ -8455,6 +8608,11 @@
               "string",
               "null"
             ]
+          },
+          "pinned": {
+            "default": false,
+            "description": "chat: With room: a block for that room alone, without the sidebar, to leave beside a terminal (a deploy channel beside the deploy).",
+            "type": "boolean"
           },
           "port": {
             "description": "port: The port, on the machine the pane runs on.",
@@ -8494,6 +8652,14 @@
           "rev_b": {
             "default": null,
             "description": "changes: With rev_a: the range rev_a..rev_b instead of the working tree.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "chat: A room to open on, by its id (read_thread and search_threads give them): team chat opens on it, with the sidebar. Default: the newest unread room.",
             "type": [
               "string",
               "null"
@@ -10145,7 +10311,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -10185,6 +10351,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -10238,22 +10413,75 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins. To answer in a thread (when you were asked in one: a message that says it is a reply in the thread of N), pass parent N, and also true to send it to the room too.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "also": {
+            "default": false,
+            "description": "With `parent`: also send the reply to the room, as Slack's \"Also send\nto #channel\" does.",
+            "type": "boolean"
+          },
+          "emoji": {
+            "default": null,
+            "description": "The emoji to react with (or take back), for `react_to_seq`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "default": [],
+            "description": "Files to attach: paths on this machine that you may read (a\nscreenshot, a log), each up to 25 MB, at most 10. They show in the\nroom as pictures, players or file cards. A message may be only files.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "parent": {
+            "default": null,
+            "description": "Reply in the thread of this message (its seq) instead of posting in\nthe room: when you were asked in a thread, answer there. A reply to\na reply goes to the same thread's first message, so give that one's\nseq (a reply's `parent`).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pin_seq": {
+            "default": null,
+            "description": "Pin this message (its seq) instead of posting: as your person's\nagent, needing the same threads.post grant. The room says so in a\nsmall note.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "react_to_seq": {
+            "default": null,
+            "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": false,
+            "description": "Take your reaction back (or unpin) instead of adding it.",
+            "type": "boolean"
+          },
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
-            "description": "The message, in markdown; @login mentions a person there.",
+            "default": "",
+            "description": "The message, in markdown; @login mentions a person there. Not\nneeded to react.",
             "type": "string"
           }
         },
         "required": [
-          "room",
-          "text"
+          "room"
         ],
         "title": "PostThreadArgs",
         "type": "object"
@@ -11919,7 +12147,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -11970,7 +12198,7 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation, app, workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation, chat, app, workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
             "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -12009,6 +12237,7 @@
               "pr",
               "issue",
               "conversation",
+              "chat",
               "app",
               "workspace"
             ],
@@ -12031,6 +12260,11 @@
               "string",
               "null"
             ]
+          },
+          "pinned": {
+            "default": false,
+            "description": "chat: With room: a block for that room alone, without the sidebar, to leave beside a terminal (a deploy channel beside the deploy).",
+            "type": "boolean"
           },
           "port": {
             "description": "port: The port, on the machine the pane runs on.",
@@ -12078,6 +12312,14 @@
           "rev_b": {
             "default": null,
             "description": "changes: With rev_a: the range rev_a..rev_b instead of the working tree.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "chat: A room to open on, by its id (read_thread and search_threads give them): team chat opens on it, with the sidebar. Default: the newest unread room.",
             "type": [
               "string",
               "null"
@@ -13860,7 +14102,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -13900,6 +14142,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -13953,22 +14204,75 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins. To answer in a thread (when you were asked in one: a message that says it is a reply in the thread of N), pass parent N, and also true to send it to the room too.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "also": {
+            "default": false,
+            "description": "With `parent`: also send the reply to the room, as Slack's \"Also send\nto #channel\" does.",
+            "type": "boolean"
+          },
+          "emoji": {
+            "default": null,
+            "description": "The emoji to react with (or take back), for `react_to_seq`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "default": [],
+            "description": "Files to attach: paths on this machine that you may read (a\nscreenshot, a log), each up to 25 MB, at most 10. They show in the\nroom as pictures, players or file cards. A message may be only files.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "parent": {
+            "default": null,
+            "description": "Reply in the thread of this message (its seq) instead of posting in\nthe room: when you were asked in a thread, answer there. A reply to\na reply goes to the same thread's first message, so give that one's\nseq (a reply's `parent`).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pin_seq": {
+            "default": null,
+            "description": "Pin this message (its seq) instead of posting: as your person's\nagent, needing the same threads.post grant. The room says so in a\nsmall note.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "react_to_seq": {
+            "default": null,
+            "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": false,
+            "description": "Take your reaction back (or unpin) instead of adding it.",
+            "type": "boolean"
+          },
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
-            "description": "The message, in markdown; @login mentions a person there.",
+            "default": "",
+            "description": "The message, in markdown; @login mentions a person there. Not\nneeded to react.",
             "type": "string"
           }
         },
         "required": [
-          "room",
-          "text"
+          "room"
         ],
         "title": "PostThreadArgs",
         "type": "object"
@@ -15720,7 +16024,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -15760,6 +16064,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -17324,7 +17637,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -17364,6 +17677,15 @@
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
+          },
+          "thread": {
+            "default": null,
+            "description": "Read the replies in the thread of this message (its seq) instead of\nthe room: a message listed with a thread says how many replies it\nhas. The message itself comes back as `parent`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [

@@ -88,6 +88,8 @@ struct State {
     /// the hub can't say.
     activity: BTreeMap<String, bool>,
     activity_down: bool,
+    /// Machines on the relay (presence's machine dots).
+    online: BTreeSet<String>,
     /// Products accounts let sign them in (M229), by account.
     products: BTreeMap<String, Vec<crate::hub::ProductLink>>,
     /// Issuer access tokens (M228): token, then its account and client.
@@ -199,6 +201,16 @@ impl TestHub {
             Some(b) => s.activity.insert(machine.into(), b),
             None => s.activity.remove(machine),
         };
+    }
+
+    /// `machine` is (or is no longer) connected to the relay.
+    pub(crate) fn set_online(&self, machine: &str, on: bool) {
+        let mut s = self.state.lock().unwrap();
+        if on {
+            s.online.insert(machine.into());
+        } else {
+            s.online.remove(machine);
+        }
     }
 
     /// The hub can't say which machines are working until one says again.
@@ -597,6 +609,12 @@ impl HubPort for TestHub {
         )
     }
 
+    fn machines_online<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<String>>> {
+        self.called("machines_online");
+        let s = self.state.lock().unwrap();
+        done(machines.iter().filter(|m| s.online.contains(*m)).cloned().collect())
+    }
+
     fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
         self.called("hosted_gone");
         let mut s = self.state.lock().unwrap();
@@ -708,7 +726,7 @@ fn room(id: &str, scope: &str, kind: &str, machine: Option<&str>, target: Option
 pub(crate) fn seed(app: &Platform, hub: &TestHub) {
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor)]);
     hub.flag("team:t", true);
-    app.db.add_chat_room(&room("ch_general", "team:t", "channel", None, None), &[], Some("prj_t")).unwrap();
+    app.db.add_chat_room(&room("ch_general", "team:t", "channel", None, None), &["a", "b"], Some("prj_t")).unwrap();
     for m in 0..5 {
         let id = format!("m{m}");
         hub.daemon(&id, "a", Some("t"));
@@ -867,6 +885,36 @@ async fn a_message_posted_on_one_machine_reaches_a_stream_on_the_other() {
     // An id from before M144 (one process's numbering) resyncs.
     let old = open_live(&base_a, "b", Some("19a2b3c4d5e-7")).await;
     hears(&old, "\"type\":\"resync\"", Duration::from_secs(4)).await;
+}
+
+/// Typing (#111) crosses machines as a short-lived `chat_events` row: a
+/// ping through one reaches the other's stream that has the room open.
+#[tokio::test]
+async fn a_typing_ping_on_one_machine_reaches_a_stream_on_the_other() {
+    let db = crate::db::Db::test();
+    let Some(db_a) = db.second() else { return eprintln!("skipped: two machines need Postgres") };
+    let db_b = db.second().unwrap();
+    let hub = Arc::new(TestHub::default());
+    let (a, base_a) = serve_on(hub.clone(), db_a).await;
+    let (b, base_b) = serve_on(hub.clone(), db_b).await;
+    crate::chat::start(&a);
+    crate::chat::start(&b);
+    seed(&a, &hub);
+
+    let on_b = open_live(&base_b, "b", None).await;
+    hears(&on_b, "\"type\":\"hello\"", Duration::from_secs(5)).await;
+    let stream = {
+        let text = on_b.lock().unwrap().clone();
+        let at = text.find("\"stream\":\"").unwrap() + 10;
+        text[at..].split('"').next().unwrap().to_owned()
+    };
+    let (st, _) =
+        call(&base_b, "b", "POST", "/api/chat/live/open", Some(json!({ "stream": stream, "room": "ch_general" })))
+            .await;
+    assert_eq!(st, 200);
+    let (st, _) = call(&base_a, "a", "POST", "/api/chat/rooms/ch_general/typing", None).await;
+    assert_eq!(st, 204);
+    hears(&on_b, "\"type\":\"typing\"", Duration::from_secs(4)).await;
 }
 
 /// One of two machines leads (M144): it alone applies the hub's feed to

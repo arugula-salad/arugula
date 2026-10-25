@@ -1,7 +1,8 @@
 // The chat page on control's chat (M123): a team's channels and DMs, and
 // the threads on panes and sessions, all rooms that control holds. The
-// sidebar lists them (each team's channels and DMs, then the threads by
-// machine, then archives); the room is ./room's. Nothing here needs a
+// sidebar lists them (Starred and the person's own sections first, then each
+// team's channels and DMs, the threads by machine, and archives); the room
+// is ./room's. Nothing here needs a
 // machine to be up: a pane's thread reads and posts with its machine
 // asleep, and only its chip waits for it.
 //
@@ -9,18 +10,31 @@
 // and `#chat=<room>&msg=<n>`, `#chat=activity`, `#chat=search/<words>`.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import { chat, type ChatStore } from "../../shared/chat-store";
-import { listedInChat } from "../../shared/chat/unread";
-import type { ChatRoom } from "../../shared/proto";
-import { MaintenanceNote } from "../../shared/ui/maintenance-note";
-import { usePhone, useSubscribe } from "../../shared/ui/hooks";
-import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
-import type { ChatRoute } from "../../shared/chat/route";
-import { RoomActivityView, RoomSearchView, SearchField, openSwitcher, useSwitcherOpen, closeSwitcher } from "./find";
-import { MsgAvatar } from "../../shared/chat/avatar";
-import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "../../shared/chat/room";
-import { fuzzy } from "../../shared/fuzzy";
-import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../../shared/platform-api";
+import { chat, type ChatStore } from "../chat-store";
+import { bold, counted, listedInChat } from "./unread";
+import { bellFor, openBell } from "./bell";
+import { loadNotify, subscribeNotify } from "./notify";
+import type { ChatRoom } from "../proto";
+import { MaintenanceNote } from "../ui/maintenance-note";
+import { usePhone, useSubscribe } from "../ui/hooks";
+import { askText, openMenu, type MenuItem } from "../ui/menu";
+import type { ChatRoute } from "./route";
+import { SavedView } from "./saved";
+import { RoomActivityView, RoomSearchView, SearchField } from "./find";
+import { MsgAvatar } from "./avatar";
+import { WebPreviewsSwitch } from "./previews";
+import { AboutButton, editDescription, editTopic, PinsButton, TopicLine } from "./pins-ui";
+import { ThreadPanel } from "./thread-panel";
+import { ThreadsView } from "./threads-view";
+import { badge } from "./threads";
+import { browseChannels, ChatDialogs, LeaveButton, MemberTools, newChannelDialog, newDmDialog } from "./members";
+import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
+import { AgentsChip } from "./agents-chip";
+import { newSection, openGroupMenu, openRoomMenu, RoomStar, toggleGroup } from "./sections";
+import { ordered, place, placed, present, sortOf, STARRED } from "./sidebar";
+import type { ChatSort } from "../proto";
+import { fuzzy } from "../fuzzy";
+import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
 
 function remembered<T>(key: string, fallback: T): T {
   try {
@@ -43,7 +57,6 @@ const SIDE_MIN = 200;
 const SIDE_MAX = 420;
 let sideWidth = remembered("chat.side", 260);
 let unreadOnly = remembered("chat.unreadOnly", false);
-let collapsed = new Set<string>(remembered<string[]>("chat.rooms.collapsed", []));
 let detailsOpen = remembered<unknown>("chat.details", 0) === 1;
 
 /** The teams this account is in, as the page knows them. */
@@ -63,14 +76,39 @@ interface Group {
   title: string;
   /** What `+` makes here. */
   make?: { label: string; aria: string; run: () => void };
+  /** The channel browser (#118). */
+  browse?: () => void;
   rooms: ChatRoom[];
   none?: string;
+  /** Where dropping a room here puts it: `starred`, a section's id, or
+   * null for the built-in groups (where its kind puts it). */
+  drop: string | null;
+  /** A section of the person's own (#120): renamed and deleted. */
+  custom?: boolean;
+  /** How it sorts until the person chooses. */
+  sort: ChatSort;
 }
 
 const byNewest = (a: ChatRoom, b: ChatRoom) => b.last - a.last || a.name.localeCompare(b.name);
 
-function groupsOf(store: ChatStore, api: PlatformApi): Group[] {
+/** The sidebar's groups (#120): Starred (while it has rooms, or a room is
+ * being dragged), the person's own sections, then the built-in ones, minus
+ * the rooms they placed. */
+function groupsOf(store: ChatStore, api: PlatformApi, dragging: boolean): Group[] {
+  const sb = store.sidebar;
   const out: Group[] = [];
+  const label = (r: ChatRoom) => roomLabel(r, api);
+  const starred = present(sb.starred, store.rooms);
+  if (starred.length || dragging) {
+    out.push({ key: STARRED, title: "★ Starred", rooms: ordered(starred, sortOf(sb, STARRED), label), none: "Drag a room here, or star it.", drop: STARRED, sort: "name" });
+  }
+  for (const x of sb.sections) {
+    out.push({ key: x.id, title: x.name, rooms: ordered(present(x.rooms, store.rooms), sortOf(sb, x.id), label), none: "Drag rooms here, or move one with ⇆.", drop: x.id, custom: true, sort: "name" });
+  }
+  const taken = placed(sb);
+  const free = (r: ChatRoom) => !taken.has(r.id);
+  // A built-in group sorted as the person chose, else as it always was.
+  const sorted = (key: string, rooms: ChatRoom[], fallback: ChatSort) => ordered(rooms.filter(free), sortOf(sb, key, fallback), label);
   const ts = teams(api);
   const known = new Set(ts.map((t) => t.team));
   // Rooms of a team this page hasn't loaded (yet): still listed.
@@ -80,21 +118,25 @@ function groupsOf(store: ChatStore, api: PlatformApi): Group[] {
     const t = ts.find((x) => x.team === team);
     const name = t?.roster.name ?? teamName(api, team);
     const mayMake = t?.role === "owner" || t?.role === "editor";
-    const channels = store.rooms
-      .filter((r) => r.kind === "channel" && r.team === team)
-      .sort((a, b) => Number(a.archived) - Number(b.archived) || a.name.localeCompare(b.name));
+    const channels = store.rooms.filter((r) => r.kind === "channel" && r.team === team);
+    const dms = store.rooms.filter((r) => r.kind === "dm" && r.team === team);
     out.push({
       key: `${team}/channels`,
       title: many ? `${name} · Channels` : "Channels",
-      make: mayMake ? { label: "+", aria: many ? `New channel in ${name}` : "New channel", run: () => void newChannel(store, team, name, api) } : undefined,
-      rooms: channels,
-      none: mayMake ? "No channels yet. Make one with +." : "No channels yet.",
+      make: mayMake ? { label: "+", aria: many ? `New channel in ${name}` : "New channel", run: () => newChannelDialog(store, team, name, api) } : undefined,
+      browse: t ? () => browseChannels(store, team, name, api) : undefined,
+      rooms: sorted(`${team}/channels`, channels, "name"),
+      none: mayMake ? "No channels joined. Browse them, or make one with +." : "No channels joined. Browse them.",
+      drop: null,
+      sort: "name",
     });
     out.push({
       key: `${team}/dms`,
       title: many ? `${name} · Direct messages` : "Direct messages",
-      make: t ? { label: "+", aria: many ? `New direct message in ${name}` : "New direct message", run: () => void newDm(store, t, api) } : undefined,
-      rooms: store.rooms.filter((r) => r.kind === "dm" && r.team === team).sort(byNewest),
+      make: t ? { label: "+", aria: many ? `New direct message in ${name}` : "New direct message", run: () => newDmDialog(store, t, api) } : undefined,
+      rooms: sorted(`${team}/dms`, dms, "recent"),
+      drop: null,
+      sort: "recent",
     });
   }
   const threads = store.rooms.filter((r) => r.kind === "pane" || r.kind === "session");
@@ -105,42 +147,12 @@ function groupsOf(store: ChatStore, api: PlatformApi): Group[] {
   }
   for (const [m, rooms] of machines) {
     const name = machineName(api, m, rooms[0].machine_name ?? "a machine");
-    out.push({ key: `machine/${m}`, title: `${name}${machineUp(api, m) ? "" : " (asleep)"}`, rooms: rooms.sort(byNewest) });
+    const shown = sorted(`machine/${m}`, rooms, "recent");
+    if (shown.length) out.push({ key: `machine/${m}`, title: `${name}${machineUp(api, m) ? "" : " (asleep)"}`, rooms: shown, drop: null, sort: "recent" });
   }
-  const archives = store.rooms.filter((r) => r.kind === "archive").sort(byNewest);
-  if (archives.length) out.push({ key: "archives", title: "Archives", rooms: archives });
+  const archives = sorted("archives", store.rooms.filter((r) => r.kind === "archive"), "recent");
+  if (archives.length) out.push({ key: "archives", title: "Archives", rooms: archives, drop: null, sort: "recent" });
   return out;
-}
-
-async function newChannel(store: ChatStore, team: string, name: string, api: PlatformApi) {
-  const v = await askText(`New channel in ${name}`, "", "one word, like general");
-  if (!v?.trim()) return;
-  try {
-    const r = await store.newChannel(team, v.trim());
-    api.nav.openRoom(r.id);
-  } catch (e) {
-    api.toast(`Couldn't make it: ${(e as Error).message}`);
-  }
-}
-
-/** Someone in the team to write to: picked from its people, or typed. */
-async function newDm(store: ChatStore, t: PlatformTeam, api: PlatformApi) {
-  const toast = api.toast;
-  const people = t.roster.members
-    .filter((m) => m.account !== store.me)
-    .map((m) => ({ value: m.account, label: t.names?.[m.account] || m.name }));
-  if (!people.length) return toast(`Nobody else is in ${t.roster.name} yet`);
-  const v = await askText(`Message someone in ${t.roster.name}`, "", "their name", Promise.resolve(people));
-  if (!v?.trim()) return;
-  const typed = v.trim().toLowerCase();
-  const who = people.find((p) => p.value === v || p.label.toLowerCase() === typed || p.label.toLowerCase().startsWith(typed));
-  if (!who) return toast(`Nobody in ${t.roster.name} is called ${v.trim()}`);
-  try {
-    const r = await store.newDm(t.team, who.value);
-    api.nav.openRoom(r.id);
-  } catch (e) {
-    toast(`Couldn't open it: ${(e as Error).message}`);
-  }
 }
 
 /** The room shown: the route's, else (on a computer) the newest unread,
@@ -149,21 +161,42 @@ function pickRoom(store: ChatStore, route: ChatRoute, phone: boolean): ChatRoom 
   if (route.room) return store.room(route.room) ?? null;
   if (phone || route.view) return null;
   // Object threads (M196) aren't listed here: one opens from its object,
-  // and its unread counts there (../../shared/chat/unread).
+  // and its unread counts there (./unread).
   const live = store.rooms.filter((r) => r.kind !== "archive" && listedInChat(r));
   return live.filter((r) => r.unread).sort(byNewest)[0] ?? live.filter((r) => r.last).sort(byNewest)[0] ?? live[0] ?? null;
 }
 
-export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore }) {
-  const phone = usePhone();
+/** How a host fits chat in its box (#123). The platform page fills the
+ * window and has neither. */
+export interface ChatFit {
+  /** Draw the phone's one-pane-at-a-time layout though the window is wide: a
+   * block is as narrow as its slot. */
+  narrow?: boolean;
+  /** One room, no sidebar: the room is the route's. */
+  pinned?: boolean;
+  /** The page has other views of chat (blocks): keys answer only while focus
+   * is in this one. */
+  scoped?: boolean;
+}
+
+export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store: ChatStore; fit?: ChatFit }) {
+  const phone = usePhone() || !!fit.narrow;
+  // The keys (and the switcher they open) are this view's while focus is in
+  // it: a page with two chat blocks has two views.
+  const root = useRef<HTMLDivElement>(null);
+  const [switching, setSwitching] = useState(false);
   const api = usePlatformApi();
   const { nav, Bar } = api;
   useSubscribe((fn) => store.subscribe(fn));
   useSubscribe((fn) => api.subscribe(fn));
   const [, setTick] = useState(0);
   const redraw = () => setTick((t) => t + 1);
+  // The room being dragged to a section (#120), on a computer.
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
   const picked = pickRoom(store, route, phone);
-  const groups = groupsOf(store, api);
+  const groups = groupsOf(store, api, dragging !== null);
+  const collapsed = new Set(store.sidebar.collapsed);
   // A room the route names that isn't (yet) in the list: loaded once, in
   // case it came since (a push for a room just made).
   const missing = route.room && !picked ? route.room : null;
@@ -176,36 +209,57 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
   });
   useEffect(() => () => document.documentElement.style.removeProperty("--chat-side"), []);
 
-  const order = groups.flatMap((g) => (collapsed.has(g.key) && !phone ? [] : g.rooms));
-  useRoomKeys(order, picked?.id ?? null, () => void store.readAll(), nav);
+  const order = groups.flatMap((g) => (collapsed.has(g.key) ? [] : g.rooms));
+  useRoomKeys(fit.pinned ? [] : order, picked?.id ?? null, () => void store.readAll(), nav, () => setSwitching(true), fit.scoped && !fit.pinned ? root : null);
+  const savedTodo = store.savedTodo();
   const mentions = store.rooms.reduce((n, r) => n + (r.mentions ? 1 : 0), 0);
 
-  const toggle = (key: string) => {
-    if (collapsed.has(key)) collapsed.delete(key);
-    else collapsed.add(key);
-    remember("chat.rooms.collapsed", [...collapsed]);
-    redraw();
+  const toggle = (key: string) => toggleGroup(store, key, api.toast);
+  const drop = (g: Group, e: DragEvent) => {
+    e.preventDefault();
+    const id = e.dataTransfer?.getData("text/x-arugula-room") || dragging;
+    setDragging(null);
+    setOver(null);
+    if (id) void store.editSidebar((s) => place(s, id, g.drop)).catch((err: Error) => api.toast(`Couldn't keep that: ${err.message}`));
   };
 
   const row = (r: ChatRoom) => {
-    const n = r.muted ? r.mentions : r.unread;
+    const n = counted(r);
     return (
       <button
         key={r.id}
-        class={`chat-row${r.id === picked?.id ? " selected" : ""}${n ? " unread" : ""}${r.last ? "" : " quiet"}${r.archived || r.muted ? " muted" : ""}`}
+        class={`chat-row${r.id === picked?.id ? " selected" : ""}${bold(r) ? " unread" : ""}${r.last ? "" : " quiet"}${r.archived || r.level === "nothing" ? " muted" : ""}${dragging === r.id ? " dragging" : ""}`}
         data-chat-room={r.id}
         data-room-kind={r.kind}
-        title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}` : r.kind === "dm" ? `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
+        title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}${r.topic ? `\n${r.topic}` : ""}` : r.kind === "dm" ? r.others.length > 1 ? `You and ${r.others.map((p) => p.name).join(", ")}` : `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
+        draggable={!phone}
+        onDragStart={(e) => {
+          e.dataTransfer?.setData("text/x-arugula-room", r.id);
+          if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+          // After the browser has taken its drag image: drawing the drop
+          // targets first would cancel the drag on some of them.
+          setTimeout(() => setDragging(r.id));
+        }}
+        onDragEnd={() => {
+          setDragging(null);
+          setOver(null);
+        }}
+        onContextMenu={(e) => openRoomMenu(e, store, r, api.toast)}
         onClick={() => nav.openRoom(r.id)}
       >
-        {r.kind === "dm" && r.with ? (
+        {r.kind === "dm" && r.with && r.others.length < 2 ? (
           <span class="chat-sigil chat-dm-pic">
-            <MsgAvatar who={r.with.account} name={r.with.name} />
+            <MsgAvatar who={r.with.account} name={r.with.name} account={r.with.account} dot />
           </span>
         ) : (
           <span class="chat-sigil">{roomSigil(r)}</span>
         )}
         <span class="chat-label">{roomLabel(r, api)}</span>
+        {r.with?.dnd && (
+          <span class="chat-dnd" title={`${r.with.name} has paused notifications`} aria-label="Paused notifications" data-dnd>
+            🌙
+          </span>
+        )}
         {n > 0 && <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.mentions ? `@${n}` : n}</span>}
       </button>
     );
@@ -219,6 +273,20 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
           <span class="chat-label">Activity</span>
           {mentions > 0 && <span class="chat-count mention">{mentions}</span>}
         </button>
+        <button class={`chat-row chat-saved${route.view === "saved" ? " selected" : ""}`} data-chat-saved onClick={() => nav.openChatView("saved")}>
+          <span class="chat-sigil">★</span>
+          <span class="chat-label">Saved</span>
+          {savedTodo > 0 && <span class="chat-count">{savedTodo}</span>}
+        </button>
+        <button
+          class={`chat-row chat-activity${route.view === "threads" ? " selected" : ""}${store.threadsUnread.n ? " unread" : ""}`}
+          data-chat-threads
+          onClick={() => nav.openChatView("threads")}
+        >
+          <span class="chat-sigil">↩</span>
+          <span class="chat-label">Threads</span>
+          {store.threadsUnread.n > 0 && <span class={store.threadsUnread.mentions ? "chat-count mention" : "chat-count"}>{badge(store.threadsUnread.n, store.threadsUnread.mentions)}</span>}
+        </button>
       </div>
       {groups.length === 0 && (
         <p class="chat-none" data-chat-no-team>
@@ -226,11 +294,21 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
         </p>
       )}
       {groups.map((g) => {
-        const shut = !phone && collapsed.has(g.key);
+        const shut = collapsed.has(g.key);
         const shown = unreadOnly ? g.rooms.filter((r) => r.unread || r.id === picked?.id) : g.rooms;
         const unread = g.rooms.reduce((n, r) => n + r.unread, 0);
         return (
-          <section key={g.key} data-chat-group={g.key}>
+          <section
+            key={g.key}
+            data-chat-group={g.key}
+            class={dragging && over === g.key ? "chat-drop" : undefined}
+            onDragOver={(e) => {
+              if (!dragging) return;
+              e.preventDefault();
+              if (over !== g.key) setOver(g.key);
+            }}
+            onDrop={(e) => drop(g, e)}
+          >
             <h2 class="chat-section chat-channels-head">
               <button aria-expanded={!shut} onClick={() => toggle(g.key)} title={shut ? "Show them" : "Hide them"}>
                 <span class="chat-caret" aria-hidden="true">
@@ -238,6 +316,23 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
                 </span>
                 {g.title}
                 {shut && unread > 0 && <span class="chat-count">{unread}</span>}
+              </button>
+              {g.browse && (
+                <button class="chat-new" title="Browse channels" aria-label="Browse channels" data-room-browse={g.key} onClick={g.browse}>
+                  ⌕
+                </button>
+              )}
+              <button
+                class="chat-new chat-group-menu"
+                title={`Sort${g.custom ? ", rename" : ""}`}
+                aria-label={`Options for ${g.title}`}
+                data-group-menu={g.key}
+                onClick={(e) => {
+                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  openGroupMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, store, { key: g.key, custom: !!g.custom, title: g.title, fallback: g.sort }, api.toast);
+                }}
+              >
+                ⋯
               </button>
               {g.make && (
                 <button class="chat-new" title={g.make.aria} aria-label={g.make.aria} data-room-new={g.key} onClick={g.make.run}>
@@ -251,26 +346,60 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
           </section>
         );
       })}
+      <ChatDialogs />
     </nav>
   );
 
   const view = route.view ? (
     route.view === "activity" ? (
       <RoomActivityView store={store} phone={phone} />
+    ) : route.view === "saved" ? (
+      <SavedView phone={phone} />
+    ) : route.view === "threads" ? (
+      <ThreadsView store={store} phone={phone} />
     ) : (
       <RoomSearchView store={store} q={route.q ?? ""} phone={phone} />
     )
   ) : picked ? (
-    <RoomView key={picked.id} store={store} room={picked} phone={phone} focus={route.msg} />
+    <RoomView key={picked.id} store={store} room={picked} phone={phone} focus={route.msg} thread={route.thread} />
   ) : missing ? (
     <div class="chat-thread chat-empty" data-room-missing>
       That room isn't one you can read (or it's gone).
     </div>
   ) : null;
 
+  const workspaceMenu = (e: MouseEvent) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const items: MenuItem[] = [
+      { label: "Mark all as read", run: () => void store.readAll() },
+      { label: "New section…", run: () => void newSection(store, api.toast) },
+      "separator",
+      { label: "Show every room", checked: !unreadOnly, run: () => ((unreadOnly = false), remember("chat.unreadOnly", false), redraw()) },
+      { label: "Show unread only", checked: unreadOnly, run: () => ((unreadOnly = true), remember("chat.unreadOnly", true), redraw()) },
+    ];
+    openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items);
+  };
+
+  if (fit.pinned) {
+    return (
+      <div class={phone ? "chat phone pinned" : "chat pinned"} ref={root} data-chat data-chat-control data-chat-pinned={route.room}>
+        <MaintenanceNote />
+        {picked ? (
+          <div class="chat-body">
+            <RoomView key={picked.id} store={store} room={picked} phone={phone} focus={route.msg} pinned thread={route.thread} />
+          </div>
+        ) : (
+          <div class="chat-thread chat-empty" data-room-missing>
+            That room isn't one you can read (or it's gone).
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (phone) {
     return (
-      <div class="chat phone" data-chat data-chat-control>
+      <div class="chat phone" ref={root} data-chat data-chat-control>
         {view ?? (
           <>
             <header class="chat-head">
@@ -280,6 +409,9 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
                   <circle cx="7" cy="7" r="4.5" />
                   <path d="M10.5 10.5 14 14" />
                 </svg>
+              </button>
+              <button class="chat-search-open" title="Sections, unread only" aria-label="Chat options" data-chat-options onClick={workspaceMenu}>
+                ⋯
               </button>
               <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
                 ✕
@@ -291,17 +423,6 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
       </div>
     );
   }
-
-  const workspaceMenu = (e: MouseEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const items: MenuItem[] = [
-      { label: "Mark all as read", run: () => void store.readAll() },
-      "separator",
-      { label: "Show every room", checked: !unreadOnly, run: () => ((unreadOnly = false), remember("chat.unreadOnly", false), redraw()) },
-      { label: "Show unread only", checked: unreadOnly, run: () => ((unreadOnly = true), remember("chat.unreadOnly", true), redraw()) },
-    ];
-    openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items);
-  };
 
   const resize = (e: PointerEvent) => {
     e.preventDefault();
@@ -322,12 +443,12 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
 
   const ts = teams(api);
   return (
-    <div class="chat" data-chat data-chat-control>
+    <div class="chat" ref={root} data-chat data-chat-control>
       <Bar>
         <SearchField route={route} />
       </Bar>
       <MaintenanceNote />
-      <RoomSwitcher rooms={order} />
+      <RoomSwitcher rooms={order} open={switching} close={() => setSwitching(false)} />
       <div class="chat-body">
         <aside class="chat-side">
           <header class="chat-side-head">
@@ -348,9 +469,9 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
 function topicOf(r: ChatRoom, api: PlatformApi): string {
   switch (r.kind) {
     case "channel":
-      return [teamName(api, r.team), r.archived ? "archived" : ""].filter(Boolean).join(" · ");
+      return [r.private ? "private" : "", r.topic, teamName(api, r.team), r.archived ? "archived" : ""].filter(Boolean).join(" · ");
     case "dm":
-      return `Direct message · ${teamName(api, r.team)}`;
+      return `${r.others.length > 1 ? "Group message" : "Direct message"} · ${teamName(api, r.team)}`;
     case "pane":
     case "session": {
       const name = machineName(api, r.machine, r.machine_name ?? "a machine");
@@ -363,10 +484,27 @@ function topicOf(r: ChatRoom, api: PlatformApi): string {
   }
 }
 
-function RoomView({ store, room, phone, focus }: { store: ChatStore; room: ChatRoom; phone: boolean; focus?: number }) {
+function RoomView({
+  store,
+  room,
+  phone,
+  focus,
+  pinned,
+  thread,
+}: {
+  store: ChatStore;
+  room: ChatRoom;
+  phone: boolean;
+  focus?: number;
+  pinned?: boolean;
+  thread?: number;
+}) {
   const [details, setDetails] = useState(detailsOpen && !phone);
   const api = usePlatformApi();
   const { nav, toast } = api;
+  // The bell's moon follows a snooze, here or in Settings.
+  useSubscribe(subscribeNotify);
+  useEffect(() => void loadNotify(), []);
   const people = store.people(room.id);
   const label = roomLabel(room, api);
   const name = room.kind === "channel" ? `#${room.name}` : label;
@@ -381,11 +519,21 @@ function RoomView({ store, room, phone, focus }: { store: ChatStore; room: ChatR
     if (room.kind === "pane") return api.goToPane(room.machine, room.target, null);
     api.goToSession(room.machine);
   };
+  // A thread open beside the room (#106): the whole screen on a phone. The
+  // room's own `&msg=` is the room's unless it's a reply in that thread.
+  const closeThread = () => nav.openRoom(room.id);
+  if (thread !== undefined && phone) {
+    return (
+      <div class="chat-main">
+        <ThreadPanel key={thread} store={store} room={room} parent={thread} phone focus={focus} close={closeThread} />
+      </div>
+    );
+  }
   return (
     <div class="chat-main">
       <section class="chat-thread" aria-label={name} data-room-view={room.id}>
         <header class="chat-head">
-          {phone && (
+          {phone && !pinned && (
             <button class="chat-back" title="Every room" aria-label="Every room" onClick={() => nav.openChat()}>
               ‹
             </button>
@@ -395,12 +543,14 @@ function RoomView({ store, room, phone, focus }: { store: ChatStore; room: ChatR
               <span class="chat-title-sigil">{roomSigil(room)}</span>
               {label}
             </strong>
-            <span data-chat-topic>{topicOf(room, api)}</span>
+            <TopicLine room={room} fallback={topicOf(room, api)} toast={toast} />
           </div>
+          <PinsButton room={room} toast={toast} />
+          <AboutButton room={room} toast={toast} />
           {!phone && people.length > 0 && (
             <button class="chat-members" title={people.map((p) => p.name).join(", ")} onClick={() => !details && toggleDetails()}>
               {people.slice(0, 3).map((p) => (
-                <MsgAvatar key={p.account} who={p.account} name={p.name} />
+                <MsgAvatar key={p.account} who={p.account} name={p.name} account={p.account} dot />
               ))}
               <span>{people.length}</span>
             </button>
@@ -410,30 +560,38 @@ function RoomView({ store, room, phone, focus }: { store: ChatStore; room: ChatR
               {room.kind === "pane" ? "Go to pane" : "Go to session"}
             </button>
           )}
+          <AgentsChip room={room.id} />
+          <RoomStar store={store} room={room} toast={toast} />
           <button
-            class={room.muted ? "chat-info on" : "chat-info"}
-            title={room.muted ? "Muted: no notifications from it but mentions' counts. Unmute" : "Mute: no notifications from it"}
-            aria-label={room.muted ? "Unmute this room" : "Mute this room"}
-            aria-pressed={room.muted}
-            data-room-mute
-            onClick={() => store.mute(room.id, !room.muted).catch((e: Error) => toast(e.message))}
+            class={room.level === "all" ? "chat-info" : "chat-info on"}
+            title={bellFor(room).title}
+            aria-label={bellFor(room).title}
+            aria-haspopup="menu"
+            data-room-bell
+            data-room-level={room.level}
+            onClick={(e) => openBell(e, room, (l) => store.setLevel(room.id, l), toast)}
           >
-            {room.muted ? "🔕" : "🔔"}
+            {bellFor(room).glyph}
           </button>
+          <LeaveButton store={store} room={room} />
           {!phone && (
             <button class={details ? "chat-info on" : "chat-info"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>
               ⓘ
             </button>
           )}
-          {phone && (
+          {phone && !pinned && (
             <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
               ✕
             </button>
           )}
         </header>
-        <RoomBody room={room} phone={phone} focus={focus} name={name} />
+        <RoomBody room={room} phone={phone} focus={thread === undefined ? focus : undefined} name={name} chip />
       </section>
-      {details && <RoomDetails store={store} room={room} close={toggleDetails} />}
+      {thread !== undefined ? (
+        <ThreadPanel key={thread} store={store} room={room} parent={thread} phone={false} focus={focus} close={closeThread} />
+      ) : (
+        details && <RoomDetails store={store} room={room} close={toggleDetails} />
+      )}
     </div>
   );
 }
@@ -460,16 +618,23 @@ function RoomDetails({ store, room, close }: { store: ChatStore; room: ChatRoom;
               : `${machineName(api, room.machine, room.machine_name ?? "Its machine")} is asleep. Its thread is still here.`}
           </p>
         )}
+        {room.kind === "channel" && (room.topic || room.description || room.topic_writable) && (
+          <div class="chat-about" data-chat-about-panel>
+            <h3>About</h3>
+            <p class={room.topic ? "" : "dim"}>{room.topic || "No topic yet."}</p>
+            {room.description && <p class="chat-pop-text">{room.description}</p>}
+            {room.topic_writable && (
+              <div class="thread-offer-buttons">
+                <button onClick={() => void editTopic(store, room, toast)}>{room.topic ? "Change topic" : "Set topic"}</button>
+                <button onClick={() => void editDescription(store, room, toast)}>{room.description ? "Change description" : "Add description"}</button>
+              </div>
+            )}
+          </div>
+        )}
         <h3>People</h3>
         {people.length === 0 && <p class="chat-none">Just you, so far.</p>}
-        <ul class="chat-people">
-          {people.map((p) => (
-            <li key={p.account} data-room-person={p.account}>
-              <MsgAvatar who={p.account} name={p.name} />
-              <span>{p.name}</span>
-            </li>
-          ))}
-        </ul>
+        <MemberTools store={store} room={room} people={people} />
+        {room.team && teams(api).find((t) => t.team === room.team)?.role === "owner" && <WebPreviewsSwitch team={room.team} toast={toast} />}
         {owner && (
           <div class="thread-offer-buttons">
             <button
@@ -490,9 +655,8 @@ function RoomDetails({ store, room, close }: { store: ChatStore; room: ChatRoom;
 
 // ---- the switcher (Ctrl/Cmd+K) and keys
 
-function RoomSwitcher({ rooms }: { rooms: ChatRoom[] }) {
+function RoomSwitcher({ rooms, open, close }: { rooms: ChatRoom[]; open: boolean; close: () => void }) {
   const api = usePlatformApi();
-  const open = useSwitcherOpen();
   const [q, setQ] = useState("");
   const [pick, setPick] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -509,11 +673,11 @@ function RoomSwitcher({ rooms }: { rooms: ChatRoom[] }) {
     .map((x) => x.r)
     .slice(0, 12);
   const go = (r: ChatRoom | undefined) => {
-    closeSwitcher();
+    close();
     if (r) api.nav.openRoom(r.id);
   };
   return (
-    <div class="chat-switcher-back" onMouseDown={(e) => e.target === e.currentTarget && closeSwitcher()}>
+    <div class="chat-switcher-back" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div class="chat-switcher" role="dialog" aria-label="Jump to a room" data-chat-switcher>
         <input
           ref={input}
@@ -526,7 +690,7 @@ function RoomSwitcher({ rooms }: { rooms: ChatRoom[] }) {
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.preventDefault();
-              closeSwitcher();
+              close();
             } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
               if (list.length) setPick((p) => (p + (e.key === "ArrowDown" ? 1 : list.length - 1)) % list.length);
@@ -550,6 +714,7 @@ function RoomSwitcher({ rooms }: { rooms: ChatRoom[] }) {
             >
               <span class="chat-sigil">{roomSigil(r)}</span>
               <span class="chat-label">{roomLabel(r, api)}</span>
+              {r.kind === "channel" && r.topic && <span class="chat-switcher-host">{r.topic}</span>}
               {r.machine_name && <span class="chat-switcher-host">{machineName(api, r.machine, r.machine_name)}</span>}
               {r.unread ? <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.unread}</span> : null}
             </li>
@@ -563,12 +728,14 @@ function RoomSwitcher({ rooms }: { rooms: ChatRoom[] }) {
 
 /** Ctrl/Cmd+K: the switcher. Alt+↑/↓: the room above or below; with
  * Shift, the next unread one. Shift+Esc: everything read. */
-function useRoomKeys(rooms: ChatRoom[], picked: string | null, markAll: () => void, nav: ChatNav) {
+function useRoomKeys(rooms: ChatRoom[], picked: string | null, markAll: () => void, nav: ChatNav, openSwitcher: () => void, within: { current: HTMLElement | null } | null) {
   const latest = useRef({ rooms, picked, markAll, nav });
   latest.current = { rooms, picked, markAll, nav };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (document.querySelector(".menu, .prompt")) return;
+      // A block answers only while focus is in it.
+      if (within && !within.current?.contains(document.activeElement)) return;
       const { rooms, picked, markAll, nav } = latest.current;
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -590,7 +757,7 @@ function useRoomKeys(rooms: ChatRoom[], picked: string | null, markAll: () => vo
         const idx = at < 0 ? (down ? i - 1 : n - i) : (((at + (down ? i : -i)) % n) + n) % n;
         const r = rooms[idx];
         if (idx === at) return;
-        if (!e.shiftKey || r.unread) return nav.openRoom(r.id);
+        if (!e.shiftKey || counted(r)) return nav.openRoom(r.id);
       }
     };
     addEventListener("keydown", key, true);

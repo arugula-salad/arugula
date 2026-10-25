@@ -318,6 +318,72 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0037_redone.sql"),
         additive: true,
     },
+    Migration {
+        version: 38,
+        name: "chat_alerts",
+        sql: include_str!("../../migrations/sqlite/0038_chat_alerts.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 39,
+        name: "link_previews",
+        sql: include_str!("../../migrations/sqlite/0039_link_previews.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 40,
+        name: "chat_reactions",
+        sql: include_str!("../../migrations/sqlite/0040_chat_reactions.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 41,
+        name: "chat_people",
+        sql: include_str!("../../migrations/sqlite/0041_chat_people.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 42,
+        name: "chat_notify",
+        sql: include_str!("../../migrations/sqlite/0042_chat_notify.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 43,
+        name: "chat_sidebars",
+        sql: include_str!("../../migrations/sqlite/0043_chat_sidebars.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 44,
+        name: "chat_saved",
+        sql: include_str!("../../migrations/sqlite/0044_chat_saved.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 45,
+        name: "chat_files",
+        sql: include_str!("../../migrations/sqlite/0045_chat_files.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 46,
+        name: "chat_topics_pins",
+        sql: include_str!("../../migrations/sqlite/0046_chat_topics_pins.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 47,
+        name: "chat_threads",
+        sql: include_str!("../../migrations/sqlite/0047_chat_threads.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 48,
+        name: "chat_channel_members",
+        sql: include_str!("../../migrations/sqlite/0048_chat_channel_members.sql"),
+        additive: false,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -545,6 +611,72 @@ const POSTGRES: &[Migration] = &[
         name: "redone",
         sql: include_str!("../../migrations/postgres/0037_redone.sql"),
         additive: true,
+    },
+    Migration {
+        version: 38,
+        name: "chat_alerts",
+        sql: include_str!("../../migrations/postgres/0038_chat_alerts.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 39,
+        name: "link_previews",
+        sql: include_str!("../../migrations/postgres/0039_link_previews.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 40,
+        name: "chat_reactions",
+        sql: include_str!("../../migrations/postgres/0040_chat_reactions.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 41,
+        name: "chat_people",
+        sql: include_str!("../../migrations/postgres/0041_chat_people.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 42,
+        name: "chat_notify",
+        sql: include_str!("../../migrations/postgres/0042_chat_notify.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 43,
+        name: "chat_sidebars",
+        sql: include_str!("../../migrations/postgres/0043_chat_sidebars.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 44,
+        name: "chat_saved",
+        sql: include_str!("../../migrations/postgres/0044_chat_saved.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 45,
+        name: "chat_files",
+        sql: include_str!("../../migrations/postgres/0045_chat_files.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 46,
+        name: "chat_topics_pins",
+        sql: include_str!("../../migrations/postgres/0046_chat_topics_pins.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 47,
+        name: "chat_threads",
+        sql: include_str!("../../migrations/postgres/0047_chat_threads.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 48,
+        name: "chat_channel_members",
+        sql: include_str!("../../migrations/postgres/0048_chat_channel_members.sql"),
+        additive: false,
     },
 ];
 

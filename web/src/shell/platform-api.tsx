@@ -10,7 +10,7 @@ import type { Client } from "./client";
 import type { FleetPane } from "./fleet";
 import { directory } from "./hosts";
 import { whatItDoes } from "./swarm/model";
-import { platformHref } from "./platform-links";
+import { openPlatform, platformHref } from "./platform-links";
 import { getFleet } from "./ui/hosts";
 import { getControlSession } from "./ui/people";
 import { openChat, openChatView, openRoom } from "./ui/places";
@@ -53,7 +53,11 @@ function build(client: Client): PlatformApi {
       openChatView,
       // The platform page's address for it, else the shell's old one, which
       // goes there once control has a platform page (M154).
-      roomLink: (room, seq) => platformHref(`/chat/${room}?msg=${seq}`) ?? `${location.origin}${location.pathname}${location.search}#chat=${room}&msg=${seq}`,
+      openGrants: () => openPlatform("/settings"),
+      roomLink: (room, seq, thread) => {
+        const on = thread !== undefined ? `&thread=${thread}` : "";
+        return platformHref(`/chat/${room}?msg=${seq}${on}`) ?? `${location.origin}${location.pathname}${location.search}#chat=${room}&msg=${seq}${on}`;
+      },
     },
     machine(id) {
       const h = hostOf(id);
@@ -88,7 +92,7 @@ function build(client: Client): PlatformApi {
 
 /** Pick a pane on a machine that's up, read its screen end to end, and
  * keep the lines you want: they're copied into the message. */
-function QuotePicker({ close, take }: { close: () => void; take: (q: PaneQuote) => void }) {
+export function QuotePicker({ close, take }: { close: () => void; take: (q: PaneQuote) => void }) {
   const fleet = getFleet();
   useSubscribe((fn) => fleet?.subscribe(fn) ?? (() => {}));
   const [picked, setPicked] = useState<FleetPane | null>(null);

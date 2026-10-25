@@ -11,7 +11,7 @@ import { AttentionBadge } from "./attention";
 import { HostCrumb, HostSection } from "./hosts";
 import { openSwarm } from "../swarm/route";
 import { hasChat, openChat } from "./places";
-import { openChanges, openIssue, openPort, openPr } from "../blocks";
+import { ChatTabBadge, openChanges, openIssue, openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { pickApp, openSandboxes } from "../labs-load";
@@ -203,6 +203,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                               {(client.tabMachine(tid) || panes.some((p) => client.machine(p))) && <span class="host-tag">VM</span>}
                               <span class="label">{tabLabel(client, t)}</span>
                               {panes.length > 1 && <span class="count">{panes.length}</span>}
+                              <ChatTabBadge client={client} panes={panes} />
                             </button>
                             {panes.length > 1 &&
                               panes.map((p, i) => (

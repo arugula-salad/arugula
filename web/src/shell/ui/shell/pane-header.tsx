@@ -26,6 +26,8 @@ export function paneType(info: PaneInfo | undefined): string {
       return "web";
     case "remote":
       return "remote shell";
+    case "team_chat":
+      return "chat";
     default:
       return info?.type ?? "pane";
   }

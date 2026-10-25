@@ -147,7 +147,7 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
  * What a block is; where one runs is its `host`, not its type. All types
  * share one id space (`%N`) and one place in the layout tree.
  */
-export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat";
+export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat";
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and
@@ -165,24 +165,100 @@ export type ChangesAsked = { note: string, by: string, at_ms: number,
 revised_ms?: number, };
 
 /**
+ * `POST /api/chat/rooms/{id}/members`: a channel's creator or its team's
+ * owners add people of the team.
+ */
+export type ChatAddMembers = { accounts: Array<string>, };
+
+/**
  * The agent that wrote a message (M197): the machine whose grant it acted
  * through, and its name now. The message's author is the machine's owner.
  */
 export type ChatAgent = { machine: string, machine_name: string, };
 
 /**
+ * `POST /api/chat/presence`: a page's heartbeat, every 15 s while it's
+ * open, and the answer is what it shows. `idle`: the page hasn't been
+ * used for 10 minutes. `gone`: it's closing (sent as a beacon), so the
+ * person shows offline now rather than when the beat goes stale. `mode`
+ * sets their choice (absent: leave it). `machines`: whose online state
+ * the page wants too (the machines its messages' agents are on).
+ */
+export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null, machines: Array<string>, };
+
+/**
+ * A public channel in the browser (#118).
+ */
+export type ChatChannel = { id: string, name: string, topic: string, 
+/**
+ * How many of the team are in it.
+ */
+members: number, 
+/**
+ * The reader is one.
+ */
+joined: boolean, archived: boolean, };
+
+/**
+ * `GET /api/chat/teams/{team}/channels?q=`: the team's public channels
+ * (a private one only shows to its members, in their rooms), by name.
+ */
+export type ChatChannels = { channels: Array<ChatChannel>, };
+
+/**
  * `PATCH /api/chat/rooms/{id}/messages/{seq}`: the author's new text.
  */
 export type ChatEdit = { text: string, };
+
+/**
+ * One attached file, as the reader sees it. `url` is control's, for the
+ * room's readers only (a session cookie, or an agent's token): the same
+ * path with `?download=1` downloads it.
+ */
+export type ChatFile = { id: string, name: string, 
+/**
+ * What the bytes were sniffed as, never what the upload said.
+ */
+mime: string, kind: ChatFileKind, size: number, 
+/**
+ * An image's size in pixels, when its header gave it.
+ */
+width?: number, height?: number, url: string, };
+
+/**
+ * How a file is shown: `Image`, `Video` and `Audio` inline (only types
+ * that are safe to render: never SVG or HTML), anything else as a card
+ * that downloads.
+ */
+export type ChatFileKind = "image" | "video" | "audio" | "file";
+
+/**
+ * `POST /api/chat/rooms/{id}/threads/{seq}/follow`: follow the thread, or
+ * stop. Answers its first message.
+ */
+export type ChatFollow = { following: boolean, };
 
 export type ChatFound = { found: Array<ChatHit>, };
 
 export type ChatHit = { room: string, message: ChatMessage, };
 
 /**
+ * `GET`/`PUT /api/chat/keywords`: the words that notify this account as a
+ * mention does (#114), lowercased, at most [`KEYWORDS_MAX`], each at most
+ * [`KEYWORD_CHARS`] long.
+ */
+export type ChatKeywords = { words: Array<string>, };
+
+/**
  * What a room is.
  */
 export type ChatKind = "channel" | "dm" | "pane" | "session" | "archive" | "object";
+
+/**
+ * `POST /api/chat/rooms/{id}/level`: the reader's level for the room; none
+ * is "use my default".
+ */
+export type ChatLevel = { level: NotifyLevel | null, };
 
 /**
  * What `GET /api/chat/live` sends, one JSON object per event (no event
@@ -192,7 +268,7 @@ export type ChatKind = "channel" | "dm" | "pane" | "session" | "archive" | "obje
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
 
 /**
  * A message as the reader sees it.
@@ -234,19 +310,58 @@ imported: string | null,
 agent: ChatAgent | null, 
 /**
  * Posted for the author by a product (M237): a hud box's name, for a
- * review written there. Shown as "<name> via <via>".
+ * review written there. Shown as "<name> via <via>". [`SYSTEM_VIA`]
+ * with no author: a line the platform wrote (#122), shown apart, as
+ * plain text.
  */
-via?: string, };
+via?: string, 
+/**
+ * Who reacted with which emoji (#104), the first reaction first.
+ * Empty for a deleted message and for archives brought in.
+ */
+reactions: Array<ChatReaction>, 
+/**
+ * Files and images attached (#107), in the order they were chosen.
+ * Empty for a deleted message: its files went with it.
+ */
+files: Array<ChatFile>, 
+/**
+ * Pinned (#119).
+ */
+pinned: boolean, 
+/**
+ * Not something said but something that happened (#119): `author` set
+ * the topic or pinned a message. Drawn dim and centered; never
+ * counted unread, pushed, edited or reacted to.
+ */
+system?: ChatSystem, 
+/**
+ * A reply (#106): the number of its thread's first message. The
+ * room's list has it only with `also`; the thread has it always.
+ */
+parent?: number, 
+/**
+ * A reply that was also sent to the channel.
+ */
+also: boolean, 
+/**
+ * The thread of replies this message starts, once it has any.
+ */
+thread?: ChatThread, };
 
 export type ChatMessages = { room: ChatRoom, 
 /**
- * Oldest first.
+ * Oldest first. With `thread`, its replies.
  */
 messages: Array<ChatMessage>, 
 /**
  * There are more in the direction asked.
  */
-more: boolean, };
+more: boolean, 
+/**
+ * With `thread`: the message that starts it, deleted or not.
+ */
+parent?: ChatMessage, };
 
 /**
  * `POST /api/chat/rooms/{id}/mute`: no pushes from this room.
@@ -256,20 +371,35 @@ export type ChatMute = { muted: boolean, };
 /**
  * `POST /api/chat/teams/{team}/channels`: owners and editors make them.
  */
-export type ChatNewChannel = { name: string, };
+export type ChatNewChannel = { name: string, 
+/**
+ * Invite-only and out of the browser (#118); else public.
+ */
+private: boolean, topic: string, 
+/**
+ * Everyone who joins the team later joins it too.
+ */
+auto_join: boolean, };
 
 /**
- * `POST /api/chat/teams/{team}/dms`: the DM with a teammate, made the
- * first time.
+ * `POST /api/chat/teams/{team}/dms`: the DM with a teammate, or (#117,
+ * with `and`) with up to seven more, made the first time: the same people
+ * again reopen it.
  */
-export type ChatNewDm = { with: string, };
+export type ChatNewDm = { with: string, and: Array<string>, };
 
 /**
  * `POST /api/chat/live/open`: the room a page's stream has open (`None`:
  * none, or the page is hidden). Nobody is pushed for a room they have
- * open.
+ * open. A page with several chat blocks (#123) has several: `room` is the
+ * first and `more` the rest.
  */
-export type ChatOpen = { stream: string, room: string | null, };
+export type ChatOpen = { stream: string, room: string | null, more?: Array<string>, 
+/**
+ * The thread open beside the room (#106), by its first message's
+ * number: replies in it aren't pushed for.
+ */
+thread?: number, };
 
 /**
  * `POST /api/chat/targets`: the thread about a pane or a session, or an
@@ -292,7 +422,27 @@ export type ChatPaneRef = { machine: string, pane: string, };
 /**
  * Someone, as the reader sees them.
  */
-export type ChatPerson = { account: string, name: string, };
+export type ChatPerson = { account: string, name: string, 
+/**
+ * They've paused their notifications (do not disturb, #115): a moon
+ * on their avatar. Only that it's on, never until when or why.
+ */
+dnd: boolean, };
+
+/**
+ * One pinned message, in `GET /api/chat/rooms/{id}/pins` (#119).
+ */
+export type ChatPin = { message: ChatMessage, 
+/**
+ * Who pinned it, and when.
+ */
+by: string, by_name: string, at: number, };
+
+/**
+ * `GET /api/chat/rooms/{id}/pins`: the room's pins, the newest first,
+ * as the reader sees the messages.
+ */
+export type ChatPins = { pins: Array<ChatPin>, };
 
 /**
  * `POST /api/chat/rooms/{id}/messages`.
@@ -302,7 +452,29 @@ export type ChatPost = { text: string,
  * A pane the message is about: only one on a machine the poster may
  * reach.
  */
-pane?: ChatPaneRef, quote?: string, };
+pane?: ChatPaneRef, quote?: string, 
+/**
+ * Files uploaded for this message (ids from `POST .../files`, #107):
+ * the poster's own, for this room, not attached before. A message may
+ * be only files.
+ */
+files?: Array<string>, 
+/**
+ * "Notify anyway" (#115): in a DM, push the other person though they
+ * have paused notifications. For this message only; anywhere else it
+ * does nothing.
+ */
+notify_anyway?: boolean, 
+/**
+ * A reply in the thread of this message (#106): the number of a
+ * message of the room that is not itself a reply.
+ */
+parent?: number, 
+/**
+ * With `parent`: also send it to the channel, as Slack's checkbox
+ * does. The room's list shows it too.
+ */
+also?: boolean, };
 
 export type ChatPosted = { seq: number, 
 /**
@@ -320,11 +492,57 @@ unreached: Array<string>,
 pushed: Array<ChatPushed>, };
 
 /**
+ * Who's around, for one reader: themselves and everyone who shares a team
+ * with them (nobody else is named, online or not), and the asked-for
+ * machines they may see that are connected. Machines' agents show as
+ * their machine, not as a person.
+ */
+export type ChatPresence = { 
+/**
+ * The reader's own choice.
+ */
+mode: PresenceMode, people: Array<ChatPresent>, machines_online: Array<string>, };
+
+/**
+ * One teammate's presence.
+ */
+export type ChatPresent = { account: string, state: PresenceState, };
+
+/**
  * Why control pushed someone.
  */
-export type ChatPushWhy = "mention" | "dm";
+export type ChatPushWhy = "mention" | "dm" | "keyword" | "message" | "thread";
 
 export type ChatPushed = { account: string, why: ChatPushWhy, };
+
+/**
+ * `POST`/`DELETE /api/chat/rooms/{id}/messages/{seq}/reactions` (and the
+ * same under `/api/daemon/chat/` for an agent, see [`agent_reactions`]):
+ * add the caller's reaction, or take it back. The emoji is the body of a
+ * post and `?emoji=` of a delete. Both answer the message ([`ChatMessage`]),
+ * and doing either twice is not an error.
+ */
+export type ChatReact = { emoji: string, };
+
+/**
+ * One emoji on a message, as the reader sees it.
+ */
+export type ChatReaction = { emoji: string, 
+/**
+ * All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].
+ */
+count: number, 
+/**
+ * The reader has: a person's own reaction, or for an agent reading,
+ * its own (never the owner's, nor the agent's for the owner).
+ */
+mine: boolean, who: Array<ChatReactor>, };
+
+/**
+ * Someone who reacted: an account, and the machine's agent if it was
+ * the agent reacting for them.
+ */
+export type ChatReactor = { account: string, name: string, agent: ChatAgent | null, };
 
 /**
  * `POST /api/chat/rooms/{id}/read`: read up to here (it only moves
@@ -358,9 +576,18 @@ target: string | null,
  */
 project: string | null, 
 /**
- * A DM's other person.
+ * A DM's other person (for a group DM, the first of `others`).
  */
 with: ChatPerson | null, 
+/**
+ * A DM's other people now, in account order (#117): one in a 1:1, and
+ * a group DM is named after them unless it was renamed (`name`).
+ */
+others: Array<ChatPerson>, 
+/**
+ * An invite-only channel (#118), hidden from the browser.
+ */
+private: boolean, 
 /**
  * The newest message's number, and the reader's read mark.
  */
@@ -371,9 +598,19 @@ last: number, read: number,
  */
 unread: number, mentions: number, 
 /**
- * The reader turned its pushes off.
+ * The reader turned its pushes off (`level` is `nothing`).
  */
 muted: boolean, 
+/**
+ * What the reader is notified of here: their own choice for the room,
+ * else their default for its kind (#113).
+ */
+level: NotifyLevel, 
+/**
+ * Whether `level` is the reader's own choice for this room (else it's
+ * their default), so the menu can offer "use my default".
+ */
+level_own: boolean, 
 /**
  * A channel its team's owners archived: read, not written.
  */
@@ -382,7 +619,20 @@ archived: boolean,
  * Whether the reader may post here now (a DM whose other person left
  * the team, an archive, an archived channel: no).
  */
-writable: boolean, };
+writable: boolean, 
+/**
+ * What people wrote about a channel (#119); empty when nobody has.
+ */
+topic: string, description: string, 
+/**
+ * How many messages are pinned.
+ */
+pins: number, 
+/**
+ * Whether the reader may set the topic: a team can leave it to its
+ * owners.
+ */
+topic_writable: boolean, };
 
 /**
  * A machine whose agents reach a room through its owner's grant (M197).
@@ -400,14 +650,23 @@ powers: Array<string>, };
 
 /**
  * `PATCH /api/chat/rooms/{id}`: a channel renamed or archived, by its
- * team's owners.
+ * team's owners; a DM renamed (`name`).
  */
 export type ChatRoomChange = { name?: string, archived?: boolean, };
 
 /**
  * `GET /api/chat/rooms/{id}`: a room and who sees it (whom `@` reaches).
  */
-export type ChatRoomDetail = { room: ChatRoom, people: Array<ChatPerson>, 
+export type ChatRoomDetail = { room: ChatRoom, 
+/**
+ * Who sees the room: a channel's or a group DM's members (#118).
+ */
+people: Array<ChatPerson>, 
+/**
+ * The reader may add and remove a channel's members: its creator and
+ * its team's owners.
+ */
+can_manage: boolean, 
 /**
  * The agents a live grant lets read or post here (M197), for everyone
  * in the room to see: "Jake's agents on geek can read and post here".
@@ -417,12 +676,183 @@ agents: Array<ChatRoomAgent>, };
 /**
  * `GET /api/chat`: every room the reader sees.
  */
-export type ChatRooms = { rooms: Array<ChatRoom>, };
+export type ChatRooms = { rooms: Array<ChatRoom>, 
+/**
+ * Unread replies in the threads the reader follows, and how many
+ * mention them (#106): the Threads view's badge, which the rooms'
+ * own counts leave out.
+ */
+threads_unread: number, threads_mentions: number, };
+
+/**
+ * `PUT /api/chat/rooms/{id}/messages/{seq}/saved`: save the message for
+ * later (again: it changes the reminder, and un-does "done"). `remind_at`
+ * (ms since the epoch, in the future, at most [`SAVED_REMIND_MAX_MS`] away)
+ * is when to push the reader once.
+ */
+export type ChatSave = { remind_at: number | null, };
+
+/**
+ * `GET /api/chat/saved`: the reader's saved messages in rooms they still
+ * see, the ones to do newest saved first, then the done ones.
+ */
+export type ChatSaved = { items: Array<ChatSavedItem>, };
+
+/**
+ * `PATCH .../saved`: mark a saved message done, or not.
+ */
+export type ChatSavedDone = { done: boolean, };
+
+/**
+ * One saved message, with its room (the reader still sees it).
+ */
+export type ChatSavedItem = { room: string, seq: number, saved_at: number, 
+/**
+ * When it was marked done.
+ */
+done: number | null, 
+/**
+ * When it will push the reader (or did: `reminded`).
+ */
+remind_at: number | null, reminded: boolean, message: ChatMessage, };
+
+/**
+ * A section the account made.
+ */
+export type ChatSection = { 
+/**
+ * Made by the page that creates it (`s_` and hex), stable under rename.
+ */
+id: string, name: string, 
+/**
+ * Room ids, in the order the person dragged them.
+ */
+rooms: Array<string>, };
+
+/**
+ * `GET /api/chat/sidebar`, and the body of `PUT` (which replaces it).
+ */
+export type ChatSidebar = { 
+/**
+ * Starred rooms, in the order they were starred.
+ */
+starred: Array<string>, 
+/**
+ * The account's own sections, top to bottom, below Starred.
+ */
+sections: Array<ChatSection>, 
+/**
+ * Groups shown shut, by key: `starred`, a section's id, or a built-in
+ * group's (`<team>/channels`, `<team>/dms`, `machine/<id>`, `archives`).
+ */
+collapsed: Array<string>, 
+/**
+ * Groups not sorted by name, by the same keys.
+ */
+sorts: { [key in string]: ChatSort }, };
+
+/**
+ * How a group's rooms are ordered.
+ */
+export type ChatSort = "name" | "recent";
+
+/**
+ * What a system line tells of (#119).
+ */
+export type ChatSystem = { 
+/**
+ * `topic` (its `text` is the new topic, empty when cleared),
+ * `description` (likewise), `pin` or `unpin`.
+ */
+kind: string, 
+/**
+ * The pinned message's number, for `pin` and `unpin`.
+ */
+target: number | null, };
 
 /**
  * What a daemon's thread is about.
  */
 export type ChatTargetKind = "pane" | "session" | "object";
+
+/**
+ * `GET`/`PUT /api/chat/teams/{team}/settings`: what a team's owners
+ * decide about its chat (#114). Anyone in the team reads it, for the
+ * composer; only an owner sets it.
+ */
+export type ChatTeamSettings = { 
+/**
+ * `@channel` and `@here` are for owners only.
+ */
+broadcast_owners: boolean, 
+/**
+ * Only owners set a channel's topic (#119).
+ */
+topic_owners: boolean, };
+
+/**
+ * The replies to a message, as one reader sees them (#106).
+ */
+export type ChatThread = { 
+/**
+ * Replies not deleted, and when the newest was written (ms).
+ */
+replies: number, last: number, 
+/**
+ * Who replied, the newest first, at most [`THREAD_REPLIERS`].
+ */
+repliers: Array<ChatPerson>, 
+/**
+ * The reader follows the thread. Always false to an agent.
+ */
+following: boolean, 
+/**
+ * The reader's mark in the thread (a room number), and the replies
+ * after it that aren't theirs (only while they follow), and how many
+ * of those mention them.
+ */
+read: number, unread: number, mentions: number, };
+
+/**
+ * One thread the reader follows, in [`ChatThreads`].
+ */
+export type ChatThreadItem = { room: string, 
+/**
+ * The message that starts it, with its [`ChatThread`].
+ */
+parent: ChatMessage, 
+/**
+ * The newest reply, for the list's preview.
+ */
+latest: ChatMessage | null, };
+
+/**
+ * `POST /api/chat/rooms/{id}/threads/{seq}/read`: read the thread up to
+ * here (a room number; it only moves forward). Answers the thread's first
+ * message, with its [`ChatThread`].
+ */
+export type ChatThreadRead = { seq: number, };
+
+/**
+ * `GET /api/chat/threads`: the threads the reader follows in rooms they
+ * see, the most recently active first (at most [`THREADS_LISTED`]), and
+ * all their unread: the badge on the Threads view.
+ */
+export type ChatThreads = { threads: Array<ChatThreadItem>, unread: number, mentions: number, };
+
+/**
+ * `PUT /api/chat/rooms/{id}/topic`: what a channel's members (or, when
+ * the team says so, its owners) write about it. What's left out stays;
+ * an empty one clears it. Each change posts a system line. Answers the room.
+ */
+export type ChatTopicSet = { topic?: string, description?: string, };
+
+/**
+ * `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read
+ * mark goes to just before it, backwards if need be (#116). The answer is
+ * the room, as the reader now sees it.
+ */
+export type ChatUnread = { seq: number, };
 
 export type Check = { name: string, source: CheckSource, state: CheckState, allow_failure: boolean, 
 /**
@@ -1804,11 +2234,46 @@ assignees: Array<string>, };
 export type Node = { "type": "pane", pane: number, } | { "type": "split", id: number, dir: Dir, children: Array<Child>, };
 
 /**
+ * How much of a room reaches the reader's pushes, and how its unread shows
+ * (#113).
+ */
+export type NotifyLevel = "all" | "mentions" | "nothing";
+
+/**
  * What "needs you" notifications someone other than the owner gets (M29):
  * agents in these sessions, or everything they may edit here ("this team's
  * agents" on a team daemon). The owner always is.
  */
 export type NotifyPref = { all: boolean, sessions: Array<number>, };
+
+/**
+ * `GET /api/notify/prefs`: the account's notification settings.
+ */
+export type NotifyPrefs = { 
+/**
+ * Levels for rooms with none of their own (#113).
+ */
+channels: NotifyLevel, dms: NotifyLevel, 
+/**
+ * Replies in the threads the person follows (#106).
+ */
+threads: NotifyLevel, 
+/**
+ * Snoozed until (ms since the epoch), while that's ahead.
+ */
+snooze_until: number | null, 
+/**
+ * IANA name; the schedule is read in it.
+ */
+tz: string, quiet: Array<QuietHours>, 
+/**
+ * Do not disturb holds back every push, not only chat's.
+ */
+all_notices: boolean, 
+/**
+ * Do not disturb is on now: snoozed, or inside quiet hours.
+ */
+paused: boolean, };
 
 /**
  * `POST /api/notify`: opt in or out of a session's agents, or all of them.
@@ -1818,6 +2283,15 @@ export type NotifyRequest = {
  * One session; none: everything you may edit here.
  */
 session?: number, on: boolean, };
+
+/**
+ * `POST /api/notify/prefs`: what's given changes, the rest stays.
+ */
+export type NotifySet = { channels?: NotifyLevel, dms?: NotifyLevel, threads?: NotifyLevel, 
+/**
+ * Snooze until this time (ms); 0 ends a snooze.
+ */
+snooze_until?: number, tz?: string, quiet?: Array<QuietHours>, all_notices?: boolean, };
 
 /**
  * `POST /api/conversations/open` (M33): a Claude Code conversation as an
@@ -2113,6 +2587,21 @@ who: string, name: string, pic?: string,
 tab?: number, pane?: number, };
 
 /**
+ * What a person chose for their own presence: `auto` (as their pages
+ * say), `away` (shown away while a page is open) or `offline` (shown
+ * offline always).
+ */
+export type PresenceMode = "auto" | "away" | "offline";
+
+/**
+ * How a person's presence shows to the teammates who see it: `active` (a
+ * page of theirs is open and was used in the last 10 minutes), `away`
+ * (open but idle, or set by hand) or `offline` (no page, or they chose to
+ * appear so).
+ */
+export type PresenceState = "active" | "away" | "offline";
+
+/**
  * A whole-tab arrangement for [`Intent::Arrange`].
  */
 export type Preset = "columns" | "grid" | "main_stack";
@@ -2146,6 +2635,18 @@ role: string, members: Array<ProjectMember>, };
  * Which forge.
  */
 export type Provider = "forgejo" | "github" | "gitlab";
+
+/**
+ * Quiet hours on some weekdays: from `from` to `to`, in minutes after
+ * midnight in the account's time zone. A window that ends at or before it
+ * starts runs past midnight, into the next day (its weekday is the day it
+ * starts on).
+ */
+export type QuietHours = { 
+/**
+ * ISO weekdays: 1 Monday … 7 Sunday.
+ */
+days: Array<number>, from: number, to: number, };
 
 /**
  * GitHub's rate limit as last heard, and any backing off (M38).

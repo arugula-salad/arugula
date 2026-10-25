@@ -1,25 +1,25 @@
 // Getting around the chat page (M75): search and Activity (your mentions
-// and what needs you) over control's rooms (M123), and whether the
-// switcher (Ctrl/Cmd+K, drawn by ./chat-rooms) is open.
+// and what needs you) over control's rooms (M123). The switcher
+// (Ctrl/Cmd+K) is ./rooms'.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import { useSubscribe } from "../../shared/ui/hooks";
-import { Markup } from "../../shared/ui/markup";
-import type { ChatStore } from "../../shared/chat-store";
-import type { ChatHit, ChatMessage, ChatRoom } from "../../shared/proto";
-import { AuthorAvatar, roomLabel, roomSigil, machineName } from "../../shared/chat/room";
-import { authorLabel } from "../../shared/chat/agents";
-import { usePlatformApi, type PlatformApi } from "../../shared/platform-api";
-import type { ChatRoute } from "../../shared/chat/route";
+import { useSubscribe } from "../ui/hooks";
+import { Markup } from "../ui/markup";
+import type { ChatStore } from "../chat-store";
+import type { ChatHit, ChatMessage, ChatRoom } from "../proto";
+import { AuthorAvatar, roomLabel, roomSigil, machineName } from "./room";
+import { authorLabel } from "./agents";
+import { usePlatformApi, type PlatformApi } from "../platform-api";
+import type { ChatRoute } from "./route";
 
-function when(at: number): string {
+export function when(at: number): string {
   const d = new Date(at);
   return new Date().toDateString() === d.toDateString()
     ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-function ViewHead({ title, sub, phone }: { title: string; sub?: string; phone: boolean }) {
+export function ViewHead({ title, sub, phone }: { title: string; sub?: string; phone: boolean }) {
   const { nav } = usePlatformApi();
   return (
     <header class="chat-head">
@@ -48,7 +48,7 @@ function RoomHits({ store, hits }: { store: ChatStore; hits: { room: string; m: 
         const unread = !!r && m.seq > r.read && !store.mine(m);
         return (
           <li key={`${room}/${m.seq}`}>
-            <button class={unread ? "chat-hit unread" : "chat-hit"} data-chat-hit={m.seq} data-hit-room={room} onClick={() => api.nav.openRoom(room, m.seq)}>
+            <button class={unread ? "chat-hit unread" : "chat-hit"} data-chat-hit={m.seq} data-hit-room={room} onClick={() => api.nav.openRoom(room, m.seq, m.parent)}>
               <span class="chat-hit-where">
                 <span>{r ? whereOf(r, api) : "a room"}</span>
                 <time>{when(m.at)}</time>
@@ -68,7 +68,7 @@ function RoomHits({ store, hits }: { store: ChatStore; hits: { room: string; m: 
   );
 }
 
-function whereOf(r: ChatRoom, api: PlatformApi): string {
+export function whereOf(r: ChatRoom, api: PlatformApi): string {
   const name = `${roomSigil(r)} ${roomLabel(r, api)}`;
   return r.machine ? `${name} · ${machineName(api, r.machine, r.machine_name ?? "")}` : name;
 }
@@ -192,34 +192,4 @@ export function SearchField({ route, phone }: { route: ChatRoute; phone?: boolea
       }}
     />
   );
-}
-
-// ---- the switcher (Ctrl/Cmd+K)
-
-let switcherOpen = false;
-const switcherListeners = new Set<() => void>();
-
-export function openSwitcher() {
-  switcherOpen = true;
-  switcherListeners.forEach((fn) => fn());
-}
-
-export function closeSwitcher() {
-  switcherOpen = false;
-  switcherListeners.forEach((fn) => fn());
-}
-
-/** Whether the switcher is open, kept current (control's chat, M123,
- * draws its own list of rooms in it). */
-export function useSwitcherOpen(): boolean {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const fn = () => setTick((t) => t + 1);
-    switcherListeners.add(fn);
-    return () => {
-      switcherListeners.delete(fn);
-      switcherOpen = false;
-    };
-  }, []);
-  return switcherOpen;
 }

@@ -41,6 +41,18 @@ pub struct Room {
     pub last_seq: i64,
 }
 
+/// What a channel or DM has beside its [`Room`] (#117, #118), read apart so
+/// the rooms of other kinds stay as they were.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoomMeta {
+    /// An invite-only channel.
+    pub private: bool,
+    /// Whoever joins the team joins it.
+    pub auto_join: bool,
+    /// A DM's people, sorted and joined by `,` when it was made.
+    pub dm_key: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     pub room: String,
@@ -59,14 +71,31 @@ pub struct Message {
     pub agent: Option<String>,
     /// The product that posted it for `author` (M237): a hud box's name.
     pub via: Option<String>,
+    /// A reply: the `seq` of its thread's first message (#106).
+    pub parent: Option<i64>,
+    /// A reply that was also sent to the channel: the room's list has it.
+    pub also: bool,
+}
+
+impl Message {
+    /// Whether the room's own list shows it: not a reply, or one that was
+    /// sent to the channel too.
+    pub fn in_main(&self) -> bool {
+        self.parent.is_none() || self.also
+    }
 }
 
 /// How many of chat's live events are kept for pages that resume
 /// (`Last-Event-ID`, M144): a page that missed more resyncs.
 pub const CHAT_EVENTS_KEPT: u64 = 10_000;
 
+/// How long a `typing` row is kept (#111): well past the 6 s it's worth
+/// sending, so a machine that is a few seconds behind still finds it.
+pub const TYPING_KEPT_MS: u64 = 15_000;
+
 /// One of chat's live events, to add (M144): `live` with the event's JSON
-/// in `body` (and `to`, whom only it goes to), or `changed`, empty.
+/// in `body` (and `to`, whom only it goes to), `typing` (a `live` body that
+/// only streams hear, and only while it's fresh), or `changed`, empty.
 pub struct NewChatEvent<'a> {
     pub kind: &'a str,
     pub body: &'a str,
@@ -81,7 +110,21 @@ pub struct ChatEvent {
     pub kind: String,
     pub body: String,
     pub to: Option<String>,
+    pub at: u64,
 }
+
+/// One of an account's saved messages (#116).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedRow {
+    pub room: String,
+    pub seq: i64,
+    pub saved_at: u64,
+    pub done: Option<u64>,
+    pub remind_at: Option<u64>,
+    pub reminded: bool,
+}
+
+pub use arugula_control_wire::chat::SAVED_MAX;
 
 pub struct NewMessage<'a> {
     pub author: &'a str,
@@ -95,6 +138,10 @@ pub struct NewMessage<'a> {
     pub agent: Option<&'a str>,
     /// Posted by this product for `author` (M237): a hud box's name.
     pub via: Option<&'a str>,
+    /// A reply in the thread of this message (#106), and whether it is
+    /// also sent to the channel.
+    pub parent: Option<i64>,
+    pub also: bool,
 }
 
 /// A message brought in from a machine (M124): its number there, and the
@@ -132,9 +179,18 @@ pub struct Search<'a> {
     pub has_quote: bool,
 }
 
+/// A condition on `chat_messages` rows: not a system line (#119), which
+/// nobody has to read, search for or be mentioned by.
+/// Not a system line: neither #119's (a row of `chat_system`) nor #122's
+/// (no author, `via` "system").
+const NOT_SYSTEM: &str = "(chat_messages.via IS NULL OR chat_messages.via != 'system') AND NOT EXISTS (SELECT 1 FROM chat_system s WHERE s.room = chat_messages.room AND s.seq = chat_messages.seq)";
+
 const ROOM_COLS: &str = "id, scope, kind, name, machine, target, created_by, created, archived, last_seq";
-const MSG_COLS: &str =
-    "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported, agent, via";
+pub(super) const MSG_COLS: &str = "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported, agent, via, parent, also";
+
+/// What the room's own list holds: not the replies, unless sent to the
+/// channel too (#106).
+pub(super) const MAIN: &str = "(parent IS NULL OR also = TRUE)";
 
 fn room_row(r: &Row) -> Result<Room> {
     Ok(Room {
@@ -151,7 +207,7 @@ fn room_row(r: &Row) -> Result<Room> {
     })
 }
 
-fn msg_row(r: &Row) -> Result<Message> {
+pub(super) fn msg_row(r: &Row) -> Result<Message> {
     let mentions: String = r.get(8)?;
     Ok(Message {
         room: r.get(0)?,
@@ -168,6 +224,8 @@ fn msg_row(r: &Row) -> Result<Message> {
         imported: r.get(11)?,
         agent: r.get(12)?,
         via: r.get(13)?,
+        parent: r.get(14)?,
+        also: r.get(15)?,
     })
 }
 
@@ -263,16 +321,30 @@ impl Db {
             .optional()
     }
 
-    /// The DM between two people in a scope.
+    /// The DM from before group DMs between two people in a scope: only
+    /// theirs (no `dm_key`), and nobody else in it.
     pub fn chat_dm(&self, scope: &str, a: &str, b: &str) -> Result<Option<Room>> {
         self.c()
             .query_row(
                 &format!(
-                    "SELECT {ROOM_COLS} FROM chat_rooms r WHERE scope = ?1 AND kind = 'dm'
+                    "SELECT {ROOM_COLS} FROM chat_rooms r WHERE scope = ?1 AND kind = 'dm' AND dm_key IS NULL
                      AND EXISTS (SELECT 1 FROM chat_members WHERE room = r.id AND account = ?2)
-                     AND EXISTS (SELECT 1 FROM chat_members WHERE room = r.id AND account = ?3)"
+                     AND EXISTS (SELECT 1 FROM chat_members WHERE room = r.id AND account = ?3)
+                     AND (SELECT count(*) FROM chat_members WHERE room = r.id) = 2"
                 ),
                 params![scope, a, b],
+                room_row,
+            )
+            .optional()
+    }
+
+    /// The DM of these people (sorted, joined by `,`: [`dm_key`]) in a
+    /// scope, whoever of them is still in it.
+    pub fn chat_dm_of(&self, scope: &str, key: &str) -> Result<Option<Room>> {
+        self.c()
+            .query_row(
+                &format!("SELECT {ROOM_COLS} FROM chat_rooms WHERE scope = ?1 AND kind = 'dm' AND dm_key = ?2"),
+                params![scope, key],
                 room_row,
             )
             .optional()
@@ -285,11 +357,25 @@ impl Db {
     /// [`super::Taken`] for a channel name, or a pane's or an object's room,
     /// already there.
     pub fn add_chat_room(&self, room: &Room, members: &[&str], project: Option<&str>) -> Result<()> {
+        self.add_chat_room_with(room, members, project, &RoomMeta::default())
+    }
+
+    /// [`add_chat_room`](Self::add_chat_room) for a channel or DM with its
+    /// [`RoomMeta`]. A DM's `dm_key` is unique in its scope: [`super::Taken`]
+    /// when someone made the same DM just now.
+    pub fn add_chat_room_with(
+        &self,
+        room: &Room,
+        members: &[&str],
+        project: Option<&str>,
+        meta: &RoomMeta,
+    ) -> Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
         tx.execute(
-            "INSERT INTO chat_rooms (id, scope, kind, name, machine, target, created_by, created, project_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO chat_rooms (id, scope, kind, name, machine, target, created_by, created, project_id,
+                                     private, auto_join, dm_key)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 room.id,
                 room.scope,
@@ -299,7 +385,10 @@ impl Db {
                 room.target,
                 room.created_by,
                 room.created,
-                project
+                project,
+                meta.private as i64,
+                meta.auto_join as i64,
+                meta.dm_key
             ],
         )
         .map_err(taken)?;
@@ -337,9 +426,91 @@ impl Db {
         )
     }
 
+    /// The rooms an agent grant over a scope reaches (#122), when it's
+    /// given: the channels of the team whose default project it is, or the
+    /// DMs of the account. Not object threads (a grant over a project
+    /// reaches every issue's: they show their agents when opened).
+    pub fn chat_rooms_reached(&self, scope_kind: &str, scope_id: &str) -> Result<Vec<Room>> {
+        let c = self.c();
+        let (sql, arg) = match scope_kind {
+            "project" => (
+                format!(
+                    "SELECT {ROOM_COLS} FROM chat_rooms WHERE kind = 'channel' AND archived IS NULL AND scope IN
+                     (SELECT 'team:' || team_id FROM projects WHERE id = ?1 AND is_default = TRUE)"
+                ),
+                scope_id,
+            ),
+            "account" => (
+                format!(
+                    "SELECT {ROOM_COLS} FROM chat_rooms WHERE kind = 'dm' AND archived IS NULL
+                     AND id IN (SELECT room FROM chat_members WHERE account = ?1)"
+                ),
+                scope_id,
+            ),
+            _ => return Ok(vec![]),
+        };
+        c.query_map(&sql, params![arg], room_row)
+    }
+
     pub fn chat_members(&self, room: &str) -> Result<Vec<String>> {
         self.c()
             .query_map("SELECT account FROM chat_members WHERE room = ?1 ORDER BY account", params![room], |r| r.get(0))
+    }
+
+    /// A room's members with when each reads from (ms), in account order.
+    pub fn chat_member_rows(&self, room: &str) -> Result<Vec<(String, u64)>> {
+        self.c().query_map(
+            "SELECT account, from_ms FROM chat_members WHERE room = ?1 ORDER BY account",
+            params![room],
+            |r| Ok((r.get::<String>(0)?, r.get::<u64>(1)?)),
+        )
+    }
+
+    /// Add `account` to a channel or DM, reading from `from` (ms): a
+    /// channel's from the start, a DM it came back to from now. `false`:
+    /// it already was.
+    pub fn add_chat_member(&self, room: &str, account: &str, from: u64) -> Result<bool> {
+        Ok(self.c().execute(
+            "INSERT INTO chat_members (room, account, from_ms) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING",
+            params![room, account, from as i64],
+        )? > 0)
+    }
+
+    /// Take `account` out of a room's members. `false`: it wasn't one.
+    pub fn remove_chat_member(&self, room: &str, account: &str) -> Result<bool> {
+        Ok(self.c().execute("DELETE FROM chat_members WHERE room = ?1 AND account = ?2", params![room, account])? > 0)
+    }
+
+    /// [`RoomMeta`] of these rooms (a room that has none of the kinds that
+    /// use it is there with the defaults), in one statement.
+    pub fn chat_room_meta(&self, rooms: &[&str]) -> Result<std::collections::HashMap<String, RoomMeta>> {
+        let mut out = std::collections::HashMap::new();
+        if rooms.is_empty() {
+            return Ok(out);
+        }
+        let c = self.c();
+        let rows = c.query_map(
+            &format!("SELECT id, private, auto_join, dm_key FROM chat_rooms WHERE {}", in_json(&c, "id", 1)),
+            params![json_list(rooms)?],
+            |r| {
+                Ok((
+                    r.get::<String>(0)?,
+                    RoomMeta { private: r.get::<i64>(1)? != 0, auto_join: r.get::<i64>(2)? != 0, dm_key: r.get(3)? },
+                ))
+            },
+        )?;
+        out.extend(rows);
+        Ok(out)
+    }
+
+    /// A team's channels, public and private, by name: the browser reads
+    /// the public ones.
+    pub fn chat_team_channels(&self, scope: &str) -> Result<Vec<Room>> {
+        self.c().query_map(
+            &format!("SELECT {ROOM_COLS} FROM chat_rooms WHERE scope = ?1 AND kind = 'channel' ORDER BY name"),
+            params![scope],
+            room_row,
+        )
     }
 
     /// How many channels a scope has.
@@ -380,39 +551,7 @@ impl Db {
     pub fn add_chat_message(&self, room: &str, m: &NewMessage) -> Result<i64> {
         let mut c = self.c();
         let tx = c.transaction()?;
-        let bytes = (m.text.len() + m.quote.map_or(0, str::len)) as i64;
-        let seq: i64 = tx.query_row(
-            "UPDATE chat_rooms SET last_seq = last_seq + 1, bytes = bytes + ?2 WHERE id = ?1 RETURNING last_seq",
-            params![room, bytes],
-            |r| r.get(0),
-        )?;
-        tx.execute(
-            "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, agent, via)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![
-                room,
-                seq,
-                m.author,
-                m.at,
-                m.text,
-                m.quote,
-                m.ref_machine,
-                m.ref_pane,
-                serde_json::to_string(m.mentions)?,
-                m.agent,
-                m.via
-            ],
-        )?;
-        if m.agent.is_some() {
-            tx.commit()?;
-            return Ok(seq);
-        }
-        tx.execute(
-            "INSERT INTO chat_reads (room, account, seq) VALUES (?1, ?2, ?3)
-             ON CONFLICT (room, account) DO UPDATE
-             SET seq = CASE WHEN excluded.seq > chat_reads.seq THEN excluded.seq ELSE chat_reads.seq END",
-            params![room, m.author, seq],
-        )?;
+        let seq = add_message_in(&tx, room, m, None)?;
         tx.commit()?;
         Ok(seq)
     }
@@ -424,19 +563,19 @@ impl Db {
         let n = i64::from(limit) + 1;
         let mut ms: Vec<Message> = match page {
             Page::After(after) => c.query_map(
-                &format!("SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3"),
+                &format!("SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq > ?2 AND {MAIN} ORDER BY seq LIMIT ?3"),
                 params![room, after, n],
                 msg_row,
             )?,
             Page::Before(before) => c.query_map(
                 &format!(
-                    "SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq < ?2 ORDER BY seq DESC LIMIT ?3"
+                    "SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq < ?2 AND {MAIN} ORDER BY seq DESC LIMIT ?3"
                 ),
                 params![room, before, n],
                 msg_row,
             )?,
             Page::Newest => c.query_map(
-                &format!("SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 ORDER BY seq DESC LIMIT ?2"),
+                &format!("SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND {MAIN} ORDER BY seq DESC LIMIT ?2"),
                 params![room, n],
                 msg_row,
             )?,
@@ -666,6 +805,9 @@ impl Db {
             "UPDATE chat_rooms SET bytes = CASE WHEN bytes > ?2 THEN bytes - ?2 ELSE 0 END WHERE id = ?1",
             params![room, old],
         )?;
+        super::chat_reactions::drop_for_message(&tx, room, seq)?;
+        super::chat_files::drop_for_message(&tx, room, seq)?;
+        super::chat_pins::drop_for_message(&tx, room, seq)?;
         tx.commit()?;
         Ok(())
     }
@@ -691,9 +833,9 @@ impl Db {
     /// Chat's live events after `after`, oldest first, at most `limit`.
     pub fn chat_events_after(&self, after: u64, limit: u32) -> Result<Vec<ChatEvent>> {
         self.c().query_map(
-            "SELECT seq, kind, body, to_account FROM chat_events WHERE seq > ?1 ORDER BY seq LIMIT ?2",
+            "SELECT seq, kind, body, to_account, at FROM chat_events WHERE seq > ?1 ORDER BY seq LIMIT ?2",
             params![after, limit],
-            |r| Ok(ChatEvent { seq: r.get(0)?, kind: r.get(1)?, body: r.get(2)?, to: r.get(3)? }),
+            |r| Ok(ChatEvent { seq: r.get(0)?, kind: r.get(1)?, body: r.get(2)?, to: r.get(3)?, at: r.get(4)? }),
         )
     }
 
@@ -713,6 +855,16 @@ impl Db {
         )
     }
 
+    /// Drop typing rows older than [`TYPING_KEPT_MS`]: they're only ever
+    /// worth a few seconds, so they go far sooner than the window of real
+    /// events and never crowd it. How many went.
+    pub fn prune_typing(&self, now: u64) -> Result<usize> {
+        self.c().execute(
+            "DELETE FROM chat_events WHERE kind = 'typing' AND at < ?1",
+            params![now.saturating_sub(TYPING_KEPT_MS)],
+        )
+    }
+
     /// An account's read mark in a room, and whether it's muted.
     pub fn chat_mark(&self, room: &str, account: &str) -> Result<(i64, bool)> {
         Ok(self
@@ -727,16 +879,29 @@ impl Db {
     }
 
     /// [`chat_mark`](Self::chat_mark) for a page of rooms, in one
-    /// statement: the rooms with a mark (the rest are `(0, false)`).
-    pub fn chat_marks(&self, rooms: &[&str], account: &str) -> Result<std::collections::HashMap<String, (i64, bool)>> {
+    /// statement: the rooms with a mark (the rest are `(0, false)`), with
+    /// the reader's own notification level for each where they chose one
+    /// (#113), so a page needn't read those apart.
+    #[allow(clippy::type_complexity)]
+    pub fn chat_marks(
+        &self,
+        rooms: &[&str],
+        account: &str,
+    ) -> Result<std::collections::HashMap<String, (i64, bool, Option<arugula_control_wire::chat::NotifyLevel>)>> {
         if rooms.is_empty() {
             return Ok(Default::default());
         }
         let c = self.c();
         let rows = c.query_map(
-            &format!("SELECT room, seq, muted FROM chat_reads WHERE account = ?1 AND {}", in_json(&c, "room", 2)),
+            &format!(
+                "SELECT room, seq, muted, level FROM chat_reads WHERE account = ?1 AND {}",
+                in_json(&c, "room", 2)
+            ),
             params![account, json_list(rooms)?],
-            |r| Ok((r.get::<String>(0)?, (r.get(1)?, r.get(2)?))),
+            |r| {
+                let level: Option<String> = r.get(3)?;
+                Ok((r.get::<String>(0)?, (r.get(1)?, r.get(2)?, level.as_deref().map(crate::db::notify::level))))
+            },
         )?;
         Ok(rows.into_iter().collect())
     }
@@ -750,11 +915,158 @@ impl Db {
         )? > 0)
     }
 
+    /// Move a read mark to `seq`, forward or back (mark as unread, #116).
+    pub fn set_chat_read_to(&self, room: &str, account: &str, seq: i64) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO chat_reads (room, account, seq) VALUES (?1, ?2, ?3)
+             ON CONFLICT (room, account) DO UPDATE SET seq = excluded.seq",
+            params![room, account, seq],
+        )?;
+        Ok(())
+    }
+
+    /// Save a message for `account` (#116), or save it again: `done` is
+    /// undone, the reminder replaced and armed. Past [`SAVED_MAX`] the
+    /// oldest done items go, then the oldest.
+    pub fn save_chat_message(
+        &self,
+        account: &str,
+        room: &str,
+        seq: i64,
+        at: u64,
+        remind_at: Option<u64>,
+    ) -> Result<()> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        tx.execute(
+            "INSERT INTO chat_saved (account, room, seq, saved_at, remind_at, reminded) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (account, room, seq) DO UPDATE
+             SET done_at = NULL, remind_at = excluded.remind_at, reminded = excluded.reminded",
+            params![account, room, seq, at, remind_at, false],
+        )?;
+        tx.execute(
+            "DELETE FROM chat_saved WHERE account = ?1 AND (room, seq) IN (
+                 SELECT room, seq FROM chat_saved WHERE account = ?1
+                 ORDER BY (done_at IS NOT NULL), saved_at DESC LIMIT 1000000 OFFSET ?2)",
+            params![account, SAVED_MAX as i64],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Mark a saved message done or not. Whether it was saved.
+    pub fn set_chat_saved_done(&self, account: &str, room: &str, seq: i64, done: Option<u64>) -> Result<bool> {
+        Ok(self.c().execute(
+            "UPDATE chat_saved SET done_at = ?4 WHERE account = ?1 AND room = ?2 AND seq = ?3",
+            params![account, room, seq, done],
+        )? > 0)
+    }
+
+    /// Stop keeping a saved message. Whether it was saved.
+    pub fn unsave_chat_message(&self, account: &str, room: &str, seq: i64) -> Result<bool> {
+        Ok(self.c().execute(
+            "DELETE FROM chat_saved WHERE account = ?1 AND room = ?2 AND seq = ?3",
+            params![account, room, seq],
+        )? > 0)
+    }
+
+    /// An account's saved messages: to do first, newest saved first, then
+    /// the done ones, newest done first.
+    pub fn chat_saved(&self, account: &str) -> Result<Vec<SavedRow>> {
+        self.c().query_map(
+            "SELECT room, seq, saved_at, done_at, remind_at, reminded FROM chat_saved WHERE account = ?1
+             ORDER BY (done_at IS NOT NULL), coalesce(done_at, saved_at) DESC, seq DESC",
+            params![account],
+            |r| {
+                Ok(SavedRow {
+                    room: r.get(0)?,
+                    seq: r.get(1)?,
+                    saved_at: r.get(2)?,
+                    done: r.get(3)?,
+                    remind_at: r.get(4)?,
+                    reminded: r.get(5)?,
+                })
+            },
+        )
+    }
+
+    /// Reminders due by `now` that nobody has sent yet, claimed: each is
+    /// marked reminded in the same statement that returns it, so of two
+    /// machines running the check one gets it. Done items don't remind.
+    pub fn claim_chat_reminders(&self, now: u64, limit: u32) -> Result<Vec<(String, String, i64)>> {
+        self.c().query_map(
+            "UPDATE chat_saved SET reminded = ?3
+             WHERE (account, room, seq) IN (
+                 SELECT account, room, seq FROM chat_saved
+                 WHERE remind_at IS NOT NULL AND remind_at <= ?1 AND reminded = ?4 AND done_at IS NULL
+                 ORDER BY remind_at LIMIT ?2)
+             AND reminded = ?4
+             RETURNING account, room, seq",
+            params![now, limit, true, false],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    }
+
     pub fn set_chat_muted(&self, room: &str, account: &str, muted: bool) -> Result<()> {
         self.c().execute(
             "INSERT INTO chat_reads (room, account, muted) VALUES (?1, ?2, ?3)
              ON CONFLICT (room, account) DO UPDATE SET muted = excluded.muted",
             params![room, account, muted],
+        )?;
+        Ok(())
+    }
+
+    /// The words that notify `account` as a mention does (#114).
+    pub fn chat_keywords(&self, account: &str) -> Result<Vec<String>> {
+        let words: Option<String> = self
+            .c()
+            .query_row("SELECT words FROM chat_keywords WHERE account = ?1", params![account], |r| r.get(0))
+            .optional()?;
+        Ok(words.and_then(|w| serde_json::from_str(&w).ok()).unwrap_or_default())
+    }
+
+    /// [`chat_keywords`](Self::chat_keywords) for a room's audience, those
+    /// who have any.
+    pub fn chat_keywords_of(&self, accounts: &[String]) -> Result<Vec<(String, Vec<String>)>> {
+        if accounts.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        let rows = c.query_map(
+            &format!("SELECT account, words FROM chat_keywords WHERE {}", in_json(&c, "account", 1)),
+            params![json_list(accounts)?],
+            |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?)),
+        )?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(a, w)| Some((a, serde_json::from_str::<Vec<String>>(&w).ok().filter(|w| !w.is_empty())?)))
+            .collect())
+    }
+
+    pub fn set_chat_keywords(&self, account: &str, words: &[String]) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO chat_keywords (account, words) VALUES (?1, ?2)
+             ON CONFLICT (account) DO UPDATE SET words = excluded.words",
+            params![account, serde_json::to_string(words)?],
+        )?;
+        Ok(())
+    }
+
+    /// Whether `@channel` and `@here` are for a team's owners only (#114).
+    pub fn chat_broadcast_owners(&self, team: &str) -> Result<bool> {
+        Ok(self
+            .c()
+            .query_row("SELECT broadcast_owners FROM chat_team_settings WHERE team = ?1", params![team], |r| r.get(0))
+            .optional()?
+            .unwrap_or(false))
+    }
+
+    pub fn set_chat_team_settings(&self, team: &str, s: arugula_control_wire::chat::ChatTeamSettings) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO chat_team_settings (team, broadcast_owners, topic_owners) VALUES (?1, ?2, ?3)
+             ON CONFLICT (team) DO UPDATE SET broadcast_owners = excluded.broadcast_owners,
+             topic_owners = excluded.topic_owners",
+            params![team, s.broadcast_owners, s.topic_owners],
         )?;
         Ok(())
     }
@@ -772,7 +1084,7 @@ impl Db {
             &format!(
                 "SELECT count(*), CAST(coalesce(sum(CASE WHEN {mentioned} THEN 1 ELSE 0 END), 0) AS BIGINT)
                  FROM chat_messages WHERE room = ?1 AND seq > ?2 AND (author != ?3 OR agent IS NOT NULL) AND deleted IS NULL AND at >= ?4
-                 AND imported_id IS NULL"
+                 AND imported_id IS NULL AND {NOT_SYSTEM} AND {MAIN}"
             ),
             params![room, read, account, from],
             |r| Ok((r.get(0)?, r.get(1)?)),
@@ -815,6 +1127,9 @@ impl Db {
                  FROM ({want}) w
                  LEFT JOIN chat_messages m ON m.room = w.room AND m.seq > w.since AND (m.author != ?1 OR m.agent IS NOT NULL)
                      AND m.deleted IS NULL AND m.at >= w.floor AND m.imported_id IS NULL
+                     AND (m.via IS NULL OR m.via != 'system')
+                     AND NOT EXISTS (SELECT 1 FROM chat_system s WHERE s.room = m.room AND s.seq = m.seq)
+                     AND (m.parent IS NULL OR m.also = TRUE)
                  GROUP BY w.room"
             ),
             params![account, asks],
@@ -823,8 +1138,31 @@ impl Db {
         Ok(rows.into_iter().collect())
     }
 
-    /// Messages in these rooms that match, newest first.
+    /// Messages in these rooms that match, newest first: by their words,
+    /// or (#107) by a file's name that has all the words.
     pub fn chat_search(&self, rooms: &[String], s: &Search, limit: u32) -> Result<Vec<Message>> {
+        let mut hits = self.chat_search_text(rooms, s, limit)?;
+        if s.words.is_empty() || s.has_quote {
+            return Ok(hits);
+        }
+        let words: Vec<String> = s.words.iter().map(|w| w.text.clone()).collect();
+        for (room, seq) in self.chat_file_name_hits(rooms, &words, limit)? {
+            if hits.iter().any(|m| m.room == room && m.seq == seq) {
+                continue;
+            }
+            if let Some(m) = self.chat_message(&room, seq)?
+                && m.deleted.is_none()
+                && s.author.is_none_or(|a| m.author == a)
+            {
+                hits.push(m);
+            }
+        }
+        hits.sort_by_key(|m| std::cmp::Reverse(m.at));
+        hits.truncate(limit as usize);
+        Ok(hits)
+    }
+
+    fn chat_search_text(&self, rooms: &[String], s: &Search, limit: u32) -> Result<Vec<Message>> {
         if rooms.is_empty() {
             return Ok(vec![]);
         }
@@ -832,7 +1170,11 @@ impl Db {
         let cols = MSG_COLS.split(", ").map(|c| format!("m.{c}")).collect::<Vec<_>>().join(", ");
         let mut sql = format!("SELECT {cols} FROM chat_messages m");
         let mut args: Vec<String> = Vec::new();
-        let mut wh = vec![format!("m.room IN ({})", marks(rooms.len())), "m.deleted IS NULL".to_owned()];
+        let mut wh = vec![
+            format!("m.room IN ({})", marks(rooms.len())),
+            "m.deleted IS NULL".to_owned(),
+            NOT_SYSTEM.replace("chat_messages.", "m."),
+        ];
         if !s.words.is_empty() {
             match c.dialect() {
                 Dialect::Sqlite => {
@@ -891,24 +1233,46 @@ impl Db {
         rows.into_iter().map(|(k, body)| Ok((k, serde_json::from_str(&body)?))).collect()
     }
 
-    /// [`chat_members`](Self::chat_members) for a page of rooms, in one
-    /// statement: by room, each in account order (a room with none isn't
-    /// there).
-    pub fn chat_members_of(&self, rooms: &[&str]) -> Result<std::collections::HashMap<String, Vec<String>>> {
-        let mut out: std::collections::HashMap<String, Vec<String>> = Default::default();
+    /// [`chat_member_rows`](Self::chat_member_rows) and
+    /// [`chat_room_meta`](Self::chat_room_meta) for a page of rooms, in
+    /// one statement (a chat list's budget is a few): the members by room,
+    /// each in account order (a room with none isn't there), and every
+    /// room's meta.
+    #[allow(clippy::type_complexity)]
+    pub fn chat_members_of(
+        &self,
+        rooms: &[&str],
+    ) -> Result<(std::collections::HashMap<String, Vec<(String, u64)>>, std::collections::HashMap<String, RoomMeta>)>
+    {
+        let mut members: std::collections::HashMap<String, Vec<(String, u64)>> = Default::default();
+        let mut metas: std::collections::HashMap<String, RoomMeta> = Default::default();
         if rooms.is_empty() {
-            return Ok(out);
+            return Ok((members, metas));
         }
         let c = self.c();
         let rows = c.query_map(
-            &format!("SELECT room, account FROM chat_members WHERE {} ORDER BY room, account", in_json(&c, "room", 1)),
+            &format!(
+                "SELECT r.id, m.account, m.from_ms, r.private, r.auto_join, r.dm_key
+                 FROM chat_rooms r LEFT JOIN chat_members m ON m.room = r.id
+                 WHERE {} ORDER BY r.id, m.account",
+                in_json(&c, "r.id", 1)
+            ),
             params![json_list(rooms)?],
-            |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?)),
+            |r| {
+                let meta =
+                    RoomMeta { private: r.get::<i64>(3)? != 0, auto_join: r.get::<i64>(4)? != 0, dm_key: r.get(5)? };
+                let member =
+                    r.get::<Option<String>>(1)?.map(|a| Ok::<_, anyhow::Error>((a, r.get::<u64>(2)?))).transpose()?;
+                Ok((r.get::<String>(0)?, member, meta))
+            },
         )?;
-        for (room, account) in rows {
-            out.entry(room).or_default().push(account);
+        for (room, member, meta) in rows {
+            if let Some(m) = member {
+                members.entry(room.clone()).or_default().push(m);
+            }
+            metas.insert(room, meta);
         }
-        Ok(out)
+        Ok((members, metas))
     }
 
     pub fn set_chat_readers(
@@ -928,13 +1292,84 @@ impl Db {
     }
 }
 
+/// [`Db::add_chat_message`] inside a transaction. `system` makes it a
+/// system line (#119): what happened, and to which message.
+pub(super) fn add_message_in(
+    tx: &impl Sql,
+    room: &str,
+    m: &NewMessage,
+    system: Option<(&str, Option<i64>)>,
+) -> Result<i64> {
+    let bytes = (m.text.len() + m.quote.map_or(0, str::len)) as i64;
+    let seq: i64 = tx.query_row(
+        "UPDATE chat_rooms SET last_seq = last_seq + 1, bytes = bytes + ?2 WHERE id = ?1 RETURNING last_seq",
+        params![room, bytes],
+        |r| r.get(0),
+    )?;
+    tx.execute(
+        "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, agent, via, parent, also)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            room,
+            seq,
+            m.author,
+            m.at,
+            m.text,
+            m.quote,
+            m.ref_machine,
+            m.ref_pane,
+            serde_json::to_string(m.mentions)?,
+            m.agent,
+            m.via,
+            m.parent,
+            m.also
+        ],
+    )?;
+    if let Some(parent) = m.parent {
+        super::chat_threads::replied(tx, room, parent, seq, m)?;
+        // A reply read in its thread says nothing of the room's list: only
+        // one sent to the channel too is read there as well.
+        if !m.also {
+            return Ok(seq);
+        }
+    }
+    if let Some((kind, target)) = system {
+        tx.execute(
+            "INSERT INTO chat_system (room, seq, kind, target) VALUES (?1, ?2, ?3, ?4)",
+            params![room, seq, kind, target],
+        )?;
+    }
+    // A system line reads nothing: whoever pinned hasn't read what came
+    // before, and a grant's line (#122) has no author to have read it.
+    if m.agent.is_none() && system.is_none() && !m.author.is_empty() {
+        tx.execute(
+            "INSERT INTO chat_reads (room, account, seq) VALUES (?1, ?2, ?3)
+             ON CONFLICT (room, account) DO UPDATE
+             SET seq = CASE WHEN excluded.seq > chat_reads.seq THEN excluded.seq ELSE chat_reads.seq END",
+            params![room, m.author, seq],
+        )?;
+    }
+    Ok(seq)
+}
+
 /// Every room in a scope, and all that's in them.
 pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::Param) -> Result<()> {
     // Which first: `cond` may read `chat_members`, which goes too.
     let ids: Vec<String> =
         tx.query_map(&format!("SELECT id FROM chat_rooms WHERE {cond}"), params![arg], |r| r.get(0))?;
     for id in ids {
-        for table in ["chat_messages", "chat_reads", "chat_members"] {
+        for table in [
+            "chat_messages",
+            "chat_reads",
+            "chat_members",
+            "chat_reactions",
+            "chat_saved",
+            "chat_files",
+            "chat_topics",
+            "chat_pins",
+            "chat_system",
+            "chat_thread_reads",
+        ] {
             tx.execute(&format!("DELETE FROM {table} WHERE room = ?1"), params![id])?;
         }
         tx.execute("DELETE FROM chat_rooms WHERE id = ?1", params![id])?;
@@ -951,19 +1386,39 @@ pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::
 ///   author ("a deleted account");
 /// - it leaves no trace in others' mentions, read marks or reader lists.
 pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], disband: &[String]) -> Result<()> {
-    drop_rooms_where(tx, "kind = 'dm' AND id IN (SELECT room FROM chat_members WHERE account = ?1)", account)?;
+    // A group DM goes on for the rest (#117); one left with two or fewer
+    // goes, both sides.
+    drop_rooms_where(
+        tx,
+        "kind = 'dm' AND id IN (SELECT room FROM chat_members WHERE account = ?1)
+         AND (SELECT count(*) FROM chat_members m WHERE m.room = chat_rooms.id) <= 2",
+        account,
+    )?;
     for m in machines {
         drop_rooms_where(tx, "scope = 'machine:' || ?1", m)?;
         tx.execute("DELETE FROM chat_readers WHERE machine = ?1", params![m])?;
     }
     for t in disband {
         drop_rooms_where(tx, "scope = 'team:' || ?1", t)?;
+        tx.execute("DELETE FROM chat_team_settings WHERE team = ?1", params![t])?;
     }
     // Its machines' old conversations, archived under it (M124).
     drop_rooms_where(tx, "scope = 'account:' || ?1", account)?;
     // The threads on objects in projects that went with it (its personal
     // ones, its disbanded teams'): projects are erased first.
     drop_rooms_where(tx, "kind = ?1 AND scope NOT IN (SELECT 'project:' || id FROM projects)", "object")?;
+    // Reactions on the messages it blanks, and those it made.
+    tx.execute(
+        "DELETE FROM chat_reactions WHERE account = ?1 OR EXISTS (SELECT 1 FROM chat_messages m
+         WHERE m.room = chat_reactions.room AND m.seq = chat_reactions.seq AND m.author = ?1)",
+        params![account],
+    )?;
+    // Files on the messages it blanks, and any it uploaded and never posted.
+    tx.execute(
+        "DELETE FROM chat_files WHERE account = ?1 OR EXISTS (SELECT 1 FROM chat_messages m
+         WHERE m.room = chat_files.room AND m.seq = chat_files.seq AND m.author = ?1)",
+        params![account],
+    )?;
     tx.execute(
         "UPDATE chat_messages SET author = '', text = '', quote = NULL, ref_machine = NULL, ref_pane = NULL,
          mentions = '[]', imported = NULL, agent = NULL, via = NULL, deleted = coalesce(deleted, ?2) WHERE author = ?1",
@@ -990,8 +1445,16 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     tx.execute(mentions, params![account])?;
     tx.execute(readers, params![account])?;
     tx.execute("UPDATE chat_rooms SET created_by = '' WHERE created_by = ?1", params![account])?;
+    tx.execute("UPDATE chat_topics SET author = '' WHERE author = ?1", params![account])?;
+    tx.execute("DELETE FROM chat_pins WHERE author = ?1", params![account])?;
     tx.execute("DELETE FROM chat_reads WHERE account = ?1", params![account])?;
+    tx.execute("DELETE FROM chat_thread_reads WHERE account = ?1", params![account])?;
+    tx.execute("DELETE FROM chat_keywords WHERE account = ?1", params![account])?;
+    tx.execute("DELETE FROM notify_prefs WHERE account = ?1", params![account])?;
+    tx.execute("DELETE FROM chat_saved WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_members WHERE account = ?1", params![account])?;
+    tx.execute("DELETE FROM chat_presence WHERE account = ?1", params![account])?;
+    tx.execute("DELETE FROM chat_sidebars WHERE account = ?1", params![account])?;
     // Its own live events (its read marks) keep their numbers, naming no one.
     tx.execute(
         "UPDATE chat_events SET kind = 'changed', body = '', to_account = NULL WHERE to_account = ?1",
@@ -1046,6 +1509,8 @@ mod tests {
                 mentions,
                 agent: None,
                 via: None,
+                parent: None,
+                also: false,
             },
         )
         .unwrap()
@@ -1105,6 +1570,8 @@ mod tests {
                     mentions: &[],
                     agent: None,
                     via: None,
+                    parent: None,
+                    also: false,
                 },
             })
             .collect();
@@ -1181,6 +1648,24 @@ mod tests {
         assert_eq!(found(&db, &["r1"], "fix*"), vec![3, 1]);
         assert_eq!(found(&db, &["r1"], "fix again"), vec![3], "every word");
         assert!(found(&db, &["r1"], "--").is_empty(), "a word with no letters finds nothing");
+    }
+
+    /// A group DM (#117) goes on for the rest when one of its people is
+    /// erased; one left with two or fewer goes, as a 1:1 always did.
+    #[test]
+    fn erasing_an_account_leaves_a_group_dm_to_the_rest() {
+        let db = Db::test();
+        room(&db, "trio", "team:t", "dm", &["gone1", "b2", "c3"]);
+        room(&db, "pair", "team:t", "dm", &["gone1", "b2"]);
+        room(&db, "other", "team:t", "dm", &["b2", "c3"]);
+        let mut c = db.c();
+        let tx = c.transaction().unwrap();
+        erase_account(&tx, "gone1", &[], &[]).unwrap();
+        tx.commit().unwrap();
+        drop(c);
+        assert_eq!(db.chat_members("trio").unwrap(), ["b2", "c3"]);
+        assert!(db.chat_room("pair").unwrap().is_none());
+        assert!(db.chat_room("other").unwrap().is_some());
     }
 
     #[test]

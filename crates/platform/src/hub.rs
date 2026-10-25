@@ -281,6 +281,14 @@ pub trait HubPort: Send + Sync {
         Box::pin(async { anyhow::bail!("this hub doesn't say whether machines are working") })
     }
 
+    /// Which of these machines are connected to the hub's relay now: the
+    /// online dot beside an agent in chat. An error is "can't say" (the
+    /// page shows them offline).
+    fn machines_online<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<String>>> {
+        let _ = machines;
+        Box::pin(async { anyhow::bail!("this hub doesn't say which machines are online") })
+    }
+
     /// What an account's devices are (M218): its root (the first device it
     /// approved, which its daemons pin), its approved device certificates
     /// and its revocations, as the hub keeps them. The platform decides

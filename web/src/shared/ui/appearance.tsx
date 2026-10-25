@@ -3,7 +3,7 @@
 // corners. Each choice applies at once, so the page behind is the preview.
 
 import { useEffect, useState } from "preact/hooks";
-import { appearance, CORNERS, darkDefault, FINISHES, onAppearance, palette, PALETTES, setAppearance, type Palette } from "../appearance";
+import { appearance, CORNERS, DENSITIES, darkDefault, FINISHES, onAppearance, palette, PALETTES, setAppearance, type Palette } from "../appearance";
 
 let shown = false;
 const listeners = new Set<() => void>();
@@ -97,11 +97,28 @@ function AppearanceDialog({ close }: { close: () => void }) {
             </button>
           ))}
         </div>
+        <h3>Messages</h3>
+        <div class="appearance-corners appearance-density" role="radiogroup" aria-label="Message density">
+          {DENSITIES.map((d) => (
+            <button
+              key={d.id}
+              role="radio"
+              aria-checked={a.density === d.id}
+              class={a.density === d.id ? "on" : undefined}
+              title={d.hint}
+              data-density-choice={d.id}
+              onClick={() => setAppearance({ density: d.id })}
+            >
+              {d.name}
+            </button>
+          ))}
+        </div>
+        <p class="hint">Chat's rows: {DENSITIES.find((d) => d.id === a.density)?.hint.toLowerCase()}.</p>
         <div class="prompt-buttons">
           <button
             type="button"
-            onClick={() => setAppearance({ palette: "default", finish: "flat", corners: "square" })}
-            disabled={a.palette === "default" && a.finish === "flat" && a.corners === "square"}
+            onClick={() => setAppearance({ palette: "default", finish: "flat", corners: "square", density: "cozy" })}
+            disabled={a.palette === "default" && a.finish === "flat" && a.corners === "square" && a.density === "cozy"}
           >
             Reset
           </button>

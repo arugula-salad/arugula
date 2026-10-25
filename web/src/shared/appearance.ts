@@ -346,8 +346,16 @@ export const CORNERS = [
   { id: "round", name: "Round" },
 ] as const;
 
+/** How chat's messages are set: a picture and a name over the text, or IRC's
+ * one line each (#121). */
+export const DENSITIES = [
+  { id: "cozy", name: "Cozy", hint: "Pictures, names over the text" },
+  { id: "compact", name: "Compact", hint: "Time, name and text on one line" },
+] as const;
+
 export type Finish = (typeof FINISHES)[number]["id"];
 export type Corners = (typeof CORNERS)[number]["id"];
+export type Density = (typeof DENSITIES)[number]["id"];
 
 export interface Appearance {
   /** A palette's id, "system" (the dark default, or Latte when the system
@@ -356,10 +364,12 @@ export interface Appearance {
   palette: string;
   finish: Finish;
   corners: Corners;
+  /** Chat's message rows. */
+  density: Density;
 }
 
 const KEY = "arugula-appearance";
-const DEFAULT: Appearance = { palette: "default", finish: "flat", corners: "soft" };
+const DEFAULT: Appearance = { palette: "default", finish: "flat", corners: "soft", density: "cozy" };
 const lightQuery = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null;
 
 let current: Appearance = load();
@@ -373,6 +383,7 @@ function parse(raw: string): Appearance | null {
       palette: v.palette === "system" || v.palette === "default" || PALETTES.some((p) => p.id === v.palette) ? v.palette! : DEFAULT.palette,
       finish: FINISHES.some((f) => f.id === v.finish) ? v.finish! : DEFAULT.finish,
       corners: CORNERS.some((c) => c.id === v.corners) ? v.corners! : DEFAULT.corners,
+      density: DENSITIES.some((d) => d.id === v.density) ? v.density! : DEFAULT.density,
     };
   } catch {
     return null;
@@ -526,6 +537,7 @@ export function apply() {
   root.dataset.scheme = p.light ? "light" : "dark";
   root.dataset.finish = current.finish;
   root.dataset.corners = current.corners;
+  root.dataset.density = current.density;
   root.dataset.palette = p.id;
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", p.ui.surface);
   listeners.forEach((fn) => fn());

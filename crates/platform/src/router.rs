@@ -41,20 +41,72 @@ fn routes() -> Routes {
         .route("/api/chat/live", get(chat::live))
         .route("/api/chat/live/open", post(chat::open))
         .route("/api/chat/search", get(chat::search))
+        .route("/api/chat/presence", post(chat::people::beat))
+        .route("/api/chat/avatar/{account}", get(chat::people::avatar))
+        .route("/api/chat/sidebar", get(chat::sidebar::get).put(chat::sidebar::put))
         .route("/api/chat/targets", post(chat::open_target))
-        .route("/api/chat/teams/{team}/channels", post(chat::new_channel))
+        .route("/api/chat/teams/{team}/channels", get(chat::members::channels).post(chat::new_channel))
         .route("/api/chat/teams/{team}/dms", post(chat::new_dm))
         .route("/api/chat/rooms/{id}", get(chat::room).patch(chat::change_room))
         .route("/api/chat/rooms/{id}/messages", get(chat::messages).post(chat::post))
         .route("/api/chat/rooms/{id}/messages/{seq}", axum::routing::patch(chat::edit).delete(chat::delete))
+        .route(
+            "/api/chat/rooms/{id}/files",
+            post(chat::files::upload)
+                .layer(axum::extract::DefaultBodyLimit::max(arugula_control_wire::chat::MAX_FILE_BYTES + 1)),
+        )
+        .route("/api/chat/rooms/{id}/files/{file}", get(chat::files::get))
+        .route("/api/chat/rooms/{id}/previews", get(chat::previews::previews))
+        .route("/api/chat/rooms/{id}/messages/{seq}/previews", post(chat::previews::hide))
+        .route("/api/chat/previews/image", get(chat::previews::image))
+        .route("/api/chat/teams/{team}/previews", get(chat::previews::team_get).put(chat::previews::team_put))
+        .route(
+            "/api/chat/rooms/{id}/messages/{seq}/reactions",
+            post(chat::reactions::add).delete(chat::reactions::remove),
+        )
+        .route("/api/chat/rooms/{id}/topic", axum::routing::put(chat::pins::set_topic))
+        .route("/api/chat/rooms/{id}/pins", get(chat::pins::list))
+        .route("/api/chat/rooms/{id}/messages/{seq}/pin", axum::routing::put(chat::pins::pin).delete(chat::pins::unpin))
+        .route("/api/chat/rooms/{id}/join", post(chat::members::join))
+        .route("/api/chat/rooms/{id}/leave", post(chat::members::leave))
+        .route("/api/chat/rooms/{id}/members", post(chat::members::add))
+        .route("/api/chat/rooms/{id}/members/{account}", axum::routing::delete(chat::members::remove))
         .route("/api/chat/rooms/{id}/read", post(chat::read))
+        .route("/api/chat/threads", get(chat::threads::followed))
+        .route("/api/chat/rooms/{id}/threads/{seq}/read", post(chat::threads::read))
+        .route("/api/chat/rooms/{id}/threads/{seq}/follow", post(chat::threads::follow))
         .route("/api/chat/rooms/{id}/mute", post(chat::mute))
+        .route("/api/chat/rooms/{id}/unread", post(chat::saved::unread))
+        .route("/api/chat/saved", get(chat::saved::list))
+        .route(
+            "/api/chat/rooms/{id}/messages/{seq}/saved",
+            axum::routing::put(chat::saved::save).patch(chat::saved::done).delete(chat::saved::unsave),
+        )
+        .route("/api/chat/rooms/{id}/typing", post(chat::typing::typing))
+        .route("/api/chat/keywords", get(chat::alerts::keywords).put(chat::alerts::set_keywords))
+        .route("/api/chat/teams/{team}/settings", get(chat::alerts::team_settings).put(chat::alerts::set_team_settings))
+        .route("/api/chat/rooms/{id}/level", post(chat::level))
+        .route("/api/notify/prefs", get(crate::notify::prefs).post(crate::notify::set_prefs))
         .route(arugula_control_wire::chat::CHAT_READERS, post(chat::daemon_readers))
         .route(arugula_control_wire::chat::CHAT_IMPORT, post(chat::daemon_import))
         .route(arugula_control_wire::chat::AGENT_ROOMS, get(chat::agent_threads::rooms))
         .route(
             "/api/daemon/chat/rooms/{id}/messages",
             get(chat::agent_threads::messages).post(chat::agent_threads::post),
+        )
+        .route(
+            "/api/daemon/chat/rooms/{id}/files",
+            post(chat::agent_threads::upload)
+                .layer(axum::extract::DefaultBodyLimit::max(arugula_control_wire::chat::MAX_FILE_BYTES + 1)),
+        )
+        .route("/api/daemon/chat/rooms/{id}/files/{file}", get(chat::agent_threads::download))
+        .route(
+            "/api/daemon/chat/rooms/{id}/messages/{seq}/reactions",
+            post(chat::agent_threads::react).delete(chat::agent_threads::unreact),
+        )
+        .route(
+            "/api/daemon/chat/rooms/{id}/messages/{seq}/pin",
+            axum::routing::put(chat::agent_threads::pin).delete(chat::agent_threads::unpin),
         )
         .route(arugula_control_wire::chat::AGENT_SEARCH, get(chat::agent_threads::search))
         .route("/api/grants", get(grants::list).post(grants::give))

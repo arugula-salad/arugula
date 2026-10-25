@@ -21,8 +21,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use arugula_control_common::ApiError;
 use arugula_control_wire::chat::{
-    self as wire, AgentMessages, AgentMessagesQuery, AgentReach, AgentRoom, AgentRooms, ChatFound, ChatPost,
-    ChatPosted, ChatSearchQuery,
+    self as wire, AgentMessages, AgentMessagesQuery, AgentReach, AgentRoom, AgentRooms, ChatFound, ChatMessage,
+    ChatPost, ChatPosted, ChatReact, ChatReactQuery, ChatSearchQuery,
 };
 use axum::{
     Json,
@@ -30,8 +30,8 @@ use axum::{
 };
 
 use super::{
-    Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, gate, in_team, listed_as, objects,
-    post_as, rooms_seen, search_in,
+    Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, files, gate, in_team, listed_as,
+    objects, pins, post_as, reactions, rooms_seen, search_in, threads,
 };
 use crate::{
     Platform,
@@ -87,8 +87,9 @@ fn shown(
     room: &Room,
     powers: Vec<String>,
     last_mention: Option<i64>,
+    extras: &pins::Extras,
 ) -> anyhow::Result<AgentRoom> {
-    let r = listed_as(app, facts, owner, room, (0, false), (0, 0))?;
+    let r = listed_as(app, facts, owner, room, (0, false), (0, 0), extras)?;
     let writable = r.writable && powers.iter().any(|p| p == THREADS_POST);
     Ok(AgentRoom {
         id: r.id,
@@ -98,10 +99,14 @@ fn shown(
         target: r.target,
         project: r.project,
         with: r.with,
+        others: r.others,
+        private: r.private,
         last: r.last,
         last_mention,
         powers,
         writable,
+        topic: r.topic,
+        description: r.description,
     })
 }
 
@@ -165,16 +170,19 @@ pub async fn rooms(State(app): State<Arc<Platform>>, d: Machine) -> J<AgentRooms
     let (rooms, facts) = reached(&app, &d, &powers).await?;
     let ids: Vec<&str> = rooms.iter().map(|(r, _)| r.id.as_str()).collect();
     let last = app.db.chat_last_mentions(&ids, &mention_of(&d))?;
+    let extras = pins::Extras::of(&app.db, &rooms.iter().map(|(r, _)| r).collect::<Vec<_>>())?;
     let rooms = rooms
         .iter()
-        .map(|(r, p)| shown(&app, &facts, &d.account, r, p.clone(), last.get(&r.id).copied()))
+        .map(|(r, p)| shown(&app, &facts, &d.account, r, p.clone(), last.get(&r.id).copied(), &extras))
         .collect::<anyhow::Result<_>>()?;
     Ok(Json(AgentRooms { rooms, reach }))
 }
 
 /// `GET /api/daemon/chat/rooms/{id}/messages?after=N|before=N&limit=&mentions=`:
 /// a page, oldest first, as the owner reads it (`threads.read`); with
-/// `mentions`, only those that mention this machine's agents.
+/// `mentions`, only those that mention this machine's agents; with
+/// `thread`, the replies in the thread of that message (#106), and the
+/// message itself as `parent`.
 pub async fn messages(
     State(app): State<Arc<Platform>>,
     d: Machine,
@@ -191,20 +199,34 @@ pub async fn messages(
     };
     let limit = q.limit.unwrap_or(PAGE).clamp(1, MAX_PAGE);
     let me = mention_of(&d);
-    let (ms, more) = if q.mentions {
-        app.db.chat_mentioning(&room.id, &me, page, limit)?
-    } else {
-        app.db.chat_messages(&room.id, page, limit)?
+    // The replies in one thread (#106), and the message that starts it.
+    let (first, ms, more) = match q.thread {
+        Some(parent) => {
+            let (first, ms, more) = threads::page(&app, &room, from, parent, page, limit)?;
+            (Some(first), ms, more)
+        }
+        None => {
+            let (ms, more) = if q.mentions {
+                app.db.chat_mentioning(&room.id, &me, page, limit)?
+            } else {
+                app.db.chat_messages(&room.id, page, limit)?
+            };
+            (None, ms, more)
+        }
     };
     let ms: Vec<&Message> = ms.iter().filter(|m| m.at >= from).collect();
-    let shower = Shower::of(&app, &d.account, &ms).await?;
+    let all: Vec<&Message> = ms.iter().copied().chain(first.iter()).collect();
+    let shower = Shower::of(&app, &d.account, &all).await?.for_agent(&d.daemon);
     let messages = ms.into_iter().map(|m| shower.show(m)).collect();
+    let parent = first.as_ref().map(|m| shower.show(m));
     let facts = Facts::of(&app, Some(&d.account), &[&room]).await?;
     let scope = agent_scope(&app, &room, &d.account)?;
     let powers = thread_powers(&grants_of(&app, &d)?, scope.as_ref());
     let last = app.db.chat_last_mentions(&[&room.id], &me)?.remove(&room.id);
-    let room = shown(&app, &facts, &d.account, &room, powers, last)?;
-    Ok(Json(AgentMessages { room, messages, more }))
+    let pins = pins::pinned(&app, &d.account, Some(&d.daemon), &room, from).await?;
+    let extras = pins::Extras::of(&app.db, &[&room])?;
+    let room = shown(&app, &facts, &d.account, &room, powers, last, &extras)?;
+    Ok(Json(AgentMessages { room, messages, more, pins, parent }))
 }
 
 /// `POST /api/daemon/chat/rooms/{id}/messages`: an agent's post
@@ -217,6 +239,85 @@ pub async fn post(
 ) -> J<ChatPosted> {
     let (room, _, agent) = room_of(&app, &d, THREADS_POST, &id).await?;
     Ok(Json(post_as(&app, &d.account, Some(&agent), &room.id, b).await?))
+}
+
+/// `POST /api/daemon/chat/rooms/{id}/files?name=`: an agent's file
+/// (`threads.post`), kept for its next post in the room, as a person's is.
+pub async fn upload(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(id): Path<String>,
+    Query(q): Query<wire::ChatUploadQuery>,
+    body: axum::body::Bytes,
+) -> J<wire::ChatFile> {
+    let (room, _, _) = room_of(&app, &d, THREADS_POST, &id).await?;
+    let facts = Facts::of(&app, Some(&d.account), &[&room]).await?;
+    let mut f = files::store(&app, &d.account, (&room, &facts), &q.name, &body).await?;
+    f.url = files::url(&room.id, &f.id, true);
+    Ok(Json(f))
+}
+
+/// `GET /api/daemon/chat/rooms/{id}/files/{file}`: a file in a room the
+/// agent reads (`threads.read`); the bytes, as a person gets them.
+pub async fn download(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, file)): Path<(String, String)>,
+    Query(q): Query<files::Download>,
+    headers: axum::http::HeaderMap,
+) -> Result<axum::response::Response, ApiError> {
+    gate(&app, &d.account).await?;
+    app.limits.check_daemon(AGENT_READS, &d.daemon)?;
+    let (room, from, _) = room_of(&app, &d, THREADS_READ, &id).await?;
+    files::fetch(&app, (&room, from), &d.account, &file, &headers, q.download.is_some()).await
+}
+
+/// `POST /api/daemon/chat/rooms/{id}/messages/{seq}/reactions`: an agent's
+/// reaction (`threads.post`), its owner's, labelled with the machine.
+pub async fn react(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, seq)): Path<(String, i64)>,
+    Json(b): Json<ChatReact>,
+) -> J<ChatMessage> {
+    reacting(&app, &d, &id, seq, &b.emoji, true).await
+}
+
+/// `DELETE` the same with `?emoji=`: takes back the agent's own.
+pub async fn unreact(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, seq)): Path<(String, i64)>,
+    Query(q): Query<ChatReactQuery>,
+) -> J<ChatMessage> {
+    reacting(&app, &d, &id, seq, &q.emoji, false).await
+}
+
+async fn reacting(app: &Platform, d: &Machine, id: &str, seq: i64, emoji: &str, on: bool) -> J<ChatMessage> {
+    let (room, from, agent) = room_of(app, d, THREADS_POST, id).await?;
+    let facts = Facts::of(app, Some(&d.account), &[&room]).await?;
+    Ok(Json(reactions::set(app, &d.account, Some(&agent), (&room, from, &facts), seq, emoji, on).await?))
+}
+
+/// `PUT /api/daemon/chat/rooms/{id}/messages/{seq}/pin`: an agent pins
+/// (`threads.post`), as its owner, labelled with the machine.
+pub async fn pin(State(app): State<Arc<Platform>>, d: Machine, Path((id, seq)): Path<(String, i64)>) -> J<ChatMessage> {
+    pinning(&app, &d, &id, seq, true).await
+}
+
+/// `DELETE` the same: unpins.
+pub async fn unpin(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, seq)): Path<(String, i64)>,
+) -> J<ChatMessage> {
+    pinning(&app, &d, &id, seq, false).await
+}
+
+async fn pinning(app: &Platform, d: &Machine, id: &str, seq: i64, on: bool) -> J<ChatMessage> {
+    let (room, from, agent) = room_of(app, d, THREADS_POST, id).await?;
+    let facts = Facts::of(app, Some(&d.account), &[&room]).await?;
+    Ok(Json(pins::set_pin(app, &d.account, Some(&agent), (&room, from, &facts), seq, on).await?))
 }
 
 /// `GET /api/daemon/chat/search?q=&team=`: over the rooms this machine's

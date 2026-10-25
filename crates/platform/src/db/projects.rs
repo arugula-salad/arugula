@@ -198,6 +198,13 @@ impl Db {
     pub fn project_roster(&self, team: &Team, now: u64) -> anyhow::Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
+        // Who wasn't in the team's roster before joins its auto-join
+        // channels (#118), as Slack's #general. A team whose roster the
+        // platform had never held (its channels are from before channel
+        // members, whose migration had no roster to copy) gives all of its
+        // public channels everyone, as that migration would have.
+        let before: Vec<String> =
+            tx.query_map("SELECT account_id FROM team_members WHERE team_id = ?1", params![team.id], |r| r.get(0))?;
         tx.execute("DELETE FROM team_members WHERE team_id = ?1", params![team.id])?;
         for m in &team.members {
             tx.execute(
@@ -206,6 +213,15 @@ impl Db {
                  ON CONFLICT (team_id, account_id) DO UPDATE SET role = excluded.role, name = excluded.name,
                      roster_version = excluded.roster_version",
                 params![team.id, m.account, m.role.as_str(), m.name, team.version],
+            )?;
+        }
+        for m in team.members.iter().filter(|m| !before.contains(&m.account)) {
+            tx.execute(
+                "INSERT INTO chat_members (room, account, from_ms)
+                 SELECT id, CAST(?2 AS TEXT), 0 FROM chat_rooms
+                 WHERE scope = 'team:' || ?1 AND kind = 'channel' AND private = 0 AND (auto_join != 0 OR CAST(?3 AS BIGINT) != 0)
+                 ON CONFLICT DO NOTHING",
+                params![team.id, m.account, before.is_empty() as i64],
             )?;
         }
         team_project(&tx, &team.id, &team.name, now)?;

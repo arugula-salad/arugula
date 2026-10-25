@@ -1036,11 +1036,47 @@ auth = "session"
 clients = ["page"]
 
 [[route]]
+method = "GET"
+path = "/api/chat/sidebar"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/chat/sidebar"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/chat/presence"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/avatar/{account}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
 method = "POST"
 path = "/api/chat/targets"
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/teams/{team}/channels"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The channel browser: the team's public channels, joined or not. Private ones are never listed."
 
 [[route]]
 method = "POST"
@@ -1100,14 +1136,265 @@ clients = ["page"]
 
 [[route]]
 method = "POST"
+path = "/api/chat/rooms/{id}/files"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A file or image for the next message (#107): the bytes are the body, `?name=` its name. Kept for its uploader for an hour; at most 10 MB, 10 to a message, and 256 MB of files per team."
+
+[[route]]
+method = "GET"
+path = "/api/chat/rooms/{id}/files/{file}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A file of a room the reader reads, and no one else (404): pictures, video and audio inline, the rest as an attachment, always with `nosniff`. `?download=1` saves any. Honours `Range`."
+
+[[route]]
+method = "GET"
+path = "/api/chat/rooms/{id}/previews"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Link previews (#108) under the messages named by `seqs`, for the reader: cards for their own objects, and Open Graph for web links."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/messages/{seq}/previews"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A message's author takes its previews off, or puts them back."
+
+[[route]]
+method = "GET"
+path = "/api/chat/previews/image"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The image of a page that was read for a preview, fetched by the platform so readers never contact the site. Takes the room and message the card is under; only a reader of that message gets it."
+
+[[route]]
+method = "GET"
+path = "/api/chat/teams/{team}/previews"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/chat/teams/{team}/previews"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A team owner's switch for web link previews in the team's chat."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/messages/{seq}/reactions"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Adds the caller's emoji (body `{emoji}`); the same twice is not an error. Answers the message."
+
+[[route]]
+method = "DELETE"
+path = "/api/chat/rooms/{id}/messages/{seq}/reactions"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Takes the caller's `?emoji=` back; none to take back is not an error."
+
+[[route]]
+method = "PUT"
+path = "/api/chat/rooms/{id}/topic"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A channel's topic and/or description (#119); a change posts a system line. A team can leave it to its owners."
+
+[[route]]
+method = "GET"
+path = "/api/chat/rooms/{id}/pins"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The room's pinned messages, the newest pin first."
+
+[[route]]
+method = "PUT"
+path = "/api/chat/rooms/{id}/messages/{seq}/pin"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Pins the message (anyone who may post); pinning twice is not an error. Posts a system line."
+
+[[route]]
+method = "DELETE"
+path = "/api/chat/rooms/{id}/messages/{seq}/pin"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Unpins it; none to take off is not an error."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/join"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Into a public channel; a private one is 404."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/leave"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Out of a channel or a DM."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/members"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A channel's creator and its team's owners add people of the team."
+
+[[route]]
+method = "DELETE"
+path = "/api/chat/rooms/{id}/members/{account}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A channel's creator and its team's owners remove a member."
+
+[[route]]
+method = "POST"
 path = "/api/chat/rooms/{id}/read"
 process = "platform"
 auth = "session"
 clients = ["page"]
 
 [[route]]
+method = "GET"
+path = "/api/chat/threads"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The threads the caller follows, most recently active first, with their unread counts (#106)."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/threads/{seq}/read"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Moves the caller's read mark in the thread of message `seq` forward. Answers that message."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/threads/{seq}/follow"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Follows the thread of message `seq` (body `{following}`), or stops. Answers that message."
+
+[[route]]
 method = "POST"
 path = "/api/chat/rooms/{id}/mute"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The old switch: muting is the `nothing` level, unmuting goes back to the default. The page uses /level."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/level"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/notify/prefs"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/notify/prefs"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/unread"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/saved"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/chat/rooms/{id}/messages/{seq}/saved"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PATCH"
+path = "/api/chat/rooms/{id}/messages/{seq}/saved"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "DELETE"
+path = "/api/chat/rooms/{id}/messages/{seq}/saved"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/typing"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/keywords"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/chat/keywords"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/teams/{team}/settings"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/chat/teams/{team}/settings"
 process = "platform"
 auth = "session"
 clients = ["page"]
@@ -1152,6 +1439,54 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Labelled as the owner's agent on the machine; nobody is woken."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/chat/rooms/{id}/files"  # wire::chat::agent_files
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "An agent's file (`threads.post`) for its next post in the room (#107), as a person's."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/chat/rooms/{id}/files/{file}"  # wire::chat::agent_files
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A file in a room the agent reads (`threads.read`)."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/chat/rooms/{id}/messages/{seq}/reactions"  # wire::chat::agent_reactions
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "An agent's reaction (`threads.post`), its owner's and labelled with the machine; nobody is woken."
+
+[[route]]
+method = "PUT"
+path = "/api/daemon/chat/rooms/{id}/messages/{seq}/pin"  # wire::chat::agent_pin
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "An agent pins a message (`threads.post`), as its owner, labelled with the machine."
+
+[[route]]
+method = "DELETE"
+path = "/api/daemon/chat/rooms/{id}/messages/{seq}/pin"  # wire::chat::agent_pin
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Unpins it."
+
+[[route]]
+method = "DELETE"
+path = "/api/daemon/chat/rooms/{id}/messages/{seq}/reactions"  # wire::chat::agent_reactions
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Takes back the agent's own `?emoji=`."
 
 [[route]]
 method = "GET"

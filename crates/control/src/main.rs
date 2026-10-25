@@ -1075,7 +1075,9 @@ async fn run() -> anyhow::Result<()> {
         let hosted = a.hosted.clone().config(&a.cloud)?;
         let cfg = arugula_platform::Config {
             public_url: public_url.clone(),
-            sites: sites.iter().map(|s| s.url.clone()).collect(),
+            // The platform page's own origin too: a link to it is one of
+            // ours (chat's previews, #108).
+            sites: sites.iter().map(|s| s.url.clone()).chain(platform_host.iter().map(|p| p.origin.clone())).collect(),
             relay_free_bytes: a.relay_free_mb * 1_000_000,
         };
         info!("the platform runs in process");

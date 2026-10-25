@@ -13,14 +13,34 @@
 
 import type { ChatRoom, InboxEntry } from "../proto.gen";
 
-/** What a room adds to a count: its unread, or only its mentions while
- * it's muted. */
+/** What a room adds to a count (#113): its unread, or only its mentions
+ * where the person chose less than every message. A channel on "mentions"
+ * (the default) counts the mentions and shows its other unread as bold
+ * ([`bold`]), as Slack does; a muted ("nothing") room counts its mentions
+ * too. A DM, a pane's or session's thread and an object's keep counting
+ * their unread: they have no quieter setting than a push's. */
 export function counted(r: ChatRoom): number {
-  return r.muted ? r.mentions : r.unread;
+  switch (r.level) {
+    case "nothing":
+      return r.mentions;
+    case "mentions":
+      return r.kind === "channel" ? r.mentions : r.unread;
+    case "all":
+      return r.unread;
+    // A room from before the level (a test's, an older server's).
+    default:
+      return r.muted ? r.mentions : r.unread;
+  }
+}
+
+/** Whether the room's name shows bold: it has unread the person asked to
+ * hear about (everything but a muted room's, whose mentions count). */
+export function bold(r: ChatRoom): boolean {
+  return r.level === "nothing" || (r.level === undefined && r.muted) ? r.mentions > 0 : r.unread > 0;
 }
 
 /** Whether the chat page's sidebar lists a room (`groupsOf` in
- * platform/chat/rooms.tsx): a team's channels and DMs, the threads on
+ * shared/chat/rooms.tsx): a team's channels and DMs, the threads on
  * panes and sessions, and archives. */
 export function listedInChat(r: ChatRoom): boolean {
   switch (r.kind) {

@@ -329,7 +329,9 @@ for (const mode of [DOMAIN, null] as const) {
         });
       }
       const [base, key] = url.split("#k=");
-      const other = key!.slice(0, -1) + (key!.endsWith("A") ? "B" : "A");
+      // The first character: the last one's low bits are base64's padding,
+      // so changing it can leave the key as it was (one key in sixteen).
+      const other = (key!.startsWith("A") ? "B" : "A") + key!.slice(1);
       await broken(`${base}#k=${other}`);
       await broken(base!);
       await broken(`${base}#k=short`);

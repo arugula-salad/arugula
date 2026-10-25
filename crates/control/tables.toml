@@ -562,12 +562,182 @@ note = "As chat_messages: it's rebuilt from them, and merged when an account goe
 seen_by = ["litestream"]
 
 [[table]]
+name = "chat_keywords"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "The words a person asked to be notified about as if mentioned (#114)."
+why_asleep = "A message with one of them pushes, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_team_settings"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "What a team's owners decided about its chat: whether @channel and @here are theirs only (#114)."
+why_asleep = "The guard on a post, with every machine asleep."
+with_account = "none"
+note = "By team: gone when the team is disbanded."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_team_prefs"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A team's chat preferences: whether web links in its rooms get previews (#108)."
+why_asleep = "Previews drawn from it, with every machine asleep."
+with_account = "none"
+note = "By team."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_link_previews"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "What control read of a public web page posted in chat, for its preview (title, description, image), by its address (#108)."
+why_asleep = "A preview drawn once for every reader, not fetched per reader, with every machine asleep."
+with_account = "none"
+note = "By address, not by who posted it; pruned once old."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_preview_hidden"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "The messages whose author took their previews off (#108)."
+why_asleep = "The same message without its preview for everyone, with every machine asleep."
+with_account = "none"
+note = "By room and message number."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_reactions"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "Who reacted to which message with which emoji, and whether their agent did it (#104)."
+why_asleep = "Reactions shown and changed, with every machine asleep."
+with_account = "deleted"
+note = "The account's own reactions, and every reaction on the messages it wrote."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_avatars"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A GitHub login's public picture as control fetched it, so readers never load it from GitHub themselves (#112)."
+why_asleep = "Pictures in chat, with every machine asleep."
+with_account = "kept"
+note = "By GitHub login, not account: a public picture, fetched again after a day."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_presence"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "When a person's pages were last heard from and last used, and whether they chose away or offline (#110)."
+why_asleep = "Who's around, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_files"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "Files and images posted in chat, bytes included, with their sniffed type and the message they belong to (#107)."
+why_asleep = "A room's files, served to its readers, with every machine asleep."
+with_account = "deleted"
+note = "The account's uploads, and the files on the messages it wrote."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_topics"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A channel's topic and description, as its members wrote them (#119)."
+why_asleep = "The room's header, with every machine asleep."
+with_account = "none"
+note = "By room: gone with the room."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_pins"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Which messages are pinned in a room, by whom and when (#119)."
+why_asleep = "The room's pins, with every machine asleep."
+with_account = "partly"
+note = "Pins of the account's own messages go with them; pins it made of others' messages stay, as the room's."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_system"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Which messages are system lines (a topic set, a message pinned) and what they're about (#119)."
+why_asleep = "The room's history, drawn right, with every machine asleep."
+with_account = "none"
+note = "By room and message number: gone with the message."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_sidebars"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "How a person arranges their chat sidebar: starred rooms, their own sections, what is collapsed and how each is sorted."
+why_asleep = "The same sidebar on every device, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "chat_reads"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A person's read mark in a room, and whether they muted it."
+what = "A person's read mark in a room, and how loud they chose it (all, mentions or nothing; none is their default)."
 why_asleep = "Unread counts and pushes, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "notify_prefs"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A person's notification settings (#113, #115): their default levels for channels, DMs and followed threads, a snooze, quiet hours by weekday with their time zone, and whether do not disturb covers every push. No message text."
+why_asleep = "Chat's pushes are decided from it with every machine asleep but the platform's."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_saved"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "The messages a person saved for later (#116): which room and message number, when, whether it's done, and when to remind them once. Private to them; never the message's text."
+why_asleep = "Saved lists and reminder pushes come from control alone, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_thread_reads"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Which reply threads a person follows (#106): the room and the thread's first message, whether they follow it, and how far they have read it. Private to them; never the message's text."
+why_asleep = "Followed threads and their unread come from control alone, with every machine asleep."
 with_account = "deleted"
 seen_by = ["litestream"]
 
@@ -576,7 +746,7 @@ name = "chat_events"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "Chat's live events, numbered (M144): a room and a message number that changed, a read mark that moved (and whose), or that who sees what may have changed. Never a message's text. Every machine of the platform sends its open pages the ones after the last it sent, and a page that dropped resumes from them. The newest 10,000 are kept."
+what = "Chat's live events, numbered (M144): a room and a message number that changed, a read mark that moved (and whose), or that who sees what may have changed, and who is typing in a room (#111: a short-lived row, pruned within seconds). Never a message's text. Every machine of the platform sends its open pages the ones after the last it sent, and a page that dropped resumes from them. The newest 10,000 are kept."
 why_asleep = "Open pages hear of messages, edits and read marks through control alone, with every machine asleep."
 with_account = "partly"
 note = "Its read marks' events lose its name (they stay as nameless markers, so the numbers hold); events about rooms name no one and go with the oldest."

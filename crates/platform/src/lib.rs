@@ -50,7 +50,21 @@ mod boxes_tests;
 pub mod cache;
 pub mod chat;
 #[cfg(test)]
+mod chat_files_tests;
+#[cfg(test)]
+mod chat_people_tests;
+#[cfg(test)]
+mod chat_pins_tests;
+#[cfg(test)]
+mod chat_previews_tests;
+#[cfg(test)]
+mod chat_reactions_tests;
+#[cfg(test)]
+mod chat_rooms_tests;
+#[cfg(test)]
 mod chat_tests;
+#[cfg(test)]
+mod chat_threads_tests;
 pub mod clients;
 #[cfg(test)]
 mod clients_tests;
@@ -77,6 +91,7 @@ pub mod issues;
 pub mod jobs;
 pub mod keys;
 pub mod links;
+pub mod notify;
 #[cfg(test)]
 mod object_threads_tests;
 pub mod page;

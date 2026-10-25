@@ -91,16 +91,45 @@ fn generate() -> String {
         c.visit::<ChatMessages>();
         c.visit::<ChatNewChannel>();
         c.visit::<ChatNewDm>();
+        c.visit::<ChatChannel>();
+        c.visit::<ChatChannels>();
+        c.visit::<ChatAddMembers>();
         c.visit::<ChatOpenTarget>();
         c.visit::<ChatRoomChange>();
         c.visit::<ChatPost>();
         c.visit::<ChatPosted>();
         c.visit::<ChatEdit>();
+        c.visit::<ChatReact>();
+        c.visit::<ChatPins>();
+        c.visit::<ChatTopicSet>();
         c.visit::<ChatRead>();
+        c.visit::<ChatThreadRead>();
+        c.visit::<ChatFollow>();
+        c.visit::<ChatThreads>();
+        c.visit::<ChatThreadItem>();
         c.visit::<ChatMute>();
+        c.visit::<ChatLevel>();
+        c.visit::<NotifyPrefs>();
+        c.visit::<NotifySet>();
         c.visit::<ChatFound>();
         c.visit::<ChatOpen>();
         c.visit::<ChatLive>();
+        c.visit::<ChatKeywords>();
+        c.visit::<ChatTeamSettings>();
+        c.visit::<ChatBeat>();
+        c.visit::<ChatPresence>();
+        c.visit::<ChatSaved>();
+        c.visit::<ChatUnread>();
+        c.visit::<ChatSave>();
+        c.visit::<ChatSavedDone>();
+    }
+    // The platform page's projects (M150).
+    c.visit::<arugula_control_wire::projects::Projects>();
+    {
+        use arugula_control_wire::chat_sidebar::*;
+        c.visit::<ChatSidebar>();
+        c.visit::<ChatSection>();
+        c.visit::<ChatSort>();
     }
     // The platform page's projects (M150).
     c.visit::<arugula_control_wire::projects::Projects>();

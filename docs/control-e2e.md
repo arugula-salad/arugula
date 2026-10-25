@@ -1331,9 +1331,14 @@ leaves it. So:
 - **Chat's pushes (M122):** control sends these itself, encrypted to each
   subscription, since it holds the chat anyway (S41 decision 5): who, where
   and the first 200 characters ("jake mentioned you in #general", "jake
-  wrote to you"), tagged `chat-<room>` with the room for the tap. A mention
-  pushes, and anything in a DM; not your own posts, a room you have open or
-  muted, or a room you were pushed for in the last minute.
+  wrote to you"), tagged `chat-<room>` with the room for the tap. What
+  pushes follows the room's level (#113): all messages, mentions only or
+  nothing, with the person's defaults for DMs, channels and threads. A
+  mention, `@channel`, `@here` or one of the person's keywords counts as a
+  mention. Not your own posts, a room you have open, or a room you were
+  pushed for in the last minute, and nothing at all while do not disturb is
+  on (a snooze or quiet hours, #115). A reminder on a saved message is one
+  push. Reactions, pins, system lines and typing push nobody.
 - **What someone hears:** an account turns three kinds on or off
   (`/api/push/prefs`, the *Push:* items under *Notify this device*), for
   every device it turned on:
@@ -1450,7 +1455,22 @@ sleeps, and control pushes and searches them itself.
 - **What enters control:** what people type, and the lines they choose to
   quote from a pane (the page reads the pane end to end, and the person
   picks the lines). Nothing else of the pane does: its output, input and
-  scrollback stay on the end-to-end channels above.
+  scrollback stay on the end-to-end channels above. Also what
+  people attach (files and images, bytes included, up to 10 MB each), the
+  emoji they react with, a channel's topic and pins, and their sidebar,
+  notification settings, keywords, saved messages and when their pages were
+  last open: tables below say which is which. None of it is end to end.
+- **What control fetches from outside** (#108, #112), the only fetches chat
+  makes from the web, from the platform process and never from a reader's
+  browser: the Open Graph page and image of a web link in a message (public
+  addresses only, refused at each redirect; a team's owner can turn it off,
+  and an author can hide one message's), cached by address for a day; and an
+  account's public GitHub picture, by login (`github.com/<login>.png`),
+  cached a day. Readers load both from control, so neither the site nor
+  GitHub sees them, and control's CSP stays closed to both. The site does
+  see control's address and the link, as for any fetch. A link to an
+  object of control's own is read from its tables, as the reader, and
+  leaves no trace but the message.
 - **Who reads a pane's thread:** whom its machine says, kept by control
   (`POST /api/daemon/chat/readers`), and never anyone control wouldn't route
   to the machine anyway. A pane chip opens only for someone who may reach
@@ -1498,7 +1518,8 @@ sleeps, and control pushes and searches them itself.
 - **Kept until deleted** (S41 decision 6): an author or an owner deletes a
   message; deleting an account deletes its DMs and its machines' threads
   and blanks its messages elsewhere (issue comments and its agents' posts
-  included); a disbanded team's rooms go with it. Nobody deletes a single
+  included); a disbanded team's rooms go with it. Deleting a message deletes its files,
+  reactions and pin; a room's go with the room. Nobody deletes a single
   issue: a project's issues and their threads go when the project does
   (with its account, or its disbanded team). The issues an account opened
   in a project that stays keep their text, naming no author.
@@ -1508,10 +1529,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 115 tables in two planes ("Two planes, two trust rules"):
+Control's database has 131 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (44 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (71 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (87 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1575,8 +1596,24 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `chat_members` | metadata | A DM's two people, and an archive's readers. | People talk with every machine asleep. | yes |  |
 | `chat_messages` | **plaintext** | A chat message, in plain text (a native issue's comments are its thread's messages), with the lines its author quoted from a pane and who it mentions. One an agent wrote under its machine's threads.post grant (M197) keeps the machine's owner as its author and names the machine, shown as "<owner>'s agent on <machine>"; revoking the grant leaves it labelled. | People talk with every machine asleep. | partly: those in its rooms that go, go; the rest stay blank, with no author and no agent's label, and it's taken out of mentions. |  |
 | `chat_fts` | **plaintext** | The full-text index of chat messages and their quotes (SQLite FTS5; on Postgres it's a generated column of chat_messages). | Control searches chat itself, with every machine asleep. | partly: as chat_messages: it's rebuilt from them, and merged when an account goes so blanked words leave it. |  |
-| `chat_reads` | metadata | A person's read mark in a room, and whether they muted it. | Unread counts and pushes, with every machine asleep. | yes |  |
-| `chat_events` | metadata | Chat's live events, numbered (M144): a room and a message number that changed, a read mark that moved (and whose), or that who sees what may have changed. Never a message's text. Every machine of the platform sends its open pages the ones after the last it sent, and a page that dropped resumes from them. The newest 10,000 are kept. | Open pages hear of messages, edits and read marks through control alone, with every machine asleep. | partly: its read marks' events lose its name (they stay as nameless markers, so the numbers hold); events about rooms name no one and go with the oldest. |  |
+| `chat_keywords` | **plaintext** | The words a person asked to be notified about as if mentioned (#114). | A message with one of them pushes, with every machine asleep. | yes |  |
+| `chat_team_settings` | metadata | What a team's owners decided about its chat: whether @channel and @here are theirs only (#114). | The guard on a post, with every machine asleep. | nothing of one: by team: gone when the team is disbanded. |  |
+| `chat_team_prefs` | metadata | A team's chat preferences: whether web links in its rooms get previews (#108). | Previews drawn from it, with every machine asleep. | nothing of one: by team. |  |
+| `chat_link_previews` | **plaintext** | What control read of a public web page posted in chat, for its preview (title, description, image), by its address (#108). | A preview drawn once for every reader, not fetched per reader, with every machine asleep. | nothing of one: by address, not by who posted it; pruned once old. |  |
+| `chat_preview_hidden` | metadata | The messages whose author took their previews off (#108). | The same message without its preview for everyone, with every machine asleep. | nothing of one: by room and message number. |  |
+| `chat_reactions` | **plaintext** | Who reacted to which message with which emoji, and whether their agent did it (#104). | Reactions shown and changed, with every machine asleep. | yes: the account's own reactions, and every reaction on the messages it wrote. |  |
+| `chat_avatars` | metadata | A GitHub login's public picture as control fetched it, so readers never load it from GitHub themselves (#112). | Pictures in chat, with every machine asleep. | kept: by GitHub login, not account: a public picture, fetched again after a day. |  |
+| `chat_presence` | metadata | When a person's pages were last heard from and last used, and whether they chose away or offline (#110). | Who's around, with every machine asleep. | yes |  |
+| `chat_files` | **plaintext** | Files and images posted in chat, bytes included, with their sniffed type and the message they belong to (#107). | A room's files, served to its readers, with every machine asleep. | yes: the account's uploads, and the files on the messages it wrote. |  |
+| `chat_topics` | **plaintext** | A channel's topic and description, as its members wrote them (#119). | The room's header, with every machine asleep. | nothing of one: by room: gone with the room. |  |
+| `chat_pins` | metadata | Which messages are pinned in a room, by whom and when (#119). | The room's pins, with every machine asleep. | partly: pins of the account's own messages go with them; pins it made of others' messages stay, as the room's. |  |
+| `chat_system` | metadata | Which messages are system lines (a topic set, a message pinned) and what they're about (#119). | The room's history, drawn right, with every machine asleep. | nothing of one: by room and message number: gone with the message. |  |
+| `chat_sidebars` | metadata | How a person arranges their chat sidebar: starred rooms, their own sections, what is collapsed and how each is sorted. | The same sidebar on every device, with every machine asleep. | yes |  |
+| `chat_reads` | metadata | A person's read mark in a room, and how loud they chose it (all, mentions or nothing; none is their default). | Unread counts and pushes, with every machine asleep. | yes |  |
+| `notify_prefs` | metadata | A person's notification settings (#113, #115): their default levels for channels, DMs and followed threads, a snooze, quiet hours by weekday with their time zone, and whether do not disturb covers every push. No message text. | Chat's pushes are decided from it with every machine asleep but the platform's. | yes |  |
+| `chat_saved` | metadata | The messages a person saved for later (#116): which room and message number, when, whether it's done, and when to remind them once. Private to them; never the message's text. | Saved lists and reminder pushes come from control alone, with every machine asleep. | yes |  |
+| `chat_thread_reads` | metadata | Which reply threads a person follows (#106): the room and the thread's first message, whether they follow it, and how far they have read it. Private to them; never the message's text. | Followed threads and their unread come from control alone, with every machine asleep. | yes |  |
+| `chat_events` | metadata | Chat's live events, numbered (M144): a room and a message number that changed, a read mark that moved (and whose), or that who sees what may have changed, and who is typing in a room (#111: a short-lived row, pruned within seconds). Never a message's text. Every machine of the platform sends its open pages the ones after the last it sent, and a page that dropped resumes from them. The newest 10,000 are kept. | Open pages hear of messages, edits and read marks through control alone, with every machine asleep. | partly: its read marks' events lose its name (they stay as nameless markers, so the numbers hold); events about rooms name no one and go with the oldest. |  |
 | `chat_readers` | metadata | Who may read the thread on a pane or a session, as its machine last said. | A pane's thread stays readable while its machine sleeps. | partly: its machines' rows go, and it's taken off the rest. |  |
 | `doc_links` | metadata | A Shared Doc link: its id, the machine that shared it, its version, size and parts, and how often it opened. | A shared Doc opens while the machine that shared it sleeps. | yes |  |
 | `doc_link_parts` | ciphertext | A Shared Doc's snapshot, in parts, encrypted to the key in the link's fragment. | A shared Doc opens while the machine that shared it sleeps. | yes |  |

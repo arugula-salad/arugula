@@ -73,7 +73,7 @@ const ID = "[a-z]{2,3}_[0-9a-f]{4,64}";
 export function platformPath(hash: string): string | null {
   let m: RegExpExecArray | null;
   if ((m = new RegExp(`^#chat=(${ID})(?:&msg=(-?\\d+))?$`).exec(hash))) return `/chat/${m[1]}${m[2] !== undefined ? `?msg=${m[2]}` : ""}`;
-  if (hash === "#chat=activity") return "/chat/activity";
+  if (hash === "#chat=activity" || hash === "#chat=saved") return `/chat/${hash.slice(6)}`;
   if ((m = /^#chat=search\/(.*)$/.exec(hash))) {
     let q = m[1];
     try {

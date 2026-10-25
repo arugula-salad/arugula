@@ -110,8 +110,15 @@ function Bubble() {
 }
 
 /** A pane's or session's room, open beside the panes. */
-export function ThreadLayer({ phone }: { phone: boolean; client?: Client }) {
-  return <RoomDrawer phone={phone} />;
+export function ThreadLayer({ phone, client }: { phone: boolean; client?: Client }) {
+  return <RoomDrawer phone={phone} client={client} />;
+}
+
+/** Opens a room as a chat block (#123), set by that block's module, which
+ * imports this one. */
+let roomAsBlock: ((client: Client, room: string) => void) | null = null;
+export function setRoomAsBlock(fn: (client: Client, room: string) => void) {
+  roomAsBlock = fn;
 }
 
 // ---- the drawer beside a pane
@@ -137,7 +144,7 @@ export function closeRoomDrawer() {
   drawerListeners.forEach((fn) => fn());
 }
 
-export function RoomDrawer({ phone }: { phone: boolean }) {
+export function RoomDrawer({ phone, client }: { phone: boolean; client?: Client }) {
   const [, tick] = useState(0);
   useEffect(() => {
     const fn = () => tick((t) => t + 1);
@@ -159,6 +166,21 @@ export function RoomDrawer({ phone }: { phone: boolean }) {
     <aside class={phone ? "thread-panel phone" : "thread-panel"} aria-label={title} data-room-drawer={room.id}>
       <header>
         <strong>{title}</strong>
+        {/* The room beside the panes, in the layout, with everything chat has. */}
+        {client && roomAsBlock && (
+          <button
+            class="thread-close"
+            title="Open it in a chat block"
+            aria-label="Open in a chat block"
+            data-room-as-block
+            onClick={() => {
+              closeRoomDrawer();
+              roomAsBlock?.(client, room.id);
+            }}
+          >
+            ▣
+          </button>
+        )}
         {/* Chat's page is the platform page's (M153). */}
         {platformOrigin() && (
           <button

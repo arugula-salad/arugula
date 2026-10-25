@@ -59,18 +59,24 @@ const DOC_INLINE = new RegExp(
  * `refs` is the URL a reference's number goes after (`…/issues/`), or null
  * to leave `#N` as text. `image`: a Doc's picture, given its target
  * (`assets/x.png`), its alt text and a key; without it an image is a link. */
-export type ForgeInline = { refs: string | null; image?: (src: string, alt: string, key: number) => ComponentChildren };
+export type ForgeInline = {
+  refs: string | null;
+  image?: (src: string, alt: string, key: number) => ComponentChildren;
+  /** What the plain text between forms becomes (chat's `:joy:` as 😂). */
+  text?: (s: string) => string;
+};
 
 /** Only these hrefs come out of a body: whoever opened the PR wrote it. */
 const safeHref = (u: string) => /^https?:\/\/[^\s/]/i.test(u);
 
 export function inline(text: string, isMe?: IsMe, landed?: (token: string) => boolean, forge?: ForgeInline): ComponentChildren[] {
   const out: ComponentChildren[] = [];
+  const plain = forge?.text ?? ((s: string) => s);
   let at = 0;
   let k = 0;
   for (const m of text.matchAll(forge ? (forge.image ? DOC_INLINE : FORGE_INLINE) : INLINE)) {
     const i = m.index!;
-    if (i > at) out.push(text.slice(at, i));
+    if (i > at) out.push(plain(text.slice(at, i)));
     const s = m[0];
     if (m[1]) out.push(<code key={k++}>{s.slice(1, -1)}</code>);
     else if (m[2]) out.push(forge ? <strong key={k++}>{inline(s.slice(2, -2), isMe, landed, forge)}</strong> : <b key={k++}>{inline(s.slice(2, -2), isMe, landed)}</b>);
@@ -115,7 +121,7 @@ export function inline(text: string, isMe?: IsMe, landed?: (token: string) => bo
     }
     at = i + s.length;
   }
-  if (at < text.length) out.push(text.slice(at));
+  if (at < text.length) out.push(plain(text.slice(at)));
   return out;
 }
 

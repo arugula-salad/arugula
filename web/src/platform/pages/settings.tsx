@@ -16,7 +16,9 @@ import { Plan, type Billing } from "../settings/plan";
 import { AgentGrants } from "../settings/agents";
 import { AgentTokens } from "../settings/agent-tokens";
 import { LinkedProducts } from "../settings/linked";
+import { ChatAlerts } from "../settings/chat-alerts";
 import { ClaudeSettings } from "../settings/claude";
+import { NotificationSettings } from "../settings/notifications";
 import { Section, SectionIndex } from "../settings/section";
 import { controlOrigin, session } from "../session";
 
@@ -54,7 +56,7 @@ export function SettingsPage() {
                 <button class="control-linkish" data-open-appearance onClick={openAppearance}>
                   Appearance…
                 </button>
-                <span class="dim">This device's palette, finish and corners.</span>
+                <span class="dim">This device's palette, finish, corners and chat density.</span>
               </li>
               {billing?.billing && (
                 <li>
@@ -72,9 +74,11 @@ export function SettingsPage() {
               </li>
             </ul>
           </Section>
+          <NotificationSettings />
           <LinkedProducts />
           <AgentGrants />
           <AgentTokens />
+          <ChatAlerts />
           <ClaudeSettings me={session.me?.account} />
         </div>
       </div>

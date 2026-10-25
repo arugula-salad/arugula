@@ -435,6 +435,7 @@ async fn pokes(f: &dyn Fixture) {
     // it's working. What a connected one says is `relay`'s, over a socket.
     assert!(hub.activity(&ids(&["d-not-connected"])).await.unwrap().is_empty());
     assert!(hub.activity(&[]).await.unwrap().is_empty());
+    assert!(hub.machines_online(&ids(&["d-not-connected"])).await.unwrap().is_empty());
 }
 
 /// Every change after `after`, a page of `limit` at a time.

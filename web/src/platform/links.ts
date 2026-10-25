@@ -19,16 +19,17 @@ export function routeProject(): string | undefined {
   return "project" in r ? r.project : undefined;
 }
 
-/** The path a room is at, at message `msg`. */
-export function roomPath(room: string, msg?: number): string {
-  if (room.startsWith("dm_")) return pathOf({ page: "dm", room, msg }, names);
+/** The path a room is at, at message `msg`; with `thread`, the thread of
+ * that message beside it (#106). */
+export function roomPath(room: string, msg?: number, thread?: number): string {
+  if (room.startsWith("dm_")) return pathOf({ page: "dm", room, msg, thread }, names);
   // An issue's thread (M196) is on its issue's page.
   const r = chat.room(room);
   if (r?.kind === "object" && r.project && r.target?.startsWith("iss_")) return pathOf({ page: "issue", project: r.project, issue: r.target, msg }, names);
   // And a run's (M215) on its run's.
   if (r?.kind === "object" && r.project && r.target?.startsWith("run_")) return pathOf({ page: "run", project: r.project, run: r.target, msg }, names);
   const project = projectOfRoom(room);
-  return project ? pathOf({ page: "chat", project, room, msg }, names) : "/";
+  return project ? pathOf({ page: "chat", project, room, msg, thread }, names) : "/";
 }
 
 /** Each id's name now, for its slug. */

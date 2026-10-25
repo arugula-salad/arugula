@@ -10,7 +10,7 @@ import { current, go, pathOf, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { toast } from "./toast";
 
-const chatIn = (view?: "activity" | "search", q?: string): Route | null => {
+const chatIn = (view?: "activity" | "saved" | "search" | "threads", q?: string): Route | null => {
   const project = routeProject() ?? session.personal()?.id;
   return project ? { page: "chat", project, view, q } : null;
 };
@@ -29,7 +29,7 @@ export const platformApi: PlatformApi = {
       const project = routeProject();
       go(project ? pathOf({ page: "project", project }, names) : "/");
     },
-    openRoom: (room, msg) => go(roomPath(room, msg)),
+    openRoom: (room, msg, thread) => go(roomPath(room, msg, thread)),
     openChatView(view, q = "") {
       const r = chatIn(view, q);
       if (!r) return;
@@ -37,7 +37,8 @@ export const platformApi: PlatformApi = {
       const now = current();
       go(pathOf(r, names), view === "search" && now.page === "chat" && now.view === "search");
     },
-    roomLink: (room, seq) => `${location.origin}${roomPath(room, seq)}`,
+    roomLink: (room, seq, thread) => `${location.origin}${roomPath(room, seq, thread)}`,
+    openGrants: () => go("/settings"),
   },
   ...noMachines,
   // A pane's chip opens on control's page, where the machines are.

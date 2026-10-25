@@ -3,7 +3,7 @@
 // switches read of the grants. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentLines, authorLabel } from "../src/shared/chat/agents.ts";
+import { agentLines, agentOwners, authorLabel, chipLabel, isSystemLine } from "../src/shared/chat/agents.ts";
 import {
   cellKey,
   cellOf,
@@ -151,4 +151,34 @@ test("a project's matrix on /settings: a row per machine, a switch per column, p
 
   assert.equal(cellKey("d1", p, "deploys"), "d1/prj_1/deploys");
   assert.equal(cellKey("d1", dms, "threads"), "d1/dms/threads");
+});
+
+test("the header chip counts machines and the popover lists them all", () => {
+  const a = (owner, owner_name, machine, powers) => ({ owner, owner_name, machine, machine_name: `${machine}.local`, powers });
+  const agents = [
+    a("a2", "Alec", "m2", ["threads.read", "threads.post"]),
+    a("a1", "Jake", "m1", ["threads.read"]),
+    a("a2", "Alec", "m3", ["threads.read"]),
+    a("a1", "Jake", "m0", ["issues.write"]),
+  ];
+  assert.equal(chipLabel(agents), "4 machines' agents");
+  assert.equal(chipLabel(agents.slice(1, 2)), "1 machine's agents");
+  const owners = agentOwners(agents);
+  assert.deepEqual(
+    owners.map((o) => [o.name, o.machines.map((m) => `${m.name}: ${m.does}`)]),
+    [
+      ["Alec", ["m2.local: read and post", "m3.local: read"]],
+      ["Jake", ["m0.local: edit this issue", "m1.local: read"]],
+    ],
+  );
+  // A grant with no power this room names still shows: nothing is hidden.
+  assert.equal(agentOwners([a("a1", "Jake", "m9", [])])[0].machines[0].does, "nothing here");
+});
+
+test("a line the platform wrote isn't a person's", () => {
+  const line = msg({ author: "", name: "", via: "system", text: "Alec's agents on geek can now read here" });
+  assert.equal(isSystemLine(line), true);
+  assert.equal(authorLabel(line), "Arugula");
+  assert.equal(isSystemLine(msg({ via: "notes" })), false);
+  assert.equal(isSystemLine(msg({ author: "", name: "" })), false);
 });

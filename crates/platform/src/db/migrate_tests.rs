@@ -396,3 +396,37 @@ fn postgres_has_sqlites_tables() {
         |a: &[(String, bool)], b: &[(String, bool)]| a.iter().filter(|c| !b.contains(c)).cloned().collect::<Vec<_>>();
     assert_eq!((only(&post, &lite), only(&lite, &post)), (vec![], vec![]), "(only Postgres's, only SQLite's)");
 }
+
+/// Channel members (0048, #118): every channel there was becomes public,
+/// with every member of its team's latest roster in it, so nobody loses a
+/// room; #general is the one everyone who joins later joins too; DMs and
+/// other teams' rosters are left alone.
+#[test]
+fn existing_channels_become_public_with_the_whole_team_in() {
+    let mut c = Connection::open_in_memory().unwrap();
+    run_to(&mut c, 46).unwrap();
+    c.execute_batch(
+        "INSERT INTO team_members (team_id, account_id, role, name, roster_version)
+             VALUES ('t', 'a', 'owner', 'a', 1), ('t', 'b', 'editor', 'b', 1), ('u', 'z', 'owner', 'z', 1);
+         INSERT INTO chat_rooms (id, scope, kind, name, created_by, created) VALUES
+             ('ch_general', 'team:t', 'channel', 'general', 'a', 1),
+             ('ch_random', 'team:t', 'channel', 'random', 'b', 2),
+             ('dm_ab', 'team:t', 'dm', '', 'a', 3),
+             ('ch_u', 'team:u', 'channel', 'ops', 'z', 4);
+         INSERT INTO chat_members (room, account) VALUES ('dm_ab', 'a'), ('dm_ab', 'b');",
+    )
+    .unwrap();
+    run(&mut c).unwrap();
+    let members = |room: &str| -> Vec<String> {
+        let mut q = c.prepare("SELECT account FROM chat_members WHERE room = ?1 ORDER BY account").unwrap();
+        q.query_map([room], |r| r.get(0)).unwrap().map(Result::unwrap).collect()
+    };
+    assert_eq!(members("ch_general"), ["a", "b"]);
+    assert_eq!(members("ch_random"), ["a", "b"]);
+    assert_eq!(members("ch_u"), ["z"]);
+    assert_eq!(members("dm_ab"), ["a", "b"], "a DM keeps its two");
+    assert_eq!(count(&c, "SELECT count(*) FROM chat_rooms WHERE private != 0"), 0, "all public");
+    assert_eq!(count(&c, "SELECT count(*) FROM chat_rooms WHERE auto_join != 0 AND name = 'general'"), 1);
+    assert_eq!(count(&c, "SELECT count(*) FROM chat_rooms WHERE auto_join != 0"), 1);
+    assert_eq!(count(&c, "SELECT count(*) FROM chat_rooms WHERE dm_key IS NOT NULL"), 0, "old DMs have no key");
+}

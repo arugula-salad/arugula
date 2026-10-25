@@ -43,7 +43,10 @@ use std::{
 
 use arugula_control_common::ApiError;
 use arugula_control_wire::{
-    chat::{AgentMessagesQuery, ChatPost, ChatSearchQuery},
+    chat::{
+        AgentMessagesQuery, ChatPost, ChatReact, ChatReactQuery, ChatReaction, ChatSearchQuery, ChatSystem, pins_line,
+        reactions_line, system_text,
+    },
     issues::{IssueListEdit, IssuePatch, IssueQuery, NewIssue},
     runs::{AgentRunStart, RUN_WAIT_MAX, RunListQuery, RunLogQuery, RunQuery},
 };
@@ -510,8 +513,13 @@ impl Agent {
     }
 
     async fn read_thread(&self, a: ReadThread) -> Out {
-        let q =
-            AgentMessagesQuery { after: a.after_seq, before: a.before_seq, limit: a.limit, mentions: a.mentions_only };
+        let q = AgentMessagesQuery {
+            after: a.after_seq,
+            before: a.before_seq,
+            limit: a.limit,
+            mentions: a.mentions_only,
+            thread: a.thread,
+        };
         let r = agent_threads::messages(self.state(), self.me(), Path(a.room.clone()), Query(q)).await?.0;
         let lines: Vec<String> = r
             .messages
@@ -523,16 +531,86 @@ impl Agent {
                     Some(machine) => format!("{by}'s agent on {machine}"),
                     None => by,
                 };
-                format!("[{}] {by}: {}", v["seq"], v["text"].as_str().unwrap_or_default())
+                if let Ok(s) = serde_json::from_value::<ChatSystem>(v["system"].clone()) {
+                    return format!(
+                        "[{}] * {by} {}",
+                        v["seq"],
+                        system_text(&s, v["text"].as_str().unwrap_or_default())
+                    );
+                }
+                let rs: Vec<ChatReaction> = serde_json::from_value(v["reactions"].clone()).unwrap_or_default();
+                let reacted =
+                    if rs.is_empty() { String::new() } else { format!("  [reactions: {}]", reactions_line(&rs)) };
+                let pinned = if v["pinned"] == true { "  [pinned]" } else { "" };
+                // A reply says whose thread it is in; a message with replies
+                // says how many (read them with `thread`).
+                let threaded = match (v["parent"].as_i64(), v["thread"]["replies"].as_u64()) {
+                    (Some(p), _) => format!(
+                        "  [reply in the thread of {p}{}]",
+                        if v["also"] == true { ", also sent to the channel" } else { "" }
+                    ),
+                    (None, Some(n)) => format!("  [{n} repl{} in its thread]", if n == 1 { "y" } else { "ies" }),
+                    _ => String::new(),
+                };
+                format!("[{}] {by}: {}{reacted}{pinned}{threaded}", v["seq"], v["text"].as_str().unwrap_or_default())
             })
             .collect();
-        let text = format!("{} message(s) in {}:\n{}", lines.len(), a.room, lines.join("\n"));
+        let mut about = String::new();
+        if !r.room.topic.is_empty() {
+            about += &format!("Topic: {}\n", r.room.topic);
+        }
+        if !r.room.description.is_empty() {
+            about += &format!("Description: {}\n", r.room.description);
+        }
+        if !r.pins.is_empty() {
+            about += &format!("Pinned:\n{}\n", pins_line(&r.pins));
+        }
+        let of = a.thread.map_or(String::new(), |t| format!(" in the thread of {t}"));
+        let text = format!("{about}{} message(s) in {}{of}:\n{}", lines.len(), a.room, lines.join("\n"));
         let project = r.room.project.clone();
         Ok(Done { text, value: to_value(&r), project, note: format!("read {}", a.room) })
     }
 
     async fn post_thread(&self, a: PostThread) -> Out {
-        let b = ChatPost { text: a.text, pane: None, quote: None };
+        if let Some(seq) = a.react_to_seq {
+            let emoji = a
+                .emoji
+                .clone()
+                .filter(|e| !e.trim().is_empty())
+                .ok_or_else(|| failed("react_to_seq needs an emoji"))?;
+            let path = Path((a.room.clone(), seq));
+            let m = if a.remove {
+                let q = Query(ChatReactQuery { emoji: emoji.clone() });
+                agent_threads::unreact(self.state(), self.me(), path, q).await?.0
+            } else {
+                agent_threads::react(self.state(), self.me(), path, Json(ChatReact { emoji: emoji.clone() })).await?.0
+            };
+            let what = if a.remove { "Took back" } else { "Reacted with" };
+            let text = format!(
+                "{what} {emoji} on seq {seq} in {} as {}'s agent on {}",
+                a.room,
+                self.owner,
+                token_label(&self.token.name)
+            );
+            return Ok(Done { text, value: to_value(&m), project: None, note: format!("reacted in {}", a.room) });
+        }
+        if let Some(seq) = a.pin_seq {
+            let path = Path((a.room.clone(), seq));
+            let m = if a.remove {
+                agent_threads::unpin(self.state(), self.me(), path).await?.0
+            } else {
+                agent_threads::pin(self.state(), self.me(), path).await?.0
+            };
+            let what = if a.remove { "Unpinned" } else { "Pinned" };
+            let text = format!(
+                "{what} seq {seq} in {} as {}'s agent on {}",
+                a.room,
+                self.owner,
+                token_label(&self.token.name)
+            );
+            return Ok(Done { text, value: to_value(&m), project: None, note: format!("pinned in {}", a.room) });
+        }
+        let b = ChatPost { text: a.text, parent: a.parent, also: a.also.then_some(true), ..Default::default() };
         let r = agent_threads::post(self.state(), self.me(), Path(a.room.clone()), Json(b)).await?.0;
         let v = to_value(&r);
         let text = format!("Posted in {} as {}'s agent on {}: {v}", a.room, self.owner, token_label(&self.token.name));
@@ -566,7 +644,7 @@ impl Agent {
     }
 
     async fn comment(&self, id: &str, text: String) -> Result<Value, Failure> {
-        let b = ChatPost { text, pane: None, quote: None };
+        let b = ChatPost { text, ..Default::default() };
         Ok(to_value(agent_threads::post(self.state(), self.me(), Path(id.to_owned()), Json(b)).await?.0))
     }
 
@@ -982,12 +1060,27 @@ struct ReadThread {
     limit: Option<u32>,
     #[serde(default)]
     mentions_only: bool,
+    #[serde(default)]
+    thread: Option<i64>,
 }
 
 #[derive(Deserialize)]
 struct PostThread {
     room: String,
+    #[serde(default)]
     text: String,
+    #[serde(default)]
+    react_to_seq: Option<i64>,
+    #[serde(default)]
+    emoji: Option<String>,
+    #[serde(default)]
+    pin_seq: Option<i64>,
+    #[serde(default)]
+    remove: bool,
+    #[serde(default)]
+    parent: Option<i64>,
+    #[serde(default)]
+    also: bool,
 }
 
 #[derive(Deserialize)]
@@ -1174,9 +1267,13 @@ pub fn tools() -> Vec<Value> {
              id. Everyone there sees it as written by the owner's agent, never as the owner.",
             json!({
                 "room": prop("string", "The room's id, or an issue's or PR's id."),
-                "text": prop("string", "The message, in markdown."),
+                "text": prop("string", "The message, in markdown. Not needed to react."),
+                "react_to_seq": prop("integer", "React to this message (its seq) with emoji instead of posting."),
+                "emoji": prop("string", "The emoji to react with, for react_to_seq."),
+                "pin_seq": prop("integer", "Pin this message (its seq) instead of posting; the room gets a note."),
+                "remove": prop("boolean", "Take your reaction back (or unpin) instead of adding it."),
             }),
-            &["room", "text"],
+            &["room"],
             false,
         ),
         tool(

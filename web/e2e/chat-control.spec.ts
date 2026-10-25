@@ -39,8 +39,38 @@ let quotedPane = 0;
 const chatOn = (p: Page) => p.evaluate(() => window.__arugula.chat.on);
 const roomsOf = (p: Page) => p.evaluate(() => window.__arugula.chat.rooms.map((r) => ({ id: r.id, kind: r.kind, name: r.name, unread: r.unread, mentions: r.mentions })));
 
+/** Control's API as whoever `p` is signed in as (`call` is the daemon's). */
+async function api(p: Page, method: string, path: string, body?: unknown) {
+  return p.evaluate(
+    async ([m, u, b]) => {
+      const r = await fetch(u as string, { method: m as string, credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: b === undefined ? undefined : JSON.stringify(b) });
+      return { status: r.status, body: (await r.json().catch(() => null)) as unknown };
+    },
+    [method, path, body] as const,
+  );
+}
+
+/** Post as whoever `p` is signed in as, from any page of theirs (the
+ * platform page has no `window.__arugula`). */
+async function say(p: Page, room: string, text: string): Promise<{ seq: number }> {
+  return p.evaluate(
+    async ([r, t]) => {
+      const res = await fetch(`/api/chat/rooms/${r}/messages`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: t }) });
+      if (!res.ok) throw new Error(`post: ${res.status} ${await res.text()}`);
+      return (await res.json()) as { seq: number };
+    },
+    [room, text] as const,
+  );
+}
+
+/** Add Bob to a channel Alice made over the API: a channel is its members' (#118). */
+const withBob = (room: string) => api(aliceChat, "POST", `/api/chat/rooms/${room}/members`, { accounts: [bobAccount] });
+
 /** The platform page at `path`, signed in by the hop if it has to be. */
 async function platform(p: Page, path: string) {
+  // In front: a page behind another of its browser's gets no frames, so what
+  // waits for one (a render, a caret) waits until something else draws.
+  await p.bringToFront();
   await p.goto(`${app}${path}`);
   await expect(p.locator("[data-chat-control]")).toBeVisible({ timeout: 15_000 });
 }
@@ -93,11 +123,19 @@ test("the rail's Chat opens the platform page, where Alice makes #general and me
   await expect(aliceChat).toHaveURL(new RegExp(`^${app}/p/prj_[0-9a-f]+-[a-z]+/chat`), { timeout: 15_000 });
   const page = aliceChat.locator("[data-chat-control]");
   await page.locator(`[data-room-new="${team}/channels"]`).click();
-  await aliceChat.locator(".prompt input").fill("general");
-  await aliceChat.locator(".prompt input").press("Enter");
+  await aliceChat.locator("[data-new-channel-name]").fill("general");
+  await aliceChat.locator("[data-new-channel-name]").press("Enter");
   const view = page.locator("[data-room-view]");
   await expect(view.locator(".chat-title")).toContainText("general");
   general = (await view.getAttribute("data-room-view"))!;
+  // A channel is its members' (#118): Bob is added before he's mentioned.
+  await aliceChat.evaluate(
+    async ([room, who]) => {
+      const r = await fetch(`/api/chat/rooms/${room}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accounts: [who] }) });
+      if (!r.ok) throw new Error(`adding: ${r.status}`);
+    },
+    [general, bobAccount] as const,
+  );
   const box = view.getByRole("textbox", { name: "Message #general" });
   await box.fill("@bob the mean test fails on alices");
   await box.press("Enter");
@@ -185,7 +223,8 @@ test("with every daemon stopped, they write in #general and a DM, from the web a
   const page = aliceChat.locator("[data-chat-control]");
   await expect(page.locator("[data-room-view]")).toBeVisible({ timeout: 15_000 });
   await page.locator(`[data-room-new="${team}/dms"]`).click();
-  await aliceChat.locator(".prompt-choices").getByRole("button", { name: "bob" }).click();
+  await aliceChat.locator('[data-dm-person] input[type="checkbox"]').first().check();
+  await aliceChat.locator("[data-dm-start]").click();
   const dm = page.locator("[data-room-view]");
   await expect(dm.locator(".chat-title")).toContainText("bob");
   const dmId = (await dm.getAttribute("data-room-view"))!;
@@ -219,10 +258,302 @@ test("with every daemon stopped, they write in #general and a DM, from the web a
   await expect(list.locator(".thread-msg").last()).toContainText("still here with alices asleep");
 });
 
+test("messages are Markdown with emoji: lists, quotes and code; :ta offers 🎉; the picker inserts; a phone fits", async () => {
+  test.setTimeout(90_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const box = room.getByRole("textbox", { name: "Message #general" });
+  await expect(box).toBeVisible({ timeout: 15_000 });
+
+  // Enter inside an open fence is a new line; the closing fence lets it send.
+  await box.fill("- one\n- two\n\n> quoted\n\n```ts\nconst a = 1;");
+  await box.press("Enter");
+  await expect(box).toHaveValue(/const a = 1;\n$/);
+  await box.pressSequentially("```");
+  await box.press("Enter");
+  const md = room.locator(".thread-msg").last().locator(".md.md-chat");
+  await expect(md.locator("ul > li")).toHaveCount(2);
+  await expect(md.locator("blockquote")).toHaveText("quoted");
+  await expect(md.locator(".md-code pre")).toContainText("const a = 1;");
+  await expect(md.locator(".md-code .hl-k")).toHaveText("const");
+  await expect(md.locator(".md-code [data-copy]")).toBeAttached();
+
+  // A short message is one line, with no margins around its paragraph.
+  await box.fill("just one line");
+  await box.press("Enter");
+  const one = room.locator(".thread-msg").last().locator(".md.md-chat p");
+  await expect(one).toHaveText("just one line");
+  expect((await one.boundingBox())!.height).toBeLessThan(26);
+
+  // `:ta` offers the party popper; Tab puts the character in the text.
+  await box.fill("party :ta");
+  await expect(room.locator(".emoji-pick li").first()).toContainText("🎉");
+  await box.press("Tab");
+  await expect(box).toHaveValue("party 🎉 ");
+
+  // The picker inserts at the caret, and old stored shortcodes draw as emoji.
+  await box.fill("ab");
+  await box.press("ArrowLeft");
+  await room.locator("[data-emoji-button]").click();
+  await room.locator("[data-emoji-picker] .emoji-search").fill("tada");
+  await room.locator('[data-emoji-picker] [data-emoji="🎉"]').click();
+  await expect(box).toHaveValue("a🎉b");
+  await box.fill(":joy: :+1:");
+  await box.press("Enter");
+  await expect(room.locator(".thread-msg").last()).toContainText("😂 👍");
+  await box.fill("🎉");
+  await box.press("Enter");
+  await expect(room.locator(".thread-msg").last().locator(".md.md-chat.md-jumbo")).toBeVisible();
+
+  // Phone width: the code block scrolls inside the message, the page doesn't.
+  await platform(bob, "/chat");
+  const list = bob.locator("[data-chat-control]");
+  await list.locator(`[data-chat-room="${general}"]`).click();
+  await expect(list.locator(".thread-msg .md-code").last()).toBeVisible({ timeout: 15_000 });
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await list.locator("[data-emoji-button]").click();
+  const sheet = list.locator("[data-emoji-picker]");
+  await expect(sheet).toBeVisible();
+  // A sheet along the bottom: the phone's width, and no wider.
+  expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
+});
+
+test("reactions: Alice and Bob react to one message, each sees both live; a long-press on the phone opens the menu", async () => {
+  test.setTimeout(90_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const seq = await say(aliceChat, general, "ship it?").then((p) => p.seq);
+  const msg = room.locator(`[data-msg="${seq}"]`);
+  await expect(msg).toBeVisible({ timeout: 15_000 });
+
+  // Bob is on his phone, in #general, with the message in front of him.
+  await platform(bob, "/chat");
+  const list = bob.locator("[data-chat-control]");
+  await list.locator(`[data-chat-room="${general}"]`).click();
+  const onPhone = list.locator(`[data-msg="${seq}"]`);
+  await expect(onPhone).toBeVisible({ timeout: 15_000 });
+
+  // Alice: the toolbar's menu, the quick set.
+  await msg.hover();
+  await msg.locator("[data-react-button]").first().click();
+  await expect(msg.locator("[data-react-menu] [data-quick]")).toHaveText(["👍", "❤️", "😂", "🎉", "👀", "✅"]);
+  await msg.locator('[data-quick="👍"]').click();
+  await expect(msg.locator('[data-reaction="👍"]')).toHaveClass(/mine/);
+  // Bob has it live, not his.
+  const theirs = onPhone.locator('[data-reaction="👍"]');
+  await expect(theirs).toContainText("1", { timeout: 15_000 });
+  await expect(theirs).not.toHaveClass(/mine/);
+
+  // Bob adds his to the same chip by tapping it; Alice sees two, and who.
+  await theirs.click();
+  await expect(theirs).toHaveClass(/mine/);
+  await expect(theirs).toContainText("2");
+  const chip = msg.locator('[data-reaction="👍"]');
+  await expect(chip).toContainText("2", { timeout: 15_000 });
+  await expect(chip).toHaveAttribute("title", /You and bob reacted with 👍/);
+
+  // A long-press on the phone opens the menu as a sheet; a quick one adds.
+  await onPhone.locator(".md").dispatchEvent("pointerdown", { pointerType: "touch", clientX: 40, clientY: 40 });
+  const sheet = list.locator("[data-react-menu]");
+  await expect(sheet).toBeVisible({ timeout: 3_000 });
+  expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
+  await sheet.locator('[data-quick="✅"]').click();
+  await expect(msg.locator('[data-reaction="✅"]')).toContainText("1", { timeout: 15_000 });
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+  // Taking back: Alice's 👍 leaves 1; the last one takes the chip away.
+  await chip.click();
+  await expect(chip).toContainText("1");
+  await expect(theirs).toContainText("1", { timeout: 15_000 });
+  await expect(onPhone.locator('[data-reaction="👍"]')).toHaveClass(/mine/);
+  // Deleting the message drops its reactions: only its tombstone is left.
+  await msg.hover();
+  await msg.locator("[data-msg-more]").click();
+  await msg.locator("[data-msg-delete]").click();
+  await expect(room.locator(`[data-msg="${seq}"]`)).toContainText("This message was deleted.", { timeout: 15_000 });
+  await expect(room.locator(`[data-msg="${seq}"] [data-reaction]`)).toHaveCount(0);
+});
+
+test("pictures come through control, and a teammate's dot shows them around, away or offline", async () => {
+  test.setTimeout(90_000);
+  // No request from either page leaves control for GitHub's picture host.
+  const hosts: string[] = [];
+  for (const p of [aliceChat, bob]) p.on("request", (r) => void hosts.push(new URL(r.url()).hostname));
+  await platform(aliceChat, `/chat/${general}`);
+  await platform(bob, `/chat/${general}`);
+  const room = bob.locator("[data-chat-control] [data-room-view]");
+  const head = room.locator(".thread-msg.first").first();
+  // Alice's message head has her picture's slot and a dot: she's here.
+  await expect(head.locator(".msg-avatar")).toBeVisible({ timeout: 15_000 });
+  await expect(head.locator("[data-presence]")).toHaveAttribute("data-presence", "active", { timeout: 15_000 });
+  // She chooses to appear offline: Bob sees it on his next beat.
+  const choose = async (name: string) => {
+    await aliceChat.locator(".platform-me").click();
+    await aliceChat.getByRole("menuitemradio", { name }).click();
+  };
+  await choose("Appear offline");
+  await expect(head.locator("[data-presence]")).toHaveAttribute("data-presence", "offline", { timeout: 30_000 });
+  await choose("Automatic");
+  await expect(head.locator("[data-presence]")).toHaveAttribute("data-presence", "active", { timeout: 30_000 });
+  // (Closing this page wouldn't make her offline: her control page is open
+  // and beats too. The timeout is the server's, tested there.)
+  expect(hosts.filter((h) => h.includes("githubusercontent"))).toEqual([]);
+  // The phone's width holds with pictures and dots in it.
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a scrolled-up room offers the newest, compact rows are one line", async () => {
+  test.setTimeout(90_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const box = room.locator(".thread-compose textarea");
+  await box.fill("first draft");
+  await box.press("Enter");
+  const mine = room.locator(".thread-msg.mine").last();
+  await expect(mine).toContainText("first draft", { timeout: 15_000 });
+
+  // ↑ in the empty box opens my last message for editing; Esc leaves it alone.
+  await box.focus();
+  await box.press("ArrowUp");
+  const edit = room.locator(".msg-edit textarea");
+  await expect(edit).toBeFocused();
+  await expect(edit).toHaveValue("first draft");
+  await edit.press("Escape");
+  await expect(room.locator(".msg-edit")).toHaveCount(0);
+  await expect(box).toBeFocused();
+  await expect(mine).toContainText("first draft");
+  // ... and saves on Enter.
+  await box.press("ArrowUp");
+  await edit.fill("second draft");
+  await edit.press("Enter");
+  await expect(mine).toContainText("second draft", { timeout: 15_000 });
+  await expect(mine).toContainText("(edited)");
+  // With something written, ↑ is the caret's.
+  await box.fill("x");
+  await box.press("ArrowUp");
+  await expect(room.locator(".msg-edit")).toHaveCount(0);
+  await box.fill("");
+
+  // The toolbar: quick emoji, the picker, the save star (#116), and ⋯ with
+  // quote, link, edit and delete among the rest.
+  await mine.hover();
+  await expect(mine.locator("[data-tool-quick]")).toHaveCount(3);
+  await expect(mine.locator("[data-msg-save]")).toHaveCount(1);
+  await expect(mine.locator("[data-msg-thread]")).toHaveCount(1);
+  await mine.locator("[data-msg-more]").click();
+  await expect(mine.locator("[data-msg-menu] [data-msg-reply], [data-msg-menu] [data-msg-link], [data-msg-menu] [data-msg-edit], [data-msg-menu] [data-msg-delete]")).toHaveCount(4);
+  // A press outside closes it. (So does Escape in a browser; this
+  // harness's key reaches the page but not the menu, so that stays manual.)
+  await room.locator(".chat-head").click({ position: { x: 5, y: 5 } });
+  await expect(mine.locator("[data-msg-menu]")).toHaveCount(0);
+
+  // A mention is an accent bar and a tint, not the amber band.
+  const mention = room.locator(".thread-msg.for-me").first();
+  if (await mention.count()) {
+    const shadow = await mention.evaluate((el) => getComputedStyle(el).boxShadow);
+    const accent = await aliceChat.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
+    expect(shadow.length).toBeGreaterThan(4);
+    expect(accent).not.toBe("");
+  }
+
+  // Scrolled up, Bob's new message is "↓ 1 new message"; the button and Esc go down.
+  // (Twenty, with what the room has: sixty posts a minute is an account's most.)
+  for (let i = 0; i < 20; i++) await say(aliceChat, general, `filler ${Date.now()}`);
+  const list = room.locator(".thread-list");
+  // The scroll's event comes with a frame, which a page in the background
+  // doesn't get: send it with the scroll.
+  await list.evaluate((el) => {
+    el.scrollTop = 0;
+    el.dispatchEvent(new Event("scroll"));
+  });
+  await expect(room.locator("[data-jump-newest]")).toBeVisible();
+  await platform(bob, "/chat");
+  await say(bob, general, "while you were up there");
+  await expect(room.locator("[data-jump-newest]")).toContainText("1 new message", { timeout: 15_000 });
+  await room.locator("[data-jump-newest]").click();
+  await expect(room.locator("[data-jump-newest]")).toHaveCount(0);
+  await expect(room.locator(".thread-msg").last()).toContainText("while you were up there");
+  await list.evaluate((el) => (el.scrollTop = 0));
+  await aliceChat.keyboard.press("Escape");
+  await expect(room.locator("[data-jump-newest]")).toHaveCount(0);
+
+  // Compact: no pictures, and a row's time, name and text share a line.
+  await aliceChat.evaluate(() => (document.documentElement.dataset.density = "compact"));
+  const row = room.locator(".thread-msg.first").last();
+  await expect(row.locator(".msg-avatar")).toBeHidden();
+  const [t, n, x] = await Promise.all(["compact-time", "thread-name", "md"].map((c) => row.locator(`.${c}`).first().boundingBox()));
+  expect(Math.abs(t!.y - n!.y)).toBeLessThan(12);
+  expect(Math.abs(n!.y - x!.y)).toBeLessThan(12);
+  await aliceChat.evaluate(() => (document.documentElement.dataset.density = "cozy"));
+});
+
+test("topic and pins: Alice sets a topic and pins two messages, Bob sees both live and the pin list jumps to the message", async () => {
+  test.setTimeout(90_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const first = await say(aliceChat, general, "the runbook lives in the wiki").then((p) => p.seq);
+  const second = await say(aliceChat, general, "freeze starts friday").then((p) => p.seq);
+  // Bob, on his phone, has the room open.
+  await platform(bob, "/chat");
+  const list = bob.locator("[data-chat-control]");
+  await list.locator(`[data-chat-room="${general}"]`).click();
+  await expect(list.locator(`[data-msg="${second}"]`)).toBeVisible({ timeout: 15_000 });
+
+  // Alice writes the topic in the header; Bob's header replaces its computed line.
+  await expect(room.locator("[data-chat-topic]")).not.toHaveAttribute("data-topic-set", "");
+  await room.locator("[data-topic-add]").click();
+  await aliceChat.locator(".prompt input").fill("Ship on Fridays");
+  await aliceChat.locator(".prompt input").press("Enter");
+  await expect(room.locator("[data-chat-topic][data-topic-set]")).toHaveText("Ship on Fridays");
+  await expect(list.locator("[data-chat-topic][data-topic-set]")).toHaveText("Ship on Fridays", { timeout: 15_000 });
+  // A small system line says who, in both rooms; it is nobody's unread.
+  await expect(list.locator('[data-system="topic"]')).toContainText("set the topic: Ship on Fridays");
+  await expect(room.locator('[data-system="topic"]')).toContainText("set the topic: Ship on Fridays");
+
+  // Alice pins both from the messages' menus.
+  for (const seq of [first, second]) {
+    const msg = room.locator(`[data-msg="${seq}"]`);
+    await msg.hover();
+    await msg.locator("[data-msg-more]").click();
+    await msg.locator("[data-msg-pin]").click();
+    await expect(msg.locator("[data-pinned-mark]")).toBeVisible();
+  }
+  await expect(room.locator("[data-pins-count]")).toHaveText("2");
+  // Bob has the count and the marks live, and a phone's width holds.
+  await expect(list.locator("[data-pins-count]")).toHaveText("2", { timeout: 15_000 });
+  await expect(list.locator(`[data-msg="${first}"] [data-pinned-mark]`)).toBeVisible({ timeout: 15_000 });
+  await expect(list.locator('[data-system="pin"]')).toHaveCount(2);
+
+  // Bob opens the pins (newest first) and jumps to the older one.
+  await list.locator("[data-chat-pins]").click();
+  const pins = list.locator("[data-chat-pins-card] [data-pin]");
+  await expect(pins).toHaveCount(2);
+  await expect(pins.first()).toHaveAttribute("data-pin", String(second));
+  const card = await list.locator("[data-chat-pins-card]").boundingBox();
+  expect(card!.x + card!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
+  await pins.nth(1).locator("[data-pin-jump]").click();
+  await expect(bob).toHaveURL(new RegExp(`msg=${first}`));
+  await expect(list.locator(`[data-msg="${first}"]`)).toBeVisible();
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+  // Unpinning is live too, and the system line says so.
+  await list.locator("[data-chat-pins]").click();
+  await list.locator(`[data-pin="${first}"] [data-pin-remove]`).click();
+  await expect(room.locator("[data-pins-count]")).toHaveText("1", { timeout: 15_000 });
+  await expect(room.locator('[data-system="unpin"]')).toHaveCount(1);
+  // Deleting a pinned message drops its pin.
+  const msg = room.locator(`[data-msg="${second}"]`);
+  await msg.hover();
+  await msg.locator("[data-msg-more]").click();
+  await msg.locator("[data-msg-delete]").click();
+  await expect(room.locator("[data-chat-pins]")).toHaveCount(0, { timeout: 15_000 });
+});
+
 test("a mention pushes, and the push's tap opens the room at the message", async () => {
   // A room Bob doesn't have open, and wasn't pushed for in the last minute
   // (control pushes once a minute per room).
   const deploys = await alice.evaluate((tm) => window.__arugula.chat.newChannel(tm, "deploys").then((r) => r.id), team);
+  await withBob(deploys);
   await platform(bob, "/chat");
   await expect(bob.locator(`[data-chat-control] [data-chat-room="${deploys}"]`)).toBeVisible({ timeout: 15_000 });
   const posted = await alice.evaluate((r) => window.__arugula.chat.post(r, "@bob one more"), deploys);
@@ -239,4 +570,465 @@ test("a mention pushes, and the push's tap opens the room at the message", async
   // Read, now he's looked: nothing for the badge.
   await home(bob);
   await expect.poll(async () => (await roomsOf(bob)).find((r) => r.id === deploys)?.mentions, { timeout: 15_000 }).toBe(0);
+});
+
+test("mark as unread brings the room back on another page; saved for later syncs, reminds, and is private", async () => {
+  test.setTimeout(120_000);
+  const room = await alice.evaluate((tm) => window.__arugula.chat.newChannel(tm, "later").then((r) => r.id), team);
+  await withBob(room);
+  for (const text of ["first thing", "second thing", "third thing"]) {
+    await alice.evaluate(([r, t]) => window.__arugula.chat.post(r, t), [room, text]);
+  }
+  // Bob's phone reads the room; a desktop-sized page of his is on the list.
+  await platform(bob, `/chat/${room}-later`);
+  const phone = bob.locator("[data-chat-control]");
+  await expect(phone.locator(".thread-msg", { hasText: "third thing" })).toBeVisible({ timeout: 15_000 });
+  const desk = await bob.context().newPage();
+  await desk.setViewportSize({ width: 1280, height: 800 });
+  await platform(desk, "/chat");
+  const unreadOf = (p: Page) =>
+    p.evaluate(async (r) => {
+      const v = (await (await fetch("/api/chat", { credentials: "same-origin" })).json()) as { rooms: { id: string; unread: number }[] };
+      return v.rooms.find((x) => x.id === r)?.unread;
+    }, room);
+  await expect.poll(() => unreadOf(desk), { timeout: 15_000 }).toBe(0);
+
+  // Mark the second unread from its menu: the phone keeps its "New" line
+  // there, and the other page sees the room unread.
+  const second = phone.locator(".thread-msg", { hasText: "second thing" });
+  await second.hover();
+  await second.locator("[data-msg-more]").click();
+  await second.locator("[data-msg-unread]").click();
+  await expect(phone.locator("[data-new-line]")).toBeVisible();
+  await expect(second.locator("xpath=preceding-sibling::*[1]")).toHaveAttribute("data-new-line");
+  await expect.poll(() => unreadOf(desk), { timeout: 15_000 }).toBe(2);
+  // A channel is "mentions only" by default (#113): its other unread is
+  // bold, not a count.
+  await expect(desk.locator(`[data-chat-room="${room}"]`)).toHaveClass(/\bunread\b/);
+  await expect.poll(() => unreadOf(bob), { timeout: 5_000 }).toBe(2);
+
+  // Save the third on the phone, with a reminder; it is in Saved on the desktop.
+  const third = phone.locator(".thread-msg", { hasText: "third thing" });
+  await third.hover();
+  await third.locator("[data-msg-more]").click();
+  await third.locator("[data-msg-remind-hour]").click();
+  await desk.locator("[data-chat-saved]").click();
+  const item = desk.locator("[data-chat-saved-view] [data-saved]", { hasText: "third thing" });
+  await expect(item).toBeVisible({ timeout: 15_000 });
+  await expect(item.locator(".saved-note")).toContainText("Reminder");
+  await expect(item).toHaveAttribute("data-saved", `${room}/3`);
+  // A plain save from the hover star, on the desktop, shows on the phone.
+  await desk.locator(`[data-chat-room="${room}"]`).click();
+  const first = desk.locator(".thread-msg", { hasText: "first thing" });
+  await first.hover();
+  await first.locator("[data-msg-save]").click();
+  // (On a phone the toolbar is the long-press sheet: the star is there, not shown.)
+  await expect(phone.locator(".thread-msg", { hasText: "first thing" }).locator("[data-msg-save]")).toHaveAttribute("aria-pressed", "true", { timeout: 15_000 });
+  // Done moves it down; Remove drops it. It is nobody else's: Alice has none.
+  await desk.locator("[data-chat-saved]").click();
+  await desk.locator('[data-saved$="/3"] [data-saved-done]').click();
+  await expect(desk.locator('[data-saved$="/3"].done')).toBeVisible({ timeout: 10_000 });
+  await desk.locator('[data-saved$="/1"] [data-saved-remove]').click();
+  await expect(desk.locator('[data-saved$="/1"]')).toHaveCount(0, { timeout: 10_000 });
+  expect(await alice.evaluate(async () => ((await (await fetch("/api/chat/saved")).json()) as { items: unknown[] }).items.length)).toBe(0);
+  await desk.close();
+});
+
+test("typing shows to the other reader and clears; @channel is offered; a keyword counts as a mention", async () => {
+  test.setTimeout(90_000);
+  const room = await alice.evaluate((tm) => window.__arugula.chat.newChannel(tm, "alerts").then((r) => r.id), team);
+  await withBob(room);
+  await platform(aliceChat, `/chat/${room}-alerts`);
+  await platform(bob, `/chat/${room}-alerts`);
+  const a = aliceChat.locator("[data-chat-control]");
+  const b = bob.locator("[data-chat-control]");
+  const abox = a.getByRole("textbox", { name: "Message #alerts" });
+  const bbox = b.getByRole("textbox", { name: "Message #alerts" });
+  // Nothing while the box is empty.
+  await expect(b.locator(".typing-line")).toHaveText("");
+  await abox.fill("");
+  await abox.pressSequentially("one moment");
+  await expect(b.locator(".typing-line")).toContainText(/is typing/, { timeout: 5_000 });
+  // Not to the typist, and gone within 6 s of stopping.
+  await expect(a.locator(".typing-line")).toHaveText("");
+  await expect(b.locator(".typing-line")).toHaveText("", { timeout: 9_000 });
+  // On send it clears at once.
+  await abox.pressSequentially(" again");
+  await expect(b.locator(".typing-line")).toContainText(/is typing/, { timeout: 5_000 });
+  await abox.press("Enter");
+  await expect(b.locator(".typing-line")).toHaveText("", { timeout: 3_000 });
+
+  // `@` offers the people, then @channel and @here.
+  await bbox.fill("@");
+  const picks = b.locator(".mention-pick li");
+  await expect(picks.nth(0)).toContainText("alice");
+  await expect(picks.getByText("@channel")).toBeVisible();
+  await expect(picks.getByText("@here")).toBeVisible();
+  await bbox.fill("");
+
+  // Bob's keyword makes Alice's message a mention for him.
+  await api(bob, "PUT", "/api/chat/keywords", { words: ["deploy failed"] });
+  // Out of the room: nobody's pushed for a room they have open.
+  await platform(bob, "/chat");
+  const posted = await alice.evaluate((r) => window.__arugula.chat.post(r, "the deploy failed on geek"), room);
+  expect(posted.pushed).toContainEqual({ account: bobAccount, why: "keyword" });
+  expect(posted.mentions).toContain(bobAccount);
+  // And @channel reaches him as a mention too.
+  const all = await alice.evaluate((r) => window.__arugula.chat.post(r, "@channel standup"), room);
+  expect(all.mentions).toContain(bobAccount);
+});
+
+test("an issue's link unfurls into a card for those who can see it, follows the issue, and a private address makes none", async () => {
+  test.setTimeout(150_000);
+  // Alice's personal project: Bob is not in it, though he reads #general.
+  const api = (p: Page, method: string, path: string, body?: unknown) =>
+    p.evaluate(
+      async ([m, u, b]) => {
+        const r = await fetch(u as string, { method: m as string, credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: b === undefined ? undefined : JSON.stringify(b) });
+        return { status: r.status, body: (await r.json().catch(() => null)) as Record<string, any> | null };
+      },
+      [method, path, body] as const,
+    );
+  await platform(aliceChat, `/chat/${general}`);
+  const made = await api(aliceChat, "POST", "/api/projects/personal/issues", { title: "Link cards", body: "", labels: [], assignees: [] });
+  expect(made.status).toBe(200);
+  const id = made.body!.id as string;
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const box = room.getByRole("textbox", { name: "Message #general" });
+  await box.fill(`look: ${app}/issues/${id} and http://169.254.169.254/latest/meta-data/`);
+  await box.press("Enter");
+  const card = room.locator(".thread-msg").last().locator("[data-link-card-object]");
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(card).toContainText("Link cards");
+  await expect(card.locator("[data-link-card-state]")).toHaveText("open");
+  // The private address is only text: no web card, and the link is still there.
+  await expect(room.locator(".thread-msg").last().locator("[data-link-card-web]")).toHaveCount(0);
+  // Phone width: the card stays inside the message.
+  expect((await card.boundingBox())!.width).toBeLessThanOrEqual(440);
+
+  // Closing the issue changes the open card (it asks again while open).
+  const closed = await api(aliceChat, "PATCH", `/api/issues/${id}`, { state: "closed" });
+  expect(closed.status).toBe(200);
+  // Cards ask again every 60 s while the room is open.
+  await expect(card.locator("[data-link-card-state]")).toHaveText("closed", { timeout: 75_000 });
+
+  // Bob can't see the issue: the plain link, and nothing of it leaks.
+  await platform(bob, `/chat/${general}`);
+  const theirs = bob.locator("[data-chat-control] .thread-msg").last();
+  await expect(theirs).toContainText(`/issues/${id}`, { timeout: 15_000 });
+  await expect(theirs.locator("[data-link-card]")).toHaveCount(0);
+  await expect(theirs).not.toContainText("Link cards");
+
+  // The author takes the preview off; it goes for everyone.
+  await aliceChat.reload();
+  const again = aliceChat.locator("[data-chat-control] .thread-msg").last();
+  await expect(again.locator("[data-link-card-object]")).toBeVisible({ timeout: 15_000 });
+  await again.locator("[data-link-card-remove]").click();
+  await expect(again.locator("[data-link-card]")).toHaveCount(0);
+});
+
+test("a channel is quiet until its bell says all, and a snooze shows Alice a moon on Bob", async () => {
+  const quiet = await alice.evaluate((tm) => window.__arugula.chat.newChannel(tm, "quiet").then((r) => r.id), team);
+  await withBob(quiet);
+  await platform(bob, "/chat");
+  const list = bob.locator("[data-chat-control]");
+  const row = list.locator(`[data-chat-room="${quiet}"]`);
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  // Mentions only is the channel default: a plain message pushes nobody, and
+  // the row is bold with no count.
+  const plain = await alice.evaluate((r) => window.__arugula.chat.post(r, "no mention here"), quiet);
+  expect(plain.pushed).toEqual([]);
+  await expect(row).toHaveClass(/unread/, { timeout: 15_000 });
+  await expect(row.locator(".chat-count")).toHaveCount(0);
+  // The bell sets it to every message; the next one pushes him.
+  await row.click();
+  await list.locator("[data-room-bell]").click();
+  await menuItem(bob, "All messages").click();
+  await expect(list.locator("[data-room-bell]")).toHaveAttribute("data-room-level", "all");
+  // Out of the room: nobody's pushed for a room they have open.
+  await platform(bob, "/chat");
+  const loud = await alice.evaluate((r) => window.__arugula.chat.post(r, "now with feeling"), quiet);
+  expect(loud.pushed).toEqual([{ account: bobAccount, why: "message" }]);
+  // A phone's bell fits the width.
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  // Pausing for an hour: the bell is a moon, and Alice's DM row with him
+  // shows one too.
+  await row.click();
+  await list.locator("[data-room-bell]").click();
+  await menuItem(bob, "1 hour").click();
+  await expect(list.locator("[data-room-bell]")).toHaveText("🌙");
+  const dm = await alice.evaluate(([tm, b]) => window.__arugula.chat.newDm(tm, b).then((r) => r.id), [team, bobAccount]);
+  await platform(aliceChat, "/chat");
+  await expect(aliceChat.locator(`[data-chat-control] [data-chat-room="${dm}"] [data-dnd]`)).toBeVisible({ timeout: 15_000 });
+  const held = await alice.evaluate((r) => window.__arugula.chat.post(r, "are you there?"), dm);
+  expect(held.pushed).toEqual([]);
+});
+
+test("threads: Alice starts one, Bob answers from his phone, each sees it live; the footer, unread, the Threads view, a deleted parent", async () => {
+  test.setTimeout(120_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const { seq } = await say(aliceChat, general, "who takes the deploy?");
+  const msg = room.locator(`[data-msg="${seq}"]`);
+  await expect(msg).toBeVisible({ timeout: 15_000 });
+
+  // The toolbar's ↩ opens a thread beside the room, and its link names it.
+  await msg.hover();
+  await msg.locator("[data-msg-thread]").click();
+  const panel = aliceChat.locator(`[data-thread-panel="${seq}"]`);
+  await expect(panel).toBeVisible();
+  await expect(aliceChat).toHaveURL(new RegExp(`thread=${seq}`));
+  await expect(panel.locator(`[data-msg="${seq}"]`)).toContainText("who takes the deploy?");
+  const reply = panel.getByRole("textbox", { name: "Reply in thread" });
+  await reply.fill("not me");
+  await reply.press("Enter");
+  await expect(panel.locator(".thread-msg").last()).toContainText("not me", { timeout: 15_000 });
+  // The reply is the thread's, not the room's; the parent says it has one.
+  await expect(room.locator(".thread-msg", { hasText: "not me" })).toHaveCount(0);
+  await expect(msg.locator("[data-thread-footer]")).toContainText("1 reply", { timeout: 15_000 });
+
+  // Bob, on his phone, finds the footer and opens the thread: the whole screen.
+  await platform(bob, "/chat");
+  const list = bob.locator("[data-chat-control]");
+  await list.locator(`[data-chat-room="${general}"]`).click();
+  const onPhone = list.locator(`[data-msg="${seq}"]`);
+  await expect(onPhone.locator("[data-thread-footer]")).toContainText("1 reply", { timeout: 15_000 });
+  await onPhone.locator("[data-thread-footer]").click();
+  const sheet = bob.locator(`[data-thread-panel="${seq}"]`);
+  await expect(sheet).toBeVisible();
+  await expect(list.locator("[data-room-view]")).toHaveCount(0);
+  await expect(sheet.locator(".thread-msg").last()).toContainText("not me");
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
+
+  // He answers, and also sends it to the channel: both see it live, in the
+  // thread and in the room.
+  await sheet.locator("[data-thread-also] input").check();
+  const box = sheet.getByRole("textbox", { name: "Reply in thread" });
+  await box.fill("me, from the bus");
+  await box.press("Enter");
+  await expect(panel.locator(".thread-msg").last()).toContainText("me, from the bus", { timeout: 15_000 });
+  await expect(room.locator(".thread-msg", { hasText: "me, from the bus" })).toBeVisible();
+  await expect(msg.locator("[data-thread-footer]")).toContainText("2 replies");
+  await expect(panel.locator("[data-reply-also]")).toBeVisible();
+  // Back to the room, with the footer where the message is.
+  await sheet.locator("[data-thread-back]").click();
+  await expect(list.locator("[data-room-view]")).toBeVisible();
+  await expect(onPhone.locator("[data-thread-footer]")).toContainText("2 replies");
+
+  // Alice answers again; Bob follows (he replied), so it is unread for him in
+  // the Threads view and its badge, and not in the room.
+  await api(aliceChat, "POST", `/api/chat/rooms/${general}/messages`, { text: "ok, I will", parent: seq });
+  const threadsUnread = async () => ((await api(bob, "GET", "/api/chat")).body as { threads_unread: number }).threads_unread;
+  await expect.poll(threadsUnread, { timeout: 15_000 }).toBe(1);
+  await platform(bob, "/chat/threads");
+  const row = bob.locator(`[data-chat-threads-view] [data-thread-row="${seq}"]`);
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await expect(row.locator("[data-thread-row-unread]")).toHaveText("1");
+  await expect(row).toContainText("ok, I will");
+  // Opening it puts the New line before it, and reads the thread.
+  await row.click();
+  const opened = bob.locator(`[data-thread-panel="${seq}"]`);
+  await expect(opened.locator("[data-new-line]")).toBeVisible({ timeout: 15_000 });
+  await expect.poll(threadsUnread, { timeout: 15_000 }).toBe(0);
+  // A link to a reply names its thread, and opens it.
+  const replyLink = ((await api(bob, "GET", `/api/chat/rooms/${general}/messages?thread=${seq}`)).body as { messages: { seq: number }[] }).messages[0].seq;
+  await platform(bob, `/chat/${general}`);
+  await bob.goto(`${bob.url().split("?")[0]}?msg=${replyLink}&thread=${seq}`);
+  await expect(bob.locator(`[data-thread-panel="${seq}"] [data-msg="${replyLink}"]`)).toBeVisible({ timeout: 15_000 });
+
+  // Search finds a reply, and its hit opens the thread.
+  const found = ((await api(aliceChat, "GET", "/api/chat/search?q=bus")).body as { found: { message: { parent?: number } }[] }).found.map((h) => h.message.parent);
+  expect(found).toEqual([seq]);
+
+  // Alice unfollows from the panel; deleting the parent leaves its tombstone
+  // with the thread under it.
+  await panel.locator("[data-thread-follow]").click();
+  await expect(panel.locator("[data-thread-follow]")).toHaveText("Follow");
+  // At this width the panel lies over the room's right side, where ⋯ is.
+  await panel.locator("[data-thread-close]").click();
+  await msg.hover();
+  await msg.locator("[data-msg-more]").click();
+  await msg.locator("[data-msg-delete]").click();
+  await expect(room.locator(`[data-msg="${seq}"]`)).toContainText("This message was deleted.", { timeout: 15_000 });
+  await expect(room.locator(`[data-msg="${seq}"] [data-thread-footer]`)).toContainText("3 replies");
+});
+
+/** A menu's item by its label (`openMenu`'s layer). */
+function menuItem(p: Page, label: string) {
+  return p.locator(".menu .menu-item", { hasText: label }).first();
+}
+
+// A 2x2 PNG, so the browser decodes it (a broken image has no width).
+const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP8z8Dwn4GBgYGJAQoAHhgCAh6X4CYAAAAASUVORK5CYII=";
+
+test("files: Alice pastes a screenshot and Bob's phone sees it inline; she drops a PDF and Bob downloads it; outsiders get nothing", async ({ browser }) => {
+  test.setTimeout(120_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const box = room.getByRole("textbox", { name: "Message #general" });
+
+  // Paste: the clipboard holds a picture, not text. It goes up as a chip.
+  await box.focus();
+  await box.evaluate((el, b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const data = new DataTransfer();
+    data.items.add(new File([bytes], "image.png", { type: "image/png" }));
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, PNG_B64);
+  const chip = room.locator("[data-attach-chip]");
+  await expect(chip).toHaveCount(1);
+  await expect(chip.locator("progress")).toHaveCount(0, { timeout: 15_000 });
+  await expect(chip).toHaveAttribute("data-attach-chip", /^pasted-.*\.png$/);
+
+  // Drop: a PDF onto the room, beside the picture. Remove works per chip.
+  await room.locator(".thread-list").evaluate((el) => {
+    const data = new DataTransfer();
+    data.items.add(new File(["%PDF-1.4\n% e2e\n"], "plan.pdf", { type: "application/pdf" }));
+    el.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
+  });
+  await expect(chip).toHaveCount(2);
+  await expect(room.locator('[data-attach-chip="plan.pdf"] progress')).toHaveCount(0, { timeout: 15_000 });
+  await room.locator('[data-attach-chip="plan.pdf"] [data-attach-remove]').click();
+  await expect(chip).toHaveCount(1);
+  await room.locator("[data-attach-input]").setInputFiles({ name: "plan.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n% e2e\n") });
+  await expect(room.locator('[data-attach-chip="plan.pdf"]')).toBeVisible();
+  await expect(room.locator("[data-attach-chip] progress")).toHaveCount(0, { timeout: 15_000 });
+
+  await box.fill("the screenshot and the plan");
+  await box.press("Enter");
+  const mine = room.locator(".thread-msg").last();
+  const image = mine.locator("[data-msg-image] img");
+  await expect(image).toBeVisible({ timeout: 15_000 });
+  // Under control's CSP the picture really loaded (a blocked one has no width).
+  await expect.poll(() => image.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(2);
+  await expect(room.locator("[data-attach-chip]")).toHaveCount(0);
+  await expect(mine.locator('[data-msg-file="plan.pdf"]')).toContainText("PDF");
+
+  // It opens full size, and a press beside the picture closes it. (Escape
+  // does too in a browser; this harness's key doesn't reach it, as with ⋯.)
+  await mine.locator("[data-msg-image]").click();
+  await expect(aliceChat.locator("[data-image-viewer] img")).toBeVisible();
+  await aliceChat.locator("[data-image-viewer]").click({ position: { x: 5, y: 5 } });
+  await expect(aliceChat.locator("[data-image-viewer]")).toHaveCount(0);
+
+  // Bob, on his phone, sees it inline within the screen, and downloads the PDF.
+  await platform(bob, `/chat/${general}`);
+  const theirs = bob.locator("[data-chat-control] .thread-msg").last();
+  await expect(theirs.locator("[data-msg-image] img")).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => theirs.locator("[data-msg-image] img").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(2);
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const [download] = await Promise.all([bob.waitForEvent("download"), theirs.locator('[data-msg-file="plan.pdf"] [data-file-download]').click()]);
+  expect(download.suggestedFilename()).toBe("plan.pdf");
+
+  // The address answers readers of the room and no one else: not a visitor
+  // with no session, and not through a public path.
+  const url = await theirs.locator("[data-msg-image] img").getAttribute("src");
+  const stranger = await browser.newContext();
+  const denied = await stranger.request.get(`${app}${url}`);
+  expect(denied.status()).not.toBe(200);
+  const seen = await bob.request.get(`${app}${url}`);
+  expect(seen.status()).toBe(200);
+  expect(seen.headers()["x-content-type-options"]).toBe("nosniff");
+  await stranger.close();
+
+  // Deleting the message takes the files with it.
+  await mine.hover();
+  await mine.locator("[data-msg-more]").click();
+  await mine.locator("[data-msg-delete]").click();
+  await expect(mine).toContainText("This message was deleted.", { timeout: 15_000 });
+  expect((await bob.request.get(`${app}${url}`)).status()).toBe(404);
+});
+
+test("private channels, the browser, leaving, and a group DM of three (#117, #118)", async ({ browser }) => {
+  test.setTimeout(240_000);
+  // Carol joins Acme as an editor.
+  const link = await alice.evaluate((tm) => window.__arugula.control!.invite(tm, "editor", true), team);
+  const carol = await t.person(browser, "carol", pixel7);
+  await carol.goto(link);
+  await carol.locator("[data-accept-invite]").click();
+  await expect(carol.locator("[data-invite-pending]")).toBeVisible();
+  await alice.bringToFront();
+  await alice.evaluate(() => window.__arugula.control!.refresh());
+  await expect(alice.locator("[data-admit-yes]")).toBeVisible({ timeout: 15_000 });
+  await alice.locator("[data-admit-yes]").click();
+  await expect.poll(() => alice.evaluate(() => window.__arugula.control!.teams[0].roster.members.length), { timeout: 15_000 }).toBe(3);
+  await home(carol);
+  await expect.poll(() => chatOn(carol), { timeout: 15_000 }).toBe(true);
+
+  // Alice makes a private channel and invites Bob, from the details panel.
+  await platform(aliceChat, "/chat");
+  const page = aliceChat.locator("[data-chat-control]");
+  await page.locator(`[data-room-new="${team}/channels"]`).click();
+  await aliceChat.locator("[data-new-channel-name]").fill("plans");
+  await aliceChat.locator("[data-new-channel-private]").check();
+  await aliceChat.locator("[data-new-channel-name]").press("Enter");
+  const view = page.locator("[data-room-view]");
+  await expect(view.locator(".chat-title")).toContainText("plans");
+  await expect(view.locator("[data-chat-topic]")).toContainText("private");
+  const plans = (await view.getAttribute("data-room-view"))!;
+  await page.locator("[data-chat-details]").click();
+  await page.locator("[data-member-add]").click();
+  await page.locator("[data-member-addable] li", { hasText: "bob" }).locator("button").click();
+  await expect(page.locator(`[data-room-person="${bobAccount}"]`)).toBeVisible({ timeout: 15_000 });
+  const box = view.getByRole("textbox", { name: "Message #plans" });
+  await box.fill("the secret roadmap");
+  await box.press("Enter");
+  await expect(view.locator(".thread-msg").last()).toContainText("the secret roadmap");
+
+  // Bob has it; Carol has no sign of it: not in her list, not in the
+  // browser, and its address is as if it weren't there.
+  await platform(bob, "/chat");
+  await expect(bob.locator(`[data-chat-room="${plans}"]`)).toBeVisible({ timeout: 15_000 });
+  await platform(carol, "/chat");
+  const hers = carol.locator("[data-chat-control]");
+  await expect(hers.locator(`[data-chat-room="${plans}"]`)).toHaveCount(0);
+  await hers.locator(`[data-room-browse="${team}/channels"]`).click();
+  await expect(carol.locator("[data-channel-browser]")).toBeVisible();
+  await expect(carol.locator('[data-browse-channel="plans"]')).toHaveCount(0);
+  // #general is Alice's and Bob's, public: Carol sees it, and joins.
+  await carol.locator('[data-browse-channel="general"] [data-browse-join]').click();
+  await expect(hers.locator("[data-room-view] .chat-title")).toContainText("general", { timeout: 15_000 });
+  // Back on her list (a phone's room has the screen), it's hers now.
+  await platform(carol, "/chat");
+  await expect(hers.locator(`[data-chat-room="${general}"]`)).toBeVisible();
+  await platform(carol, `/chat/${plans}`);
+  await expect(carol.locator("[data-room-missing]")).toBeVisible({ timeout: 15_000 });
+
+  // Leaving #general takes it from her list, and it stays in the browser.
+  await platform(carol, `/chat/${general}`);
+  await hers.locator("[data-room-leave]").click();
+  await platform(carol, "/chat");
+  await expect(hers.locator(`[data-chat-room="${general}"]`)).toHaveCount(0, { timeout: 15_000 });
+  await hers.locator(`[data-room-browse="${team}/channels"]`).click();
+  await expect(carol.locator('[data-browse-channel="general"] [data-browse-join]')).toBeVisible();
+  await carol.keyboard.press("Escape");
+
+  // A DM of Alice, Bob and Carol: named after them, live for all three.
+  await platform(aliceChat, "/chat");
+  await page.locator(`[data-room-new="${team}/dms"]`).click();
+  for (const who of ["bob", "carol"]) await aliceChat.locator("[data-new-dm] li", { hasText: who }).locator("input").check();
+  await aliceChat.locator("[data-dm-start]").click();
+  const trio = page.locator("[data-room-view]");
+  await expect(trio.locator(".chat-title")).toContainText(/bob, carol|carol, bob/, { timeout: 15_000 });
+  const trioId = (await trio.getAttribute("data-room-view"))!;
+  const trioBox = trio.getByRole("textbox").first();
+  await trioBox.fill("hello, the three of us");
+  await trioBox.press("Enter");
+  await platform(carol, "/chat");
+  await expect(hers.locator(`[data-chat-room="${trioId}"]`)).toBeVisible({ timeout: 15_000 });
+  await hers.locator(`[data-chat-room="${trioId}"]`).click();
+  await expect(hers.locator(".thread-msg").last()).toContainText("hello, the three of us");
+  const back = hers.getByRole("textbox").first();
+  await back.fill("hi from my phone");
+  await back.press("Enter");
+  await expect(trio.locator(".thread-msg").last()).toContainText("hi from my phone", { timeout: 15_000 });
+  // The phone's list and the room fit its width.
+  expect(await carol.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  // Opening a DM with the same people reopens it.
+  await platform(aliceChat, "/chat");
+  await page.locator(`[data-room-new="${team}/dms"]`).click();
+  for (const who of ["bob", "carol"]) await aliceChat.locator("[data-new-dm] li", { hasText: who }).locator("input").check();
+  await aliceChat.locator("[data-dm-start]").click();
+  await expect(page.locator("[data-room-view]")).toHaveAttribute("data-room-view", trioId, { timeout: 15_000 });
 });

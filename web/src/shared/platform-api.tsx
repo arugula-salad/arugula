@@ -32,12 +32,16 @@ export interface ChatNav {
   /** Every room, from the top. */
   openChat(): void;
   closeChat(): void;
-  /** A room, at message `msg`. */
-  openRoom(room: string, msg?: number): void;
-  /** Activity, or search results for `q`. */
-  openChatView(view: "activity" | "search", q?: string): void;
-  /** A message's link, to copy. */
-  roomLink(room: string, seq: number): string;
+  /** A room, at message `msg`; with `thread`, the thread of that message
+   * beside it (#106), and `msg` a reply in it to show. */
+  openRoom(room: string, msg?: number, thread?: number): void;
+  /** Activity, the threads I follow, or search results for `q`. */
+  openChatView(view: "activity" | "saved" | "search" | "threads", q?: string): void;
+  /** A message's link, to copy; a reply's names its thread. */
+  roomLink(room: string, seq: number, thread?: number): string;
+  /** Where the reader gives their machines' agents access to rooms (a
+   * room's agents chip links here); a host with no such page omits it. */
+  openGrants?(): void;
 }
 
 export interface PlatformApi {

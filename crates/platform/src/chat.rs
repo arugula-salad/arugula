@@ -15,10 +15,15 @@
 //! [`cache::DELAY`] (a feed tick plus a cache tick).
 //!
 //! **Who sees a room** ([`sight`]):
-//! - a channel: everyone in its team's latest roster (only owners while the
-//!   team is locked);
-//! - a DM: its two people, while each is in the team. One who left doesn't
-//!   see it; the other still reads it but can't write (decision 10);
+//! - a channel: its members (#118) who are in its team's latest roster now
+//!   (only owners while the team is locked). A public channel is joined by
+//!   anyone in the team ([`members::join`]), a private one by invitation
+//!   alone, and neither shows to a team member who isn't one: 404, in
+//!   search, Activity and the live stream too;
+//! - a DM: its people (two, or up to eight, #117), while each is in the
+//!   team, each from when they came to it. One who left the team doesn't
+//!   see it; the rest still read it, and write while two are left
+//!   (decision 10, generalised);
 //! - the thread on a pane or session: whom its machine last said may read
 //!   it ([`daemon_readers`], decision 2), each from their "from now" floor,
 //!   and only while control would route them to the machine at all
@@ -65,10 +70,11 @@ use std::{
 
 use arugula_control_common::{ApiError, err, refusal};
 use arugula_control_wire::chat::{
-    self as wire, ChatEdit, ChatFound, ChatHit, ChatKind, ChatLive, ChatMessage, ChatMessages, ChatMessagesQuery,
-    ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget, ChatPane, ChatPerson, ChatPost, ChatPosted,
-    ChatPushWhy, ChatPushed, ChatRead, ChatReaderList, ChatReaders, ChatReadersStored, ChatRoom, ChatRoomAgent,
-    ChatRoomChange, ChatRoomDetail, ChatRooms, ChatSearchQuery,
+    self as wire, ChatEdit, ChatFound, ChatHit, ChatKind, ChatLevel, ChatLive, ChatMessage, ChatMessages,
+    ChatMessagesQuery, ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget, ChatPane, ChatPerson, ChatPost,
+    ChatPosted, ChatPushWhy, ChatPushed, ChatReaction, ChatReactor, ChatRead, ChatReaderList, ChatReaders,
+    ChatReadersStored, ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms, ChatSearchQuery,
+    NotifyLevel,
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -86,7 +92,9 @@ use crate::{
     cache,
     db::{
         Db, Taken,
-        chat::{Message, NewChatEvent, NewMessage, OldMessage, Page, Room, Search, UnreadAsk, Word},
+        chat::{Message, NewChatEvent, NewMessage, OldMessage, Page, Room, RoomMeta, Search, UnreadAsk, Word},
+        chat_files::ChatFileRow,
+        chat_reactions::Reaction,
         objects::Holder,
         projects::{ISSUES_WRITE, THREADS_POST, THREADS_READ},
     },
@@ -94,8 +102,21 @@ use crate::{
     hub::{Account, Daemon, Flags, PushOptions, Team},
 };
 
+pub(crate) mod agent_notice;
 pub(crate) mod agent_threads;
+pub(crate) mod alerts;
+pub(crate) mod files;
+mod link_fetch;
+pub(crate) mod members;
 pub(crate) mod objects;
+pub(crate) mod people;
+pub(crate) mod pins;
+pub mod previews;
+pub(crate) mod reactions;
+pub(crate) mod saved;
+pub(crate) mod sidebar;
+pub(crate) mod threads;
+pub(crate) mod typing;
 
 type J<T> = Result<Json<T>, ApiError>;
 
@@ -194,7 +215,7 @@ struct Facts {
     /// The machines asked about for the reader, and those they may reach.
     asked: HashSet<String>,
     reach: HashSet<String>,
-    /// A page's rooms ([`Facts::page`]): their DMs' members and their
+    /// A page's rooms ([`Facts::page`]): their channels' and DMs' members and their
     /// machines' readers, each read once for the page rather than once or
     /// more per room (a round trip each on Postgres). Empty for one room's
     /// facts, whose callers may write in between: those read the database.
@@ -203,6 +224,8 @@ struct Facts {
     /// name (M196).
     projects: HashMap<String, Holder>,
     objects: HashMap<String, objects::Object>,
+    /// Channels' and DMs' privacy, topic and DM key (#117, #118).
+    meta: HashMap<String, RoomMeta>,
 }
 
 #[derive(Default)]
@@ -212,7 +235,7 @@ struct PageReads {
     readers: HashMap<(String, String, String), Vec<arugula_control_wire::chat::ChatReader>>,
     /// The rooms whose members are in `members`.
     members_of: HashSet<String>,
-    members: HashMap<String, Vec<String>>,
+    members: HashMap<String, Vec<(String, u64)>>,
 }
 
 impl Facts {
@@ -262,6 +285,7 @@ impl Facts {
         asked.sort();
         asked.dedup();
         let mut page = PageReads::default();
+        let mut meta = HashMap::new();
         let mut people = Vec::new();
         if whole {
             // Readers matter on others' machines (an owner sees their own
@@ -276,14 +300,23 @@ impl Facts {
             on.dedup();
             page.readers = app.db.chat_readers_on(&on)?;
             page.readers_on = on.into_iter().collect();
-            let dms: Vec<&str> = rooms.iter().filter(|r| r.kind == "dm").map(|r| r.id.as_str()).collect();
-            page.members = app.db.chat_members_of(&dms)?;
-            page.members_of = dms.iter().map(|d| (*d).to_owned()).collect();
-            people.extend(page.members.values().flatten().cloned());
+            let held: Vec<&str> =
+                rooms.iter().filter(|r| matches!(r.kind.as_str(), "dm" | "channel")).map(|r| r.id.as_str()).collect();
+            (page.members, meta) = app.db.chat_members_of(&held)?;
+            page.members_of = held.iter().map(|d| (*d).to_owned()).collect();
+            // A DM's people are named in the list; a channel's are not.
+            for r in rooms.iter().filter(|r| r.kind == "dm") {
+                people.extend(page.members.get(&r.id).into_iter().flatten().map(|(a, _)| a.clone()));
+            }
         } else {
             for r in rooms.iter().filter(|r| r.kind == "dm") {
                 people.extend(app.db.chat_members(&r.id)?);
             }
+        }
+        if !whole {
+            let held: Vec<&str> =
+                rooms.iter().filter(|r| matches!(r.kind.as_str(), "dm" | "channel")).map(|r| r.id.as_str()).collect();
+            meta = app.db.chat_room_meta(&held)?;
         }
         people.sort();
         people.dedup();
@@ -302,15 +335,27 @@ impl Facts {
             page,
             projects,
             objects,
+            meta,
         })
+    }
+
+    /// A channel's or DM's members, each with when they read from: from the
+    /// page, or the database.
+    fn member_rows(&self, app: &Platform, room: &str) -> anyhow::Result<Vec<(String, u64)>> {
+        if self.page.members_of.contains(room) {
+            return Ok(self.page.members.get(room).cloned().unwrap_or_default());
+        }
+        app.db.chat_member_rows(room)
     }
 
     /// A room's members: from the page, or the database.
     fn members(&self, app: &Platform, room: &str) -> anyhow::Result<Vec<String>> {
-        if self.page.members_of.contains(room) {
-            return Ok(self.page.members.get(room).cloned().unwrap_or_default());
-        }
-        app.db.chat_members(room)
+        Ok(self.member_rows(app, room)?.into_iter().map(|(a, _)| a).collect())
+    }
+
+    /// What a channel or DM has beside its row.
+    fn meta(&self, room: &str) -> RoomMeta {
+        self.meta.get(room).cloned().unwrap_or_default()
     }
 
     /// Who reads a pane's or session's thread, as its machine last said:
@@ -379,10 +424,13 @@ async fn target_sight(
 async fn sight(app: &Platform, facts: &Facts, account: &str, room: &Room) -> anyhow::Result<Option<u64>> {
     let team = room.scope.strip_prefix("team:");
     Ok(match (room.kind.as_str(), team) {
-        ("channel", Some(team)) => facts.role(team, account).map(|_| 0),
-        ("dm", Some(team)) => {
-            let member = facts.members(app, &room.id)?.iter().any(|a| a == account);
-            (member && facts.role(team, account).is_some()).then_some(0)
+        // A member in the team now. A channel's members read all of it, a
+        // DM's one who came back (#117) from when they did.
+        ("channel" | "dm", Some(team)) => {
+            if facts.role(team, account).is_none() {
+                return Ok(None);
+            }
+            facts.member_rows(app, &room.id)?.into_iter().find(|(a, _)| a == account).map(|(_, from)| from)
         }
         ("pane" | "session", _) => match (&room.machine, &room.target) {
             (Some(m), Some(t)) => target_sight(app, facts, account, m, &room.kind, t).await?,
@@ -415,8 +463,11 @@ fn writable(app: &Platform, facts: &Facts, room: &Room, account: &str) -> anyhow
         ("pane" | "session", _) => !watching(app, facts, account, room)?,
         // Every member who sees it, a team's viewers too.
         ("object", _) => true,
-        // Both still in the team: one who left ends it for the other.
-        ("dm", Some(team)) => facts.members(app, &room.id)?.iter().all(|a| facts.role(team, a).is_some()),
+        // Two of its people still in the team: with one left, it's read-only
+        // (decision 10, generalised).
+        ("dm", Some(team)) => {
+            facts.members(app, &room.id)?.iter().filter(|a| facts.role(team, a).is_some()).count() >= 2
+        }
         _ => false,
     })
 }
@@ -450,7 +501,7 @@ async fn audience(app: &Platform, room: &Room) -> anyhow::Result<Vec<String>> {
             .unwrap_or_default()
     };
     let mut maybe: Vec<String> = match (room.kind.as_str(), room.scope.strip_prefix("team:")) {
-        ("channel", Some(team)) => members(Some(team)),
+        ("channel", Some(_)) => facts.members(app, &room.id)?,
         ("pane" | "session", _) => {
             let m = room.machine.as_deref().unwrap_or_default();
             let mut v: Vec<String> = facts.owner(m).map(str::to_owned).into_iter().collect();
@@ -508,7 +559,66 @@ fn new_id(prefix: &str) -> String {
 fn listed(app: &Platform, facts: &Facts, account: &str, room: &Room, from: u64) -> anyhow::Result<ChatRoom> {
     let mark = app.db.chat_mark(&room.id, account)?;
     let counts = app.db.chat_unread(&room.id, account, mark.0, from)?;
-    listed_as(app, facts, account, room, mark, counts)
+    let mut r = listed_as(app, facts, account, room, mark, counts, &pins::Extras::of(&app.db, &[room])?)?;
+    with_levels(app, account, std::slice::from_mut(&mut r), None)?;
+    Ok(r)
+}
+
+/// What each room is set to for `account` (#113): their own choice, else
+/// their default for its kind; and whether a DM's other person has
+/// notifications paused (#115). `own` is the reader's choices when the
+/// caller read them with the marks ([`rooms`]); else one statement reads
+/// them. One more reads the reader's defaults and the DM people's pauses
+/// together, whatever the page's size (`GET /api/chat`'s budget,
+/// `hub_calls_tests`).
+fn with_levels(
+    app: &Platform,
+    account: &str,
+    rooms: &mut [ChatRoom],
+    own: Option<HashMap<String, NotifyLevel>>,
+) -> anyhow::Result<()> {
+    let own = match own {
+        Some(o) => o,
+        None => {
+            let ids: Vec<&str> = rooms.iter().map(|r| r.id.as_str()).collect();
+            app.db.chat_levels_for(account, &ids)?
+        }
+    };
+    let mut who: Vec<String> = rooms.iter().flat_map(|r| &r.others).map(|w| w.account.clone()).collect();
+    who.push(account.to_owned());
+    let mut prefs = app.db.notify_prefs_of(&who)?;
+    let mine = prefs.remove(account).unwrap_or_default();
+    for r in rooms.iter_mut() {
+        let kind = match r.kind {
+            ChatKind::Dm => "dm",
+            ChatKind::Channel => "channel",
+            _ => "thread",
+        };
+        let chosen = own.get(&r.id).copied();
+        r.level = chosen.unwrap_or_else(|| crate::notify::default_level(&mine, kind));
+        r.level_own = chosen.is_some();
+        // The old flag reads the same as `nothing`.
+        r.muted = r.level == NotifyLevel::Nothing;
+    }
+    let now = now_ms();
+    for r in rooms.iter_mut() {
+        for w in r.with.iter_mut().chain(r.others.iter_mut()) {
+            w.dnd = prefs.get(&w.account).is_some_and(|p| crate::notify::paused(p, now));
+        }
+    }
+    Ok(())
+}
+
+/// Which of these accounts have notifications paused now (#115).
+fn paused_among(app: &Platform, accounts: &[String]) -> anyhow::Result<HashSet<String>> {
+    let now = now_ms();
+    Ok(app
+        .db
+        .notify_prefs_of(accounts)?
+        .into_iter()
+        .filter(|(_, p)| crate::notify::paused(p, now))
+        .map(|(a, _)| a)
+        .collect())
 }
 
 /// [`listed`], with the reader's mark (and whether they muted it) and the
@@ -521,16 +631,25 @@ fn listed_as(
     room: &Room,
     (read, muted): (i64, bool),
     (unread, mentions): (u64, u64),
+    extras: &pins::Extras,
 ) -> anyhow::Result<ChatRoom> {
-    let with = if room.kind == "dm" {
+    let writable = writable(app, facts, room, account)?;
+    let (topic, description, pins, topic_writable) = extras.of_room(facts, room, account, writable);
+    let others: Vec<ChatPerson> = if room.kind == "dm" {
         facts
             .members(app, &room.id)?
             .into_iter()
-            .find(|a| a != account)
-            .map(|a| ChatPerson { name: facts.people.get(&a).map(|p| p.name.clone()).unwrap_or_default(), account: a })
+            .filter(|a| a != account)
+            .map(|a| ChatPerson {
+                name: facts.people.get(&a).map(|p| p.name.clone()).unwrap_or_default(),
+                account: a,
+                dnd: false,
+            })
+            .collect()
     } else {
-        None
+        vec![]
     };
+    let meta = facts.meta(&room.id);
     let machine_name = room.machine.as_ref().and_then(|m| facts.daemons.get(m)).map(|d| d.name.clone());
     Ok(ChatRoom {
         id: room.id.clone(),
@@ -541,15 +660,35 @@ fn listed_as(
         machine_name,
         target: room.target.clone(),
         project: objects::project_of(room).map(str::to_owned),
-        with,
+        with: others.first().cloned(),
+        others,
+        private: meta.private,
         last: room.last_seq,
         read,
         unread,
         mentions,
         muted,
+        // The reader's own and default levels are filled in by
+        // [`with_levels`], for a page of rooms at once.
+        level: if muted { NotifyLevel::Nothing } else { NotifyLevel::Mentions },
+        level_own: muted,
         archived: room.archived.is_some(),
-        writable: writable(app, facts, room, account)?,
+        writable,
+        topic,
+        description,
+        pins,
+        topic_writable,
     })
+}
+
+/// Mark the people who have notifications paused.
+fn with_dnd(app: &Platform, people: &mut [ChatPerson]) -> anyhow::Result<()> {
+    let ids: Vec<String> = people.iter().map(|p| p.account.clone()).collect();
+    let paused = paused_among(app, &ids)?;
+    for p in people {
+        p.dnd = paused.contains(&p.account);
+    }
+    Ok(())
 }
 
 /// Names and pane chips, asked of the hub once per answer.
@@ -558,12 +697,30 @@ struct Shower {
     machines: HashMap<String, (String, bool)>,
     /// Agents' machines' names (M197): "" for one that's gone.
     agents: HashMap<String, String>,
+    /// The reactions on these messages (#104), first reaction first.
+    reactions: HashMap<(String, i64), Vec<Reaction>>,
+    /// The files on these messages (#107), in the order they were chosen.
+    files: HashMap<(String, i64), Vec<ChatFileRow>>,
+    /// Which are system lines or pinned (#119).
+    marks: pins::Marks,
+    /// The threads these messages start (#106), for the reader.
+    threads: HashMap<(String, i64), threads::Summary>,
+    /// Who is reading: a reaction is "mine" when it is this account's and
+    /// this agent's ("" for the person), so an agent sees its own apart
+    /// from its owner's.
+    reader: (String, String),
 }
 
 impl Shower {
     async fn of(app: &Platform, reader: &str, ms: &[&Message]) -> anyhow::Result<Self> {
         let hub = &*app.hub;
+        let reactions = reactions_of(&app.db, ms)?;
+        let files = files::files_of(&app.db, ms)?;
+        let marks = pins::Marks::of(&app.db, ms)?;
+        let threads = threads::summaries(&app.db, reader, ms)?;
         let mut authors: Vec<String> = ms.iter().map(|m| m.author.clone()).filter(|a| !a.is_empty()).collect();
+        authors.extend(reactions.values().flatten().map(|r| r.account.clone()));
+        authors.extend(threads.values().flat_map(|t| t.repliers.iter().cloned()));
         authors.sort();
         authors.dedup();
         let mut machines: Vec<String> =
@@ -573,6 +730,7 @@ impl Shower {
         // The agents' machines, for their names only.
         let mut named = machines.clone();
         named.extend(ms.iter().filter_map(|m| m.agent.clone()));
+        named.extend(reactions.values().flatten().filter(|r| !r.agent.is_empty()).map(|r| r.agent.clone()));
         named.sort();
         named.dedup();
         let (accounts, daemons, reach) = tokio::try_join!(
@@ -583,6 +741,7 @@ impl Shower {
         let agents = ms
             .iter()
             .filter_map(|m| m.agent.clone())
+            .chain(reactions.values().flatten().filter(|r| !r.agent.is_empty()).map(|r| r.agent.clone()))
             .map(|a| {
                 let name = daemons.get(&a).map(|d| d.name.clone()).unwrap_or_default();
                 (a, name)
@@ -600,7 +759,22 @@ impl Shower {
                 (m, (name, opens))
             })
             .collect();
-        Ok(Self { names, machines, agents })
+        Ok(Self {
+            names,
+            machines,
+            agents,
+            reactions,
+            files,
+            marks,
+            threads,
+            reader: (reader.to_owned(), String::new()),
+        })
+    }
+
+    /// Read as the agent on `machine` (for its owner `reader`).
+    pub(super) fn for_agent(mut self, machine: &str) -> Self {
+        self.reader.1 = machine.to_owned();
+        self
     }
 
     fn show(&self, m: &Message) -> ChatMessage {
@@ -628,8 +802,75 @@ impl Shower {
                 machine_name: self.agents.get(a).cloned().unwrap_or_default(),
             }),
             via: m.via.clone(),
+            reactions: self.reacted(m),
+            // An agent reads them at its machine's address.
+            files: self
+                .files
+                .get(&(m.room.clone(), m.seq))
+                .into_iter()
+                .flatten()
+                .map(|f| files::shown(f, !self.reader.1.is_empty()))
+                .collect(),
+            pinned: self.marks.pinned(m),
+            system: self.marks.system(m),
+            parent: m.parent,
+            also: m.also,
+            thread: self.threads.get(&(m.room.clone(), m.seq)).map(|t| {
+                let named = |a: &str| ChatPerson {
+                    account: a.to_owned(),
+                    name: self.names.get(a).cloned().unwrap_or_default(),
+                    dnd: false,
+                };
+                t.shown(named, !self.reader.1.is_empty())
+            }),
         }
     }
+
+    /// A message's reactions, grouped by emoji in the order each was
+    /// first made.
+    fn reacted(&self, m: &Message) -> Vec<ChatReaction> {
+        let mut out: Vec<ChatReaction> = Vec::new();
+        for r in self.reactions.get(&(m.room.clone(), m.seq)).into_iter().flatten() {
+            let at = match out.iter().position(|x| x.emoji == r.emoji) {
+                Some(i) => i,
+                None => {
+                    out.push(ChatReaction { emoji: r.emoji.clone(), count: 0, mine: false, who: vec![] });
+                    out.len() - 1
+                }
+            };
+            let c = &mut out[at];
+            c.count += 1;
+            c.mine |= (r.account.as_str(), r.agent.as_str()) == (self.reader.0.as_str(), self.reader.1.as_str());
+            if c.who.len() < wire::MAX_REACTORS_SHOWN {
+                c.who.push(ChatReactor {
+                    name: self.names.get(&r.account).cloned().unwrap_or_default(),
+                    account: r.account.clone(),
+                    agent: (!r.agent.is_empty()).then(|| wire::ChatAgent {
+                        machine: r.agent.clone(),
+                        machine_name: self.agents.get(&r.agent).cloned().unwrap_or_default(),
+                    }),
+                });
+            }
+        }
+        out
+    }
+}
+
+/// The reactions on `ms`, by (room, seq): one query a room, over the
+/// numbers it spans.
+fn reactions_of(db: &Db, ms: &[&Message]) -> anyhow::Result<HashMap<(String, i64), Vec<Reaction>>> {
+    let mut span: HashMap<&str, (i64, i64)> = HashMap::new();
+    for m in ms.iter().filter(|m| m.deleted.is_none() && m.imported.is_none()) {
+        let e = span.entry(m.room.as_str()).or_insert((m.seq, m.seq));
+        *e = (e.0.min(m.seq), e.1.max(m.seq));
+    }
+    let mut out: HashMap<(String, i64), Vec<Reaction>> = HashMap::new();
+    for (room, (from, to)) in span {
+        for r in db.chat_reactions(room, from, to)? {
+            out.entry((r.room.clone(), r.seq)).or_default().push(r);
+        }
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------- mentions
@@ -780,6 +1021,8 @@ pub struct Hub {
     /// rooms.
     generation: AtomicU64,
     pushed: Mutex<HashMap<(String, String), u64>>,
+    /// When each person last pinged typing in each room ([`typing`]).
+    typed: Mutex<HashMap<(String, String), u64>>,
 }
 
 /// Event ids are `c-<seq>`, `seq` being the event's row in `chat_events`
@@ -796,7 +1039,10 @@ const EVENTS_PAGE: u32 = 500;
 
 struct StreamInfo {
     account: String,
-    open: Option<String>,
+    /// The rooms its page shows (more than one with several chat blocks).
+    open: Vec<String>,
+    /// The thread open beside it (#106).
+    thread: Option<i64>,
 }
 
 impl Default for Hub {
@@ -808,6 +1054,7 @@ impl Default for Hub {
             streams: Mutex::new(HashMap::new()),
             generation: AtomicU64::new(0),
             pushed: Mutex::new(HashMap::new()),
+            typed: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -855,6 +1102,16 @@ impl Hub {
                             tracing::warn!(seq = e.seq, error = %err, "chat: a live event this build can't read")
                         }
                     },
+                    // A ping of #111: sent while it's fresh, not replayed
+                    // after (a machine that was away, a stream that resumes).
+                    "typing" => {
+                        if now_ms().saturating_sub(e.at) <= wire::TYPING_MS
+                            && let Ok(ev) = serde_json::from_str::<ChatLive>(&e.body)
+                        {
+                            // `n: 0`: not numbered, so no stream keeps its place by it.
+                            let _ = self.tx.send(Arc::new(Out { n: 0, ev, to: None }));
+                        }
+                    }
                     _ => self.changed(),
                 }
                 self.last.store(e.seq, Ordering::SeqCst);
@@ -932,7 +1189,14 @@ impl Hub {
     }
 
     fn has_open(&self, account: &str, room: &str) -> bool {
-        self.streams.lock().unwrap().values().any(|s| s.account == account && s.open.as_deref() == Some(room))
+        self.streams.lock().unwrap().values().any(|s| s.account == account && s.open.iter().any(|r| r == room))
+    }
+
+    /// Whether `account` has the thread `parent` of `room` open (#106).
+    fn has_open_thread(&self, account: &str, room: &str, parent: i64) -> bool {
+        self.streams.lock().unwrap().values().any(|s| {
+            s.account == account && s.open.first().map(String::as_str) == Some(room) && s.thread == Some(parent)
+        })
     }
 
     /// Whether `account` may be pushed for `room` now (and note it). Per
@@ -960,7 +1224,19 @@ struct Registered {
 
 impl Drop for Registered {
     fn drop(&mut self) {
-        self.app.chat.streams.lock().unwrap().remove(&self.id);
+        let last = {
+            let mut streams = self.app.chat.streams.lock().unwrap();
+            let account = streams.remove(&self.id).map(|s| s.account);
+            account.filter(|a| !streams.values().any(|s| s.account == *a))
+        };
+        // The person's last open page here closed: they're gone now, not
+        // when the beat goes stale (a page on another machine's streams
+        // says so again within [`people::STREAM_BEAT`]).
+        if let Some(a) = last
+            && let Err(e) = self.app.db.chat_beat(&a, now_ms(), false, true)
+        {
+            tracing::warn!(error = %e, "chat: noting a page closed");
+        }
     }
 }
 
@@ -975,6 +1251,9 @@ struct Live {
     rooms: HashSet<String>,
     generation: u64,
     read_at: Instant,
+    /// Keeps the person seen while the stream is open, even if the page's
+    /// own timers are throttled in a background tab.
+    beat: tokio::time::Interval,
 }
 
 fn data(ev: &ChatLive) -> String {
@@ -1004,6 +1283,15 @@ impl Live {
 
     /// The event to send for `out`, if this stream gets it.
     async fn deliver(&mut self, out: &Out) -> Option<Event> {
+        // Typing isn't in the log (`n` 0): no id, never replayed, and heard
+        // only by another person's page that has the room open.
+        if let ChatLive::Typing { room, account, .. } = &out.ev {
+            // `open` is the page's word: the room is also one this stream sees.
+            let hears = *account != self.account
+                && self.rooms.contains(room)
+                && self.app().chat.stream_has_open(&self.reg.id, room);
+            return hears.then(|| Event::default().data(data(&out.ev)));
+        }
         if out.n <= self.seen {
             return None;
         }
@@ -1022,9 +1310,18 @@ impl Live {
             }
             ChatLive::Message { room, .. }
             | ChatLive::Changed { room, .. }
+            | ChatLive::Reacted { room, .. }
+            | ChatLive::Pinned { room }
+            | ChatLive::Reply { room, .. }
+            | ChatLive::ThreadRead { room, .. }
             | ChatLive::Read { room, .. }
             | ChatLive::Object { room, .. } => self.rooms.contains(room),
-            ChatLive::Hello { .. } | ChatLive::Resync {} => true,
+            // Sidebar and Saved are told to their account only (`out.to`).
+            ChatLive::Hello { .. }
+            | ChatLive::Sidebar {}
+            | ChatLive::Saved {}
+            | ChatLive::Resync {}
+            | ChatLive::Typing { .. } => true,
         };
         ok.then(|| Event::default().id(self.app().chat.id(out.n)).data(data(&out.ev)))
     }
@@ -1054,7 +1351,12 @@ pub async fn live(
         if streams.values().filter(|x| x.account == s.account).count() >= STREAMS_PER_ACCOUNT {
             return Err(err(StatusCode::TOO_MANY_REQUESTS, "too many open chat pages; close some"));
         }
-        streams.insert(id.clone(), StreamInfo { account: s.account.clone(), open: None });
+        streams.insert(id.clone(), StreamInfo { account: s.account.clone(), open: Vec::new(), thread: None });
+    }
+    // A page that opened is a person who's here: seen now, active at the
+    // page's first beat (it says whether it's in use).
+    if let Err(e) = app.db.chat_beat(&s.account, now_ms(), false, false) {
+        tracing::warn!(error = %e, "chat: noting a page opened");
     }
     let last = headers.get("last-event-id").and_then(|v| v.to_str().ok()).map(str::to_owned);
     // Subscribe first, then read what was missed from the database: what's
@@ -1071,6 +1373,7 @@ pub async fn live(
         rooms: HashSet::new(),
         generation: 0,
         read_at: Instant::now(),
+        beat: tokio::time::interval_at(tokio::time::Instant::now() + people::STREAM_BEAT, people::STREAM_BEAT),
     };
     live.refresh().await;
     live.pending.push_back(Event::default().data(data(&ChatLive::Hello { stream: id })));
@@ -1094,7 +1397,16 @@ pub async fn live(
             if let Some(ev) = live.pending.pop_front() {
                 return Some((Ok(ev), live));
             }
-            match live.rx.recv().await {
+            let got = tokio::select! {
+                got = live.rx.recv() => got,
+                _ = live.beat.tick() => {
+                    if let Err(e) = live.app().db.chat_beat(&live.account, now_ms(), false, false) {
+                        tracing::warn!(error = %e, "chat: noting a page is still open");
+                    }
+                    continue;
+                }
+            };
+            match got {
                 Ok(out) => {
                     if let Some(ev) = live.deliver(&out).await {
                         return Some((Ok(ev), live));
@@ -1118,7 +1430,8 @@ pub async fn open(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Cha
         .get_mut(&b.stream)
         .filter(|x| x.account == s.account)
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such stream"))?;
-    st.open = b.room.clone();
+    st.open = b.room.iter().chain(b.more.iter().flatten()).cloned().collect();
+    st.thread = b.room.as_ref().and(b.thread);
     Ok(Json(b))
 }
 
@@ -1132,16 +1445,20 @@ pub async fn rooms(State(app): State<Arc<Platform>>, s: Person) -> J<ChatRooms> 
     // room (a round trip each on Postgres, where one per room added up).
     let ids: Vec<&str> = seen.iter().map(|(r, _)| r.id.as_str()).collect();
     let marks = app.db.chat_marks(&ids, &s.account)?;
-    let mark = |id: &str| marks.get(id).copied().unwrap_or((0, false));
+    let mark = |id: &str| marks.get(id).map(|m| (m.0, m.1)).unwrap_or((0, false));
     let asks: Vec<UnreadAsk<'_>> =
         seen.iter().map(|(r, from)| UnreadAsk { room: &r.id, read: mark(&r.id).0, from: *from }).collect();
     let counts = app.db.chat_unread_in(&s.account, &asks)?;
+    let extras = pins::Extras::of(&app.db, &seen.iter().map(|(r, _)| r).collect::<Vec<_>>())?;
     let mut rooms = Vec::new();
     for (r, _) in &seen {
         let n = counts.get(&r.id).copied().unwrap_or((0, 0));
-        rooms.push(listed_as(&app, &facts, &s.account, r, mark(&r.id), n)?);
+        rooms.push(listed_as(&app, &facts, &s.account, r, mark(&r.id), n, &extras)?);
     }
-    Ok(Json(ChatRooms { rooms }))
+    let own = marks.iter().filter_map(|(id, m)| m.2.map(|l| (id.clone(), l))).collect();
+    with_levels(&app, &s.account, &mut rooms, Some(own))?;
+    let (threads_unread, threads_mentions) = threads::totals(&app, &s.account, &seen).await?;
+    Ok(Json(ChatRooms { rooms, threads_unread, threads_mentions }))
 }
 
 /// A channel's name: one lowercase word of letters, digits, `-` and `_`.
@@ -1156,8 +1473,20 @@ fn channel_name(name: &str) -> Result<String, ApiError> {
     }
 }
 
+/// A topic or a DM's name: a line of at most this many characters.
+const MAX_LABEL: usize = 250;
+
+fn label(text: &str) -> Result<String, ApiError> {
+    let t = text.trim();
+    if t.chars().count() > MAX_LABEL || t.contains('\n') {
+        return Err(err(StatusCode::BAD_REQUEST, "that is one line of at most 250 characters"));
+    }
+    Ok(t.to_owned())
+}
+
 /// `POST /api/chat/teams/{team}/channels`: owners and editors make them;
-/// viewers read and post.
+/// viewers read and post. The maker is its first member; public unless
+/// `private` (#118).
 pub async fn new_channel(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -1191,19 +1520,32 @@ pub async fn new_channel(
         return Err(err(StatusCode::CONFLICT, "a team has at most 200 channels; archive or reuse one"));
     }
     app.limits.check_account(CHAT_ROOMS, &s.account)?;
+    let topic = label(&b.topic)?;
     let room = Room { name, ..room };
     // The team's default project (made the first time).
     let project = crate::projects::team_project(&app, &team).await?;
-    app.db.add_chat_room(&room, &[], project.as_deref()).map_err(|e| {
+    // Auto-join is for the public ones: a private channel is by invitation.
+    let meta = RoomMeta { private: b.private, auto_join: b.auto_join && !b.private, dm_key: None };
+    app.db.add_chat_room_with(&room, &[&s.account], project.as_deref(), &meta).map_err(|e| {
         if e.is::<Taken>() { err(StatusCode::CONFLICT, "there's a channel by that name") } else { e.into() }
     })?;
+    if !topic.is_empty() {
+        // The topic it was made with: no system line, nothing yet to read.
+        let new =
+            crate::db::chat_pins::Topic { topic, description: String::new(), author: s.account.clone(), at: now_ms() };
+        app.db.set_chat_topic(&room.id, &new, None, &[])?;
+    }
     app.chat.room(&app.db, &room.id);
-    app.analytics.capture_team(&s.account, &team, "chat channel made", json!({}));
+    app.analytics.capture_team(&s.account, &team, "chat channel made", json!({ "private": b.private }));
+    let facts = Facts::of(&app, Some(&s.account), &[&room]).await?;
     Ok(Json(listed(&app, &facts, &s.account, &room, 0)?))
 }
 
-/// `POST /api/chat/teams/{team}/dms`: the DM with a teammate (made the
-/// first time).
+/// `POST /api/chat/teams/{team}/dms`: the DM with a teammate, or with up to
+/// seven more (#117), made the first time. The same people again reopen it:
+/// adding someone is a different set, so a new conversation that doesn't
+/// show them the history. One who left it and asks for it again comes back
+/// to it from now.
 pub async fn new_dm(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -1225,18 +1567,58 @@ pub async fn new_dm(
         last_seq: 0,
     };
     let facts = Facts::of(&app, Some(&s.account), &[&room]).await?;
-    if b.with == s.account || facts.role(&team, &s.account).is_none() || facts.role(&team, &b.with).is_none() {
-        return Err(err(StatusCode::NOT_FOUND, "nobody by that account in this team"));
+    let mut people: Vec<String> = std::iter::once(b.with.clone()).chain(b.and.iter().cloned()).collect();
+    people.push(s.account.clone());
+    people.sort();
+    people.dedup();
+    let nobody = || err(StatusCode::NOT_FOUND, "nobody by that account in this team");
+    // Not just yourself, and not you twice over.
+    if people.len() < 2 || b.with == s.account || facts.role(&team, &s.account).is_none() {
+        return Err(nobody());
     }
-    if let Some(r) = app.db.chat_dm(&scope, &s.account, &b.with)? {
-        let facts = Facts::of(&app, Some(&s.account), &[&r]).await?;
-        return Ok(Json(listed(&app, &facts, &s.account, &r, 0)?));
+    if people.len() > wire::DM_PEOPLE {
+        return Err(err(StatusCode::BAD_REQUEST, "a DM has at most 8 people"));
+    }
+    if people.iter().any(|a| facts.role(&team, a).is_none()) {
+        return Err(nobody());
+    }
+    let key = people.join(",");
+    let existing = if people.len() == 2 {
+        // Before group DMs: the two people's own, with no key.
+        let other = people.iter().find(|a| **a != s.account).ok_or_else(nobody)?;
+        match app.db.chat_dm(&scope, &s.account, other)? {
+            Some(r) => Some(r),
+            None => app.db.chat_dm_of(&scope, &key)?,
+        }
+    } else {
+        app.db.chat_dm_of(&scope, &key)?
+    };
+    let (app, account) = (&*app, s.account.as_str());
+    let reopen = |r: Room| async move {
+        // Back in a conversation they left, from now.
+        if app.db.add_chat_member(&r.id, account, now_ms())? {
+            app.chat.room(&app.db, &r.id);
+        }
+        let facts = Facts::of(app, Some(account), &[&r]).await?;
+        let from = sight(app, &facts, account, &r).await?.ok_or_else(nobody)?;
+        Ok::<_, ApiError>(Json(listed(app, &facts, account, &r, from)?))
+    };
+    if let Some(r) = existing {
+        return reopen(r).await;
     }
     app.limits.check_account(CHAT_ROOMS, &s.account)?;
-    app.db.add_chat_room(&room, &[&s.account, &b.with], None)?;
-    app.chat.room(&app.db, &room.id);
-    let facts = Facts::of(&app, Some(&s.account), &[&room]).await?;
-    Ok(Json(listed(&app, &facts, &s.account, &room, 0)?))
+    let members: Vec<&str> = people.iter().map(String::as_str).collect();
+    let meta = RoomMeta { dm_key: Some(key.clone()), ..RoomMeta::default() };
+    match app.db.add_chat_room_with(&room, &members, None, &meta) {
+        Ok(()) => app.chat.room(&app.db, &room.id),
+        // Someone made it just now.
+        Err(e) if e.is::<Taken>() => {
+            return reopen(app.db.chat_dm_of(&scope, &key)?.ok_or_else(nobody)?).await;
+        }
+        Err(e) => return Err(e.into()),
+    }
+    let facts = Facts::of(app, Some(&s.account), &[&room]).await?;
+    Ok(Json(listed(app, &facts, &s.account, &room, 0)?))
 }
 
 /// A pane's or session's id as a daemon names it: short, no spaces.
@@ -1342,10 +1724,13 @@ pub async fn room(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<St
     let names = app.cache.accounts(&*app.hub, &audience).await?;
     let people = audience
         .into_iter()
-        .map(|a| ChatPerson { name: names.get(&a).map(|x| x.name.clone()).unwrap_or_default(), account: a })
+        .map(|a| ChatPerson { name: names.get(&a).map(|x| x.name.clone()).unwrap_or_default(), account: a, dnd: false })
         .collect();
+    let mut people: Vec<ChatPerson> = people;
+    with_dnd(&app, &mut people)?;
     let agents = room_agents(&app, &facts, &room).await?;
-    Ok(Json(ChatRoomDetail { room: listed(&app, &facts, &s.account, &room, from)?, people, agents }))
+    let can_manage = members::may_manage(&facts, &room, &s.account);
+    Ok(Json(ChatRoomDetail { room: listed(&app, &facts, &s.account, &room, from)?, people, can_manage, agents }))
 }
 
 // ---------------------------------------------------------------- agents
@@ -1486,7 +1871,8 @@ async fn room_agents(app: &Platform, facts: &Facts, room: &Room) -> anyhow::Resu
 }
 
 /// `PATCH /api/chat/rooms/{id}`: a channel renamed or archived, by its
-/// team's owners.
+/// team's owners; a DM renamed by any
+/// of its people (#117).
 pub async fn change_room(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -1495,22 +1881,39 @@ pub async fn change_room(
 ) -> J<ChatRoom> {
     gate(&app, &s.account).await?;
     let (room, from, facts) = room_for(&app, &s.account, &id).await?;
-    let team = room.scope.strip_prefix("team:").filter(|_| room.kind == "channel");
-    let Some(team) = team else { return Err(err(StatusCode::BAD_REQUEST, "only a channel is renamed or archived")) };
-    if facts.role(team, &s.account) != Some(TeamRole::Owner) {
-        return Err(err(StatusCode::FORBIDDEN, "a team's owners rename and archive its channels"));
-    }
-    if let Some(name) = &b.name {
-        let name = channel_name(name)?;
-        app.db.rename_chat_room(&room.id, &name).map_err(|e| {
-            if e.is::<Taken>() { err(StatusCode::CONFLICT, "there's a channel by that name") } else { e.into() }
-        })?;
-    }
-    if let Some(archived) = b.archived {
-        app.db.archive_chat_room(&room.id, archived.then(now_ms))?;
+    if room.kind == "dm" {
+        if b.archived.is_some() {
+            return Err(err(StatusCode::BAD_REQUEST, "a DM is only renamed"));
+        }
+        if let Some(name) = &b.name {
+            let name = label(name)?;
+            if name.chars().count() > 80 {
+                return Err(err(StatusCode::BAD_REQUEST, "a DM's name is at most 80 characters"));
+            }
+            app.db.rename_chat_room(&room.id, &name)?;
+        }
+    } else {
+        let team = room.scope.strip_prefix("team:").filter(|_| room.kind == "channel");
+        let Some(team) = team else {
+            return Err(err(StatusCode::BAD_REQUEST, "only a channel is renamed or archived"));
+        };
+        let owner = facts.role(team, &s.account) == Some(TeamRole::Owner);
+        if (b.name.is_some() || b.archived.is_some()) && !owner {
+            return Err(err(StatusCode::FORBIDDEN, "a team's owners rename and archive its channels"));
+        }
+        if let Some(name) = &b.name {
+            let name = channel_name(name)?;
+            app.db.rename_chat_room(&room.id, &name).map_err(|e| {
+                if e.is::<Taken>() { err(StatusCode::CONFLICT, "there's a channel by that name") } else { e.into() }
+            })?;
+        }
+        if let Some(archived) = b.archived {
+            app.db.archive_chat_room(&room.id, archived.then(now_ms))?;
+        }
     }
     app.chat.room(&app.db, &room.id);
     let room = app.db.chat_room(&room.id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such room"))?;
+    let facts = Facts::of(&app, Some(&s.account), &[&room]).await?;
     Ok(Json(listed(&app, &facts, &s.account, &room, from)?))
 }
 
@@ -1523,7 +1926,23 @@ pub async fn mute(
 ) -> J<ChatRoom> {
     gate(&app, &s.account).await?;
     let (room, from, facts) = room_for(&app, &s.account, &id).await?;
-    app.db.set_chat_muted(&room.id, &s.account, b.muted)?;
+    // The old switch, kept for callers that have it: muting is the
+    // `nothing` level, and unmuting goes back to the default.
+    app.db.set_chat_level(&room.id, &s.account, b.muted.then_some(NotifyLevel::Nothing))?;
+    Ok(Json(listed(&app, &facts, &s.account, &room, from)?))
+}
+
+/// `POST /api/chat/rooms/{id}/level`: what I'm notified of in this room,
+/// or (none) my default for rooms like it.
+pub async fn level(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path(id): Path<String>,
+    Json(b): Json<ChatLevel>,
+) -> J<ChatRoom> {
+    gate(&app, &s.account).await?;
+    let (room, from, facts) = room_for(&app, &s.account, &id).await?;
+    app.db.set_chat_level(&room.id, &s.account, b.level)?;
     Ok(Json(listed(&app, &facts, &s.account, &room, from)?))
 }
 
@@ -1544,11 +1963,20 @@ pub async fn messages(
         (None, Some(b)) => Page::Before(b),
         (None, None) => Page::Newest,
     };
-    let (ms, more) = app.db.chat_messages(&room.id, page, q.limit.unwrap_or(PAGE).clamp(1, MAX_PAGE))?;
+    let limit = q.limit.unwrap_or(PAGE).clamp(1, MAX_PAGE);
+    if let Some(parent) = q.thread {
+        let (first, ms, more) = threads::page(&app, &room, from, parent, page, limit)?;
+        let all: Vec<&Message> = std::iter::once(&first).chain(ms.iter()).collect();
+        let shower = Shower::of(&app, &s.account, &all).await?;
+        let messages = ms.iter().map(|m| shower.show(m)).collect();
+        let room = listed(&app, &facts, &s.account, &room, from)?;
+        return Ok(Json(ChatMessages { room, messages, more, parent: Some(shower.show(&first)) }));
+    }
+    let (ms, more) = app.db.chat_messages(&room.id, page, limit)?;
     let ms: Vec<&Message> = ms.iter().filter(|m| m.at >= from).collect();
     let shower = Shower::of(&app, &s.account, &ms).await?;
     let messages = ms.into_iter().map(|m| shower.show(m)).collect();
-    Ok(Json(ChatMessages { room: listed(&app, &facts, &s.account, &room, from)?, messages, more }))
+    Ok(Json(ChatMessages { room: listed(&app, &facts, &s.account, &room, from)?, messages, parent: None, more }))
 }
 
 fn sizes(text: &str, quote: Option<&str>) -> Result<(), ApiError> {
@@ -1596,7 +2024,7 @@ pub(crate) async fn post_full(
 ) -> Result<ChatPosted, ApiError> {
     let s = Person { account: author.to_owned() };
     gate(app, &s.account).await?;
-    let (room, _, facts) = room_for(app, &s.account, id).await?;
+    let (room, from, facts) = room_for(app, &s.account, id).await?;
     if watching(app, &facts, &s.account, &room)? {
         return Err(refusal(
             StatusCode::FORBIDDEN,
@@ -1607,9 +2035,23 @@ pub(crate) async fn post_full(
     if !writable(app, &facts, &room, &s.account)? {
         return Err(err(StatusCode::CONFLICT, "this room is read-only"));
     }
+    // A reply goes under a message that starts a thread: one that isn't a
+    // reply, brought in or blank with nothing under it (a deleted message
+    // with a thread keeps taking replies).
+    if let Some(p) = b.parent {
+        let first = threads::parent_in(app, &room, from, p)?;
+        if first.imported.is_some() {
+            return Err(err(StatusCode::CONFLICT, "an archive's messages are read-only"));
+        }
+        if first.deleted.is_some() && app.db.chat_thread_repliers(&room.id, p, p)?.is_empty() {
+            return Err(err(StatusCode::CONFLICT, "that message was deleted"));
+        }
+    }
     let text = b.text.trim();
     let quote = b.quote.as_deref().filter(|q| !q.trim().is_empty());
-    if text.is_empty() && quote.is_none() {
+    let attach = files::to_attach(app, &room, &s.account, &b.files)?;
+    let files_label = files::label(&attach);
+    if text.is_empty() && quote.is_none() && attach.is_empty() {
         return Err(err(StatusCode::BAD_REQUEST, "say something"));
     }
     sizes(text, quote)?;
@@ -1631,7 +2073,17 @@ pub(crate) async fn post_full(
     app.limits.check_account_per_minute(CHAT_POSTS, &s.account)?;
     app.limits.check_all_per_minute(ALL_CHAT_POSTS)?;
     let people = audience(app, &room).await?;
-    let (named, mut unreached) = mentions(app, text, &people, &s.account).await?;
+    let (mut named, mut unreached) = mentions(app, text, &people, &s.account).await?;
+    // `@channel`, `@here` and keywords are mentions too (#114): stored
+    // beside the named, so counts and Activity see them.
+    let extra = alerts::extra(app, &facts, &room, text, &people, &s.account, &named).await?;
+    unreached.retain(|w| !matches!(w.as_str(), alerts::CHANNEL | alerts::HERE));
+    for a in &extra.broadcast {
+        if !named.contains(a) {
+            named.push(a.clone());
+        }
+    }
+    named.extend(extra.keyword.iter().cloned());
     let mut stored = named.clone();
     stored.extend(agent_mentions(app, &facts, &room, &mut unreached, agent).await?);
     let at = now_ms();
@@ -1647,29 +2099,65 @@ pub(crate) async fn post_full(
             mentions: &stored,
             agent: agent.map(|a| a.machine.as_str()),
             via,
+            parent: b.parent,
+            also: b.parent.is_some() && b.also.unwrap_or(false),
         },
     )?;
-    app.chat.publish(&app.db, ChatLive::Message { room: room.id.clone(), seq }, None);
+    if !attach.is_empty() {
+        let ids: Vec<String> = attach.into_iter().map(|f| f.id).collect();
+        app.db.attach_chat_files(&room.id, seq, &s.account, &ids)?;
+    }
+    // A reply changes its thread, and the room's list only when it was also
+    // sent to the channel.
+    let also = b.parent.is_some() && b.also.unwrap_or(false);
+    if let Some(parent) = b.parent {
+        app.chat.publish(&app.db, ChatLive::Reply { room: room.id.clone(), parent, seq }, None);
+    }
+    if b.parent.is_none() || also {
+        app.chat.publish(&app.db, ChatLive::Message { room: room.id.clone(), seq }, None);
+    }
+    let thread = match b.parent {
+        Some(parent) => Some(ThreadPush { parent, also, followers: app.db.chat_thread_followers(&room.id, parent)? }),
+        None => None,
+    };
     let pushed = push(
         app,
         &facts,
         &room,
         (&s.account, agent, via),
+        thread,
         seq,
-        text.is_empty().then_some(quote).flatten().unwrap_or(text),
+        if text.is_empty() && quote.is_none() {
+            &files_label
+        } else {
+            text.is_empty().then_some(quote).flatten().unwrap_or(text)
+        },
         &named,
+        &extra.keyword,
         &people,
+        b.notify_anyway.unwrap_or(false),
     )
     .await?;
     Ok(ChatPosted { seq, mentions: stored, unreached, pushed })
+}
+
+/// A reply being pushed (#106): its thread, whether it was also sent to the
+/// channel, and who follows the thread now.
+struct ThreadPush {
+    parent: i64,
+    also: bool,
+    followers: Vec<String>,
 }
 
 /// How chat's pushes go: to every subscription the account has, with the
 /// hub's TTL, as control's own notices always have (M122).
 const PUSHES: PushOptions = PushOptions { ttl: None, any_subscription: true };
 
-/// Push a new message to whom it's for (S41 q4): mentions, and the other
-/// person in a DM. Not the author, nobody with the room open or muted, and
+/// Push a new message to whom it's for (S41 q4): mentions, the other
+/// person in a DM, and (#113) whoever set the room, or their default for
+/// rooms like it, to every message; each by their level for the room
+/// ([`crate::notify`]), and nobody while they've paused notifications
+/// (#115). Not the author, nobody with the room open or muted, and
 /// nobody twice a minute for one room. The hub sends them
 /// ([`HubPort::push_with`](crate::HubPort::push_with)), in the
 /// background: a failure is only logged.
@@ -1683,20 +2171,55 @@ async fn push(
     facts: &Facts,
     room: &Room,
     (author, agent, via): (&str, Option<&AgentPrincipal>, Option<&str>),
+    thread: Option<ThreadPush>,
     seq: i64,
     text: &str,
     named: &[String],
+    keyed: &[String],
     people: &[String],
+    anyway: bool,
 ) -> anyhow::Result<Vec<ChatPushed>> {
     let inboxed = room.kind == "object" && room.target.as_deref().and_then(crate::inbox::thread_reason).is_some();
-    let mut to: Vec<(String, ChatPushWhy)> =
-        named.iter().filter(|_| !inboxed).map(|a| (a.clone(), ChatPushWhy::Mention)).collect();
+    let mut to: Vec<(String, ChatPushWhy)> = named
+        .iter()
+        .filter(|_| !inboxed)
+        .map(|a| (a.clone(), if keyed.contains(a) { ChatPushWhy::Keyword } else { ChatPushWhy::Mention }))
+        .collect();
     if room.kind == "dm" {
         for a in people {
             if a != author && !named.contains(a) {
                 to.push((a.clone(), ChatPushWhy::Dm));
             }
         }
+    }
+    // Everyone else in a channel who asked for every message there (#113):
+    // by their level for the room, else their default. A reply only in its
+    // thread isn't a message of the channel: its followers hear it below.
+    if !inboxed && room.kind != "dm" && thread.as_ref().is_none_or(|t| t.also) {
+        for a in people {
+            if a != author && !named.contains(a) {
+                to.push((a.clone(), ChatPushWhy::Message));
+            }
+        }
+    }
+    // The thread's followers (#106), at their level for followed threads.
+    if let Some(t) = thread.as_ref().filter(|_| !inboxed) {
+        for a in &t.followers {
+            if a != author && !to.iter().any(|(x, _)| x == a) {
+                to.push((a.clone(), ChatPushWhy::Thread));
+            }
+        }
+    }
+    // Their levels and do not disturb (#113, #115). One statement each for
+    // everyone, whatever the channel's size.
+    if !to.is_empty() {
+        let accounts: Vec<String> = to.iter().map(|(a, _)| a.clone()).collect();
+        let own = app.db.chat_levels_in(&room.id, &accounts)?;
+        let prefs = app.db.notify_prefs_of(&accounts)?;
+        let (now, fresh) = (now_ms(), crate::db::notify::Prefs::default());
+        to.retain(|(a, why)| {
+            crate::notify::chat_push(prefs.get(a).unwrap_or(&fresh), &room.kind, own.get(a).copied(), *why, now, anyway)
+        });
     }
     if to.is_empty() && !(inboxed && !named.is_empty()) {
         return Ok(vec![]);
@@ -1732,22 +2255,37 @@ async fn push(
     let now = now_ms();
     let mut out = Vec::new();
     let mut sends = Vec::new();
+    // A reply only in its thread is quiet for those with that thread open,
+    // not for everyone with the room open, and is its own push to a person
+    // within the minute.
+    let replying = thread.as_ref().filter(|t| !t.also);
+    let gap_key = match replying {
+        Some(t) => format!("{}#{}", room.id, t.parent),
+        None => room.id.clone(),
+    };
     for (account, why) in to {
+        let open = match replying {
+            Some(t) => app.chat.has_open_thread(&account, &room.id, t.parent),
+            None => app.chat.has_open(&account, &room.id),
+        };
         if account == author
             || app.db.chat_mark(&room.id, &account)?.1
-            || app.chat.has_open(&account, &room.id)
-            || !app.chat.may_push(&account, &room.id, now)
+            || open
+            || !app.chat.may_push(&account, &gap_key, now)
         {
             continue;
         }
         let title = match why {
             ChatPushWhy::Mention if room.kind == "dm" => format!("{me} mentioned you"),
             ChatPushWhy::Mention => format!("{me} mentioned you in {place}"),
+            ChatPushWhy::Keyword => format!("{me} wrote a word you watch in {place}"),
             ChatPushWhy::Dm => format!("{me} wrote to you"),
+            ChatPushWhy::Message => format!("{me} in {place}"),
+            ChatPushWhy::Thread => format!("{me} replied in a thread in {place}"),
         };
         let msg = json!({
-            "chat": { "room": room.id, "seq": seq },
-            "title": title, "body": body, "tag": format!("chat-{}", room.id), "control": true,
+            "chat": { "room": room.id, "seq": seq, "parent": thread.as_ref().map(|t| t.parent) },
+            "title": title, "body": body, "tag": format!("chat-{}", gap_key.replace('#', "-t")), "control": true,
         });
         sends.push((account.clone(), msg));
         out.push(ChatPushed { account, why });
@@ -1784,6 +2322,9 @@ pub async fn edit(
     gate(&app, &s.account).await?;
     let (room, _, facts) = room_for(&app, &s.account, &id).await?;
     let m = message_in(&app, &room, seq)?;
+    if pins::is_system(&app, &room, seq)? {
+        return Err(err(StatusCode::FORBIDDEN, "a note of what happened in the room isn't edited"));
+    }
     if m.author != s.account || m.deleted.is_some() {
         return Err(err(StatusCode::FORBIDDEN, "only its author edits a message"));
     }
@@ -1806,10 +2347,16 @@ pub async fn edit(
     }
     sizes(text, None)?;
     app.limits.check_account_per_minute(CHAT_POSTS, &s.account)?;
-    let (mut named, mut unreached) = mentions(&app, text, &audience(&app, &room).await?, &s.account).await?;
+    let people = audience(&app, &room).await?;
+    let (mut named, mut unreached) = mentions(&app, text, &people, &s.account).await?;
+    let extra = alerts::extra(&app, &facts, &room, text, &people, &s.account, &named).await?;
+    unreached.retain(|w| !matches!(w.as_str(), alerts::CHANNEL | alerts::HERE));
+    named.extend(extra.broadcast.iter().filter(|a| !named.contains(a)).cloned().collect::<Vec<_>>());
+    named.extend(extra.keyword);
     named.extend(agent_mentions(&app, &facts, &room, &mut unreached, None).await?);
     app.db.edit_chat_message(&room.id, seq, text, &named, now_ms())?;
     app.chat.publish(&app.db, ChatLive::Changed { room: room.id.clone(), seq }, None);
+    threads::announce(&app, &m);
     Ok(Json(shown(&app, &s.account, &message_in(&app, &room, seq)?).await?))
 }
 
@@ -1824,6 +2371,9 @@ pub async fn delete(
     gate(&app, &s.account).await?;
     let (room, _, facts) = room_for(&app, &s.account, &id).await?;
     let m = message_in(&app, &room, seq)?;
+    if pins::is_system(&app, &room, seq)? {
+        return Err(err(StatusCode::FORBIDDEN, "a note of what happened in the room isn't deleted"));
+    }
     let may = m.author == s.account
         || match room.scope.split_once(':') {
             Some(("team", team)) => facts.role(team, &s.account) == Some(TeamRole::Owner),
@@ -1835,8 +2385,13 @@ pub async fn delete(
         return Err(err(StatusCode::FORBIDDEN, "only its author, or an owner, deletes a message"));
     }
     if m.deleted.is_none() {
+        let was_pinned = !app.db.chat_pinned_among(&room.id, seq, seq)?.is_empty();
         app.db.delete_chat_message(&room.id, seq, now_ms())?;
         app.chat.publish(&app.db, ChatLive::Changed { room: room.id.clone(), seq }, None);
+        if was_pinned {
+            app.chat.publish(&app.db, ChatLive::Pinned { room: room.id.clone() }, None);
+        }
+        threads::announce(&app, &m);
     }
     Ok(Json(shown(&app, &s.account, &message_in(&app, &room, seq)?).await?))
 }
@@ -2124,6 +2679,8 @@ async fn import(
                 mentions,
                 agent: None,
                 via: None,
+                parent: None,
+                also: false,
             },
         })
         .collect();
@@ -2293,10 +2850,19 @@ pub fn start(app: &Arc<Platform>) {
         loop {
             let Some(p) = app.upgrade() else { return };
             p.chat.catch_up(&p.db);
+            if let Err(e) = p.db.prune_typing(now_ms()) {
+                tracing::warn!(error = %e, "chat: pruning typing");
+            }
             // Held with the rest of the background work for a window.
+            if !p.is_paused() {
+                saved::remind(&p).await;
+            }
             if pruned.elapsed() >= Duration::from_secs(60) && !p.is_paused() {
                 if let Err(e) = p.db.prune_chat_events() {
                     tracing::warn!(error = %e, "chat: pruning live events");
+                }
+                if let Err(e) = p.db.sweep_chat_files(now_ms()) {
+                    tracing::warn!(error = %e, "chat: sweeping files nobody posted");
                 }
                 pruned = Instant::now();
             }

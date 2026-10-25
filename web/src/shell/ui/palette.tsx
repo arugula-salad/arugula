@@ -273,6 +273,7 @@ function places(client: Client, phone: boolean): Command[] {
   if (hasChat()) {
     go("chat", "Go to Chat", () => openChat());
     go("activity", "Chat: Activity, what needs you", () => openChatView("activity"));
+    go("threads", "Chat: Threads you follow", () => openChatView("threads"));
   }
   if (client.flag("agents") && !client.state?.roles) {
     go("recipes", "Agents: Recipes", () => openAgentsPage("recipes"));

@@ -21,6 +21,7 @@ test("each old route of the platform's, with real parameters, lands on its new p
     ["#chat=dm_00aa11bb22cc33dd&msg=-3", "/chat/dm_00aa11bb22cc33dd?msg=-3"],
     ["#chat=th_0123456789abcdef0123", "/chat/th_0123456789abcdef0123"],
     ["#chat=activity", "/chat/activity"],
+    ["#chat=saved", "/chat/saved"],
     ["#chat=search/from%3A%40sam%20deploy", "/chat/search?q=from%3A%40sam%20deploy"],
     ["#chat=search/", "/chat/search"],
     // A machine's own thread, from before M125: chat, from the top.

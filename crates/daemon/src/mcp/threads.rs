@@ -17,7 +17,10 @@
 
 use std::time::Duration;
 
-use arugula_control_wire::chat::{AGENT_ROOMS, AGENT_SEARCH, agent_messages};
+use arugula_control_wire::chat::{
+    AGENT_ROOMS, AGENT_SEARCH, ChatPin, ChatReaction, ChatSystem, MAX_FILE_BYTES, MAX_FILES, SYSTEM_VIA, agent_files,
+    agent_messages, agent_pin, agent_reactions, pins_line, reactions_line, system_text,
+};
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
 use schemars::JsonSchema;
@@ -49,6 +52,11 @@ pub struct ReadThreadArgs {
     /// name).
     #[serde(default)]
     pub mentions_only: bool,
+    /// Read the replies in the thread of this message (its seq) instead of
+    /// the room: a message listed with a thread says how many replies it
+    /// has. The message itself comes back as `parent`.
+    #[serde(default)]
+    pub thread: Option<i64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -56,8 +64,41 @@ pub struct PostThreadArgs {
     /// The room's id (list kind threads), or an issue's, PR's or hosted
     /// box's id (iss_…, fi_…, hw_…) to comment on it.
     pub room: String,
-    /// The message, in markdown; @login mentions a person there.
+    /// The message, in markdown; @login mentions a person there. Not
+    /// needed to react.
+    #[serde(default)]
     pub text: String,
+    /// Files to attach: paths on this machine that you may read (a
+    /// screenshot, a log), each up to 25 MB, at most 10. They show in the
+    /// room as pictures, players or file cards. A message may be only files.
+    #[serde(default)]
+    pub files: Vec<String>,
+    /// React to this message (its seq) with `emoji` instead of posting:
+    /// as your person's agent on this machine, apart from their own
+    /// reaction. Needs the same threads.post grant.
+    #[serde(default)]
+    pub react_to_seq: Option<i64>,
+    /// The emoji to react with (or take back), for `react_to_seq`.
+    #[serde(default)]
+    pub emoji: Option<String>,
+    /// Pin this message (its seq) instead of posting: as your person's
+    /// agent, needing the same threads.post grant. The room says so in a
+    /// small note.
+    #[serde(default)]
+    pub pin_seq: Option<i64>,
+    /// Take your reaction back (or unpin) instead of adding it.
+    #[serde(default)]
+    pub remove: bool,
+    /// Reply in the thread of this message (its seq) instead of posting in
+    /// the room: when you were asked in a thread, answer there. A reply to
+    /// a reply goes to the same thread's first message, so give that one's
+    /// seq (a reply's `parent`).
+    #[serde(default)]
+    pub parent: Option<i64>,
+    /// With `parent`: also send the reply to the room, as Slack's "Also send
+    /// to #channel" does.
+    #[serde(default)]
+    pub also: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -82,8 +123,8 @@ pub(crate) const READ_TOOL: &str = "read_thread";
 pub(crate) const POST_TOOL: &str = "post_thread";
 pub(crate) const SEARCH_TOOL: &str = "search_threads";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.";
-pub(crate) const POST_DESCRIPTION: &str = "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. Nothing wakes you on a mention: read them when you look.";
+pub(crate) const POST_DESCRIPTION: &str = "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 10 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files. Or pin a message: pin_seq (remove: true unpins); the room gets a note of it, and read_thread lists the room's topic and pins. To answer in a thread (when you were asked in one: a message that says it is a reply in the thread of N), pass parent N, and also true to send it to the room too.";
 pub(crate) const SEARCH_DESCRIPTION: &str = "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.";
 
 /// What a refusal says to an agent.
@@ -97,11 +138,19 @@ fn said(e: CloudRefused) -> String {
     }
 }
 
-/// `#general`, `DM with Sam`, `issue #12`.
+/// `#general`, `DM with Sam`, `group DM with Sam, Alex`, `issue #12`.
 fn room_name(r: &Value) -> String {
     let name = r["name"].as_str().unwrap_or("?");
     match r["kind"].as_str() {
+        Some("channel") if r["private"].as_bool() == Some(true) => format!("#{name} (private)"),
         Some("channel") => format!("#{name}"),
+        // A group DM is named after its people unless it was renamed.
+        Some("dm") if r["others"].as_array().is_some_and(|o| o.len() > 1) => {
+            let others = r["others"].as_array().map(Vec::as_slice).unwrap_or_default();
+            let people: Vec<&str> =
+                others.iter().map(|p| p["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("?")).collect();
+            format!("group DM with {}", people.join(", "))
+        }
         Some("dm") => format!("DM with {}", r["with"]["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("?")),
         _ => name.to_owned(),
     }
@@ -109,8 +158,12 @@ fn room_name(r: &Value) -> String {
 
 /// Who wrote it: a person, or "<owner>'s agent on <machine>"; and
 /// "via <product>" when a product posted it for them (M237: a hud box's
-/// review).
+/// review). A line the platform wrote (a grant reached the room, #122) is
+/// "Arugula".
 fn by(m: &Value) -> String {
+    if m["via"] == SYSTEM_VIA && m["author"].as_str().is_none_or(str::is_empty) {
+        return "Arugula".to_owned();
+    }
     let name = m["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("someone");
     let who = match m["agent"]["machine_name"].as_str() {
         Some(machine) => format!("{name}'s agent on {machine}"),
@@ -126,9 +179,54 @@ fn by(m: &Value) -> String {
 fn message(m: &Value, mention: &str) -> Value {
     json!({
         "seq": m["seq"], "at": m["at"], "by": by(m), "author": m["author"], "agent": m["agent"], "via": m["via"],
-        "text": m["text"], "quote": m["quote"], "deleted": m["deleted"].is_u64(),
+        "text": m["text"], "quote": m["quote"], "deleted": m["deleted"].is_u64(), "reactions": m["reactions"],
+        "files": m["files"],
+        "pinned": m["pinned"], "system": m["system"],
+        "parent": m["parent"], "also": m["also"].as_bool().unwrap_or(false), "thread": m["thread"],
         "mentions_you": m["mentions"].as_array().is_some_and(|a| a.iter().any(|x| x == mention)),
     })
+}
+
+/// A message's attachments as one line (empty when none): name, kind and
+/// size, and control's address for each.
+fn files_of(m: &Value) -> String {
+    m["files"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|f| {
+            format!(
+                "{} ({}, {} bytes) {}",
+                f["name"].as_str().unwrap_or("?"),
+                f["mime"].as_str().unwrap_or("?"),
+                f["size"],
+                f["url"].as_str().unwrap_or("")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Where a message is in a thread, as one line (empty when it is in no
+/// thread): a reply says whose, a message with replies how many.
+fn thread_note(m: &Value) -> String {
+    match (m["parent"].as_i64(), m["thread"]["replies"].as_u64()) {
+        (Some(p), _) => {
+            format!("  [reply in the thread of {p}{}]", if m["also"] == true { ", also sent to the room" } else { "" })
+        }
+        (None, Some(n)) => format!(
+            "  [{n} repl{} in its thread: read_thread with thread {}]",
+            if n == 1 { "y" } else { "ies" },
+            m["seq"]
+        ),
+        _ => String::new(),
+    }
+}
+
+/// A message's reactions as one line (empty when none).
+fn reactions_of(m: &Value) -> String {
+    let rs: Vec<ChatReaction> = serde_json::from_value(m["reactions"].clone()).unwrap_or_default();
+    reactions_line(&rs)
 }
 
 fn query(pairs: &[(&str, String)]) -> String {
@@ -208,6 +306,9 @@ impl Call<'_> {
         if a.mentions_only {
             q.push(("mentions", "true".to_owned()));
         }
+        if let Some(t) = a.thread {
+            q.push(("thread", t.to_string()));
+        }
         let path = format!("{}?{}", agent_messages(a.room.trim()), query(&q));
         let v = self.threads_call(Method::GET, &path, None).await?;
         let me = self.mention();
@@ -218,32 +319,152 @@ impl Call<'_> {
         let lines: Vec<String> = messages
             .iter()
             .map(|m| {
-                format!("[{}] {}: {}", m["seq"], m["by"].as_str().unwrap_or("?"), m["text"].as_str().unwrap_or(""))
+                if let Ok(s) = serde_json::from_value::<ChatSystem>(m["system"].clone()) {
+                    return format!(
+                        "[{}] * {} {}",
+                        m["seq"],
+                        m["by"].as_str().unwrap_or("?"),
+                        system_text(&s, m["text"].as_str().unwrap_or(""))
+                    );
+                }
+                let reacted = reactions_of(m);
+                let attached = files_of(m);
+                format!(
+                    "[{}] {}: {}{}{}{}",
+                    m["seq"],
+                    m["by"].as_str().unwrap_or("?"),
+                    m["text"].as_str().unwrap_or(""),
+                    if attached.is_empty() { String::new() } else { format!("  [files: {attached}]") },
+                    if reacted.is_empty() { String::new() } else { format!("  [reactions: {reacted}]") },
+                    thread_note(m)
+                ) + if m["pinned"] == true { "  [pinned]" } else { "" }
             })
             .collect();
+        let pins: Vec<ChatPin> = serde_json::from_value(v["pins"].clone()).unwrap_or_default();
+        let mut about = String::new();
+        if let Some(t) = room["topic"].as_str().filter(|t| !t.is_empty()) {
+            about += &format!("\nTopic: {t}");
+        }
+        if let Some(d) = room["description"].as_str().filter(|d| !d.is_empty()) {
+            about += &format!("\nDescription: {d}");
+        }
+        if !pins.is_empty() {
+            about += &format!("\nPinned:\n{}", pins_line(&pins));
+        }
+        let parent = (!v["parent"].is_null()).then(|| message(&v["parent"], &me));
         let summary = format!(
-            "{} ({}), {} message(s){}{}",
+            "{} ({}), {} message(s){}{}{about}{}",
             room_name(room),
             room["id"].as_str().unwrap_or("?"),
             messages.len(),
             if a.mentions_only { " that mention you" } else { "" },
+            match (&parent, a.thread) {
+                (Some(p), Some(t)) => format!(
+                    " in the thread of {t} ({}: {})",
+                    p["by"].as_str().unwrap_or("?"),
+                    p["text"].as_str().unwrap_or("")
+                ),
+                _ => String::new(),
+            },
             if lines.is_empty() { String::new() } else { format!(":\n{}", lines.join("\n")) },
         );
-        done(summary, json!({ "room": room, "messages": messages, "more": v["more"], "next_after_seq": next }))
+        done(
+            summary,
+            json!({
+                "room": room, "messages": messages, "more": v["more"], "next_after_seq": next,
+                "topic": room["topic"], "description": room["description"], "pins": v["pins"], "parent": parent,
+            }),
+        )
     }
 
     /// `post_thread`.
     pub(crate) async fn post_thread(&self, a: PostThreadArgs) -> Out {
         self.owners_agent(POST_TOOL).await?;
-        let body = json!({ "text": a.text });
-        let v = self.threads_call(Method::POST, &agent_messages(a.room.trim()), Some(body)).await?;
-        let mut summary =
-            format!("Posted as seq {} in {}, labelled as your person's agent on this machine", v["seq"], a.room.trim());
+        if let Some(seq) = a.react_to_seq {
+            let emoji =
+                a.emoji.as_deref().map(str::trim).filter(|e| !e.is_empty()).ok_or("react_to_seq needs an emoji")?;
+            let room = a.room.trim();
+            let v = if a.remove {
+                let path = format!("{}?{}", agent_reactions(room, seq), query(&[("emoji", emoji.to_owned())]));
+                self.threads_call(Method::DELETE, &path, None).await?
+            } else {
+                self.threads_call(Method::POST, &agent_reactions(room, seq), Some(json!({ "emoji": emoji }))).await?
+            };
+            let what = if a.remove { "Took back" } else { "Reacted with" };
+            return done(format!("{what} {emoji} on seq {seq} in {room}, as your person's agent on this machine"), v);
+        }
+        let room = a.room.trim();
+        if let Some(seq) = a.pin_seq {
+            let method = if a.remove { Method::DELETE } else { Method::PUT };
+            let v = self.threads_call(method, &agent_pin(room, seq), None).await?;
+            let what = if a.remove { "Unpinned" } else { "Pinned" };
+            return done(format!("{what} seq {seq} in {room}, as your person's agent on this machine"), v);
+        }
+        if a.files.len() > MAX_FILES {
+            return Err(format!("a message carries at most {MAX_FILES} files"));
+        }
+        let mut ids = vec![];
+        for path in &a.files {
+            ids.push(self.upload_file(room, path).await?);
+        }
+        // Files only when there are some: the same body as before #107 otherwise.
+        let mut body = if ids.is_empty() { json!({ "text": a.text }) } else { json!({ "text": a.text, "files": ids }) };
+        if let Some(p) = a.parent {
+            body["parent"] = json!(p);
+            body["also"] = json!(a.also);
+        }
+        let v = self.threads_call(Method::POST, &agent_messages(room), Some(body)).await?;
+        let mut summary = format!(
+            "Posted as seq {}{} in {room}, labelled as your person's agent on this machine",
+            v["seq"],
+            a.parent.map_or(String::new(), |p| format!(" in the thread of {p}")),
+        );
+        if !ids.is_empty() {
+            summary += &format!(", with {} file(s)", ids.len());
+        }
         if let Some(u) = v["unreached"].as_array().filter(|u| !u.is_empty()) {
             let words: Vec<&str> = u.iter().filter_map(Value::as_str).collect();
             summary += &format!(" (@{} reached nobody there)", words.join(", @"));
         }
         done(summary, v)
+    }
+
+    /// One file from this machine, read as `read_file` reads (a path the
+    /// agent may read, relative to its pane's directory), up to control's
+    /// limit, and uploaded to the room: its id there.
+    async fn upload_file(&self, room: &str, path: &str) -> Result<String, String> {
+        let pane = self.own_pane();
+        let mut full = path.to_owned();
+        if let Some(p) = pane {
+            let info = self.readable(p).await?;
+            if !full.starts_with('/')
+                && !full.starts_with('~')
+                && let Some(cwd) = info.info.cwd.as_deref()
+            {
+                full = format!("{}/{full}", cwd.trim_end_matches('/'));
+            }
+        }
+        let mut bytes: Vec<u8> = vec![];
+        loop {
+            let (chunk, size) =
+                crate::fs::read_on(self.app(), pane, &full, bytes.len() as u64, arugula_proto::fs::READ_MAX).await?;
+            if size > MAX_FILE_BYTES as u64 {
+                return Err(format!("{path} is {size} bytes: a file in chat is at most {MAX_FILE_BYTES}"));
+            }
+            bytes.extend_from_slice(&chunk);
+            if chunk.is_empty() || bytes.len() as u64 >= size {
+                break;
+            }
+        }
+        let name = path.rsplit('/').next().unwrap_or(path);
+        let up = format!("{}?{}", agent_files(room), query(&[("name", name.to_owned())]));
+        let v = self
+            .app()
+            .control
+            .cloud_bytes(Method::POST, &up, bytes)
+            .await
+            .map_err(|e| format!("{path}: {}", said(e)))?;
+        v["id"].as_str().map(str::to_owned).ok_or_else(|| format!("{path}: control didn't give the file an id"))
     }
 
     /// `search_threads`.
@@ -325,5 +546,21 @@ mod tests {
         assert_eq!(super::by(&json!({ "name": "Ada", "via": "notes (hud)" })), "Ada via notes (hud)");
         let m = super::message(&json!({ "name": "Ada", "via": "notes (hud)", "mentions": [] }), "a");
         assert_eq!(m["via"], "notes (hud)");
+        let line = json!({ "author": "", "name": "", "via": "system", "text": "a's agents on geek can now read here" });
+        assert_eq!(super::by(&line), "Arugula");
+    }
+
+    /// A room's name for an agent: a private channel and a group DM say so.
+    #[test]
+    fn room_names_say_private_and_group() {
+        assert_eq!(super::room_name(&json!({ "kind": "channel", "name": "ops", "private": true })), "#ops (private)");
+        assert_eq!(super::room_name(&json!({ "kind": "channel", "name": "ops" })), "#ops");
+        let sam = json!({ "name": "Sam" });
+        let alex = json!({ "name": "Alex" });
+        assert_eq!(
+            super::room_name(&json!({ "kind": "dm", "name": "", "with": sam, "others": [sam, alex] })),
+            "group DM with Sam, Alex"
+        );
+        assert_eq!(super::room_name(&json!({ "kind": "dm", "with": sam, "others": [sam] })), "DM with Sam");
     }
 }
