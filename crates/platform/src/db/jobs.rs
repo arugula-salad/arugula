@@ -17,10 +17,10 @@
 //!   the lease runs out, which carries on from the last checkpoint. A job
 //!   claimed its kind's most attempts in a row without handing itself back
 //!   (crashing or hanging each time) ends `failed` at the next claim.
-//! - A run's or a deploy's job that ends other than `done` (gave up,
-//!   failed, canceled) ends what it followed in the same transaction
-//!   (`end_work_in`, M223): nothing is left pending or running with no
-//!   job.
+//! - A run's, a deploy's or a session's job that ends other than `done`
+//!   (gave up, failed, canceled) ends what it followed in the same
+//!   transaction (`end_work_in`, M223): nothing is left pending or running
+//!   with no job.
 //! - A cancel ([`Db::cancel_job`]) makes the job due at once, and a hand-back
 //!   or a failure keeps it due, so its handler sees it at the next claim; a
 //!   heartbeat tells a step that's running.
@@ -78,10 +78,13 @@ pub enum JobKind {
     Run,
     Deploy,
     Schedule,
+    /// An agent session's (M254): it follows the session while it lives.
+    Session,
 }
 
 impl JobKind {
-    pub const ALL: [JobKind; 4] = [JobKind::Workspace, JobKind::Run, JobKind::Deploy, JobKind::Schedule];
+    pub const ALL: [JobKind; 5] =
+        [JobKind::Workspace, JobKind::Run, JobKind::Deploy, JobKind::Schedule, JobKind::Session];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -89,6 +92,7 @@ impl JobKind {
             JobKind::Run => "run",
             JobKind::Deploy => "deploy",
             JobKind::Schedule => "schedule",
+            JobKind::Session => "session",
         }
     }
 
@@ -535,10 +539,11 @@ impl Db {
 #[path = "jobs_tests.rs"]
 pub(crate) mod tests;
 
-/// A run's or a deploy's job ended other than `done` (it gave up, failed or
-/// was canceled), in the caller's transaction: what it followed ends with
-/// it, saying `why`, so nothing is left pending or running with no job
-/// (M223). A run that hasn't ended fails, by control. A deploy's run ends
+/// A run's, a deploy's or a session's job ended other than `done` (it gave
+/// up, failed or was canceled), in the caller's transaction: what it
+/// followed ends with it, saying `why`, so nothing is left pending or
+/// running with no job (M223). A session that hasn't ended fails, by
+/// control (M254). A run that hasn't ended fails, by control. A deploy's run ends
 /// its deploy: failed (by its run) if the run had started it, canceled if
 /// not. A deploy's own job fails its run that way too, and its box is
 /// deleted. The owners are paged once by the run's job or the deploy's,
@@ -601,6 +606,15 @@ fn end_work_in(tx: &impl Sql, id: &str, kind: JobKind, why: &str, now: u64) -> R
             }
             end_deploy(id, run.as_deref())?;
             super::hosted::ask_delete_deploy_box_in(tx, id, now)?;
+        }
+        JobKind::Session => {
+            use super::sessions::{Move, State, move_session_in};
+            let state: Option<String> =
+                tx.query_row("SELECT state FROM agent_sessions WHERE id = ?1", params![id], |r| r.get(0)).optional()?;
+            if let Some(from) = state.as_deref().and_then(State::parse).filter(|s| !s.terminal()) {
+                let detail = serde_json::json!({ "reason": why }).to_string();
+                let _ = move_session_in(tx, id, &Move::Control { from, to: State::Failed, at: now, detail: &detail })?;
+            }
         }
         JobKind::Workspace | JobKind::Schedule => {}
     }
