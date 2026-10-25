@@ -291,8 +291,8 @@ says what is stored.
   platform, before the push, so it covers Web Push, the desktop and the
   phone alike.
 - **`@channel` and `@here`:** `@channel` notifies everyone in the room,
-  `@here` is meant for those who are active, but presence isn't wired into it
-  yet, so it reaches the same people. Both count as mentions. A team's owners can
+  `@here` only those whose presence is active (a page of theirs used in the
+  last minutes, not away or appearing offline). Both count as mentions. A team's owners can
   keep them for owners (a post by anyone else is refused, 403), and the
   composer asks first past six people.
 - **Keywords:** words (up to 20, a whole word or phrase) that notify you as a
