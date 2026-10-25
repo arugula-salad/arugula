@@ -317,8 +317,12 @@ pub struct PromptRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "result", rename_all = "snake_case")]
 pub enum PromptResult {
-    /// Its turn ended.
-    Done,
+    /// Its turn ended. `turn`: what it said and left behind, for an agent
+    /// block (AR-1, #1475); named `turn` because `result` is the tag.
+    Done {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        turn: Option<TurnResult>,
+    },
     /// It asks for someone: an approval or a question.
     NeedsInput {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -741,6 +745,92 @@ pub struct DocLinkUrl {
 pub struct Closed {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<WorktreeOutcome>,
+}
+
+/// What an agent block's last turn produced (AR-1, #1475): its final
+/// message as clean text, and the work it left in the block's git repo.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TurnResult {
+    /// The agent's replies after the last prompt, joined: no thoughts, tool
+    /// calls or notes. Cut (and marked) past [`TurnResult::MESSAGE_MAX`].
+    pub message: String,
+    /// Present when the block's directory is in a git repo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<Work>,
+}
+
+impl TurnResult {
+    /// The most characters of `message` kept.
+    pub const MESSAGE_MAX: usize = 8000;
+
+    /// One line for a summary: the message's start, then the work, with
+    /// uncommitted files first since they're what a reader must not miss.
+    pub fn line(&self) -> String {
+        let mut first: String = self.message.split_whitespace().collect::<Vec<_>>().join(" ");
+        if first.chars().count() > 200 {
+            first = first.chars().take(200).collect::<String>() + "…";
+        }
+        let mut out = format!("\"{first}\"");
+        if let Some(w) = &self.work {
+            out.push_str(" · ");
+            out.push_str(&w.line());
+        }
+        out
+    }
+}
+
+/// What a turn left in a git repo (AR-1, #1475).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Work {
+    /// The checked-out branch, or `(detached)`.
+    pub branch: String,
+    /// HEAD, abbreviated.
+    pub head: String,
+    /// HEAD is in some remote-tracking branch.
+    pub pushed: bool,
+    /// Paths `git status --porcelain` lists: changed, staged or untracked.
+    /// At most 50; `uncommitted_total` says how many there are.
+    #[serde(default)]
+    pub uncommitted: Vec<String>,
+    #[serde(default)]
+    pub uncommitted_total: u32,
+    /// `"SHA subject"` for each commit since the turn began (newest first).
+    /// Absent when HEAD at the turn's start isn't known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commits: Option<Vec<String>>,
+    /// `git diff --stat` from the turn's start to HEAD; same condition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diffstat: Option<String>,
+}
+
+impl Work {
+    /// "branch foo at abc1234 (pushed), 2 uncommitted files, 1 commit (+10 -2)".
+    pub fn line(&self) -> String {
+        let mut out =
+            format!("branch {} at {} ({})", self.branch, self.head, if self.pushed { "pushed" } else { "not pushed" });
+        if self.uncommitted_total > 0 {
+            let n = self.uncommitted_total;
+            out.push_str(&format!(", UNCOMMITTED: {n} file{}", if n == 1 { "" } else { "s" }));
+        }
+        if let Some(c) = &self.commits {
+            let n = c.len();
+            out.push_str(&format!(", {n} commit{}", if n == 1 { "" } else { "s" }));
+            if let Some(d) = self.diffstat.as_deref().and_then(|d| d.lines().last()) {
+                let (plus, minus) = (count(d, "insertion"), count(d, "deletion"));
+                out.push_str(&format!(" (+{plus} -{minus})"));
+            }
+        }
+        out
+    }
+}
+
+/// The number before `word` in a `--stat` summary line.
+fn count(line: &str, word: &str) -> u32 {
+    line.split(", ")
+        .find(|p| p.contains(word))
+        .and_then(|p| p.split_whitespace().next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0)
 }
 
 /// What closing a block did to its worktree: removed, or kept with the

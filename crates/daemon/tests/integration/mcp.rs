@@ -984,6 +984,65 @@ async fn prompt_agent_records_the_client_as_who_prompted() {
     assert_eq!(entries[at - 1]["text"], "A follow-up from mcp:claude-code", "{entries}");
 }
 
+/// AR-1 (#1475): a turn that edits one file and commits another comes back
+/// with its final message, clean, and the work it left: the edit uncommitted,
+/// the one commit and its diffstat. Both prompt_agent and wait (idle) say so.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turn_returns_its_message_and_the_work_it_left() {
+    let d = Daemon::child();
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let scratch = Scratch::new("mcp-turn-result");
+    let repo = scratch.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git").args(args).current_dir(&repo).output().unwrap();
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    git(&["init", "-q", "-b", "main"]);
+    git(&["config", "user.email", "t@example.com"]);
+    git(&["config", "user.name", "T"]);
+    std::fs::write(repo.join("a.txt"), "a\n").unwrap();
+    git(&["add", "a.txt"]);
+    git(&["commit", "-q", "-m", "start"]);
+
+    let config = json!({ "agent": "acp", "command": ["python3", fake()], "cwd": repo, "prompt": "hello" });
+    let b = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(b, "idle");
+
+    let v = call(&s, "prompt_agent", json!({ "pane": b, "text": "work a.txt b.txt" })).await;
+    assert_eq!(v["result"], "done", "{v}");
+    let turn = &v["turn"];
+    assert_eq!(turn["message"], "done", "{v}");
+    let work = &turn["work"];
+    assert_eq!(work["branch"], "main", "{v}");
+    assert_eq!(work["pushed"], false, "{v}");
+    assert_eq!(work["uncommitted"], json!(["a.txt"]), "{v}");
+    let commits = work["commits"].as_array().unwrap_or_else(|| panic!("no commits: {v}"));
+    assert_eq!(commits.len(), 1, "{v}");
+    assert!(commits[0].as_str().unwrap().ends_with(" add b.txt"), "{v}");
+    assert!(work["diffstat"].as_str().unwrap().contains("b.txt"), "{v}");
+    assert!(!work["diffstat"].as_str().unwrap().contains("a.txt"), "{v}");
+    assert_eq!(work["head"], git(&["rev-parse", "--short", "HEAD"]), "{v}");
+    let summary = v["summary"].as_str().unwrap();
+    assert!(summary.contains("UNCOMMITTED: 1 file") && summary.contains("\"done\""), "{summary}");
+
+    // wait (idle) says the same, once the turn is done.
+    let w = call(&s, "wait", json!({ "pane": b, "until": "idle" })).await;
+    assert_eq!(w["turn"], *turn, "{w}");
+    assert!(w["summary"].as_str().unwrap().contains("UNCOMMITTED"), "{w}");
+
+    // A directory that isn't a repo: the message alone.
+    let plain = scratch.join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    let config = json!({ "agent": "acp", "command": ["python3", fake()], "cwd": plain, "prompt": "hello" });
+    let p = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(p, "idle");
+    let v = call(&s, "prompt_agent", json!({ "pane": p, "text": "recall" })).await;
+    assert_eq!(v["result"], "done", "{v}");
+    assert!(v["turn"]["message"].is_string() && v["turn"].get("work").is_none(), "{v}");
+}
+
 /// The `labs` file in the state dir lists `delegate`, `doc` and the other
 /// jobs (kinds of show and list), and removing it takes them away again,
 /// with no restart. Each is read where it's used, on a `stat`. Chat's old

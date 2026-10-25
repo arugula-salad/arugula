@@ -55,6 +55,7 @@ pub mod defs;
 pub mod hosted;
 pub mod images;
 mod link;
+mod turnwork;
 #[cfg(unix)]
 pub(crate) use link::pipe_cloexec;
 pub mod transcript;
@@ -261,6 +262,10 @@ pub struct TurnStat {
     pub run: Option<String>,
     #[serde(skip)]
     cost_base: Option<f64>,
+    /// HEAD of the block's repo when the turn began (AR-1, #1475), read
+    /// just after; `None` outside a repo, or if the read hasn't come yet.
+    #[serde(skip)]
+    head: Option<String>,
 }
 
 /// A prompt waiting for the agent: its text, and images (M71) by name in
@@ -355,6 +360,8 @@ struct Inner {
     cost: Option<f64>,
     currency: Option<String>,
     turns: Vec<TurnStat>,
+    /// A turn began (at this time) and HEAD isn't noted on it yet.
+    head_wanted: Option<u64>,
     last_stop: Option<String>,
     /// A turn was outstanding when the server we followed went away.
     interrupted: bool,
@@ -576,6 +583,7 @@ impl Inner {
             cost: None,
             currency: None,
             turns: vec![],
+            head_wanted: None,
             last_stop: None,
             interrupted: false,
             cut: false,
@@ -918,6 +926,9 @@ impl Inner {
                             run: self.carry_run.take(),
                             ..Default::default()
                         });
+                        if self.live {
+                            self.head_wanted = Some(at);
+                        }
                         Purpose::Prompt
                     }
                     _ => Purpose::Other,
@@ -2139,6 +2150,9 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                         }
                         _ => {}
                     }
+                    if let Some(at) = g.head_wanted.take() {
+                        note_head(&ctx, &inner, &g, at);
+                    }
                     for f in fx.drain(..) {
                         if let Effect::Retry(q) = &f {
                             retries += 1;
@@ -2166,6 +2180,9 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
             _ = tick.tick() => {
                 {
                     let mut g = inner.lock().unwrap();
+                    if let Some(at) = g.head_wanted.take() {
+                        note_head(&ctx, &inner, &g, at);
+                    }
                     if g.autonomous_at.is_some_and(|t| t.elapsed() >= autonomous_quiet()) {
                         g.autonomous_at = None;
                         g.end_woken(now_ms());
@@ -2281,6 +2298,30 @@ fn cut_reason(headline: String) -> arugula_proto::Reason {
         diff: None,
         actions: vec![arugula_proto::Action::Continue, arugula_proto::Action::Dismiss],
     }
+}
+
+/// Where a block's git commands run: its directory.
+fn work_dir(ctx: &AgentCtx, g: &Inner) -> String {
+    g.cfg.cwd.clone().unwrap_or_else(|| match ctx.sprite {
+        Some(_) => "/home/sprite".into(),
+        None => ctx.home.display().to_string(),
+    })
+}
+
+/// Reads HEAD of the repo the turn that began at `at` runs in, off the
+/// lock, and keeps it on the turn (AR-1, #1475).
+fn note_head(ctx: &AgentCtx, inner: &Arc<Mutex<Inner>>, g: &Inner, at: u64) {
+    if g.cfg.def.chat {
+        return;
+    }
+    let (block, inner, cwd) = (ctx.block.clone(), inner.clone(), work_dir(ctx, g));
+    tokio::spawn(async move {
+        let Ok(runner) = crate::review::Runner::user(&block).await else { return };
+        let Some(head) = turnwork::head(&runner, &cwd).await else { return };
+        if let Some(t) = inner.lock().unwrap().turns.iter_mut().rev().find(|t| t.started_ms == at) {
+            t.head = Some(head);
+        }
+    });
 }
 
 /// Act on what a frame asked for.
@@ -2922,6 +2963,29 @@ impl Agent {
 
     /// `send {text, files?}`: the next prompt. `files` (M71) are paths M70's
     /// upload route answered for this block.
+    /// `turn_result` (AR-1, #1475): the last turn's final message and the
+    /// work it left, as a [`arugula_proto::api::TurnResult`]; `null` while a
+    /// turn runs, before the first, or when it said nothing.
+    fn turn_result(&self) -> BoxFuture<'static, Result<Value, String>> {
+        let (message, start, cwd) = {
+            let g = self.inner.lock().unwrap();
+            let done = g.turns.last().is_some_and(|t| t.ended_ms.is_some()) && g.prompt_id.is_none();
+            let message = if done { g.t.last_message() } else { None };
+            (message, g.turns.last().and_then(|t| t.head.clone()), work_dir(&self.ctx, &g))
+        };
+        let block = self.ctx.block.clone();
+        Box::pin(async move {
+            let Some(message) = message else { return Ok(Value::Null) };
+            // Git trouble is no work to report, not an error.
+            let runner = crate::review::Runner::user(&block).await;
+            let r = match runner {
+                Ok(runner) => turnwork::result(&runner, &cwd, start.as_deref(), message).await,
+                Err(_) => arugula_proto::api::TurnResult { message, work: None },
+            };
+            serde_json::to_value(r).map_err(|e| e.to_string())
+        })
+    }
+
     fn send(&self, args: &Value, by: Option<&str>) -> Result<Value, String> {
         let text = args["text"].as_str().map(str::trim).unwrap_or_default();
         let files = strings(&args["files"]);
@@ -3147,6 +3211,7 @@ impl Block for Agent {
             }
             "set_model" => self.set_model(&args),
             "state" => Ok(self.state()),
+            "turn_result" => return self.turn_result(),
             "image" => images::read(&self.ctx.dir, args["name"].as_str().unwrap_or_default()),
             m => Err(no_method(self.kind(), m)),
         };
