@@ -354,7 +354,8 @@ impl Call<'_> {
         for path in &a.files {
             ids.push(self.upload_file(room, path).await?);
         }
-        let body = json!({ "text": a.text, "files": ids });
+        // Files only when there are some: the same body as before #107 otherwise.
+        let body = if ids.is_empty() { json!({ "text": a.text }) } else { json!({ "text": a.text, "files": ids }) };
         let v = self.threads_call(Method::POST, &agent_messages(room), Some(body)).await?;
         let mut summary =
             format!("Posted as seq {} in {}, labelled as your person's agent on this machine", v["seq"], room);
