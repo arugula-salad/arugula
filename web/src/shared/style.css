@@ -493,9 +493,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   white-space: nowrap;
 }
 
-/* Another window owns this tab's size: a note and a real button. */
+/* Another window owns this tab's size: a note and a real button. Over the
+   grid, which fills the area for the presenter (#1472). */
 .sized-elsewhere {
   position: absolute;
+  z-index: 3;
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);

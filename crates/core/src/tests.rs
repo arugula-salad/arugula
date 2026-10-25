@@ -155,6 +155,66 @@ fn editors_typing_in_turn_dont_fight_over_the_size() {
     assert!(hold.view(&mut m, b, 1, (90, 30), None, Claim::Typed, at(idle + 0.2)).unwrap());
 }
 
+/// #1472: while A presents, B's claims (switching to the tab, typing, "use
+/// this size") don't take the size, even from a client that still sends
+/// them. A's own window still sizes the tab.
+#[test]
+fn a_presenters_size_holds_against_other_clients() {
+    use std::time::{Duration, Instant};
+
+    use crate::{Claim, SIZE_HOLD, SizeHold};
+
+    let mut m = mux_with_session();
+    let mut hold = SizeHold::default();
+    let t0 = Instant::now();
+    let (a, b) = (7, 8);
+    let size = |m: &Mux| (m.tab(1).unwrap().cols, m.tab(1).unwrap().rows);
+    assert!(hold.view(&mut m, b, 1, (90, 30), None, Claim::Yes, t0).unwrap());
+    // A presents: its size is the tab's at once.
+    assert!(m.present(a, 1, true, (120, 40), None).unwrap());
+    assert_eq!((size(&m), m.tab(1).unwrap().presenter), ((120, 40), Some(a)));
+    // Long after A's last move, B shows the tab, types, and asks for its size.
+    let later = t0 + SIZE_HOLD * 20;
+    for claim in [Claim::Yes, Claim::Typed, Claim::No] {
+        assert!(!hold.view(&mut m, b, 1, (90, 30), None, claim, later).unwrap(), "{claim:?}");
+    }
+    assert!(!m.view(b, 1, 90, 30, None, true).unwrap());
+    assert_eq!((size(&m), m.tab(1).unwrap().owner), ((120, 40), Some(a)));
+    // A's window resizing still sizes the tab.
+    assert!(hold.view(&mut m, a, 1, (130, 44), None, Claim::No, later).unwrap());
+    assert_eq!(size(&m), (130, 44));
+    // A leaving ends it, and the next claim works as before.
+    assert!(m.release(a));
+    assert_eq!(m.tab(1).unwrap().presenter, None);
+    assert!(hold.view(&mut m, b, 1, (90, 30), None, Claim::Yes, later).unwrap());
+    assert_eq!((size(&m), m.tab(1).unwrap().owner), ((90, 30), Some(b)));
+}
+
+/// #1472: taking over moves the pin and the size; stopping lets claims work.
+#[test]
+fn taking_over_a_presentation_and_stopping_it() {
+    let mut m = mux_with_session();
+    let (a, b) = (7, 8);
+    m.present(a, 1, true, (120, 40), None).unwrap();
+    assert!(m.present(b, 1, true, (90, 30), None).unwrap());
+    let t = m.tab(1).unwrap();
+    assert_eq!(((t.cols, t.rows), t.owner, t.presenter), ((90, 30), Some(b), Some(b)));
+    assert!(!m.view(a, 1, 120, 40, None, true).unwrap());
+    assert!(m.present(b, 1, false, (0, 0), None).unwrap());
+    assert!(!m.present(b, 1, false, (0, 0), None).unwrap(), "already stopped");
+    assert!(m.view(a, 1, 120, 40, None, true).unwrap());
+}
+
+/// #1472: a presentation is never saved, or after a restart (client ids
+/// start over) a stranger could inherit the pin.
+#[test]
+fn a_presenter_is_not_saved() {
+    let mut m = mux_with_session();
+    m.present(7, 1, true, (120, 40), None).unwrap();
+    let back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+    assert_eq!(back.tab(1).unwrap().presenter, None);
+}
+
 #[test]
 fn layout_serializes_for_clients() {
     let mut m = mux_with_session();

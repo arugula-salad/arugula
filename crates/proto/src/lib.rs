@@ -98,6 +98,11 @@ pub enum ClientMsg {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         typed: bool,
     },
+    /// Present `tab` (#1472): while `on`, only this client's window sets its
+    /// size. From an editor while someone else presents, it takes over. With
+    /// `on` false it stops, if this client presents or owns the machine.
+    /// The size sent with the last [`ClientMsg::View`] is the one it takes.
+    Present { tab: TabId, on: bool },
     /// Change sessions, tabs or splits. Errors come back as
     /// [`ServerMsg::Error`] with the same id.
     Intent { id: Option<u64>, intent: Intent },
@@ -986,6 +991,10 @@ pub struct TabView {
     /// `layout` already shows it.
     #[serde(default)]
     pub focus: Option<PaneId>,
+    /// The client presenting the tab (#1472): only its window sets the size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub presenter: Option<ClientId>,
     pub layout: Layout,
 }
 

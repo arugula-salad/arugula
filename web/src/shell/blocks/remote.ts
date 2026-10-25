@@ -296,7 +296,7 @@ class RemoteView implements BlockView {
   /** Typed into on its host's connection: this window sizes it now. */
   claimed() {
     const tab = this.home.tabOfPane(this.id);
-    if (tab && tab.owner !== this.home.clientId) this.home.claim(tab.id, true);
+    if (tab && tab.owner !== this.home.clientId && !this.home.presentedElsewhere(tab)) this.home.claim(tab.id, true);
     this.push(true);
   }
 

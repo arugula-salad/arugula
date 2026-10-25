@@ -66,15 +66,9 @@ impl Daemon {
                     // Presence only: no pane changed.
                     self.soon();
                 }
+                self.view_size.insert(client, (tab, cols, rows));
                 // Only editors size a tab; viewers letterbox.
-                let editor = who.is_owner()
-                    || self
-                        .mux
-                        .session_of_tab(tab)
-                        .ok()
-                        .and_then(|s| self.config.acl.role(&who, s))
-                        .is_some_and(|r| r >= Role::Editor);
-                if !editor {
+                if !self.may_size(&who, tab) {
                     return;
                 }
                 let claim = match (claim, typed) {
@@ -84,6 +78,25 @@ impl Daemon {
                 };
                 let now = std::time::Instant::now();
                 if let Ok(true) = self.hold.view(&mut self.mux, client, tab, (cols, rows), zoom, claim, now) {
+                    self.changed();
+                }
+            }
+            ClientMsg::Present { tab, on } => {
+                // Presenting is sizing: editors only, as for a view (#1472).
+                if !self.may_size(&who, tab) {
+                    let message = "you can't present here (ask the owner for more access)".to_owned();
+                    let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Error { id: None, message }));
+                    return;
+                }
+                if !on && !who.is_owner() && self.mux.tab(tab).is_ok_and(|t| t.presenter != Some(client)) {
+                    return;
+                }
+                let (cols, rows) = match self.view_size.get(&client) {
+                    Some((t, c, r)) if *t == tab => (*c, *r),
+                    _ => self.mux.tab(tab).map(|t| (t.cols, t.rows)).unwrap_or((80, 24)),
+                };
+                let zoom = self.zoomed.get(&client).copied();
+                if let Ok(true) = self.mux.present(client, tab, on, (cols, rows), zoom) {
                     self.changed();
                 }
             }
@@ -397,6 +410,18 @@ impl Daemon {
     }
 
     /// Resize panes whose cells changed, tell every client, and save soon.
+    /// Whether `who` may set `tab`'s size: editors on its session, and the
+    /// machine's owner. Viewers letterbox.
+    fn may_size(&self, who: &Principal, tab: TabId) -> bool {
+        who.is_owner()
+            || self
+                .mux
+                .session_of_tab(tab)
+                .ok()
+                .and_then(|s| self.config.acl.role(who, s))
+                .is_some_and(|r| r >= Role::Editor)
+    }
+
     pub(super) fn changed(&mut self) {
         for (pane, r) in self.mux.pane_rects() {
             let size = (r.cols, r.rows);

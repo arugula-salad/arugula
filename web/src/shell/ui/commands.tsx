@@ -165,6 +165,10 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
   const machine = client.tabMachine(tab.id);
   return [
     { label: "Rename tab", run: rename },
+    // A viewer's would be refused (#1472).
+    ...(client.role(client.sessionOfTab(tab.id) ?? null) === "viewer"
+      ? []
+      : [{ label: "Present", checked: tab.presenter === client.clientId, run: () => client.present(tab.id, tab.presenter !== client.clientId) } as MenuItem]),
     { label: "New tab", run: () => client.intent({ op: "new_tab", session: client.session!, from_pane: client.active(tab.id) ?? null }) },
     ...(client.has("vms") ? [{ label: "New VM tab", run: () => void client.newVm({ session: client.session!, tab: true }) } as MenuItem] : []),
     { label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, client.active(tab.id)) },

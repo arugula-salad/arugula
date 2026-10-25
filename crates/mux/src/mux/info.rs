@@ -311,6 +311,7 @@ impl Daemon {
                     owner: t.owner,
                     zoom: t.zoom,
                     focus: t.focus,
+                    presenter: t.presenter,
                     layout: self.mux.layout(t.id).ok()?,
                 })
             })

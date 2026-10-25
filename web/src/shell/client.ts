@@ -1113,11 +1113,23 @@ export class Client {
     this.send({ type: "view", tab, cols, rows, zoom, claim, typed });
   }
 
+  /** Present `tab` from this window (or take over from whoever does), or
+   * stop. The daemon takes the size this window last said it shows (#1472). */
+  present(tab: TabId, on: boolean) {
+    this.send({ type: "present", tab, on });
+  }
+
+  /** Someone else presents `tab`: only their window sets its size. */
+  presentedElsewhere(tab: TabView): boolean {
+    return tab.presenter !== undefined && tab.presenter !== this.clientId;
+  }
+
   input(pane: PaneId, data: Uint8Array) {
     const tab = this.tabOfPane(pane);
     // Typing here makes this window the one whose size counts, once
-    // whoever has it stops typing for a moment.
-    if (tab && tab.owner !== this.clientId) this.claim(tab.id, true);
+    // whoever has it stops typing for a moment. Not while someone
+    // presents: the daemon would refuse it (#1472).
+    if (tab && tab.owner !== this.clientId && !this.presentedElsewhere(tab)) this.claim(tab.id, true);
     data = this.applyModifiers(data);
     if (this.link?.open) this.link.sendBinary(encodeFrame(FrameKind.Input, pane, data));
   }
