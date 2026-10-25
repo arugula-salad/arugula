@@ -49,7 +49,7 @@ impl McpOp for ClosePane {
     const SURFACE: Surface = Surface::Tool {
         name: "close",
         title: "Close a pane",
-        description: "Close a pane or block, ending what runs in it. A block that owns a git worktree (start_agent with worktree, or an agent on an issue) has it removed, with its local branch, only if nothing is uncommitted or unpushed and the branch is merged into its base; otherwise worktree says kept and why. Never forced.",
+        description: "Close a pane or block, ending what runs in it. A block that owns a git worktree (start_agent with worktree, or an agent on an issue) has it removed, with its local branch, only if nothing is uncommitted or unpushed and the branch is merged into its base (or its squash-merged PR's head is exactly HEAD, which gh says); otherwise worktree says kept and why. Never forced.",
         destructive: true,
         idempotent: false,
         open_world: false,

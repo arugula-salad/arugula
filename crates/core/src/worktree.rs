@@ -55,8 +55,10 @@ printf 'ok %s/%s %s\n' "$top" "$w" "$base"
 /// the worktree, `$3` its branch, `$4` the base. Fetches, then removes the
 /// worktree (never with `--force`) and the local branch only if nothing
 /// is uncommitted, HEAD is on a remote branch, and HEAD and the branch
-/// are in `origin/BASE`. Never touches a remote branch. Says `removed`,
-/// `kept WHY` or `err WHY` last.
+/// are in `origin/BASE`. A squash merge isn't in `origin/BASE`: for a
+/// clean, pushed worktree on a github.com origin, `gh` may say a merged PR
+/// from the branch had exactly HEAD as its head, which counts. Never
+/// touches a remote branch. Says `removed`, `kept WHY` or `err WHY` last.
 pub const CLOSE: &str = r#"repo=$1; w=$2; branch=$3; base=$4
 [ -e "$w/.git" ] || { printf 'gone\n'; exit 0; }
 why=
@@ -73,13 +75,28 @@ if [ -n "$fetched" ] && git -C "$repo" merge-base --is-ancestor "$head" "refs/re
     git -C "$repo" merge-base --is-ancestor "refs/heads/$branch" "refs/remotes/origin/$base" 2>/dev/null || merged=
   fi
 fi
+# The forge: a squash-merged PR whose head is exactly HEAD (a PR merged at an
+# older commit, with more commits since, is not).
+if [ -z "$merged" ] && [ -n "$fetched" ] && [ -z "$why" ] && command -v gh >/dev/null 2>&1 \
+  && case $(git -C "$repo" config --get remote.origin.url 2>/dev/null) in *github.com[:/]*) true ;; *) false ;; esac; then
+  tip=$(git -C "$repo" rev-parse -q --verify "refs/heads/$branch" 2>/dev/null)
+  if [ -z "$tip" ] || [ "$tip" = "$head" ]; then
+    if command -v timeout >/dev/null 2>&1; then t="timeout 10"; else t=; fi
+    oids=$(cd "$repo" && $t gh pr list --head "$branch" --state merged --json headRefOid,number --limit 5 -q '.[].headRefOid' 2>/dev/null)
+    case "
+$oids
+" in *"
+$head
+"*) merged=1 ;; esac
+  fi
+fi
 if [ -z "$merged" ]; then
   if [ -z "$fetched" ]; then why="${why:+$why, }couldn't fetch origin/$base to check it's merged"
   else why="${why:+$why, }not merged into origin/$base"; fi
 fi
 [ -z "$why" ] || { printf 'kept %s\n' "$why"; exit 0; }
 out=$(git -C "$repo" worktree remove "$w" 2>&1) || { printf 'kept git worktree remove: %s\n' "$(printf '%s' "$out" | tail -n 1)"; exit 0; }
-# Merged into origin/BASE above, so -D (-d would judge it against the clone's HEAD).
+# Merged (into origin/BASE, or the PR's head is HEAD) above, so -D (-d would judge it against the clone's HEAD).
 if git -C "$repo" show-ref --verify -q "refs/heads/$branch"; then
   out=$(git -C "$repo" branch -q -D "$branch" 2>&1) || { printf 'removed worktree, kept branch: %s\n' "$(printf '%s' "$out" | tail -n 1)"; exit 0; }
 fi
@@ -110,6 +127,54 @@ mod tests {
             .unwrap();
         let out = String::from_utf8_lossy(&out.stdout);
         assert_eq!(out.lines().last(), Some(format!("ok {clone}/.arugula/worktrees/i3-x main").as_str()), "{out}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A squash-merged branch isn't in `origin/main`: with a github.com
+    /// origin, a fake `gh` saying a merged PR had HEAD as its head makes it
+    /// merged; one that names another commit leaves it kept.
+    #[test]
+    fn close_asks_the_forge_about_a_squash_merge() {
+        let dir = std::env::temp_dir().join(format!("arugula-close-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("bin")).unwrap();
+        let dir = dir.canonicalize().unwrap();
+        let sh = |script: &str| {
+            let out = std::process::Command::new("sh").arg("-c").arg(script).current_dir(&dir).output().unwrap();
+            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        };
+        let g = "git -c user.name=t -c user.email=t@t";
+        sh(&format!(
+            "git init -q --bare -b main up.git && git clone -q up.git clone 2>/dev/null && cd clone \
+             && {g} commit -q --allow-empty -m one && git push -q origin main \
+             && git remote set-url origin https://github.com/o/r.git && git remote set-url --push origin ../up.git"
+        ));
+        // The fetch and the push go to the bare repo; the URL is only for the check.
+        sh("cd clone && git config url.\"$PWD/../up.git\".insteadOf https://github.com/o/r.git");
+        let close = |name: &str, oid: &str| {
+            sh(&format!(
+                "cd clone && git worktree add -q -b {name} ../{name} && cd ../{name} && {g} commit -q --allow-empty -m w \
+                 && git push -q origin {name}"
+            ));
+            let head = sh(&format!("git -C {name} rev-parse HEAD"));
+            let want = if oid.is_empty() { head } else { oid.to_owned() };
+            std::fs::write(dir.join("bin/gh"), format!("#!/bin/sh\necho {want}\n")).unwrap();
+            sh("chmod +x bin/gh");
+            let out = std::process::Command::new("sh")
+                .args(["-c", super::CLOSE, "sh"])
+                .args([dir.join("clone").to_str().unwrap(), dir.join(name).to_str().unwrap(), name, "main"])
+                .env("PATH", format!("{}:{}", dir.join("bin").display(), std::env::var("PATH").unwrap()))
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).lines().last().unwrap_or_default().to_owned()
+        };
+        let stale = close("stale", "0000000000000000000000000000000000000001");
+        assert!(stale.starts_with("kept ") && stale.contains("not merged into origin/main"), "{stale}");
+        assert!(dir.join("stale").exists());
+        assert_eq!(close("squashed", ""), "removed");
+        assert!(!dir.join("squashed").exists());
+        assert!(sh("cd clone && git branch --list squashed").is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
