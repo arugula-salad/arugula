@@ -296,6 +296,22 @@ impl Transcript {
         }
     }
 
+    /// What the agent said in the last turn: its replies after the last
+    /// prompt, joined, with no thoughts, tool calls or notes (AR-1, #1475).
+    /// `None` before any prompt, or when the turn said nothing.
+    pub fn last_message(&self) -> Option<String> {
+        let from = self.entries.iter().rposition(|e| matches!(e, Entry::User { .. }))? + 1;
+        let said: Vec<&str> = self.entries[from..]
+            .iter()
+            .filter_map(|e| match e {
+                Entry::Agent { text, forgotten: false, .. } => Some(text.trim()),
+                _ => None,
+            })
+            .filter(|t| !t.is_empty())
+            .collect();
+        (!said.is_empty()).then(|| said.join("\n\n"))
+    }
+
     /// The transcript as Markdown: `capture --text`.
     pub fn markdown(&self) -> String {
         let mut out = String::new();

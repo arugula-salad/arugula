@@ -499,7 +499,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -1446,7 +1446,7 @@
         "readOnlyHint": false,
         "title": "Start an agent"
       },
-      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
+      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. When its turn ends (wait until idle), turn has its last message and the work it left; read_output has the whole transcript. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
       "inputSchema": {
         "$defs": {
           "AgentKind": {
@@ -1639,7 +1639,7 @@
         "readOnlyHint": false,
         "title": "Prompt an agent and wait"
       },
-      "description": "Give an agent (an agent block, or Claude Code or Codex in a terminal) a prompt and wait for its turn in one call: returns when the turn ends (done), when it asks for someone (needs_input, with the question: agent_respond answers it), or stalled with its screen's last lines if it shows no sign of work within a few seconds (no agent there, the prompt not submitted, the agent gone). An agent already waiting on an approval or question isn't typed at; its question comes back (pass answering to type the answer).",
+      "description": "Give an agent (an agent block, or Claude Code or Codex in a terminal) a prompt and wait for its turn in one call: returns when the turn ends (done, with turn: the agent's last message and, in a git repo, the work it left: branch, pushed, uncommitted files, commits since the turn began, diffstat), when it asks for someone (needs_input, with the question: agent_respond answers it), or stalled with its screen's last lines if it shows no sign of work within a few seconds (no agent there, the prompt not submitted, the agent gone). An agent already waiting on an approval or question isn't typed at; its question comes back (pass answering to type the answer).",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -4120,7 +4120,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -5309,7 +5309,7 @@
         "readOnlyHint": false,
         "title": "Start an agent"
       },
-      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
+      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. When its turn ends (wait until idle), turn has its last message and the work it left; read_output has the whole transcript. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
       "inputSchema": {
         "$defs": {
           "AgentKind": {
@@ -5515,7 +5515,7 @@
         "readOnlyHint": false,
         "title": "Prompt an agent and wait"
       },
-      "description": "Give an agent (an agent block, or Claude Code or Codex in a terminal) a prompt and wait for its turn in one call: returns when the turn ends (done), when it asks for someone (needs_input, with the question: agent_respond answers it), or stalled with its screen's last lines if it shows no sign of work within a few seconds (no agent there, the prompt not submitted, the agent gone). An agent already waiting on an approval or question isn't typed at; its question comes back (pass answering to type the answer).",
+      "description": "Give an agent (an agent block, or Claude Code or Codex in a terminal) a prompt and wait for its turn in one call: returns when the turn ends (done, with turn: the agent's last message and, in a git repo, the work it left: branch, pushed, uncommitted files, commits since the turn began, diffstat), when it asks for someone (needs_input, with the question: agent_respond answers it), or stalled with its screen's last lines if it shows no sign of work within a few seconds (no agent there, the prompt not submitted, the agent gone). An agent already waiting on an approval or question isn't typed at; its question comes back (pass answering to type the answer).",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -7970,7 +7970,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -8917,7 +8917,7 @@
         "readOnlyHint": false,
         "title": "Start an agent"
       },
-      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
+      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. When its turn ends (wait until idle), turn has its last message and the work it left; read_output has the whole transcript. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
       "inputSchema": {
         "$defs": {
           "AgentKind": {
@@ -9110,7 +9110,7 @@
         "readOnlyHint": false,
         "title": "Prompt an agent and wait"
       },
-      "description": "Give an agent (an agent block, or Claude Code or Codex in a terminal) a prompt and wait for its turn in one call: returns when the turn ends (done), when it asks for someone (needs_input, with the question: agent_respond answers it), or stalled with its screen's last lines if it shows no sign of work within a few seconds (no agent there, the prompt not submitted, the agent gone). An agent already waiting on an approval or question isn't typed at; its question comes back (pass answering to type the answer).",
+      "description": "Give an agent (an agent block, or Claude Code or Codex in a terminal) a prompt and wait for its turn in one call: returns when the turn ends (done, with turn: the agent's last message and, in a git repo, the work it left: branch, pushed, uncommitted files, commits since the turn began, diffstat), when it asks for someone (needs_input, with the question: agent_respond answers it), or stalled with its screen's last lines if it shows no sign of work within a few seconds (no agent there, the prompt not submitted, the agent gone). An agent already waiting on an approval or question isn't typed at; its question comes back (pass answering to type the answer).",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -11591,7 +11591,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -12780,7 +12780,7 @@
         "readOnlyHint": false,
         "title": "Start an agent"
       },
-      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
+      "description": "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. When its turn ends (wait until idle), turn has its last message and the work it left; read_output has the whole transcript. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
       "inputSchema": {
         "$defs": {
           "AgentKind": {
@@ -12986,7 +12986,7 @@
         "readOnlyHint": false,
         "title": "Prompt an agent and wait"
       },
-      "description": "Give an agent (an agent block, or Claude Code or Codex in a terminal) a prompt and wait for its turn in one call: returns when the turn ends (done), when it asks for someone (needs_input, with the question: agent_respond answers it), or stalled with its screen's last lines if it shows no sign of work within a few seconds (no agent there, the prompt not submitted, the agent gone). An agent already waiting on an approval or question isn't typed at; its question comes back (pass answering to type the answer).",
+      "description": "Give an agent (an agent block, or Claude Code or Codex in a terminal) a prompt and wait for its turn in one call: returns when the turn ends (done, with turn: the agent's last message and, in a git repo, the work it left: branch, pushed, uncommitted files, commits since the turn began, diffstat), when it asks for someone (needs_input, with the question: agent_respond answers it), or stalled with its screen's last lines if it shows no sign of work within a few seconds (no agent there, the prompt not submitted, the agent gone). An agent already waiting on an approval or question isn't typed at; its question comes back (pass answering to type the answer).",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -15024,7 +15024,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -16631,7 +16631,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {

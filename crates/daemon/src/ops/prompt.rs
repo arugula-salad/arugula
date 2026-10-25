@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use arugula_proto::{
     EventKind, PaneId,
-    api::{PromptRequest, PromptResult},
+    api::{PromptRequest, PromptResult, TurnResult},
     op::ops::PanePrompt,
 };
 
@@ -30,6 +30,7 @@ impl Handle for PanePrompt {
             Via::Mcp(call) => Some(call.by()),
         };
         match tokio::time::timeout(limit, prompt(cx.app, id, req.text, req.answering, stall, by)).await {
+            Ok(Ok(PromptResult::Done { .. })) => Ok(PromptResult::Done { turn: turn_result(cx.app, id).await }),
             Ok(Ok(r)) => Ok(r),
             Ok(Err(e)) => Err(bad(e).into()),
             Err(_) => Ok(PromptResult::StillRunning),
@@ -163,9 +164,16 @@ pub(crate) async fn prompt(
         if !started {
             started = started_now(state).await;
         } else if matches!(state, Attention::Idle | Attention::Done) {
-            return Ok(PromptResult::Done);
+            return Ok(PromptResult::Done { turn: None });
         }
     }
+}
+
+/// What an agent block's last turn said and left in its repo (AR-1,
+/// #1475); `None` for anything else, or while it runs.
+pub(crate) async fn turn_result(app: &App, id: PaneId) -> Option<TurnResult> {
+    let block = app.mux.api(|r| Api::Block(id, r)).await.flatten()?;
+    serde_json::from_value(block.call("turn_result", serde_json::Value::Null).await.ok()?).ok()
 }
 
 /// What a terminal pane's agent screen was last read as (`working`,

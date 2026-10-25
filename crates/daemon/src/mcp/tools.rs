@@ -1235,7 +1235,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -1320,7 +1320,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "start_agent",
             title: "Start an agent",
-            description: "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
+            description: "Start an agent (Claude Code, Codex, any ACP agent) in an agent block with a prompt. Its approvals and questions come to the block; wait until needs_input, then agent_respond, or leave them for the user. When its turn ends (wait until idle), turn has its last message and the work it left; read_output has the whole transcript. With worktree {branch}, it works in a git worktree Arugula makes for it, which close removes only once nothing is lost.",
             args: Args::One(schema_for_type::<StartAgentArgs>),
             read_only: false,
             destructive: false,
@@ -1332,7 +1332,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "prompt_agent",
             title: "Prompt an agent and wait",
-            description: "Give an agent (an agent block, or Claude Code or Codex in a terminal) a prompt and wait for its turn in one call: returns when the turn ends (done), when it asks for someone (needs_input, with the question: agent_respond answers it), or stalled with its screen's last lines if it shows no sign of work within a few seconds (no agent there, the prompt not submitted, the agent gone). An agent already waiting on an approval or question isn't typed at; its question comes back (pass answering to type the answer).",
+            description: "Give an agent (an agent block, or Claude Code or Codex in a terminal) a prompt and wait for its turn in one call: returns when the turn ends (done, with turn: the agent's last message and, in a git repo, the work it left: branch, pushed, uncommitted files, commits since the turn began, diffstat), when it asks for someone (needs_input, with the question: agent_respond answers it), or stalled with its screen's last lines if it shows no sign of work within a few seconds (no agent there, the prompt not submitted, the agent gone). An agent already waiting on an approval or question isn't typed at; its question comes back (pass answering to type the answer).",
             args: Args::One(schema_for_type::<PromptArgs>),
             read_only: false,
             destructive: true,
@@ -2614,15 +2614,23 @@ impl<'a> Call<'a> {
                 RunState::Matched { pane, matched: text, offset, next_offset: self.end_of(pane).await },
             ),
             WaitResult::Attention { state, ask } => {
+                let turn = match state {
+                    Attention::Idle | Attention::Done => crate::ops::prompt::turn_result(self.app, pane).await,
+                    _ => None,
+                };
+                let finished = |what: &str| match &turn {
+                    Some(t) => format!("%{pane} {what}: {}", t.line()),
+                    None => format!("%{pane} {what}"),
+                };
                 let summary = match (&state, &ask) {
                     (Attention::NeedsInput, Some(a)) => {
                         format!("%{pane} asks: {}. Answer with agent_respond (or leave it for the user)", a.headline())
                     }
                     (Attention::NeedsInput, None) => format!("%{pane} needs input"),
-                    (Attention::Done, _) => format!("%{pane} finished"),
-                    _ => format!("%{pane} is idle"),
+                    (Attention::Done, _) => finished("finished its turn"),
+                    _ => finished("is idle"),
                 };
-                done(summary, results::Attended { pane, state, ask })
+                done(summary, results::Attended { pane, state, ask, turn })
             }
             WaitResult::Timeout => self.still_running(pane, Duration::ZERO).await,
         }
@@ -4019,7 +4027,7 @@ impl Call<'_> {
             owned.as_ref().map(|w| format!(", in worktree {} (branch {})", w.path, w.branch)).unwrap_or_default();
         done(
             format!(
-                "Started an agent in %{block}{tail}; wait on it (until needs_input or idle), then read_output for its transcript"
+                "Started an agent in %{block}{tail}; wait on it (until needs_input or idle): the answer has its last message and the work it left; read_output for its transcript"
             ),
             results::BlockOnly { block },
         )
@@ -4130,7 +4138,10 @@ impl Call<'_> {
             return self.not_yet(pane, limit, Some("end of its turn")).await;
         }
         let summary = match &r {
-            PromptResult::Done => {
+            PromptResult::Done { turn: Some(t) } => {
+                format!("%{pane} finished its turn: {}; read_output for the whole transcript", t.line())
+            }
+            PromptResult::Done { turn: None } => {
                 format!("%{pane} finished its turn; read_output (screen: true for what it shows) for what it said")
             }
             PromptResult::NeedsInput { question, .. } => {

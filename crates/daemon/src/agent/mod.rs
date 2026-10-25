@@ -55,6 +55,7 @@ pub mod defs;
 pub mod hosted;
 pub mod images;
 mod link;
+mod turnwork;
 #[cfg(unix)]
 pub(crate) use link::pipe_cloexec;
 pub mod transcript;
@@ -2283,6 +2284,14 @@ fn cut_reason(headline: String) -> arugula_proto::Reason {
     }
 }
 
+/// Where a block's git commands run: its directory.
+fn work_dir(ctx: &AgentCtx, g: &Inner) -> String {
+    g.cfg.cwd.clone().unwrap_or_else(|| match ctx.sprite {
+        Some(_) => "/home/sprite".into(),
+        None => ctx.home.display().to_string(),
+    })
+}
+
 /// Act on what a frame asked for.
 fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
     match f {
@@ -2920,6 +2929,29 @@ impl Agent {
         Ok(json!({ "cancelled": true }))
     }
 
+    /// `turn_result` (AR-1, #1475): the last turn's final message and the
+    /// work it left, as a [`arugula_proto::api::TurnResult`]; `null` while a
+    /// turn runs, before the first, or when it said nothing.
+    fn turn_result(&self) -> BoxFuture<'static, Result<Value, String>> {
+        let (message, started_ms, cwd) = {
+            let g = self.inner.lock().unwrap();
+            let done = g.turns.last().is_some_and(|t| t.ended_ms.is_some()) && g.prompt_id.is_none();
+            let message = if done { g.t.last_message() } else { None };
+            (message, g.turns.last().map(|t| t.started_ms), work_dir(&self.ctx, &g))
+        };
+        let block = self.ctx.block.clone();
+        Box::pin(async move {
+            let Some(message) = message else { return Ok(Value::Null) };
+            // Git trouble is no work to report, not an error.
+            let runner = crate::review::Runner::user(&block).await;
+            let r = match runner {
+                Ok(runner) => turnwork::result(&runner, &cwd, started_ms, message).await,
+                Err(_) => arugula_proto::api::TurnResult { message, work: None },
+            };
+            serde_json::to_value(r).map_err(|e| e.to_string())
+        })
+    }
+
     /// `send {text, files?}`: the next prompt. `files` (M71) are paths M70's
     /// upload route answered for this block.
     fn send(&self, args: &Value, by: Option<&str>) -> Result<Value, String> {
@@ -3147,6 +3179,7 @@ impl Block for Agent {
             }
             "set_model" => self.set_model(&args),
             "state" => Ok(self.state()),
+            "turn_result" => return self.turn_result(),
             "image" => images::read(&self.ctx.dir, args["name"].as_str().unwrap_or_default()),
             m => Err(no_method(self.kind(), m)),
         };

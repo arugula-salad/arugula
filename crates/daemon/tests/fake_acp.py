@@ -11,6 +11,9 @@ Prompts:
                  permission; the reply says "Allowed." or "Not allowed."
   read PATH      a Read tool call with no command that fails (not a shell command)
   write NAME TEXT  writes TEXT to NAME in its session's folder, unasked
+  work A B       thinks, makes a tool call, edits A in its session's folder
+                 (git repo) and leaves it uncommitted, commits a new file B,
+                 and says "done" (AR-1, #1475)
   slow           streams for ~10s unless cancelled
   remember WORD  remembers WORD; "recall" says it (across processes)
   crash          exits with code 3 mid-turn
@@ -412,6 +415,22 @@ def prompt(mid, p):
         with open(os.path.join(s.get("cwd") or ".", name), "w") as f:
             f.write(body + "\n")
         msg(f"Wrote {name}.")
+    elif text.startswith("work "):
+        a, b = text.split(" ")[1:3]
+        cwd = s.get("cwd") or "."
+        update(sid, s, {"sessionUpdate": "agent_thought_chunk", "messageId": f"t{n}",
+                        "content": {"type": "text", "text": "pondering the edit"}})
+        tid = f"tool{n}"
+        update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": tid, "title": f"Edit {a}",
+                        "kind": "edit", "status": "pending"})
+        with open(os.path.join(cwd, a), "a") as f:
+            f.write("edited\n")
+        with open(os.path.join(cwd, b), "w") as f:
+            f.write("new\n")
+        subprocess.run(["git", "add", b], cwd=cwd, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", f"add {b}"], cwd=cwd, check=True)
+        update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "completed"})
+        msg("done")
     elif text.startswith("perm "):
         name = text[5:]
         tid = f"tool{n}"

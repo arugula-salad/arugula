@@ -13,7 +13,8 @@ use std::io::Read;
 fn prompted(pane: u32, r: &PromptResult) -> (String, i32) {
     let q = |question: &Option<String>| question.as_deref().unwrap_or("a question").to_owned();
     match r {
-        PromptResult::Done => (format!("%{pane} finished its turn"), 0),
+        PromptResult::Done { turn: Some(t) } => (format!("%{pane} finished its turn: {}", t.line()), 0),
+        PromptResult::Done { turn: None } => (format!("%{pane} finished its turn"), 0),
         PromptResult::NeedsInput { question, .. } => (format!("%{pane} asks: {}", q(question)), 2),
         PromptResult::Blocked { question, .. } => (
             format!(

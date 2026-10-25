@@ -103,6 +103,9 @@ pub struct Attended {
     pub pane: PaneId,
     pub state: Attention,
     pub ask: Option<Box<Ask>>,
+    /// An agent block's finished turn: what it said and left (AR-1, #1475).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn: Option<arugula_proto::api::TurnResult>,
 }
 
 /// The command `read_output` was asked about (`last_command`).
@@ -628,7 +631,7 @@ mod tests {
             json!({ "pane": 7, "state": "matched", "match": "ready", "offset": 3, "next_offset": 8 }),
         );
         same(
-            Attended { pane: 7, state: Attention::Done, ask: None },
+            Attended { pane: 7, state: Attention::Done, ask: None, turn: None },
             json!({ "pane": 7, "state": Attention::Done, "ask": null }),
         );
     }
@@ -835,7 +838,10 @@ mod tests {
     #[test]
     fn prompting_threads_and_devices() {
         use arugula_proto::api::PromptResult;
-        same(PromptedAgent { result: PromptResult::Done, pane: 7 }, json!({ "result": "done", "pane": 7 }));
+        same(
+            PromptedAgent { result: PromptResult::Done { turn: None }, pane: 7 },
+            json!({ "result": "done", "pane": 7 }),
+        );
         same(
             PromptedAgent { result: PromptResult::Stalled { why: "w".into(), screen: "s".into() }, pane: 7 },
             json!({ "result": "stalled", "why": "w", "screen": "s", "pane": 7 }),
