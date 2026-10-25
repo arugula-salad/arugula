@@ -122,6 +122,14 @@ test("a viewer can't type, call the API or change the layout", async () => {
   expect(await owner.evaluate(() => window.__arugula.client.state!.panes.length)).toBe(before);
 });
 
+// #1472: presenting sets the tab's size, which only an editor does.
+test("a viewer can't present", async () => {
+  const tabId = await owner.evaluate((p) => window.__arugula.client.tabOfPane(p)!.id, sharedPane);
+  await friend.evaluate((t) => window.__arugula.client.present(t, true), tabId);
+  await expect(friend.getByText("you can't present here")).toBeVisible();
+  expect((await owner.evaluate((p) => window.__arugula.client.tabOfPane(p)!, sharedPane)).presenter).toBeUndefined();
+});
+
 // M113 (#1028): the workspace shows a viewer only what they may do; the
 // rest is disabled with why, or not there.
 test("a viewer's workspace hides what they can't do, or says why it's off", async () => {
@@ -164,6 +172,12 @@ test("made an editor, they type at once, without reconnecting", async () => {
   await run(friend, sharedPane, "echo friend-$((6*7))", "friend-42");
   await expect.poll(() => text(owner, sharedPane)).toContain("friend-42");
   expect(await friend.evaluate(() => window.__arugula.client.clientId)).toBe(clientId);
+  // An editor can present, and the owner of the machine can stop it (#1472).
+  const tabId = await owner.evaluate((p) => window.__arugula.client.tabOfPane(p)!.id, sharedPane);
+  await friend.evaluate((t) => window.__arugula.client.present(t, true), tabId);
+  await expect.poll(() => owner.evaluate((p) => window.__arugula.client.tabOfPane(p)!.presenter, sharedPane)).toBe(clientId);
+  await owner.evaluate((t) => window.__arugula.client.present(t, false), tabId);
+  await expect.poll(() => owner.evaluate((p) => window.__arugula.client.tabOfPane(p)!.presenter, sharedPane)).toBeUndefined();
 });
 
 test("revoked, they're cut off within a second; the audit log has it all", async () => {
