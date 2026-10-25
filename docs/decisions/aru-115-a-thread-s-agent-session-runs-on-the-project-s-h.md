@@ -39,6 +39,12 @@ supersedes: []
 evidence:
   - title: "#1438"
     url: "https://github.com/arugula-salad/arugula/issues/1438"
+  - title: "Arugula #129"
+    url: "https://app.arugula.io/issues/iss_c2af265d6402c7a2f22e8d24154fb215"
+  - title: "Arugula #130"
+    url: "https://app.arugula.io/issues/iss_e2a536bc47833538c4a29793052acbc1"
+  - title: "Arugula #131"
+    url: "https://app.arugula.io/issues/iss_9eac7586846748abea4bf7264dfd9771"
 decided_by: "jhgaylor"
 decided_on: "2026-10-25"
 reviews: []
@@ -104,4 +110,4 @@ their machine's grants ("Agents are in conversations"), an agent's
 "approve" is never an approval, and an agent's GitHub write from a person's
 machine is still a draft its person sends.
 Where: the sessions tables and their rules (`crates/platform/src/db/sessions.rs`, migration `0049_agent_sessions`), the states and the signed event (`crates/e2e/src/session.rs`), what the box pulls and reports (`crates/control-wire/src/work.rs`), sessions as objects (`crates/platform/src/chat/objects.rs`); dispatch (M256) and the card (M257) follow.
-From: thread = session (Arugula #129, native, behind #1438), M254 (Arugula #131).
+From: thread = session (Arugula #129, native, behind #1438), M254 (Arugula #131), S42 (Arugula #130).
