@@ -1331,9 +1331,14 @@ leaves it. So:
 - **Chat's pushes (M122):** control sends these itself, encrypted to each
   subscription, since it holds the chat anyway (S41 decision 5): who, where
   and the first 200 characters ("jake mentioned you in #general", "jake
-  wrote to you"), tagged `chat-<room>` with the room for the tap. A mention
-  pushes, and anything in a DM; not your own posts, a room you have open or
-  muted, or a room you were pushed for in the last minute.
+  wrote to you"), tagged `chat-<room>` with the room for the tap. What
+  pushes follows the room's level (#113): all messages, mentions only or
+  nothing, with the person's defaults for DMs, channels and threads. A
+  mention, `@channel`, `@here` or one of the person's keywords counts as a
+  mention. Not your own posts, a room you have open, or a room you were
+  pushed for in the last minute, and nothing at all while do not disturb is
+  on (a snooze or quiet hours, #115). A reminder on a saved message is one
+  push. Reactions, pins, system lines and typing push nobody.
 - **What someone hears:** an account turns three kinds on or off
   (`/api/push/prefs`, the *Push:* items under *Notify this device*), for
   every device it turned on:
@@ -1450,7 +1455,22 @@ sleeps, and control pushes and searches them itself.
 - **What enters control:** what people type, and the lines they choose to
   quote from a pane (the page reads the pane end to end, and the person
   picks the lines). Nothing else of the pane does: its output, input and
-  scrollback stay on the end-to-end channels above.
+  scrollback stay on the end-to-end channels above. Also what
+  people attach (files and images, bytes included, up to 10 MB each), the
+  emoji they react with, a channel's topic and pins, and their sidebar,
+  notification settings, keywords, saved messages and when their pages were
+  last open: tables below say which is which. None of it is end to end.
+- **What control fetches from outside** (#108, #112), the only fetches chat
+  makes from the web, from the platform process and never from a reader's
+  browser: the Open Graph page and image of a web link in a message (public
+  addresses only, refused at each redirect; a team's owner can turn it off,
+  and an author can hide one message's), cached by address for a day; and an
+  account's public GitHub picture, by login (`github.com/<login>.png`),
+  cached a day. Readers load both from control, so neither the site nor
+  GitHub sees them, and control's CSP stays closed to both. The site does
+  see control's address and the link, as for any fetch. A link to an
+  object of control's own is read from its tables, as the reader, and
+  leaves no trace but the message.
 - **Who reads a pane's thread:** whom its machine says, kept by control
   (`POST /api/daemon/chat/readers`), and never anyone control wouldn't route
   to the machine anyway. A pane chip opens only for someone who may reach
@@ -1498,7 +1518,8 @@ sleeps, and control pushes and searches them itself.
 - **Kept until deleted** (S41 decision 6): an author or an owner deletes a
   message; deleting an account deletes its DMs and its machines' threads
   and blanks its messages elsewhere (issue comments and its agents' posts
-  included); a disbanded team's rooms go with it. Nobody deletes a single
+  included); a disbanded team's rooms go with it. Deleting a message deletes its files,
+  reactions and pin; a room's go with the room. Nobody deletes a single
   issue: a project's issues and their threads go when the project does
   (with its account, or its disbanded team). The issues an account opened
   in a project that stays keep their text, naming no author.
