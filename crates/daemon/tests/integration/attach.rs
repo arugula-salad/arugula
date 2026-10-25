@@ -540,6 +540,33 @@ async fn the_tab_takes_the_claiming_clients_size() {
     assert_ne!(state.tabs[0].owner, None);
 }
 
+/// #1472: while A presents, B's claims (an older client still sends them)
+/// leave the tab at A's size and the state names A; B's `Present` takes over.
+#[tokio::test]
+async fn a_presenters_size_holds_until_someone_takes_over() {
+    let d = start().await;
+    let (mut a, state) = connect_state(&d).await;
+    let tab = state.tabs[0].id;
+    send(&mut a, ClientMsg::View { tab, cols: 101, rows: 30, zoom: None, claim: false, typed: false }).await;
+    send(&mut a, ClientMsg::Present { tab, on: true }).await;
+    let state = state_where(&mut a, |s| s.tabs[0].presenter.is_some()).await;
+    assert_eq!((state.tabs[0].cols, state.tabs[0].rows), (101, 30), "starting claims the size");
+    assert_eq!(state.tabs[0].presenter, state.tabs[0].owner);
+    let first = state.tabs[0].presenter;
+
+    let (mut b, _) = connect_state(&d).await;
+    send(&mut b, ClientMsg::View { tab, cols: 61, rows: 20, zoom: None, claim: true, typed: false }).await;
+    send(&mut b, ClientMsg::View { tab, cols: 62, rows: 20, zoom: None, claim: true, typed: true }).await;
+    // B's take-over is handled after both claims, so the first size A sees
+    // other than its own is B's take-over.
+    send(&mut b, ClientMsg::View { tab, cols: 63, rows: 20, zoom: None, claim: false, typed: false }).await;
+    send(&mut b, ClientMsg::Present { tab, on: true }).await;
+    let state = state_where(&mut a, |s| s.tabs[0].cols != 101).await;
+    assert_eq!((state.tabs[0].cols, state.tabs[0].rows), (63, 20), "only the take-over resized it");
+    assert_ne!(state.tabs[0].presenter, first);
+    assert_eq!(state.tabs[0].presenter, state.tabs[0].owner);
+}
+
 /// #333: a second window's typing doesn't take the size from a window
 /// still typing there (it would resize the pane at every turn); showing
 /// the tab or "use this size" still does.

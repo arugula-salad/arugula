@@ -44,6 +44,11 @@ pub struct Tab {
     /// so unfocusing gives back the same layout.
     #[serde(default)]
     pub focus: Option<PaneId>,
+    /// The client presenting this tab (#1472): while set, only its window
+    /// sets the tab's size. Never saved: client ids start over with the
+    /// daemon, so a saved one could pin the tab to a stranger.
+    #[serde(skip)]
+    pub presenter: Option<ClientId>,
 }
 
 /// A whole-tab arrangement for [`Intent::Arrange`].
@@ -344,7 +349,17 @@ impl Mux {
         let id = self.next_tab;
         self.tabs.insert(
             id,
-            Tab { id, name: None, root, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, owner: None, zoom: None, focus: None },
+            Tab {
+                id,
+                name: None,
+                root,
+                cols: DEFAULT_COLS,
+                rows: DEFAULT_ROWS,
+                owner: None,
+                zoom: None,
+                focus: None,
+                presenter: None,
+            },
         );
         let s = self.session_mut(session)?;
         let at = index.unwrap_or(s.tabs.len()).min(s.tabs.len());
@@ -620,6 +635,10 @@ impl Mux {
         claim: bool,
     ) -> Result<bool, Error> {
         let t = self.tabs.get_mut(&tab).ok_or(Error::NoTab(tab))?;
+        // Whatever the claim says, a presenter's size holds (#1472).
+        if t.presenter.is_some_and(|p| p != client) {
+            return Ok(false);
+        }
         if !(claim || t.owner.is_none() || t.owner == Some(client)) {
             return Ok(false);
         }
@@ -636,10 +655,45 @@ impl Mux {
         Ok(true)
     }
 
+    /// `client` starts presenting `tab` (or takes over from the one who
+    /// does), or, with `on` false, stops it. Starting claims the size at
+    /// once. Stopping is for the presenter; who else may is the caller's
+    /// call. Returns whether anything changed (#1472).
+    pub fn present(
+        &mut self,
+        client: ClientId,
+        tab: TabId,
+        on: bool,
+        (cols, rows): (u16, u16),
+        zoom: Option<PaneId>,
+    ) -> Result<bool, Error> {
+        let t = self.tabs.get_mut(&tab).ok_or(Error::NoTab(tab))?;
+        if !on {
+            if t.presenter.is_none() {
+                return Ok(false);
+            }
+            t.presenter = None;
+            self.rev += 1;
+            return Ok(true);
+        }
+        let was = t.presenter.take();
+        // The old presenter no longer pins, so the claim is allowed.
+        let sized = self.view(client, tab, cols, rows, zoom, true)?;
+        self.tabs.get_mut(&tab).ok_or(Error::NoTab(tab))?.presenter = Some(client);
+        if !sized && was != Some(client) {
+            self.rev += 1;
+        }
+        Ok(sized || was != Some(client))
+    }
+
     /// A client went away: its tabs keep their size until someone else
-    /// views them.
+    /// views them, and it stops presenting.
     pub fn release(&mut self, client: ClientId) -> bool {
         let mut changed = false;
+        for t in self.tabs.values_mut().filter(|t| t.presenter == Some(client)) {
+            t.presenter = None;
+            changed = true;
+        }
         for t in self.tabs.values_mut().filter(|t| t.owner == Some(client)) {
             t.owner = None;
             t.zoom = None;

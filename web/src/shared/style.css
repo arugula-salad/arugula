@@ -1219,6 +1219,16 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--danger)22;
 }
 
+.tab-presenting {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-color);
+  white-space: nowrap;
+}
+
 .host-tag {
   margin-right: 5px;
   padding: 0 4px;

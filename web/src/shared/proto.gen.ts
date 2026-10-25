@@ -876,7 +876,7 @@ export type ClientMsg = { "type": "attach", panes: Array<AttachPane>, zstd?: boo
  * Unused since #806: programs asking are told it's there whoever
  * is attached. Kept so older clients and daemons still agree.
  */
-kitty_keys?: boolean, } | { "type": "ack", pane: number, offset: number, } | { "type": "detach", panes: Array<number>, } | { "type": "view", tab: number, cols: number, rows: number, zoom: number | null, claim: boolean, typed?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
+kitty_keys?: boolean, } | { "type": "ack", pane: number, offset: number, } | { "type": "detach", panes: Array<number>, } | { "type": "view", tab: number, cols: number, rows: number, zoom: number | null, claim: boolean, typed?: boolean, } | { "type": "present", tab: number, on: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
 
 /**
  * A command the shell integration reported.
@@ -3040,7 +3040,11 @@ export type TabView = { id: number, name: string | null, root: Node, cols: numbe
  * The pane filling the tab for everyone (focus mode, M109), if any.
  * `layout` already shows it.
  */
-focus: number | null, layout: Layout, };
+focus: number | null, 
+/**
+ * The client presenting the tab (#1472): only its window sets the size.
+ */
+presenter?: number, layout: Layout, };
 
 /**
  * `GET` and `POST /api/team-pins`: the teams pinned here, and those whose

@@ -111,7 +111,12 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   // Not while the link is down, nor to a viewer: neither has a say in its
   // size (viewers see it letterboxed; the daemon takes editors' sizes).
   const viewer = client.role(client.sessionOfTab(tab.id) ?? null) === "viewer";
-  const elsewhere = client.connected && !viewer && tab.owner !== null && tab.owner !== client.clientId;
+  const presenting = tab.presenter !== undefined;
+  const mine = presenting && tab.presenter === client.clientId;
+  // Someone else's window sets the size while they present (#1472), so the
+  // "Use this window's size" bar gives way to theirs.
+  const elsewhere = !presenting && client.connected && !viewer && tab.owner !== null && tab.owner !== client.clientId;
+  const presenter = client.state?.presence?.find((p) => p.client === tab.presenter)?.name ?? "Someone";
 
   return (
     <div class={scale < 1 ? "tab-area scaled" : "tab-area"} ref={ref}>
@@ -141,6 +146,12 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
           )}
         <DropOverlay client={client} tab={drawingTab} cell={drawingCell} />
       </div>
+      {presenting && !mine && client.connected && (
+        <div class="sized-elsewhere" data-presenter-bar data-presenting="other">
+          {presenter} is presenting
+          {!viewer && <button onClick={() => client.present(tab.id, true)}>Take over</button>}
+        </div>
+      )}
       {elsewhere && (
         <div class="sized-elsewhere" data-sized-elsewhere>
           Another window set this tab's size.

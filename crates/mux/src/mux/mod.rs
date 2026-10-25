@@ -441,6 +441,9 @@ struct Daemon {
     refused: HashMap<ClientId, Instant>,
     /// The tab each client shows (M13 presence).
     viewing: HashMap<ClientId, TabId>,
+    /// ...and the size it last said it shows it in, for [`ClientMsg::Present`]
+    /// to claim (#1472).
+    view_size: HashMap<ClientId, (TabId, u16, u16)>,
     /// ...and the one pane in it, on a phone.
     zoomed: HashMap<ClientId, PaneId>,
     /// Blocks some client draws now (M11), as they were last told.
@@ -620,6 +623,7 @@ pub fn start(
         focus: HashMap::new(),
         refused: HashMap::new(),
         viewing: HashMap::new(),
+        view_size: HashMap::new(),
         zoomed: HashMap::new(),
         drawn: Default::default(),
         fs: fs.clone(),
@@ -1340,6 +1344,7 @@ impl Daemon {
                 self.focus.remove(&client);
                 self.refused.remove(&client);
                 self.viewing.remove(&client);
+                self.view_size.remove(&client);
                 self.zoomed.remove(&client);
                 // Their last client left: they no longer drive anything.
                 if let Some(who) = gone
