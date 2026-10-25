@@ -38,7 +38,10 @@ pub const HOOKS_SNIPPET: &str = r#"{
       { "hooks": [{ "type": "command", "command": "arugula attention done" }] },
       { "hooks": [{ "type": "command", "command": "arugula inbox", "asyncRewake": true, "timeout": 86400 }] }
     ],
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "arugula inbox", "asyncRewake": true, "timeout": 86400 }] }],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "arugula inbox", "asyncRewake": true, "timeout": 86400 }] },
+      { "hooks": [{ "type": "command", "command": "arugula hook" }] }
+    ],
     "PreToolUse": [
       { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "arugula ask", "timeout": 604800 }] },
       { "hooks": [{ "type": "command", "command": "arugula hook" }] }
@@ -710,6 +713,27 @@ mod tests {
         let only_ask = r#"{"hooks":{"PreToolUse":[{"matcher":"AskUserQuestion","hooks":[{"type":"command","command":"arugula ask"}]}]}}"#;
         let (v, _) = merged(only_ask);
         assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 2);
+    }
+
+    /// #1486: an install from before `SessionStart` ran `arugula hook` lacks
+    /// it, `status` says so, and `install` adds it once.
+    #[test]
+    fn an_old_install_gets_the_session_start_hook_once() {
+        let mut old = snippet();
+        old.get_mut("SessionStart").unwrap().as_array_mut().unwrap().truncate(1);
+        let old = json!({ "hooks": Value::Object(old) });
+        let missing: Vec<_> =
+            present(&old).into_iter().filter(|(_, p)| *p == Has::Missing).map(|(event, _)| event).collect();
+        assert_eq!(missing, ["SessionStart"]);
+        let (v, changed) = merged(&old.to_string());
+        assert!(changed);
+        let starts = v["hooks"]["SessionStart"].as_array().unwrap();
+        let hooks = |c: &str| starts.iter().filter(|g| g["hooks"][0]["command"] == c).count();
+        assert_eq!((hooks("arugula inbox"), hooks("arugula hook")), (1, 1), "{starts:?}");
+        assert_eq!(starts.len(), 2);
+        let (again, changed) = merged(&v.to_string());
+        assert!(!changed);
+        assert_eq!(again, v);
     }
 
     #[test]

@@ -4886,9 +4886,10 @@ mod tests {
         assert!(!with.contains("thread") && !with.contains("@agent"), "{with}");
         // Labs only adds the Doc sentence.
         let without = crate::mcp::instructions(fl(false));
-        let plain = with.replace(crate::mcp::DOC_INSTRUCTIONS, "");
+        let plain = with.replace(&format!("{} ", flags::DOCS_STEERING), "");
         assert!(with.len() > without.len() && plain == without);
-        assert!(with.contains("doc to build a report") && !without.contains("doc to build"), "{with}");
+        assert!(with.contains(flags::DOCS_STEERING) && !without.contains("Artifact"), "{with}");
+        assert!(with.contains("not an Artifact") && with.contains("`doc share`"), "{with}");
         // Both say when to show a PR (AR-7).
         assert!(with.contains("show it (kind pr)") && without.contains("show it (kind pr)"), "{without}");
     }
