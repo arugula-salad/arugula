@@ -13,6 +13,7 @@ mod acl;
 mod close;
 mod conversations;
 mod doc_links;
+pub(crate) mod docs;
 mod flags;
 mod fs;
 mod hosted;
@@ -85,6 +86,19 @@ impl From<ApiError> for OpError {
 }
 
 impl OpError {
+    /// The sentence an MCP agent gets for it (a pane that's gone aside).
+    pub fn sentence(self) -> String {
+        match self {
+            OpError::NoPane(id) => format!("no pane %{id}"),
+            OpError::Forbidden(why)
+            | OpError::Unreachable(why)
+            | OpError::NoFlag(why)
+            | OpError::Failed(why)
+            | OpError::Status(_, why)
+            | OpError::Text(_, why) => why,
+        }
+    }
+
     pub fn http(self) -> ApiError {
         match self {
             OpError::NoPane(id) => ApiError(StatusCode::NOT_FOUND, format!("no pane %{id}")),

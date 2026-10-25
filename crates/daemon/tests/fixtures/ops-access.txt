@@ -7,8 +7,11 @@ agents.get GET /api/hosts/self/agents Owner drives=false credential=false
 agents.refresh POST /api/hosts/self/agents/refresh Owner drives=false credential=false
 conversation.open POST /api/conversations/open Owner drives=false credential=false
 conversations.list GET /api/conversations Owner drives=false credential=false
+doc.delete DELETE /api/docs/{id} Owner drives=false credential=false
+doc.open POST /api/docs/open Owner drives=false credential=false
 doc_link.delete DELETE /api/doc-links/{id} Owner drives=false credential=false
 doc_link.get GET /api/doc-links/{id} Owner drives=false credential=true
+docs.list GET /api/docs Owner drives=false credential=false
 flag.set PUT /api/flags/{name} Owner drives=false credential=false
 flags.list GET /api/flags Owner drives=false credential=false
 fs.list GET /api/fs/list Owner drives=false credential=false

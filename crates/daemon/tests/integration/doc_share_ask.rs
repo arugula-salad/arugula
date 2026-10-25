@@ -36,10 +36,11 @@ const ONLY_OWNER: &str = "only the owner can share this Doc";
 
 /// A control that keeps nothing and counts what a daemon sends it.
 #[derive(Clone, Default)]
-struct Fake {
+pub(crate) struct Fake {
     /// Parts put, commits made and links deleted.
-    puts: Arc<AtomicUsize>,
-    commits: Arc<AtomicUsize>,
+    pub(crate) puts: Arc<AtomicUsize>,
+    pub(crate) commits: Arc<AtomicUsize>,
+    pub(crate) deletes: Arc<AtomicUsize>,
     /// Answer the quota with this status instead of 200 (0: as it is).
     refuse: Arc<AtomicU16>,
     viewer: Arc<Mutex<String>>,
@@ -63,6 +64,11 @@ async fn commit(State(f): State<Fake>) -> Json<Value> {
     Json(json!({}))
 }
 
+async fn unshare(State(f): State<Fake>) -> Json<Value> {
+    f.deletes.fetch_add(1, Ordering::SeqCst);
+    Json(json!({}))
+}
+
 async fn dial(up: WebSocketUpgrade) -> Response {
     up.on_upgrade(|ws| async move {
         tokio::time::sleep(Duration::from_secs(3600)).await;
@@ -70,7 +76,7 @@ async fn dial(up: WebSocketUpgrade) -> Response {
     })
 }
 
-fn serve(f: Fake) -> (tokio::runtime::Runtime, String) {
+pub(crate) fn serve(f: Fake) -> (tokio::runtime::Runtime, String) {
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     let url = rt.block_on(async {
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -87,7 +93,7 @@ fn serve(f: Fake) -> (tokio::runtime::Runtime, String) {
             .route("/api/doc-links/quota", get(quota))
             .route("/api/doc-links/{id}/v/{ver}/parts/{n}", put(part))
             .route("/api/doc-links/{id}/v/{ver}/commit", post(commit))
-            .route("/api/doc-links/{id}", delete(|| async { Json(json!({})) }))
+            .route("/api/doc-links/{id}", delete(unshare))
             // What a visitor's browser asks first: the link is served.
             .route("/d/{id}/data/meta", get(|| async { Json(json!({})) }))
             .with_state(f);
@@ -98,7 +104,7 @@ fn serve(f: Fake) -> (tokio::runtime::Runtime, String) {
 }
 
 /// Joined to the fake control, as `join` leaves it.
-fn enroll(state: &std::path::Path, control: &str) {
+pub(crate) fn enroll(state: &std::path::Path, control: &str) {
     let keys = DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
     let mut cert = Cert::new(&keys, "a1", Kind::Daemon, "test");
     cert.sign_with(&keys);
@@ -107,20 +113,21 @@ fn enroll(state: &std::path::Path, control: &str) {
     std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
 }
 
-struct World {
-    d: Daemon,
-    fake: Fake,
+pub(crate) struct World {
+    pub(crate) d: Daemon,
+    pub(crate) fake: Fake,
     /// An agent block, which started the Doc.
-    agent: u64,
-    doc: u64,
-    _rt: tokio::runtime::Runtime,
+    pub(crate) agent: u64,
+    pub(crate) doc: u64,
+    /// The fake control's runtime: dropped, control is out of reach.
+    pub(crate) rt: Option<tokio::runtime::Runtime>,
 }
 
 impl World {
     /// A daemon with its owner, FRIEND a viewer and EDITOR an editor, the
     /// `docs` flag on, joined to the fake control, and an agent block that
     /// has made a Doc of two sections.
-    fn new(env: &[(&str, &str)]) -> World {
+    pub(crate) fn new(env: &[(&str, &str)]) -> World {
         let fake = Fake::default();
         let (rt, url) = serve(fake.clone());
         let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
@@ -143,7 +150,7 @@ impl World {
             json!({ "kind": "fill", "block": doc, "section": "s1", "markdown": "Secret words." }),
         )
         .unwrap();
-        World { d, fake, agent, doc, _rt: rt }
+        World { d, fake, agent, doc, rt: Some(rt) }
     }
 
     fn share(&self) -> Result<Value, String> {
@@ -241,7 +248,9 @@ fn an_agent_asks_and_the_owners_tap_publishes_and_the_repeat_call_gets_the_url()
     let key = url.split("#k=").nth(1).unwrap();
     assert!(!w.d.state(w.doc).to_string().contains(key), "the key is in the Doc's state");
     assert!(!w.d.get("/api/panes").to_string().contains(key), "the key is in the panes");
-    let mut at = vec![w.d.state.join(format!("blocks/{}", w.doc)), w.d.state.clone()];
+    let rows = w.d.get("/api/docs");
+    let id = rows.as_array().unwrap().iter().find(|r| r["open"] == w.doc).unwrap()["id"].as_str().unwrap().to_owned();
+    let mut at = vec![w.d.state.join("docs").join(id), w.d.state.clone()];
     let doc_dir = at[0].clone();
     while let Some(dir) = at.pop() {
         for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {

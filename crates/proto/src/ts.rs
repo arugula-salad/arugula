@@ -56,6 +56,9 @@ fn generate() -> String {
     c.visit::<HostFeatures>();
     c.visit::<FlagInfo>();
     c.visit::<crate::api::DocLinkUrl>();
+    c.visit::<crate::api::DocRow>();
+    c.visit::<crate::api::DocOpenRequest>();
+    c.visit::<crate::api::DocOpened>();
     c.visit::<crate::api::Ports>();
     c.visit::<FlagSetRequest>();
     c.visit::<crate::flags::Source>();

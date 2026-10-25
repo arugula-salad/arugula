@@ -1027,6 +1027,32 @@ export type Dir = "row" | "column";
 export type DocLinkUrl = { url: string, };
 
 /**
+ * `POST /api/docs/open` (#1493): a Doc from the library in a block.
+ */
+export type DocOpenRequest = { id: string, session?: string | null, split?: number | null, };
+
+/**
+ * The block that shows the Doc: the one that had it open, or a new one.
+ */
+export type DocOpened = { pane: number, };
+
+/**
+ * One Doc in the library (#1493): `GET /api/docs`. `open` is the block
+ * that shows it now, `shared` its link's dates (never the link).
+ */
+export type DocRow = { id: string, title: string, made: number, updated: number, 
+/**
+ * Who made it: an agent (`mcp:NAME`), a person's driver name, or
+ * `migrated` for a Doc that predates the library.
+ */
+by: string, open?: number | null, shared?: DocShared | null, };
+
+/**
+ * When a Doc was shared with a link, and last updated.
+ */
+export type DocShared = { made: number, updated: number, };
+
+/**
  * An agent's write, waiting for a person.
  */
 export type Draft = { id: string, 
@@ -3235,8 +3261,11 @@ export const OPS = {
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
+  "doc.delete": { method: "DELETE", path: "/api/docs/{id}" },
+  "doc.open": { method: "POST", path: "/api/docs/open" },
   "doc_link.delete": { method: "DELETE", path: "/api/doc-links/{id}" },
   "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
+  "docs.list": { method: "GET", path: "/api/docs" },
   "flag.set": { method: "PUT", path: "/api/flags/{name}" },
   "flags.list": { method: "GET", path: "/api/flags" },
   "fs.list": { method: "GET", path: "/api/fs/list" },

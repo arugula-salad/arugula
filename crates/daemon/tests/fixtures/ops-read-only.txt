@@ -3,6 +3,7 @@ acl.get GET /api/acl
 adapters.list GET /api/agents/adapters
 agents.get GET /api/hosts/self/agents
 conversations.list GET /api/conversations
+docs.list GET /api/docs
 flags.list GET /api/flags
 fs.list GET /api/fs/list
 fs.recent GET /api/fs/recent

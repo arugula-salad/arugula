@@ -160,6 +160,18 @@ fn bodies(state: &Value) -> Vec<Option<String>> {
     state["entries"].as_array().unwrap().iter().map(|e| e["body"].as_str().map(str::to_owned)).collect()
 }
 
+/// Where the Doc a block shows keeps its files: its folder in the library.
+fn library_dir(d: &Daemon, block: u64) -> std::path::PathBuf {
+    let rows = d.get("/api/docs");
+    let row = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["open"] == block)
+        .unwrap_or_else(|| panic!("no Doc in %{block}: {rows}"));
+    d.state.join("docs").join(row["id"].as_str().unwrap())
+}
+
 /// Every file under `dir` with its modification time.
 fn mtimes(dir: &Path) -> Vec<(String, SystemTime)> {
     let mut out = vec![];
@@ -282,14 +294,14 @@ fn an_idle_doc_sends_and_writes_nothing() {
     let mut page = Page::connect(&d, None);
     page.show(pane);
     page.settled(doc);
-    let dir = d.state.join(format!("blocks/{doc}"));
+    let dir = library_dir(&d, doc);
     let before = mtimes(&dir);
-    assert!(before.iter().any(|(p, _)| p.ends_with("doc/s1.md")), "{before:?}");
+    assert!(before.iter().any(|(p, _)| p.ends_with("/s1.md")), "{before:?}");
 
     // Nothing polls and nothing ticks: five quiet seconds.
     let frames = page.blocks_for(doc, Duration::from_secs(5));
     assert!(frames.is_empty(), "{} block messages while idle: {frames:?}", frames.len());
-    assert_eq!(mtimes(&dir), before, "nothing under blocks/{doc}/ was written");
+    assert_eq!(mtimes(&dir), before, "nothing in the Doc's folder was written");
     drop(m);
 }
 
@@ -443,7 +455,8 @@ fn the_flag_hides_the_doc_and_refuses_it_and_a_restart_keeps_it() {
     d.start();
     let state = d.state(doc);
     assert_eq!(bodies(&state), [Some("First.".into()), Some("Second.".into()), Some("Third.".into())]);
-    assert!(d.state.join(format!("blocks/{doc}/doc/doc.json")).is_file());
+    assert!(library_dir(&d, doc).join("doc.json").is_file());
+    assert!(!d.state.join(format!("blocks/{doc}/doc")).exists(), "no Doc file in the block's folder");
 }
 
 #[test]
@@ -483,13 +496,13 @@ fn a_chart_and_a_drawing_fill_and_a_bad_one_leaves_the_section_as_it_was() {
     m.call("doc", fill(doc, "s2", &drawing)).unwrap();
     let patch = viewer.block(doc);
     assert_eq!((patch["entries_at"].as_u64(), patch["entries"][0]["body"].as_str()), (Some(1), Some(drawing.as_str())));
-    let file = |s: &str| d.state.join(format!("blocks/{doc}/doc/{s}.md"));
+    let file = |s: &str| library_dir(&d, doc).join(format!("{s}.md"));
     assert_eq!(std::fs::read_to_string(file("s2")).unwrap(), drawing);
 
     // A bad chart over a filled section, and over a pending one: refused with
     // a line saying what to fix, and nothing changes on disk, in the state or
     // on a page.
-    let before = (bodies(&d.state(doc)), mtimes(&d.state.join(format!("blocks/{doc}"))));
+    let before = (bodies(&d.state(doc)), mtimes(&library_dir(&d, doc)));
     for (section, bad, says) in [
         ("s1", "bad/unordered-line.md", "x must be numbers, dates"),
         ("s3", "bad/bad-json.md", "chart: not JSON"),
@@ -499,7 +512,7 @@ fn a_chart_and_a_drawing_fill_and_a_bad_one_leaves_the_section_as_it_was() {
         let e = m.call("doc", fill(doc, section, &example(bad))).unwrap_err();
         assert!(e.contains(says) && e.contains("section is unchanged") && !e.contains('\n'), "{bad}: {e}");
     }
-    assert_eq!((bodies(&d.state(doc)), mtimes(&d.state.join(format!("blocks/{doc}")))), before);
+    assert_eq!((bodies(&d.state(doc)), mtimes(&library_dir(&d, doc))), before);
     assert!(!file("s3").exists());
     assert!(viewer.blocks_for(doc, Duration::from_millis(700)).is_empty(), "a refusal sends nothing");
 
@@ -554,7 +567,7 @@ fn an_agent_puts_a_picture_from_a_file_or_from_data_and_fills_with_it() {
     // ...and from base64.
     m.call("doc", asset_data(doc, "shot.png", &png("from data"))).unwrap();
     assert_eq!(asset_names(&d.state(doc)), ["flow.png", "shot.png"]);
-    assert_eq!(std::fs::read(d.state.join(format!("blocks/{doc}/doc/assets/flow.png"))).unwrap(), png("from a file"));
+    assert_eq!(std::fs::read(library_dir(&d, doc).join("assets/flow.png")).unwrap(), png("from a file"));
 
     // Now a section can show them, and its text says what they are.
     m.call("doc", fill(doc, "s1", "The flow:\n\n![The flow, in boxes](assets/flow.png)\n")).unwrap();
@@ -626,7 +639,7 @@ fn a_picture_that_isnt_one_is_refused_with_a_line_saying_what_to_fix() {
     refuse(asset_data(doc, "p20.png", &png("x")), "at most 20 assets");
     m.call("doc", asset_data(doc, "p1.png", &png("replaced"))).unwrap();
     assert_eq!(asset_names(&d.state(doc)).len(), 20);
-    assert!(!d.state.join(format!("blocks/{doc}/doc/assets/p20.png")).exists());
+    assert!(!library_dir(&d, doc).join("assets/p20.png").exists());
     // Only a Doc takes one.
     let file = d.sessions.join("notes.txt");
     std::fs::write(&file, "x").unwrap();
@@ -694,7 +707,7 @@ fn a_viewer_reads_a_picture_and_neither_a_viewer_nor_an_editor_can_put_one() {
     // and nothing changes.
     let put = format!("/api/blocks/{doc}/call/doc_asset_put");
     let fill_path = format!("/api/blocks/{doc}/call/doc_fill");
-    let before = (d.state(doc), mtimes(&d.state.join(format!("blocks/{doc}"))));
+    let before = (d.state(doc), mtimes(&library_dir(&d, doc)));
     for who in [FRIEND, EDITOR] {
         let (status, text) =
             d.raw_as(who, "POST", &put, Some(json!({ "name": "evil.png", "data": b64(&png("evil")) })));
@@ -705,7 +718,7 @@ fn a_viewer_reads_a_picture_and_neither_a_viewer_nor_an_editor_can_put_one() {
         let (status, text) = d.raw_as(who, "POST", &fill_path, Some(body));
         assert_eq!(status, 403, "{who}: {text}");
     }
-    assert_eq!((d.state(doc), mtimes(&d.state.join(format!("blocks/{doc}")))), before);
+    assert_eq!((d.state(doc), mtimes(&library_dir(&d, doc))), before);
     let (status, text) = d.raw("POST", &put, Some(json!({ "name": "owner.png", "data": b64(&png("mine")) })));
     assert_eq!(status, 200, "the owner puts one: {text}");
     // Another block's `asset` call is not opened by the Doc's row: a viewer
@@ -754,7 +767,7 @@ fn no_client_is_sent_a_pictures_bytes_and_a_restart_keeps_it() {
 
     // A restart: the picture is still there, still read by name, and a
     // scratch file left by a crash is not one.
-    std::fs::write(d.state.join(format!("blocks/{doc}/doc/assets/big.tmp")), "half").unwrap();
+    std::fs::write(library_dir(&d, doc).join("assets/big.tmp"), "half").unwrap();
     d.stop();
     d.start();
     let state = d.state(doc);
