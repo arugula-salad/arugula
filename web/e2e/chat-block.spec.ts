@@ -75,11 +75,15 @@ test("a chat block opens beside the terminal, and posts as Alice", async () => {
   const opened = await call(alice, "POST", "/api/blocks", { type: "team_chat", config: { room: null, pinned: false }, split: terminal, local: true });
   expect(opened.status, JSON.stringify(opened.body)).toBe(200);
   chatBlock = (opened.body as { block: number }).block;
+  // The terminal's tab, where the block went (`/api/run` made a new tab).
+  await alice.bringToFront();
+  await alice.evaluate((p) => window.__arugula.client.setActive(p), terminal);
   const chat = block(chatBlock);
   await expect(chat).toBeVisible({ timeout: 15_000 });
   // In the layout beside the terminal: one tab, both panes.
   await expect(alice.locator(`[data-pane="${terminal}"]`)).toBeVisible();
-  await expect(chat.locator(".chat-side")).toBeVisible();
+  // Its rooms: a sidebar, or in a narrow slot (as here) the list, as a phone has.
+  await expect(chat.locator(".chat-side, .chat-list").first()).toBeVisible();
   await chat.locator(`[data-chat-room="${ops}"]`).click();
   const view = chat.locator("[data-room-view]");
   await expect(view.locator(".chat-title")).toContainText("ops");
@@ -90,7 +94,12 @@ test("a chat block opens beside the terminal, and posts as Alice", async () => {
   // Where it is is kept in its layout entry.
   await expect.poll(async () => (await stateOf(chatBlock)).room, { timeout: 10_000 }).toBe(ops);
   // Live for the other side.
-  await expect.poll(() => bob.evaluate((r) => window.__arugula.chat.messages(r)?.list.at(-1)?.text, ops), { timeout: 15_000 }).toContain("deploy is green");
+  const lastFor = (r: string) =>
+    bob.evaluate(async (room) => {
+      const v = (await (await fetch(`/api/chat/rooms/${room}/messages`, { credentials: "same-origin" })).json()) as { messages: { text: string }[] };
+      return v.messages.at(-1)?.text ?? "";
+    }, r);
+  await expect.poll(() => lastFor(ops), { timeout: 15_000 }).toContain("deploy is green");
 });
 
 test("a quote of the terminal beside it is one click", async () => {
@@ -142,6 +151,7 @@ test("a tab with a chat block says what's unread in chat", async () => {
   const other = await call(alice, "POST", "/api/blocks", { type: "team_chat", config: { room: null, pinned: false }, local: true });
   expect(other.status, JSON.stringify(other.body)).toBe(200);
   await alice.evaluate((p) => window.__arugula.client.setActive(p), terminal);
-  await bob.evaluate((r) => window.__arugula.chat.post(r, "who is on call?"), ops);
+  // A mention: a channel's plain message counts for nothing at its default level (#113).
+  await bob.evaluate((r) => window.__arugula.chat.post(r, "@alice who is on call?"), ops);
   await expect(alice.locator("[data-chat-tab-badge]").first()).toBeVisible({ timeout: 15_000 });
 });
