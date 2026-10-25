@@ -1,0 +1,28 @@
+== q4a. arugulad killed (kill -9) on a box whose provider supervises it (loam's services: the template's start command is its service e2b-template-start)
+$ service before: {"name": "e2b-template-start", "state": "running", "pid": 4067, "restarts": 0, "started_at": "2026-10-25T23:34:08.335567206Z"}
+%3
+$ reachable again through the relay after 7 s (tries 1)
+$ service after: {"name": "e2b-template-start", "state": "running", "pid": 4152, "restarts": 1, "started_at": "2026-10-25T23:37:35.772740906Z"}
+$ cloud ls: dev                      ready      hw_d3620bf29ba90496821fb99b8965209b  machine 9f41123afa63a633  set up
+
+== q4b. the daemon gone with nothing to restart it (E2B's case: loam's service stopped)
+$ stop: {"name": "e2b-template-start", "state": "stopped", "pid": null, "restarts": 1, "started_at": null}
+$ cloud ls: dev                      ready      hw_d3620bf29ba90496821fb99b8965209b  machine 9f41123afa63a633  set up
+$ pause at the provider (as the idle timeout would): 204
+$ cloud ls: dev                      paused     hw_d3620bf29ba90496821fb99b8965209b  machine 9f41123afa63a633  set up
+$ cloud open dev --wait:
+arugula: dev is paused…
+dev                      ready      hw_d3620bf29ba90496821fb99b8965209b  machine 9f41123afa63a633  set up
+(after 2 s)
+$ ls --host dev (opening the machine, which waits on its wake):
+arugula: can't reach dev (the relay: websocket handshake interrupted)
+(after 16 s)
+$ provider: running
+$ cloud ls: dev                      ready      hw_d3620bf29ba90496821fb99b8965209b  machine 9f41123afa63a633  set up
+$ cloud ls, 20 s on: dev                      ready      hw_d3620bf29ba90496821fb99b8965209b  machine 9f41123afa63a633  set up
+$ service: {"name": "e2b-template-start", "state": "stopped", "pid": null, "restarts": 1, "started_at": null}
+
+== q4c. the daemon started again in the box (what a supervisor, or the platform through the provider, would do)
+$ start: {"name": "e2b-template-start", "state": "running", "pid": 4192, "restarts": 1, "started_at": "2026-10-25T23:39:17.19193579Z"}
+$ reachable again after 7 s (tries 1)
+$ cloud ls: dev                      ready      hw_d3620bf29ba90496821fb99b8965209b  machine 9f41123afa63a633  set up

@@ -1,0 +1,66 @@
+
+== setup: the remote (as GitHub), and the session's checkout (ses1's)
+
+== the agent plants things a careless push would run or follow
+$ as git -C /home/ses1/work/ses_s42push config --list --local
+core.repositoryformatversion=0
+core.filemode=true
+core.bare=false
+core.logallrefupdates=true
+core.fsmonitor=id -un > /tmp/s42-fsmonitor-ran-as; false
+remote.origin.url=/tmp/s42-src
+remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*
+remote.origin.pushurl=/tmp/s42-remote.git
+remote.origin.push=+refs/heads/*:refs/heads/*
+branch.main.remote=origin
+branch.main.merge=refs/heads/main
+user.email=ses_s42push@sessions.invalid
+user.name=Arugula session
+credential.helper=!f() { cat > /tmp/s42-helper-saw; }; f
+(exit 0)
+
+== 1. ses1 writes a bundle of its one branch (git runs as ses1; what it plants runs as ses1)
+$ as git -C /home/ses1/work/ses_s42push bundle create /home/ses1/out-ses_s42push.bundle refs/heads/arugula/ses_s42push-fix-readme
+(exit 0)
+
+== 2. the daemon takes the bundle's bytes (read as ses1, written by user) and checks it names just that ref
+$ git -C /home/user/.local/state/s42-push/mirror.git bundle list-heads /tmp/s42-in.bundle
+c05a7afe13bf92ca6e954d4baea637a355f57490 refs/heads/arugula/ses_s42push-fix-readme
+(exit 0)
+only refs/heads/arugula/ses_s42push-fix-readme: ok
+
+== 3. fetched into the daemon's own repo, then pushed: one refspec, no hooks, no repo config of the agent's, token for this call only
+$ env -i HOME=/nonexistent PATH=/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 git -C /home/user/.local/state/s42-push/mirror.git -c core.hooksPath=/dev/null fetch -q /tmp/s42-in.bundle +refs/heads/arugula/ses_s42push-fix-readme:refs/heads/arugula/ses_s42push-fix-readme
+(exit 0)
+$ push arugula/ses_s42push-fix-readme
+To /tmp/s42-remote.git
+*	refs/heads/arugula/ses_s42push-fix-readme:refs/heads/arugula/ses_s42push-fix-readme	[new branch]
+Done
+(exit 0)
+$ push main
+REFUSED: main isn't arugula/ses_s42push-…
+(exit 1)
+$ push arugula/ses_other-x
+REFUSED: arugula/ses_other-x isn't arugula/ses_s42push-…
+(exit 1)
+$ git -C /tmp/s42-remote.git for-each-ref --format=%(refname) %(objectname:short) %(subject)
+refs/heads/arugula/ses_s42push-fix-readme c05a7af fix readme
+refs/heads/main 3c8d7e6 init
+(exit 0)
+
+== nothing the agent planted ran as user
+/tmp/s42-hook-ran-as: (not there)
+/tmp/s42-fsmonitor-ran-as: (not there)
+/tmp/s42-helper-saw: (not there)
+
+== the helper hands git the token from its environment (what an https push asks it)
+protocol=https
+host=github.com
+username=x-access-token
+password=<the token>
+
+== the token isn't on disk
+$ grep -rlF <token> /home/user /tmp /home/ses1 (as root)
+(none)
+
+== done

@@ -1,0 +1,27 @@
+# S42 q1: a daemon restart under a session agent (local container from the
+# S42 image, plain arugulad as `user`). Commands run from the host with
+# `docker exec -u user s42-local`; output as it printed.
+$ arugula agent --acp "sudo -n -u ses1 -- env -i HOME=/home/ses1 USER=ses1 LOGNAME=ses1 PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 FAKE_ACP_DIR=/home/ses1/.fake-acp /usr/bin/python3 /opt/s42/fake_acp.py" --cwd /home/ses1/work/ses_s42demo --title restart "remember plum"
+%3
+$ arugula wait %3 --idle --timeout 20
+done
+$ pgrep -a -u ses1
+276 /usr/bin/python3 /opt/s42/fake_acp.py
+$ pkill -x arugulad          # the daemon, by name, in the container
+$ pgrep -a -u ses1           # the agent went with it (no FD store on a hosted box)
+$ arugulad &                 # started again
+$ arugula call %3 send '{"text":"recall"}'; arugula wait %3 --idle --timeout 20
+done
+$ arugula tail %3 | tail -8
+_Started the agent again_
+
+## You
+
+recall
+
+You said plum.
+$ pgrep -a -u ses1           # respawned as ses1, its session loaded from ses1's home
+414 /usr/bin/python3 /opt/s42/fake_acp.py
+$ grep '"e":"spawn"' ~/.local/state/arugula/blocks/3/*   # both spawns, the same argv
+{"d":"note","m":{"argv":["sudo","-n","-u","ses1","--","env","-i","HOME=/home/ses1",...
+{"d":"note","m":{"argv":["sudo","-n","-u","ses1","--","env","-i","HOME=/home/ses1",...

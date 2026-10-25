@@ -1,0 +1,48 @@
+ok   no s42 sandboxes before
+info builder made: sb-3sceszwf6rb2 from base in 275 ms
+info builder kernel and init: 6.1.155 PID USER CMD 1 root /init uid=1000(user) gid=1000(user) groups=1000(user),27(sudo) sudo-ok
+ok   builder: setup-like writes
+info builder look: {"id":"sb-3sceszwf6rb2","uptime":"6.76","pid1":"/init ","state_dir":1,"daemon_key":"0a614e8eb547","control_json":1,"revokes":1,"setup_json":1,"box_note":"sb-3sceszwf6rb2","ledger":1,"npmrc":1,"built":1,"secret_proc":1,"secret_in_environ":1,"secret_on_disk":"/etc/s42-app.conf /home/user/.git-credentials /home/user/.npmrc ","create_env":"builder","arugulad":""}
+ok   builder holds the secret in a process
+info builder: journal entries holding the secret: no journald
+info snapshot (full): sb-3sceszwf6rb2/v1 names=["v1","memory=true"] in 701 ms
+info builder paused (loam: deleted after its fork): sb-3sceszwf6rb2
+info child1 made: sb-ih6voqrubgtw from sb-3sceszwf6rb2/v1 in 276 ms
+info child1 look: {"id":"sb-ih6voqrubgtw","uptime":"14.06","pid1":"/init ","state_dir":1,"daemon_key":"0a614e8eb547","control_json":1,"revokes":1,"setup_json":1,"box_note":"sb-3sceszwf6rb2","ledger":1,"npmrc":1,"built":1,"secret_proc":1,"secret_in_environ":1,"secret_on_disk":"/etc/s42-app.conf /home/user/.git-credentials /home/user/.npmrc ","create_env":"child1","arugulad":""}
+ok   child1: the sandbox id file names the new box: sb-3sceszwf6rb2 -> sb-ih6voqrubgtw
+info child1: memory carried (process from the builder still running): 1
+info child1: create env seen by a new command: child1
+info child1: unwiped, old state carried: key=0a614e8eb547 control=1 revokes=1 setup=1 note=sb-3sceszwf6rb2 disk=/etc/s42-app.conf /home/user/.git-credentials /home/user/.npmrc
+info child1: metadata and template: {"labels":{"arugula_spike":"s42","s42_box":"child1"},"env":{"S42_CREATE_ENV":"child1"},"template":"e2b"}
+info child1: wipe: removed /etc/s42-app.conf removed /home/user/.git-credentials removed /home/user/.npmrc killed 306 s42-holds-secret 3600
+info child1: arugulad started fresh: 576 583 2026-10-25T23:30:52.743041Z  INFO arugulad::hosted::enroll: hosted: waiting for a box of its own snapshot=sb-ih6voqrubgtw 2026-10-25T23:30:52.746732Z  INFO arugulad: listening socket=/home/user/.local/state/arugula/sock 2026-10-25T23:30:52.755637Z  INFO arugula_mux::pane
+info child1 wiped look: {"id":"sb-ih6voqrubgtw","uptime":"20.18","pid1":"/init ","state_dir":1,"daemon_key":"","control_json":0,"revokes":0,"setup_json":0,"box_note":"","ledger":0,"npmrc":0,"built":1,"secret_proc":0,"secret_in_environ":0,"secret_on_disk":"","create_env":"child1","arugulad":"576"}
+ok   child1: nothing left to carry
+info snapshot (full): sb-ih6voqrubgtw/v1 names=["v1","memory=true"] in 787 ms
+info snapshot (filesystem): sb-ih6voqrubgtw/v2 names=["v2","memory=false"] in 18 ms
+info child1 paused (loam: deleted after its fork): sb-ih6voqrubgtw
+info child2 (full) made: sb-altucrjtkyj4 from sb-ih6voqrubgtw/v1 in 406 ms
+info child2 (full) look: {"id":"sb-altucrjtkyj4","uptime":"33.05","pid1":"/init ","state_dir":1,"daemon_key":"859ceaf23ebb","control_json":0,"revokes":0,"setup_json":0,"box_note":"sb-altucrjtkyj4","ledger":0,"npmrc":0,"built":1,"secret_proc":0,"secret_in_environ":0,"secret_on_disk":"","create_env":"child2","arugulad":"576"}
+ok   child2 (full): the sandbox id file names the new box: sb-ih6voqrubgtw -> sb-altucrjtkyj4
+ok   child2 (full): no old daemon state (control.json, revokes, setup, ledger)
+ok   child2 (full): no secret on disk or in a process
+ok   child2 (full): setup's real work is there
+info child2 (full): arugulad: 576 583 2026-10-25T23:30:58.634277Z  INFO arugulad::hosted::reseed: hosted: reseeded the kernel's random generator for the new box 2026-10-25T23:30:58.637090Z  INFO arugulad::hosted: hosted: a new box; starting over with keys of its own (sandbox sb-altucrjtkyj4) 2026-10-25T23:30:58.774272Z  WARN 
+ok   child2 (full): arugulad running
+ok   child2 (full): the daemon noted the new box as its own: sb-altucrjtkyj4 vs sb-altucrjtkyj4
+ok   child2 (full): a daemon key of its own, made in the new box: 859ceaf23ebb (old 0a614e8eb547)
+info child2 deleted: sb-altucrjtkyj4 true
+info child2 (filesystem) made: sb-dz4nop5h6obp from sb-ih6voqrubgtw/v2 in 313 ms
+info child2 (filesystem) look: {"id":"sb-dz4nop5h6obp","uptime":"12.15","pid1":"/init ","state_dir":1,"daemon_key":"","control_json":0,"revokes":0,"setup_json":0,"box_note":"","ledger":0,"npmrc":0,"built":1,"secret_proc":0,"secret_in_environ":0,"secret_on_disk":"","create_env":"child2","arugulad":""}
+ok   child2 (filesystem): the sandbox id file names the new box: sb-ih6voqrubgtw -> sb-dz4nop5h6obp
+ok   child2 (filesystem): no old daemon state (control.json, revokes, setup, ledger)
+ok   child2 (filesystem): no secret on disk or in a process
+ok   child2 (filesystem): setup's real work is there
+info child2 (filesystem): arugulad: 2026-10-25T23:30:52.743041Z  INFO arugulad::hosted::enroll: hosted: waiting for a box of its own snapshot=sb-ih6voqrubgtw
+info child2 (filesystem): arugulad running: false nothing starts it at boot here
+info child2 deleted: sb-dz4nop5h6obp true
+info cleanup: delete sandbox: sb-3sceszwf6rb2 true
+info cleanup: delete sandbox: sb-ih6voqrubgtw true
+ok   cleanup: s42 sandboxes left: none
+ok   cleanup: s42 snapshots left: none
+PASS
