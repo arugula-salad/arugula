@@ -57,7 +57,7 @@ impl Daemon {
                     }
                 }
             }
-            ClientMsg::View { tab, cols, rows, zoom, claim, typed } => {
+            ClientMsg::View { tab, cols, rows, zoom, claim, typed, asked } => {
                 match zoom {
                     Some(z) => self.zoomed.insert(client, z),
                     None => self.zoomed.remove(&client),
@@ -82,6 +82,7 @@ impl Daemon {
                     (true, true) => Claim::Typed,
                     (true, false) => Claim::Yes,
                 };
+                let claim = self.between_people(client, who.id(), tab, claim, asked);
                 let now = std::time::Instant::now();
                 if let Ok(true) = self.hold.view(&mut self.mux, client, tab, (cols, rows), zoom, claim, now) {
                     self.changed();
@@ -474,12 +475,35 @@ impl Daemon {
         }
     }
 
-    /// An ssh guest's window (M65) sizes the pane's tab, zoomed to it.
+    /// A claim on `tab`'s size from `client` (`who`), after the rule between
+    /// people (#1502, DECISIONS.md "Size arbitration"). Switching to a tab or
+    /// typing in it takes the size from nobody or from the same person's
+    /// window, never from another person's; that takes `asked` (the button).
+    /// An owner whose client has gone is nobody's.
+    fn between_people(&self, client: ClientId, who: &str, tab: TabId, claim: Claim, asked: bool) -> Claim {
+        let other = self
+            .mux
+            .tab(tab)
+            .ok()
+            .and_then(|t| t.owner)
+            .filter(|o| *o != client)
+            .and_then(|o| self.clients.get(&o))
+            .is_some_and(|o| o.principal.id() != who);
+        match claim {
+            Claim::Yes if other && asked => Claim::Yes,
+            _ if other => Claim::No,
+            c => c,
+        }
+    }
+
+    /// An ssh guest's (`who`, a principal id) window (M65) sizes the pane's tab, zoomed to it.
     #[cfg(feature = "labs")]
-    pub(super) fn guest_view(&mut self, client: ClientId, pane: PaneId, (cols, rows): (u16, u16)) {
+    pub(super) fn guest_view(&mut self, client: ClientId, who: &str, pane: PaneId, (cols, rows): (u16, u16)) {
         let Ok(tab) = self.mux.tab_of(pane) else { return };
+        // A guest never asks, so they never take another person's size.
+        let claim = self.between_people(client, who, tab, Claim::Yes, false);
         let now = std::time::Instant::now();
-        if let Ok(true) = self.hold.view(&mut self.mux, client, tab, (cols, rows), Some(pane), Claim::Yes, now) {
+        if let Ok(true) = self.hold.view(&mut self.mux, client, tab, (cols, rows), Some(pane), claim, now) {
             self.changed();
         }
     }

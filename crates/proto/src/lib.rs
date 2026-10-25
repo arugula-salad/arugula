@@ -89,6 +89,11 @@ pub enum ClientMsg {
     /// waits until the owner has been idle a few seconds, so two editors
     /// typing in turn don't resize the pane at every turn (#333). An older
     /// daemon ignores `typed` and takes any claim at once.
+    ///
+    /// Between people (#1502): a claim, switching or typing, only takes the
+    /// size from nobody or from a window of the same person. Taking it from
+    /// another person's window needs `asked`, which only the "Use this
+    /// window's size" button sets. Typing still reaches the owner's size.
     View {
         tab: TabId,
         cols: u16,
@@ -97,6 +102,9 @@ pub enum ClientMsg {
         claim: bool,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         typed: bool,
+        /// The person pressed "Use this window's size" (#1502).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        asked: bool,
     },
     /// Change sessions, tabs or splits. Errors come back as
     /// [`ServerMsg::Error`] with the same id.

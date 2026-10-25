@@ -61,9 +61,9 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   size.current = { cols, rows, zoom };
   const shown = useRef<{ tab: TabId; zoom: PaneId | null } | null>(null);
   useEffect(() => {
-    client.claim = (t, typed) => {
+    client.claim = (t, typed, asked) => {
       const s = size.current;
-      if (s.cols) client.view(t, s.cols, s.rows, s.zoom, true, typed);
+      if (s.cols) client.view(t, s.cols, s.rows, s.zoom, true, typed, asked);
     };
   }, [client]);
   useEffect(() => {
@@ -144,7 +144,7 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
       {elsewhere && (
         <div class="sized-elsewhere" data-sized-elsewhere>
           Another window set this tab's size.
-          <button onClick={() => client.claim(tab.id)}>Use this window's size</button>
+          <button onClick={() => client.claim(tab.id, false, true)}>Use this window's size</button>
         </div>
       )}
     </div>

@@ -157,7 +157,7 @@ impl Daemon {
                         None => {
                             self.drive(pane, by.clone());
                             self.typed(pane);
-                            self.guest_view(client, pane, size);
+                            self.guest_view(client, &by.who, pane, size);
                             self.broadcast();
                         }
                     }
@@ -169,7 +169,7 @@ impl Daemon {
             #[cfg(feature = "labs")]
             Api::GuestSize { pane, client, who, size } => {
                 if self.drivers.get(&pane).is_some_and(|d| d.who == who) {
-                    self.guest_view(client, pane, size);
+                    self.guest_view(client, &who, pane, size);
                 }
             }
             #[cfg(feature = "labs")]
