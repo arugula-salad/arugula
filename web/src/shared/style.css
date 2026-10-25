@@ -8306,6 +8306,23 @@ input.chat-search {
   flex-direction: column;
 }
 
+/* A phone's room header has more buttons than width (pins, about, star,
+   move, bell, leave): the back button and the room's name keep the first
+   row, and the buttons wrap onto a row of their own under it. */
+.chat.phone .chat-head {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.chat.phone .chat-head .chat-title {
+  flex: 1 1 calc(100% - 48px);
+}
+
+.chat.phone .chat-head > :not(.chat-back):not(.chat-title):first-of-type,
+.chat.phone .chat-head .chat-title + * {
+  margin-left: auto;
+}
+
 .chat-title strong,
 .chat-title span {
   overflow: hidden;
@@ -10553,6 +10570,11 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
    (which leave the places to the rail). */
 html[data-workspace="new"] :is(.chat, .swarm, .swarm-shell > .bar) {
   left: var(--rail-w, 56px);
+}
+
+/* Not a chat block (#123): it's in its slot, not beside the rail. */
+html[data-workspace="new"] .block-team-chat .chat {
+  left: auto;
 }
 
 html[data-workspace="new"] #status {
