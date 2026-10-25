@@ -4889,6 +4889,8 @@ mod tests {
         let plain = with.replace(crate::mcp::DOC_INSTRUCTIONS, "");
         assert!(with.len() > without.len() && plain == without);
         assert!(with.contains("doc to build a report") && !without.contains("doc to build"), "{with}");
+        // Both say when to show a PR (AR-7).
+        assert!(with.contains("show it (kind pr)") && without.contains("show it (kind pr)"), "{without}");
     }
 
     /// #963: `doc` is a tool, with `new` and `fill`, only where `docs` is on;
