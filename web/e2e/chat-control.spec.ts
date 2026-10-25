@@ -663,7 +663,7 @@ test("typing shows to the other reader and clears; @channel is offered; a keywor
 });
 
 test("an issue's link unfurls into a card for those who can see it, follows the issue, and a private address makes none", async () => {
-  test.setTimeout(90_000);
+  test.setTimeout(150_000);
   // Alice's personal project: Bob is not in it, though he reads #general.
   const api = (p: Page, method: string, path: string, body?: unknown) =>
     p.evaluate(
@@ -693,7 +693,8 @@ test("an issue's link unfurls into a card for those who can see it, follows the 
   // Closing the issue changes the open card (it asks again while open).
   const closed = await api(aliceChat, "PATCH", `/api/issues/${id}`, { state: "closed" });
   expect(closed.status).toBe(200);
-  await expect(card.locator("[data-link-card-state]")).toHaveText("closed", { timeout: 45_000 });
+  // Cards ask again every 60 s while the room is open.
+  await expect(card.locator("[data-link-card-state]")).toHaveText("closed", { timeout: 75_000 });
 
   // Bob can't see the issue: the plain link, and nothing of it leaks.
   await platform(bob, `/chat/${general}`);
