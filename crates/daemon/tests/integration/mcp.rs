@@ -429,6 +429,92 @@ async fn start_agent_gives_the_agent_its_callers_login() {
     s.cancel().await.unwrap();
 }
 
+/// Runs `git ARGS` in `dir` (a throwaway repo), as a test identity.
+fn git(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// AR-2 (#1476): `start_agent {worktree}` makes a worktree and branch and
+/// runs the agent in it; `close` keeps it while a file is uncommitted, and
+/// removes it, and its local branch, once the branch is merged into its
+/// base (a bare repo as `origin`).
+#[tokio::test(flavor = "multi_thread")]
+async fn start_agent_owns_a_worktree_and_close_keeps_unmerged_work() {
+    let d = Daemon::child();
+    // git prints real paths: macOS's temp dir is under a symlink.
+    let tmp = std::env::temp_dir().join(format!("arugula-ar2-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let tmp = tmp.canonicalize().unwrap();
+    git(&tmp, &["init", "-q", "--bare", "-b", "main", "origin.git"]);
+    git(&tmp, &["init", "-q", "-b", "main", "work"]);
+    let work = tmp.join("work");
+    git(&work, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    git(&work, &["remote", "add", "origin", tmp.join("origin.git").to_str().unwrap()]);
+    git(&work, &["push", "-q", "origin", "main"]);
+
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let start = |branch: &str, prompt: &str| {
+        json!({ "agent": "acp", "command": format!("python3 {}", fake()), "prompt": prompt,
+            "cwd": work, "worktree": { "branch": branch } })
+    };
+
+    // An agent in a worktree of its own: its file lands there.
+    let r = call(&s, "start_agent", start("feat-a", "write dirty.txt")).await;
+    let a = r["block"].as_u64().unwrap();
+    let wa = work.join(".arugula/worktrees/feat-a");
+    assert!(r["summary"].as_str().unwrap().contains(wa.to_str().unwrap()), "{r}");
+    call(&s, "wait", json!({ "pane": a, "until": "idle", "timeout": 30 })).await;
+    assert_eq!(d.state(a)["cwd"], wa.to_str().unwrap());
+    assert!(wa.join("dirty.txt").exists());
+
+    // The same branch again is refused, not reused.
+    let why = refused(&s, "start_agent", start("feat-a", "hello")).await;
+    assert!(why.contains("exists already"), "{why}");
+
+    // An uncommitted file: closed, but kept, with the reason.
+    let r = call(&s, "close", json!({ "pane": a })).await;
+    assert_eq!(r["worktree"]["outcome"], "kept", "{r}");
+    assert!(r["worktree"]["why"].as_str().unwrap().contains("1 uncommitted file"), "{r}");
+    assert!(r["summary"].as_str().unwrap().contains("kept worktree"), "{r}");
+    assert!(wa.join("dirty.txt").exists());
+    assert!(!git(&work, &["branch", "--list", "feat-a"]).is_empty());
+
+    // Merged into origin's main: removed, with its local branch.
+    let r = call(&s, "start_agent", start("feat-b", "hello")).await;
+    let b = r["block"].as_u64().unwrap();
+    let wb = work.join(".arugula/worktrees/feat-b");
+    call(&s, "wait", json!({ "pane": b, "until": "idle", "timeout": 30 })).await;
+    git(&wb, &["commit", "-q", "--allow-empty", "-m", "work"]);
+    git(&wb, &["push", "-q", "origin", "feat-b:feat-b"]);
+    let r = call(&s, "close", json!({ "pane": b })).await;
+    assert_eq!(r["worktree"]["outcome"], "kept", "pushed, but not merged yet: {r}");
+    assert!(r["worktree"]["why"].as_str().unwrap().contains("not merged"), "{r}");
+    let c = call(&s, "start_agent", start("feat-c", "hello")).await["block"].as_u64().unwrap();
+    let wc = work.join(".arugula/worktrees/feat-c");
+    call(&s, "wait", json!({ "pane": c, "until": "idle", "timeout": 30 })).await;
+    git(&wc, &["commit", "-q", "--allow-empty", "-m", "work"]);
+    git(&wc, &["push", "-q", "origin", "feat-c:feat-c"]);
+    git(&wc, &["push", "-q", "origin", "feat-c:main"]);
+    let r = call(&s, "close", json!({ "pane": c })).await;
+    assert_eq!(r["worktree"]["outcome"], "removed", "{r}");
+    assert!(!wc.exists());
+    assert!(git(&work, &["branch", "--list", "feat-c"]).is_empty());
+    // ...and origin's branch is not touched.
+    assert!(!git(&tmp.join("origin.git"), &["branch", "--list", "feat-c"]).is_empty());
+
+    s.cancel().await.unwrap();
+    // Git won't remove a worktree with work in it; the test does.
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 /// #629: `start_agent {title}` names the block.
 #[tokio::test(flavor = "multi_thread")]
 async fn start_agent_names_the_block() {

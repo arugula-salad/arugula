@@ -34,6 +34,14 @@ pub struct PaneOnly {
     pub pane: PaneId,
 }
 
+/// A closed pane, and what became of the worktree its block owned.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ClosedPane {
+    pub pane: PaneId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<arugula_proto::api::WorktreeOutcome>,
+}
+
 /// A file pasted into a terminal (`attach` pastes only on Unix).
 #[cfg(unix)]
 #[derive(Debug, Serialize)]

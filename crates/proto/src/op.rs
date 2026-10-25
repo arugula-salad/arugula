@@ -391,7 +391,7 @@ pub mod ops {
         const ACCESS: Access = Access::Pane(Role::Editor);
         type Path = PaneId;
         type Req = Empty;
-        type Res = Empty;
+        type Res = crate::api::Closed;
     }
 
     /// `GET /api/hosts/self/shell-env` (#74): the shell environment blocks

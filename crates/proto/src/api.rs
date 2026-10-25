@@ -734,6 +734,39 @@ pub struct DocLinkUrl {
     pub url: String,
 }
 
+/// What `POST /api/panes/N/close` answers: `{}`, or, when the block owned
+/// a git worktree (an agent started with a `worktree`, or on an issue),
+/// what became of it (AR-2, #1476).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Closed {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<WorktreeOutcome>,
+}
+
+/// What closing a block did to its worktree: removed, or kept with the
+/// reason. Arugula never removes one with uncommitted or unmerged work.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct WorktreeOutcome {
+    /// The worktree, absolute.
+    pub path: String,
+    pub branch: String,
+    pub outcome: WorktreeFate,
+    /// Why it was kept (or a note on removing it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum WorktreeFate {
+    /// The worktree and its local branch are gone.
+    Removed,
+    /// Both stay; `why` says what stopped it.
+    Kept,
+}
+
 /// What a route answers when it has nothing to say: `{}`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Empty {}
