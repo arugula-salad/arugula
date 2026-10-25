@@ -1005,6 +1005,8 @@ async fn a_turn_returns_its_message_and_the_work_it_left() {
     std::fs::write(repo.join("a.txt"), "a\n").unwrap();
     git(&["add", "a.txt"]);
     git(&["commit", "-q", "-m", "start"]);
+    // The reflog counts seconds: the turn starts in a later one than this.
+    tokio::time::sleep(Duration::from_millis(1100)).await;
 
     let config = json!({ "agent": "acp", "command": ["python3", fake()], "cwd": repo, "prompt": "hello" });
     let b = d.open_with(json!({ "type": "agent", "config": config }));
