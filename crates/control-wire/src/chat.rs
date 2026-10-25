@@ -124,9 +124,11 @@ pub struct ChatRoom {
     pub muted: bool,
     /// What the reader is notified of here: their own choice for the room,
     /// else their default for its kind (#113).
+    #[serde(default)]
     pub level: NotifyLevel,
     /// Whether `level` is the reader's own choice for this room (else it's
     /// their default), so the menu can offer "use my default".
+    #[serde(default)]
     pub level_own: bool,
     /// A channel its team's owners archived: read, not written.
     pub archived: bool,
