@@ -8,7 +8,7 @@
 //! ([`ChatPushWhy::Keyword`]).
 
 use super::*;
-use wire::{ChatKeywords, ChatTeamSettings, KEYWORD_CHARS, KEYWORDS_MAX};
+use wire::{ChatKeywords, ChatTeamSettings, KEYWORD_CHARS, KEYWORDS_MAX, PresenceState};
 
 /// The two words that reach a room's people.
 pub const CHANNEL: &str = "channel";
@@ -31,10 +31,16 @@ impl Broadcast {
     }
 }
 
-/// Who in `people` is active now, for `@here`. Presence (#110) fills this
-/// in; until it lands everyone is active, so `@here` acts as `@channel`.
-pub async fn active(_app: &Platform, _room: &Room, people: &[String]) -> anyhow::Result<Vec<String>> {
-    Ok(people.to_vec())
+/// Who in `people` is active now, for `@here`: by presence (#110), so not
+/// those away, idle, offline or appearing offline. One statement.
+pub async fn active(app: &Platform, _room: &Room, people: &[String]) -> anyhow::Result<Vec<String>> {
+    let seen = app.db.chat_seen(people)?;
+    let now = now_ms();
+    Ok(people
+        .iter()
+        .filter(|a| seen.get(*a).is_some_and(|s| super::people::state_of(s, now) == PresenceState::Active))
+        .cloned()
+        .collect())
 }
 
 /// Whom `@channel` and `@here` reach: the room's people but the author,
@@ -247,8 +253,13 @@ mod tests {
             "{v}"
         );
         assert_eq!(v["unreached"], json!([]), "the word was understood");
+        // @here is whoever is active (#110): nobody yet, then b, whose page
+        // was just used.
         let (_, v) = post(&base, "a", "@here quick one").await;
-        assert_eq!(v["mentions"], json!(["b"]), "until presence, @here is @channel");
+        assert_eq!(v["mentions"], json!([]), "nobody is around");
+        app.db.chat_beat("b", now_ms(), true, false).unwrap();
+        let (_, v) = post(&base, "a", "@here quick two").await;
+        assert_eq!(v["mentions"], json!(["b"]), "b is around");
 
         // Only an owner sets the guard; any member reads it.
         let settings = "/api/chat/teams/t/settings";
