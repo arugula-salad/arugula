@@ -151,6 +151,12 @@ pub struct Search<'a> {
     pub has_quote: bool,
 }
 
+/// A condition on `chat_messages` rows: not a system line (#119), which
+/// nobody has to read, search for or be mentioned by.
+/// Not a system line: neither #119's (a row of `chat_system`) nor #122's
+/// (no author, `via` "system").
+const NOT_SYSTEM: &str = "(chat_messages.via IS NULL OR chat_messages.via != 'system') AND NOT EXISTS (SELECT 1 FROM chat_system s WHERE s.room = chat_messages.room AND s.seq = chat_messages.seq)";
+
 const ROOM_COLS: &str = "id, scope, kind, name, machine, target, created_by, created, archived, last_seq";
 const MSG_COLS: &str =
     "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported, agent, via";
@@ -425,39 +431,7 @@ impl Db {
     pub fn add_chat_message(&self, room: &str, m: &NewMessage) -> Result<i64> {
         let mut c = self.c();
         let tx = c.transaction()?;
-        let bytes = (m.text.len() + m.quote.map_or(0, str::len)) as i64;
-        let seq: i64 = tx.query_row(
-            "UPDATE chat_rooms SET last_seq = last_seq + 1, bytes = bytes + ?2 WHERE id = ?1 RETURNING last_seq",
-            params![room, bytes],
-            |r| r.get(0),
-        )?;
-        tx.execute(
-            "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, agent, via)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![
-                room,
-                seq,
-                m.author,
-                m.at,
-                m.text,
-                m.quote,
-                m.ref_machine,
-                m.ref_pane,
-                serde_json::to_string(m.mentions)?,
-                m.agent,
-                m.via
-            ],
-        )?;
-        if m.agent.is_some() || m.author.is_empty() {
-            tx.commit()?;
-            return Ok(seq);
-        }
-        tx.execute(
-            "INSERT INTO chat_reads (room, account, seq) VALUES (?1, ?2, ?3)
-             ON CONFLICT (room, account) DO UPDATE
-             SET seq = CASE WHEN excluded.seq > chat_reads.seq THEN excluded.seq ELSE chat_reads.seq END",
-            params![room, m.author, seq],
-        )?;
+        let seq = add_message_in(&tx, room, m, None)?;
         tx.commit()?;
         Ok(seq)
     }
@@ -713,6 +687,7 @@ impl Db {
         )?;
         super::chat_reactions::drop_for_message(&tx, room, seq)?;
         super::chat_files::drop_for_message(&tx, room, seq)?;
+        super::chat_pins::drop_for_message(&tx, room, seq)?;
         tx.commit()?;
         Ok(())
     }
@@ -966,11 +941,12 @@ impl Db {
             .unwrap_or(false))
     }
 
-    pub fn set_chat_broadcast_owners(&self, team: &str, owners_only: bool) -> Result<()> {
+    pub fn set_chat_team_settings(&self, team: &str, s: arugula_control_wire::chat::ChatTeamSettings) -> Result<()> {
         self.c().execute(
-            "INSERT INTO chat_team_settings (team, broadcast_owners) VALUES (?1, ?2)
-             ON CONFLICT (team) DO UPDATE SET broadcast_owners = excluded.broadcast_owners",
-            params![team, owners_only],
+            "INSERT INTO chat_team_settings (team, broadcast_owners, topic_owners) VALUES (?1, ?2, ?3)
+             ON CONFLICT (team) DO UPDATE SET broadcast_owners = excluded.broadcast_owners,
+             topic_owners = excluded.topic_owners",
+            params![team, s.broadcast_owners, s.topic_owners],
         )?;
         Ok(())
     }
@@ -988,7 +964,7 @@ impl Db {
             &format!(
                 "SELECT count(*), CAST(coalesce(sum(CASE WHEN {mentioned} THEN 1 ELSE 0 END), 0) AS BIGINT)
                  FROM chat_messages WHERE room = ?1 AND seq > ?2 AND (author != ?3 OR agent IS NOT NULL) AND deleted IS NULL AND at >= ?4
-                 AND imported_id IS NULL AND (via IS NULL OR via != 'system')"
+                 AND imported_id IS NULL AND {NOT_SYSTEM}"
             ),
             params![room, read, account, from],
             |r| Ok((r.get(0)?, r.get(1)?)),
@@ -1032,6 +1008,7 @@ impl Db {
                  LEFT JOIN chat_messages m ON m.room = w.room AND m.seq > w.since AND (m.author != ?1 OR m.agent IS NOT NULL)
                      AND m.deleted IS NULL AND m.at >= w.floor AND m.imported_id IS NULL
                      AND (m.via IS NULL OR m.via != 'system')
+                     AND NOT EXISTS (SELECT 1 FROM chat_system s WHERE s.room = m.room AND s.seq = m.seq)
                  GROUP BY w.room"
             ),
             params![account, asks],
@@ -1052,13 +1029,14 @@ impl Db {
             if hits.iter().any(|m| m.room == room && m.seq == seq) {
                 continue;
             }
-            if let Some(m) = self.chat_message(&room, seq)? {
-                if m.deleted.is_none() && s.author.is_none_or(|a| m.author == a) {
-                    hits.push(m);
-                }
+            if let Some(m) = self.chat_message(&room, seq)?
+                && m.deleted.is_none()
+                && s.author.is_none_or(|a| m.author == a)
+            {
+                hits.push(m);
             }
         }
-        hits.sort_by(|a, b| b.at.cmp(&a.at));
+        hits.sort_by_key(|m| std::cmp::Reverse(m.at));
         hits.truncate(limit as usize);
         Ok(hits)
     }
@@ -1071,7 +1049,11 @@ impl Db {
         let cols = MSG_COLS.split(", ").map(|c| format!("m.{c}")).collect::<Vec<_>>().join(", ");
         let mut sql = format!("SELECT {cols} FROM chat_messages m");
         let mut args: Vec<String> = Vec::new();
-        let mut wh = vec![format!("m.room IN ({})", marks(rooms.len())), "m.deleted IS NULL".to_owned()];
+        let mut wh = vec![
+            format!("m.room IN ({})", marks(rooms.len())),
+            "m.deleted IS NULL".to_owned(),
+            NOT_SYSTEM.replace("chat_messages.", "m."),
+        ];
         if !s.words.is_empty() {
             match c.dialect() {
                 Dialect::Sqlite => {
@@ -1167,13 +1149,73 @@ impl Db {
     }
 }
 
+/// [`Db::add_chat_message`] inside a transaction. `system` makes it a
+/// system line (#119): what happened, and to which message.
+pub(super) fn add_message_in(
+    tx: &impl Sql,
+    room: &str,
+    m: &NewMessage,
+    system: Option<(&str, Option<i64>)>,
+) -> Result<i64> {
+    let bytes = (m.text.len() + m.quote.map_or(0, str::len)) as i64;
+    let seq: i64 = tx.query_row(
+        "UPDATE chat_rooms SET last_seq = last_seq + 1, bytes = bytes + ?2 WHERE id = ?1 RETURNING last_seq",
+        params![room, bytes],
+        |r| r.get(0),
+    )?;
+    tx.execute(
+        "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, agent, via)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![
+            room,
+            seq,
+            m.author,
+            m.at,
+            m.text,
+            m.quote,
+            m.ref_machine,
+            m.ref_pane,
+            serde_json::to_string(m.mentions)?,
+            m.agent,
+            m.via
+        ],
+    )?;
+    if let Some((kind, target)) = system {
+        tx.execute(
+            "INSERT INTO chat_system (room, seq, kind, target) VALUES (?1, ?2, ?3, ?4)",
+            params![room, seq, kind, target],
+        )?;
+    }
+    // A system line reads nothing: whoever pinned hasn't read what came
+    // before, and a grant's line (#122) has no author to have read it.
+    if m.agent.is_none() && system.is_none() && !m.author.is_empty() {
+        tx.execute(
+            "INSERT INTO chat_reads (room, account, seq) VALUES (?1, ?2, ?3)
+             ON CONFLICT (room, account) DO UPDATE
+             SET seq = CASE WHEN excluded.seq > chat_reads.seq THEN excluded.seq ELSE chat_reads.seq END",
+            params![room, m.author, seq],
+        )?;
+    }
+    Ok(seq)
+}
+
 /// Every room in a scope, and all that's in them.
 pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::Param) -> Result<()> {
     // Which first: `cond` may read `chat_members`, which goes too.
     let ids: Vec<String> =
         tx.query_map(&format!("SELECT id FROM chat_rooms WHERE {cond}"), params![arg], |r| r.get(0))?;
     for id in ids {
-        for table in ["chat_messages", "chat_reads", "chat_members", "chat_reactions", "chat_saved", "chat_files"] {
+        for table in [
+            "chat_messages",
+            "chat_reads",
+            "chat_members",
+            "chat_reactions",
+            "chat_saved",
+            "chat_files",
+            "chat_topics",
+            "chat_pins",
+            "chat_system",
+        ] {
             tx.execute(&format!("DELETE FROM {table} WHERE room = ?1"), params![id])?;
         }
         tx.execute("DELETE FROM chat_rooms WHERE id = ?1", params![id])?;
@@ -1242,6 +1284,8 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     tx.execute(mentions, params![account])?;
     tx.execute(readers, params![account])?;
     tx.execute("UPDATE chat_rooms SET created_by = '' WHERE created_by = ?1", params![account])?;
+    tx.execute("UPDATE chat_topics SET author = '' WHERE author = ?1", params![account])?;
+    tx.execute("DELETE FROM chat_pins WHERE author = ?1", params![account])?;
     tx.execute("DELETE FROM chat_reads WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_keywords WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM notify_prefs WHERE account = ?1", params![account])?;

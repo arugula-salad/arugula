@@ -237,7 +237,7 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
 
 /**
  * A message as the reader sees it.
@@ -293,7 +293,17 @@ reactions: Array<ChatReaction>,
  * Files and images attached (#107), in the order they were chosen.
  * Empty for a deleted message: its files went with it.
  */
-files: Array<ChatFile>, };
+files: Array<ChatFile>, 
+/**
+ * Pinned (#119).
+ */
+pinned: boolean, 
+/**
+ * Not something said but something that happened (#119): `author` set
+ * the topic or pinned a message. Drawn dim and centered; never
+ * counted unread, pushed, edited or reacted to.
+ */
+system?: ChatSystem, };
 
 export type ChatMessages = { room: ChatRoom, 
 /**
@@ -355,6 +365,21 @@ export type ChatPerson = { account: string, name: string,
  * on their avatar. Only that it's on, never until when or why.
  */
 dnd: boolean, };
+
+/**
+ * One pinned message, in `GET /api/chat/rooms/{id}/pins` (#119).
+ */
+export type ChatPin = { message: ChatMessage, 
+/**
+ * Who pinned it, and when.
+ */
+by: string, by_name: string, at: number, };
+
+/**
+ * `GET /api/chat/rooms/{id}/pins`: the room's pins, the newest first,
+ * as the reader sees the messages.
+ */
+export type ChatPins = { pins: Array<ChatPin>, };
 
 /**
  * `POST /api/chat/rooms/{id}/messages`.
@@ -506,7 +531,20 @@ archived: boolean,
  * Whether the reader may post here now (a DM whose other person left
  * the team, an archive, an archived channel: no).
  */
-writable: boolean, };
+writable: boolean, 
+/**
+ * What people wrote about a channel (#119); empty when nobody has.
+ */
+topic: string, description: string, 
+/**
+ * How many messages are pinned.
+ */
+pins: number, 
+/**
+ * Whether the reader may set the topic: a team can leave it to its
+ * owners.
+ */
+topic_writable: boolean, };
 
 /**
  * A machine whose agents reach a room through its owner's grant (M197).
@@ -616,6 +654,20 @@ sorts: { [key in string]: ChatSort }, };
 export type ChatSort = "name" | "recent";
 
 /**
+ * What a system line tells of (#119).
+ */
+export type ChatSystem = { 
+/**
+ * `topic` (its `text` is the new topic, empty when cleared),
+ * `description` (likewise), `pin` or `unpin`.
+ */
+kind: string, 
+/**
+ * The pinned message's number, for `pin` and `unpin`.
+ */
+target: number | null, };
+
+/**
  * What a daemon's thread is about.
  */
 export type ChatTargetKind = "pane" | "session" | "object";
@@ -629,7 +681,18 @@ export type ChatTeamSettings = {
 /**
  * `@channel` and `@here` are for owners only.
  */
-broadcast_owners: boolean, };
+broadcast_owners: boolean, 
+/**
+ * Only owners set a channel's topic (#119).
+ */
+topic_owners: boolean, };
+
+/**
+ * `PUT /api/chat/rooms/{id}/topic`: what a channel's members (or, when
+ * the team says so, its owners) write about it. What's left out stays;
+ * an empty one clears it. Each change posts a system line. Answers the room.
+ */
+export type ChatTopicSet = { topic?: string, description?: string, };
 
 /**
  * `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read

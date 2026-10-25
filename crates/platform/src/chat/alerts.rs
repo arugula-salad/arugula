@@ -161,7 +161,10 @@ pub async fn team_settings(
 ) -> J<ChatTeamSettings> {
     gate(&app, &s.account).await?;
     team_role(&app, &s.account, &team).await?;
-    Ok(Json(ChatTeamSettings { broadcast_owners: app.db.chat_broadcast_owners(&team)? }))
+    Ok(Json(ChatTeamSettings {
+        broadcast_owners: app.db.chat_broadcast_owners(&team)?,
+        topic_owners: app.db.chat_topic_owners(&team)?,
+    }))
 }
 
 /// `PUT /api/chat/teams/{team}/settings`: an owner's.
@@ -175,7 +178,7 @@ pub async fn set_team_settings(
     if !team_role(&app, &s.account, &team).await? {
         return Err(err(StatusCode::FORBIDDEN, "only an owner can change this"));
     }
-    app.db.set_chat_broadcast_owners(&team, b.broadcast_owners)?;
+    app.db.set_chat_team_settings(&team, b)?;
     Ok(Json(b))
 }
 

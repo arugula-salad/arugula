@@ -97,6 +97,8 @@ fn generate() -> String {
         c.visit::<ChatPosted>();
         c.visit::<ChatEdit>();
         c.visit::<ChatReact>();
+        c.visit::<ChatPins>();
+        c.visit::<ChatTopicSet>();
         c.visit::<ChatRead>();
         c.visit::<ChatMute>();
         c.visit::<ChatLevel>();

@@ -659,6 +659,39 @@ note = "The account's uploads, and the files on the messages it wrote."
 seen_by = ["litestream"]
 
 [[table]]
+name = "chat_topics"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A channel's topic and description, as its members wrote them (#119)."
+why_asleep = "The room's header, with every machine asleep."
+with_account = "none"
+note = "By room: gone with the room."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_pins"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Which messages are pinned in a room, by whom and when (#119)."
+why_asleep = "The room's pins, with every machine asleep."
+with_account = "partly"
+note = "Pins of the account's own messages go with them; pins it made of others' messages stay, as the room's."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_system"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Which messages are system lines (a topic set, a message pinned) and what they're about (#119)."
+why_asleep = "The room's history, drawn right, with every machine asleep."
+with_account = "none"
+note = "By room and message number: gone with the message."
+seen_by = ["litestream"]
+
+[[table]]
 name = "chat_sidebars"
 plane = "platform"
 process = "platform"

@@ -43,7 +43,10 @@ use std::{
 
 use arugula_control_common::ApiError;
 use arugula_control_wire::{
-    chat::{AgentMessagesQuery, ChatPost, ChatReact, ChatReactQuery, ChatReaction, ChatSearchQuery, reactions_line},
+    chat::{
+        AgentMessagesQuery, ChatPost, ChatReact, ChatReactQuery, ChatReaction, ChatSearchQuery, ChatSystem, pins_line,
+        reactions_line, system_text,
+    },
     issues::{IssueListEdit, IssuePatch, IssueQuery, NewIssue},
     runs::{AgentRunStart, RUN_WAIT_MAX, RunListQuery, RunLogQuery, RunQuery},
 };
@@ -523,13 +526,31 @@ impl Agent {
                     Some(machine) => format!("{by}'s agent on {machine}"),
                     None => by,
                 };
+                if let Ok(s) = serde_json::from_value::<ChatSystem>(v["system"].clone()) {
+                    return format!(
+                        "[{}] * {by} {}",
+                        v["seq"],
+                        system_text(&s, v["text"].as_str().unwrap_or_default())
+                    );
+                }
                 let rs: Vec<ChatReaction> = serde_json::from_value(v["reactions"].clone()).unwrap_or_default();
                 let reacted =
                     if rs.is_empty() { String::new() } else { format!("  [reactions: {}]", reactions_line(&rs)) };
-                format!("[{}] {by}: {}{reacted}", v["seq"], v["text"].as_str().unwrap_or_default())
+                let pinned = if v["pinned"] == true { "  [pinned]" } else { "" };
+                format!("[{}] {by}: {}{reacted}{pinned}", v["seq"], v["text"].as_str().unwrap_or_default())
             })
             .collect();
-        let text = format!("{} message(s) in {}:\n{}", lines.len(), a.room, lines.join("\n"));
+        let mut about = String::new();
+        if !r.room.topic.is_empty() {
+            about += &format!("Topic: {}\n", r.room.topic);
+        }
+        if !r.room.description.is_empty() {
+            about += &format!("Description: {}\n", r.room.description);
+        }
+        if !r.pins.is_empty() {
+            about += &format!("Pinned:\n{}\n", pins_line(&r.pins));
+        }
+        let text = format!("{about}{} message(s) in {}:\n{}", lines.len(), a.room, lines.join("\n"));
         let project = r.room.project.clone();
         Ok(Done { text, value: to_value(&r), project, note: format!("read {}", a.room) })
     }
@@ -556,6 +577,22 @@ impl Agent {
                 token_label(&self.token.name)
             );
             return Ok(Done { text, value: to_value(&m), project: None, note: format!("reacted in {}", a.room) });
+        }
+        if let Some(seq) = a.pin_seq {
+            let path = Path((a.room.clone(), seq));
+            let m = if a.remove {
+                agent_threads::unpin(self.state(), self.me(), path).await?.0
+            } else {
+                agent_threads::pin(self.state(), self.me(), path).await?.0
+            };
+            let what = if a.remove { "Unpinned" } else { "Pinned" };
+            let text = format!(
+                "{what} seq {seq} in {} as {}'s agent on {}",
+                a.room,
+                self.owner,
+                token_label(&self.token.name)
+            );
+            return Ok(Done { text, value: to_value(&m), project: None, note: format!("pinned in {}", a.room) });
         }
         let b = ChatPost { text: a.text, ..Default::default() };
         let r = agent_threads::post(self.state(), self.me(), Path(a.room.clone()), Json(b)).await?.0;
@@ -1019,6 +1056,8 @@ struct PostThread {
     #[serde(default)]
     emoji: Option<String>,
     #[serde(default)]
+    pin_seq: Option<i64>,
+    #[serde(default)]
     remove: bool,
 }
 
@@ -1209,7 +1248,8 @@ pub fn tools() -> Vec<Value> {
                 "text": prop("string", "The message, in markdown. Not needed to react."),
                 "react_to_seq": prop("integer", "React to this message (its seq) with emoji instead of posting."),
                 "emoji": prop("string", "The emoji to react with, for react_to_seq."),
-                "remove": prop("boolean", "Take your reaction back instead of adding it."),
+                "pin_seq": prop("integer", "Pin this message (its seq) instead of posting; the room gets a note."),
+                "remove": prop("boolean", "Take your reaction back (or unpin) instead of adding it."),
             }),
             &["room"],
             false,

@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
+import type { ChatTeamSettings } from "../../shared/proto";
 import { keywords, setKeywords, setTeamSettings, teamSettings } from "../../shared/chat/alerts";
 import { usePlatformApi } from "../../shared/platform-api";
 import { Section } from "./section";
@@ -67,32 +68,40 @@ function Words() {
 }
 
 function OwnersOnly({ team, name }: { team: string; name: string }) {
-  const [on, setOn] = useState<boolean | null>(null);
+  const [s, setS] = useState<ChatTeamSettings | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
-    teamSettings(team).then(
-      (s) => setOn(s.broadcast_owners),
-      (e: Error) => setErr(e.message),
-    );
+    teamSettings(team).then(setS, (e: Error) => setErr(e.message));
   }, [team]);
-  if (on === null) return err ? <p class="control-error">{err}</p> : null;
+  if (s === null) return err ? <p class="control-error">{err}</p> : null;
+  // The two switches are one record on the server: each sends both.
+  const flip = (change: Partial<ChatTeamSettings>) => void setTeamSettings(team, { ...s, ...change }).then(setS, (e: Error) => setErr(e.message));
   return (
-    <label class="settings-switch">
-      <input
-        type="checkbox"
-        role="switch"
-        class="sw-switch"
-        data-chat-owners-only={team}
-        checked={on}
-        onChange={() =>
-          void setTeamSettings(team, { broadcast_owners: !on }).then(
-            (s) => setOn(s.broadcast_owners),
-            (e: Error) => setErr(e.message),
-          )
-        }
-      />
-      <span>Only owners of {name} may use @channel and @here</span>
-    </label>
+    <>
+      <label class="settings-switch">
+        <input
+          type="checkbox"
+          role="switch"
+          class="sw-switch"
+          data-chat-owners-only={team}
+          checked={s.broadcast_owners}
+          onChange={() => flip({ broadcast_owners: !s.broadcast_owners })}
+        />
+        <span>Only owners of {name} may use @channel and @here</span>
+      </label>
+      <label class="settings-switch">
+        <input
+          type="checkbox"
+          role="switch"
+          class="sw-switch"
+          data-chat-topic-owners={team}
+          checked={s.topic_owners}
+          onChange={() => flip({ topic_owners: !s.topic_owners })}
+        />
+        <span>Only owners of {name} may set a channel's topic</span>
+      </label>
+      {err ? <p class="control-error">{err}</p> : null}
+    </>
   );
 }
 

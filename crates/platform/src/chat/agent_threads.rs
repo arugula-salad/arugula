@@ -31,7 +31,7 @@ use axum::{
 
 use super::{
     Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, files, gate, in_team, listed_as,
-    objects, post_as, reactions, rooms_seen, search_in,
+    objects, pins, post_as, reactions, rooms_seen, search_in,
 };
 use crate::{
     Platform,
@@ -87,8 +87,9 @@ fn shown(
     room: &Room,
     powers: Vec<String>,
     last_mention: Option<i64>,
+    extras: &pins::Extras,
 ) -> anyhow::Result<AgentRoom> {
-    let r = listed_as(app, facts, owner, room, (0, false), (0, 0))?;
+    let r = listed_as(app, facts, owner, room, (0, false), (0, 0), extras)?;
     let writable = r.writable && powers.iter().any(|p| p == THREADS_POST);
     Ok(AgentRoom {
         id: r.id,
@@ -102,6 +103,8 @@ fn shown(
         last_mention,
         powers,
         writable,
+        topic: r.topic,
+        description: r.description,
     })
 }
 
@@ -165,9 +168,10 @@ pub async fn rooms(State(app): State<Arc<Platform>>, d: Machine) -> J<AgentRooms
     let (rooms, facts) = reached(&app, &d, &powers).await?;
     let ids: Vec<&str> = rooms.iter().map(|(r, _)| r.id.as_str()).collect();
     let last = app.db.chat_last_mentions(&ids, &mention_of(&d))?;
+    let extras = pins::Extras::of(&app.db, &rooms.iter().map(|(r, _)| r).collect::<Vec<_>>())?;
     let rooms = rooms
         .iter()
-        .map(|(r, p)| shown(&app, &facts, &d.account, r, p.clone(), last.get(&r.id).copied()))
+        .map(|(r, p)| shown(&app, &facts, &d.account, r, p.clone(), last.get(&r.id).copied(), &extras))
         .collect::<anyhow::Result<_>>()?;
     Ok(Json(AgentRooms { rooms, reach }))
 }
@@ -197,14 +201,16 @@ pub async fn messages(
         app.db.chat_messages(&room.id, page, limit)?
     };
     let ms: Vec<&Message> = ms.iter().filter(|m| m.at >= from).collect();
-    let shower = Shower::of(&app, &d.account, &ms).await?.as_agent(&d.daemon);
+    let shower = Shower::of(&app, &d.account, &ms).await?.for_agent(&d.daemon);
     let messages = ms.into_iter().map(|m| shower.show(m)).collect();
     let facts = Facts::of(&app, Some(&d.account), &[&room]).await?;
     let scope = agent_scope(&app, &room, &d.account)?;
     let powers = thread_powers(&grants_of(&app, &d)?, scope.as_ref());
     let last = app.db.chat_last_mentions(&[&room.id], &me)?.remove(&room.id);
-    let room = shown(&app, &facts, &d.account, &room, powers, last)?;
-    Ok(Json(AgentMessages { room, messages, more }))
+    let pins = pins::pinned(&app, &d.account, Some(&d.daemon), &room, from).await?;
+    let extras = pins::Extras::of(&app.db, &[&room])?;
+    let room = shown(&app, &facts, &d.account, &room, powers, last, &extras)?;
+    Ok(Json(AgentMessages { room, messages, more, pins }))
 }
 
 /// `POST /api/daemon/chat/rooms/{id}/messages`: an agent's post
@@ -275,6 +281,27 @@ async fn reacting(app: &Platform, d: &Machine, id: &str, seq: i64, emoji: &str, 
     let (room, from, agent) = room_of(app, d, THREADS_POST, id).await?;
     let facts = Facts::of(app, Some(&d.account), &[&room]).await?;
     Ok(Json(reactions::set(app, &d.account, Some(&agent), (&room, from, &facts), seq, emoji, on).await?))
+}
+
+/// `PUT /api/daemon/chat/rooms/{id}/messages/{seq}/pin`: an agent pins
+/// (`threads.post`), as its owner, labelled with the machine.
+pub async fn pin(State(app): State<Arc<Platform>>, d: Machine, Path((id, seq)): Path<(String, i64)>) -> J<ChatMessage> {
+    pinning(&app, &d, &id, seq, true).await
+}
+
+/// `DELETE` the same: unpins.
+pub async fn unpin(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, seq)): Path<(String, i64)>,
+) -> J<ChatMessage> {
+    pinning(&app, &d, &id, seq, false).await
+}
+
+async fn pinning(app: &Platform, d: &Machine, id: &str, seq: i64, on: bool) -> J<ChatMessage> {
+    let (room, from, agent) = room_of(app, d, THREADS_POST, id).await?;
+    let facts = Facts::of(app, Some(&d.account), &[&room]).await?;
+    Ok(Json(pins::set_pin(app, &d.account, Some(&agent), (&room, from, &facts), seq, on).await?))
 }
 
 /// `GET /api/daemon/chat/search?q=&team=`: over the rooms this machine's
