@@ -2,11 +2,15 @@
 // checks are in palette-steps.ts, shared with palette.webkit.spec.ts.
 
 import { devices, expect, test } from "@playwright/test";
-import { desktop, phone } from "./palette-steps";
+import { desktop, docs, phone } from "./palette-steps";
 import { active, paneEl, reset } from "./helpers";
 
 test("the chord opens the palette from a terminal; it runs every pane-menu action", async ({ page }) => {
   await desktop(page);
+});
+
+test("Docs opens the Docs page, and a Doc that was closed opens by its title", async ({ page }) => {
+  await docs(page);
 });
 
 test.describe("on a phone", () => {

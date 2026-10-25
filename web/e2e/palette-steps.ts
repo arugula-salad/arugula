@@ -2,6 +2,7 @@
 // WebKit (palette.webkit.spec.ts), on a desktop and a phone.
 
 import { expect, type Page } from "@playwright/test";
+import { newDoc, type Post } from "./doc-steps";
 import { active, paneEl, panes, ready, reset, tabsInSession, text, type as typeIn, sheetTab } from "./helpers";
 
 const palette = (page: Page) => page.getByRole("dialog", { name: "Command palette" });
@@ -164,4 +165,41 @@ export async function phone(page: Page) {
   await rows(page).first().tap();
   await expect(palette(page)).toBeHidden();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.panes.length)).toBe(2);
+}
+
+/** The Docs page and the Docs a machine keeps (#1494): "Docs" goes to the
+ * page, and a Doc whose pane is closed is "Open Doc: TITLE", asked for once
+ * when the palette opens, not on every key. */
+export async function docs(page: Page, mod: "Control" | "Meta" = "Control") {
+  await page.addInitScript(() => localStorage.removeItem("arugula.palette.recent"));
+  await reset(page);
+  const [term] = await panes(page);
+  await ready(page, term);
+  const title = `Palette Doc ${Date.now()}`;
+  const post: Post = async (path, data) => (await page.request.post(path, { data })).json();
+  const made = await newDoc(post, term, title);
+  await post(`/api/panes/${made}/close`, {});
+  await expect(page.locator(`[data-doc-block="${made}"]`)).toHaveCount(0);
+
+  const asked: string[] = [];
+  page.on("request", (r) => r.method() === "GET" && new URL(r.url()).pathname === "/api/docs" && asked.push(r.url()));
+  await page.keyboard.press(`${mod}+Shift+KeyP`);
+  await expect(palette(page)).toBeVisible();
+  const entry = palette(page).locator('[data-command^="Docs/open "]').filter({ hasText: `Open Doc: ${title}` });
+  await expect(entry).toHaveCount(1);
+  // Typing finds it by title and asks nothing more.
+  await filter(page).pressSequentially("open doc palette", { delay: 20 });
+  await expect(rows(page).first()).toContainText(`Open Doc: ${title}`);
+  expect(asked).toHaveLength(1);
+  await filter(page).press("Enter");
+  await expect(palette(page)).toBeHidden();
+  await expect.poll(async () => page.evaluate((p) => window.__arugula.client.info(p)?.type, await active(page))).toBe("doc");
+  await expect(page.locator(`[data-doc-block="${await active(page)}"] .doc-title`)).toHaveText(title);
+
+  // "Docs" is a place: it opens the page.
+  await page.keyboard.press(`${mod}+Shift+KeyP`);
+  await filter(page).fill("docs");
+  await palette(page).locator('[data-command="Places/docs"]').click();
+  await expect(palette(page)).toBeHidden();
+  await expect(page.locator("[data-docs-page]")).toBeVisible();
 }

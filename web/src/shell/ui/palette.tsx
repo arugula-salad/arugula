@@ -24,6 +24,9 @@ import { paneName } from "./shell/overview";
 import { openAttention } from "./shell/attention-drawer";
 import { focusSessionSearch } from "./shell/prefs";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
+import { closeDocsPage, docsRoute, openDoc, openDocsPage } from "./docs-route";
+import { opPath, OPS } from "../ops";
+import type { DocRow } from "../../shared/proto";
 import { askText, closeMenu, type MenuItem } from "../../shared/ui/menu";
 import { ariaKeys, keyHint } from "./keys";
 import { newTabItems, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
@@ -131,7 +134,7 @@ function fromMenu(group: string, items: MenuItem[], about?: string): Command[] {
 }
 
 /** Every command for what's shown now. */
-export function commands(client: Client, phone: boolean, workspace: string | null): Command[] {
+export function commands(client: Client, phone: boolean, workspace: string | null, docs: DocRow[] = []): Command[] {
   const state = client.state;
   if (!state) return [];
   const out: Command[] = [];
@@ -207,6 +210,20 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     }
   }
 
+  // The Docs this machine keeps, by title (#1494).
+  for (const d of docs) {
+    out.push({
+      key: `Docs/open ${d.id}`,
+      group: "Docs",
+      label: `Open Doc: ${d.title}`,
+      detail: d.open === null || d.open === undefined ? undefined : "open now",
+      run: async () => {
+        const why = await openDoc(client, d.id);
+        if (why) client.toast(why);
+      },
+    });
+  }
+
   // The swarm, and the next pane that wants you after the active one.
   const wanting = state.panes.filter((p) => p.attention === "needs_input").map((p) => p.id);
   const next: PaneId | undefined = wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
@@ -232,8 +249,8 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
 }
 
 /** Where the palette was opened: the panes, or a place over them. */
-function here(): "panes" | "swarm" | "agents" {
-  return swarmRoute() ? "swarm" : agentsRoute() ? "agents" : "panes";
+function here(): "panes" | "swarm" | "agents" | "docs" {
+  return swarmRoute() ? "swarm" : agentsRoute() ? "agents" : docsRoute() ? "docs" : "panes";
 }
 
 /** The places, and what the one you're in offers: first when you're not
@@ -243,6 +260,7 @@ function places(client: Client, phone: boolean): Command[] {
   const toPanes = () => {
     if (swarmRoute()) closeSwarm();
     if (agentsRoute()) closeAgentsPage();
+    if (docsRoute()) closeDocsPage();
     closeOverview();
   };
   const out: Command[] = [];
@@ -279,6 +297,7 @@ function places(client: Client, phone: boolean): Command[] {
     go("recipes", "Agents: Recipes", () => openAgentsPage("recipes"));
     go("team", "Agents: Team", () => openAgentsPage("team"));
   }
+  if (client.flag("docs") && !client.state?.roles) go("docs", "Docs", openDocsPage);
   return out;
 }
 
@@ -326,9 +345,25 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
   const [, setTick] = useState(0);
   useEffect(() => client.subscribe(() => setTick((t) => t + 1)), [client]);
 
+  // The Docs this machine keeps, asked once when the palette opens (not on
+  // every keystroke), for "Open Doc: TITLE".
+  const [docs, setDocs] = useState<DocRow[]>([]);
+  useEffect(() => {
+    if (!client.flag("docs") || client.state?.roles) return;
+    let live = true;
+    client
+      .request(OPS["docs.list"].method, opPath("docs.list"))
+      .then((res) => (res.ok ? res.json<DocRow[]>() : []))
+      .then((v) => live && Array.isArray(v) && setDocs(v))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [client]);
+
   const rows = useMemo(
-    () => rank(commands(client, phone, isWorkspace ? cwd : null), query, recent),
-    [client, phone, isWorkspace, cwd, query, recent, client.state?.rev, pane],
+    () => rank(commands(client, phone, isWorkspace ? cwd : null, docs), query, recent),
+    [client, phone, isWorkspace, cwd, query, recent, client.state?.rev, pane, docs],
   );
 
   // A phone's keyboard would cover half the list: only on request there.
@@ -350,6 +385,7 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
     if (c.group !== "Swarm" && c.group !== "Places" && swarmRoute()) closeSwarm();
     if (c.group !== "Swarm" && c.group !== "Chat" && c.group !== "Places") {
       if (agentsRoute()) closeAgentsPage();
+      if (docsRoute()) closeDocsPage();
     }
     if (c.group !== "Places" && overviewRoute()) closeOverview();
     // Keys back to the pane first; a prompt the command opens takes them.

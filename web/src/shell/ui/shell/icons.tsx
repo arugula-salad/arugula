@@ -70,6 +70,20 @@ export const AgentsIcon = () => (
   </Svg>
 );
 
+export const DocsIcon = () => (
+  <Svg>
+    <path d="M7 4h7l4 4v12H7z" />
+    <path d="M14 4v4h4M10 12h5M10 15.5h5" />
+  </Svg>
+);
+
+export const LinkIcon = () => (
+  <Svg size={14}>
+    <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />
+    <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+  </Svg>
+);
+
 export const SettingsIcon = () => (
   <Svg>
     <path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1" />

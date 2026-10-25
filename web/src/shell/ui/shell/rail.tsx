@@ -1,6 +1,6 @@
 // The rail down the left of the workspace (M108, #1023): Arugula's mark
 // (this machine's sessions), Sessions (the sidebar), Panes, Swarm, Chat (on
-// the platform page, M153), Agents and Settings. It stays while the swarm
+// the platform page, M153), Agents, Docs and Settings. It stays while the swarm
 // or agents cover the panes, so the way back is always in one place, and Panes goes back to the
 // session's last tab and pane (the routes never change the selection).
 
@@ -10,11 +10,12 @@ import type { Client } from "../../client";
 import { directory } from "../../hosts";
 import { onSwarmRoute, openSwarm } from "../../swarm/route";
 import { openAgentsPage } from "../agents-route";
+import { openDocsPage } from "../docs-route";
 import { settingsItems } from "../commands";
 import { openMenu } from "../../../shared/ui/menu";
 import { chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
 import { countView } from "../../../shared/telemetry";
-import { AgentsIcon, ChatIcon, Mark, PanesIcon, SessionsIcon, SettingsIcon, SwarmIcon } from "./icons";
+import { AgentsIcon, ChatIcon, DocsIcon, Mark, PanesIcon, SessionsIcon, SettingsIcon, SwarmIcon } from "./icons";
 import { focusSessionSearch, setSidebarOpen, useSidebar } from "./prefs";
 
 /** Re-render on any route change, the swarm's too (it closes without a
@@ -41,6 +42,7 @@ export function Rail({ client }: { client: Client }) {
   const { n, mention } = threads ? chatUnread() : { n: 0, mention: false };
   // As places.tsx decides: the machine owner's, with the Labs flag.
   const agents = client.flag("agents") && !client.state?.roles;
+  const docs = client.flag("docs") && !client.state?.roles;
   const host = directory.current || "this machine";
   const panes = () => {
     if (at !== "panes") closePlace(at);
@@ -114,6 +116,17 @@ export function Rail({ client }: { client: Client }) {
           onClick={() => at !== "agents" && openAgentsPage()}
         >
           <AgentsIcon />
+        </RailButton>
+      )}
+      {docs && (
+        <RailButton
+          label="Docs"
+          tip="Docs: the Docs your agents wrote, to open again"
+          here={at === "docs"}
+          hook="data-open-docs"
+          onClick={() => at !== "docs" && openDocsPage()}
+        >
+          <DocsIcon />
         </RailButton>
       )}
       <div class="ws-rail-fill" />

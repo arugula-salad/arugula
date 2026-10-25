@@ -7,6 +7,7 @@ import type { Client } from "../client";
 import { directory } from "../hosts";
 import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
+import { closeDocsPage, docsRoute, openDocsPage } from "./docs-route";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
 import { chat, chatStore } from "../../shared/chat-store";
@@ -71,7 +72,7 @@ export function useChatTick(client: Client) {
 
 /** Where a person is: the panes, the swarm or agents, or (in the new
  * workspace, M111) the overview of this machine's sessions. */
-export type Place = "panes" | "swarm" | "agents" | "overview";
+export type Place = "panes" | "swarm" | "agents" | "docs" | "overview";
 
 /** `#overview`, or `#overview=<session>` for one session's (M111). */
 export function overviewRoute(): { session?: number } | null {
@@ -98,23 +99,26 @@ export function currentPlace(): Place {
   if (overviewRoute()) return "overview";
   if (swarmRoute()) return "swarm";
   if (agentsRoute()) return "agents";
+  if (docsRoute()) return "docs";
   return "panes";
 }
 
 /** Back to the panes from wherever you are. */
 export function closePlace(at: Place) {
   if (at === "agents") closeAgentsPage();
+  else if (at === "docs") closeDocsPage();
   else if (at === "swarm") closeSwarm();
   else if (at === "overview") closeOverview();
 }
 
-/** Panes · Swarm · Chat · Agents, in the bar every place shares
+/** Panes · Swarm · Chat · Agents · Docs, in the bar every place shares
  * (./app-bar). Chat opens the platform page. Agents (#403) is the machine
- * owner's, with its flag. */
+ * owner's, with its flag, and so is Docs (#1494). */
 export function Places({ client, at }: { client: Client; at: Place }) {
   useChatTick(client);
   const { n, mention } = chatUnread();
   const agents = client.flag("agents") && !client.state?.roles;
+  const docs = client.flag("docs") && !client.state?.roles;
   // No machine yet: no panes or swarm to go to.
   const machines = !!client.state || directory.names.length > 0;
   return (
@@ -161,6 +165,17 @@ export function Places({ client, at }: { client: Client; at: Place }) {
           onClick={() => at !== "agents" && openAgentsPage()}
         >
           Agents
+        </button>
+      )}
+      {docs && (
+        <button
+          class={at === "docs" ? "place here" : "place"}
+          title="Docs: the Docs your agents wrote, to open again"
+          data-open-docs
+          aria-pressed={at === "docs"}
+          onClick={() => at !== "docs" && openDocsPage()}
+        >
+          Docs
         </button>
       )}
     </div>

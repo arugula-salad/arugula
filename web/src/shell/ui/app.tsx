@@ -12,6 +12,7 @@ import { KeyBar, PhoneHeader } from "./phone";
 import { ThreadLayer } from "./threads";
 import { InLabs } from "./in-labs";
 import { agentsRoute } from "./agents-route";
+import { docsRoute } from "./docs-route";
 import { HostPicker, NewMachineNote, setMachineItems } from "./hosts";
 import { ControlRequests, ShareDialog } from "./people";
 import { directory } from "../hosts";
@@ -94,7 +95,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   const overview = useOverview();
   useLayoutEffect(() => {
     if (!ws) return;
-    // The swarm and agents pages sit beside its rail (style.css).
+    // The swarm, agents and Docs pages sit beside its rail (style.css).
     document.documentElement.dataset.workspace = "new";
     return () => void delete document.documentElement.dataset.workspace;
   }, [ws]);
@@ -120,6 +121,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
       {state && <AgentsPageLayer client={client} />}
+      {state && <DocsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
@@ -195,6 +197,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
       {state && <AgentsPageLayer client={client} />}
+      {state && <DocsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
@@ -274,4 +277,16 @@ function AgentsPageLayer({ client }: { client: Client }) {
   }, []);
   if (!agentsRoute()) return null;
   return <InLabs on={client.flag("agents")}>{(l) => <l.AgentsPage client={client} />}</InLabs>;
+}
+
+/** The Docs page (#1494): loads Labs only while its route is up. */
+function DocsPageLayer({ client }: { client: Client }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((t) => t + 1);
+    window.addEventListener("hashchange", fn);
+    return () => window.removeEventListener("hashchange", fn);
+  }, []);
+  if (!docsRoute()) return null;
+  return <InLabs on={client.flag("docs")}>{(l) => <l.DocsPage client={client} />}</InLabs>;
 }

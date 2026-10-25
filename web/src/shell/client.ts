@@ -960,6 +960,18 @@ export class Client {
     }
   }
 
+  /** Show a pane the daemon just named, once this client's state has it
+   * (a block opened a moment ago isn't in the state yet). */
+  showWhenKnown(pane: PaneId) {
+    if (this.info(pane)) return this.setActive(pane);
+    const off = this.subscribe(() => {
+      if (!this.info(pane)) return;
+      off();
+      this.setActive(pane);
+    });
+    setTimeout(off, 5000);
+  }
+
   // ---- talking to the daemon
 
   connect() {

@@ -42,7 +42,7 @@
 //! | GET | `/api/history` | `pane=`, `session=`, `failed=1`, `since=` secs, `cwd=`, `match=`, `kind=`, `limit=`, `host=` | `[HistoryEntry]`, each with a stable `id` (M112); a guest gets the panes they may read |
 //! | GET | `/api/search` | `re=`, `since=` secs | `[SearchHit]`: lines of output |
 //! | GET | `/api/docs` | | `[DocRow]`: the Docs in the library, newest first (#1493; the owner's) |
-//! | POST | `/api/docs/open` | `DocOpenRequest` | `DocOpened`: the Doc's block, the one that has it open or a new one |
+//! | POST | `/api/docs/open` | `DocOpenRequest`: a Doc `id` or a shared `link`'s id | `DocOpened`: the Doc's block, the one that has it open or a new one |
 //! | DELETE | `/api/docs/ID` | | `Empty`: unshared first, then removed (the owner's, never an agent's) |
 //! | GET | `/api/fs/…`, POST `/api/panes/N/cd` | | files on a host: see [`crate::fs`] |
 //! | GET | `/api/host` | | `HostInfo`: this daemon's name and version, its tailnet URL, whether the tailnet has reached it, the control it joined |
@@ -891,12 +891,19 @@ pub struct DocShared {
     pub updated: u64,
 }
 
-/// `POST /api/docs/open` (#1493): a Doc from the library in a block.
+/// `POST /api/docs/open` (#1493): a Doc from the library in a block. Exactly
+/// one of `id` and `link` names it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
 pub struct DocOpenRequest {
-    pub id: String,
+    /// The Doc's id (`docs.list` has them).
+    #[serde(default)]
+    pub id: Option<String>,
+    /// A link's id, as control's Shared Docs lists it (#1494): the Doc that
+    /// link shares.
+    #[serde(default)]
+    pub link: Option<String>,
     #[serde(default)]
     pub session: Option<String>,
     #[serde(default)]
