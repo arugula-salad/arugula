@@ -41,6 +41,18 @@ pub struct Room {
     pub last_seq: i64,
 }
 
+/// What a channel or DM has beside its [`Room`] (#117, #118), read apart so
+/// the rooms of other kinds stay as they were.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoomMeta {
+    /// An invite-only channel.
+    pub private: bool,
+    /// Whoever joins the team joins it.
+    pub auto_join: bool,
+    /// A DM's people, sorted and joined by `,` when it was made.
+    pub dm_key: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     pub room: String,
@@ -309,16 +321,30 @@ impl Db {
             .optional()
     }
 
-    /// The DM between two people in a scope.
+    /// The DM from before group DMs between two people in a scope: only
+    /// theirs (no `dm_key`), and nobody else in it.
     pub fn chat_dm(&self, scope: &str, a: &str, b: &str) -> Result<Option<Room>> {
         self.c()
             .query_row(
                 &format!(
-                    "SELECT {ROOM_COLS} FROM chat_rooms r WHERE scope = ?1 AND kind = 'dm'
+                    "SELECT {ROOM_COLS} FROM chat_rooms r WHERE scope = ?1 AND kind = 'dm' AND dm_key IS NULL
                      AND EXISTS (SELECT 1 FROM chat_members WHERE room = r.id AND account = ?2)
-                     AND EXISTS (SELECT 1 FROM chat_members WHERE room = r.id AND account = ?3)"
+                     AND EXISTS (SELECT 1 FROM chat_members WHERE room = r.id AND account = ?3)
+                     AND (SELECT count(*) FROM chat_members WHERE room = r.id) = 2"
                 ),
                 params![scope, a, b],
+                room_row,
+            )
+            .optional()
+    }
+
+    /// The DM of these people (sorted, joined by `,`: [`dm_key`]) in a
+    /// scope, whoever of them is still in it.
+    pub fn chat_dm_of(&self, scope: &str, key: &str) -> Result<Option<Room>> {
+        self.c()
+            .query_row(
+                &format!("SELECT {ROOM_COLS} FROM chat_rooms WHERE scope = ?1 AND kind = 'dm' AND dm_key = ?2"),
+                params![scope, key],
                 room_row,
             )
             .optional()
@@ -331,11 +357,25 @@ impl Db {
     /// [`super::Taken`] for a channel name, or a pane's or an object's room,
     /// already there.
     pub fn add_chat_room(&self, room: &Room, members: &[&str], project: Option<&str>) -> Result<()> {
+        self.add_chat_room_with(room, members, project, &RoomMeta::default())
+    }
+
+    /// [`add_chat_room`](Self::add_chat_room) for a channel or DM with its
+    /// [`RoomMeta`]. A DM's `dm_key` is unique in its scope: [`super::Taken`]
+    /// when someone made the same DM just now.
+    pub fn add_chat_room_with(
+        &self,
+        room: &Room,
+        members: &[&str],
+        project: Option<&str>,
+        meta: &RoomMeta,
+    ) -> Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
         tx.execute(
-            "INSERT INTO chat_rooms (id, scope, kind, name, machine, target, created_by, created, project_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO chat_rooms (id, scope, kind, name, machine, target, created_by, created, project_id,
+                                     private, auto_join, dm_key)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 room.id,
                 room.scope,
@@ -345,7 +385,10 @@ impl Db {
                 room.target,
                 room.created_by,
                 room.created,
-                project
+                project,
+                meta.private as i64,
+                meta.auto_join as i64,
+                meta.dm_key
             ],
         )
         .map_err(taken)?;
@@ -412,6 +455,62 @@ impl Db {
     pub fn chat_members(&self, room: &str) -> Result<Vec<String>> {
         self.c()
             .query_map("SELECT account FROM chat_members WHERE room = ?1 ORDER BY account", params![room], |r| r.get(0))
+    }
+
+    /// A room's members with when each reads from (ms), in account order.
+    pub fn chat_member_rows(&self, room: &str) -> Result<Vec<(String, u64)>> {
+        self.c().query_map(
+            "SELECT account, from_ms FROM chat_members WHERE room = ?1 ORDER BY account",
+            params![room],
+            |r| Ok((r.get::<String>(0)?, r.get::<u64>(1)?)),
+        )
+    }
+
+    /// Add `account` to a channel or DM, reading from `from` (ms): a
+    /// channel's from the start, a DM it came back to from now. `false`:
+    /// it already was.
+    pub fn add_chat_member(&self, room: &str, account: &str, from: u64) -> Result<bool> {
+        Ok(self.c().execute(
+            "INSERT INTO chat_members (room, account, from_ms) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING",
+            params![room, account, from as i64],
+        )? > 0)
+    }
+
+    /// Take `account` out of a room's members. `false`: it wasn't one.
+    pub fn remove_chat_member(&self, room: &str, account: &str) -> Result<bool> {
+        Ok(self.c().execute("DELETE FROM chat_members WHERE room = ?1 AND account = ?2", params![room, account])? > 0)
+    }
+
+    /// [`RoomMeta`] of these rooms (a room that has none of the kinds that
+    /// use it is there with the defaults), in one statement.
+    pub fn chat_room_meta(&self, rooms: &[&str]) -> Result<std::collections::HashMap<String, RoomMeta>> {
+        let mut out = std::collections::HashMap::new();
+        if rooms.is_empty() {
+            return Ok(out);
+        }
+        let c = self.c();
+        let rows = c.query_map(
+            &format!("SELECT id, private, auto_join, dm_key FROM chat_rooms WHERE {}", in_json(&c, "id", 1)),
+            params![json_list(rooms)?],
+            |r| {
+                Ok((
+                    r.get::<String>(0)?,
+                    RoomMeta { private: r.get::<i64>(1)? != 0, auto_join: r.get::<i64>(2)? != 0, dm_key: r.get(3)? },
+                ))
+            },
+        )?;
+        out.extend(rows);
+        Ok(out)
+    }
+
+    /// A team's channels, public and private, by name: the browser reads
+    /// the public ones.
+    pub fn chat_team_channels(&self, scope: &str) -> Result<Vec<Room>> {
+        self.c().query_map(
+            &format!("SELECT {ROOM_COLS} FROM chat_rooms WHERE scope = ?1 AND kind = 'channel' ORDER BY name"),
+            params![scope],
+            room_row,
+        )
     }
 
     /// How many channels a scope has.
@@ -1134,24 +1233,46 @@ impl Db {
         rows.into_iter().map(|(k, body)| Ok((k, serde_json::from_str(&body)?))).collect()
     }
 
-    /// [`chat_members`](Self::chat_members) for a page of rooms, in one
-    /// statement: by room, each in account order (a room with none isn't
-    /// there).
-    pub fn chat_members_of(&self, rooms: &[&str]) -> Result<std::collections::HashMap<String, Vec<String>>> {
-        let mut out: std::collections::HashMap<String, Vec<String>> = Default::default();
+    /// [`chat_member_rows`](Self::chat_member_rows) and
+    /// [`chat_room_meta`](Self::chat_room_meta) for a page of rooms, in
+    /// one statement (a chat list's budget is a few): the members by room,
+    /// each in account order (a room with none isn't there), and every
+    /// room's meta.
+    #[allow(clippy::type_complexity)]
+    pub fn chat_members_of(
+        &self,
+        rooms: &[&str],
+    ) -> Result<(std::collections::HashMap<String, Vec<(String, u64)>>, std::collections::HashMap<String, RoomMeta>)>
+    {
+        let mut members: std::collections::HashMap<String, Vec<(String, u64)>> = Default::default();
+        let mut metas: std::collections::HashMap<String, RoomMeta> = Default::default();
         if rooms.is_empty() {
-            return Ok(out);
+            return Ok((members, metas));
         }
         let c = self.c();
         let rows = c.query_map(
-            &format!("SELECT room, account FROM chat_members WHERE {} ORDER BY room, account", in_json(&c, "room", 1)),
+            &format!(
+                "SELECT r.id, m.account, m.from_ms, r.private, r.auto_join, r.dm_key
+                 FROM chat_rooms r LEFT JOIN chat_members m ON m.room = r.id
+                 WHERE {} ORDER BY r.id, m.account",
+                in_json(&c, "r.id", 1)
+            ),
             params![json_list(rooms)?],
-            |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?)),
+            |r| {
+                let meta =
+                    RoomMeta { private: r.get::<i64>(3)? != 0, auto_join: r.get::<i64>(4)? != 0, dm_key: r.get(5)? };
+                let member =
+                    r.get::<Option<String>>(1)?.map(|a| Ok::<_, anyhow::Error>((a, r.get::<u64>(2)?))).transpose()?;
+                Ok((r.get::<String>(0)?, member, meta))
+            },
         )?;
-        for (room, account) in rows {
-            out.entry(room).or_default().push(account);
+        for (room, member, meta) in rows {
+            if let Some(m) = member {
+                members.entry(room.clone()).or_default().push(m);
+            }
+            metas.insert(room, meta);
         }
-        Ok(out)
+        Ok((members, metas))
     }
 
     pub fn set_chat_readers(
@@ -1265,7 +1386,14 @@ pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::
 ///   author ("a deleted account");
 /// - it leaves no trace in others' mentions, read marks or reader lists.
 pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], disband: &[String]) -> Result<()> {
-    drop_rooms_where(tx, "kind = 'dm' AND id IN (SELECT room FROM chat_members WHERE account = ?1)", account)?;
+    // A group DM goes on for the rest (#117); one left with two or fewer
+    // goes, both sides.
+    drop_rooms_where(
+        tx,
+        "kind = 'dm' AND id IN (SELECT room FROM chat_members WHERE account = ?1)
+         AND (SELECT count(*) FROM chat_members m WHERE m.room = chat_rooms.id) <= 2",
+        account,
+    )?;
     for m in machines {
         drop_rooms_where(tx, "scope = 'machine:' || ?1", m)?;
         tx.execute("DELETE FROM chat_readers WHERE machine = ?1", params![m])?;
@@ -1520,6 +1648,24 @@ mod tests {
         assert_eq!(found(&db, &["r1"], "fix*"), vec![3, 1]);
         assert_eq!(found(&db, &["r1"], "fix again"), vec![3], "every word");
         assert!(found(&db, &["r1"], "--").is_empty(), "a word with no letters finds nothing");
+    }
+
+    /// A group DM (#117) goes on for the rest when one of its people is
+    /// erased; one left with two or fewer goes, as a 1:1 always did.
+    #[test]
+    fn erasing_an_account_leaves_a_group_dm_to_the_rest() {
+        let db = Db::test();
+        room(&db, "trio", "team:t", "dm", &["gone1", "b2", "c3"]);
+        room(&db, "pair", "team:t", "dm", &["gone1", "b2"]);
+        room(&db, "other", "team:t", "dm", &["b2", "c3"]);
+        let mut c = db.c();
+        let tx = c.transaction().unwrap();
+        erase_account(&tx, "gone1", &[], &[]).unwrap();
+        tx.commit().unwrap();
+        drop(c);
+        assert_eq!(db.chat_members("trio").unwrap(), ["b2", "c3"]);
+        assert!(db.chat_room("pair").unwrap().is_none());
+        assert!(db.chat_room("other").unwrap().is_some());
     }
 
     #[test]

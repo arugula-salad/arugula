@@ -15,10 +15,15 @@
 //! [`cache::DELAY`] (a feed tick plus a cache tick).
 //!
 //! **Who sees a room** ([`sight`]):
-//! - a channel: everyone in its team's latest roster (only owners while the
-//!   team is locked);
-//! - a DM: its two people, while each is in the team. One who left doesn't
-//!   see it; the other still reads it but can't write (decision 10);
+//! - a channel: its members (#118) who are in its team's latest roster now
+//!   (only owners while the team is locked). A public channel is joined by
+//!   anyone in the team ([`members::join`]), a private one by invitation
+//!   alone, and neither shows to a team member who isn't one: 404, in
+//!   search, Activity and the live stream too;
+//! - a DM: its people (two, or up to eight, #117), while each is in the
+//!   team, each from when they came to it. One who left the team doesn't
+//!   see it; the rest still read it, and write while two are left
+//!   (decision 10, generalised);
 //! - the thread on a pane or session: whom its machine last said may read
 //!   it ([`daemon_readers`], decision 2), each from their "from now" floor,
 //!   and only while control would route them to the machine at all
@@ -87,7 +92,7 @@ use crate::{
     cache,
     db::{
         Db, Taken,
-        chat::{Message, NewChatEvent, NewMessage, OldMessage, Page, Room, Search, UnreadAsk, Word},
+        chat::{Message, NewChatEvent, NewMessage, OldMessage, Page, Room, RoomMeta, Search, UnreadAsk, Word},
         chat_files::ChatFileRow,
         chat_reactions::Reaction,
         objects::Holder,
@@ -102,6 +107,7 @@ pub(crate) mod agent_threads;
 pub(crate) mod alerts;
 pub(crate) mod files;
 mod link_fetch;
+pub(crate) mod members;
 pub(crate) mod objects;
 pub(crate) mod people;
 pub(crate) mod pins;
@@ -209,7 +215,7 @@ struct Facts {
     /// The machines asked about for the reader, and those they may reach.
     asked: HashSet<String>,
     reach: HashSet<String>,
-    /// A page's rooms ([`Facts::page`]): their DMs' members and their
+    /// A page's rooms ([`Facts::page`]): their channels' and DMs' members and their
     /// machines' readers, each read once for the page rather than once or
     /// more per room (a round trip each on Postgres). Empty for one room's
     /// facts, whose callers may write in between: those read the database.
@@ -218,6 +224,8 @@ struct Facts {
     /// name (M196).
     projects: HashMap<String, Holder>,
     objects: HashMap<String, objects::Object>,
+    /// Channels' and DMs' privacy, topic and DM key (#117, #118).
+    meta: HashMap<String, RoomMeta>,
 }
 
 #[derive(Default)]
@@ -227,7 +235,7 @@ struct PageReads {
     readers: HashMap<(String, String, String), Vec<arugula_control_wire::chat::ChatReader>>,
     /// The rooms whose members are in `members`.
     members_of: HashSet<String>,
-    members: HashMap<String, Vec<String>>,
+    members: HashMap<String, Vec<(String, u64)>>,
 }
 
 impl Facts {
@@ -277,6 +285,7 @@ impl Facts {
         asked.sort();
         asked.dedup();
         let mut page = PageReads::default();
+        let mut meta = HashMap::new();
         let mut people = Vec::new();
         if whole {
             // Readers matter on others' machines (an owner sees their own
@@ -291,14 +300,23 @@ impl Facts {
             on.dedup();
             page.readers = app.db.chat_readers_on(&on)?;
             page.readers_on = on.into_iter().collect();
-            let dms: Vec<&str> = rooms.iter().filter(|r| r.kind == "dm").map(|r| r.id.as_str()).collect();
-            page.members = app.db.chat_members_of(&dms)?;
-            page.members_of = dms.iter().map(|d| (*d).to_owned()).collect();
-            people.extend(page.members.values().flatten().cloned());
+            let held: Vec<&str> =
+                rooms.iter().filter(|r| matches!(r.kind.as_str(), "dm" | "channel")).map(|r| r.id.as_str()).collect();
+            (page.members, meta) = app.db.chat_members_of(&held)?;
+            page.members_of = held.iter().map(|d| (*d).to_owned()).collect();
+            // A DM's people are named in the list; a channel's are not.
+            for r in rooms.iter().filter(|r| r.kind == "dm") {
+                people.extend(page.members.get(&r.id).into_iter().flatten().map(|(a, _)| a.clone()));
+            }
         } else {
             for r in rooms.iter().filter(|r| r.kind == "dm") {
                 people.extend(app.db.chat_members(&r.id)?);
             }
+        }
+        if !whole {
+            let held: Vec<&str> =
+                rooms.iter().filter(|r| matches!(r.kind.as_str(), "dm" | "channel")).map(|r| r.id.as_str()).collect();
+            meta = app.db.chat_room_meta(&held)?;
         }
         people.sort();
         people.dedup();
@@ -317,15 +335,27 @@ impl Facts {
             page,
             projects,
             objects,
+            meta,
         })
+    }
+
+    /// A channel's or DM's members, each with when they read from: from the
+    /// page, or the database.
+    fn member_rows(&self, app: &Platform, room: &str) -> anyhow::Result<Vec<(String, u64)>> {
+        if self.page.members_of.contains(room) {
+            return Ok(self.page.members.get(room).cloned().unwrap_or_default());
+        }
+        app.db.chat_member_rows(room)
     }
 
     /// A room's members: from the page, or the database.
     fn members(&self, app: &Platform, room: &str) -> anyhow::Result<Vec<String>> {
-        if self.page.members_of.contains(room) {
-            return Ok(self.page.members.get(room).cloned().unwrap_or_default());
-        }
-        app.db.chat_members(room)
+        Ok(self.member_rows(app, room)?.into_iter().map(|(a, _)| a).collect())
+    }
+
+    /// What a channel or DM has beside its row.
+    fn meta(&self, room: &str) -> RoomMeta {
+        self.meta.get(room).cloned().unwrap_or_default()
     }
 
     /// Who reads a pane's or session's thread, as its machine last said:
@@ -394,10 +424,13 @@ async fn target_sight(
 async fn sight(app: &Platform, facts: &Facts, account: &str, room: &Room) -> anyhow::Result<Option<u64>> {
     let team = room.scope.strip_prefix("team:");
     Ok(match (room.kind.as_str(), team) {
-        ("channel", Some(team)) => facts.role(team, account).map(|_| 0),
-        ("dm", Some(team)) => {
-            let member = facts.members(app, &room.id)?.iter().any(|a| a == account);
-            (member && facts.role(team, account).is_some()).then_some(0)
+        // A member in the team now. A channel's members read all of it, a
+        // DM's one who came back (#117) from when they did.
+        ("channel" | "dm", Some(team)) => {
+            if facts.role(team, account).is_none() {
+                return Ok(None);
+            }
+            facts.member_rows(app, &room.id)?.into_iter().find(|(a, _)| a == account).map(|(_, from)| from)
         }
         ("pane" | "session", _) => match (&room.machine, &room.target) {
             (Some(m), Some(t)) => target_sight(app, facts, account, m, &room.kind, t).await?,
@@ -430,8 +463,11 @@ fn writable(app: &Platform, facts: &Facts, room: &Room, account: &str) -> anyhow
         ("pane" | "session", _) => !watching(app, facts, account, room)?,
         // Every member who sees it, a team's viewers too.
         ("object", _) => true,
-        // Both still in the team: one who left ends it for the other.
-        ("dm", Some(team)) => facts.members(app, &room.id)?.iter().all(|a| facts.role(team, a).is_some()),
+        // Two of its people still in the team: with one left, it's read-only
+        // (decision 10, generalised).
+        ("dm", Some(team)) => {
+            facts.members(app, &room.id)?.iter().filter(|a| facts.role(team, a).is_some()).count() >= 2
+        }
         _ => false,
     })
 }
@@ -465,7 +501,7 @@ async fn audience(app: &Platform, room: &Room) -> anyhow::Result<Vec<String>> {
             .unwrap_or_default()
     };
     let mut maybe: Vec<String> = match (room.kind.as_str(), room.scope.strip_prefix("team:")) {
-        ("channel", Some(team)) => members(Some(team)),
+        ("channel", Some(_)) => facts.members(app, &room.id)?,
         ("pane" | "session", _) => {
             let m = room.machine.as_deref().unwrap_or_default();
             let mut v: Vec<String> = facts.owner(m).map(str::to_owned).into_iter().collect();
@@ -548,7 +584,7 @@ fn with_levels(
             app.db.chat_levels_for(account, &ids)?
         }
     };
-    let mut who: Vec<String> = rooms.iter().filter_map(|r| r.with.as_ref().map(|w| w.account.clone())).collect();
+    let mut who: Vec<String> = rooms.iter().flat_map(|r| &r.others).map(|w| w.account.clone()).collect();
     who.push(account.to_owned());
     let mut prefs = app.db.notify_prefs_of(&who)?;
     let mine = prefs.remove(account).unwrap_or_default();
@@ -565,8 +601,10 @@ fn with_levels(
         r.muted = r.level == NotifyLevel::Nothing;
     }
     let now = now_ms();
-    for w in rooms.iter_mut().filter_map(|r| r.with.as_mut()) {
-        w.dnd = prefs.get(&w.account).is_some_and(|p| crate::notify::paused(p, now));
+    for r in rooms.iter_mut() {
+        for w in r.with.iter_mut().chain(r.others.iter_mut()) {
+            w.dnd = prefs.get(&w.account).is_some_and(|p| crate::notify::paused(p, now));
+        }
     }
     Ok(())
 }
@@ -597,15 +635,21 @@ fn listed_as(
 ) -> anyhow::Result<ChatRoom> {
     let writable = writable(app, facts, room, account)?;
     let (topic, description, pins, topic_writable) = extras.of_room(facts, room, account, writable);
-    let with = if room.kind == "dm" {
-        facts.members(app, &room.id)?.into_iter().find(|a| a != account).map(|a| ChatPerson {
-            name: facts.people.get(&a).map(|p| p.name.clone()).unwrap_or_default(),
-            account: a,
-            dnd: false,
-        })
+    let others: Vec<ChatPerson> = if room.kind == "dm" {
+        facts
+            .members(app, &room.id)?
+            .into_iter()
+            .filter(|a| a != account)
+            .map(|a| ChatPerson {
+                name: facts.people.get(&a).map(|p| p.name.clone()).unwrap_or_default(),
+                account: a,
+                dnd: false,
+            })
+            .collect()
     } else {
-        None
+        vec![]
     };
+    let meta = facts.meta(&room.id);
     let machine_name = room.machine.as_ref().and_then(|m| facts.daemons.get(m)).map(|d| d.name.clone());
     Ok(ChatRoom {
         id: room.id.clone(),
@@ -616,7 +660,9 @@ fn listed_as(
         machine_name,
         target: room.target.clone(),
         project: objects::project_of(room).map(str::to_owned),
-        with,
+        with: others.first().cloned(),
+        others,
+        private: meta.private,
         last: room.last_seq,
         read,
         unread,
@@ -1427,8 +1473,20 @@ fn channel_name(name: &str) -> Result<String, ApiError> {
     }
 }
 
+/// A topic or a DM's name: a line of at most this many characters.
+const MAX_LABEL: usize = 250;
+
+fn label(text: &str) -> Result<String, ApiError> {
+    let t = text.trim();
+    if t.chars().count() > MAX_LABEL || t.contains('\n') {
+        return Err(err(StatusCode::BAD_REQUEST, "that is one line of at most 250 characters"));
+    }
+    Ok(t.to_owned())
+}
+
 /// `POST /api/chat/teams/{team}/channels`: owners and editors make them;
-/// viewers read and post.
+/// viewers read and post. The maker is its first member; public unless
+/// `private` (#118).
 pub async fn new_channel(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -1462,19 +1520,32 @@ pub async fn new_channel(
         return Err(err(StatusCode::CONFLICT, "a team has at most 200 channels; archive or reuse one"));
     }
     app.limits.check_account(CHAT_ROOMS, &s.account)?;
+    let topic = label(&b.topic)?;
     let room = Room { name, ..room };
     // The team's default project (made the first time).
     let project = crate::projects::team_project(&app, &team).await?;
-    app.db.add_chat_room(&room, &[], project.as_deref()).map_err(|e| {
+    // Auto-join is for the public ones: a private channel is by invitation.
+    let meta = RoomMeta { private: b.private, auto_join: b.auto_join && !b.private, dm_key: None };
+    app.db.add_chat_room_with(&room, &[&s.account], project.as_deref(), &meta).map_err(|e| {
         if e.is::<Taken>() { err(StatusCode::CONFLICT, "there's a channel by that name") } else { e.into() }
     })?;
+    if !topic.is_empty() {
+        // The topic it was made with: no system line, nothing yet to read.
+        let new =
+            crate::db::chat_pins::Topic { topic, description: String::new(), author: s.account.clone(), at: now_ms() };
+        app.db.set_chat_topic(&room.id, &new, None, &[])?;
+    }
     app.chat.room(&app.db, &room.id);
-    app.analytics.capture_team(&s.account, &team, "chat channel made", json!({}));
+    app.analytics.capture_team(&s.account, &team, "chat channel made", json!({ "private": b.private }));
+    let facts = Facts::of(&app, Some(&s.account), &[&room]).await?;
     Ok(Json(listed(&app, &facts, &s.account, &room, 0)?))
 }
 
-/// `POST /api/chat/teams/{team}/dms`: the DM with a teammate (made the
-/// first time).
+/// `POST /api/chat/teams/{team}/dms`: the DM with a teammate, or with up to
+/// seven more (#117), made the first time. The same people again reopen it:
+/// adding someone is a different set, so a new conversation that doesn't
+/// show them the history. One who left it and asks for it again comes back
+/// to it from now.
 pub async fn new_dm(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -1496,18 +1567,58 @@ pub async fn new_dm(
         last_seq: 0,
     };
     let facts = Facts::of(&app, Some(&s.account), &[&room]).await?;
-    if b.with == s.account || facts.role(&team, &s.account).is_none() || facts.role(&team, &b.with).is_none() {
-        return Err(err(StatusCode::NOT_FOUND, "nobody by that account in this team"));
+    let mut people: Vec<String> = std::iter::once(b.with.clone()).chain(b.and.iter().cloned()).collect();
+    people.push(s.account.clone());
+    people.sort();
+    people.dedup();
+    let nobody = || err(StatusCode::NOT_FOUND, "nobody by that account in this team");
+    // Not just yourself, and not you twice over.
+    if people.len() < 2 || b.with == s.account || facts.role(&team, &s.account).is_none() {
+        return Err(nobody());
     }
-    if let Some(r) = app.db.chat_dm(&scope, &s.account, &b.with)? {
-        let facts = Facts::of(&app, Some(&s.account), &[&r]).await?;
-        return Ok(Json(listed(&app, &facts, &s.account, &r, 0)?));
+    if people.len() > wire::DM_PEOPLE {
+        return Err(err(StatusCode::BAD_REQUEST, "a DM has at most 8 people"));
+    }
+    if people.iter().any(|a| facts.role(&team, a).is_none()) {
+        return Err(nobody());
+    }
+    let key = people.join(",");
+    let existing = if people.len() == 2 {
+        // Before group DMs: the two people's own, with no key.
+        let other = people.iter().find(|a| **a != s.account).ok_or_else(nobody)?;
+        match app.db.chat_dm(&scope, &s.account, other)? {
+            Some(r) => Some(r),
+            None => app.db.chat_dm_of(&scope, &key)?,
+        }
+    } else {
+        app.db.chat_dm_of(&scope, &key)?
+    };
+    let (app, account) = (&*app, s.account.as_str());
+    let reopen = |r: Room| async move {
+        // Back in a conversation they left, from now.
+        if app.db.add_chat_member(&r.id, account, now_ms())? {
+            app.chat.room(&app.db, &r.id);
+        }
+        let facts = Facts::of(app, Some(account), &[&r]).await?;
+        let from = sight(app, &facts, account, &r).await?.ok_or_else(nobody)?;
+        Ok::<_, ApiError>(Json(listed(app, &facts, account, &r, from)?))
+    };
+    if let Some(r) = existing {
+        return reopen(r).await;
     }
     app.limits.check_account(CHAT_ROOMS, &s.account)?;
-    app.db.add_chat_room(&room, &[&s.account, &b.with], None)?;
-    app.chat.room(&app.db, &room.id);
-    let facts = Facts::of(&app, Some(&s.account), &[&room]).await?;
-    Ok(Json(listed(&app, &facts, &s.account, &room, 0)?))
+    let members: Vec<&str> = people.iter().map(String::as_str).collect();
+    let meta = RoomMeta { dm_key: Some(key.clone()), ..RoomMeta::default() };
+    match app.db.add_chat_room_with(&room, &members, None, &meta) {
+        Ok(()) => app.chat.room(&app.db, &room.id),
+        // Someone made it just now.
+        Err(e) if e.is::<Taken>() => {
+            return reopen(app.db.chat_dm_of(&scope, &key)?.ok_or_else(nobody)?).await;
+        }
+        Err(e) => return Err(e.into()),
+    }
+    let facts = Facts::of(app, Some(&s.account), &[&room]).await?;
+    Ok(Json(listed(app, &facts, &s.account, &room, 0)?))
 }
 
 /// A pane's or session's id as a daemon names it: short, no spaces.
@@ -1618,7 +1729,8 @@ pub async fn room(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<St
     let mut people: Vec<ChatPerson> = people;
     with_dnd(&app, &mut people)?;
     let agents = room_agents(&app, &facts, &room).await?;
-    Ok(Json(ChatRoomDetail { room: listed(&app, &facts, &s.account, &room, from)?, people, agents }))
+    let can_manage = members::may_manage(&facts, &room, &s.account);
+    Ok(Json(ChatRoomDetail { room: listed(&app, &facts, &s.account, &room, from)?, people, can_manage, agents }))
 }
 
 // ---------------------------------------------------------------- agents
@@ -1759,7 +1871,8 @@ async fn room_agents(app: &Platform, facts: &Facts, room: &Room) -> anyhow::Resu
 }
 
 /// `PATCH /api/chat/rooms/{id}`: a channel renamed or archived, by its
-/// team's owners.
+/// team's owners; a DM renamed by any
+/// of its people (#117).
 pub async fn change_room(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -1768,22 +1881,39 @@ pub async fn change_room(
 ) -> J<ChatRoom> {
     gate(&app, &s.account).await?;
     let (room, from, facts) = room_for(&app, &s.account, &id).await?;
-    let team = room.scope.strip_prefix("team:").filter(|_| room.kind == "channel");
-    let Some(team) = team else { return Err(err(StatusCode::BAD_REQUEST, "only a channel is renamed or archived")) };
-    if facts.role(team, &s.account) != Some(TeamRole::Owner) {
-        return Err(err(StatusCode::FORBIDDEN, "a team's owners rename and archive its channels"));
-    }
-    if let Some(name) = &b.name {
-        let name = channel_name(name)?;
-        app.db.rename_chat_room(&room.id, &name).map_err(|e| {
-            if e.is::<Taken>() { err(StatusCode::CONFLICT, "there's a channel by that name") } else { e.into() }
-        })?;
-    }
-    if let Some(archived) = b.archived {
-        app.db.archive_chat_room(&room.id, archived.then(now_ms))?;
+    if room.kind == "dm" {
+        if b.archived.is_some() {
+            return Err(err(StatusCode::BAD_REQUEST, "a DM is only renamed"));
+        }
+        if let Some(name) = &b.name {
+            let name = label(name)?;
+            if name.chars().count() > 80 {
+                return Err(err(StatusCode::BAD_REQUEST, "a DM's name is at most 80 characters"));
+            }
+            app.db.rename_chat_room(&room.id, &name)?;
+        }
+    } else {
+        let team = room.scope.strip_prefix("team:").filter(|_| room.kind == "channel");
+        let Some(team) = team else {
+            return Err(err(StatusCode::BAD_REQUEST, "only a channel is renamed or archived"));
+        };
+        let owner = facts.role(team, &s.account) == Some(TeamRole::Owner);
+        if (b.name.is_some() || b.archived.is_some()) && !owner {
+            return Err(err(StatusCode::FORBIDDEN, "a team's owners rename and archive its channels"));
+        }
+        if let Some(name) = &b.name {
+            let name = channel_name(name)?;
+            app.db.rename_chat_room(&room.id, &name).map_err(|e| {
+                if e.is::<Taken>() { err(StatusCode::CONFLICT, "there's a channel by that name") } else { e.into() }
+            })?;
+        }
+        if let Some(archived) = b.archived {
+            app.db.archive_chat_room(&room.id, archived.then(now_ms))?;
+        }
     }
     app.chat.room(&app.db, &room.id);
     let room = app.db.chat_room(&room.id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such room"))?;
+    let facts = Facts::of(&app, Some(&s.account), &[&room]).await?;
     Ok(Json(listed(&app, &facts, &s.account, &room, from)?))
 }
 

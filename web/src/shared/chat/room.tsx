@@ -39,6 +39,7 @@ import { useSubscribe } from "../ui/hooks";
 import { useChatShown } from "./shown";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 import { ReplyTag, setThreadNav, ThreadFooter } from "./thread-ui";
+import { dmLabel } from "./members";
 
 // ---- machines, by control's id for them
 
@@ -56,7 +57,7 @@ export function machineUp(api: PlatformApi, id: string | null | undefined): bool
 /** What a room is called: `#name`, the other person, or the pane's title. */
 export function roomLabel(r: ChatRoom, api: PlatformApi): string {
   if (r.kind === "channel") return r.name;
-  if (r.kind === "dm") return r.with?.name || "someone who left";
+  if (r.kind === "dm") return dmLabel(r);
   if (r.kind === "pane" && r.target !== null) {
     const what = api.paneTitle(r.machine, r.target);
     // While its machine sleeps the fleet may not know it: the last title
@@ -180,9 +181,11 @@ function keepDraft(key: string, text: string) {
 function emptyNote(r: ChatRoom): string {
   switch (r.kind) {
     case "channel":
-      return `This is the start of #${r.name}. Everyone in the team reads it; write @name to notify someone.`;
+      return r.private
+        ? `This is the start of the private channel #${r.name}. Only the people in it read it; write @name to notify one of them.`
+        : `This is the start of #${r.name}. Anyone in the team can join it; write @name to notify someone.`;
     case "dm":
-      return `Just you and ${r.with?.name ?? "them"}.`;
+      return r.others.length > 1 ? `Just you and ${r.others.map((p) => p.name).join(", ")}.` : `Just you and ${r.with?.name ?? "them"}.`;
     case "pane":
       return "Talk about this pane here. Whoever may read its thread sees it; write @name to notify one of them.";
     case "session":
@@ -198,7 +201,7 @@ function emptyNote(r: ChatRoom): string {
 function readOnly(r: ChatRoom): string {
   if (r.kind === "archive") return "An archive: read only.";
   if (r.archived) return "This channel is archived: read only.";
-  if (r.kind === "dm") return `${r.with?.name ?? "They"} left the team: you can read this, not write.`;
+  if (r.kind === "dm") return "Not enough of the people in it are left in the team: you can read this, not write.";
   return "You can read this room, not write in it.";
 }
 

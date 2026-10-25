@@ -1071,6 +1071,14 @@ auth = "session"
 clients = ["page", "cli"]
 
 [[route]]
+method = "GET"
+path = "/api/chat/teams/{team}/channels"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The channel browser: the team's public channels, joined or not. Private ones are never listed."
+
+[[route]]
 method = "POST"
 path = "/api/chat/teams/{team}/channels"
 process = "platform"
@@ -1228,6 +1236,38 @@ process = "platform"
 auth = "session"
 clients = ["page"]
 note = "Unpins it; none to take off is not an error."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/join"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Into a public channel; a private one is 404."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/leave"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Out of a channel or a DM."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/members"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A channel's creator and its team's owners add people of the team."
+
+[[route]]
+method = "DELETE"
+path = "/api/chat/rooms/{id}/members/{account}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A channel's creator and its team's owners remove a member."
 
 [[route]]
 method = "POST"

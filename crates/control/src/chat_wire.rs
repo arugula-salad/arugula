@@ -152,7 +152,13 @@ impl Rig {
 
     async fn channel(&self, who: &str, name: &str) -> String {
         let v = self.ok(who, "POST", &format!("/api/chat/teams/{TEAM}/channels"), Some(json!({ "name": name }))).await;
-        v["id"].as_str().unwrap().to_owned()
+        let id = v["id"].as_str().unwrap().to_owned();
+        // A channel is its members' (#118): the team's others join it, as
+        // these tests have always taken it to be everyone's.
+        for other in [&self.jake, &self.alex, &self.carol].into_iter().filter(|o| *o != who) {
+            self.ok(other, "POST", &format!("/api/chat/rooms/{id}/join"), None).await;
+        }
+        id
     }
 
     async fn rooms(&self, who: &str) -> Vec<Value> {

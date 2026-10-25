@@ -111,8 +111,15 @@ pub struct ChatRoom {
     /// The project an object thread is in (M196).
     #[serde(default)]
     pub project: Option<String>,
-    /// A DM's other person.
+    /// A DM's other person (for a group DM, the first of `others`).
     pub with: Option<ChatPerson>,
+    /// A DM's other people now, in account order (#117): one in a 1:1, and
+    /// a group DM is named after them unless it was renamed (`name`).
+    #[serde(default)]
+    pub others: Vec<ChatPerson>,
+    /// An invite-only channel (#118), hidden from the browser.
+    #[serde(default)]
+    pub private: bool,
     /// The newest message's number, and the reader's read mark.
     pub last: i64,
     pub read: i64,
@@ -168,7 +175,12 @@ pub struct ChatRooms {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatRoomDetail {
     pub room: ChatRoom,
+    /// Who sees the room: a channel's or a group DM's members (#118).
     pub people: Vec<ChatPerson>,
+    /// The reader may add and remove a channel's members: its creator and
+    /// its team's owners.
+    #[serde(default)]
+    pub can_manage: bool,
     /// The agents a live grant lets read or post here (M197), for everyone
     /// in the room to see: "Jake's agents on geek can read and post here".
     #[serde(default)]
@@ -544,14 +556,58 @@ pub struct ChatMessages {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatNewChannel {
     pub name: String,
+    /// Invite-only and out of the browser (#118); else public.
+    #[serde(default)]
+    pub private: bool,
+    #[serde(default)]
+    pub topic: String,
+    /// Everyone who joins the team later joins it too.
+    #[serde(default)]
+    pub auto_join: bool,
 }
 
-/// `POST /api/chat/teams/{team}/dms`: the DM with a teammate, made the
-/// first time.
+/// `POST /api/chat/teams/{team}/dms`: the DM with a teammate, or (#117,
+/// with `and`) with up to seven more, made the first time: the same people
+/// again reopen it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatNewDm {
     pub with: String,
+    #[serde(default)]
+    pub and: Vec<String>,
+}
+
+/// The most people in one DM, the maker included (#117).
+pub const DM_PEOPLE: usize = 8;
+
+/// A public channel in the browser (#118).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatChannel {
+    pub id: String,
+    pub name: String,
+    pub topic: String,
+    /// How many of the team are in it.
+    pub members: u64,
+    /// The reader is one.
+    pub joined: bool,
+    pub archived: bool,
+}
+
+/// `GET /api/chat/teams/{team}/channels?q=`: the team's public channels
+/// (a private one only shows to its members, in their rooms), by name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatChannels {
+    pub channels: Vec<ChatChannel>,
+}
+
+/// `POST /api/chat/rooms/{id}/members`: a channel's creator or its team's
+/// owners add people of the team.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatAddMembers {
+    pub accounts: Vec<String>,
 }
 
 /// `POST /api/chat/targets`: the thread about a pane or a session, or an
@@ -567,7 +623,7 @@ pub struct ChatOpenTarget {
 }
 
 /// `PATCH /api/chat/rooms/{id}`: a channel renamed or archived, by its
-/// team's owners.
+/// team's owners; a DM renamed (`name`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatRoomChange {
@@ -1262,8 +1318,15 @@ pub struct AgentRoom {
     /// An object thread's global id, and its project.
     pub target: Option<String>,
     pub project: Option<String>,
-    /// A DM's other person.
+    /// A DM's other person (the first, in a group DM).
     pub with: Option<ChatPerson>,
+    /// A DM's other people (#117): a group DM has several.
+    #[serde(default)]
+    pub others: Vec<ChatPerson>,
+    /// An invite-only channel (#118): only the owner's membership reaches
+    /// it, so an agent sees it only when its owner is in.
+    #[serde(default)]
+    pub private: bool,
     /// The newest message's number, and the newest that mentions this
     /// machine's agents.
     pub last: i64,

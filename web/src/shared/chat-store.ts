@@ -10,6 +10,8 @@
 // the message, and its chip says whether it opens for this reader.
 
 import type {
+  ChatChannel,
+  ChatChannels,
   ChatFound,
   ChatLive,
   ChatMessage,
@@ -478,6 +480,11 @@ export class ChatStore {
     return this.detail.get(id)?.people ?? [];
   }
 
+  /** Whether I add and remove a channel's members, as loaded (#118). */
+  canManage(id: string): boolean {
+    return this.detail.get(id)?.can_manage ?? false;
+  }
+
   /** The machines whose agents a grant lets read or post in a room (M197),
    * as loaded (empty until it is). */
   agents(id: string): ChatRoomAgent[] {
@@ -491,12 +498,44 @@ export class ChatStore {
     return room;
   }
 
-  async newChannel(team: string, name: string): Promise<ChatRoom> {
-    return this.took(await call<ChatRoom>("POST", `/api/chat/teams/${enc(team)}/channels`, { name }));
+  async newChannel(team: string, name: string, opts: { private?: boolean; topic?: string } = {}): Promise<ChatRoom> {
+    return this.took(await call<ChatRoom>("POST", `/api/chat/teams/${enc(team)}/channels`, { name, ...opts }));
   }
 
-  async newDm(team: string, withAccount: string): Promise<ChatRoom> {
-    return this.took(await call<ChatRoom>("POST", `/api/chat/teams/${enc(team)}/dms`, { with: withAccount }));
+  /** The DM with one person or, with up to seven more, a group's: the same
+   * people reopen it (#117). */
+  async newDm(team: string, who: string | string[]): Promise<ChatRoom> {
+    const [first, ...and] = typeof who === "string" ? [who] : who;
+    return this.took(await call<ChatRoom>("POST", `/api/chat/teams/${enc(team)}/dms`, { with: first, and }));
+  }
+
+  /** The team's public channels, joined or not (#118). */
+  async channels(team: string, q = ""): Promise<ChatChannel[]> {
+    const r = await call<ChatChannels>("GET", `/api/chat/teams/${enc(team)}/channels${q ? `?q=${enc(q)}` : ""}`);
+    return r.channels;
+  }
+
+  async join(id: string): Promise<ChatRoom> {
+    return this.took(await call<ChatRoom>("POST", `/api/chat/rooms/${enc(id)}/join`));
+  }
+
+  /** Out of a channel or a DM: it leaves the list (a public channel stays
+   * in the browser). */
+  async leave(id: string) {
+    await call<unknown>("POST", `/api/chat/rooms/${enc(id)}/leave`);
+    this.rooms = this.rooms.filter((r) => r.id !== id);
+    this.detail.delete(id);
+    this.emit();
+  }
+
+  async addMembers(id: string, accounts: string[]) {
+    this.took(await call<ChatRoom>("POST", `/api/chat/rooms/${enc(id)}/members`, { accounts }));
+    await this.detailOf(id, true);
+  }
+
+  async removeMember(id: string, account: string) {
+    this.took(await call<ChatRoom>("DELETE", `/api/chat/rooms/${enc(id)}/members/${enc(account)}`));
+    await this.detailOf(id, true);
   }
 
   /** The thread on a pane or a session (made the first time). */

@@ -61,7 +61,7 @@ pub(crate) async fn seeded() -> (Arc<TestHub>, Arc<crate::Platform>, String, Str
     crate::cache::catch_up(&app).await.unwrap();
     let t = crate::projects::team_project(&app, "t").await.unwrap().unwrap();
     let u = crate::projects::team_project(&app, "u").await.unwrap().unwrap();
-    app.db.add_chat_room(&room("ch_general", "channel"), &[], Some(&t)).unwrap();
+    app.db.add_chat_room(&room("ch_general", "channel"), &["a", "b", "x"], Some(&t)).unwrap();
     app.db.add_chat_room(&room("dm_ab", "dm"), &["a", "b"], None).unwrap();
     app.db.add_chat_room(&room("dm_bx", "dm"), &["b", "x"], None).unwrap();
     (hub, app, base, t, u)

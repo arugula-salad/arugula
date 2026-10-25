@@ -1,0 +1,90 @@
+/* The new-channel dialog, the channel browser, the group-DM picker and the
+   member tools (./members.tsx). Palette tokens only; the dialogs sit on the
+   shell's .prompt. */
+
+.members-dialog {
+  display: grid;
+  gap: 12px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.members-dialog small {
+  display: block;
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.members-kind {
+  display: grid;
+  gap: 8px;
+}
+
+.members-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+
+.prompt .members-radio input {
+  flex: none;
+  padding: 0;
+}
+
+.members-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.members-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.members-list li:hover {
+  background: var(--raised-hover);
+}
+
+.members-what {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.members-hint {
+  margin: 0;
+}
+
+.members-add {
+  margin-top: 8px;
+  padding: 4px 10px;
+  color: var(--fg);
+  background: var(--letterbox);
+  border: 1px solid var(--raised-hover);
+  border-radius: 6px;
+}
+
+.members-add:hover {
+  border-color: var(--accent);
+}
+
+.members-remove {
+  margin-left: auto;
+  color: var(--dim);
+}
+
+.members-remove:hover {
+  color: var(--fg);
+}
+
+.members-addable li button {
+  margin-left: auto;
+}

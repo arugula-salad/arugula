@@ -58,7 +58,12 @@ async fn seed(app: &Platform, hub: &TestHub, base: &str) -> (String, String) {
         .unwrap();
     let (st, ch) = call(base, "c", "POST", "/api/chat/teams/u/channels", Some(json!({ "name": "general" }))).await;
     assert_eq!(st, 200, "{ch}");
-    (issue.id, ch["id"].as_str().unwrap().to_owned())
+    let room = ch["id"].as_str().unwrap().to_owned();
+    // A channel is its members' (#118): the team's others join it.
+    for who in ["a", "b"] {
+        call(base, who, "POST", &format!("/api/chat/rooms/{room}/join"), None).await;
+    }
+    (issue.id, room)
 }
 
 async fn say(base: &str, who: &str, room: &str, text: &str) -> i64 {

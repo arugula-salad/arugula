@@ -726,7 +726,7 @@ fn room(id: &str, scope: &str, kind: &str, machine: Option<&str>, target: Option
 pub(crate) fn seed(app: &Platform, hub: &TestHub) {
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor)]);
     hub.flag("team:t", true);
-    app.db.add_chat_room(&room("ch_general", "team:t", "channel", None, None), &[], Some("prj_t")).unwrap();
+    app.db.add_chat_room(&room("ch_general", "team:t", "channel", None, None), &["a", "b"], Some("prj_t")).unwrap();
     for m in 0..5 {
         let id = format!("m{m}");
         hub.daemon(&id, "a", Some("t"));

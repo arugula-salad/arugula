@@ -27,6 +27,7 @@ import { AboutButton, editDescription, editTopic, PinsButton, TopicLine } from "
 import { ThreadPanel } from "./thread-panel";
 import { ThreadsView } from "./threads-view";
 import { badge } from "./threads";
+import { browseChannels, ChatDialogs, LeaveButton, MemberTools, newChannelDialog, newDmDialog } from "./members";
 import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
 import { AgentsChip } from "./agents-chip";
 import { newSection, openGroupMenu, openRoomMenu, RoomStar, toggleGroup } from "./sections";
@@ -75,6 +76,8 @@ interface Group {
   title: string;
   /** What `+` makes here. */
   make?: { label: string; aria: string; run: () => void };
+  /** The channel browser (#118). */
+  browse?: () => void;
   rooms: ChatRoom[];
   none?: string;
   /** Where dropping a room here puts it: `starred`, a section's id, or
@@ -120,16 +123,17 @@ function groupsOf(store: ChatStore, api: PlatformApi, dragging: boolean): Group[
     out.push({
       key: `${team}/channels`,
       title: many ? `${name} · Channels` : "Channels",
-      make: mayMake ? { label: "+", aria: many ? `New channel in ${name}` : "New channel", run: () => void newChannel(store, team, name, api) } : undefined,
+      make: mayMake ? { label: "+", aria: many ? `New channel in ${name}` : "New channel", run: () => newChannelDialog(store, team, name, api) } : undefined,
+      browse: t ? () => browseChannels(store, team, name, api) : undefined,
       rooms: sorted(`${team}/channels`, channels, "name"),
-      none: channels.length ? undefined : mayMake ? "No channels yet. Make one with +." : "No channels yet.",
+      none: mayMake ? "No channels joined. Browse them, or make one with +." : "No channels joined. Browse them.",
       drop: null,
       sort: "name",
     });
     out.push({
       key: `${team}/dms`,
       title: many ? `${name} · Direct messages` : "Direct messages",
-      make: t ? { label: "+", aria: many ? `New direct message in ${name}` : "New direct message", run: () => void newDm(store, t, api) } : undefined,
+      make: t ? { label: "+", aria: many ? `New direct message in ${name}` : "New direct message", run: () => newDmDialog(store, t, api) } : undefined,
       rooms: sorted(`${team}/dms`, dms, "recent"),
       drop: null,
       sort: "recent",
@@ -149,37 +153,6 @@ function groupsOf(store: ChatStore, api: PlatformApi, dragging: boolean): Group[
   const archives = sorted("archives", store.rooms.filter((r) => r.kind === "archive"), "recent");
   if (archives.length) out.push({ key: "archives", title: "Archives", rooms: archives, drop: null, sort: "recent" });
   return out;
-}
-
-async function newChannel(store: ChatStore, team: string, name: string, api: PlatformApi) {
-  const v = await askText(`New channel in ${name}`, "", "one word, like general");
-  if (!v?.trim()) return;
-  try {
-    const r = await store.newChannel(team, v.trim());
-    api.nav.openRoom(r.id);
-  } catch (e) {
-    api.toast(`Couldn't make it: ${(e as Error).message}`);
-  }
-}
-
-/** Someone in the team to write to: picked from its people, or typed. */
-async function newDm(store: ChatStore, t: PlatformTeam, api: PlatformApi) {
-  const toast = api.toast;
-  const people = t.roster.members
-    .filter((m) => m.account !== store.me)
-    .map((m) => ({ value: m.account, label: t.names?.[m.account] || m.name }));
-  if (!people.length) return toast(`Nobody else is in ${t.roster.name} yet`);
-  const v = await askText(`Message someone in ${t.roster.name}`, "", "their name", Promise.resolve(people));
-  if (!v?.trim()) return;
-  const typed = v.trim().toLowerCase();
-  const who = people.find((p) => p.value === v || p.label.toLowerCase() === typed || p.label.toLowerCase().startsWith(typed));
-  if (!who) return toast(`Nobody in ${t.roster.name} is called ${v.trim()}`);
-  try {
-    const r = await store.newDm(t.team, who.value);
-    api.nav.openRoom(r.id);
-  } catch (e) {
-    toast(`Couldn't open it: ${(e as Error).message}`);
-  }
 }
 
 /** The room shown: the route's, else (on a computer) the newest unread,
@@ -258,7 +231,7 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
         class={`chat-row${r.id === picked?.id ? " selected" : ""}${bold(r) ? " unread" : ""}${r.last ? "" : " quiet"}${r.archived || r.level === "nothing" ? " muted" : ""}${dragging === r.id ? " dragging" : ""}`}
         data-chat-room={r.id}
         data-room-kind={r.kind}
-        title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}${r.topic ? `\n${r.topic}` : ""}` : r.kind === "dm" ? `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
+        title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}${r.topic ? `\n${r.topic}` : ""}` : r.kind === "dm" ? r.others.length > 1 ? `You and ${r.others.map((p) => p.name).join(", ")}` : `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
         draggable={!phone}
         onDragStart={(e) => {
           e.dataTransfer?.setData("text/x-arugula-room", r.id);
@@ -274,7 +247,7 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
         onContextMenu={(e) => openRoomMenu(e, store, r, api.toast)}
         onClick={() => nav.openRoom(r.id)}
       >
-        {r.kind === "dm" && r.with ? (
+        {r.kind === "dm" && r.with && r.others.length < 2 ? (
           <span class="chat-sigil chat-dm-pic">
             <MsgAvatar who={r.with.account} name={r.with.name} account={r.with.account} dot />
           </span>
@@ -344,6 +317,11 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
                 {g.title}
                 {shut && unread > 0 && <span class="chat-count">{unread}</span>}
               </button>
+              {g.browse && (
+                <button class="chat-new" title="Browse channels" aria-label="Browse channels" data-room-browse={g.key} onClick={g.browse}>
+                  ⌕
+                </button>
+              )}
               <button
                 class="chat-new chat-group-menu"
                 title={`Sort${g.custom ? ", rename" : ""}`}
@@ -368,6 +346,7 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
           </section>
         );
       })}
+      <ChatDialogs />
     </nav>
   );
 
@@ -490,9 +469,9 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
 function topicOf(r: ChatRoom, api: PlatformApi): string {
   switch (r.kind) {
     case "channel":
-      return [teamName(api, r.team), r.archived ? "archived" : ""].filter(Boolean).join(" · ");
+      return [r.private ? "private" : "", r.topic, teamName(api, r.team), r.archived ? "archived" : ""].filter(Boolean).join(" · ");
     case "dm":
-      return `Direct message · ${teamName(api, r.team)}`;
+      return `${r.others.length > 1 ? "Group message" : "Direct message"} · ${teamName(api, r.team)}`;
     case "pane":
     case "session": {
       const name = machineName(api, r.machine, r.machine_name ?? "a machine");
@@ -594,6 +573,7 @@ function RoomView({
           >
             {bellFor(room).glyph}
           </button>
+          <LeaveButton store={store} room={room} />
           {!phone && (
             <button class={details ? "chat-info on" : "chat-info"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>
               ⓘ
@@ -653,14 +633,7 @@ function RoomDetails({ store, room, close }: { store: ChatStore; room: ChatRoom;
         )}
         <h3>People</h3>
         {people.length === 0 && <p class="chat-none">Just you, so far.</p>}
-        <ul class="chat-people">
-          {people.map((p) => (
-            <li key={p.account} data-room-person={p.account}>
-              <MsgAvatar who={p.account} name={p.name} account={p.account} dot />
-              <span>{p.name}</span>
-            </li>
-          ))}
-        </ul>
+        <MemberTools store={store} room={room} people={people} />
         {room.team && teams(api).find((t) => t.team === room.team)?.role === "owner" && <WebPreviewsSwitch team={room.team} toast={toast} />}
         {owner && (
           <div class="thread-offer-buttons">

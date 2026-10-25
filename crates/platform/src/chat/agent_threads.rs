@@ -99,6 +99,8 @@ fn shown(
         target: r.target,
         project: r.project,
         with: r.with,
+        others: r.others,
+        private: r.private,
         last: r.last,
         last_mention,
         powers,

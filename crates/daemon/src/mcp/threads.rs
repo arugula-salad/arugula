@@ -138,11 +138,19 @@ fn said(e: CloudRefused) -> String {
     }
 }
 
-/// `#general`, `DM with Sam`, `issue #12`.
+/// `#general`, `DM with Sam`, `group DM with Sam, Alex`, `issue #12`.
 fn room_name(r: &Value) -> String {
     let name = r["name"].as_str().unwrap_or("?");
     match r["kind"].as_str() {
+        Some("channel") if r["private"].as_bool() == Some(true) => format!("#{name} (private)"),
         Some("channel") => format!("#{name}"),
+        // A group DM is named after its people unless it was renamed.
+        Some("dm") if r["others"].as_array().is_some_and(|o| o.len() > 1) => {
+            let others = r["others"].as_array().map(Vec::as_slice).unwrap_or_default();
+            let people: Vec<&str> =
+                others.iter().map(|p| p["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("?")).collect();
+            format!("group DM with {}", people.join(", "))
+        }
         Some("dm") => format!("DM with {}", r["with"]["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("?")),
         _ => name.to_owned(),
     }
@@ -540,5 +548,19 @@ mod tests {
         assert_eq!(m["via"], "notes (hud)");
         let line = json!({ "author": "", "name": "", "via": "system", "text": "a's agents on geek can now read here" });
         assert_eq!(super::by(&line), "Arugula");
+    }
+
+    /// A room's name for an agent: a private channel and a group DM say so.
+    #[test]
+    fn room_names_say_private_and_group() {
+        assert_eq!(super::room_name(&json!({ "kind": "channel", "name": "ops", "private": true })), "#ops (private)");
+        assert_eq!(super::room_name(&json!({ "kind": "channel", "name": "ops" })), "#ops");
+        let sam = json!({ "name": "Sam" });
+        let alex = json!({ "name": "Alex" });
+        assert_eq!(
+            super::room_name(&json!({ "kind": "dm", "name": "", "with": sam, "others": [sam, alex] })),
+            "group DM with Sam, Alex"
+        );
+        assert_eq!(super::room_name(&json!({ "kind": "dm", "with": sam, "others": [sam] })), "DM with Sam");
     }
 }

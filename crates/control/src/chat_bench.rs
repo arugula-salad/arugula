@@ -96,7 +96,7 @@ async fn bench(out_of_process: bool) -> String {
     let mut rooms = Vec::new();
     for i in 0..CHANNELS {
         let r = room(format!("ch_{i}"), format!("team:{TEAM}"), "channel", None, None);
-        db.add_chat_room(&r, &[], None).unwrap();
+        db.add_chat_room(&r, &["a1"], None).unwrap();
         rooms.push(r.id);
     }
     for i in 1..=DMS {

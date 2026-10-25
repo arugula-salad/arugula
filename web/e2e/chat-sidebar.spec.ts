@@ -28,6 +28,7 @@ let app = "";
 let general = "";
 let ops = "";
 let dm = "";
+let bobAccount = "";
 let section = "";
 
 async function platform(p: Page, path: string) {
@@ -59,6 +60,7 @@ test("a team with chat on, a machine of Alice's, and three rooms", async ({ brow
   await expect(alice.locator("[data-admit-yes]")).toBeVisible({ timeout: 15_000 });
   await alice.locator("[data-admit-yes]").click();
   await expect.poll(() => alice.evaluate(() => window.__arugula.control!.teams[0].roster.members.length), { timeout: 15_000 }).toBe(2);
+  bobAccount = await alice.evaluate(() => window.__arugula.control!.teams[0].roster.members.find((m) => m.name === "bob")!.account);
   await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
   await t.addMachine(alice, "alices");
   for (const p of [alice, bob]) {
@@ -73,15 +75,24 @@ test("a team with chat on, a machine of Alice's, and three rooms", async ({ brow
   const page = aliceChat.locator("[data-chat-control]");
   for (const name of ["general", "ops"]) {
     await page.locator(`[data-room-new="${team}/channels"]`).click();
-    await aliceChat.locator(".prompt input").fill(name);
-    await aliceChat.locator(".prompt input").press("Enter");
+    await aliceChat.locator("[data-new-channel-name]").fill(name);
+    await aliceChat.locator("[data-new-channel-name]").press("Enter");
     await expect(page.locator("[data-room-view] .chat-title")).toContainText(name);
     const id = (await page.locator("[data-room-view]").getAttribute("data-room-view"))!;
+    // A channel is its members' (#118): Bob is added to see it.
+    await aliceChat.evaluate(
+      async ([room, who]) => {
+        const r = await fetch(`/api/chat/rooms/${room}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accounts: [who] }) });
+        if (!r.ok) throw new Error(`adding: ${r.status}`);
+      },
+      [id, bobAccount] as const,
+    );
     if (name === "general") general = id;
     else ops = id;
   }
   await page.locator(`[data-room-new="${team}/dms"]`).click();
-  await aliceChat.locator(".prompt-choices").getByRole("button", { name: "bob" }).click();
+  await aliceChat.locator("[data-new-dm] li", { hasText: "bob" }).locator("input").check();
+  await aliceChat.locator("[data-dm-start]").click();
   dm = (await page.locator("[data-room-view]").getAttribute("data-room-view"))!;
 });
 

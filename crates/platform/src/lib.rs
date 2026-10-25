@@ -60,6 +60,8 @@ mod chat_previews_tests;
 #[cfg(test)]
 mod chat_reactions_tests;
 #[cfg(test)]
+mod chat_rooms_tests;
+#[cfg(test)]
 mod chat_tests;
 #[cfg(test)]
 mod chat_threads_tests;

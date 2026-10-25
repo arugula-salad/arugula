@@ -90,8 +90,8 @@ test("chat on the platform page: Alice makes #general and mentions Bob, who answ
   const page = alice.locator("[data-chat-control]");
   await expect(page).toBeVisible({ timeout: 15_000 });
   await page.locator(`[data-room-new="${team}/channels"]`).click();
-  await alice.locator(".prompt input").fill("general");
-  await alice.locator(".prompt input").press("Enter");
+  await alice.locator("[data-new-channel-name]").fill("general");
+  await alice.locator("[data-new-channel-name]").press("Enter");
   await expect(page.locator("[data-room-view] .chat-title")).toContainText("general");
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/chat\/ch_[0-9a-f]+-general$/);
   const box = page.locator(".thread-compose textarea");
@@ -101,7 +101,9 @@ test("chat on the platform page: Alice makes #general and mentions Bob, who answ
 
   await platform(bob, "/chat");
   const bobs = bob.locator("[data-chat-control]");
-  await bobs.locator("[data-chat-room]", { hasText: "general" }).click();
+  // A public channel is joined from the browser (#118), and its history is there.
+  await bobs.locator(`[data-room-browse="${team}/channels"]`).click();
+  await bob.locator('[data-browse-channel="general"] [data-browse-join]').click();
   await expect(bobs.locator(".thread-msg").last()).toContainText("the platform page is up");
   await bobs.locator(".thread-compose textarea").fill("seen it, thanks");
   await bobs.locator(".thread-compose textarea").press("Enter");

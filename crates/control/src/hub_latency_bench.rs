@@ -233,7 +233,7 @@ async fn hub_latency_bench() {
     for i in 0..CHANNELS {
         s.platform
             .db
-            .add_chat_room(&room(format!("ch_{i}"), format!("team:{TEAM}"), "channel", None, None), &[], None)
+            .add_chat_room(&room(format!("ch_{i}"), format!("team:{TEAM}"), "channel", None, None), &["a0"], None)
             .unwrap();
     }
     // The platform's change-feed follower, as `arugula-platform` runs it.

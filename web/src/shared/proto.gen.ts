@@ -165,6 +165,12 @@ export type ChangesAsked = { note: string, by: string, at_ms: number,
 revised_ms?: number, };
 
 /**
+ * `POST /api/chat/rooms/{id}/members`: a channel's creator or its team's
+ * owners add people of the team.
+ */
+export type ChatAddMembers = { accounts: Array<string>, };
+
+/**
  * The agent that wrote a message (M197): the machine whose grant it acted
  * through, and its name now. The message's author is the machine's owner.
  */
@@ -179,6 +185,25 @@ export type ChatAgent = { machine: string, machine_name: string, };
  * the page wants too (the machines its messages' agents are on).
  */
 export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null, machines: Array<string>, };
+
+/**
+ * A public channel in the browser (#118).
+ */
+export type ChatChannel = { id: string, name: string, topic: string, 
+/**
+ * How many of the team are in it.
+ */
+members: number, 
+/**
+ * The reader is one.
+ */
+joined: boolean, archived: boolean, };
+
+/**
+ * `GET /api/chat/teams/{team}/channels?q=`: the team's public channels
+ * (a private one only shows to its members, in their rooms), by name.
+ */
+export type ChatChannels = { channels: Array<ChatChannel>, };
 
 /**
  * `PATCH /api/chat/rooms/{id}/messages/{seq}`: the author's new text.
@@ -346,13 +371,22 @@ export type ChatMute = { muted: boolean, };
 /**
  * `POST /api/chat/teams/{team}/channels`: owners and editors make them.
  */
-export type ChatNewChannel = { name: string, };
+export type ChatNewChannel = { name: string, 
+/**
+ * Invite-only and out of the browser (#118); else public.
+ */
+private: boolean, topic: string, 
+/**
+ * Everyone who joins the team later joins it too.
+ */
+auto_join: boolean, };
 
 /**
- * `POST /api/chat/teams/{team}/dms`: the DM with a teammate, made the
- * first time.
+ * `POST /api/chat/teams/{team}/dms`: the DM with a teammate, or (#117,
+ * with `and`) with up to seven more, made the first time: the same people
+ * again reopen it.
  */
-export type ChatNewDm = { with: string, };
+export type ChatNewDm = { with: string, and: Array<string>, };
 
 /**
  * `POST /api/chat/live/open`: the room a page's stream has open (`None`:
@@ -542,9 +576,18 @@ target: string | null,
  */
 project: string | null, 
 /**
- * A DM's other person.
+ * A DM's other person (for a group DM, the first of `others`).
  */
 with: ChatPerson | null, 
+/**
+ * A DM's other people now, in account order (#117): one in a 1:1, and
+ * a group DM is named after them unless it was renamed (`name`).
+ */
+others: Array<ChatPerson>, 
+/**
+ * An invite-only channel (#118), hidden from the browser.
+ */
+private: boolean, 
 /**
  * The newest message's number, and the reader's read mark.
  */
@@ -607,14 +650,23 @@ powers: Array<string>, };
 
 /**
  * `PATCH /api/chat/rooms/{id}`: a channel renamed or archived, by its
- * team's owners.
+ * team's owners; a DM renamed (`name`).
  */
 export type ChatRoomChange = { name?: string, archived?: boolean, };
 
 /**
  * `GET /api/chat/rooms/{id}`: a room and who sees it (whom `@` reaches).
  */
-export type ChatRoomDetail = { room: ChatRoom, people: Array<ChatPerson>, 
+export type ChatRoomDetail = { room: ChatRoom, 
+/**
+ * Who sees the room: a channel's or a group DM's members (#118).
+ */
+people: Array<ChatPerson>, 
+/**
+ * The reader may add and remove a channel's members: its creator and
+ * its team's owners.
+ */
+can_manage: boolean, 
 /**
  * The agents a live grant lets read or post here (M197), for everyone
  * in the room to see: "Jake's agents on geek can read and post here".
