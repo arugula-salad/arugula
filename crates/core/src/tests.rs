@@ -160,7 +160,7 @@ fn editors_typing_in_turn_dont_fight_over_the_size() {
 /// them. A's own window still sizes the tab.
 #[test]
 fn a_presenters_size_holds_against_other_clients() {
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     use crate::{Claim, SIZE_HOLD, SizeHold};
 
