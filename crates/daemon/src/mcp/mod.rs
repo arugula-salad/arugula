@@ -305,8 +305,9 @@ list kind cloud_workspaces lists them, and you act as the user there), \
 history for what happened before (kind output: what panes printed). Output is paged: pass next_offset \
 back as offset. show's kinds: port (a dev server in a browser block beside its terminal), changes (a \
 diff), file (at a line), pr, issue, conversation (a Claude Code conversation, to continue or fork); show \
-one instead of describing it, and once you open a pull request, or one is ready for the person's review or merge, show it (kind pr) rather than linking it, and use draft for the merge; \
-wait (until idle or needs_input) instead of polling output. \
+one instead of describing it, and once you open a pull request, or one is ready for the person's review \
+or merge, show it (kind pr) rather than linking it, and use draft for the merge; wait (until idle or \
+needs_input) instead of polling output. \
 Claude Code hooks put your questions (arugula ask), permission prompts (arugula hook, which anyone allowed can \
 answer), follow-ups (arugula inbox) and attention on cards; without them your questions stay in the terminal. \
 `arugula hooks install` adds them: ask your person first (capabilities says whether yours are live). \
