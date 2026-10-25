@@ -155,6 +155,8 @@ impl Request for crate::api::ConversationsQuery {}
 
 impl Request for crate::api::OpenConversationRequest {}
 
+impl Request for crate::api::DocOpenRequest {}
+
 impl Request for crate::api::Subscription {}
 
 impl Request for crate::api::NotifyRequest {}
@@ -260,6 +262,9 @@ macro_rules! every_op {
         $m!($crate::op::ops::RuleForget);
         $m!($crate::op::ops::DocLinkGet);
         $m!($crate::op::ops::DocLinkDelete);
+        $m!($crate::op::ops::DocsList);
+        $m!($crate::op::ops::DocOpen);
+        $m!($crate::op::ops::DocDelete);
         $m!($crate::op::ops::PaneWait);
         $m!($crate::op::ops::PaneSend);
         $m!($crate::op::ops::PaneKeys);
@@ -351,15 +356,15 @@ pub mod ops {
         Machine, PaneId,
         api::{
             AclSetRequest, Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConversationList,
-            ConversationsQuery, DetectionAnswer, DocLinkUrl, DriverEntry, Empty, FollowUpRequest, FollowedUp,
-            FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo,
-            IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest,
-            LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest, OpenConversationRequest,
-            OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process,
-            PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse, SendRequest, Share,
-            ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus,
-            Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest, WaitResult,
-            WithdrawRequest,
+            ConversationsQuery, DetectionAnswer, DocLinkUrl, DocOpenRequest, DocOpened, DocRow, DriverEntry, Empty,
+            FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs,
+            IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
+            InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest,
+            OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest,
+            Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse,
+            SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest,
+            StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest,
+            WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -562,6 +567,51 @@ pub mod ops {
         const NAME: &'static str = "doc_link.delete";
         const METHOD: Method = Method::Delete;
         const PATH: &'static str = "/api/doc-links/{id}";
+        const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::DOCS);
+        type Path = String;
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `GET /api/docs` (#1493): the Docs in the library, newest first, each
+    /// with the block that shows it and its link's dates.
+    pub struct DocsList;
+
+    impl Op for DocsList {
+        const NAME: &'static str = "docs.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/docs";
+        const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::DOCS);
+        type Path = ();
+        type Req = Empty;
+        type Res = Vec<DocRow>;
+    }
+
+    /// `POST /api/docs/open` (#1493): a Doc from the library in a block; the
+    /// block that has it open already, if one does.
+    pub struct DocOpen;
+
+    impl Op for DocOpen {
+        const NAME: &'static str = "doc.open";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/docs/open";
+        const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::DOCS);
+        type Path = ();
+        type Req = DocOpenRequest;
+        type Res = DocOpened;
+    }
+
+    /// `DELETE /api/docs/ID` (#1493): unshare a Doc, close its block and
+    /// remove it. The machine's own account's, and never an agent's.
+    pub struct DocDelete;
+
+    impl Op for DocDelete {
+        const NAME: &'static str = "doc.delete";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/docs/{id}";
         const ACCESS: Access = Access::Owner;
         const FLAG: Option<&'static str> = Some(crate::flags::DOCS);
         type Path = String;

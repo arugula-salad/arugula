@@ -859,6 +859,10 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     #[cfg(windows)]
     kept.extend(host::collect(&state_dir));
     info!(scopes = launch.scopes, fd_store = launch.fd_store, hold = launch.hold, kept = kept.len(), "pane launcher");
+    // The Docs of the old layout move into the library before the layout is
+    // restored (the blocks' configs name their Doc) and before closed
+    // folders are pruned.
+    docs::library::migrate(&state_dir);
     store.prune_closed(store::CLOSED_RETENTION_MS);
     let integration = if args.no_shell_integration {
         None

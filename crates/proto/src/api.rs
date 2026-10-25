@@ -41,6 +41,9 @@
 //! | GET | `/api/events` | `pane=`, `session=`, `type=a,b`, `follow=1`, `since=` secs | NDJSON `Event`s, each with an `id` (M112); a guest gets the panes they may read; a follow of one pane naming `attention` starts with its attention now (#895) |
 //! | GET | `/api/history` | `pane=`, `session=`, `failed=1`, `since=` secs, `cwd=`, `match=`, `kind=`, `limit=`, `host=` | `[HistoryEntry]`, each with a stable `id` (M112); a guest gets the panes they may read |
 //! | GET | `/api/search` | `re=`, `since=` secs | `[SearchHit]`: lines of output |
+//! | GET | `/api/docs` | | `[DocRow]`: the Docs in the library, newest first (#1493; the owner's) |
+//! | POST | `/api/docs/open` | `DocOpenRequest` | `DocOpened`: the Doc's block, the one that has it open or a new one |
+//! | DELETE | `/api/docs/ID` | | `Empty`: unshared first, then removed (the owner's, never an agent's) |
 //! | GET | `/api/fs/…`, POST `/api/panes/N/cd` | | files on a host: see [`crate::fs`] |
 //! | GET | `/api/host` | | `HostInfo`: this daemon's name and version, its tailnet URL, whether the tailnet has reached it, the control it joined |
 //! | GET | `/api/hosts/self/shell-env` | | `ShellEnv`: the shell environment blocks that run your tools get (#74) |
@@ -576,6 +579,10 @@ pub struct SearchHit {
     /// A synced copy of another host's history (`host=NAME`), not ours.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
+    /// A line of a Doc in the library (#1493): its id. `pane` is the block
+    /// that shows it now, or 0 when none does; `offset` is the line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc: Option<String>,
 }
 
 /// `POST /api/shares`: a read-only link to one terminal pane.
@@ -855,6 +862,52 @@ pub enum WorktreeFate {
     Removed,
     /// Both stay; `why` says what stopped it.
     Kept,
+}
+
+/// One Doc in the library (#1493): `GET /api/docs`. `open` is the block
+/// that shows it now, `shared` its link's dates (never the link).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct DocRow {
+    pub id: String,
+    pub title: String,
+    pub made: u64,
+    pub updated: u64,
+    /// Who made it: an agent (`mcp:NAME`), a person's driver name, or
+    /// `migrated` for a Doc that predates the library.
+    pub by: String,
+    #[serde(default)]
+    pub open: Option<PaneId>,
+    #[serde(default)]
+    pub shared: Option<DocShared>,
+}
+
+/// When a Doc was shared with a link, and last updated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocShared {
+    pub made: u64,
+    pub updated: u64,
+}
+
+/// `POST /api/docs/open` (#1493): a Doc from the library in a block.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct DocOpenRequest {
+    pub id: String,
+    #[serde(default)]
+    pub session: Option<String>,
+    #[serde(default)]
+    pub split: Option<PaneId>,
+}
+
+/// The block that shows the Doc: the one that had it open, or a new one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocOpened {
+    pub pane: PaneId,
 }
 
 /// What a route answers when it has nothing to say: `{}`.

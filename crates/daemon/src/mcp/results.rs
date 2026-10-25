@@ -219,6 +219,10 @@ pub struct Hit {
     pub offset: u64,
     pub command: Option<String>,
     pub line: String,
+    /// A line of a Doc in the library (doc list has them): the Doc's id.
+    /// `pane` is the block that shows it, or 0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub doc: Option<String>,
 }
 
 /// `history` kind output.
@@ -730,7 +734,16 @@ mod tests {
                 "output_offset": 0 }], "total": 1 }),
         );
         same(
-            Hits { hits: vec![Hit { pane: 2, open: false, offset: 4, command: Some("ls".into()), line: "l".into() }] },
+            Hits {
+                hits: vec![Hit {
+                    pane: 2,
+                    open: false,
+                    offset: 4,
+                    command: Some("ls".into()),
+                    line: "l".into(),
+                    doc: None,
+                }],
+            },
             json!({ "hits": [{ "pane": 2, "open": false, "offset": 4, "command": "ls",
                 "line": "l" }] }),
         );

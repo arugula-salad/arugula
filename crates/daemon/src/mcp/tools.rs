@@ -9,10 +9,10 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use arugula_proto::{
     Attention, BlockType, Driver, PaneId, Policy, StartedBy,
-    api::{ActRequest, HistoryEntry, HistoryKind, OpenRequest, PaneSummary, RunRequest, WaitResult},
+    api::{ActRequest, DocOpenRequest, HistoryEntry, HistoryKind, OpenRequest, PaneSummary, RunRequest, WaitResult},
     flags::{self, On},
     forge::{ForgeState, ItemKind, ReviewEvent, Write},
-    op::ops::{ClosePane, ConversationOpen, ConversationsList, ListPanes},
+    op::ops::{ClosePane, ConversationOpen, ConversationsList, DocsList, ListPanes},
 };
 use rmcp::{
     RoleServer,
@@ -582,6 +582,15 @@ pub struct DocNewArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct DocOpenArgs {
+    /// The Doc's id (doc list has them).
+    pub doc: String,
+    /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
+    #[serde(default)]
+    pub beside: Option<PaneArg>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct DocFillArgs {
     /// The Doc block (from doc new).
     pub block: PaneArg,
@@ -984,6 +993,13 @@ const DOC: &[Kind] = &[
         schema: schema_for_type::<DocNewArgs>,
         flag: Some(flags::DOCS),
     },
+    super::ops::kind::<DocsList>(),
+    Kind {
+        name: "open",
+        description: "Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.",
+        schema: schema_for_type::<DocOpenArgs>,
+        flag: Some(flags::DOCS),
+    },
     Kind {
         name: "fill",
         description: r##"Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.
@@ -1308,7 +1324,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "doc",
             title: "Build a document for the user",
-            description: "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Never write the Doc's files by hand.",
+            description: "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.",
             args: Args::Kinds { kinds: table(DOC), default: None },
             read_only: false,
             destructive: false,
@@ -2081,6 +2097,11 @@ impl<'a> Call<'a> {
             },
             ("doc", Some("new")) => match parse(args) {
                 Ok(a) => self.doc_new(a).await,
+                Err(e) => Err(e),
+            },
+            ("doc", Some("list")) => super::ops::call::<DocsList>(self, args).await,
+            ("doc", Some("open")) => match parse(args) {
+                Ok(a) => self.doc_open(a).await,
                 Err(e) => Err(e),
             },
             ("doc", Some("fill")) => match parse(args) {
@@ -3012,9 +3033,12 @@ impl<'a> Call<'a> {
         let store = self.app.mux.store.clone();
         let kinds = self.app.mux.kinds.clone();
         let want = if only.is_some() { 2000 } else { limit };
-        let hits = tokio::task::spawn_blocking(move || history::search(&store, &kinds, &re, since, want))
+        let docs_re = re.clone();
+        let mut hits = tokio::task::spawn_blocking(move || history::search(&store, &kinds, &re, since, want))
             .await
             .unwrap_or_default();
+        // The Doc library's lines (#1493), for an agent that reaches the machine.
+        hits.extend(crate::ops::docs::search_library(self.app, docs_re, since, want.saturating_sub(hits.len())).await);
         let hits: Vec<results::Hit> = hits
             .into_iter()
             .filter(|h| only.as_ref().is_none_or(|o| o.contains(&h.pane)))
@@ -3025,6 +3049,7 @@ impl<'a> Call<'a> {
                 offset: h.offset,
                 command: h.command,
                 line: one_line(&h.line, 300),
+                doc: h.doc,
             })
             .collect();
         done(format!("{} matching lines", hits.len()), results::Hits { hits })
@@ -3177,13 +3202,29 @@ impl<'a> Call<'a> {
         done(format!("Showing team chat {what} in block %{block}"), results::BlockOnly { block })
     }
 
-    /// `doc new`: the block beside the caller's pane, then its outline.
+    /// `doc new`: a Doc in the library, its block beside the caller's pane,
+    /// then its outline.
     async fn doc_new(&self, a: DocNewArgs) -> Out {
-        crate::labs::flag(self.app.control.state_dir(), flags::DOCS)?;
+        let state = self.app.control.state_dir().to_owned();
+        crate::labs::flag(&state, flags::DOCS)?;
         let (beside, host) = self.beside(a.beside.as_ref()).await?;
+        // Two doc new make two Docs: each is made here, before its block.
+        let by = self.by();
+        let title = a.title.clone();
+        let meta = {
+            let state = state.clone();
+            tokio::task::spawn_blocking(move || crate::docs::library::make(&state, &title, &by))
+                .await
+                .map_err(|e| e.to_string())??
+        };
+        // A Doc with no outline is nothing to keep: undone if it fails.
+        let undo = || {
+            let (state, id) = (state.clone(), meta.id.clone());
+            let _ = crate::docs::library::remove(&state, &id);
+        };
         let req = OpenRequest {
             kind: BlockType::Doc,
-            config: json!({ "title": a.title }),
+            config: json!({ "doc": meta.id, "title": a.title }),
             session: None,
             split: beside,
             from_pane: beside,
@@ -3195,7 +3236,13 @@ impl<'a> Call<'a> {
         // Through `open`, which records who started it: an agent block may
         // drive only what it started, so it could not fill its own Doc
         // otherwise.
-        let block = self.open(req).await?;
+        let block = match self.open(req).await {
+            Ok(b) => b,
+            Err(e) => {
+                undo();
+                return Err(e);
+            }
+        };
         let sections: Vec<Value> =
             a.sections.iter().map(|s| json!({ "heading": s.heading, "intent": s.intent })).collect();
         let args = json!({ "title": a.title, "sections": sections });
@@ -3206,8 +3253,8 @@ impl<'a> Call<'a> {
         let outline = match outlined {
             Ok(o) => o,
             Err(e) => {
-                // A Doc with no outline is nothing to look at.
                 let _ = self.app.mux.api(|r| Api::Close(block, r)).await;
+                undo();
                 return Err(e);
             }
         };
@@ -3219,7 +3266,37 @@ impl<'a> Call<'a> {
                 ids.len(),
                 ids.join(", ")
             ),
-            json!({ "block": block, "sections": sections }),
+            json!({ "block": block, "doc": meta.id, "sections": sections }),
+        )
+    }
+
+    /// `doc open`: a Doc from the library in a block beside the caller's
+    /// pane, or the block that has it. The caller drives a block it made;
+    /// one the user (or another agent) had open stays theirs unless nobody
+    /// started it, which the caller then does.
+    async fn doc_open(&self, a: DocOpenArgs) -> Out {
+        crate::labs::flag(self.app.control.state_dir(), flags::DOCS)?;
+        let (beside, host) = self.beside(a.beside.as_ref()).await?;
+        confine(self.on_machine().await?, host.is_some())?;
+        let req = DocOpenRequest { id: a.doc.clone(), session: None, split: beside };
+        let (block, made) =
+            crate::ops::docs::open_doc(self.app, None, req).await.map_err(crate::ops::OpError::sentence)?;
+        let unclaimed = match self.app.mux.api(Api::Panes).await {
+            Some(panes) => panes.iter().find(|p| p.info.id == block).is_some_and(|p| p.info.started_by.is_none()),
+            None => false,
+        };
+        if made || unclaimed {
+            self.started(block).await;
+        }
+        let b =
+            self.app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
+        let state = b.state();
+        let sections: Vec<&str> =
+            state["entries"].as_array().into_iter().flatten().filter_map(|e| e["id"].as_str()).collect();
+        let what = if made { "Opened" } else { "It was already open:" };
+        done(
+            format!("{what} Doc {} in block %{block} ({} sections); doc fill goes on with it", a.doc, sections.len()),
+            json!({ "block": block, "doc": a.doc, "title": state["title"], "sections": sections }),
         )
     }
 
@@ -4976,7 +5053,7 @@ mod tests {
         assert!(docs(On::none()).is_none());
         assert!(docs(On::all()).is_some());
         let Some(Def { args: Args::Kinds { kinds, .. }, .. }) = docs(On::all()) else { panic!("doc has kinds") };
-        assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "fill", "asset", "share"]);
+        assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "list", "open", "fill", "asset", "share"]);
         let off = block_offers(On::none());
         assert!(off.iter().all(|o| o.kind != "doc"), "{off:?}");
         let on = block_offers(On::all());

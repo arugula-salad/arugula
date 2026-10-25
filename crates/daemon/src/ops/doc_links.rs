@@ -57,10 +57,17 @@ impl Handle for DocLinkDelete {
         let Some(entry) = link::get(dir, &id).map_err(OpError::Failed)? else {
             return Err(OpError::Status(StatusCode::NOT_FOUND, "this machine didn't share that Doc".into()));
         };
-        // Its block, if it is open and still holds this link, does it all
-        // and clears its `shared`; otherwise only the key goes.
-        if let Some(b) = cx.app.mux.api(|r| Api::Block(entry.block, r)).await.flatten()
-            && b.kind() == BlockType::Doc
+        // The block that shows its Doc, if one is open and still holds this
+        // link, does it all and clears its `shared`; otherwise only the key
+        // goes.
+        let block = match &entry.doc {
+            Some(doc) => super::docs::open_blocks(cx.app).await.get(doc).copied(),
+            None => None,
+        };
+        if let Some(b) = match block {
+            Some(b) => cx.app.mux.api(|r| Api::Block(b, r)).await.flatten(),
+            None => None,
+        } && b.kind() == BlockType::Doc
         {
             let done = b.call("doc_unshare", serde_json::json!({ "id": id })).await.map_err(why)?;
             if done["other"] != true {

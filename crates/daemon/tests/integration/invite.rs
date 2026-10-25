@@ -720,6 +720,8 @@ async fn a_teams_other_owner_cant_share_a_doc_or_read_its_link() {
     }
     calls.push(("GET", format!("/api/doc-links/{id}")));
     calls.push(("DELETE", format!("/api/doc-links/{id}")));
+    // Deleting a Doc from the library (#1493) is the same account's.
+    calls.push(("DELETE", format!("/api/docs/{}", &id[..16])));
     for (method, path) in &calls {
         let (status, r) = channel_call(&mut dee, &dee_ch, method, path, json!({})).await;
         assert_eq!(status, 403, "dee {method} {path}: {r}");
