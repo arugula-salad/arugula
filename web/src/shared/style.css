@@ -493,11 +493,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   white-space: nowrap;
 }
 
-/* Another window owns this tab's size: a note and a real button. Over the
-   grid, which fills the area for the presenter (#1472). */
+/* Another window owns this tab's size: a note and a real button. */
 .sized-elsewhere {
   position: absolute;
-  z-index: 3;
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
@@ -1216,6 +1214,16 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--danger);
   border-color: var(--danger)66;
   background: var(--danger)22;
+}
+
+.tab-presenting {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-color);
+  white-space: nowrap;
 }
 
 .host-tag {

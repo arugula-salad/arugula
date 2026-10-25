@@ -409,7 +409,6 @@ impl Daemon {
         Ok(())
     }
 
-    /// Resize panes whose cells changed, tell every client, and save soon.
     /// Whether `who` may set `tab`'s size: editors on its session, and the
     /// machine's owner. Viewers letterbox.
     fn may_size(&self, who: &Principal, tab: TabId) -> bool {
@@ -422,6 +421,7 @@ impl Daemon {
                 .is_some_and(|r| r >= Role::Editor)
     }
 
+    /// Resize panes whose cells changed, tell every client, and save soon.
     pub(super) fn changed(&mut self) {
         for (pane, r) in self.mux.pane_rects() {
             let size = (r.cols, r.rows);

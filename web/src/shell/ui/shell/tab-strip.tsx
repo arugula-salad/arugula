@@ -220,6 +220,11 @@ function TabItem({
         )
       )}
       <RemoteTag client={client} tab={tab} />
+      {tab.presenter === client.clientId && (
+        <span class="tab-presenting" data-presenting="me" title="You are presenting this tab">
+          Presenting
+        </span>
+      )}
       <span class="tab-label">{label}</span>
       <TabPeople client={client} tab={tab.id} />
       <AttentionBadge {...tabAttention(client, tab)} client={client} />

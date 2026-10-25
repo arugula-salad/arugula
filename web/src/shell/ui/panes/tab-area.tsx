@@ -146,14 +146,10 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
           )}
         <DropOverlay client={client} tab={drawingTab} cell={drawingCell} />
       </div>
-      {presenting && client.connected && (
-        <div class="sized-elsewhere" data-presenter-bar data-presenting={mine ? "me" : "other"}>
-          {mine ? "Presenting" : `${presenter} is presenting`}
-          {mine ? (
-            <button onClick={() => client.present(tab.id, false)}>Stop</button>
-          ) : (
-            !viewer && <button onClick={() => client.present(tab.id, true)}>Take over</button>
-          )}
+      {presenting && !mine && client.connected && (
+        <div class="sized-elsewhere" data-presenter-bar data-presenting="other">
+          {presenter} is presenting
+          {!viewer && <button onClick={() => client.present(tab.id, true)}>Take over</button>}
         </div>
       )}
       {elsewhere && (

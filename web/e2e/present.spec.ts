@@ -1,12 +1,16 @@
 // #1472: while a window presents a tab, its size is the tab's. Another
 // editor switching to the tab, typing, or asking for the size doesn't
-// take it; "Take over" does, and "Stop" gives the tab back to claims.
+// take it; "Take over" does, and stopping from the tab's menu gives the tab back to claims.
 
 import { expect, test, type Page } from "@playwright/test";
 import { active, closeContexts, open, ready, reset, run, tab, text, type } from "./helpers";
 
 test.afterAll(closeContexts);
 
+const menu = async (p: Page, id: number) => {
+  await p.locator(`[data-tab-id="${id}"]`).click({ button: "right" });
+  await p.getByRole("menuitemradio", { name: "Present" }).click();
+};
 const me = (p: Page) => p.evaluate(() => window.__arugula.client.clientId);
 
 test("a presenter keeps the tab's size until someone takes over", async ({ browser }) => {
@@ -31,8 +35,12 @@ test("a presenter keeps the tab's size until someone takes over", async ({ brows
   await expect.poll(async () => (await tab(a)).presenter).toBe(await me(a));
   await expect.poll(async () => (await tab(a)).owner).toBe(await me(a));
   const sized = await tab(a);
-  await expect(a.locator("[data-presenter-bar]")).toContainText("Presenting");
-  await expect(a.locator("[data-presenter-bar]")).toHaveAttribute("data-presenting", "me");
+  // The presenter's tab is marked; no bar floats over their own rows.
+  const mark = (p: Page) => p.locator(`[data-tab-id="${first.id}"] [data-presenting="me"]`);
+  await expect(mark(a)).toHaveAttribute("title", "You are presenting this tab");
+  await expect(a.locator("[data-presenter-bar]")).toHaveCount(0);
+  await expect(mark(b)).toHaveCount(0);
+  await expect(b.locator("[data-presenter-bar]")).toHaveAttribute("data-presenting", "other");
   // B sees who presents, in place of "Use this window's size".
   await expect(b.locator("[data-presenter-bar]")).toContainText("is presenting");
   await expect(b.locator("[data-sized-elsewhere]")).toHaveCount(0);
@@ -71,13 +79,23 @@ test("a presenter keeps the tab's size until someone takes over", async ({ brows
   await b.locator("[data-presenter-bar]").getByRole("button", { name: "Take over" }).click();
   await expect.poll(async () => (await tab(a)).presenter).toBe(await me(b));
   await expect.poll(async () => (await tab(a)).owner).toBe(await me(b));
-  await expect(b.locator("[data-presenter-bar]")).toHaveAttribute("data-presenting", "me");
+  await expect(mark(b)).toHaveCount(1);
+  await expect(mark(a)).toHaveCount(0);
   await expect(a.locator("[data-presenter-bar]")).toHaveAttribute("data-presenting", "other");
+  await expect(b.locator("[data-presenter-bar]")).toHaveCount(0);
 
-  // B stops: both bars go, and nobody's pinned.
-  await b.locator("[data-presenter-bar]").getByRole("button", { name: "Stop" }).click();
+  // B stops from the tab's menu: the marker and A's bar go, and nobody's pinned.
+  await b.locator(`[data-tab-id="${first.id}"]`).click({ button: "right" });
+  await b.getByRole("menuitemradio", { name: "Present" }).click();
   await expect.poll(async () => (await tab(a)).presenter).toBeUndefined();
   await expect(a.locator("[data-presenter-bar]")).toHaveCount(0);
-  await expect(b.locator("[data-presenter-bar]")).toHaveCount(0);
+  await expect(mark(b)).toHaveCount(0);
   await run(a, pane, "echo done-$((5+5))", "done-10");
+
+  // A presents again and stops from the menu: the marker follows the menu.
+  await menu(a, first.id);
+  await expect(mark(a)).toHaveCount(1);
+  await menu(a, first.id);
+  await expect(mark(a)).toHaveCount(0);
+  await expect.poll(async () => (await tab(a)).presenter).toBeUndefined();
 });
