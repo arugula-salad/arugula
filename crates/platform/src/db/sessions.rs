@@ -1060,6 +1060,8 @@ impl Db {
                 state: s.seen_as().as_str().into(),
                 n: s.daemon_n,
                 prompts: prompts.iter().map(Prompt::wire).collect(),
+                // M257 keeps them and serves them here.
+                actions: vec![],
             });
         }
         Ok(out)

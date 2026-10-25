@@ -271,6 +271,42 @@ pub struct SessionWork {
     /// Its queued prompts, oldest first: what the next turn starts with.
     #[serde(default)]
     pub prompts: Vec<SessionPrompt>,
+    /// What people asked of its agent that the machine hasn't done yet
+    /// (M257's control side; M255 does them), oldest first: listed on every
+    /// pull until a report the platform took names it
+    /// ([`SessionDetail::actions`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<SessionAction>,
+}
+
+/// Something a person asked of a session's agent: answer its question,
+/// approve or deny its permission, or cancel its turn (the session goes
+/// on). Stopping the session isn't one: control moves it to `stopped`,
+/// and the machine stops the agent when it's no longer listed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionAction {
+    /// `sac_` and 32 hex characters: the machine does each once.
+    pub id: String,
+    /// The account that asked: the agent's transcript names them.
+    pub by: String,
+    /// `answer` (a question), `approve` or `deny` (a permission), or
+    /// `cancel` (the turn).
+    pub kind: String,
+    /// The open request it answers, as the `needs_input` report named it
+    /// ([`SessionDetail::request`]); none: whichever is open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
+    /// `answer`: the answer's content, an object (`{"question_0": "Blue"}`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer: Option<serde_json::Value>,
+    /// `approve`: the option chosen (`allow-once` by default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub option: Option<String>,
+    /// `deny`: why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// When it was asked (ms).
+    pub at: u64,
 }
 
 /// A prompt queued in a session's thread.
@@ -380,6 +416,22 @@ pub struct SessionDetail {
     /// A turn's: how many paths it left uncommitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uncommitted: Option<u32>,
+    /// The [`SessionAction`]s this report carries out: an answer, approval
+    /// or denial on the move from `needs_input` back to `working`, a cancel
+    /// on the turn's end (or, with no turn to cancel, on whatever report
+    /// comes next).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<String>,
+    /// To `needs_input`: the open request's id, which an action names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
+    /// To `needs_input`: `permission` or `question`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask: Option<String>,
+    /// To `needs_input` for a permission: its options' ids (`allow-once`,
+    /// `reject` …).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
 }
 
 /// One state change, signed by the machine that made it.
@@ -451,6 +503,11 @@ mod tests {
         let d = SessionDetail { tool: Some("Bash".into()), ..SessionDetail::default() };
         assert_eq!(serde_json::to_string(&d).unwrap(), r#"{"tool":"Bash"}"#);
         assert_eq!(serde_json::to_string(&SessionDetail::default()).unwrap(), "{}");
+        assert!(w.sessions[0].actions.is_empty(), "a platform without M257's actions");
+        let a: SessionAction =
+            serde_json::from_str(r#"{"id":"sac_1","by":"a","kind":"answer","answer":{"question_0":"Blue"},"at":1}"#)
+                .unwrap();
+        assert_eq!((a.request, a.option), (None, None));
     }
 
     /// Members' text goes in plain; GitHub's fenced as quoted data, in a
