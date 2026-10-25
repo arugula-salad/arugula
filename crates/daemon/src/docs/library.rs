@@ -259,7 +259,10 @@ fn migrate_inner(state_dir: &Path, copy: Copy) -> Result<(), String> {
 
 /// The block folders with an old-layout Doc, and the Doc ids earlier passes
 /// gave block folders: `(pane, open, id)` by folder.
-fn scan(state_dir: &Path) -> (Vec<Old>, HashMap<PathBuf, (PaneId, bool, String)>) {
+/// A block folder's Doc: `(pane, open, id)`.
+type Known = HashMap<PathBuf, (PaneId, bool, String)>;
+
+fn scan(state_dir: &Path) -> (Vec<Old>, Known) {
     let (mut olds, mut ids) = (Vec::new(), HashMap::new());
     for sub in ["blocks", "closed"] {
         let Ok(entries) = std::fs::read_dir(state_dir.join(sub)) else { continue };
