@@ -69,7 +69,11 @@ pub struct TeamChat {
 impl TeamChat {
     pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
         let config: Config = serde_json::from_value(config).map_err(|e| format!("chat config: {e}"))?;
-        Ok(Arc::new(Self { ctx, config: Mutex::new(config.checked()?) }))
+        let b = Arc::new(Self { ctx, config: Mutex::new(config.checked()?) });
+        // Pages already connected hear of a new block's state only when it
+        // changes: say it once, or the block waits on "…" until a reload.
+        b.ctx.changed();
+        Ok(b)
     }
 
     /// The page moved: keep where, unless the block is pinned to a room.
