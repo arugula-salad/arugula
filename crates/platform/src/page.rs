@@ -176,7 +176,11 @@ mod tests {
         // found), as a 404 (UI audit #193).
         for p in ["/agents", "/agents/", "/nope/p/prj_1", "/P/prj_1", "/index"] {
             let r = page.serve(&Method::GET, p);
-            assert_eq!((r.status().as_u16(), header(&r, header::CONTENT_TYPE)), (404, "text/html; charset=utf-8"), "{p}");
+            assert_eq!(
+                (r.status().as_u16(), header(&r, header::CONTENT_TYPE)),
+                (404, "text/html; charset=utf-8"),
+                "{p}"
+            );
             assert!(body(r).await.contains("id=root"), "{p}");
         }
         let r = page.serve(&Method::POST, "/");
@@ -191,7 +195,8 @@ mod tests {
     /// would be a 404 (UI audit #193).
     #[test]
     fn pages_are_the_web_routers_first_segments() {
-        let ts = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/src/platform/paths.ts")).unwrap();
+        let ts =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/src/platform/paths.ts")).unwrap();
         let quoted = |s: &str| -> Vec<String> { s.split('"').skip(1).step_by(2).map(str::to_owned).collect() };
         let top = ts.split("export const TOP = [").nth(1).and_then(|s| s.split(']').next()).expect("TOP in paths.ts");
         let mut top = quoted(top);
