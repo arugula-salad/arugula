@@ -124,15 +124,14 @@ pub(crate) struct World {
 }
 
 impl World {
-    /// A daemon with its owner, FRIEND a viewer and EDITOR an editor, the
-    /// `docs` flag on, joined to the fake control, and an agent block that
-    /// has made a Doc of two sections.
+    /// A daemon with its owner, FRIEND a viewer and EDITOR an editor,
+    /// joined to the fake control, and an agent block that has made a Doc
+    /// of two sections.
     pub(crate) fn new(env: &[(&str, &str)]) -> World {
         let fake = Fake::default();
         let (rt, url) = serve(fake.clone());
         let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
         let d = Daemon::child_in(&args, env, |state| enroll(state, &url));
-        arugula_proto::flags::set(&d.state, "docs", true).unwrap();
         let p = &d.get("/api/panes")[0];
         let session = p["session"].as_u64().unwrap();
         d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": "viewer" }));
@@ -478,16 +477,6 @@ fn share_follows_drive_the_flag_and_the_kind() {
         let (status, text) =
             w.d.raw_as(who, "POST", &format!("/api/blocks/{}/call/doc_share_ask", w.doc), Some(json!({})));
         assert_eq!(status, 403, "{who}: {text}");
-    }
-
-    // Off: the kind is refused with how to turn it on (a build without
-    // Labs has no flags to turn off).
-    #[cfg(feature = "labs")]
-    {
-        arugula_proto::flags::set(&w.d.state, "docs", false).unwrap();
-        let e = agent_mcp(&w.d, w.agent, "doc", json!({ "kind": "share", "block": w.doc }));
-        assert!(e.is_err(), "{e:?}");
-        assert!(w.card().is_none());
     }
 }
 

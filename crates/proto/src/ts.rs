@@ -65,6 +65,8 @@ fn generate() -> String {
     c.visit::<crate::telemetry::TelemetryInfo>();
     c.visit::<crate::telemetry::TelemetrySetRequest>();
     c.visit::<crate::telemetry::TelemetryNoteRequest>();
+    c.visit::<crate::sharing::Sharing>();
+    c.visit::<crate::sharing::SharingSetRequest>();
     c.visit::<ControlState>();
     c.visit::<HostInfo>();
     c.visit::<InviteRequest>();
@@ -239,6 +241,13 @@ fn flags_table() -> String {
             f.default,
             f.local_only
         ));
+    }
+    out.push_str("] as const;\n");
+    out.push_str(
+        "\n/** Renamed Labs flags (`arugula_proto::flags::ALIASES`, aru-117): the old\n * name, then the new. A daemon from before the rename reports the old. */\nexport const FLAG_ALIASES = [\n",
+    );
+    for (old, new) in crate::flags::ALIASES {
+        out.push_str(&format!("  [{old:?}, {new:?}],\n"));
     }
     out.push_str("] as const;\n");
     out

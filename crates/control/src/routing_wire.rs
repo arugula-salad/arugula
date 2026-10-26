@@ -1138,8 +1138,21 @@ async fn labs_flags_go_to_the_machines_they_are_for() {
     assert_eq!(flags(&c, &team_box).await, json!({ "account": { "chat": false }, "team": { "chat": true } }));
     assert_eq!(flags(&c, &own_box).await, json!({ "account": { "chat": false }, "team": {} }));
 
-    // Guest ssh and the agent catalog are each machine's alone.
-    for name in ["guest-ssh", "agents"] {
+    // A renamed flag set by its old name (aru-117, an older page) is kept
+    // by its new one, and a machine is sent both, for a daemon from before.
+    let set = json!({ "name": "workspaces", "on": true, "team": team });
+    let (st, v) = c.as_person(&owner, "POST", "/api/flags", Some(set)).await;
+    assert_eq!((st, &v["flags"]), (200, &json!({ "chat": true, "chant-workspaces": true })));
+    assert_eq!(
+        flags(&c, &team_box).await["team"],
+        json!({ "chat": true, "chant-workspaces": true, "workspaces": true })
+    );
+    let unset = json!({ "name": "chant-workspaces", "on": null, "team": team });
+    assert_eq!(c.as_person(&owner, "POST", "/api/flags", Some(unset)).await.0, 200);
+
+    // Guest ssh and the agent catalog are each machine's alone, by either
+    // name.
+    for name in ["guest-ssh", "agent-delegation", "agents"] {
         let set = json!({ "name": name, "on": true, "team": team });
         let (st, v) = c.as_person(&owner, "POST", "/api/flags", Some(set)).await;
         assert_eq!(st, 400, "{name}: {v}");

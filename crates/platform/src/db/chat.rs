@@ -13,8 +13,9 @@
 //!   pane or a session there), `account:<id>` (an archive, M124), or
 //!   `project:<id>` (the thread on an object in that project, M196).
 //! - Control numbers messages per room (`seq`), in the same transaction
-//!   that moves the room's `last_seq`. M124's import numbers old messages
-//!   0 and below, before the room's own.
+//!   that moves the room's `last_seq`. M124's import numbered old messages
+//!   0 and below, before the room's own; it's gone (native #203), and what
+//!   it brought in stays as it was (`imported`, `imported_id`).
 //! - A deleted message keeps its row and number, with no text, quote, pane
 //!   or mentions, so numbers and read marks hold.
 
@@ -145,14 +146,6 @@ pub struct NewMessage<'a> {
     /// also sent to the channel.
     pub parent: Option<i64>,
     pub also: bool,
-}
-
-/// A message brought in from a machine (M124): its number there, and the
-/// name its author had there.
-pub struct OldMessage<'a> {
-    pub id: u64,
-    pub name: &'a str,
-    pub m: NewMessage<'a>,
 }
 
 /// Which page of a room's messages.
@@ -641,107 +634,6 @@ impl Db {
             |r| Ok((r.get::<String>(0)?, r.get::<i64>(1)?)),
         )?;
         Ok(rows.into_iter().collect())
-    }
-
-    /// Bring in a machine's old messages (M124), each once by its old
-    /// number (`imported_id`): those the room has already are left out.
-    /// While the room holds nothing of control's own, they keep their
-    /// numbers. Once it does, every message brought in goes before
-    /// control's, numbered up to 0 in their old order (S41 q6), so a later
-    /// part of an import still lands after the earlier ones. How many were
-    /// added, and how many it had.
-    pub fn import_chat_messages(&self, room: &str, old: &[OldMessage]) -> Result<(usize, usize)> {
-        // Far below any number a room gives, while they're put in order.
-        const PARKED: i64 = -(1 << 50);
-        let mut c = self.c();
-        let tx = c.transaction()?;
-        // One import or post in the room at a time (M144): both move the
-        // room's row.
-        tx.query_row(&format!("SELECT id FROM chat_rooms WHERE id = ?1{}", tx.for_update()), params![room], |r| {
-            r.get::<String>(0)
-        })?;
-        let have: std::collections::HashSet<i64> = tx
-            .query_map(
-                "SELECT imported_id FROM chat_messages WHERE room = ?1 AND imported_id IS NOT NULL",
-                params![room],
-                |r| r.get(0),
-            )?
-            .into_iter()
-            .collect();
-        let mut new: Vec<&OldMessage> = old.iter().filter(|o| !have.contains(&(o.id as i64))).collect();
-        new.sort_by_key(|o| o.id);
-        new.dedup_by_key(|o| o.id);
-        let already = old.len() - new.len();
-        if new.is_empty() {
-            return Ok((0, already));
-        }
-        let own: bool = tx.query_row(
-            "SELECT EXISTS (SELECT 1 FROM chat_messages WHERE room = ?1 AND imported_id IS NULL)",
-            params![room],
-            |r| r.get(0),
-        )?;
-        if own {
-            tx.execute(
-                "UPDATE chat_messages SET seq = ?2 - imported_id WHERE room = ?1 AND imported_id IS NOT NULL",
-                params![room, PARKED],
-            )?;
-        }
-        let mut bytes = 0i64;
-        for o in &new {
-            let m = &o.m;
-            let id = o.id as i64;
-            tx.execute(
-                "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions,
-                 imported, imported_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-                params![
-                    room,
-                    if own { PARKED - id } else { id },
-                    m.author,
-                    m.at,
-                    m.text,
-                    m.quote,
-                    m.ref_machine,
-                    m.ref_pane,
-                    serde_json::to_string(m.mentions)?,
-                    o.name,
-                    id
-                ],
-            )?;
-            bytes += (m.text.len() + m.quote.map_or(0, str::len)) as i64;
-        }
-        let last = if own {
-            // All of them, in their old order, up to 0.
-            tx.execute(
-                "UPDATE chat_messages SET seq = (
-                     SELECT n FROM (
-                         SELECT id, row_number() OVER (ORDER BY imported_id)
-                             - (SELECT count(*) FROM chat_messages WHERE room = ?1 AND imported_id IS NOT NULL) AS n
-                         FROM chat_messages WHERE room = ?1 AND imported_id IS NOT NULL
-                     ) x WHERE x.id = chat_messages.id)
-                 WHERE room = ?1 AND imported_id IS NOT NULL",
-                params![room],
-            )?;
-            0
-        } else {
-            new.last().map_or(0, |o| o.id as i64)
-        };
-        tx.execute(
-            "UPDATE chat_rooms SET last_seq = CASE WHEN last_seq > ?2 THEN last_seq ELSE ?2 END, bytes = bytes + ?3
-             WHERE id = ?1",
-            params![room, last, bytes],
-        )?;
-        tx.commit()?;
-        Ok((new.len(), already))
-    }
-
-    /// An archive's reader (M124), from when they read it (ms).
-    pub fn set_chat_member_from(&self, room: &str, account: &str, from: u64) -> Result<()> {
-        self.c().execute(
-            "INSERT INTO chat_members (room, account, from_ms) VALUES (?1, ?2, ?3)
-             ON CONFLICT (room, account) DO UPDATE SET from_ms = excluded.from_ms",
-            params![room, account, from as i64],
-        )?;
-        Ok(())
     }
 
     /// From when a member of a room reads it (ms); `None`: not a member.
@@ -1580,61 +1472,6 @@ mod tests {
         assert_eq!((ms.iter().map(|m| m.seq).collect::<Vec<_>>(), more), (vec![1, 2, 3], false));
         let (ms, more) = db.chat_messages("r1", Page::After(3), 1).unwrap();
         assert_eq!((ms.iter().map(|m| m.seq).collect::<Vec<_>>(), more), (vec![4], true));
-    }
-
-    fn import(db: &Db, room: &str, ids: &[u64]) -> (usize, usize) {
-        let texts: Vec<String> = ids.iter().map(|i| format!("old {i}")).collect();
-        let old: Vec<OldMessage> = ids
-            .iter()
-            .zip(&texts)
-            .map(|(id, text)| OldMessage {
-                id: *id,
-                name: "Jake",
-                m: NewMessage {
-                    author: "a1",
-                    at: *id,
-                    text,
-                    quote: None,
-                    ref_machine: None,
-                    ref_pane: None,
-                    mentions: &[],
-                    agent: None,
-                    via: None,
-                    parent: None,
-                    also: false,
-                },
-            })
-            .collect();
-        db.import_chat_messages(room, &old).unwrap()
-    }
-
-    fn numbered(db: &Db, room: &str) -> Vec<(i64, String)> {
-        db.chat_messages(room, Page::After(i64::MIN), 200).unwrap().0.into_iter().map(|m| (m.seq, m.text)).collect()
-    }
-
-    #[test]
-    fn imports_keep_numbers_or_go_before_controls_own() {
-        let db = Db::test();
-        let n = |seq: i64, t: &str| (seq, t.to_owned());
-        // A room with nothing of its own: old numbers kept, in parts, and
-        // each once.
-        room(&db, "fresh", "machine:m", "pane", &[]);
-        assert_eq!(import(&db, "fresh", &[1, 2]), (2, 0));
-        assert_eq!(import(&db, "fresh", &[2, 3]), (1, 1));
-        assert_eq!(numbered(&db, "fresh"), [n(1, "old 1"), n(2, "old 2"), n(3, "old 3")]);
-        assert_eq!(db.chat_room("fresh").unwrap().unwrap().last_seq, 3);
-        assert_eq!(post(&db, "fresh", "a2", "new", None, &[]), 4);
-        assert_eq!(db.chat_unread("fresh", "a3", 0, 0).unwrap(), (1, 0), "old messages count as read");
-
-        // A room used in control first: they go before its own, and a later
-        // part still lands after the earlier ones.
-        room(&db, "used", "machine:m", "session", &[]);
-        post(&db, "used", "a2", "new 1", None, &[]);
-        assert_eq!(import(&db, "used", &[1, 2]), (2, 0));
-        assert_eq!(import(&db, "used", &[3]), (1, 0));
-        assert_eq!(numbered(&db, "used"), [n(-2, "old 1"), n(-1, "old 2"), n(0, "old 3"), n(1, "new 1")]);
-        assert_eq!(post(&db, "used", "a2", "new 2", None, &[]), 2);
-        assert_eq!(db.chat_bytes("machine:m").unwrap() as usize, "old 1".len() * 6 + "new".len() + "new 1".len() * 2);
     }
 
     #[test]

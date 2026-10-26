@@ -149,7 +149,7 @@ fn claude_code_in_a_vm() {
         return;
     }
     let d = Daemon::child_with(&["--wisp-token-file", token.to_str().unwrap()]);
-    // VMs are the `vms` flag's (#347).
+    // VMs are the `sandbox-providers` flag's (#347).
     arugula_testkit::labs(&d.state, true);
     let config = json!({ "agent": "claude", "model": "haiku", "prompt": PROMPT });
     let id = d.open_with(json!({ "type": "agent", "vm": true, "config": config }));

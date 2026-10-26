@@ -53,8 +53,7 @@ pub(crate) async fn open_blocks(app: &App) -> HashMap<String, PaneId> {
     out
 }
 
-/// `search`'s lines of the Docs in the library (a Doc no block shows too),
-/// when `docs` is on.
+/// `search`'s lines of the Docs in the library (a Doc no block shows too).
 pub(crate) async fn search_library(
     app: &App,
     re: regex::Regex,
@@ -62,7 +61,7 @@ pub(crate) async fn search_library(
     limit: usize,
 ) -> Vec<arugula_proto::api::SearchHit> {
     let state = app.control.state_dir().to_owned();
-    if limit == 0 || crate::labs::flag(&state, arugula_proto::flags::DOCS).is_err() {
+    if limit == 0 {
         return vec![];
     }
     let open = open_blocks(app).await;

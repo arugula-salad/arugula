@@ -46,7 +46,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["chat", "vms", "workspaces", "guest-ssh", "forges", "agents", "docs"] as const;
+const FLAGS = ["sandbox-providers", "chant-workspaces", "additional-forges", "agent-delegation"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -61,35 +61,31 @@ const onNow = () =>
     .filter(([, on]) => on)
     .map(([name]) => name);
 
-/** Which flags' features this page shows, each by its own sign. */
-async function shown(page: Page, pane: number): Promise<Flag[]> {
+/** Which flags' features this page shows, each by its own sign; and
+ * `guest-ssh` for *Invite over ssh…*, which is a sharing setting now
+ * (native #205), so no flag shows it. */
+async function shown(page: Page, pane: number): Promise<(Flag | "guest-ssh")[]> {
   await page.evaluate(() => window.__arugula.client.loadFeatures());
-  const out: Flag[] = [];
+  const out: (Flag | "guest-ssh")[] = [];
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
   await expect(page.getByRole("menuitem", { name: "Share read-only link…" })).toBeVisible();
   const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
   await page.keyboard.press("Escape");
-  if (items.includes("New VM pane on the right")) out.push("vms");
+  if (items.includes("New VM pane on the right")) out.push("sandbox-providers");
   if (items.includes("Invite over ssh…")) out.push("guest-ssh");
   const page_says = await page.evaluate(() => {
     const c = window.__arugula.client as unknown as { flag(n: string): boolean; forgeLink(u: string): string | null };
     return {
-      // Chat is control's, on its platform page (M155): the machine's flag
-      // draws nothing here of its own, but the page has it.
-      chat: c.flag("chat"),
-      workspaces: c.flag("workspaces"),
+      workspaces: c.flag("chant-workspaces"),
       forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
       // M76 is the daemon's and the CLI's; the page's catalog is M77's.
-      agents: c.flag("agents"),
-      docs: c.flag("docs"),
+      agents: c.flag("agent-delegation"),
     };
   });
-  if (page_says.chat) out.push("chat");
-  if (page_says.workspaces) out.push("workspaces");
-  if (page_says.forges) out.push("forges");
-  if (page_says.agents) out.push("agents");
-  if (page_says.docs) out.push("docs");
-  return FLAGS.filter((f) => out.includes(f));
+  if (page_says.workspaces) out.push("chant-workspaces");
+  if (page_says.forges) out.push("additional-forges");
+  if (page_says.agents) out.push("agent-delegation");
+  return [...FLAGS, "guest-ssh" as const].filter((f) => out.includes(f));
 }
 
 async function start(page: Page) {
@@ -120,34 +116,34 @@ test("a machine that hasn't asked isn't offered Developer settings, and #develop
   expect(existsSync(join(state, "flags.json"))).toBe(false);
 });
 
-const chatFlag = (page: Page) => page.evaluate(() => window.__arugula.client.flag("chat"));
+const workspacesFlag = (page: Page) => page.evaluate(() => window.__arugula.client.flag("workspaces"));
 
-test("turning chat on in the dialog turns on chat, and nothing else, without a reload", async ({ page }) => {
+test("turning chant workspaces on in the dialog turns on them, and nothing else, without a reload", async ({ page }) => {
   const pane = await start(page);
   await page.goto("/#developer");
-  await dialog(page).locator('[data-flag="chat"] input').check();
-  await expect.poll(() => chatFlag(page)).toBe(true);
-  // Chat itself is on control's platform page: nothing of it here.
-  await expect(page.locator("[data-open-chat]")).toHaveCount(0);
+  // Chat isn't a flag (native #203): it's control's, by team.
+  await expect(dialog(page).locator('[data-flag="chat"]')).toHaveCount(0);
+  await dialog(page).locator('[data-flag="workspaces"] input').check();
+  await expect.poll(() => workspacesFlag(page)).toBe(true);
   await expect(dialog(page).locator("[data-flag] input:checked")).toHaveCount(1);
-  expect(onNow()).toEqual(["chat"]);
+  expect(onNow()).toEqual(["workspaces"]);
   await dialog(page).getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog(page)).toBeHidden();
-  expect(await shown(page, pane)).toEqual(["chat"]);
+  expect(await shown(page, pane)).toEqual(["workspaces"]);
   // The swarm's views are no flag's: all four, whatever is on.
   await page.goto("/#swarm");
   await expect(page.locator(".swarm")).toBeVisible();
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 });
 
-test("once asked for, the account menu offers them; off takes chat away again", async ({ page }) => {
+test("once asked for, the account menu offers them; off takes chant workspaces away again", async ({ page }) => {
   const pane = await start(page);
-  expect(await chatFlag(page)).toBe(true);
+  expect(await workspacesFlag(page)).toBe(true);
   await page.locator(".ws-head [data-account-menu]").click();
   await page.getByRole("menuitem", { name: "Developer settings…" }).click();
-  await expect(dialog(page).locator('[data-flag="chat"] input')).toBeChecked();
-  await dialog(page).locator('[data-flag="chat"] input').uncheck();
-  await expect.poll(() => chatFlag(page)).toBe(false);
+  await expect(dialog(page).locator('[data-flag="workspaces"] input')).toBeChecked();
+  await dialog(page).locator('[data-flag="workspaces"] input').uncheck();
+  await expect.poll(() => workspacesFlag(page)).toBe(false);
   expect(onNow()).toEqual([]);
   await page.keyboard.press("Escape");
   expect(await shown(page, pane)).toEqual([]);
@@ -166,17 +162,37 @@ test("each flag turns on its own feature and no other", async ({ page }) => {
   }
 });
 
+test("a renamed flag's old name still turns its feature on, under its new name", async ({ page }) => {
+  // aru-117: `PUT /api/flags/vms` is `sandbox-providers`; only new names show.
+  const pane = await start(page);
+  const renamed = [
+    ["vms", "sandbox-providers"],
+    ["workspaces", "chant-workspaces"],
+    ["forges", "additional-forges"],
+    ["agents", "agent-delegation"],
+  ] as const;
+  for (const [old, now] of renamed) {
+    expect((await setFlag(old, true)).ok, old).toBe(true);
+    expect(onNow(), old).toEqual([now]);
+    expect(await shown(page, pane), `${old} on`).toEqual([now]);
+    expect((await setFlag(old, false)).ok, old).toBe(true);
+    expect(await shown(page, pane), `${old} off`).toEqual([]);
+  }
+  await page.goto("/#developer");
+  await expect(dialog(page).locator('[data-flag="vms"]')).toHaveCount(0);
+  await expect(dialog(page).locator('[data-flag="sandbox-providers"]')).toHaveCount(1);
+});
+
 /** Requests that are each flag's feature (#347): its routes, and making
  * its blocks. Configs that don't parse, so with the flag on they fail past
  * the gate, in their own words, and nothing starts. (The swarm's
  * views have no route.) */
 const GATED: [Flag, string, string, unknown][] = [
-  ["vms", "GET", "/api/machines", undefined],
-  ["vms", "GET", "/api/sandboxes", undefined],
-  ["workspaces", "POST", "/api/blocks", { type: "workspace", config: {}, local: true }],
-  ["guest-ssh", "GET", "/api/guests", undefined],
-  ["forges", "POST", "/api/blocks", { type: "forge", config: { repo: "o/r", number: 0, provider: "forgejo" }, local: true }],
-  ["agents", "GET", "/api/a2a/agents", undefined],
+  ["sandbox-providers", "GET", "/api/machines", undefined],
+  ["sandbox-providers", "GET", "/api/sandboxes", undefined],
+  ["chant-workspaces", "POST", "/api/blocks", { type: "workspace", config: {}, local: true }],
+  ["additional-forges", "POST", "/api/blocks", { type: "forge", config: { repo: "o/r", number: 0, provider: "forgejo" }, local: true }],
+  ["agent-delegation", "GET", "/api/a2a/agents", undefined],
 ];
 
 const ask = async (method: string, path: string, body: unknown) => {
@@ -202,8 +218,39 @@ test("each flag's routes and blocks follow it: refused off, saying how to turn i
   }
 });
 
-test("an ssh invite from the pane's menu works with its flag on, and is refused once it's off", async ({ page }) => {
-  expect((await setFlag("guest-ssh", true)).ok).toBe(true);
+const setSharing = (guest_ssh: boolean, as?: string) =>
+  fetch(`${base}/api/sharing`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", ...(as ? { "tailscale-user-login": as } : {}) },
+    body: JSON.stringify({ guest_ssh }),
+  });
+
+const sharingDialog = (page: Page) => page.getByRole("dialog", { name: "Guest SSH access" });
+
+test("guest ssh is a sharing setting, off by default: the machine's settings turn the ssh invite on", async ({ page }) => {
+  // Not a flag any more (native #205): the old name is refused, saying where it went.
+  const old = await setFlag("guest-ssh", true);
+  expect(old.ok).toBe(false);
+  expect(await old.text()).toContain("sharing setting");
+  const pane = await start(page);
+  expect(await shown(page, pane)).toEqual([]);
+  const off = await ask("POST", "/api/guests", { pane });
+  expect(off.status).toBe(404);
+  expect(off.text).toContain("`arugulad sharing guest-ssh on`");
+
+  await page.locator(".ws-head [data-account-menu]").click();
+  await page.getByRole("menuitem", { name: "Guest SSH access…" }).click();
+  const sw = sharingDialog(page).getByRole("switch", { name: "Guest SSH access on this machine" });
+  await expect(sw).not.toBeChecked();
+  await sw.check();
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.guestSsh())).toBe(true);
+  expect(JSON.parse(readFileSync(join(state, "sharing.json"), "utf8"))).toEqual({ guest_ssh: true });
+  await sharingDialog(page).getByRole("button", { name: "Done", exact: true }).click();
+  expect(await shown(page, pane)).toEqual(["guest-ssh"]);
+});
+
+test("an ssh invite from the pane's menu works with Guest SSH access on, and is refused once it's off", async ({ page }) => {
+  expect((await setSharing(true)).ok).toBe(true);
   const pane = await start(page);
   await page.evaluate(() => window.__arugula.client.loadFeatures());
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
@@ -214,10 +261,10 @@ test("an ssh invite from the pane's menu works with its flag on, and is refused 
     await fetch(`${base}/api/guests/${i.id}`, { method: "DELETE" });
   }
   // Off: the menu loses it, and the route behind it says why.
-  expect((await setFlag("guest-ssh", false)).ok).toBe(true);
+  expect((await setSharing(false)).ok).toBe(true);
   const r = await ask("POST", "/api/guests", { pane });
   expect(r.status).toBe(404);
-  expect(r.text).toContain("`arugulad flags guest-ssh on`");
+  expect(r.text).toContain("`arugulad sharing guest-ssh on`");
   expect(await shown(page, pane)).toEqual([]);
 });
 
@@ -232,9 +279,31 @@ test("the swarm's views are no flag: swarm-themes is retired", async ({ page }) 
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 });
 
+test("Docs are no flag: docs is retired, and the rail offers them with every flag off", async ({ page }) => {
+  // Doc blocks, the doc tool and the Docs page left Labs (native #204); the
+  // old name is refused as any retired flag is.
+  const r = await setFlag("docs", true);
+  expect(r.ok).toBe(false);
+  expect(await r.text()).toContain("isn't a flag any more");
+  await open(page);
+  await expect(page.locator(".ws-rail [data-open-docs]")).toBeVisible();
+  expect((await ask("GET", "/api/docs", undefined)).status).toBe(200);
+});
+
+test("chat is no flag: chat is retired, and control's by team", async () => {
+  const r = await setFlag("chat", true);
+  expect(r.ok).toBe(false);
+  expect(await r.text()).toContain("isn't a flag any more");
+  expect(onNow()).toEqual([]);
+});
+
 test("the flags are the owner's: someone else can't read or change them", async () => {
   const other = "friend@example.com";
-  expect((await setFlag("chat", true, other)).status).toBe(403);
+  expect((await setFlag("vms", true, other)).status).toBe(403);
   expect((await fetch(`${base}/api/flags`, { headers: { "tailscale-user-login": other } })).status).toBe(403);
   expect(onNow()).toEqual([]);
+  // Guest SSH access too (native #205).
+  expect((await setSharing(true, other)).status).toBe(403);
+  expect((await fetch(`${base}/api/sharing`)).ok).toBe(true);
+  expect(((await (await fetch(`${base}/api/sharing`)).json()) as { guest_ssh: boolean }).guest_ssh).toBe(false);
 });

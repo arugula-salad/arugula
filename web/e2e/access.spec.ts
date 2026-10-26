@@ -138,7 +138,7 @@ test("a viewer's workspace hides what they can't do, or says why it's off", asyn
     await expect(friend.locator(sel)).toBeDisabled();
     await expect(friend.locator(sel)).toHaveAttribute("title", "Viewers can't change the layout");
   }
-  // Docs are the owner's too (#1494): the machine has the flag, and a guest has no page.
+  // Docs are the owner's (#1494): a guest has no page.
   await expect(owner.locator(".ws-rail [data-open-docs]")).toBeVisible();
   await expect(friend.locator("[data-open-docs]")).toHaveCount(0);
   await friend.evaluate(() => (location.hash = "docs"));

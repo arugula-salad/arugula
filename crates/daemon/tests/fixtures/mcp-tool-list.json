@@ -1274,7 +1274,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- app {url, beside?, title?}: An app's box as an app block beside a pane, by its address (url): the app's own page in a frame, on its own origin. The box signs the user in with their Arugula account, so nothing is shared with it from here.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -1309,7 +1309,7 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation, chat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation, chat, app: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
             "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -1340,7 +1340,8 @@
               "pr",
               "issue",
               "conversation",
-              "chat"
+              "chat",
+              "app"
             ],
             "type": "string"
           },
@@ -1428,6 +1429,18 @@
               }
             ],
             "description": "conversation: Then continue it, or fork it (for one open somewhere else) and go on in the fork."
+          },
+          "title": {
+            "default": null,
+            "description": "app: What to call the block (default: the box's host).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "app: The app's address: its box's origin (`https://…`).",
+            "type": "string"
           }
         },
         "required": [
@@ -1437,6 +1450,130 @@
       },
       "name": "show",
       "title": "Show the user a block"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Build a document for the user"
+      },
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- list: The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.\n- open {doc, beside?}: Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.\n\nTwo kinds of fenced block draw as more than code, in the section that talks about them.\nA chart: a ```chart fence holding a JSON spec. type is \"bar\" or \"line\"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with \"order\": [...]. For example:\n```chart\n{\"type\": \"bar\", \"title\": \"Sales by month\", \"x\": \"month\", \"y\": [\"sales\"], \"rows\": [{\"month\": \"Jan\", \"sales\": 12}, {\"month\": \"Feb\", \"sales\": 19}]}\n```\nA drawing: a ```svg fence holding one <svg> element, with xmlns=\"http://www.w3.org/2000/svg\" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run. For example:\n```svg Idea to app\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 40\"><rect x=\"2\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e8f0fe\" stroke=\"#335\"/><path d=\"M62 20 H98\" stroke=\"#335\"/><rect x=\"98\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e6f4ea\" stroke=\"#335\"/></svg>\n```\nEvery fence is checked before anything is written: a bad chart or drawing is refused with one line saying what to fix, and the section stays as it was.\n- asset {block, name, data?, path?}: Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {\"kind\": \"asset\", \"block\": 7, \"name\": \"flow.png\", \"path\": \"/tmp/flow.png\"}.\n- share {block}: Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: \"waiting\"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it.",
+      "inputSchema": {
+        "$defs": {
+          "DocSection": {
+            "description": "One section of a Doc's outline.",
+            "properties": {
+              "heading": {
+                "description": "The section's heading.",
+                "type": "string"
+              },
+              "intent": {
+                "default": "",
+                "description": "One line on what the section will hold: the user reads it while the section is pending.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "heading"
+            ],
+            "type": "object"
+          },
+          "PaneArg": {
+            "anyOf": [
+              {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "A pane or block: `7` or `\"%7\"`."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "beside": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PaneArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "new, open: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+          },
+          "block": {
+            "$ref": "#/$defs/PaneArg",
+            "description": "fill, asset, share: The Doc block (from doc new)."
+          },
+          "data": {
+            "default": null,
+            "description": "asset: Or the file itself, base64 (at most 2 MB).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "doc": {
+            "description": "open: The Doc's id (doc list has them).",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "new",
+              "list",
+              "open",
+              "fill",
+              "asset",
+              "share"
+            ],
+            "type": "string"
+          },
+          "markdown": {
+            "description": "fill: The section's body, in Markdown (at most 64 KB). Filling a section again replaces it.",
+            "type": "string"
+          },
+          "name": {
+            "description": "asset: The picture's name in the Doc: letters, digits, _ . and -, ending in .png, .jpg, .jpeg, .gif or .webp (the bytes must be that type). A name already used is replaced.",
+            "type": "string"
+          },
+          "path": {
+            "default": null,
+            "description": "asset: A PNG, JPEG, GIF or WebP file you can read, as an absolute path (at most 2 MB). An agent on a machine of its own sends data instead.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "section": {
+            "description": "fill: The section's id (s1, s2, … from doc new).",
+            "type": "string"
+          },
+          "sections": {
+            "description": "new: Every section, in order (at most 40), so the user sees the whole outline at once.",
+            "items": {
+              "$ref": "#/$defs/DocSection"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "new: The Doc's title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "doc",
+      "title": "Build a document for the user"
     },
     {
       "annotations": {
@@ -4990,7 +5127,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- app {url, beside?, title?}: An app's box as an app block beside a pane, by its address (url): the app's own page in a frame, on its own origin. The box signs the user in with their Arugula account, so nothing is shared with it from here.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -5019,14 +5156,6 @@
           "actor": {
             "default": null,
             "description": "workspace: The user's chant principal, which approvals here record (github:LOGIN,\nor a signer's name). Default: their Arugula name, passed as is.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "app": {
-            "default": null,
-            "description": "app: The app's name in the user's studio. Leave it out to list their\napps instead.",
             "type": [
               "string",
               "null"
@@ -5178,6 +5307,18 @@
               }
             ],
             "description": "conversation: Then continue it, or fork it (for one open somewhere else) and go on in the fork."
+          },
+          "title": {
+            "default": null,
+            "description": "app: What to call the block (default: the box's host).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "app: The app's address: its box's origin (`https://…`).",
+            "type": "string"
           }
         },
         "required": [
@@ -8761,7 +8902,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- app {url, beside?, title?}: An app's box as an app block beside a pane, by its address (url): the app's own page in a frame, on its own origin. The box signs the user in with their Arugula account, so nothing is shared with it from here.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -8796,7 +8937,7 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation, chat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation, chat, app: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
             "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -8827,7 +8968,8 @@
               "pr",
               "issue",
               "conversation",
-              "chat"
+              "chat",
+              "app"
             ],
             "type": "string"
           },
@@ -8915,6 +9057,18 @@
               }
             ],
             "description": "conversation: Then continue it, or fork it (for one open somewhere else) and go on in the fork."
+          },
+          "title": {
+            "default": null,
+            "description": "app: What to call the block (default: the box's host).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "app: The app's address: its box's origin (`https://…`).",
+            "type": "string"
           }
         },
         "required": [
@@ -8924,6 +9078,130 @@
       },
       "name": "show",
       "title": "Show the user a block"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Build a document for the user"
+      },
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- list: The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.\n- open {doc, beside?}: Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.\n\nTwo kinds of fenced block draw as more than code, in the section that talks about them.\nA chart: a ```chart fence holding a JSON spec. type is \"bar\" or \"line\"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with \"order\": [...]. For example:\n```chart\n{\"type\": \"bar\", \"title\": \"Sales by month\", \"x\": \"month\", \"y\": [\"sales\"], \"rows\": [{\"month\": \"Jan\", \"sales\": 12}, {\"month\": \"Feb\", \"sales\": 19}]}\n```\nA drawing: a ```svg fence holding one <svg> element, with xmlns=\"http://www.w3.org/2000/svg\" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run. For example:\n```svg Idea to app\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 40\"><rect x=\"2\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e8f0fe\" stroke=\"#335\"/><path d=\"M62 20 H98\" stroke=\"#335\"/><rect x=\"98\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e6f4ea\" stroke=\"#335\"/></svg>\n```\nEvery fence is checked before anything is written: a bad chart or drawing is refused with one line saying what to fix, and the section stays as it was.\n- asset {block, name, data?, path?}: Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {\"kind\": \"asset\", \"block\": 7, \"name\": \"flow.png\", \"path\": \"/tmp/flow.png\"}.\n- share {block}: Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: \"waiting\"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it.",
+      "inputSchema": {
+        "$defs": {
+          "DocSection": {
+            "description": "One section of a Doc's outline.",
+            "properties": {
+              "heading": {
+                "description": "The section's heading.",
+                "type": "string"
+              },
+              "intent": {
+                "default": "",
+                "description": "One line on what the section will hold: the user reads it while the section is pending.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "heading"
+            ],
+            "type": "object"
+          },
+          "PaneArg": {
+            "anyOf": [
+              {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "A pane or block: `7` or `\"%7\"`."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "beside": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PaneArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "new, open: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+          },
+          "block": {
+            "$ref": "#/$defs/PaneArg",
+            "description": "fill, asset, share: The Doc block (from doc new)."
+          },
+          "data": {
+            "default": null,
+            "description": "asset: Or the file itself, base64 (at most 2 MB).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "doc": {
+            "description": "open: The Doc's id (doc list has them).",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "new",
+              "list",
+              "open",
+              "fill",
+              "asset",
+              "share"
+            ],
+            "type": "string"
+          },
+          "markdown": {
+            "description": "fill: The section's body, in Markdown (at most 64 KB). Filling a section again replaces it.",
+            "type": "string"
+          },
+          "name": {
+            "description": "asset: The picture's name in the Doc: letters, digits, _ . and -, ending in .png, .jpg, .jpeg, .gif or .webp (the bytes must be that type). A name already used is replaced.",
+            "type": "string"
+          },
+          "path": {
+            "default": null,
+            "description": "asset: A PNG, JPEG, GIF or WebP file you can read, as an absolute path (at most 2 MB). An agent on a machine of its own sends data instead.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "section": {
+            "description": "fill: The section's id (s1, s2, … from doc new).",
+            "type": "string"
+          },
+          "sections": {
+            "description": "new: Every section, in order (at most 40), so the user sees the whole outline at once.",
+            "items": {
+              "$ref": "#/$defs/DocSection"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "new: The Doc's title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "doc",
+      "title": "Build a document for the user"
     },
     {
       "annotations": {
@@ -12477,7 +12755,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- app {url, beside?, title?}: An app's box as an app block beside a pane, by its address (url): the app's own page in a frame, on its own origin. The box signs the user in with their Arugula account, so nothing is shared with it from here.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -12506,14 +12784,6 @@
           "actor": {
             "default": null,
             "description": "workspace: The user's chant principal, which approvals here record (github:LOGIN,\nor a signer's name). Default: their Arugula name, passed as is.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "app": {
-            "default": null,
-            "description": "app: The app's name in the user's studio. Leave it out to list their\napps instead.",
             "type": [
               "string",
               "null"
@@ -12665,6 +12935,18 @@
               }
             ],
             "description": "conversation: Then continue it, or fork it (for one open somewhere else) and go on in the fork."
+          },
+          "title": {
+            "default": null,
+            "description": "app: What to call the block (default: the box's host).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "app: The app's address: its box's origin (`https://…`).",
+            "type": "string"
           }
         },
         "required": [

@@ -21,19 +21,37 @@ MCP `show` kind `app`) for anyone, and signs you in with your Arugula
 account through the hub. A `studio` flag left in `flags.json` does nothing,
 and the daemon removes the old `studio.json` when it starts.
 
+Chat was here until it left Labs (native #203, 2026-10-26):
+it's on wherever a team's owners turn it on in control, a `chat` flag left
+in `flags.json` does nothing, and a machine's old threads are no longer
+brought into control. [Threads and chat](#threads-and-chat) still
+describes it below.
+
+Guest ssh (inviting someone with only OpenSSH to a pane, M65) was the
+`guest-ssh` flag until it left Labs (2026-10-26, native #205). It is a
+sharing setting now, **Guest SSH access**, off until the machine's owner
+turns it on: *Guest SSH access…* in the machine's settings (the machine
+menu, the account menu's *This machine*, the phone's sheet), or
+`arugulad sharing guest-ssh on` on the machine. It is kept in
+`sharing.json` in the state directory (`arugula_proto::sharing`), which
+control never writes, so no push turns it on, as the flag was local-only.
+A machine that had the flag on (by name, or `labs`) keeps it on: the
+daemon writes the old flag's word there once, at its start. With it off,
+*Invite over ssh…* isn't offered and `/api/guests` (list, invite, revoke)
+is refused, saying how to turn it on. `arugula guests`, `arugula share
+--guest…` and `arugulad --guest-ssh`/`--guest-ssh-host` (the listener) are
+always in `--help` now; `guest-ssh` is a retired flag.
+
 ## Turning a feature on
 
 Each feature has a flag, off on a new install:
 
 | Flag | Turns on |
 | --- | --- |
-| `chat` | The chat page (chat itself is control's), and bringing old threads into control |
-| `vms` | VM tabs and panes, machines and the sandboxes page |
-| `workspaces` | Chant workspace blocks |
-| `guest-ssh` | *Invite over ssh…* for a guest with only OpenSSH |
-| `forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on) |
-| `agents` | Offering Claude Code subagents from this machine as A2A agents, and the team's agent catalog (#403) |
-| `docs` | Doc blocks: a report, plan or write-up an agent builds beside its pane, section by section (#962), kept in a library you can list and reopen (#1492) |
+| `sandbox-providers` | VM tabs and panes, machines and the sandboxes page, from your own sandbox provider (cloud workspaces are the platform's, and need no flag) |
+| `chant-workspaces` | Chant workspace blocks: a workspace's members, relationships and gates |
+| `additional-forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on), until they fit platform projects and workflows |
+| `agent-delegation` | Agent recipes, offering them from this machine as A2A agents, the team's agent catalog and tasks between machines (#403); set only on the machine |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
 `arugula --help` and `arugulad --help`. Without it they aren't offered, and
@@ -47,18 +65,23 @@ one isn't made.
 
 | Flag | What is refused without it |
 | --- | --- |
-| `chat` | Nothing on the machine: it shows the Chat page, and, joined to control, brings old threads into it (see [Threads and chat](#threads-and-chat)) |
-| `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
-| `workspaces` | chant workspace blocks |
-| `guest-ssh` | `/api/guests` (list, invite, revoke) |
-| `forges` | Forgejo and GitLab blocks and webhooks |
-| `agents` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
-| `docs` | new Doc blocks, the `doc` tool by name, and the Doc library's `/api/docs…` (list, open, delete) |
+| `sandbox-providers` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
+| `chant-workspaces` | chant workspace blocks |
+| `additional-forges` | Forgejo and GitLab blocks and webhooks |
+| `agent-delegation` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
 
 ```
-arugulad flags                # the flags, and which are on
-arugulad flags chat on        # and `off`
+arugulad flags                            # the flags, and which are on
+arugulad flags sandbox-providers on       # and `off`, or `unset`
 ```
+
+Four flags were renamed on 2026-10-26 (DECISIONS.md "Four Labs flags
+stay, renamed; the rest graduate or retire"): `vms` is
+`sandbox-providers`, `workspaces` is `chant-workspaces`, `forges` is
+`additional-forges` and `agents` is `agent-delegation`. The old names
+still work, forever, wherever a name comes in: in `flags.json`, in what
+control pushes, in `PUT /api/flags/NAME` and in `arugulad flags NAME on`
+(`flags::ALIASES`). Only the new names are listed.
 
 Or, as the machine's owner, in the web client: *Developer settings…* in the
 session menu (and the command palette, and the phone's sheet) has a switch
@@ -67,7 +90,7 @@ menus offer it only on a machine that has asked: one where `arugulad flags`
 has been run, or a flag set. The desktop app's *Daemon* menu has *Developer
 settings…* either way, and so does the page at `/#developer`.
 
-The flags are `{"flags": {"chat": true}}` in `flags.json` in the state
+The flags are `{"flags": {"vms": true}}` in `flags.json` in the state
 directory, which is `$ARUGULA_STATE_DIR` if set, else
 `$XDG_STATE_HOME/arugula`, else `~/.local/state/arugula`; on Windows,
 `%LOCALAPPDATA%\arugula\state`. `arugulad flags` writes it directly, so it
@@ -84,21 +107,21 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
 - **Per machine.** They're read by the machine that serves the page, so every
   machine you want a feature on needs its own. Someone you share a session
   with sees VMs on your machine if it has them on, and not
-  otherwise. Chat is control's and follows control's flag.
+  otherwise. Chat is no flag: it's control's, on by team (see
+  [Threads and chat](#threads-and-chat)).
 - **No restart.** The daemon reads the flags whenever it's asked.
 - **Each feature still needs its own setup.** VMs need a sandbox
-  provider, guest ssh its listener; a flag lets its
+  provider; a flag lets its
   feature be shown and used, and sets nothing up.
 
 ## What labs unhides
 
 - **CLI (`arugula --help`):** `workspace`,
-  `agents`, `guests`, `machines`, `sandboxes`;
-  `agent --vm/--machine/--as`,
-  `run --vm/--vm-tab/--image/--sandbox`, and
-  `share --guest/--rw/--reusable/--relay/--addr/--name`
+  `agents`, `machines`, `sandboxes`;
+  `agent --vm/--machine/--as`, and
+  `run --vm/--vm-tab/--image/--sandbox`
   (`LABS_COMMANDS`, `LABS_OPTIONS` in `crates/cli/src/main.rs`).
-- **Daemon (`arugulad --help`):** `--guest-ssh`, `--guest-ssh-host`,
+- **Daemon (`arugulad --help`):**
   `--wisp-url`,
   `--wisp-token-file`, `--loam-url`,
   `--loam-key-file`
@@ -112,9 +135,13 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
 - **Web client:** `Client.has("vms")` and
   `hasLabs()` and `flag(name)` in `web/src/shell/client.ts`: VM panes and tabs,
   *Sandboxes…*, *Split (local)* and a VM tab's *Machine* items,
-  *Open as workspace*, *Invite over ssh…*, threads and chat.
+  *Open as workspace*, *Invite over ssh…*.
   The swarm's city, hive and timeline views left Labs (2026-10-26): every
   swarm offers them under *Theme*, and `swarm-themes` is a retired flag.
+  Docs left Labs the same day (native #204): Doc blocks, the `doc` tool,
+  the Docs page and the Doc library's `/api/docs…` are on every machine,
+  and `docs` is a retired flag. Sharing a Doc is still the owner's tap, or
+  a card that asks them when an agent's `doc share` wants it.
 - **Machines (VMs).** A *machine* (`--machine mN`, `mN:PATH`, `--machine
   local`, MCP `run`'s `machine`) is a VM or sandbox from the provider
   (`crates/mux/src/labs/machine.rs`). Examples that use them: `arugula open
@@ -160,9 +187,12 @@ one, as after a lost machine.
 
 Chat is control's (#978, DECISIONS.md "Chat lives in control, in plain
 text"): a team's channels and DMs, and a thread about each pane and each
-session, held by control so they work with every machine asleep. It's
-behind control's own `chat` flag, the account's or a team's
-(`POST /api/flags`); the API is under `/api/chat`
+session, held by control so they work with every machine asleep. It isn't
+Labs any more (native #203): no machine has a flag for it. It's on for
+everyone in a team whose owners turned it on (*Chat* under Teams on
+control's page, kept as the team's `chat` beside its Labs flags,
+`POST /api/flags`; an account's own word, set before, still beats its
+teams'); the API is under `/api/chat`
 (`crates/platform/src/chat.rs`, control's platform since M138), and the
 pages read it in
 `web/src/shared/chat-store.ts`, `web/src/shared/chat/rooms.tsx` and
@@ -171,21 +201,19 @@ pages read it in
 thread beside it and links to the rest, and since M155 draws no chat page
 of its own.
 
-**No machine keeps chat (M125).** A machine's `chat` flag does one thing
-now:
-- Joined to control, with control's flag on too, it brings the threads and
-  conversations an older daemon kept (`<state>/threads/`) into control
-  once, then renames the folder `threads.imported/` (M124,
-  `crates/daemon/src/chat_import.rs`). A machine that skipped the release
-  with the import still does this. Not joined, the folder stays where it
-  is, unread. An older daemon is marked "Update to bring its threads into
-  chat" under Devices and machines.
+**No machine keeps chat (M125).** The threads and conversations an older
+daemon kept (`<state>/threads/`) were brought into control once by daemons
+from 0.49 to 0.62 (M124); that import is gone (native #203, no replacement).
+What came in stays in control; a folder that never came in stays on its
+machine, unread, and `threads.imported/` is left as it was.
 
 What the daemon still does for chat is say who may read each pane's and
 session's thread (`POST /api/daemon/chat/readers`, from
-`crates/mux/src/mux/chat_readers.rs`): the same people as the pane or
-session, a private pane's only its owner, a "from now" share from when it
-was made. Control holds the messages; the machine decides who reads them.
+`crates/mux/src/mux/chat_readers.rs`, sent by
+`crates/daemon/src/chat_readers.rs` while control has chat on for the
+machine's account or team): the same people as the pane or session, a
+private pane's only its owner, a "from now" share from when it was made.
+Control holds the messages; the machine decides who reads them.
 
 - **Threads on panes and sessions.** *Thread* in a pane's menu, *Session
   thread* in the session menu, or the bubble on a pane opens its room
@@ -209,9 +237,9 @@ was made. Control holds the messages; the machine decides who reads them.
   `threads.post` grant, as the owner's agent and labelled so; `@agent` is
   text otherwise. [control.md](control.md) has the grants; "What chat does
   for agents" below says what each feature below means for them.
-- **Conversations** (#855) were rooms of their own on one machine. Brought
-  into control they're read-only archives (S41 decision 3); a new one is a
-  channel or a DM.
+- **Conversations** (#855) were rooms of their own on one machine. Those
+  brought into control (M124) are read-only archives (S41 decision 3); a
+  new one is a channel or a DM.
 - **Gone with the machine's store:** an `@` of someone who can't read the
   thread no longer offers to invite them (#297), and `search` and MCP
   `history` find terminal output only.
@@ -635,7 +663,7 @@ available for a workspace on a VM; the block says so.
 ## Agent recipes
 
 The first part of the AGENTS track (#403): agents one person offers to other
-people's agents. With `agents` on (M76, #398):
+people's agents. With `agent-delegation` on (M76, #398):
 
 - **A recipe is a Claude Code subagent file**, as it is:
   `.claude/agents/NAME.md` in a project, or `~/.claude/agents/NAME.md`. Its

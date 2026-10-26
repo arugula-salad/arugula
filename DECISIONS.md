@@ -164,3 +164,4 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-069](docs/decisions/aru-069-zig-0-16-builds-ghostty-the-toolchain-is-pinned.md): Zig 0.16 builds Ghostty; the toolchain is pinned
 - [aru-070](docs/decisions/aru-070-windows-is-a-full-platform-built-on-github-s-runners.md): Windows is a full platform, built on GitHub's runners
 - [aru-104](docs/decisions/aru-104-drivers-come-in-order-chant-to-fly-then-apps-pla.md): Drivers come in order: chant to Fly, then apps-platform; planter in step 8
+- [aru-117](docs/decisions/aru-117-four-labs-flags-stay-renamed-the-rest-graduate-or-retire.md): Four Labs flags stay, renamed; the rest graduate or retire

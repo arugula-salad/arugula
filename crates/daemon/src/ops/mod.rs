@@ -29,6 +29,7 @@ mod sandboxes;
 mod settings;
 mod setup;
 mod shares;
+mod sharing;
 mod shell_env;
 mod signin;
 mod synced;

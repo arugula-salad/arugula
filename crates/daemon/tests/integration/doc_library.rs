@@ -315,28 +315,6 @@ fn deleting_a_shared_doc_with_control_down_refuses_and_keeps_everything() {
     assert!(!lib(&w.d, &other_id).exists());
 }
 
-/// The docs flag hides and refuses all three operations, and MCP's list and
-/// open.
-#[cfg(feature = "labs")]
-#[test]
-fn the_docs_flag_gates_each_operation() {
-    let w = World::new(&[]);
-    let (d, doc) = (&w.d, w.doc);
-    let id = id_of(d, doc);
-    arugula_proto::flags::set(&d.state, "docs", false).unwrap();
-    for (method, path, body) in [
-        ("GET", "/api/docs".to_owned(), None),
-        ("POST", "/api/docs/open".to_owned(), Some(json!({ "id": id }))),
-        ("DELETE", format!("/api/docs/{id}"), None),
-    ] {
-        let (status, text) = d.raw(method, &path, body);
-        assert_eq!(status, 404, "{method} {path}: {text}");
-        assert!(text.contains("arugulad flags docs on"), "{text}");
-    }
-    assert!(lib(d, &id).join("meta.json").is_file(), "nothing was deleted");
-    arugula_proto::flags::set(&d.state, "docs", true).unwrap();
-}
-
 /// The old layout's Docs move at start: an open one, a closed one and a
 /// shared open one, each with its content, the open blocks' configs and the
 /// links following; a second start changes nothing.
@@ -350,7 +328,6 @@ fn the_start_up_migration_moves_open_closed_and_shared_docs_once() {
         "--wisp-token-file",
         "/nonexistent",
     ]);
-    arugula_proto::flags::set(&d.state, "docs", true).unwrap();
     let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
     let make = |d: &Daemon, title: &str| -> (u64, String) {
         let block = d

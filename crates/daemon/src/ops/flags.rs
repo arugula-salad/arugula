@@ -47,6 +47,8 @@ impl Handle for FlagSet {
             _ => OpError::Failed(format!("couldn't write {}: {e}", flags::FILE)),
         })?;
         tracing::info!(flag = %name, on = ?req.on, "flag set");
+        // An old name (aru-117) answers as the flag it is now.
+        let name = flags::canonical(&name);
         let (f, s) = flags::explain(dir).into_iter().find(|(f, _)| f.name == name).expect("set accepted a known flag");
         Ok(info(f, s))
     }

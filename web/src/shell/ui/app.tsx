@@ -18,6 +18,7 @@ import { ControlRequests, ShareDialog } from "./people";
 import { directory } from "../hosts";
 import { DeveloperLayer } from "./developer";
 import { RulesLayer } from "./rules";
+import { SharingLayer } from "./sharing";
 import { DocShareLayer } from "./doc-share";
 import { ConversationsLayer } from "./conversations";
 import { PickerLayer } from "./picker";
@@ -128,10 +129,11 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {state && <AgentsPageLayer client={client} />}
       {state && <DocsPageLayer client={client} />}
       <ConversationsLayer />
-      <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
+      <InLabs on={client.flag("sandbox-providers")}>{(l) => <l.SandboxesLayer />}</InLabs>
       <RulesLayer />
       <DocShareLayer />
       <DeveloperLayer />
+      <SharingLayer />
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />
@@ -211,10 +213,11 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {state && <AgentsPageLayer client={client} />}
       {state && <DocsPageLayer client={client} />}
       <ConversationsLayer />
-      <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
+      <InLabs on={client.flag("sandbox-providers")}>{(l) => <l.SandboxesLayer />}</InLabs>
       <RulesLayer />
       <DocShareLayer />
       <DeveloperLayer />
+      <SharingLayer />
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />
@@ -302,17 +305,23 @@ function AgentsPageLayer({ client }: { client: Client }) {
     return () => window.removeEventListener("hashchange", fn);
   }, []);
   if (!agentsRoute()) return null;
-  return <InLabs on={client.flag("agents")}>{(l) => <l.AgentsPage client={client} />}</InLabs>;
+  return <InLabs on={client.flag("agent-delegation")}>{(l) => <l.AgentsPage client={client} />}</InLabs>;
 }
 
-/** The Docs page (#1494): loads Labs only while its route is up. */
+/** The Docs page (#1494): a chunk of its own, fetched while its route is
+ * up. Not Labs' since native #204. */
 function DocsPageLayer({ client }: { client: Client }) {
   const [, setTick] = useState(0);
+  const [page, setPage] = useState<typeof import("./docs-page") | null>(null);
   useEffect(() => {
     const fn = () => setTick((t) => t + 1);
     window.addEventListener("hashchange", fn);
     return () => window.removeEventListener("hashchange", fn);
   }, []);
-  if (!docsRoute()) return null;
-  return <InLabs on={client.flag("docs")}>{(l) => <l.DocsPage client={client} />}</InLabs>;
+  const on = docsRoute();
+  useEffect(() => {
+    if (on && !page) import("./docs-page").then(setPage, (e) => console.error("The Docs page didn't load", e));
+  }, [on]);
+  if (!on || !page) return null;
+  return <page.DocsPage client={client} />;
 }

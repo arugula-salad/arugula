@@ -36,9 +36,9 @@ mod doc_share_ask;
 mod editor_swarm;
 #[cfg(feature = "editor")]
 mod editors;
-// M124: the `chat` flag that turns the import on is Labs'.
-#[cfg(all(unix, feature = "labs"))]
-mod chat_import;
+// Reader lists follow control's chat setting, not a Labs flag (native #203).
+#[cfg(unix)]
+mod chat_readers;
 // #347: needs the forge too (Forgejo's block is one of its gates).
 #[cfg(all(feature = "labs", feature = "forge"))]
 mod flag_gates;

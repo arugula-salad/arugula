@@ -368,7 +368,7 @@ async fn what_crosses_the_gateway() {
     // body it covers goes on as it was.
     let keys = daemon(&app, "acct-a", "geek");
     let body = vec![b'x'; 1000];
-    let path = arugula_control_wire::chat::CHAT_IMPORT;
+    let path = arugula_control_wire::chat::CHAT_READERS;
     let sig = v2(&keys, "POST", path, &body);
     http.post(format!("{base}{path}")).header("x-arugula-auth", sig).body(body).send().await.unwrap();
     let (_, h, n) = seen.0.lock().unwrap().pop().unwrap();

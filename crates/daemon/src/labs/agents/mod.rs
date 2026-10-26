@@ -1,5 +1,5 @@
 //! Agent recipes (M76, #398): Claude Code subagents a machine's owner
-//! offers, each with an A2A 1.0 agent card. Behind the `agents` flag; the
+//! offers, each with an A2A 1.0 agent card. Behind the `agent-delegation` flag; the
 //! team's catalog (M77) and tasks over A2A (M78) build on it.
 //!
 //! - **A recipe is a Claude Code subagent file** (`.claude/agents/NAME.md`
@@ -355,8 +355,11 @@ fn refuse(status: StatusCode, why: &str) -> Response {
 
 /// Off unless the machine has the flag: the routes aren't there.
 fn off(app: &App) -> Option<Response> {
-    (!super::on(app.control.state_dir(), arugula_proto::flags::AGENTS)).then(|| {
-        refuse(StatusCode::NOT_FOUND, "the agent catalog is in Labs: `arugulad flags agents on` turns it on here")
+    (!super::on(app.control.state_dir(), arugula_proto::flags::AGENT_DELEGATION)).then(|| {
+        refuse(
+            StatusCode::NOT_FOUND,
+            "the agent catalog is in Labs: `arugulad flags agent-delegation on` turns it on here",
+        )
     })
 }
 

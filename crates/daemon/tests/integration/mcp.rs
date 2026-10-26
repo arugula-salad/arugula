@@ -1078,13 +1078,6 @@ async fn labs_lists_all_the_tools() {
         s2.cancel().await.unwrap();
 
         arugula_testkit::labs(&d.state, false);
-        // #665: chat's flag alone lists no tool of its own (#1095), and none
-        // of the others' kinds.
-        arugula_proto::flags::set(&d.state, "chat", true).unwrap();
-        let chat = s.list_all_tools().await.unwrap();
-        assert_eq!(chat.len(), 32, "{:?}", names(&chat));
-        assert!(!kinds(&chat, "show").contains(&"workspace".to_owned()), "show lists workspace with only chat on");
-        arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
@@ -1580,10 +1573,10 @@ async fn capabilities_says_what_is_here_and_whether_hooks_are_live() {
 
     #[cfg(feature = "labs")]
     {
-        arugula_proto::flags::set(&d.state, "workspaces", true).unwrap();
+        arugula_proto::flags::set(&d.state, "chant-workspaces", true).unwrap();
         let c = call(&s, "capabilities", json!({})).await;
         assert!(c["blocks"].as_array().unwrap().iter().any(|b| b["kind"] == "workspace"), "{c}");
-        assert_eq!(c["flags"], json!(["workspaces"]), "{c}");
+        assert_eq!(c["flags"], json!(["chant-workspaces"]), "{c}");
     }
     s.cancel().await.unwrap();
 

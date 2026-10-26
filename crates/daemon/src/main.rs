@@ -16,7 +16,7 @@ use arugula_mux::block;
 mod block_channel;
 mod browser;
 mod callers;
-mod chat_import;
+mod chat_readers;
 use arugula_mux::classify;
 mod control;
 // Windows panes on a pseudoconsole (M56).
@@ -618,6 +618,9 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Telemetry { what, json, state_dir }) => {
             telemetry_cli(what, json, &state_dir.unwrap_or_else(default_state_dir))
         }
+        Some(Command::Sharing { name, switch, state_dir }) => {
+            sharing_cli(name, switch, &state_dir.unwrap_or_else(default_state_dir))
+        }
         Some(Command::Leave { state_dir }) => {
             let dir = state_dir.unwrap_or_else(default_state_dir);
             let listen = std::fs::read_to_string(dir.join("listen")).unwrap_or_else(|_| "127.0.0.1:7681".into());
@@ -652,6 +655,9 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
         flags::Source::Team => "team",
         flags::Source::Default => "default",
     };
+    // The flags file may change below: keep what it said of guest ssh
+    // first, as a sharing setting (native #205).
+    arugula_proto::sharing::migrate(dir).map_err(|e| anyhow::anyhow!("{e}"))?;
     let Some(name) = name else {
         // Asking is what makes Developer settings show in the menus (#665).
         flags::unlock(dir).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -663,7 +669,7 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
         return Ok(());
     };
     match switch {
-        None if flags::FLAGS.iter().any(|f| f.name == name) => println!("{}", state(flags::get(dir, name))),
+        None if flags::lookup(name).is_some() => println!("{}", state(flags::get(dir, name))),
         None => match flags::retired(name) {
             Some(why) => anyhow::bail!("{why}"),
             None => anyhow::bail!("no flag named {name} (see `arugulad flags`)"),
@@ -675,11 +681,41 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
                 args::Switch::Unset => flags::unset(dir, name),
             }
             .map_err(|e| anyhow::anyhow!("{e}"))?;
+            // An old name (aru-117) says the flag's name now.
+            let name = flags::canonical(name);
             let now = flags::explain(dir).into_iter().find(|(f, _)| f.name == name).map(|(_, s)| s);
             let now = now.expect("set accepted a known flag");
             println!("{name} is {} ({})", state(now.on), from(now.source));
             if !labs::BUILT {
                 println!("  This build of Arugula has no Labs, so nothing changes.");
+            } else if daemon_running(dir) {
+                println!("  The running daemon follows at once.");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `arugulad sharing`: the machine's sharing settings, one's state, or one
+/// set (native #205). It works on the state directory, not through the
+/// daemon, so only someone at the machine as its owner can.
+fn sharing_cli(
+    name: Option<args::SharingSetting>,
+    switch: Option<args::OnOff>,
+    dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    use arugula_proto::sharing;
+    let state = |on| if on { "on" } else { "off" };
+    let about = "Invite a guest with only OpenSSH to a pane (`arugula share --guest`).";
+    match (name, switch) {
+        (None, _) => println!("guest-ssh  {:3}  {about}", state(sharing::guest_ssh(dir))),
+        (Some(args::SharingSetting::GuestSsh), None) => println!("{}", state(sharing::guest_ssh(dir))),
+        (Some(args::SharingSetting::GuestSsh), Some(s)) => {
+            let on = s == args::OnOff::On;
+            sharing::set_guest_ssh(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("guest-ssh is {}", state(on));
+            if !labs::BUILT {
+                println!("  This build of Arugula has no guest ssh, so nothing changes.");
             } else if daemon_running(dir) {
                 println!("  The running daemon follows at once.");
             }
@@ -1058,6 +1094,11 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     let hosts = hosts::Hosts::open(&state_dir, name.clone(), provider);
     hosts.spawn_probe();
     let shares = share::Shares::open(&state_dir);
+    // Guest SSH access was the `guest-ssh` flag: a machine that had it on
+    // keeps it on (native #205).
+    if let Err(e) = arugula_proto::sharing::migrate(&state_dir) {
+        warn!(error = %e, "couldn't keep the guest-ssh flag as Guest SSH access");
+    }
     let guest_listen = match args.guest_ssh.as_str() {
         "off" => None,
         a => Some(a.parse::<SocketAddr>().map_err(|e| anyhow::anyhow!("--guest-ssh {a}: {e}"))?),

@@ -1692,6 +1692,13 @@ block_channels?: boolean,
  */
 vms: boolean, 
 /**
+ * Guest SSH access is on here (a sharing setting, native #205), in a
+ * build that has it: the owner may invite a guest over ssh. Absent
+ * from a daemon before it, where the `guest-ssh` flag in `flags`
+ * says.
+ */
+guest_ssh?: boolean, 
+/**
  * The names of the Labs flags that are on, whatever else each needs
  * (a login, a provider). `None` from a daemon before #665: see `labs`.
  */
@@ -3371,6 +3378,28 @@ export type ShareRequest = { pane: number,
 ttl_secs?: number | null, };
 
 /**
+ * `GET /api/sharing` (the `sharing.get` operation), and what `sharing.set`
+ * answers: the machine's sharing settings.
+ */
+export type Sharing = { 
+/**
+ * Guest SSH access: its owner may invite a guest to a pane over plain
+ * ssh. Off by default.
+ */
+guest_ssh: boolean, 
+/**
+ * Whether this build has guest ssh. A build without Labs keeps the
+ * setting, and nothing follows. Absent: it has.
+ */
+built?: boolean, };
+
+/**
+ * `PUT /api/sharing` (the `sharing.set` operation): the settings to
+ * change; one left out stays as it is.
+ */
+export type SharingSetRequest = { guest_ssh?: boolean, };
+
+/**
  * A split's area and how long each child is along the split's direction,
  * so a client can turn a divider drag into new weights.
  */
@@ -3686,6 +3715,8 @@ export const OPS = {
   "share.mint": { method: "POST", path: "/api/shares" },
   "share.revoke": { method: "DELETE", path: "/api/shares/{id}" },
   "shares.list": { method: "GET", path: "/api/shares" },
+  "sharing.get": { method: "GET", path: "/api/sharing" },
+  "sharing.set": { method: "PUT", path: "/api/sharing" },
   "shell_env.get": { method: "GET", path: "/api/hosts/self/shell-env" },
   "shell_env.refresh": { method: "POST", path: "/api/hosts/self/shell-env/refresh" },
   "signin_link.get": { method: "GET", path: "/api/signin-link" },
@@ -3703,11 +3734,17 @@ export type OpName = keyof typeof OPS;
 
 /** The Labs flags (`arugula_proto::flags::FLAGS`), in order. */
 export const FLAGS = [
-  { name: "chat", title: "Chat", about: "The chat page, which needs control. Brings this machine's old threads into it.", default: false, local_only: false },
-  { name: "vms", title: "VMs and sandboxes", about: "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider.", default: false, local_only: false },
-  { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false, local_only: false },
-  { name: "guest-ssh", title: "Guest ssh", about: "Invite a guest to a pane over plain ssh.", default: false, local_only: true },
-  { name: "forges", title: "Forgejo and GitLab", about: "PR and issue blocks for Forgejo and GitLab, beside GitHub's.", default: false, local_only: false },
-  { name: "agents", title: "Agent catalog", about: "Offer Claude Code subagents from this machine, and see the ones your team offers.", default: false, local_only: true },
-  { name: "docs", title: "Docs", about: "Agents build documents in a block beside their pane.", default: false, local_only: false },
+  { name: "sandbox-providers", title: "External sandbox providers", about: "VM tabs and panes, machines and the sandboxes page, from your own sandbox provider. Cloud workspaces don't need it.", default: false, local_only: false },
+  { name: "chant-workspaces", title: "Chant workspaces", about: "Chant workspace blocks: a workspace's members, relationships and gates.", default: false, local_only: false },
+  { name: "additional-forges", title: "GitLab and Forgejo", about: "PR and issue blocks for GitLab and Forgejo, beside GitHub's.", default: false, local_only: false },
+  { name: "agent-delegation", title: "Local agent delegation", about: "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.", default: false, local_only: true },
+] as const;
+
+/** Renamed Labs flags (`arugula_proto::flags::ALIASES`, aru-117): the old
+ * name, then the new. A daemon from before the rename reports the old. */
+export const FLAG_ALIASES = [
+  ["vms", "sandbox-providers"],
+  ["workspaces", "chant-workspaces"],
+  ["forges", "additional-forges"],
+  ["agents", "agent-delegation"],
 ] as const;

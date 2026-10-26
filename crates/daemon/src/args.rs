@@ -131,6 +131,21 @@ pub(crate) enum Command {
         #[arg(long, env = "ARUGULA_STATE_DIR")]
         state_dir: Option<PathBuf>,
     },
+    /// Sharing settings: `arugulad sharing guest-ssh on` lets this
+    /// machine's owner invite a guest with only OpenSSH to a pane (Guest
+    /// SSH access, off by default). It writes sharing.json in the state
+    /// directory; a running daemon follows at once. Control can't set it.
+    Sharing {
+        /// The setting to show or set [default: list them].
+        #[arg(value_enum)]
+        name: Option<SharingSetting>,
+        /// Turn it on or off here [default: show it].
+        #[arg(requires = "name", value_enum)]
+        switch: Option<OnOff>,
+        /// The daemon's state directory [default: as the daemon's].
+        #[arg(long, env = "ARUGULA_STATE_DIR")]
+        state_dir: Option<PathBuf>,
+    },
     /// Whether this machine sends usage counts to Arugula, and what: `on`,
     /// `off`, or `status`, which shows the next report as it would be sent
     /// (docs/telemetry.md). It writes telemetry.json in the state
@@ -153,6 +168,20 @@ pub(crate) enum TelemetryCmd {
     On,
     Off,
     Status,
+}
+
+/// A sharing setting (`arugulad sharing NAME`, native #205).
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SharingSetting {
+    /// Guest SSH access.
+    GuestSsh,
+}
+
+/// What `arugulad sharing NAME` is told.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OnOff {
+    On,
+    Off,
 }
 
 /// What `arugulad flags NAME` is told to do.
@@ -232,13 +261,13 @@ pub(crate) struct RunArgs {
     pub(crate) guest_machines: usize,
 
     /// Where the ssh server for invited guests listens (`arugula
-    /// share --guest`), only while an invite exists; `off` turns the feature
-    /// off. Port 0 picks a free one.
-    #[arg(long, env = "ARUGULA_GUEST_SSH", default_value = crate::labs::GUEST_SSH_LISTEN, hide = true)]
+    /// share --guest`, with Guest SSH access on: `arugulad sharing`), only
+    /// while an invite exists; `off` turns it off. Port 0 picks a free one.
+    #[arg(long, env = "ARUGULA_GUEST_SSH", default_value = crate::labs::GUEST_SSH_LISTEN)]
     pub(crate) guest_ssh: String,
 
     /// The address guests are told to ssh to [default: the hostname].
-    #[arg(long, env = "ARUGULA_GUEST_SSH_HOST", hide = true)]
+    #[arg(long, env = "ARUGULA_GUEST_SSH_HOST")]
     pub(crate) guest_ssh_host: Option<String>,
 
     /// Command line for panes, split on whitespace [default: $SHELL -l].
@@ -434,15 +463,14 @@ pub(crate) struct BlockArgs {
 pub(crate) const DEFAULT_WISP_URL: &str = "http://127.0.0.1:7788";
 
 /// Options that work but stay out of `--help` unless the machine has turned
-/// their Labs flag on: guest ssh and the sandbox provider.
-/// The others that are `hide = true` are internals, and stay hidden.
-const LABS_OPTIONS: [(&str, &str); 6] = [
-    ("guest_ssh", flags::GUEST_SSH),
-    ("guest_ssh_host", flags::GUEST_SSH),
-    ("wisp_url", flags::VMS),
-    ("wisp_token_file", flags::VMS),
-    ("loam_url", flags::VMS),
-    ("loam_key_file", flags::VMS),
+/// their Labs flag on: the sandbox provider. (Guest ssh's left Labs,
+/// native #205: always listed.) The others that are `hide = true` are
+/// internals, and stay hidden.
+const LABS_OPTIONS: [(&str, &str); 4] = [
+    ("wisp_url", flags::SANDBOX_PROVIDERS),
+    ("wisp_token_file", flags::SANDBOX_PROVIDERS),
+    ("loam_url", flags::SANDBOX_PROVIDERS),
+    ("loam_key_file", flags::SANDBOX_PROVIDERS),
 ];
 
 /// The command line, listing in `--help` the options `flags` turns on.
@@ -483,8 +511,8 @@ mod tests {
     use clap::CommandFactory;
 
     /// `arugulad --help` is for strangers: no milestone or issue numbers, no
-    /// names of our own machines, and what needs a wispd or guest ssh isn't
-    /// listed.
+    /// names of our own machines, and what needs a wispd isn't
+    /// listed. Guest ssh's options are: it left Labs (native #205).
     #[test]
     fn help_has_no_internal_numbers_or_names_and_hides_what_a_stranger_cant_use() {
         let mut cmd = super::Args::command();
@@ -514,13 +542,12 @@ mod tests {
             "--loam-url",
             "--loam-key-file",
             "--studio-file",
-            "--guest-ssh",
-            "--guest-ssh-host",
             "--guest-machines",
             "--static-dir",
         ] {
             assert!(!top.contains(flag), "{flag} is in `arugulad --help`");
         }
+        assert!(top.contains("--guest-ssh ") && top.contains("--guest-ssh-host"), "{top}");
         // Retired options still parse old service files but are not advertised.
         assert!(!top.contains("--managoat-account-stream") && !top.contains("fountain"), "{top}");
         // Its name before the rename to Managoat still parses too.
@@ -531,12 +558,12 @@ mod tests {
     }
 
     /// With the `labs` file `arugulad --help` lists the sandbox provider
-    /// and guest ssh, and no other hidden option. The test
+    /// and no other hidden option. The test
     /// passes the bool; it reads neither the filesystem nor the environment.
     #[test]
     fn labs_unhides_its_options_and_only_those() {
-        let labs =
-            ["--wisp-url", "--wisp-token-file", "--loam-url", "--loam-key-file", "--guest-ssh", "--guest-ssh-host"];
+        let labs = ["--wisp-url", "--wisp-token-file", "--loam-url", "--loam-key-file"];
+        // The studio login's file is retired (native #206): it parses, unlisted.
         let hidden_internals = [
             "--guest-machines",
             "--static-dir",

@@ -972,7 +972,7 @@ function RunThread({ run, msg }: { run: RunView; msg?: number }) {
     <div class="run-thread">
       <h2>Thread</h2>
       {on === false ? (
-        <p class="dim">Threads come with chat, which is off for you. A team owner turns it on in the team's Developer settings, on Control.</p>
+        <p class="dim">Threads come with chat, which is off for you. A team owner turns it on for the team under Teams, on Control.</p>
       ) : (
         <div class="issue-thread chat-thread" data-run-thread={room?.id}>
           {room ? (

@@ -1,5 +1,5 @@
 // The Docs page (#1494): the Docs a machine keeps, which outlive their pane
-// (#1493). One daemon with the `docs` flag. A Doc whose pane was closed is
+// (#1493). One daemon of its own. A Doc whose pane was closed is
 // on the page and opens again in the current session with its content; one
 // that is open comes forward instead of making a second; Delete asks, says
 // when a link would stop working, and shows why a shared Doc stays when

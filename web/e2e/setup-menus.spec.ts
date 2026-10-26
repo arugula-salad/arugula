@@ -50,8 +50,10 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     vms: false,
     // Not joined to a control with a block domain (#150).
     block_channels: false,
-    // `labs` in flags.json is every flag (#665).
-    flags: ["chat", "vms", "workspaces", "guest-ssh", "forges", "agents", "docs"],
+    // `labs` in flags.json is every flag (#665), and keeps guest ssh on as
+    // Guest SSH access, a sharing setting (native #205).
+    guest_ssh: true,
+    flags: ["sandbox-providers", "chant-workspaces", "additional-forges", "agent-delegation"],
   });
   const [term] = await panes(page);
   const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…"];
