@@ -8,9 +8,9 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
+import { Time } from "../../shared/ui/time";
 import type { PlatformProject } from "../session";
 import { nameIn } from "../pages/issues";
-import { ago } from "./agent-tokens";
 import { useProductNames } from "./linked";
 import { Section } from "./section";
 
@@ -49,7 +49,7 @@ export function ClientApps({ p }: { p: PlatformProject }) {
             <span class="settings-tag">{product(a.client)}</span>
             <code class="sw-mono">{a.app}</code>
             <span class="dim">
-              added {ago(a.added_at)}
+              added <Time at={a.added_at} />
               {a.added_by ? (
                 <>
                   {" "}

@@ -43,6 +43,7 @@ import { SessionCardMessage, sessionOf } from "./session-card";
 import { dmLabel } from "./members";
 import { useStickToBottom } from "./stick";
 import { BookmarkIcon } from "./icons";
+import { Time } from "../ui/time";
 
 // ---- machines, by control's id for them
 
@@ -458,6 +459,7 @@ export function RoomBody({
                     // Back to the composer once the edit is saved or cancelled.
                     if (!on) composeRef.current?.focus();
                   }}
+                  relative={embedded}
                 />
               </Fragment>
             );
@@ -499,6 +501,7 @@ export function RoomMessage({
   editing,
   setEditing,
   inThread = false,
+  relative = false,
 }: {
   room: ChatRoom;
   m: ChatMessage;
@@ -509,6 +512,9 @@ export function RoomMessage({
   setEditing: (on: boolean) => void;
   /** Shown in a thread's panel (#106): no thread of its own to open there. */
   inThread?: boolean;
+  /** On a page about something else (an issue's, a run's): the head says
+   * how long ago, as the page's timeline does (UI audit #182). */
+  relative?: boolean;
 }) {
   const head =
     !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
@@ -612,7 +618,7 @@ export function RoomMessage({
                 via {m.via}
               </span>
             )}
-            <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>
+            {relative ? <Time at={m.at} long /> : <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>}
           </div>
         )}
         {!editing && <ReplyTag room={room} m={m} inThread={inThread} />}

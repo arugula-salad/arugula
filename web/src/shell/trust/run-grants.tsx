@@ -7,6 +7,7 @@
 // too. The platform keeps them; the hosted machines check them.
 
 import { useEffect, useState } from "preact/hooks";
+import { Time } from "../../shared/ui/time";
 import { api, type ControlSession, type RunGrantView } from "../control";
 import type { Delegation } from "../e2e/hosted.ts";
 import { GRANT_DAYS } from "../e2e/run-grant.ts";
@@ -23,7 +24,6 @@ interface Row {
 }
 
 const DAYS = [30, GRANT_DAYS, 365];
-const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
 export function RunGrants({ s }: { s: ControlSession }) {
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -89,7 +89,19 @@ export function RunGrants({ s }: { s: ControlSession }) {
                   {g
                     ? r.view?.stale
                       ? " · the grant is for an earlier delegation: sign it again"
-                      : ` · runs may start until ${g.grant.expires ? day(g.grant.expires) : "revoked"}${r.view?.renew ? ": renew it" : ""}`
+                      : (
+                        <>
+                          {" "}
+                          · runs may start {g.grant.expires ? (
+                            <>
+                              until it expires <Time at={g.grant.expires} />
+                            </>
+                          ) : (
+                            "until it's revoked"
+                          )}
+                          {r.view?.renew ? ": renew it" : ""}
+                        </>
+                      )
                     : r.view?.offer
                       ? " · has cloud workspaces: allow runs on them"
                       : " · no runs"}

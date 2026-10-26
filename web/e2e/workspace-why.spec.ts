@@ -207,7 +207,7 @@ test("an opened member card: its decisions, the lease and run on it with their p
   await expect(why.locator(`[data-why-run="${run}"]`)).toContainText("as shipper");
   await expect(why.locator(`[data-why-run="${other}"]`)).toContainText("running · as shipper · W-001");
   await expect(why.locator(`[data-why-run="${other}"] [data-why-pane]`)).toHaveCount(0);
-  await expect(why.locator('[data-why-lease="W-001"]')).toContainText("W-001 held by shipper · until");
+  await expect(why.locator('[data-why-lease="W-001"]')).toContainText(/W-001 held by shipper · (expires|active)/);
   await expect(why.locator('[data-why-lease="W-001"] [data-why-pane]')).toHaveCount(0);
   await expect(card.locator("[data-tag-leases]")).toHaveText("1 leased");
 

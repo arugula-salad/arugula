@@ -17,6 +17,7 @@ import type { Client } from "../client";
 import { desktopApp } from "../../shared/desktop";
 import type { ControlState } from "../../shared/proto";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { Time } from "../../shared/ui/time";
 import type { MenuItem } from "../../shared/ui/menu";
 import { openGettingStarted } from "./welcome";
 
@@ -127,12 +128,6 @@ function hiddenFor(): string | null {
   }
 }
 
-function when(ms?: number): string {
-  if (!ms) return "";
-  const d = new Date(ms);
-  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-}
-
 /** Dropped by control: says so, with Join again. "Not now" hides it for
  * this tab until control says it again (another drop). */
 export function ControlBanner({ client }: { client: Client }) {
@@ -163,7 +158,16 @@ export function ControlBanner({ client }: { client: Client }) {
   return (
     <div class="control-dropped" role="alert" data-control-dropped>
       <p>
-        <b>This machine is no longer in {placeOf(s)}.</b> Control dropped it{s.dropped_ms ? ` (${when(s.dropped_ms)})` : ""}: it left, or was removed.
+        <b>This machine is no longer in {placeOf(s)}.</b> Control dropped it
+        {s.dropped_ms ? (
+          <>
+            {" "}
+            <Time at={s.dropped_ms} on />
+          </>
+        ) : (
+          ""
+        )}
+        : it left, or was removed.
         {s.said ? <span class="control-dropped-said"> Control says: {s.said}</span> : null}
         {s.code ? (
           <span data-control-dropped-code>

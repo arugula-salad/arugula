@@ -20,6 +20,7 @@ import { setSidebarOpen, setSidebarWidth, takeSearchFocus, useSidebar } from "./
 import { offlineWhy } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
 import type { MenuItem } from "../../../shared/ui/menu";
+import { Time } from "../../../shared/ui/time";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -80,15 +81,6 @@ export function summarize(client: Client, session: Session): SessionSummary {
     context,
     last: Math.max(0, ...infos.map((i) => i.activity?.last_ms ?? 0)),
   };
-}
-
-function ago(ms: number): string | null {
-  if (!ms) return null;
-  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
 }
 
 // ---- the session's last tab, so going back to it lands where you were
@@ -307,7 +299,7 @@ function SessionRow({
     const r = el.getBoundingClientRect();
     openFresh(client, { clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items, { from: e.type === "click" ? el : null });
   };
-  const when = ago(row.last);
+  const when = row.last || null;
   const unread = sessionUnread(client, s.id);
   return (
     <div
@@ -356,7 +348,7 @@ function SessionRow({
               ) : (
                 <span />
               )}
-              {when && <span class="ws-session-ago">{when}</span>}
+              {when && <Time class="ws-session-ago" at={Math.min(when, Date.now())} title="Last active" />}
             </span>
           )}
         </button>

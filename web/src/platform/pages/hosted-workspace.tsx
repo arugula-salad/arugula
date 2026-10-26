@@ -23,6 +23,7 @@ import { follow, pathOf } from "../router";
 import { controlOrigin, session } from "../session";
 import { toneClass, workspaceTone, type Tone } from "../swarm";
 import { Missing } from "./project";
+import { Time } from "../../shared/ui/time";
 
 /** A hosted workspace, as the platform answers it. */
 interface HostedWorkspace {
@@ -83,8 +84,6 @@ const shortMachine = (m: string) => (m.length > 8 ? `${m.slice(0, 8)}…` : m);
 
 /** States nothing changes on its own: the page stops looking again. */
 const SETTLED = new Set(["ready", "paused", "failed"]);
-
-const when = (ms: number) => (ms ? new Date(ms).toLocaleString() : "");
 
 const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KiB` : `${(n / 1024 / 1024).toFixed(1)} MiB`);
 
@@ -322,7 +321,14 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
                     {t.title || t.agent}
                   </button>{" "}
                   <span class="dim sw-mono">
-                    {t.agent} · closed {when(t.closed_at)} · {size(t.bytes)}
+                    {t.agent}
+                    {t.closed_at ? (
+                      <>
+                        {" "}
+                        · closed <Time at={t.closed_at} />
+                      </>
+                    ) : null}{" "}
+                    · {size(t.bytes)}
                     {t.cut ? " · its middle was cut" : ""}
                   </span>
                   {/* Its Markdown drawn, as chat's is (UI audit #165). */}

@@ -15,11 +15,11 @@ import { deployEventState, deployStateText, plannerText } from "../../shared/dep
 import { CopyButton } from "../../shared/ui/copy";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
+import { Time } from "../../shared/ui/time";
 import { controlOrigin } from "../session";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
-import { ago } from "../settings/agent-tokens";
 import { deployTone, toneClass } from "../swarm";
 import { where } from "../where";
 
@@ -66,8 +66,6 @@ async function get<T>(path: string): Promise<T> {
   if (!r.ok) throw new Error(refusalOf(r.status, v));
   return v;
 }
-
-export const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /** Who planned it: a person, "<owner>'s agent on <machine>", or an agent
  * token's (../../shared/deploys). */
@@ -132,7 +130,7 @@ export function DeployCard({ d, link, planOpen, headless }: { d: Deploy; link?: 
         </dd>
         <dt>Planned</dt>
         <dd>
-          by {planner(d)}, {when(d.created_at)}
+          by {planner(d)}, <Time at={d.created_at} />
         </dd>
       </dl>
       {d.plan_text ? (
@@ -217,9 +215,12 @@ export function DeployPage({ id }: { id: string }) {
             {d.approvals.map((a) => (
               <li key={a.id} data-deploy-approval={a.decision}>
                 {a.decision === "once" ? "Approved" : "Denied"} by {a.name || "a deleted account"} on {a.device_name}
-                {a.passkey ? ", with a passkey" : ""}, {when(a.at)}
+                {a.passkey ? ", with a passkey" : ""}, <Time at={a.at} />
                 {/* Only while it can still be applied (UI audit #167). */}
-                {a.decision === "once" && d.state === "approved" ? <span class="dim"> · good until {when(a.expires)}</span> : null}
+                {a.decision === "once" && d.state === "approved" ? <span class="dim">
+                    {" "}
+                    · expires <Time at={a.expires} />
+                  </span> : null}
               </li>
             ))}
           </ul>
@@ -246,7 +247,7 @@ export function DeployPage({ id }: { id: string }) {
               ) : (
                 e.by
               )}
-              , {when(e.at)}
+              , <Time at={e.at} />
             </span>
           </li>
         ))}
@@ -280,8 +281,8 @@ export function DeployRow({ d }: { d: DeploySummary }) {
           </span>
         ) : null}
       </td>
-      <td class="dim" title={when(at)}>
-        {ago(at)}
+      <td class="dim">
+        <Time at={at} />
       </td>
     </tr>
   );

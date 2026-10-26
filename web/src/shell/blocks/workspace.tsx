@@ -14,6 +14,7 @@ import { BlockError, BlockLoading } from "./block-states";
 import { openWorkspace } from "./open-labs";
 import type { BlockRenderer, BlockView } from "./view";
 import { ago, decisionLine, GateWhy, governs } from "../ui/gate-why";
+import { Time } from "../../shared/ui/time";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { Graph, type Clicks, type GraphStatus } from "./workspace-graph";
 
@@ -112,13 +113,6 @@ function hint(error: string, code: string | null, root: string): string | null {
   return error.startsWith("no chant.workspace.json") ? "This directory isn't in a chant workspace." : null;
 }
 
-/** "until 1:23 PM" for a time today, else the date too. */
-function until(t: string | null): string {
-  if (!t) return "";
-  const d = new Date(t);
-  return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleString();
-}
-
 /** A member card's why (#618): the decisions covering it, the commits no
  * decision covers, the leases and runs on it, each linked to its pane while
  * that pane is open. Proposed decisions are reviewed in hud. */
@@ -186,7 +180,13 @@ function WhyCard({ client, id, s, m, mayOpen }: { client: Client; id: PaneId; s:
       ) : (
         m.leases.map((l) => (
           <div key={l.item} class="ws-why-row" data-why-lease={l.item}>
-            <b>{l.item}</b> held by {l.holder} · {l.state === "active" ? `until ${until(l.expires_at)}` : l.state} {paneLink(l.pane)}
+            <b>{l.item}</b> held by {l.holder} · {l.state === "active" && l.expires_at ? (
+              <>
+                expires <Time at={Date.parse(l.expires_at)} title="Until" />
+              </>
+            ) : (
+              l.state
+            )} {paneLink(l.pane)}
           </div>
         ))
       )}
@@ -408,8 +408,18 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                     <b>{g.member}</b>: {g.op} waits at gate <b>{g.gate}</b>
                     <div class="dim ws-gate-when">
                       {g.approvals}/{g.needed} approvals
-                      {g.since && ` · ${ago(g.since)}`}
-                      {g.expires && ` · expires ${new Date(g.expires).toLocaleString()}`}
+                      {g.since && (
+                        <>
+                          {" "}
+                          · <Time at={Date.parse(g.since)} />
+                        </>
+                      )}
+                      {g.expires && (
+                        <>
+                          {" "}
+                          · expires <Time at={Date.parse(g.expires)} />
+                        </>
+                      )}
                     </div>
                     <GateWhy gate={g} />
                   </div>
@@ -558,7 +568,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
             s.records_note && <p class="dim ws-note">Records: {s.records_note}</p>
           )}
           <p class="dim ws-note">
-            {s.reads.map((r) => `${r.name} ${r.ms} ms${r.ok ? "" : ` (failed${r.reason ? `: ${r.reason}` : ""})`}`).join(" · ")} · read {ago(new Date(s.updated_ms).toISOString())}
+            {s.reads.map((r) => `${r.name} ${r.ms} ms${r.ok ? "" : ` (failed${r.reason ? `: ${r.reason}` : ""})`}`).join(" · ")} · read <Time at={s.updated_ms} />
           </p>
         </div>
       )}
@@ -581,7 +591,12 @@ function PointGate({ g, may, busy, answer }: { g: Gate; may: boolean; busy: bool
           decision point {point.point}
           {g.member && ` · ${g.op} waits at gate ${g.gate}`}
           {g.needed > 1 && ` · ${g.needed} people answer it`}
-          {g.since && ` · asked ${ago(g.since)}`}
+          {g.since && (
+            <>
+              {" "}
+              · asked <Time at={Date.parse(g.since)} />
+            </>
+          )}
         </div>
         {proposal && <div class="dim">{proposal}</div>}
         {g.why && <GateWhy gate={g} />}

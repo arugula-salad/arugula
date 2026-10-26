@@ -9,7 +9,7 @@ import { useEffect, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { ProjectDrafts } from "../drafts";
 import { MsgAvatar } from "../../shared/chat/avatar";
-import { ago } from "../../shared/issues/text";
+import { Time } from "../../shared/ui/time";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
 import { names, roomPath } from "../links";
@@ -117,7 +117,7 @@ function ProjectRuns({ p }: { p: PlatformProject }) {
                 {runTitle(r.op, null, r.deploy)}
               </a>{" "}
               <span class="dim sw-mono">
-                {STATES[r.state] ?? r.state} · {ago(r.created_at)}
+                {STATES[r.state] ?? r.state} · <Time at={r.created_at} long />
               </span>
             </li>
           );

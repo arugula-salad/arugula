@@ -19,6 +19,7 @@ import { ConfirmRemove } from "../../shared/ui/confirm";
 import { agentsRoute, closeAgentsPage, openAgentsPage, type AgentsTab } from "./agents-route";
 import { AppBar } from "./app-bar";
 import { CopyText } from "../../shared/ui/copy";
+import { Time } from "../../shared/ui/time";
 
 interface Recipe {
   name: string;
@@ -439,14 +440,6 @@ function RecipeForm({
   );
 }
 
-function ago(ms: number | null): string {
-  if (!ms) return "";
-  const s = Math.max(0, (Date.now() - ms) / 1000);
-  if (s < 90) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  return `${Math.round(s / 3600)}h ago`;
-}
-
 function TeamTab({ client }: { client: Client }) {
   const [shelves, setShelves] = useState<Shelf[] | null>(null);
   const [waiting, setWaiting] = useState<Waiting[]>([]);
@@ -562,7 +555,14 @@ function TeamTab({ client }: { client: Client }) {
             <span class="dim">
               {s.here ? " · this machine" : ""}
               {s.owner ? ` · ${s.owner}'s` : ""}
-              {!s.online ? ` · offline, as seen ${ago(s.fetched_ms)}` : ""}
+              {!s.online ? (
+                <>
+                  {" "}
+                  · offline{s.fetched_ms ? <>, as seen <Time at={s.fetched_ms} /></> : ""}
+                </>
+              ) : (
+                ""
+              )}
             </span>
           </h4>
           {s.note && s.online && <p class="dim offer-said">{s.note}</p>}
@@ -621,7 +621,7 @@ function TeamTab({ client }: { client: Client }) {
                   <div class="agents-card-head">
                     <b>{g.name}</b>
                     <span class="dim">
-                      may use {g.agent} until {new Date(g.until_ms).toLocaleTimeString()}
+                      may use {g.agent} · ends <Time at={g.until_ms} title="Until" />
                     </span>
                   </div>
                 </div>

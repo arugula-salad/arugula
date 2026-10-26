@@ -27,7 +27,7 @@ import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { Markdown } from "../../shared/ui/markdown";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
-import { ago } from "../../shared/issues/text";
+import { Time } from "../../shared/ui/time";
 import "../../shared/issues/issues.css";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
@@ -233,7 +233,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
                 </a>
                 <ThreadUnread target={r.id} />
                 <span class="issue-row-meta dim">
-                  <StateChip tone={runTone(r.state)}>{STATES[r.state] ?? r.state}</StateChip> · {triggerLine(r, nameOf)} · {ago(r.created_at)}
+                  <StateChip tone={runTone(r.state)}>{STATES[r.state] ?? r.state}</StateChip> · {triggerLine(r, nameOf)} · <Time at={r.created_at} long />
                   {r.started_at && end ? ` · ${took(r.started_at, end)}` : ""}
                   {r.exit_code !== null && r.exit_code !== undefined ? ` · exit ${r.exit_code}` : ""}
                 </span>
@@ -392,7 +392,14 @@ function Specs({
                 {s.schedules.map((x) => (
                   <li key={x.id} data-run-schedule={x.id} class={x.enabled ? "" : "dim"}>
                     ⏱ <code>{x.cron}</code> {x.timezone}
-                    {x.enabled ? ` · next ${new Date(x.next_at).toLocaleString()}` : " · off"}
+                    {x.enabled ? (
+                      <>
+                        {" "}
+                        · next <Time at={x.next_at} long title="Next" />
+                      </>
+                    ) : (
+                      " · off"
+                    )}
                     {x.last_error ? <span class="control-error"> · {x.last_error}</span> : null}
                     {can && (
                       <>
@@ -676,7 +683,7 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
               </a>
             </>
           ) : null}
-          {" "}· {ago(run.created_at)}
+          {" "}· <Time at={run.created_at} long />
           {run.started_at ? ` · ran ${took(run.started_at, run.ended_at ?? Date.now())}` : ""}
         </dd>
         <dt>{op?.deploy ? "Deploy" : op?.instruction !== null && op?.instruction !== undefined ? "Instruction" : "Command"}</dt>
@@ -797,9 +804,7 @@ function TimelineRow({ e, by }: { e: RunEventView; by: string }) {
       <span>
         <b>{who}</b> {what}
         {detail ? <span class="dim"> · {detail}</span> : null}{" "}
-        <time class="dim" title={new Date(e.at).toLocaleString()}>
-          {ago(e.at)}
-        </time>
+        <Time class="dim" at={e.at} long />
       </span>
     </li>
   );

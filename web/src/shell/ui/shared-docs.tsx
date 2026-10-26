@@ -13,6 +13,7 @@ import { opPath, OPS } from "../ops";
 import type { DocOpenRequest, DocOpened, DocRow } from "../../shared/proto";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
+import { Time } from "../../shared/ui/time";
 import { getFleet } from "./hosts";
 
 /** One row of control's `GET /api/doc-links`. */
@@ -28,7 +29,6 @@ interface Row {
 export const OFFLINE = "its machine is offline";
 
 const size = (b: number) => (b < 1 << 20 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / (1 << 20)).toFixed(1)} MB`);
-const when = (ms: number) => new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 const opened = (n: number) => (n === 0 ? "not opened yet" : n === 1 ? "opened about once" : `opened about ${n} times`);
 
 export function SharedDocs({ s, close }: { s: ControlSession; close: () => void }) {
@@ -144,7 +144,7 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
               <br />
               <span class="dim">
                 {titles.has(r.id) ? `on ${name(r)} · ` : ""}
-                {size(r.size)} · shared {when(r.made)} · updated {when(r.updated)} · {opened(r.opens)}
+                {size(r.size)} · shared <Time at={r.made} on /> · updated <Time at={r.updated} on /> · {opened(r.opens)}
               </span>
             </span>
             <button class="primary small" data-open-shared-doc disabled={!machine(r)} title={machine(r) ? undefined : OFFLINE} onClick={() => void openIt(r)}>

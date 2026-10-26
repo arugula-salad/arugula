@@ -17,6 +17,7 @@ import type { PaneId } from "../../shared/proto";
 import { getFleet } from "../ui/hosts";
 import { askText } from "../../shared/ui/menu";
 import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
+import { Time } from "../../shared/ui/time";
 import type { BlockRenderer, BlockView } from "./view";
 
 interface Card {
@@ -70,24 +71,7 @@ export interface AgentsState {
   updated_ms: number;
 }
 
-/** A grant's end: the time today, else the day and time (UI audit #178:
- * a time alone read as today's). */
-function until(ms: number): string {
-  const d = new Date(ms);
-  const today = d.toDateString() === new Date().toDateString();
-  return d.toLocaleString(undefined, { ...(today ? {} : { month: "short", day: "numeric" }), hour: "numeric", minute: "2-digit" });
-}
-
 const model = (c: Card) => c.skills?.[0]?.tags?.find((t) => t !== "claude-code") ?? null;
-
-function ago(ms: number | null): string {
-  if (!ms) return "";
-  const s = Math.max(0, (Date.now() - ms) / 1000);
-  if (s < 90) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
-}
 
 function plain(s: AgentsState | null): string {
   if (!s) return "Team agents";
@@ -153,7 +137,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
         <span class="dim" data-agents-count>
           {total} on {s.catalog.machines.length} machine{s.catalog.machines.length === 1 ? "" : "s"}
         </span>
-        <span class="dim">{s.loading ? "asking…" : ago(s.catalog.refreshed_ms)}</span>
+        <span class="dim">{s.loading ? "asking…" : <Time at={s.catalog.refreshed_ms} title="Asked" />}</span>
         <button title="Ask every machine for its agents again" data-agents-refresh disabled={busy !== null || s.loading} onClick={() => void call("refresh", {}, "couldn't refresh the catalog")}>
           {busy === "refresh" ? "…" : "↻"}
         </button>
@@ -194,7 +178,14 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                 {m.here ? " · this machine" : ""}
                 {m.owner ? ` · ${m.owner}'s` : ""}
                 {m.team ? " · team" : ""}
-                {!m.online ? ` · offline, as seen ${ago(m.fetched_ms)}` : ""}
+                {!m.online ? (
+                  <>
+                    {" "}
+                    · offline{m.fetched_ms ? <>, as seen <Time at={m.fetched_ms} /></> : ""}
+                  </>
+                ) : (
+                  ""
+                )}
               </span>
             </h4>
             {m.note && m.online && <p class="dim offer-said">{m.note}</p>}
@@ -236,7 +227,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                 <li key={`${g.account}/${g.agent}`} data-grant={`${g.name}/${g.agent}`}>
                   <b>{g.name}</b>
                   <span class="dim">
-                    {g.agent}, until {until(g.until_ms)}
+                    {g.agent}, ends <Time at={g.until_ms} title="Until" />
                   </span>
                   <button data-revoke={`${g.name}/${g.agent}`} disabled={busy !== null} onClick={() => void call("revoke", { account: g.account, agent: g.agent }, "couldn't take it back")}>
                     Revoke

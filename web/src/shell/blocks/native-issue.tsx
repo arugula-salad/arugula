@@ -26,7 +26,7 @@ import type { ForgePin, NativeIssue, PlatformProjects } from "../../shared/proto
 import { chat } from "../../shared/chat-store";
 import { IssueApiContext, IssueView, type IssueApi, type IssuePlace } from "../../shared/issues/view";
 import { IssueError, issues } from "../../shared/issues/store";
-import { ago } from "../../shared/issues/text";
+import { Time } from "../../shared/ui/time";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { platformHref } from "../platform-links";
@@ -147,7 +147,7 @@ function useReader(s: NativeIssueState, project: string | null | undefined): Rea
 /** Where it was read from, and that it's what it said last when the
  * platform can't be reached. */
 function Foot({ s, me }: { s: NativeIssueState; me: boolean }) {
-  if (s.pin.stale && !me) return <span data-issue-foot>Arugula control can't be reached now: this is what it said {s.read_ms ? ago(s.read_ms) : "last"}.</span>;
+  if (s.pin.stale && !me) return <span data-issue-foot>Arugula control can't be reached now: this is what it said {s.read_ms ? <Time at={s.read_ms} long /> : "last"}.</span>;
   return <span data-issue-foot>{me ? "Read as you, through Arugula control." : "Read through Arugula control by this machine, for its owner."}</span>;
 }
 

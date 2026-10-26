@@ -9,7 +9,7 @@ import { Modal } from "../../shared/ui/modal";
 import { signedAppIn, type AppLogin, type ControlSession, type ShareOffer, type Team } from "../control";
 import type { TeamRole } from "../e2e/team.ts";
 import { roleAs, roleLabel } from "../ui/roles";
-import { addedAt, clearHash, dropHash } from "./common";
+import { AddedAt, clearHash, dropHash } from "./common";
 
 /** M48: the desktop app asks to sign in as this account. Allowing hands a
  * grant to the app on this computer (its loopback port): an app elsewhere
@@ -352,7 +352,7 @@ export function AdmitPrompt({ s, team, req }: { s: ControlSession; team: Team; r
     <Modal>
       <h2>Add to {team.roster.name}?</h2>
       <p data-admit={req.account}>
-        <b>{req.name}</b> used {whose} invite link (made {addedAt(req.invite.made)}, for {roleFor(req.invite.role)}).
+        <b>{req.name}</b> used {whose} invite link (made <AddedAt at={req.invite.made} />, for {roleFor(req.invite.role)}).
       </p>
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">

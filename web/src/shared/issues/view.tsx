@@ -19,6 +19,7 @@ import type { ChatRoom, IssueEvent, IssuePatch, IssuePatched, NativeIssue } from
 import { chat } from "../chat-store";
 import { MsgAvatar } from "../chat/avatar";
 import { RoomBody, type Between } from "../chat/room";
+import { Time } from "../ui/time";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
 import { PageHeader, type BackLink } from "../ui/page-header";
@@ -28,7 +29,7 @@ import { usePhone, useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { IssueError, issues } from "./store";
 import "./issues.css";
-import { ago, eventLine, stateLabel, whoLabel, type NameOf } from "./text";
+import { eventLine, stateLabel, whoLabel, type NameOf } from "./text";
 
 /** What an issue's view reads and changes it through. */
 export interface IssueApi {
@@ -267,8 +268,13 @@ export function IssueView({
           <div class="issue-meta">
             <StateTag i={issue} />
             <span>
-              <b class="issue-who">{whoLabel(issue.author, issue.agent, nameOf)}</b> opened this {ago(issue.created_at)}
-              {issue.state === "closed" && issue.closed_at ? ` · closed ${ago(issue.closed_at)}` : ""}
+              <b class="issue-who">{whoLabel(issue.author, issue.agent, nameOf)}</b> opened this <Time at={issue.created_at} long />
+              {issue.state === "closed" && issue.closed_at ? (
+                <>
+                  {" "}
+                  · closed <Time at={issue.closed_at} long />
+                </>
+              ) : null}
             </span>
             {issue.agent && (
               <Chip tone="teal" title={`Opened by an agent on ${issue.agent.machine_name || "a machine"}, through its owner's grant`} data-issue-agent>
@@ -289,7 +295,7 @@ export function IssueView({
       </PageHeader>
       {stale && (
         <p class="issue-stale" role="status" data-issue-stale>
-          Can't reach Arugula control now: this is what it said {read ? ago(read) : "last"}.
+          Can't reach Arugula control now: this is what it said {read ? <Time at={read} long /> : "last"}.
         </p>
       )}
       <div class="issue-cols">
@@ -305,7 +311,7 @@ export function IssueView({
             <div class="issue-post-body">
               <div class="thread-head">
                 <span class="thread-name">{whoLabel(issue.author, issue.agent, nameOf)}</span>
-                <time title={new Date(issue.created_at).toLocaleString()}>{ago(issue.created_at)}</time>
+                <Time at={issue.created_at} long />
                 {writer && editing !== "body" && (
                   <button class="secondary small issue-edit" data-issue-edit-body onClick={() => setEditing("body")}>
                     Edit
@@ -355,9 +361,7 @@ function IssueEventRow({ e, line, nameOf }: { e: IssueEvent; line: string; nameO
       </span>
       <span>
         <b>{whoLabel(e.actor, e.agent, nameOf)}</b> {line}{" "}
-        <time class="dim" title={new Date(e.at).toLocaleString()}>
-          {ago(e.at)}
-        </time>
+        <Time class="dim" at={e.at} long />
       </span>
     </div>
   );

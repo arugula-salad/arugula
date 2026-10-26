@@ -26,6 +26,7 @@ import { askText, type PromptChoice } from "../../shared/ui/menu";
 import { isNativeIssue, NativeIssueBlock, nativeIssueText, nativeIssueTitle, type NativeIssueState } from "./native-issue";
 import { BlockError, BlockLoading, OpenOutside } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
+import { Time } from "../../shared/ui/time";
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
  * beside `split` or in a new tab of `session`. */
@@ -42,15 +43,6 @@ export async function openIssue(client: Client, where: { split?: PaneId; session
   if (!issue?.trim()) return;
   const place = where.split !== undefined ? { split: where.split, from_pane: where.split } : { session: where.session !== undefined ? String(where.session) : undefined };
   await client.openBlock({ type: "forge", config: { issue: issue.trim(), dir: where.dir ?? undefined }, local: true, ...place }, "couldn't open the issue");
-}
-
-function ago(ms: number | null | undefined): string {
-  if (!ms) return "";
-  const s = Math.max(0, (Date.now() - ms) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
 }
 
 const words = (s: string) => s.replace(/_/g, " ");
@@ -155,7 +147,7 @@ function Timeline({ events, s }: { events: ForgeEvent[]; s: ForgeState }) {
       <h4>Timeline</h4>
       {tidy(events).map((e) => (
         <div key={e.id} class="forge-row forge-event">
-          <span class="dim">{ago(e.at)}</span> <b>{e.actor ?? "someone"}</b> {eventLine(e)}
+          <Time class="dim" at={e.at} /> <b>{e.actor ?? "someone"}</b> {eventLine(e)}
           {e.body && <Body text={e.body} s={s} />}
         </div>
       ))}
@@ -188,12 +180,12 @@ function Foot({ s, buttons }: { s: ForgeState; buttons: ComponentChildren }) {
   const live = s.live && ` · ${s.live === "webhook" ? `live (${s.live_via === "github-app" ? "GitHub App" : "webhook"})` : "polling"}`;
   const polls = s.pin ? (
     <p class="dim ws-note forge-polls" data-forge-live-state data-forge-pin-read title={s.pin.stale ?? s.live_why ?? undefined}>
-      read through Arugula control {ago(s.updated_ms)}
+      read through Arugula control <Time at={s.updated_ms} />
       {s.pin.stale ? " · can't reach it now: as it said last" : live}
     </p>
   ) : (
     <p class="dim ws-note forge-polls" data-forge-live-state title={s.live_why ?? undefined}>
-      {plural(s.polls, "poll")}, {plural(s.reads, "full read")} · read {ago(s.updated_ms)}
+      {plural(s.polls, "poll")}, {plural(s.reads, "full read")} · read <Time at={s.updated_ms} />
       {live}
     </p>
   );
@@ -382,7 +374,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
             <h4>Agent</h4>
             {l ? (
               <div class="forge-row" data-agent-link={l.block}>
-                <b>{l.agent}</b> works on it in %{l.block}, on <code>{l.branch}</code> from <code>{l.base}</code> <span class="dim">{ago(l.at_ms)}</span>
+                <b>{l.agent}</b> works on it in %{l.block}, on <code>{l.branch}</code> from <code>{l.base}</code> <span class="dim"><Time at={l.at_ms} /></span>
                 <div class="dim">{l.worktree}</div>
                 <div>
                   {l.pr ? (
@@ -583,7 +575,7 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
               <p class="dim forge-new-who">
                 {n.agent ? (
                   <>
-                    <b>{agent}</b> drafted this new issue · {ago(n.at_ms)}
+                    <b>{agent}</b> drafted this new issue · <Time at={n.at_ms} />
                   </>
                 ) : (
                   <>opening it as {n.by || "you"}…</>
@@ -591,14 +583,14 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
               </p>
               {revising && n.asked && (
                 <div class="forge-status asked" data-new-asked>
-                  <b>{n.asked.by}</b> asked for changes <span class="dim">· {ago(n.asked.at_ms)}</span>
+                  <b>{n.asked.by}</b> asked for changes <span class="dim">· <Time at={n.asked.at_ms} /></span>
                   <div class="forge-status-note">{n.asked.note}</div>
                   <div class="dim">{agent} is revising it. The new draft replaces this one here.</div>
                 </div>
               )}
               {waiting && !revising && n.asked?.revised_ms !== undefined && (
                 <div class="forge-status ok" data-new-revised>
-                  {agent} revised it after {n.asked.by}'s note <span class="dim">· {ago(n.asked.revised_ms)}</span>
+                  {agent} revised it after {n.asked.by}'s note <span class="dim">· <Time at={n.asked.revised_ms} /></span>
                   <div class="dim forge-status-note">“{n.asked.note}”</div>
                 </div>
               )}
@@ -637,7 +629,7 @@ function Drafts({ s }: { s: ForgeState }) {
       {[...waiting, ...settled].map((d) => (
         <div key={d.id} class={`forge-draft ${d.status}`} data-draft={d.id} data-draft-status={d.status}>
           <div>
-            <b>{d.by.replace(/^mcp:/, "")}</b> drafted {draftWhat(d)} <span class="dim">{ago(d.at_ms)}</span>
+            <b>{d.by.replace(/^mcp:/, "")}</b> drafted {draftWhat(d)} <span class="dim"><Time at={d.at_ms} /></span>
             {d.status === "sent" && (
               <span class="ws-tag">
                 sent by {d.settled_by}
