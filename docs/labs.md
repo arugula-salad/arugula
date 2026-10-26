@@ -275,7 +275,12 @@ says what is stored.
   never when empty). Others with the room open see up to three names, then
   "Several people are typing…", for 6 s. It is a short-lived row in
   `chat_events`, so it reaches every platform machine and is never
-  replayed, and dropped within seconds.
+  replayed, and dropped within seconds. Writing `@arugula` in a project's
+  channel, a reply thread in one, or an issue's or PR's thread makes the
+  composer's ping say `warm` (once per message; a reply thread's composer
+  sends only that, never typing), and control wakes the project's agents box,
+  so it's up by the time the message is sent: only for someone who could
+  ask, never in a DM, and at most once a minute per project.
 
 **Being told, and not**
 - **Levels:** per room, *all messages*, *mentions only* or *nothing*. The

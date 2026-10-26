@@ -22,6 +22,7 @@ import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
 import { TypingLine } from "./typing";
+import { asksArugula, warmsIn } from "./warm";
 import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
 // Saved items (#116) fill the toolbar's save, mark-unread and reminder hooks.
 import "./saved-hooks";
@@ -971,6 +972,7 @@ export function RoomCompose({
         : await chat.post(room.id, text, quote, files.ids, paused && anyway);
       setMissed(posted.unreached.map((w) => `Nobody here called ${w} can read this room`));
       setText("");
+      chat.composed(room.id, thread?.parent);
       setQuote(undefined);
       setAlso(false);
       files.clear();
@@ -1091,7 +1093,10 @@ export function RoomCompose({
             const v = (e.target as HTMLTextAreaElement).value;
             setText(v);
             // Never while it's empty; the store holds it to one in 3 s.
-            if (v.trim() && !thread) chat.typing(room.id);
+            // An `@arugula` being written warms the project's box (M262);
+            // in a reply thread that's all the ping is.
+            if (!v.trim()) chat.composed(room.id, thread?.parent);
+            else chat.typing(room.id, warmsIn(room.kind) && asksArugula(v), thread?.parent);
           }}
           onKeyDown={(e) => {
             const n = options.length || emojis.length;

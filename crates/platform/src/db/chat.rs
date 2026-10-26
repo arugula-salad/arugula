@@ -93,6 +93,9 @@ pub const CHAT_EVENTS_KEPT: u64 = 10_000;
 /// sending, so a machine that is a few seconds behind still finds it.
 pub const TYPING_KEPT_MS: u64 = 15_000;
 
+/// At most one warm (M262) per project in this long, across machines.
+pub const WARM_GAP_MS: u64 = 60_000;
+
 /// One of chat's live events, to add (M144): `live` with the event's JSON
 /// in `body` (and `to`, whom only it goes to), `typing` (a `live` body that
 /// only streams hear, and only while it's fresh), or `changed`, empty.
@@ -855,14 +858,41 @@ impl Db {
         )
     }
 
-    /// Drop typing rows older than [`TYPING_KEPT_MS`]: they're only ever
-    /// worth a few seconds, so they go far sooner than the window of real
-    /// events and never crowd it. How many went.
+    /// Drop typing rows older than [`TYPING_KEPT_MS`], and warm rows older
+    /// than [`WARM_GAP_MS`]: they're only ever worth a few seconds (or a
+    /// minute), so they go far sooner than the window of real events and
+    /// never crowd it. How many went.
     pub fn prune_typing(&self, now: u64) -> Result<usize> {
         self.c().execute(
-            "DELETE FROM chat_events WHERE kind = 'typing' AND at < ?1",
-            params![now.saturating_sub(TYPING_KEPT_MS)],
+            "DELETE FROM chat_events WHERE (kind = 'typing' AND at < ?1) OR (kind = 'warm' AND at < ?2)",
+            params![now.saturating_sub(TYPING_KEPT_MS), now.saturating_sub(WARM_GAP_MS)],
         )
+    }
+
+    /// Whether `project`'s agents box may be warmed now (M262): true at
+    /// most once a [`WARM_GAP_MS`] per project, whichever platform machine
+    /// asks. It's a `warm` row of `chat_events` (`body` the project), taken
+    /// under the table's lock as a live event is added, so two machines
+    /// never both take it. Nothing streams it and nobody is told: it's
+    /// only the mark, pruned with typing.
+    pub fn take_warm(&self, project: &str, now: u64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        tx.lock("chat_events")?;
+        let recent: i64 = tx.query_row(
+            "SELECT count(*) FROM chat_events WHERE kind = 'warm' AND body = ?1 AND at > ?2",
+            params![project, now.saturating_sub(WARM_GAP_MS)],
+            |r| r.get(0),
+        )?;
+        if recent > 0 {
+            return Ok(false);
+        }
+        tx.execute(
+            "INSERT INTO chat_events (kind, body, to_account, at) VALUES ('warm', ?1, NULL, ?2)",
+            params![project, now],
+        )?;
+        tx.commit()?;
+        Ok(true)
     }
 
     /// An account's read mark in a room, and whether it's muted.

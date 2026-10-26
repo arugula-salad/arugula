@@ -848,6 +848,15 @@ export type ChatThreads = { threads: Array<ChatThreadItem>, unread: number, ment
 export type ChatTopicSet = { topic?: string, description?: string, };
 
 /**
+ * `POST /api/chat/rooms/{id}/typing`'s body, which may be left out (#111).
+ * `warm` (M262): the composer's text asks `@arugula`, so the project's
+ * agents box is woken now, before the message is sent. A page sends it
+ * once per composing burst. `show` false: only that, not typing (a reply
+ * thread's composer, whose typing nobody is shown).
+ */
+export type ChatTyping = { warm: boolean, show: boolean, };
+
+/**
  * `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read
  * mark goes to just before it, backwards if need be (#116). The answer is
  * the room, as the reader now sees it.
