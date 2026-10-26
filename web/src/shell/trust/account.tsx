@@ -1,6 +1,6 @@
 // Sign-in and account (#173): where you're signed in (sign one out, or
-// everywhere), your passkeys (never the last way in), and deleting the
-// account, after typing its login. Its usage reports switch is shared
+// everywhere), your passkeys and GitHub link (#208; never the last way
+// in), and deleting the account, after typing its login. Its usage reports switch is shared
 // (../../shared/ui/account-telemetry.tsx), handed the account's answer.
 
 import { useEffect, useState } from "preact/hooks";
@@ -68,13 +68,28 @@ export function passkeyName(k: Passkeys["passkeys"][number], i: number): string 
   return `Passkey ${i + 1}`;
 }
 
-export function AccountPanel({ s, close }: { s: ControlSession; close: () => void }) {
+/** Where linking GitHub comes back to: `#github-link=<what happened>`. */
+export const GITHUB_LINK_HASH = /^#github-link=([a-z-]+)$/;
+
+/** What linking GitHub came back with, for the dialog to say. */
+const LINKED: Record<string, string> = {
+  linked: "GitHub is linked: you can sign in with it too.",
+  taken: "That GitHub account already signs in to another Arugula account. Nothing changed.",
+  "has-other": "This account has another GitHub account linked: unlink it first.",
+  elsewhere: "That link was started in another browser or sign-in: press Link GitHub again here.",
+  expired: "That link took too long or was used already: press Link GitHub again.",
+  declined: "GitHub didn't link: it was declined on GitHub.",
+  failed: "Linking GitHub failed: try again.",
+};
+
+export function AccountPanel({ s, close, linked }: { s: ControlSession; close: () => void; linked?: string }) {
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [keys, setKeys] = useState<Passkeys | null>(null);
   const [err, setErr] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
   // The passkey whose Remove was clicked: a dialog asks.
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
+  const [unlinking, setUnlinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const load = () => {
     api<{ sessions: SessionRow[] }>("/api/me/sessions").then((r) => setSessions(r.sessions), (e: Error) => setErr(e.message));
@@ -194,6 +209,59 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
             <button class="secondary" data-add-passkey onClick={() => act(() => s.addPasskey())}>
               Add a passkey
             </button>
+          ) : null}
+        </>
+      ) : null}
+      {s.info.github || keys?.github ? (
+        <>
+          <h3 class="control-group">GitHub</h3>
+          {linked ? (
+            <p class={linked === "linked" ? "dim" : "control-error"} data-github-link={linked}>
+              {LINKED[linked] ?? LINKED.failed}
+            </p>
+          ) : null}
+          <ul class="control-devices control-rows" data-github>
+            <li>
+              <span data-github-login>{keys?.github ?? "Not linked"}</span>
+              <span class="dim">{keys?.github ? "signs you in" : "sign in with GitHub too, and use its repos"}</span>
+              {!keys ? (
+                <span />
+              ) : keys.github ? (
+                <button
+                  class="secondary danger small"
+                  data-unlink-github
+                  disabled={keys.ways <= 1}
+                  title={keys.ways <= 1 ? "Your only way to sign in" : undefined}
+                  onClick={() => setUnlinking(true)}
+                >
+                  Unlink
+                </button>
+              ) : (
+                <button
+                  class="secondary small"
+                  data-link-github
+                  onClick={() => location.assign(`/auth/github?link=1&next=${encodeURIComponent(location.pathname + location.search)}`)}
+                >
+                  Link GitHub
+                </button>
+              )}
+            </li>
+          </ul>
+          {unlinking ? (
+            <ConfirmRemove
+              title={`Unlink GitHub (${keys?.github ?? ""})?`}
+              label="Unlink"
+              cancel={() => setUnlinking(false)}
+              go={() => {
+                setUnlinking(false);
+                act(async () => {
+                  await api("/api/me/github/unlink", {});
+                  await s.refreshMe();
+                });
+              }}
+            >
+              <p>It stops signing you in at once, and features that use your GitHub account stop until you link it again.</p>
+            </ConfirmRemove>
           ) : null}
         </>
       ) : null}

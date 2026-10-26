@@ -1,0 +1,73 @@
+// A project's boards (live status board, step 2), as the platform's board
+// routes give them to the reader (crates/platform/src/boards.rs): the list,
+// one board with its zones and rows (and each `fi_` and `iss_` row's state
+// now as `live`), and the writes. Shared: the platform page's board page
+// and the shell's board block read through it. A write that names a stale
+// `rev` is refused with 409 (`stale_rev`): the view reads the board again.
+
+import type { BoardList, BoardMoveEntry, BoardPutEntry, BoardView } from "../proto";
+import { chat } from "../chat-store";
+import { platformFetch, refusalOf } from "../maintenance";
+
+/** A refusal from the board routes: its status, and `reason` when it gave
+ * one (`stale_rev` for a write on an entry that moved on). */
+export class BoardError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly reason?: string,
+  ) {
+    super(message);
+  }
+}
+
+export const STALE_REV = "stale_rev";
+
+async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await platformFetch(path, {
+    method,
+    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    credentials: "same-origin",
+  });
+  const j = (await res.json().catch(() => ({}))) as T & { error?: string; reason?: string };
+  if (!res.ok) throw new BoardError(res.status, refusalOf(res.status, j, `HTTP ${res.status}`), j.reason);
+  return j;
+}
+
+const enc = encodeURIComponent;
+
+/** The boards' titles the page has read, for their links' slugs. */
+const titles = new Map<string, string>();
+
+export const boards = {
+  title: (id: string): string | undefined => titles.get(id),
+  async list(project: string): Promise<BoardList> {
+    const l = await call<BoardList>("GET", `/api/projects/${enc(project)}/boards`);
+    for (const b of l.boards) titles.set(b.id, b.title);
+    return l;
+  },
+  async create(project: string, title: string): Promise<BoardView> {
+    const v = await call<BoardView>("POST", `/api/projects/${enc(project)}/boards`, { title });
+    titles.set(v.board.id, v.board.title);
+    return v;
+  },
+  async get(id: string): Promise<BoardView> {
+    const v = await call<BoardView>("GET", `/api/boards/${enc(id)}`);
+    titles.set(id, v.board.title);
+    return v;
+  },
+  /** Make or change an entry: what isn't given is left as it is. */
+  put(id: string, p: Partial<BoardPutEntry>) {
+    const full: BoardPutEntry = { id: null, rev: null, entry: null, zone: null, title: null, kind: null, pointer: null, note: null, status: null, ...p };
+    return call<BoardView>("PUT", `/api/boards/${enc(id)}/entries`, full);
+  },
+  move(id: string, entry: string, m: Partial<BoardMoveEntry>) {
+    const full: BoardMoveEntry = { rev: null, zone: null, before: null, ...m };
+    return call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, full);
+  },
+  remove: (id: string, entry: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/entries/${enc(entry)}`),
+  /** The board's thread (made the first time someone opens it): the room
+   * the platform pushes a change on, so a view hears of it live. */
+  thread: (id: string) => chat.openObject(id),
+};

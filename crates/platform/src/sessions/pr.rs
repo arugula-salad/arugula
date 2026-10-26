@@ -14,8 +14,8 @@
 //!   other places GitHub looks, read from the base branch with the App's
 //!   read token) and what the session's pushed turns left, under its
 //!   `## Summary` (or its first section; one of its own without a
-//!   template): the commits' subjects (from GitHub's compare when the
-//!   turns' reports have none), the last pushed turn's diffstat, and its
+//!   template): the commits' subjects (from GitHub's compare, else the
+//!   turns' reports), the last pushed turn's diffstat, and its
 //!   finish step's result. A later turn that didn't push (its finish step
 //!   failed, M261, or its push did) isn't on GitHub, so it's left out.
 //!   The footer links the session and its thread. The title is the first
@@ -281,9 +281,9 @@ async fn compared(app: &Platform, link: &LinkedRepo, base: &str, head: &str) -> 
     app_get(app, link, &format!("repos/{}/compare/{base}...{head}", link.full_name)).await
 }
 
-/// The compare's commits, newest first, as `"SHA subject"`: for a session
-/// whose turns' reports have none (a turn typed in its block before the
-/// box followed those, 0.62.1).
+/// The compare's commits, newest first, as `"SHA subject"`: what the PR
+/// holds, which the turns' reports may not be (a turn typed in its block
+/// before the box followed those, 0.62.1, or a commit lost with a box).
 fn commits_in(v: &Value) -> Vec<String> {
     let mut out: Vec<String> = v["commits"]
         .as_array()
@@ -447,10 +447,12 @@ async fn draft_view(app: &Platform, s: &Session, link: &LinkedRepo, v: &Viewer) 
     let turns = on_github(turns(app, s)?);
     let names = app.cache.accounts(&*app.hub, std::slice::from_ref(&v.account)).await?;
     let asker = names.get(&v.account).map(|a| a.name.clone()).unwrap_or_default();
-    let mut commits = commits_of(&turns);
     let cmp = if turns.is_empty() { None } else { compared(app, link, &base, &s.branch).await };
+    // GitHub's compare is what the PR holds; the turns' reports also name
+    // commits a box made and lost (its push failed, then it was rebuilt).
+    let mut commits = cmp.as_ref().map(commits_in).unwrap_or_default();
     if commits.is_empty() {
-        commits = cmp.as_ref().map(commits_in).unwrap_or_default();
+        commits = commits_of(&turns);
     }
     let ci = cmp.as_ref().is_some_and(changes_ci);
     let (issue, thread, ask) = match app.db.chat_room(&s.room)? {

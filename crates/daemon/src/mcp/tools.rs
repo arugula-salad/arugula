@@ -1556,6 +1556,32 @@ fn all_defs() -> Vec<Def> {
             flag: None,
             output: None,
         },
+        // Boards, step 3: a project's live status board, through the owner's
+        // grants, behind the `boards` flag.
+        Def {
+            name: super::boards::READ_TOOL,
+            title: "Read a status board",
+            description: super::boards::READ_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::boards::ReadBoardArgs>),
+            read_only: true,
+            destructive: false,
+            idempotent: true,
+            open_world: true,
+            flag: Some(flags::BOARDS),
+            output: None,
+        },
+        Def {
+            name: super::boards::WRITE_TOOL,
+            title: "Write to a status board",
+            description: super::boards::WRITE_DESCRIPTION,
+            args: Args::Kinds { kinds: table(super::boards::WRITE), default: None },
+            read_only: false,
+            destructive: true,
+            idempotent: false,
+            open_world: true,
+            flag: Some(flags::BOARDS),
+            output: None,
+        },
         // M216: a project's runs, through the owner's grants.
         Def {
             name: super::runs::START_TOOL,
@@ -2057,6 +2083,11 @@ impl<'a> Call<'a> {
             },
             ("forge_read" | "forge_draft", Some(kind)) => self.forge_ops(name, kind, args).await,
             ("issue_write", Some(kind)) => self.issue_write(kind, args).await,
+            ("board_write", Some(kind)) => self.board_write(kind, args).await,
+            ("board_read", _) => match parse(args) {
+                Ok(a) => self.board_read(a).await,
+                Err(e) => Err(e),
+            },
             ("start_run", _) => match parse(args) {
                 Ok(a) => self.start_run(a).await,
                 Err(e) => Err(e),
@@ -4887,10 +4918,10 @@ mod tests {
         for name in THREAD_TOOLS {
             assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
         }
-        assert_eq!(every.len(), 34);
+        assert_eq!(every.len(), 36);
         assert_eq!(defs(fl(false)).len(), 33 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 34 - NO_FORGE);
-        assert_eq!(every.len(), defs(fl(false)).len() + 1 + NO_FORGE, "and delegate");
+        assert_eq!(defs(fl(true)).len(), 36 - NO_FORGE);
+        assert_eq!(every.len(), defs(fl(false)).len() + 3 + NO_FORGE, "and delegate and the board tools");
     }
 
     /// A grouped call says what's wrong with it: no kind, a kind it doesn't

@@ -47,7 +47,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation"] as const;
+const FLAGS = ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation", "boards"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -82,11 +82,14 @@ async function shown(page: Page, pane: number): Promise<(Flag | "guest-ssh")[]> 
       forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
       // M76 is the daemon's and the CLI's; the page's catalog is M77's.
       agents: c.flag("agent-delegation"),
+      // Boards are control's (aru-116): the page only knows the flag.
+      boards: c.flag("boards"),
     };
   });
   if (page_says.workspaces) out.push("chant-workspaces");
   if (page_says.forges) out.push("additional-forges");
   if (page_says.agents) out.push("agent-delegation");
+  if (page_says.boards) out.push("boards");
   return [...FLAGS, "guest-ssh" as const].filter((f) => out.includes(f));
 }
 

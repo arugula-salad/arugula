@@ -53,7 +53,7 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     // `labs` in flags.json is every flag (#665), and keeps guest ssh on as
     // Guest SSH access, a sharing setting (native #205).
     guest_ssh: true,
-    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation"],
+    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation", "boards"],
   });
   const [term] = await panes(page);
   const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Open a studio app…"];

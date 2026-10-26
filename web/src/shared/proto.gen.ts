@@ -147,7 +147,103 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
  * What a block is; where one runs is its `host`, not its type. All types
  * share one id space (`%N`) and one place in the layout tree.
  */
-export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat";
+export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat" | "board";
+
+/**
+ * Zone or row.
+ */
+export type BoardEntryKind = "zone" | "row";
+
+export type BoardList = { project: string, boards: Array<ProjectBoard>, };
+
+/**
+ * The item a row points at, as it is now: what the page draws beside the
+ * row's own status, and the label of its link.
+ */
+export type BoardLive = { state: BoardLiveState, 
+/**
+ * `pr` or `issue` (a mirrored one), or `native` for a native issue.
+ */
+kind: string, 
+/**
+ * `OWNER/NAME` of a mirrored item; absent for a native issue.
+ */
+repo?: string | null, number: number, title: string, };
+
+/**
+ * What a row's `fi_` or `iss_` pointer is now, from data control already
+ * has (the forge mirror, the issues table): a separate fact, never written
+ * over the row's stored `status`.
+ */
+export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merged" | "closed";
+
+/**
+ * [`BOARD_ENTRY_MOVE`]'s body: put the entry just before `before` (a
+ * sibling), or last when there is none. A row may go to another `zone`
+ * (its own, if absent); a zone moves among zones, never past `proofs`.
+ */
+export type BoardMoveEntry = { rev: number | null, zone: string | null, before: string | null, };
+
+/**
+ * What a row points at. `None` is free text. The ids are the platform's:
+ * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
+ */
+export type BoardPointer = { "kind": "none" } | { "kind": "forge_item", id: string, } | { "kind": "issue", id: string, } | { "kind": "run", id: string, } | { "kind": "workspace", id: string, } | { "kind": "block", machine: string, pane: string, };
+
+/**
+ * [`BOARD_ENTRIES`]' body. Without `id` it makes an entry: `entry` says
+ * which. A zone is added before the `proofs` zone (a `proofs` one goes
+ * last, and a board has one); a row is added last in `zone`. With `id` it
+ * changes that entry: what is absent is left as it is. A change to
+ * `title`, `pointer` or `note` names `rev`; a change to `status` alone
+ * doesn't.
+ */
+export type BoardPutEntry = { id: string | null, rev: number | null, entry: BoardEntryKind | null, 
+/**
+ * A new row's zone.
+ */
+zone: string | null, title: string | null, 
+/**
+ * A new zone's kind.
+ */
+kind: BoardZoneKind | null, 
+/**
+ * A row's pointer; `{"kind": "none"}` clears it.
+ */
+pointer: BoardPointer | null, note: string | null, 
+/**
+ * A row's status; `"none"` clears it.
+ */
+status: BoardStatus | null, };
+
+export type BoardRow = { id: string, rev: number, pointer: BoardPointer, note: string, status: BoardStatus, 
+/**
+ * A `fi_` or `iss_` pointer's state now, when the reader may see the
+ * item ([`BoardView`] is read with it; a write's answer has it too).
+ */
+live?: BoardLive | null, 
+/**
+ * The machine whose agent added the row, if one did (it may remove
+ * it; nobody else's agent may).
+ */
+agent?: ChatAgent | null, created_at: number, updated_at: number, };
+
+/**
+ * Where a row stands. `None` says nothing.
+ */
+export type BoardStatus = "none" | "open" | "working" | "needs_input" | "done" | "failed";
+
+/**
+ * A board with its zones and rows, in order.
+ */
+export type BoardView = { board: ProjectBoard, zones: Array<BoardZone>, };
+
+export type BoardZone = { id: string, rev: number, title: string, kind?: BoardZoneKind | null, rows: Array<BoardRow>, };
+
+/**
+ * A zone's kind: `proofs` is the board's last zone. Absent: a plain one.
+ */
+export type BoardZoneKind = "proofs";
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and
@@ -2293,6 +2389,8 @@ closed_by?: string,
  */
 closed_by_agent?: ChatAgent, };
 
+export type NewBoard = { title: string, };
+
 /**
  * A new issue, before and after it reached the forge.
  */
@@ -2712,6 +2810,12 @@ root: string,
  * Its name: the repository its origin names, else its folder's.
  */
 name: string, };
+
+export type ProjectBoard = { id: string, project: string, title: string, 
+/**
+ * The account that made it; empty once that account is deleted.
+ */
+created_by: string, created_at: number, updated_at: number, };
 
 export type ProjectMember = { account: string, 
 /**
@@ -3828,6 +3932,7 @@ export const FLAGS = [
   { name: "chant-workspaces", title: "Chant workspaces", about: "Chant workspace blocks: a workspace's members, relationships and gates.", default: false, local_only: false },
   { name: "additional-forges", title: "GitLab and Forgejo", about: "PR and issue blocks for GitLab and Forgejo, beside GitHub's.", default: false, local_only: false },
   { name: "agent-delegation", title: "Local agent delegation", about: "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.", default: false, local_only: true },
+  { name: "boards", title: "Boards", about: "A project's live status board, which needs control.", default: false, local_only: false },
 ] as const;
 
 /** Renamed Labs flags (`arugula_proto::flags::ALIASES`, aru-117): the old

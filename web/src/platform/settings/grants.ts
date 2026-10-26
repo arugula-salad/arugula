@@ -43,7 +43,9 @@ export function liveOver(grants: Grant[], machine: string, s: AgentScope, powers
       g.live &&
       g.subject.id === machine &&
       g.power !== "cloud.drive" &&
-      (powers ? powers.includes(g.power) : !g.power.startsWith("runs.") && g.power !== DEPLOYS_PLAN) &&
+      (powers
+        ? powers.includes(g.power)
+        : !g.power.startsWith("runs.") && !g.power.startsWith("boards.") && g.power !== DEPLOYS_PLAN) &&
       g.scope.kind === s.kind &&
       (s.kind === "account" || g.scope.id === s.id),
   );

@@ -52,6 +52,7 @@ constrains:
   - "path:crates/platform/migrations"
   - "path:crates/control-wire/src/boards.rs"
   - "path:crates/platform/src/chat/objects.rs"
+  - "path:crates/daemon/src/board_block.rs"
 ---
 
 # A board is the project's tracker, a platform object daemons report agent blocks to
@@ -82,5 +83,5 @@ the approved design for the board (Arugula #187, step 1 of 5), three rulings:
 - **A board serves as the project's tracker,** so issues get no parent field
   for now. A board groups issues with everything else a row can point at.
 
-Where: the tables (migration `0058_boards`) and their rules (`crates/platform/src/db/boards.rs`), the routes (`crates/platform/src/boards.rs`, paths in `crates/control-wire/src/boards.rs`), boards as objects (`crates/platform/src/chat/objects.rs`). The page, the block, the MCP tools and the daemon's pushes follow.
+Where: the tables (migration `0058_boards`) and their rules (`crates/platform/src/db/boards.rs`), the routes (`crates/platform/src/boards.rs`, paths in `crates/control-wire/src/boards.rs`), boards as objects (`crates/platform/src/chat/objects.rs`). A read adds each `fi_` and `iss_` row's state now as `live`, from the forge mirror and the issues table, and a change to a board (or to an item a row points at) pushes an object change on the board's thread. The page (`web/src/platform/pages/boards.tsx`, view in `web/src/shared/boards/`) and the board pin block (`crates/daemon/src/board_block.rs`, config `{board}`, drawn only when shown) are step 2 (Arugula #188); the block keeps only the board's id, and the page reads and writes as the person. The MCP tools and the daemon's pushes follow.
 From: Arugula #187 (native, step 1 of the status board).

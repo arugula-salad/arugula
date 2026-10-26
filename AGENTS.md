@@ -108,7 +108,8 @@ nothing marked `mux:` names the edge or the block kinds.
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
   conversations (`conversations/`), the IDE bridge (`ide/`, with the mux's half in `mux:ide/`), invites
-  (`invite/`), remote blocks (`remote.rs`), configured agent harnesses
+  (`invite/`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
+  configured agent harnesses
   (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
   (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`; the
@@ -155,8 +156,8 @@ removed").
 ## Labs
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
-`sandbox-providers`, `chant-workspaces`, `additional-forges`,
-`agent-delegation` (DECISIONS.md "Four Labs flags stay, renamed; the rest
+`sandbox-providers`, `studio`, `chant-workspaces`, `additional-forges`,
+`agent-delegation`, `boards` (DECISIONS.md "Four Labs flags stay, renamed; the rest
 graduate or retire"). Their old names, `vms`, `workspaces`, `forges` and
 `agents`, are aliases forever (`flags::ALIASES`, mirrored for control as
 `wire::FLAG_ALIASES`): every name that comes in goes through
@@ -166,7 +167,8 @@ so an old file naming it is ignored: `fountain` (daemon-side Managoat,
 removed: DECISIONS.md "Daemon-side Managoat is removed"), `huddles`
 (DECISIONS.md "Huddles are removed"), and, graduated or retired in the same
 rethink, `chat` (control's, on by team; the import of a machine's old threads went with it), `docs`, `guest-ssh` (now a machine sharing setting, Guest SSH access, in `sharing.json`: `arugula_proto::sharing`, off by default, the owner's alone; the old flag's word is kept once), `swarm-themes`
-(the swarm's views, under Theme) and `studio` (its connector). They're named
+(the swarm's views, under Theme); `studio` stays until the platform covers
+its connector. They're named
 flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
 read on every call, never cached), set by `arugulad flags chant-workspaces on` or the

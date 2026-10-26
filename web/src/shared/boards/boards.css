@@ -1,0 +1,241 @@
+/* A project's board (live status board, step 2): the platform page's board
+   and the shell's board block draw this (shared/boards/view.tsx). Tags are
+   the forge blocks' (../style.css). It fits a phone: a row is a glyph, its
+   words and one menu button, and its notes wrap. */
+
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+  min-width: 0;
+}
+
+.board-title {
+  margin: 0;
+  font-size: 1.4em;
+  overflow-wrap: anywhere;
+}
+
+.board-stale,
+.board-confirm {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.board-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.board-zone[data-zone-kind="proofs"] {
+  border-style: dashed;
+}
+
+.board-zone-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.board-zone-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.board-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.board-bar i {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+  transition: width 0.2s;
+}
+
+.board-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.board-row:first-child {
+  border-top: 0;
+}
+
+.board-glyph,
+.board-more {
+  flex: none;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+}
+
+.board-glyph {
+  font-size: 1.15em;
+}
+
+.board-glyph.s-working {
+  color: var(--info);
+}
+
+.board-glyph.s-needs_input {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.board-glyph.s-done {
+  color: var(--ok);
+}
+
+.board-glyph.s-failed {
+  color: var(--danger);
+}
+
+.board-glyph.s-none,
+.board-glyph.s-open {
+  color: var(--dim);
+}
+
+.board-glyph:hover,
+.board-more:hover {
+  background: var(--raised);
+}
+
+.board-main {
+  flex: 1;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.board-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.board-ptr {
+  font-family: var(--f-mono, ui-monospace, monospace);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.board-item {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.board-note {
+  overflow-wrap: anywhere;
+}
+
+.board-note .md {
+  margin: 0;
+}
+
+.board-note .md p {
+  margin: 0;
+}
+
+.board-add,
+.board-foot button,
+.board-form button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.board-add {
+  align-self: flex-start;
+  border-style: dashed;
+  color: var(--dim);
+}
+
+.board-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+
+.board-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.board-form input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.board-form-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.board-bad {
+  color: var(--danger);
+  font-size: 0.9em;
+}
+
+.board-list a {
+  overflow-wrap: anywhere;
+}
+
+.board-block {
+  height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 12px;
+}
+
+@media (max-width: 700px) {
+  .board-zone {
+    padding: 8px 10px;
+  }
+
+  .board-glyph,
+  .board-more {
+    min-width: 40px;
+    height: 40px;
+  }
+}

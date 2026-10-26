@@ -278,7 +278,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
     // `labs`, the one switch from before, is every flag (#665), and keeps guest ssh on as
     // Guest SSH access, a sharing setting (native #205).
     guest_ssh: true,
-    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation"],
+    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation", "boards"],
   });
 
   await open(page);

@@ -425,6 +425,7 @@ pub async fn change(
     // Pages showing it (its thread's readers) read it again (M203).
     if !events.is_empty() {
         app.chat.object_changed(&app.db, &format!("project:{}", issue.project), &issue.id);
+        crate::boards::issue_changed(app, &issue.id);
     }
     Ok(wire::IssuePatched {
         issue: issues_wire(app, &[issue]).await?.remove(0),

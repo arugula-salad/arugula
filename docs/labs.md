@@ -45,6 +45,7 @@ Each feature has a flag, off on a new install:
 | `chant-workspaces` | Chant workspace blocks: a workspace's members, relationships and gates |
 | `additional-forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on), until they fit platform projects and workflows |
 | `agent-delegation` | Agent recipes, offering them from this machine as A2A agents, the team's agent catalog and tasks between machines (#403); set only on the machine |
+| `boards` | A project's live status board, which is control's: zones of rows that point at issues, PRs, runs, workspaces and agent blocks |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
 `arugula --help` and `arugulad --help`. Without it they aren't offered, and
@@ -63,6 +64,7 @@ one isn't made.
 | `chant-workspaces` | chant workspace blocks |
 | `additional-forges` | Forgejo and GitLab blocks and webhooks |
 | `agent-delegation` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
+| `boards` | nothing on the daemon: control's board routes answer 404 for an account without it |
 
 ```
 arugulad flags                            # the flags, and which are on

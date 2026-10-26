@@ -191,6 +191,15 @@ fn generate() -> String {
         c.visit::<IssueExportQuery>();
         c.visit::<IssueExport>();
     }
+    // A project's boards (live status board).
+    {
+        use arugula_control_wire::boards::*;
+        c.visit::<BoardList>();
+        c.visit::<NewBoard>();
+        c.visit::<BoardView>();
+        c.visit::<PutEntry>();
+        c.visit::<MoveEntry>();
+    }
     c.decls.sort();
     let mut out = String::from(
         "// Generated from crates/proto by `just proto-ts`: don't edit. Change the\n\

@@ -2,6 +2,7 @@
 // with each id's current name for its slug.
 
 import { chat } from "../shared/chat-store";
+import { boards } from "../shared/boards/store";
 import { listedInChat } from "../shared/chat/unread";
 import { issues } from "../shared/issues/store";
 import { runs } from "./runs";
@@ -55,6 +56,7 @@ export function roomElsewhere(r: Route): string | null {
 export function names(id: string): string | undefined {
   if (id.startsWith("prj_")) return session.project(id)?.name;
   if (id.startsWith("iss_")) return issues.known(id)?.title;
+  if (id.startsWith("brd_")) return boards.title(id);
   const r = chat.room(id);
   return r?.kind === "channel" ? r.name : undefined;
 }

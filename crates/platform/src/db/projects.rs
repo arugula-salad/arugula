@@ -75,6 +75,15 @@ pub const RUNS_START: &str = "runs.start";
 pub const RUNS_COMMAND: &str = "runs.command";
 pub const RUN_POWERS: [&str; 3] = [RUNS_READ, RUNS_START, RUNS_COMMAND];
 
+/// An agent's powers over a project's boards (boards, step 3): its
+/// machine's agents read a project's boards (`boards.read`), or add rows,
+/// set their notes and statuses and move them (`boards.write`, which reads
+/// too, and never makes or deletes a zone or a board). Over a project only,
+/// never given on join; the owner gives each.
+pub const BOARDS_READ: &str = "boards.read";
+pub const BOARDS_WRITE: &str = "boards.write";
+pub const BOARD_POWERS: [&str; 2] = [BOARDS_READ, BOARDS_WRITE];
+
 /// An agent with no machine's power to set a project's secrets by name
 /// (M230), over a project only: write-only, never read back. Only a token
 /// is given it ([`crate::agent_tokens`]), never a machine.
