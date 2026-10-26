@@ -2763,11 +2763,13 @@ async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
 /// answering a write to the row's note at another rev with 409, and a
 /// write to a zone with 403 as the platform does. Every call as it came:
 /// method and path, its body.
+#[cfg(feature = "labs")]
 #[derive(Clone, Default)]
 struct FakeBoards {
     calls: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
 }
 
+#[cfg(feature = "labs")]
 async fn fake_boards(f: FakeBoards) -> String {
     use axum::{
         Json, Router,
@@ -2841,6 +2843,7 @@ async fn fake_boards(f: FakeBoards) -> String {
 /// zones, rows and 72-column text; board_write adds a row, sets a status
 /// with no rev, says to read again on a 409, needs a rev for a note, and
 /// passes the platform's refusal of a zone through.
+#[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
