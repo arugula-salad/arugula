@@ -1112,6 +1112,14 @@ pub enum ChatLive {
         room: String,
         target: String,
     },
+    /// An agent session whose card is in `room` changed (M257: a state,
+    /// a question, an answer on its way, a turn's result): read it again
+    /// (`arugula_control_wire::sessions::SESSION`). Sent to those who see
+    /// the room.
+    Session {
+        room: String,
+        ses: String,
+    },
     /// Someone is typing in a room (#111): shown for [`TYPING_MS`] and
     /// never stored or replayed. Sent to the room's other readers.
     Typing {

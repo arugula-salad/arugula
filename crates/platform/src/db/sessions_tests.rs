@@ -700,12 +700,14 @@ fn actions_wait_for_the_box_and_the_first_answer_wins() {
     let did = json!({ "actions": [a.id] }).to_string();
     b.say(&db, &s.id, Kind::State, Some(State::Working), &did, T0 + 25).unwrap();
     let done = db.session_actions(&s.id).unwrap();
-    assert_eq!((done[0].state, done[0].done_n), (ActionState::Done, Some(db.session(&s.id).unwrap().unwrap().daemon_n)));
+    assert_eq!(
+        (done[0].state, done[0].done_n),
+        (ActionState::Done, Some(db.session(&s.id).unwrap().unwrap().daemon_n))
+    );
     assert!(db.session_work("hw_1").unwrap()[0].actions.is_empty());
 
     // A permission: approved with one of its options, or not at all.
-    let detail =
-        json!({ "question": "Bash: rm", "request": "req_2", "ask": "permission", "options": ["allow-once", "reject-once"] });
+    let detail = json!({ "question": "Bash: rm", "request": "req_2", "ask": "permission", "options": ["allow-once", "reject-once"] });
     b.say(&db, &s.id, Kind::State, Some(State::NeedsInput), &detail.to_string(), T0 + 30).unwrap();
     let as_answer = db.add_session_action(&s.id, &ask(ActionKind::Answer, None), T0 + 31).unwrap();
     assert!(matches!(as_answer, Err(Refused::Detail(_))), "{as_answer:?}");

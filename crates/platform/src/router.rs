@@ -238,6 +238,10 @@ fn routes() -> Routes {
             axum::routing::patch(runs::change_rule).delete(runs::delete_rule),
         )
         .route("/api/projects/{project}/runs", get(crate::triggers::read::list).post(runs::start))
+        // An agent session's card and page (M257).
+        .route(arugula_control_wire::sessions::SESSION, get(crate::session_live::show))
+        .route(arugula_control_wire::sessions::SESSION_STOP, post(crate::session_live::stop))
+        .route(arugula_control_wire::sessions::SESSION_ACTIONS, post(crate::session_live::act))
         // Reading runs, and a machine's agents' runs (M216).
         .route(wire_runs::RUN, get(crate::triggers::read::show))
         .route(wire_runs::RUN_LOG, get(crate::triggers::read::log))
