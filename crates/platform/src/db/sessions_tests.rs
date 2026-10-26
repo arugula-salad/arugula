@@ -412,10 +412,12 @@ fn a_quiet_box_is_unresponsive_until_heard_from() {
     assert_eq!(after.heard_at, Some(heard + 3 * QUIET_MS + 1));
 }
 
-/// A box runs turns for at most three sessions at once: a fourth's take
-/// is refused, and the pull doesn't offer it.
+/// A box holds at most three sessions: a fourth's take is refused, and
+/// the pull doesn't offer it. A done session keeps its slot (its checkout,
+/// for its next turn), so three done ones still leave no room; one ending
+/// makes it.
 #[test]
-fn a_box_runs_three_sessions_at_once() {
+fn a_box_holds_three_sessions_at_once() {
     let db = Db::test();
     let b = Machine::new();
     seed(&db, Some(&b.id));
@@ -425,18 +427,25 @@ fn a_box_runs_three_sessions_at_once() {
     let fourth = create(&db, 4);
     assert_eq!(db.session_work("hw_1").unwrap().len(), 3, "the queued one waits");
     assert_eq!(b.report(&db, &fourth.id, State::Working, T0 + 20).unwrap_err(), Refused::Busy);
-    // One finishing its turn makes room.
-    let busy = db.session_work("hw_1").unwrap()[0].session.clone();
-    b.report(&db, &busy, State::Done, T0 + 21).unwrap();
+    // All three finishing their turns makes no room: done ones keep theirs.
+    let held: Vec<String> = db.session_work("hw_1").unwrap().into_iter().map(|w| w.session).collect();
+    for (i, id) in held.iter().enumerate() {
+        b.report(&db, id, State::Done, T0 + 21 + i as u64).unwrap();
+    }
+    assert_eq!(db.session_work("hw_1").unwrap().len(), 3, "not offered while three are done");
+    assert_eq!(b.report(&db, &fourth.id, State::Working, T0 + 24).unwrap_err(), Refused::Busy);
+    // A done one's next turn is in its own slot.
+    db.queue_prompt(&held[0], &member("one more thing"), T0 + 25).unwrap().unwrap();
+    b.report(&db, &held[0], State::Working, T0 + 26).unwrap();
+    b.report(&db, &held[0], State::Done, T0 + 27).unwrap();
+    // One ending makes room.
+    control(&db, &held[1], State::Done, State::Stopped, T0 + 28).unwrap();
     let work = db.session_work("hw_1").unwrap();
-    assert_eq!(work.len(), 4);
+    assert_eq!(work.len(), 3);
     let queued = work.iter().find(|w| w.session == fourth.id).unwrap();
     assert_eq!((queued.state.as_str(), queued.n, queued.prompts.len()), ("queued", 0, 1));
     assert_eq!(queued.prompts[0].text, "fix the login page");
-    b.report(&db, &fourth.id, State::Working, T0 + 22).unwrap();
-    // And now the done one's next prompt waits.
-    db.queue_prompt(&busy, &member("one more thing"), T0 + 23).unwrap().unwrap();
-    assert_eq!(b.report(&db, &busy, State::Working, T0 + 24).unwrap_err(), Refused::Busy);
+    b.report(&db, &fourth.id, State::Working, T0 + 29).unwrap();
 }
 
 /// Prompts: queued until a turn takes them or they're taken back; an
