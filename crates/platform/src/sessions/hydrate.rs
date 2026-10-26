@@ -48,9 +48,9 @@
 //!   object's oldest comments, and the prompt says what it left out.
 //!   Each GitHub text is cut at [`MAX_ITEM_TEXT`] bytes before it's fenced.
 //!
-//! **GitHub's `author_association`.** The mirror doesn't keep it
-//! (`forge_content` has no such column), so a mirrored text is fenced as
-//! `UNKNOWN`. Keeping it would take a migration and the ingest's help.
+//! **GitHub's `author_association`** is the mirror's, as GitHub sent it
+//! with each text (`forge_content.author_association`); a row mirrored
+//! before it was kept reads `UNKNOWN` until GitHub sends the text again.
 
 use std::collections::HashMap;
 
@@ -71,7 +71,7 @@ use crate::{
 pub const MAX_ITEM_TEXT: usize = 4 * 1024;
 /// The most messages read from a thread.
 pub const MAX_MESSAGES: u32 = 200;
-/// What a mirrored text's association reads as: the mirror doesn't keep it.
+/// What a mirrored text's association reads as when the mirror has none.
 pub const UNKNOWN_ASSOCIATION: &str = "UNKNOWN";
 
 /// One message, as the prompt shows it.
@@ -290,14 +290,15 @@ async fn item(app: &Platform, room: &Room, asker: &str) -> Result<Option<Item>> 
     {
         for r in rows.iter().filter(|r| !r.body.trim().is_empty()) {
             let login = r.author_login.as_deref().unwrap_or("someone");
+            let quoted = github_text(login, r.association.as_deref().unwrap_or(UNKNOWN_ASSOCIATION), &r.body);
             let said = match (r.kind.as_str(), &r.path) {
-                ("body", _) => format!("Its description:\n{}", github_text(login, UNKNOWN_ASSOCIATION, &r.body)),
-                ("review", _) => format!("A review:\n{}", github_text(login, UNKNOWN_ASSOCIATION, &r.body)),
+                ("body", _) => format!("Its description:\n{quoted}"),
+                ("review", _) => format!("A review:\n{quoted}"),
                 ("review_comment", Some(path)) => {
                     let at = r.line.map(|l| format!(":{l}")).unwrap_or_default();
-                    format!("A review comment on {path}{at}:\n{}", github_text(login, UNKNOWN_ASSOCIATION, &r.body))
+                    format!("A review comment on {path}{at}:\n{quoted}")
                 }
-                _ => format!("A comment:\n{}", github_text(login, UNKNOWN_ASSOCIATION, &r.body)),
+                _ => format!("A comment:\n{quoted}"),
             };
             texts.push(said);
         }
