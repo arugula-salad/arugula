@@ -5,7 +5,9 @@
 // theme lays out its panes in world units and draws them; this does the rest.
 
 import type { WorkKind } from "../../shared/proto";
-import type { FieldHooks, FieldPane, SwarmScene } from "./field";
+import { C, readColors, type FieldHooks, type FieldPane, type SwarmScene } from "./field";
+
+export { C };
 
 /** Kinds that run until stopped (or aren't processes): no command that
  * finishes, so nothing grows. The city's `LONG`. */
@@ -44,7 +46,6 @@ export const FONT = {
   display: (w: number, px: number) => `${w} ${px}px "Big Shoulders Display", "Arial Narrow", sans-serif`,
   mono: (w: number, px: number) => `${w} ${px}px "Arugula Mono", "JetBrains Mono", ui-monospace, monospace`,
 };
-export const C = { void: "#06080d", ink: "#e6ebf4", mute: "#7c8698", line: "#1a2030", fail: "#ff5468" };
 
 /** A world rectangle. */
 export interface Rect {
@@ -80,6 +81,7 @@ export abstract class Flat implements SwarmScene {
     protected hooks: FieldHooks,
   ) {
     this.cx = cv.getContext("2d")!;
+    readColors(cv);
     this.listen();
   }
 

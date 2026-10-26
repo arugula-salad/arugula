@@ -17,6 +17,23 @@ import { KINDS } from "./model";
 export const UNREAD = "#e6ebf4";
 export const UNREAD_MENTION = "#f9e2af";
 
+/** The swarm's dark set, as the canvases paint it: style.css's
+ * `:where(.swarm, …)` rule is where it's defined, and each scene reads it
+ * from there (readColors) when it's made (UI audit #180). These are only
+ * what it starts as. */
+export const C = { void: "#06080d", ink: "#e6ebf4", mute: "#7c8698", line: "#1a2030", fail: "#ff5468" };
+
+/** Takes C from the swarm's custom properties, as `el` (a canvas in the
+ * swarm) inherits them. */
+export function readColors(el: Element) {
+  const css = getComputedStyle(el);
+  const from = { void: "--void", ink: "--ink", mute: "--mute", line: "--line", fail: "--s-fail" } as const;
+  for (const k of Object.keys(from) as (keyof typeof from)[]) {
+    const v = css.getPropertyValue(from[k]).trim();
+    if (v) C[k] = v;
+  }
+}
+
 export interface FieldPane {
   key: string;
   kind: WorkKind;
@@ -196,6 +213,7 @@ export class Field implements SwarmScene {
     private hooks: FieldHooks,
   ) {
     this.cx = cv.getContext("2d")!;
+    readColors(cv);
     this.listen();
     // Labels are drawn in the swarm's faces (shared/fonts.css), and a field
     // asleep doesn't draw: draw again once those load. A face that didn't
@@ -712,7 +730,7 @@ export class Field implements SwarmScene {
     const { cx, W, H } = this;
     const z = this.cam.z;
     cx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    cx.fillStyle = "#06080d";
+    cx.fillStyle = C.void;
     cx.fillRect(0, 0, W, H);
 
     // Dot grid.
@@ -781,7 +799,7 @@ export class Field implements SwarmScene {
         cx.beginPath();
         cx.rect(x, y, w, h);
         cx.clip();
-        cx.fillStyle = "#06080d";
+        cx.fillStyle = C.void;
         cx.fillText(`${t.label} · ${t.where}`, x + fs * 0.6, y + fs * 1.15);
         cx.fillStyle = "rgba(200,210,226,.35)";
         stubs(t.key).forEach((len, i) => cx.fillRect(x + fs * 0.6, y + fs * 2.4 + i * fs * 1.35, (w - fs * 1.2) * len * act, fs * 0.5));
