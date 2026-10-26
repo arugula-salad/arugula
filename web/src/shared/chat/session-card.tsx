@@ -552,7 +552,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
       ) : null}
       {c.turn && (
         <div class="session-card-turn" data-session-turn>
-          <span class={c.turn.pushed ? "ok" : "dim"}>{c.turn.pushed ? "Pushed" : "Not pushed"}</span>
+          <span class={c.turn.pushed ? "ok" : "dim"}>{review ? "Read only" : c.turn.pushed ? "Pushed" : "Not pushed"}</span>
           <span class="dim">
             {" "}
             · {c.turn.commits.length} commit{c.turn.commits.length === 1 ? "" : "s"}
