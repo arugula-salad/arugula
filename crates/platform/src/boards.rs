@@ -32,6 +32,14 @@
 //! and one for the issues, through the reader's own forge access. `status`
 //! is the row's own and never changes with it.
 //!
+//! **A machine's blocks** (step 4): a daemon tells control the state of its
+//! own agent blocks ([`agent::put_block_state`], stored by machine and
+//! pane), and a row with a `Block` pointer shows it as `block` in a read
+//! ([`resolve_blocks`]) when the block's machine holds `boards.write` over
+//! the board's project, asked on that read. What the report holds is only
+//! what aru-116 allows ([`wire::BlockState`]). A report pushes an object
+//! change for the boards whose rows point at the block.
+//!
 //! **Live:** a change to a board, to an issue a row points at, or (a
 //! webhook) to a mirrored item it points at pushes an object change
 //! ([`changed`]), so clients following the board read it again.
@@ -230,6 +238,7 @@ fn view(s: db::Stored, names: &std::collections::HashMap<String, String>) -> wir
                         note: e.note,
                         status: e.status,
                         live: None,
+                        block: None,
                         agent: e.agent.map(|m| ChatAgent {
                             machine_name: names.get(&m).cloned().unwrap_or_default(),
                             machine: m,
@@ -307,6 +316,46 @@ async fn resolve(app: &Platform, account: &str, v: &mut wire::BoardView) -> Resu
     Ok(())
 }
 
+/// Add each agent block row's state as its machine reported it, when that
+/// machine holds `boards.write` over the board's project now (the grant is
+/// asked on every read, so a revoked one hides what it reported).
+async fn resolve_blocks(app: &Platform, v: &mut wire::BoardView) -> Result<(), ApiError> {
+    let mut by_machine: std::collections::BTreeMap<&str, Vec<&str>> = Default::default();
+    for row in v.zones.iter().flat_map(|z| z.rows.iter()) {
+        if let wire::Pointer::Block { machine, pane } = &row.pointer {
+            by_machine.entry(machine).or_default().push(pane);
+        }
+    }
+    let mut states: HashMap<(String, String), wire::BlockState> = HashMap::new();
+    for (machine, panes) in by_machine {
+        if !machine_writes(app, machine, &v.board.project).await {
+            continue;
+        }
+        for (pane, state) in app.db.block_states(machine, &panes)? {
+            states.insert((machine.to_owned(), pane), state);
+        }
+    }
+    for row in v.zones.iter_mut().flat_map(|z| z.rows.iter_mut()) {
+        if let wire::Pointer::Block { machine, pane } = &row.pointer {
+            row.block = states.get(&(machine.clone(), pane.clone())).cloned();
+        }
+    }
+    Ok(())
+}
+
+/// Whether `machine` holds a live `boards.write` grant over `project`, one
+/// its owner may still give ([`agent_may`]).
+async fn machine_writes(app: &Platform, machine: &str, project: &str) -> bool {
+    let Ok(grants) = app.db.machine_write_projects(machine, BOARDS_WRITE) else { return false };
+    for (scope, owner) in grants.into_iter().filter(|(p, _)| p == project) {
+        let m = Machine { account: owner, daemon: machine.to_owned() };
+        if agent_may(app, &m, BOARDS_WRITE, &AgentScope::Project(scope)).await.is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
 async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView, ApiError> {
     let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
     let mut machines: Vec<String> = stored.entries.iter().filter_map(|e| e.agent.clone()).collect();
@@ -319,6 +368,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     };
     let mut v = view(stored, &names);
     resolve(app, account, &mut v).await?;
+    resolve_blocks(app, &mut v).await?;
     Ok(v)
 }
 

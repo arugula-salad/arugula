@@ -21,7 +21,7 @@ import { useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { BoardError, STALE_REV, boards } from "./store";
 import "./boards.css";
-import { GLYPH, LIVE_LABEL, STATUSES, STATUS_LABEL, liveClass, parsePointer, pointerHref, pointerLabel, pointerText, progress, stepBefore } from "./text";
+import { BLOCK_LABEL, GLYPH, LIVE_LABEL, STATUSES, STATUS_LABEL, blockClass, blockFacts, liveClass, parsePointer, pointerHref, pointerLabel, pointerText, progress, stepBefore } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -283,6 +283,14 @@ function Row({
             )}
             {r.live && <span class="board-item dim">{r.live.title}</span>}
           </div>
+          {r.block && (
+            <div class="board-line board-block" data-board-block={r.block.state}>
+              <span class={`ws-tag ${blockClass(r.block.state)}`}>{BLOCK_LABEL[r.block.state]}</span>
+              {blockFacts(r.block).map((f) => (
+                <span class="board-fact dim" key={f}>{f}</span>
+              ))}
+            </div>
+          )}
           {r.note && (
             <div class="board-note" data-board-note>
               <Markdown text={r.note} refs={null} />

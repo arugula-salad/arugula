@@ -2,7 +2,7 @@
 // progress, a pointer's label and the id a person typed as a pointer.
 // Plain functions, for the view and its tests (scripts/boards.test.mjs).
 
-import type { BoardLive, BoardLiveState, BoardPointer, BoardRow, BoardStatus, BoardZone } from "../proto";
+import type { BoardBlockState, BoardBlockWord, BoardLive, BoardLiveState, BoardPointer, BoardRow, BoardStatus, BoardZone } from "../proto";
 
 /** A row's status as its glyph: ○ open (or none), ◐ working, ? needs
  * input, ● done, ✕ failed. */
@@ -40,6 +40,32 @@ export const LIVE_LABEL: Record<BoardLiveState, string> = {
  * `waits` and `bad` for checks. */
 export function liveClass(s: BoardLiveState): string {
   return s === "checks_running" ? "waits" : s === "checks_failed" ? "bad" : `forge-state ${s}`;
+}
+
+/** What a machine reported of an agent block, as a tag. */
+export const BLOCK_LABEL: Record<BoardBlockWord, string> = {
+  working: "working",
+  needs_input: "needs input",
+  idle: "idle",
+  closed: "closed",
+};
+
+/** The class a block's state tag takes: `waits` when it wants someone. */
+export function blockClass(w: BoardBlockWord): string {
+  return w === "needs_input" ? "waits" : "";
+}
+
+/** The rest of a block's report, each fact short: `branch@head`, pushed or
+ * unpushed, the uncommitted files and the diffstat (`3 files, +40 −2`). */
+export function blockFacts(b: BoardBlockState): string[] {
+  const out: string[] = [];
+  if (b.branch && b.head) out.push(`${b.branch}@${b.head}`);
+  else if (b.branch || b.head) out.push((b.branch ?? b.head)!);
+  if (b.pushed != null) out.push(b.pushed ? "pushed" : "unpushed");
+  if (b.uncommitted) out.push(`${b.uncommitted} uncommitted`);
+  const d = b.diffstat;
+  if (d) out.push(`${d.files} file${d.files === 1 ? "" : "s"}, +${d.added} −${d.removed}`);
+  return out;
 }
 
 /** A zone's rows that are done, of all its rows. */

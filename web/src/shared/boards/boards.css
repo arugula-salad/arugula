@@ -157,6 +157,16 @@
   overflow-wrap: anywhere;
 }
 
+.board-block {
+  margin-top: 2px;
+}
+
+.board-fact {
+  font-family: var(--f-mono, ui-monospace, monospace);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+
 .board-note {
   overflow-wrap: anywhere;
 }

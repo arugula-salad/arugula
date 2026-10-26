@@ -58,6 +58,11 @@ pub fn agent_board(id: &str) -> String {
     format!("/api/daemon/boards/{id}")
 }
 
+/// `PUT` [`PutBlockState`]: a machine tells control the state of one of its
+/// own agent blocks, for the rows that point at it. The machine is the one
+/// that signed the request, never a field of the body.
+pub const AGENT_BLOCK_STATE: &str = "/api/daemon/block-state";
+
 /// [`AGENT_BOARD_ENTRIES`] for `id`.
 pub fn agent_board_entries(id: &str) -> String {
     format!("/api/daemon/boards/{id}/entries")
@@ -197,6 +202,104 @@ pub struct Live {
     pub title: String,
 }
 
+/// What an agent block is doing (aru-116's second ruling).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardBlockWord"))]
+#[serde(rename_all = "snake_case")]
+pub enum BlockWord {
+    Working,
+    NeedsInput,
+    Idle,
+    Closed,
+}
+
+impl BlockWord {
+    /// The word a board shows.
+    pub fn word(self) -> &'static str {
+        match self {
+            BlockWord::Working => "working",
+            BlockWord::NeedsInput => "needs input",
+            BlockWord::Idle => "idle",
+            BlockWord::Closed => "closed",
+        }
+    }
+}
+
+/// A `git diff --stat` summary line as numbers: nothing of the files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardDiffstat"))]
+#[serde(deny_unknown_fields)]
+pub struct Diffstat {
+    pub files: u32,
+    pub added: u32,
+    pub removed: u32,
+}
+
+impl Diffstat {
+    /// `3 files changed, +40 −2`.
+    pub fn line(&self) -> String {
+        let s = if self.files == 1 { "" } else { "s" };
+        format!("{} file{s} changed, +{} −{}", self.files, self.added, self.removed)
+    }
+}
+
+/// What a daemon says of one of its own agent blocks, and all it says
+/// (aru-116's second ruling): the state word, the branch, the short HEAD,
+/// whether it is pushed, how many files are uncommitted and the diffstat.
+/// No message text, no file names, no prompts: the type has no field that
+/// could carry them, and a body with another field is refused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardBlockState"))]
+#[serde(deny_unknown_fields)]
+pub struct BlockState {
+    pub state: BlockWord,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// HEAD, abbreviated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pushed: Option<bool>,
+    /// How many files are uncommitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uncommitted: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diffstat: Option<Diffstat>,
+}
+
+impl BlockState {
+    /// `needs input · feat/x@abc1234 · unpushed · 2 uncommitted · 3 files
+    /// changed, +40 −2`: what a board shows of a block, in one line.
+    pub fn line(&self) -> String {
+        let mut parts = vec![self.state.word().to_owned()];
+        match (&self.branch, &self.head) {
+            (Some(b), Some(h)) => parts.push(format!("{b}@{h}")),
+            (Some(x), None) | (None, Some(x)) => parts.push(x.clone()),
+            (None, None) => {}
+        }
+        if let Some(p) = self.pushed {
+            parts.push(if p { "pushed" } else { "unpushed" }.to_owned());
+        }
+        if let Some(n) = self.uncommitted.filter(|n| *n > 0) {
+            parts.push(format!("{n} uncommitted"));
+        }
+        if let Some(d) = &self.diffstat {
+            parts.push(d.line());
+        }
+        parts.join(" · ")
+    }
+}
+
+/// [`AGENT_BLOCK_STATE`]'s body: the pane (of the machine that signs it) and
+/// its state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardPutBlockState"))]
+#[serde(deny_unknown_fields)]
+pub struct PutBlockState {
+    pub pane: String,
+    pub block: BlockState,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardRow"))]
 pub struct Row {
@@ -209,6 +312,10 @@ pub struct Row {
     /// item ([`BoardView`] is read with it; a write's answer has it too).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub live: Option<Live>,
+    /// A `Block` pointer's block as its machine last reported it, when that
+    /// machine holds `boards.write` over the board's project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block: Option<BlockState>,
     /// The machine whose agent added the row, if one did (it may remove
     /// it; nobody else's agent may).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -335,7 +442,8 @@ fn fit(s: &str, max: usize) -> String {
 
 /// A board as plain text, no wider than [`TEXT_WIDTH`] columns: each zone
 /// is its title and a progress bar counting its done rows, then its rows,
-/// each a status glyph, a short pointer label and the note (cut to fit).
+/// each a status glyph, a short pointer label and the note (cut to fit),
+/// and under an agent block's row what its machine reported of it.
 /// The `proofs` zone comes last. Ids and revs aren't in it: they are in the
 /// [`BoardView`].
 ///
@@ -364,6 +472,10 @@ pub fn render(view: &BoardView) -> String {
             let note = fit(&r.note, TEXT_WIDTH - lead.chars().count());
             out += format!("{lead}{note}").trim_end();
             out.push('\n');
+            if let Some(b) = &r.block {
+                // Under the row, in line with its label.
+                out += &format!("      {}\n", fit(&b.line(), TEXT_WIDTH - 6));
+            }
         }
     }
     out.trim_end().to_owned()
@@ -381,6 +493,7 @@ mod tests {
             note: note.into(),
             status,
             live: None,
+            block: None,
             agent: None,
             created_at: 0,
             updated_at: 0,
@@ -433,5 +546,38 @@ PROOFS                                                    ███████�
   ●                    Tests green on main";
         assert_eq!(text, want);
         assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
+    }
+
+    /// A block's row carries what its machine reported under it, and the
+    /// body that reports it takes no field the ruling doesn't list.
+    #[test]
+    fn a_block_row_shows_its_reported_state() {
+        let board = Board {
+            id: "brd_1".into(),
+            project: "prj_1".into(),
+            title: "Launch".into(),
+            created_by: "a".into(),
+            created_at: 0,
+            updated_at: 0,
+        };
+        let mut r = row(Pointer::Block { machine: "m1".into(), pane: "7".into() }, Status::Working, "Tokenizer");
+        r.block = Some(BlockState {
+            state: BlockWord::NeedsInput,
+            branch: Some("feat/tokenizer".into()),
+            head: Some("abc1234".into()),
+            pushed: Some(false),
+            uncommitted: Some(2),
+            diffstat: Some(Diffstat { files: 3, added: 40, removed: 2 }),
+        });
+        let text = render(&BoardView { board, zones: vec![zone("Build", None, vec![r])] });
+        let want = "\
+Build                                                     ░░░░░░░░░░ 0/1
+  ◐ m1/7               Tokenizer
+      needs input · feat/tokenizer@abc1234 · unpushed · 2 uncommitted ·…";
+        assert_eq!(text, want);
+        assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
+
+        let extra = serde_json::json!({ "pane": "7", "block": { "state": "idle", "message": "hello" } });
+        assert!(serde_json::from_value::<PutBlockState>(extra).is_err(), "no field for what an agent said");
     }
 }
