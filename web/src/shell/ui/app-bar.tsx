@@ -154,7 +154,7 @@ export function AccountButton({ client }: { client: Client | null }) {
   const open = (e: MouseEvent) => {
     countView("settings");
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const mine: MenuItem[] = account ? [{ header: accountHeader(login) }, ...account.items(), "separator"] : [];
+    const mine: MenuItem[] = account ? [{ header: accountHeader(login), name: !!login }, ...account.items(), "separator"] : [];
     const items: MenuItem[] = [...mine, ...presenceItems(), ...settingsItems(client)];
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
     // Right-aligned under the button; the menu keeps itself on screen.

@@ -116,7 +116,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     // like ports.
     ...(entry && !client.state?.roles ? [{ label: "Open in editor", run: () => openEditor(client, id) } as MenuItem] : []),
     // M11: what changed in its repository, where it runs.
-    ...(!client.state?.roles ? [{ label: "Changes", run: () => openChanges(client, id) } as MenuItem] : []),
+    ...(!client.state?.roles ? [{ id: "changes", label: "Changes", run: () => openChanges(client, id) } as MenuItem] : []),
     ...(workspace ? [{ label: "Open as workspace", run: () => openWorkspace(client, workspace, id) } as MenuItem] : []),
     ...(own && !tabMachine
       ? [{ label: "Share machine with tab", run: () => void client.api(`/api/panes/${id}/share-machine`) } as MenuItem]
@@ -128,7 +128,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
       ? [{ label: "Attach file…", shortcut: desktopPlatform() === "macos" ? keyHint("desktop.attach") : undefined, run: () => void client.attachFiles(id) } as MenuItem]
       : []),
     moveToTab,
-    { label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, id, phone) },
+    { id: "picker", label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, id, phone) },
     { label: "Copy working directory", disabled: !cwd, run: () => cwd && void navigator.clipboard?.writeText(cwd) },
     // A dial-out host's links would be on a daemon nobody can reach.
     ...(client.base.startsWith("/")
@@ -191,14 +191,14 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
   if (watching) return [{ header: watching }, ...(desktopApp() ? [{ label: "Open in new window", run: () => openInNewWindow(client.active(tab.id)) } as MenuItem] : [])];
   return [
     { label: "Rename tab", run: rename },
-    { label: "New tab", run: () => client.intent({ op: "new_tab", session: client.session!, from_pane: client.active(tab.id) ?? null }) },
-    ...(client.has("vms") ? [{ label: "New VM tab", run: () => void client.newVm({ session: client.session!, tab: true }) } as MenuItem] : []),
-    { label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, client.active(tab.id)) },
+    { id: "new-tab", label: "New tab", run: () => client.intent({ op: "new_tab", session: client.session!, from_pane: client.active(tab.id) ?? null }) },
+    ...(client.has("vms") ? [{ id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session: client.session!, tab: true }) } as MenuItem] : []),
+    { id: "picker", label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, client.active(tab.id)) },
     // The desktop app (M46): this tab in a window of its own.
     ...(desktopApp() ? [{ label: "Open in new window", run: () => openInNewWindow(client.active(tab.id)) } as MenuItem] : []),
     // M11: what changed in the active pane's repository, on its machine.
     ...(!client.state?.roles && client.active(tab.id) !== undefined
-      ? [{ label: "Changes", run: () => openChanges(client, client.active(tab.id)!) } as MenuItem]
+      ? [{ id: "changes", label: "Changes", run: () => openChanges(client, client.active(tab.id)!) } as MenuItem]
       : []),
     ...machineItems(client, tab),
     "separator",
@@ -210,8 +210,8 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
 export function newTabItems(client: Client, session: SessionId): MenuItem[] {
   // Each one a verb, "New …" or "Open …" (UI audit #171).
   return [
-    { label: "New tab", run: () => client.intent({ op: "new_tab", session, from_pane: client.active() ?? null }) },
-    ...(client.has("vms") ? [{ label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem] : []),
+    { id: "new-tab", label: "New tab", run: () => client.intent({ op: "new_tab", session, from_pane: client.active() ?? null }) },
+    ...(client.has("vms") ? [{ id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem] : []),
     { label: "New tab in a directory…", shortcut: keyHint("picker"), disabled: client.active() === undefined, run: () => openPicker(client, client.active()) },
     // M35: a studio app's box, in a tab of its own. The owner's.
     ...(!client.state?.roles && client.has("studio") ? [{ label: "Open a studio app…", run: () => pickApp(client, { session }) } as MenuItem] : []),
@@ -247,7 +247,7 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     // VMs and sandboxes need wisp (#180).
     ...(client.has("vms")
       ? [
-          { label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem,
+          { id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem,
           { label: "Sandboxes…", run: () => openSandboxes(client) } as MenuItem,
         ]
       : []),

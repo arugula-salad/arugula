@@ -54,6 +54,8 @@ export interface Command {
   detail?: string;
   /** More words that find it, after its label (a jump's session and tab). */
   also?: string;
+  /** The action it is, from its menu item: the same in two menus. */
+  id?: string;
 }
 
 let open: { client: Client; phone: boolean } | null = null;
@@ -273,9 +275,14 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     disabled: next === undefined,
     run: () => next !== undefined && (location.hash = `swarm=${next}`),
   });
-  // A command two menus share (New VM tab) once.
+  // A command two menus share once, by the action their items name (UI
+  // audit #195: the pane's and the tab's Go to directory…, both the
+  // active pane's; New tab, New VM tab), else by its menu and label.
   const seen = new Set<string>();
-  return out.filter((c) => !seen.has(c.key) && !!seen.add(c.key));
+  return out.filter((c) => {
+    const k = c.id ? `id/${c.id}` : c.key;
+    return !seen.has(k) && !!seen.add(k);
+  });
 }
 
 /** Where the palette was opened: the panes, or a place over them. */

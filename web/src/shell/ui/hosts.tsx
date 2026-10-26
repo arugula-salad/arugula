@@ -221,7 +221,7 @@ export function HostButton({ path = true }: { path?: boolean } = {}) {
     <button ref={ref} class="host-button" title="Hosts" aria-haspopup="menu" aria-expanded={expanded} data-host={directory.current} onClick={open} onContextMenu={open}>
       {directory.current}
       {path && directory.path ? (
-        <span class={`host-path ${directory.path}`} data-path={directory.path} title={directory.path === "relayed" ? "Through Arugula control's relay (end to end encrypted)" : "Straight to the machine"}>
+        <span class={`host-path ${directory.path}`} data-path={directory.path} title={directory.path === "relayed" ? "Through Arugula control's relay (end-to-end encrypted)" : "Straight to the machine"}>
           {directory.path}
         </span>
       ) : null}{" "}

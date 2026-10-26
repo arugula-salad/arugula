@@ -243,7 +243,7 @@ interface Person {
 
 
 /** #763: verify someone you share with, if you want to: scan the code in
- * their Devices and machines…, or compare its words. Off the main path:
+ * their Devices and machines, or compare its words. Off the main path:
  * sharing pins their key on first use either way. */
 function VerifyPerson({ who, done, close }: { who: Person; done: () => void; close: () => void }) {
   const [words, setWords] = useState<string[]>([]);
@@ -259,7 +259,7 @@ function VerifyPerson({ who, done, close }: { who: Person; done: () => void; clo
   return (
     <div class="share-verify" data-verify={who.account}>
       <p>
-        Scan the code in {who.name}'s <i>Devices and machines…</i>, or check it shows these words:
+        Scan the code in {who.name}'s <i>Devices and machines</i>, or check it shows these words:
       </p>
       <p class="share-verify-words" data-verify-words>
         {words.join(" ")}

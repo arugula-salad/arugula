@@ -668,7 +668,7 @@ function Cloud({
             {c.confirm.account}
           </div>
           <p class="start-dim">
-            The device you approved on shows your account's fingerprint in the approval and under Devices and machines… Check they're the same before this
+            The device you approved on shows your account's fingerprint in the approval and under Devices and machines. Check they're the same before this
             machine trusts the account.
           </p>
           <div class="start-confirm">
