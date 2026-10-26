@@ -215,7 +215,7 @@ fn a_session_lives_across_turns() {
     let b = Machine::new();
     seed(&db, Some(&b.id));
     let (s, first) = db.create_session(&new_session(1), T0).unwrap().unwrap();
-    assert_eq!(s.branch, format!("arugula/{}-fix-login", s.id));
+    assert_eq!(s.branch, format!("arugula/{}-fix-login", &s.id[4..12]));
     assert!(s.id.starts_with("ses_") && s.id.len() == 36, "{}", s.id);
     assert_eq!((s.state, s.last_seq, s.daemon_n, s.machine.as_deref()), (State::Queued, 1, 0, None));
     assert_eq!(first.state, PromptState::Queued);
@@ -504,7 +504,19 @@ fn one_session_per_thread_on_a_live_workspace() {
     let bare = NewSession { slug: "", ..new_session(5) };
     db.c().execute("UPDATE hosted_workspaces SET deleted_at = NULL", params![]).unwrap();
     let s = db.create_session(&bare, T0).unwrap().unwrap().0;
-    assert_eq!(s.branch, format!("arugula/{}", s.id));
+    assert_eq!(s.branch, format!("arugula/{}", &s.id[4..12]));
+}
+
+/// A branch is 8 hex of the session's id and its slug: short enough to
+/// read, the full id kept on the row.
+#[test]
+fn a_sessions_branch_is_short() {
+    let id = "ses_0123456789abcdef0123456789abcdef";
+    assert_eq!(branch_for(id, "fix-the-login-page"), "arugula/01234567-fix-the-login-page");
+    assert_eq!(branch_for(id, ""), "arugula/01234567");
+    let longest = branch_for(id, &slug("one two three four five six seven eight nine ten eleven"));
+    assert!(longest.len() <= "arugula/".len() + BRANCH_HEX + 1 + MAX_SLUG, "{longest}");
+    assert!(!longest.ends_with('-'), "cut at a word: {longest}");
 }
 
 #[test]

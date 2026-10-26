@@ -100,6 +100,19 @@ pub fn slug(text: &str) -> String {
     out
 }
 
+/// How many hex characters of a session's id its branch takes.
+pub const BRANCH_HEX: usize = 8;
+
+/// Session `id`'s branch: `arugula/<the first 8 hex of its id>-<slug>`,
+/// or `arugula/<8 hex>` with no slug. Short enough to read in a PR's
+/// header; the full id stays on the session's row, and the push is checked
+/// against the row's branch.
+pub fn branch_for(id: &str, slug: &str) -> String {
+    let hex = id.strip_prefix("ses_").unwrap_or(id);
+    let short = &hex[..hex.len().min(BRANCH_HEX)];
+    if slug.is_empty() { format!("arugula/{short}") } else { format!("arugula/{short}-{slug}") }
+}
+
 fn is_slug(s: &str) -> bool {
     s.len() <= MAX_SLUG
         && !s.starts_with('-')
@@ -133,7 +146,8 @@ pub struct Session {
     pub block: Option<String>,
     /// The linked repo it works in (`owner/name`).
     pub repo: Option<String>,
-    /// The one ref it may push: `arugula/<id>-<slug>`.
+    /// The one ref it may push ([`branch_for`]):
+    /// `arugula/<8 hex of its id>-<slug>`.
     pub branch: String,
     pub state: State,
     /// The state an `unresponsive` session goes back to.
@@ -305,8 +319,8 @@ pub struct NewSession<'a> {
     /// One of the project's live workspaces.
     pub workspace: &'a str,
     pub repo: Option<&'a str>,
-    /// Its branch's slug ([`slug`]): the branch is `arugula/<id>-<slug>`,
-    /// or `arugula/<id>` with none.
+    /// Its branch's slug ([`slug`]): the branch is [`branch_for`] its id
+    /// and this.
     pub slug: &'a str,
     pub prompt: NewPrompt<'a>,
 }
@@ -646,8 +660,23 @@ pub fn create_session_in(c: &impl Sql, new: &NewSession, at: u64) -> Result<Opti
     if new.asker.is_empty() {
         bail!("a session has an asker");
     }
-    let id = new_id("ses");
-    let branch = if new.slug.is_empty() { format!("arugula/{id}") } else { format!("arugula/{id}-{}", new.slug) };
+    // The branch has only 8 hex of the id: one the project's sessions
+    // already have is drawn again.
+    let (id, branch) = loop {
+        let id = new_id("ses");
+        let branch = branch_for(&id, new.slug);
+        let used = c
+            .query_row(
+                "SELECT 1 FROM agent_sessions WHERE project_id = ?1 AND branch = ?2",
+                params![new.project, branch],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if !used {
+            break (id, branch);
+        }
+    };
     let made = c
         .query_row(
             &format!(
