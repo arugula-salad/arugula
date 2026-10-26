@@ -832,7 +832,7 @@ html[data-corners="square"] .platform input.sw-switch {
       name above its four switches, each labelled, so nothing is wider than
       the screen. */
 
-@media (max-width: 600px) {
+@media (max-width: 700px) {
   .platform .agent-key {
     grid-template-columns: 1fr;
   }
@@ -894,7 +894,7 @@ html[data-corners="square"] .platform input.sw-switch {
       and when, then its commit; a spend line's who, then its numbers,
       each labelled. */
 
-@media (max-width: 600px) {
+@media (max-width: 700px) {
   .platform .settings-table thead {
     position: absolute;
     width: 1px;

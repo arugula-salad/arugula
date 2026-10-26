@@ -141,7 +141,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         aria-expanded={switcherOpen}
         onClick={pick}
       >
-        {projectName} <span class="caret" aria-hidden="true">▾</span>
+        <span class="platform-project-name">{projectName}</span> <span class="caret" aria-hidden="true">▾</span>
       </button>
       <nav class="places" aria-label="Places">
         {project && (

@@ -2986,6 +2986,9 @@ button.att {
 .control-code input.control-join-code {
   width: 22rem;
   max-width: 100%;
+  /* Gives way to Approve… on a phone (UI audit #186). */
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 /* The rest of a join code (#760): the half the page has, fixed, then a
@@ -3507,7 +3510,16 @@ button.att {
   flex: 1 1 12rem;
 }
 
-.share-history {
+/* A team's long name wraps in its button, not off the dialog (UI audit
+   #186). */
+.share-team .secondary {
+  max-width: 100%;
+  white-space: normal;
+  text-align: start;
+}
+
+/* Over .prompt label's grid: the box beside its words (UI audit #186). */
+.prompt .share-history {
   display: flex;
   gap: 4px;
   align-items: center;
@@ -3608,6 +3620,9 @@ button.att {
   margin: 8px 0;
   padding-left: 1.4em;
   display: grid;
+  /* A step is the list's width, not its longest command's (UI audit
+     #186: Add a machine ran off a phone). */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -4240,6 +4255,14 @@ button.att {
   }
   .swarm-hint {
     display: none;
+  }
+}
+/* A finger on the swarm's chips (UI audit #186): the narrow bar's are
+   21px tall, under any tap target. */
+@media (max-width: 760px) and (pointer: coarse) {
+  .swarm-seg button,
+  .swarm-tools button {
+    min-height: 32px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -7588,6 +7611,54 @@ button.thread-quote:hover {
   background: var(--raised);
   color: var(--fg);
   font-weight: 600;
+}
+
+/* A phone keeps this bar on the Agents and Docs pages (UI audit #186):
+   the machine, Commands and the account on the first line; the places
+   (scrolling, as the platform bar's do) and the page's own tabs on a
+   second, so nothing is pushed off the screen. The account is its
+   avatar. */
+@media (max-width: 700px) {
+  .app-bar {
+    flex-wrap: wrap;
+    height: auto;
+  }
+
+  .app-bar > * {
+    min-height: var(--bar-h);
+  }
+
+  /* The line break. */
+  .app-bar::before {
+    content: "";
+    order: 1;
+    flex-basis: 100%;
+    border-top: 1px solid var(--divider);
+  }
+
+  .app-bar .host-button {
+    max-width: 40vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .app-bar .places {
+    order: 2;
+    flex: 1 1 0;
+    min-width: 0;
+    margin: 0;
+    padding: 0 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .app-bar .agents-tabs {
+    order: 3;
+  }
+
+  .app-bar .account-login {
+    display: none;
+  }
 }
 
 /* The chat page (ui/chat.tsx, M73): every thread, on a page of its own
