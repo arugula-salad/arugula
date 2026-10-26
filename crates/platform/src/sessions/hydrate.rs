@@ -411,8 +411,9 @@ pub async fn first_prompt(
 }
 
 /// Where a rebuilt box's prompt says the thread starts.
-const REBUILT: &str = "This session's box was rebuilt, and its checkout and your conversation went with the old \
-one: anything it committed and didn't push is gone. You start again in a fresh checkout, from the thread as it is now.";
+const REBUILT: &str = "This session's box was rebuilt, and its checkout went with the old one: anything it \
+committed and didn't push is gone. You start again in a fresh checkout, from the thread as it is now, and your \
+conversation before the rebuild if the old box kept it (below).";
 
 /// The first prompt of session `s` on its workspace's new box (M258: the
 /// box was rebuilt): it can't `--resume` there, so it's the thread
