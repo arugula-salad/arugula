@@ -12,8 +12,10 @@
 //!   frees its slot on the box. A turn under way (`working`) finishes
 //!   first: the session's job stops it once the turn is `done`
 //!   (`sessions::job`). One that had ended (idle, say) only takes the time.
-//! - **Its PR** is linked on the session when its asker didn't send it
-//!   through the card (someone opened it by hand), so the card links it.
+//! - **Its PR** is the one that merged, so the card links it: the asker's
+//!   own from the card, or one someone opened from its branch by hand
+//!   (which wins over an asker's PR that closed unmerged). Its draft can't
+//!   be kept or sent after (`sessions::pr`).
 //! - **The thread is done** ([`Db::done_threads`]) when the newest session
 //!   on it merged. A done thread leaves the Threads view; `@arugula` again
 //!   starts a new session there, and the thread is going again.
@@ -75,7 +77,7 @@ impl Db {
         for (id, st, full) in found {
             let url = format!("https://github.com/{full}/pull/{number}");
             tx.execute(
-                "UPDATE agent_sessions SET merged_at = ?2, pr = COALESCE(pr, ?3), updated_at = ?2
+                "UPDATE agent_sessions SET merged_at = ?2, pr = ?3, updated_at = ?2
                  WHERE id = ?1 AND merged_at IS NULL",
                 params![id, now, url],
             )?;

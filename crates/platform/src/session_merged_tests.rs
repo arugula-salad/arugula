@@ -98,6 +98,16 @@ async fn a_merged_pr_ends_its_session_and_its_thread_is_done() {
     assert!(v["card"]["merged_at"].is_u64(), "{v}");
     assert_eq!(v["events"].as_array().unwrap().last().unwrap()["text"], "Its pull request merged: done");
     assert!(threads(&base, "b").await.is_empty(), "a done thread leaves the Threads view");
+    // Its PR merged: its asker's draft is neither kept nor sent now.
+    let edit = json!({ "title": "Speed up the login", "body": "" });
+    let (st, v) = call(&base, "b", "PUT", &format!("/api/sessions/{}/pr", s.id), Some(edit.clone())).await;
+    assert_eq!(
+        (st, v["error"].as_str()),
+        (409, Some("its pull request merged already: https://github.com/o/app/pull/12"))
+    );
+    let (st, v) =
+        call(&base, "b", "POST", &format!("/api/sessions/{}/pr/send", s.id), Some(json!({ "edit": edit }))).await;
+    assert_eq!(st, 409, "{v}");
 
     // Seen again (a redelivery, the poller): nothing moves.
     mirror(&app, &pr_webhook(12, &s.branch, true));

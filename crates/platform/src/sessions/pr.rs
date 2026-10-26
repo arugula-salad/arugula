@@ -30,6 +30,8 @@
 //!   call, `POST repos/{repo}/pulls`, as them. A token that may not write
 //!   there, or none, leaves it to one of their machines (`forge.send`, kind
 //!   `pr`, with their `gh`). Only once a turn pushed the branch.
+//! - **Merged** (M265): once a PR from its branch merged, nothing is kept
+//!   or sent any more, and the session's `pr` is the PR that merged.
 //! - **After:** the session's `pr` is the PR's URL, so its card shows it,
 //!   and the PR's thread says where it came from once the mirror has the
 //!   PR ([`noted`], `chat::session_card::note_pr`): now, if the PR's
@@ -115,6 +117,16 @@ async fn asker_of(app: &Platform, account: &str, ses: &str) -> Result<(Session, 
         ));
     }
     Ok((s, link, v))
+}
+
+/// A session whose PR merged (M265) is done: there's no PR left to draft
+/// or send, and its card links the one that merged.
+fn not_merged(s: &Session) -> Result<(), ApiError> {
+    match (s.merged_at, &s.pr) {
+        (Some(_), Some(pr)) => Err(err(StatusCode::CONFLICT, &format!("its pull request merged already: {pr}"))),
+        (Some(_), None) => Err(err(StatusCode::CONFLICT, "its pull request merged already")),
+        (None, _) => Ok(()),
+    }
 }
 
 /// Every turn's detail, oldest first.
@@ -482,6 +494,7 @@ pub async fn show(
 
 /// Keep what the asker wrote, checked.
 async fn keep(app: &Platform, s: &Session, link: &LinkedRepo, e: &SessionPrEdit) -> Result<PrDraft, ApiError> {
+    not_merged(s)?;
     let title = e.title.trim();
     if title.is_empty() || title.chars().count() > TITLE_MAX {
         return Err(err(StatusCode::BAD_REQUEST, "a PR needs a title of at most 256 characters"));
@@ -589,6 +602,7 @@ pub async fn send(app: &Platform, account: &str, id: &str, how: How) -> Result<S
     if d.author != account {
         return Err(err(StatusCode::FORBIDDEN, "only the session's asker sends its PR: it goes out as them"));
     }
+    not_merged(&s)?;
     let now = now_ms();
     match d.state.as_str() {
         "sent" => return Err(err(StatusCode::CONFLICT, "it was sent already")),
