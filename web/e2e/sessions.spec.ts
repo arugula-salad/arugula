@@ -162,7 +162,7 @@ test("the card goes queued, working, needs input, and Bob answers it", async () 
   const a = card(alice, first.id);
   await expect(a).toHaveAttribute("data-session-state", "queued", { timeout: 15_000 });
   await expect(a.locator("[data-session-label]")).toHaveText("queued");
-  await expect(a.locator("[data-session-branch]")).toContainText(`arugula/${first.id}-fix-the-login-page`);
+  await expect(a.locator("[data-session-branch]")).toContainText(`arugula/${first.id.slice(4, 12)}-fix-the-login-page`);
   await expect(a.locator("[data-session-pr]")).toBeDisabled();
 
   // The box takes it and runs a tool.
