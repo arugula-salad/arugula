@@ -276,13 +276,15 @@ fn commits_of(turns: &[SessionDetail]) -> Vec<String> {
     commits
 }
 
-/// The branch's commits on GitHub, from `base`, newest first, as
-/// `"SHA subject"`: for a session whose turns' reports have none (a turn
-/// typed in its block before the box followed those, 0.62.1).
-async fn compared(app: &Platform, link: &LinkedRepo, base: &str, head: &str) -> Vec<String> {
-    let Some(v) = app_get(app, link, &format!("repos/{}/compare/{base}...{head}", link.full_name)).await else {
-        return vec![];
-    };
+/// GitHub's compare of the branch with `base`, from where they part.
+async fn compared(app: &Platform, link: &LinkedRepo, base: &str, head: &str) -> Option<Value> {
+    app_get(app, link, &format!("repos/{}/compare/{base}...{head}", link.full_name)).await
+}
+
+/// The compare's commits, newest first, as `"SHA subject"`: for a session
+/// whose turns' reports have none (a turn typed in its block before the
+/// box followed those, 0.62.1).
+fn commits_in(v: &Value) -> Vec<String> {
     let mut out: Vec<String> = v["commits"]
         .as_array()
         .into_iter()
@@ -297,11 +299,26 @@ async fn compared(app: &Platform, link: &LinkedRepo, base: &str, head: &str) -> 
     out
 }
 
-/// What the (pushed) turns left, for the body's summary: each commit's
-/// subject, the last turn's diffstat, and what the last pushed turn's
-/// finish step did. Empty when they left nothing to say.
-fn summary(commits: &[String], turns: &[SessionDetail]) -> String {
+/// Whether the compare's branch changes a CI workflow: a file under
+/// `.github/workflows/`, or one moved from there. The push token may
+/// (aru-115, amended), so the reviewer is told.
+fn changes_ci(v: &Value) -> bool {
+    let ci = |f: &Value| f.as_str().is_some_and(|f| f.starts_with(".github/workflows/"));
+    v["files"].as_array().into_iter().flatten().any(|f| ci(&f["filename"]) || ci(&f["previous_filename"]))
+}
+
+/// The summary's first line when the branch changes CI.
+const CHANGES_CI: &str = "**⚠ This PR changes CI workflows** (`.github/workflows/`): check them before merging.";
+
+/// What the (pushed) turns left, for the body's summary: a warning when
+/// the branch changes CI (`ci`), each commit's subject, the last turn's
+/// diffstat, and what the last pushed turn's finish step did. Empty when
+/// they left nothing to say.
+fn summary(commits: &[String], turns: &[SessionDetail], ci: bool) -> String {
     let mut out = String::new();
+    if ci {
+        out.push_str(&format!("{CHANGES_CI}\n\n"));
+    }
     for c in commits {
         let subject = subject(c);
         if !subject.is_empty() {
@@ -322,7 +339,7 @@ fn summary(commits: &[String], turns: &[SessionDetail]) -> String {
 /// thread.
 fn footer(app: &Platform, s: &Session, asker: &str, thread: Option<&str>) -> String {
     let short: String = s.id.trim_start_matches("ses_").chars().take(8).collect();
-    let public = app.cfg.public_url.trim_end_matches('/');
+    let public = app.cfg.page();
     let mut out = format!("Opened from Arugula agent session [`{short}`]({public}/p/{}/sessions/{})", s.project, s.id);
     if !asker.is_empty() {
         out.push_str(&format!(", asked for by {asker}"));
@@ -400,7 +417,7 @@ async fn thread_of(
     s: &Session,
     room: &crate::db::chat::Room,
 ) -> anyhow::Result<(Option<String>, Option<String>)> {
-    let public = app.cfg.public_url.trim_end_matches('/');
+    let public = app.cfg.page();
     let target = room.target.as_deref().filter(|_| room.kind == "object");
     if let Some(t) = target.filter(|t| t.starts_with("iss_")) {
         let i = app.db.issue(t)?;
@@ -431,9 +448,11 @@ async fn draft_view(app: &Platform, s: &Session, link: &LinkedRepo, v: &Viewer) 
     let names = app.cache.accounts(&*app.hub, std::slice::from_ref(&v.account)).await?;
     let asker = names.get(&v.account).map(|a| a.name.clone()).unwrap_or_default();
     let mut commits = commits_of(&turns);
-    if commits.is_empty() && !turns.is_empty() {
-        commits = compared(app, link, &base, &s.branch).await;
+    let cmp = if turns.is_empty() { None } else { compared(app, link, &base, &s.branch).await };
+    if commits.is_empty() {
+        commits = cmp.as_ref().map(commits_in).unwrap_or_default();
     }
+    let ci = cmp.as_ref().is_some_and(changes_ci);
     let (issue, thread, ask) = match app.db.chat_room(&s.room)? {
         Some(room) => {
             let (issue, thread) = thread_of(app, v, s, &room).await?;
@@ -444,7 +463,7 @@ async fn draft_view(app: &Platform, s: &Session, link: &LinkedRepo, v: &Viewer) 
     let tpl = template(app, link, &base).await;
     let body = body_for(
         tpl.as_ref().map(|(_, t)| t.as_str()),
-        &summary(&commits, &turns),
+        &summary(&commits, &turns, ci),
         &footer(app, s, &asker, thread.as_deref()),
     );
     Ok(SessionPr {
@@ -870,6 +889,19 @@ mod tests {
         assert_eq!(title_for(&s, Some(" "), &[], Some("@arugula")), "Please do this issue add farewell name");
     }
 
+    /// A workflow file added, changed, removed or moved away is CI's; a
+    /// file elsewhere that names `.github/workflows` isn't.
+    #[test]
+    fn what_changes_ci() {
+        let files = |fs: Value| json!({ "files": fs });
+        assert!(changes_ci(&files(json!([{ "filename": "README.md" }, { "filename": ".github/workflows/test.yml" }]))));
+        assert!(changes_ci(&files(json!([{ "filename": "ci.yml", "previous_filename": ".github/workflows/ci.yml" }]))));
+        assert!(!changes_ci(&files(
+            json!([{ "filename": "docs/.github/workflows/x.yml" }, { "filename": ".github/CODEOWNERS" }])
+        )));
+        assert!(!changes_ci(&json!({ "commits": [] })), "a compare without files");
+    }
+
     /// The summary goes under the template's `## Summary`, else its first
     /// section, else a `## Summary` of its own; the rest is kept, and the
     /// footer ends it.
@@ -886,12 +918,15 @@ mod tests {
             ..Default::default()
         };
         let commits = ["b2 Add a test".to_owned(), "a1 Add farewell".to_owned()];
-        let said = summary(&commits, &[turn]);
+        let said = summary(&commits, std::slice::from_ref(&turn), false);
         assert_eq!(
             said,
             "- Add a test\n- Add farewell\n\nThe last turn's changes:\n\n```text\n greet.py | 4 ++++\n 1 file \
              changed\n```\n\nThe finish step, `just check`, passed.\n"
         );
+        // A branch that changes CI leads with a warning for its reviewer.
+        assert_eq!(summary(&commits, &[turn], true), format!("{CHANGES_CI}\n\n{said}"));
+        assert_eq!(summary(&[], &[], true), format!("{CHANGES_CI}\n\n"));
         let foot = "Opened from Arugula agent session x.\n";
         let tpl = "## What\n<!-- what it does -->\n\n## Summary\n\n## Testing\n- [ ] tests\n";
         assert_eq!(

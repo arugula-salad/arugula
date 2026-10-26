@@ -1467,7 +1467,8 @@ async fn give_fix(
     }
 }
 
-/// Do action `a` to the block, as the person who asked.
+/// Do action `a` to the block, as the person who asked (by login, for the
+/// transcript's note, else by account id).
 async fn act(b: &Arc<dyn crate::block::Block>, a: &SessionAction) {
     let id = a.request.clone().map_or(Value::Null, Value::String);
     let (method, args) = match a.kind.as_str() {
@@ -1480,7 +1481,7 @@ async fn act(b: &Arc<dyn crate::block::Block>, a: &SessionAction) {
             return;
         }
     };
-    if let Err(e) = b.call_by(method, args, Some(&a.by)).await {
+    if let Err(e) = b.call_by(method, args, Some(a.who())).await {
         // Answered meanwhile, or nothing to cancel: it's done all the same.
         info!(action = a.id, method, error = e, "hosted: a session action didn't apply");
     }

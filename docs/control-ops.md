@@ -192,6 +192,12 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     process it forwards the page's GETs to the platform, signed like every
     forwarded call, and the platform serves its own embedded copy. Its
     page ships with the platform, not with a daemon release.
+  - The platform builds links to the page (an issue's, a thread's, a
+    session's, in a session's first prompt and its PR's body) on this
+    host. In process it has the hub's; out of process it reads its own
+    `ARUGULA_PLATFORM_HOST` (`packaging/platform/fly.toml` sets
+    `app.arugula.io`). Unset, those links are on control's public URL,
+    where nothing answers them.
   - Every answer there has the platform page's own CSP (its own scripts
     and styles, `connect-src 'self'`, no `unsafe-eval`, no frames either
     way), `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, HSTS

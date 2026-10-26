@@ -14,11 +14,15 @@
 //! - its repo is linked to the session's project;
 //! - it isn't a review (M264), which pushes nothing.
 //!
-//! The token covers that repo alone, with `contents: write` and nothing
-//! else: without `workflows`, GitHub refuses a push that changes
-//! `.github/workflows/`. It's logged as every mint is (`session:push`, for
-//! the asker), never kept, and the box revokes it once it pushed. The App's
-//! key never leaves the platform.
+//! The token covers that repo alone, with `contents: write` and
+//! `workflows: write` (aru-115, amended 2026-10-26). GitHub compares a new
+//! branch's tree with the default branch's, so without `workflows` it
+//! refuses the push of any session that began before main changed
+//! `.github/workflows/`: the branch's older workflow file reads as an
+//! edit. So a session's branch may change CI files, and the PR's reviewer
+//! checks them (its draft says when it does). It's logged as every mint is
+//! (`session:push`, for the asker), never kept, and the box revokes it once
+//! it pushed. The App's key never leaves the platform.
 //!
 //! What this doesn't stop: an agent that gets from its session user to the
 //! daemon's user could use a token in the seconds it lives, on any ref.

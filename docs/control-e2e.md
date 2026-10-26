@@ -814,7 +814,7 @@ follow.
   heard from again. Those events have no signature.
 - **One branch, no sends.** The box pushes `arugula/<session>-<slug>` and
   nothing else, with an installation token minted for each push and never
-  written to disk. The PR is a draft its asker sends, with their one-use
+  written to disk (the repo's contents and workflows: aru-115, amended). The PR is a draft its asker sends, with their one-use
   user token.
 
 **Who starts one** (M256, `crates/platform/src/chat/sessions.rs`): an owner
