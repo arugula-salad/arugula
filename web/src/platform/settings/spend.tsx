@@ -4,14 +4,15 @@
 // (studio's lobby), on one kind of key: the project's own, an account's own,
 // or Arugula's (under a monthly cap per account). Agent turns on the
 // project's hosted workspaces are counted beside them: their calls go
-// through E2B's proxy, which doesn't see their usage. A section
-// (./section): the month's totals as the swarm's stats, then the lines as
-// a table.
+// through a proxy that doesn't see their usage. A section (./section): the
+// month's totals as the swarm's stats, then the lines as a table; "None
+// yet." in a month with none (UI audit #166).
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import type { PlatformProject } from "../session";
 import { nameIn } from "../pages/issues";
+import { useProductNames } from "./linked";
 import { Section } from "./section";
 
 interface Line {
@@ -36,9 +37,17 @@ const dollars = (usd: number) => `$${usd < 0.01 && usd > 0 ? usd.toFixed(4) : us
 const count = (n: number) => n.toLocaleString();
 const whose: Record<Line["pays"], string> = { project: "the project's key", account: "their own key", platform: "Arugula's key" };
 
+/** "October 2026" for the platform's "2026-10" (a UTC month). */
+export function monthName(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  if (!y || !m) return month;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
 export function ClaudeSpend({ p }: { p: PlatformProject }) {
   const [v, setV] = useState<Spend | null>(null);
   const [err, setErr] = useState("");
+  const product = useProductNames();
   useEffect(() => {
     platformFetch(`/api/projects/${encodeURIComponent(p.id)}/inference/spend`, { credentials: "same-origin" })
       .then(async (r) => {
@@ -49,8 +58,8 @@ export function ClaudeSpend({ p }: { p: PlatformProject }) {
       .catch((e: Error) => setErr(e.message));
   }, [p.id]);
   if (err) return <p class="control-error">{err}</p>;
-  // Nothing to show where nothing went through Arugula this month.
-  if (!v || (v.lines.length === 0 && v.hosted.turns === 0)) return null;
+  if (!v) return null;
+  const none = v.lines.length === 0 && v.hosted.turns === 0;
   const name = nameIn(p);
   const who = (a: string | null) => (a ? (name(a) ?? a) : "a deleted account");
   return (
@@ -58,30 +67,36 @@ export function ClaudeSpend({ p }: { p: PlatformProject }) {
       id="spend"
       title="Claude spend"
       hooks={{ "data-claude-spend": v.month }}
-      lede={`What this project's Claude calls through Arugula cost in ${v.month} (UTC).`}
+      lede={`What this project's Claude calls through Arugula cost in ${monthName(v.month)} (UTC).`}
       more={
         <p>
           At Anthropic's list prices, by who made the calls (or a product, for them) and whose key paid: the project's, their own, or Arugula's,
           which has a monthly cap per account. Agent turns on the project's hosted workspaces are counted beside them: their calls go through
-          E2B's proxy, which doesn't see their usage, so their tokens aren't priced here. Keys are never shown, here or anywhere.
+          a proxy that doesn't see their usage, so their tokens aren't priced here. Keys are never shown, here or anywhere.
         </p>
       }
     >
-      <div class="sw-stats">
-        <span>
-          <b>{dollars(v.usd)}</b>this month
-        </span>
-        {v.platform_usd > 0 ? (
+      {none && <p class="dim">None yet.</p>}
+      {!none && (
+        <div class="sw-stats">
           <span>
-            <b>{dollars(v.platform_usd)}</b>on Arugula's key
+            <b>{dollars(v.usd)}</b>this month
           </span>
-        ) : null}
-        {v.hosted.turns > 0 ? (
-          <span>
-            <b>{count(v.hosted.turns)}</b>hosted agent {v.hosted.turns === 1 ? "turn" : "turns"}
-          </span>
-        ) : null}
-      </div>
+          {v.platform_usd > 0 ? (
+            <span>
+              <b>{dollars(v.platform_usd)}</b>on Arugula's key
+            </span>
+          ) : null}
+          {v.hosted.turns > 0 ? (
+            // Their minutes, and how many were on Arugula's key, in the stat
+            // itself (UI audit #166): their tokens aren't priced (More says why).
+            <span data-spend-hosted>
+              <b>{count(v.hosted.turns)}</b>hosted agent {v.hosted.turns === 1 ? "turn" : "turns"}, {count(v.hosted.minutes)} min
+              {v.hosted.platform_turns > 0 ? `, ${count(v.hosted.platform_turns)} on Arugula's key` : ""}
+            </span>
+          ) : null}
+        </div>
+      )}
       {v.lines.length > 0 && (
         <table class="settings-table spend-table" data-spend-lines>
           <thead>
@@ -99,7 +114,7 @@ export function ClaudeSpend({ p }: { p: PlatformProject }) {
               <tr key={`${l.account}-${l.client}-${l.pays}`} data-spend-line={l.pays}>
                 <th scope="row">
                   {who(l.account)}
-                  {l.client ? <span class="dim"> · through {l.client}</span> : null}
+                  {l.client ? <span class="dim"> · through {product(l.client)}</span> : null}
                 </th>
                 <td data-col="Key">{whose[l.pays]}</td>
                 <td class="num" data-col="Calls">
@@ -118,12 +133,6 @@ export function ClaudeSpend({ p }: { p: PlatformProject }) {
             ))}
           </tbody>
         </table>
-      )}
-      {v.hosted.turns > 0 && (
-        <p class="dim settings-note" data-spend-hosted>
-          Hosted workspaces: {count(v.hosted.turns)} agent {v.hosted.turns === 1 ? "turn" : "turns"} ({count(v.hosted.minutes)} min)
-          {v.hosted.platform_turns > 0 ? `, ${count(v.hosted.platform_turns)} on Arugula's key` : ""}. Their tokens aren't priced here.
-        </p>
       )}
     </Section>
   );
