@@ -133,14 +133,18 @@ pub async fn linked(_st: &arugula_proto::forge::ForgeState) -> bool {
 }
 
 /// `{"t": "ops"}` for control's socket (M168): the typed ops this machine
-/// does when control asks: the run ops (M211), and the forge's when it's
-/// built.
+/// does when control asks: the run ops (M211), the hosted ones (Arugula
+/// #209), and the forge's when it's built.
 pub fn ops_message() -> tokio::sync::watch::Receiver<Option<String>> {
     let ops = arugula_control_wire::forge::Ops {
         ops: if BUILT {
             arugula_control_wire::forge::Ops::ours().ops
         } else {
-            arugula_control_wire::forge::RUN_OPS.iter().map(|s| (*s).to_owned()).collect()
+            arugula_control_wire::forge::RUN_OPS
+                .iter()
+                .chain(arugula_control_wire::forge::HOSTED_OPS)
+                .map(|s| (*s).to_owned())
+                .collect()
         },
         ..Default::default()
     };
@@ -166,6 +170,7 @@ pub fn op_from_control(
             DaemonOp::ForgeSend(_) => arugula_control_wire::forge::OpAnswer::Unknown,
             DaemonOp::RunStart(s) => crate::hosted::runs::start(&app, &s),
             DaemonOp::RunRevoke(r) => crate::hosted::runs::revoke(&app, &r),
+            DaemonOp::HostedArchive(_) => crate::hosted::archive::flush().await,
         };
         let _ = answers.send(serde_json::to_string(&OpDone::new(ask.id, answer)).unwrap_or_default());
     });
