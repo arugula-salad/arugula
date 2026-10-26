@@ -6,8 +6,22 @@
 //! replayed to a stream that resumes (`Hub::missed` reads `live` rows only),
 //! and pruned within seconds (`Db::prune_typing`). A page shows a name for
 //! [`wire::TYPING_MS`] after its last ping.
+//!
+//! **Warming the box** (M262, thread = session, Arugula #129): a ping whose
+//! composer asks `@arugula` says `warm` ([`wire::ChatTyping`]), and the
+//! machine it reaches wakes the project's agents box ([`warm`]) while the
+//! message is still being written, so a paused box (about a second to
+//! resume) is up by the time it's sent. Only where `@arugula` works (a
+//! project's channel, or the thread on its issue or PR; never a DM), only
+//! for someone it would start a session for ([`crate::triggers::may_start`]),
+//! only the box its sessions go to (`Db::agents_run_on`: the one chosen,
+//! else the only one), and at most once a minute per project across the
+//! platform's machines (`Db::take_warm`). The wake is the hub's own
+//! ([`crate::hosted::wake::wake`]): one resume, done by the worker, and a
+//! woken box is `waking` until its daemon dials in.
 
 use super::*;
+use crate::{db::sessions::AgentsOn, triggers::Cannot};
 
 /// At most one ping per account per room in this long: the page sends one
 /// every [`wire::TYPING_PING_MS`], so this only holds back a client that
@@ -46,11 +60,14 @@ impl Hub {
 }
 
 /// `POST /api/chat/rooms/{id}/typing`: I'm typing here. For a room I see
-/// and may write in; a read-only or watched room has nobody to tell.
+/// and may write in; a read-only or watched room has nobody to tell. With
+/// `warm` ([`wire::ChatTyping`]), the project's agents box is woken too,
+/// in the background ([`warm`]).
 pub async fn typing(
     State(app): State<Arc<Platform>>,
     s: Person,
     Path(id): Path<String>,
+    body: Option<Json<wire::ChatTyping>>,
 ) -> Result<StatusCode, ApiError> {
     gate(&app, &s.account).await?;
     let (room, _, facts) = room_for(&app, &s.account, &id).await?;
@@ -58,8 +75,70 @@ pub async fn typing(
         return Err(err(StatusCode::CONFLICT, "you can't write here"));
     }
     let name = name_of(&app, &s.account).await?;
-    app.chat.typing(&app.db, &room.id, &s.account, &name, now_ms());
+    let now = now_ms();
+    app.chat.typing(&app.db, &room.id, &s.account, &name, now);
+    if body.is_some_and(|Json(b)| b.warm) {
+        let account = s.account.clone();
+        tokio::spawn(async move {
+            if let Err(e) = warm(&app, &room, &account, now).await {
+                tracing::warn!(room = room.id, error = %format!("{e:#}"), "chat: warming the agents box");
+            }
+        });
+    }
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// What a warm ping comes to ([`warm_for`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Warm {
+    /// Not a room `@arugula` works in: a DM, a pane's room, a room outside
+    /// a project.
+    NotHere,
+    /// The sender couldn't start a session there.
+    Cannot(Cannot),
+    /// The project has no box its sessions would go to: none, or several
+    /// and none chosen.
+    NoBox,
+    /// This project's box was warmed within the last minute.
+    Soon,
+    /// Wake this box of this project (the minute is taken).
+    Wake { project: String, workspace: String },
+}
+
+/// Whether `account`'s warm ping in `room` at `now` wakes a box, and which.
+/// The minute is only taken for a ping that would wake one, so a viewer's
+/// ping never holds back an editor's.
+pub(crate) async fn warm_for(app: &Platform, room: &Room, account: &str, now: u64) -> anyhow::Result<Warm> {
+    if !super::sessions::works_in(room) {
+        return Ok(Warm::NotHere);
+    }
+    let Some(project) = app.db.chat_room_project(&room.id)? else { return Ok(Warm::NotHere) };
+    if let Some(why) = crate::triggers::may_start(app, &project, account).await? {
+        return Ok(Warm::Cannot(why));
+    }
+    let workspace = match app.db.agents_run_on(&project)? {
+        AgentsOn::Chosen(w) | AgentsOn::Only(w) => w,
+        AgentsOn::Ask(_) | AgentsOn::Nowhere => return Ok(Warm::NoBox),
+    };
+    if !app.db.take_warm(&project, now)? {
+        return Ok(Warm::Soon);
+    }
+    Ok(Warm::Wake { project, workspace })
+}
+
+/// A warm ping (module docs): wake the project's agents box when
+/// [`warm_for`] says to, and what the wake answered.
+pub(crate) async fn warm(
+    app: &Platform,
+    room: &Room,
+    account: &str,
+    now: u64,
+) -> anyhow::Result<(Warm, Option<arugula_control_wire::hosted::WakeAnswer>)> {
+    let w = warm_for(app, room, account, now).await?;
+    let Warm::Wake { project, workspace } = &w else { return Ok((w, None)) };
+    let a = crate::hosted::wake::wake(app, project, workspace).await?;
+    tracing::info!(room = room.id, %workspace, answer = ?a, "chat: an @arugula being written warmed the agents box");
+    Ok((w, Some(a)))
 }
 
 #[cfg(test)]
@@ -122,6 +201,82 @@ mod tests {
         assert!(hub.stream_has_open("s1", "ch_1"));
         assert!(!hub.stream_has_open("s1", "ch_2"));
         assert!(!hub.stream_has_open("s2", "ch_1"));
+    }
+
+    /// M262: a warm ping wakes the project's box only for someone who could
+    /// ask `@arugula` there (not a viewer, not a member off the beta's
+    /// list, not someone outside), and once a minute per project, whoever
+    /// sends it. A refused ping doesn't take the minute.
+    #[tokio::test]
+    async fn a_warm_ping_wakes_for_someone_who_could_ask_once_a_minute() {
+        let (_hub, app, _base, t, _u, _keys) =
+            crate::sessions_hydrate_tests::platform(&["https://github.com/o/app"]).await;
+        let room = app.db.chat_room("ch_general").unwrap().unwrap();
+        let now = now_ms();
+        assert_eq!(warm_for(&app, &room, "x", now).await.unwrap(), Warm::Cannot(Cannot::Viewer));
+        assert_eq!(warm_for(&app, &room, "y", now).await.unwrap(), Warm::Cannot(Cannot::Unlisted));
+        assert_eq!(warm_for(&app, &room, "c", now).await.unwrap(), Warm::Cannot(Cannot::Outside));
+        let wake = Warm::Wake { project: t.clone(), workspace: "hw_dev".into() };
+        assert_eq!(warm_for(&app, &room, "b", now).await.unwrap(), wake, "the refused ones took nothing");
+        assert_eq!(warm_for(&app, &room, "b", now + 3_000).await.unwrap(), Warm::Soon);
+        assert_eq!(warm_for(&app, &room, "a", now + 59_000).await.unwrap(), Warm::Soon, "per project");
+        assert_eq!(warm_for(&app, &room, "a", now + 60_001).await.unwrap(), wake);
+
+        // The minute is the database's, so it holds whichever machine asks;
+        // it's pruned once it's past.
+        assert!(!app.db.take_warm(&t, now + 61_000).unwrap());
+        assert!(app.db.take_warm("prj_other", now + 61_000).unwrap(), "another project's own");
+        app.db.prune_typing(now + 200_000).unwrap();
+        assert!(app.db.chat_events_after(0, 10).unwrap().iter().all(|e| e.kind != "warm"));
+    }
+
+    /// M262: machines asking at once (each its own connection) take a
+    /// project's minute once between them.
+    #[test]
+    fn the_minute_is_taken_once_by_machines_at_once() {
+        let db = Db::test();
+        let now = now_ms();
+        let took = std::thread::scope(|s| {
+            let all: Vec<_> = (0..8).map(|_| s.spawn(|| db.take_warm("prj_a", now).unwrap())).collect();
+            all.into_iter().map(|h| h.join().unwrap()).filter(|t| *t).count()
+        });
+        assert_eq!(took, 1);
+    }
+
+    /// M262: never in a DM; nothing when the project has no box its
+    /// sessions would go to (none, or several and none chosen); the chosen
+    /// one when there is one.
+    #[tokio::test]
+    async fn a_warm_ping_in_a_dm_or_with_no_box_wakes_nothing() {
+        use crate::db::sql::{Sql as _, params};
+        let (_hub, app, _base, t, _u, _keys) =
+            crate::sessions_hydrate_tests::platform(&["https://github.com/o/app"]).await;
+        let dm = Room {
+            id: "dm_ab".into(),
+            scope: "team:t".into(),
+            kind: "dm".into(),
+            name: "dm_ab".into(),
+            machine: None,
+            target: None,
+            created_by: "a".into(),
+            created: 1,
+            archived: None,
+            last_seq: 0,
+        };
+        app.db.add_chat_room(&dm, &["a", "b"], None).unwrap();
+        let now = now_ms();
+        assert_eq!(warm_for(&app, &dm, "b", now).await.unwrap(), Warm::NotHere);
+
+        let room = app.db.chat_room("ch_general").unwrap().unwrap();
+        crate::sessions_hydrate_tests::add_box(&app, &t, "hw_stage", "staging", &[], None);
+        assert_eq!(warm_for(&app, &room, "b", now).await.unwrap(), Warm::NoBox, "two, none chosen");
+        assert!(app.db.set_agents_run_on(&t, Some("hw_stage")).unwrap());
+        let wake = Warm::Wake { project: t.clone(), workspace: "hw_stage".into() };
+        assert_eq!(warm_for(&app, &room, "b", now).await.unwrap(), wake, "the chosen one");
+
+        app.db.c().execute("UPDATE hosted_workspaces SET deleted_at = 1", params![]).unwrap();
+        assert_eq!(warm_for(&app, &room, "b", now + 120_000).await.unwrap(), Warm::NoBox);
+        assert!(app.db.take_warm(&t, now + 120_000).unwrap(), "no box took no minute");
     }
 
     #[test]

@@ -1117,6 +1117,8 @@ impl Hub {
                             let _ = self.tx.send(Arc::new(Out { n: 0, ev, to: None }));
                         }
                     }
+                    // A project's warm mark (M262): nothing to send.
+                    "warm" => {}
                     _ => self.changed(),
                 }
                 self.last.store(e.seq, Ordering::SeqCst);
