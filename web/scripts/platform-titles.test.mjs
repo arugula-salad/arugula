@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "../src/platform/paths.ts";
 import { titleOf } from "../src/platform/titles.ts";
+import { shellTitle } from "../src/shell/ui/titles.ts";
 
 const known = {
   project: (id) => ({ prj_aaaa: "Acme" })[id],
@@ -42,4 +43,14 @@ test("a DM and a deploy take the project the bar shows; unknown names are left o
   assert.equal(t(dep), "Deploy · Arugula");
   assert.equal(t(dep, { ...known, shown: "prj_aaaa" }), "Deploy · Acme · Arugula");
   assert.equal(t("/p/prj_ffff/issues/iss_ffff"), "Issue · Arugula");
+});
+
+// Control's tabs read the same way (UI audit #170).
+test("control's tabs say the session and the machine, or the place", () => {
+  assert.equal(shellTitle("panes", "geek", "api"), "api · geek · Arugula");
+  assert.equal(shellTitle("panes", "geek", null), "geek · Arugula");
+  assert.equal(shellTitle("panes", null, null), "Arugula");
+  assert.equal(shellTitle("swarm", "geek", "api"), "Swarm · Arugula");
+  assert.equal(shellTitle("overview", "geek", "api"), "Sessions · geek · Arugula");
+  assert.equal(shellTitle("agents", "geek", "api"), "Agents · geek · Arugula");
 });

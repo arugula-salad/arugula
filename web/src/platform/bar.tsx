@@ -19,6 +19,7 @@ import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
 import { PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
+import { InboxCount } from "./inbox-count";
 
 /** The bar's place a route is under (UI audit #159): a project's workspaces
  * are its home's, and its settings, Deploy… and a deploy are Settings. */
@@ -71,7 +72,10 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // None on a page that's no project's: the bar says "All projects".
   const project = barProject(r);
   const p = session.project(project);
-  const here = sectionOf(r);
+  // An id that's none of the reader's lights no place (UI audit #170): the
+  // body says it isn't one of theirs.
+  const unknown = !!project && !p && session.state === "ready";
+  const here = unknown ? null : sectionOf(r);
   // Chat is a team's: a project without one opens the first team's.
   const chatTo = project && p?.team ? pathOf({ page: "chat", project }, names) : "/chat";
   const pick = (e: MouseEvent) => {
@@ -145,6 +149,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         </Place>
         <Place to="/inbox" here={here === "inbox"} data="inbox">
           Inbox
+          <InboxCount />
         </Place>
         {/* In a project, its settings; account settings are the account menu's. */}
         <Place to={project ? pathOf({ page: "project-settings", project }, names) : "/settings"} here={here === "settings"} data="settings">

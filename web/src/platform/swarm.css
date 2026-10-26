@@ -86,7 +86,9 @@
 
 /* Every page is in the swarm's face (UI audit #157), its loading and
    missing notes too, chat's sidebar and rooms, and the dialogs and menus
-   over them; the bar is the shell's head, in the shell's. */
+   over them; and the bar over them, its places' counts too (UI audit
+   #170), so the page doesn't change face under its own bar. */
+.platform-bar,
 .platform .platform-main,
 .platform .sw-page,
 .chat-body,

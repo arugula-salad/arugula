@@ -113,12 +113,14 @@ function Members({ p }: { p: PlatformProject }) {
   );
 }
 
+/** Nothing here (UI audit #170): a page's heading, why in a dim line, and
+ * the way back to every project. */
 export function Missing({ what }: { what: string }) {
   return (
-    <section class="platform-section" data-platform-missing>
-      <p>{what}</p>
+    <section class="platform-section sw-page" data-platform-missing>
+      <PageHeader title="Not found" sub={what} />
       <p>
-        <a href="/" onClick={(e) => follow(e, "/")}>
+        <a class="primary" href="/" onClick={(e) => follow(e, "/")}>
           Your projects
         </a>
       </p>
