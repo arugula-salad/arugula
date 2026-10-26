@@ -108,7 +108,7 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
         <AddMachine s={s} />
         {/* UI audit #150: every dialog ends the same way. */}
         <div class="prompt-buttons">
-          <button onClick={() => setPanel(null)}>Done</button>
+          <button class="secondary" onClick={() => setPanel(null)}>Done</button>
         </div>
       </Modal>
     );

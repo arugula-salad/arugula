@@ -100,7 +100,7 @@ export function Environments({ p }: { p: PlatformProject }) {
             }}
           />
         ) : (
-          <button class="settings-btn" data-environment-new onClick={() => setMaking(true)} disabled={!drivers.length}>
+          <button class="secondary settings-new" data-environment-new onClick={() => setMaking(true)} disabled={!drivers.length}>
             New environment
           </button>
         )
@@ -125,7 +125,7 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
           {env.driver}
         </span>
         {plans && (
-          <a class="settings-btn env-deploy" href={deployPath} data-environment-deploy={env.name} data-deploy-new onClick={(e) => follow(e, deployPath)}>
+          <a class="secondary small env-deploy" href={deployPath} data-environment-deploy={env.name} data-deploy-new onClick={(e) => follow(e, deployPath)}>
             Deploy…
           </a>
         )}
@@ -243,7 +243,7 @@ function RecentDeploys({ env, history: { page, busy, err, older } }: { env: stri
         </table>
       )}
       {page.next && (
-        <button class="control-linkish env-older" disabled={busy} data-env-deploys-older onClick={() => void older()}>
+        <button class="link env-older" disabled={busy} data-env-deploys-older onClick={() => void older()}>
           Older
         </button>
       )}
@@ -288,7 +288,7 @@ function SecretRow({ env, name }: { env: string; name: string }) {
           data-env-secret-value={name}
           onInput={(e) => setValue(e.currentTarget.value)}
         />
-        <button disabled={busy || !value} data-env-secret-save={name}>
+        <button class="primary small" disabled={busy || !value} data-env-secret-save={name}>
           Set
         </button>
         {said && (
@@ -409,7 +409,7 @@ function NewEnvironment({ base, drivers, done }: { base: string; drivers: Driver
         </p>
       )}
       <div class="prompt-buttons">
-        <button type="button" onClick={() => done(false)}>
+        <button class="secondary" type="button" onClick={() => done(false)}>
           Cancel
         </button>
         <button class="primary" disabled={busy} data-environment-make>

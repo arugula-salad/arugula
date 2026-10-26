@@ -281,7 +281,7 @@
   margin: 0;
   padding: 10px 12px 10px 14px;
   border: 1px solid color-mix(in srgb, var(--c) 45%, var(--divider));
-  border-radius: 6px;
+  border-radius: var(--card-radius);
   background: color-mix(in srgb, var(--c) 7%, var(--surface));
   animation: sw-card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
 }
@@ -361,7 +361,7 @@
 .platform .sw-n {
   margin-left: auto;
   padding: 3px 7px;
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   background: var(--c);
   color: var(--on-color);
   font: 700 12px/1 var(--f-mono);

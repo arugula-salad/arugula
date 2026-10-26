@@ -149,12 +149,12 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
           <p>{port ? `Nothing is answering on ${where}` : `Couldn't load ${where}`}</p>
           <p class="dim">{s.error}</p>
           {port && <p class="dim">It shows again when the server is back.</p>}
-          <button onClick={() => call("reload")}>Try again</button>
+          <button class="primary" onClick={() => call("reload")}>Try again</button>
         </div>
       ) : s.framable === false ? (
         <div class="browser-card">
           <p>{s.title ?? where} doesn't allow being shown inside another page.</p>
-          <a class="button" href={s.url} target="_blank" rel="noopener noreferrer">
+          <a class="primary" href={s.url} target="_blank" rel="noopener noreferrer">
             Open in new tab
           </a>
         </div>

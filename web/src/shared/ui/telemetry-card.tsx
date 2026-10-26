@@ -28,7 +28,7 @@ export function TelemetryCard({
       <p>{about}</p>
       {preview !== undefined && <TelemetryPreview preview={preview} />}
       <div class="prompt-buttons">
-        <button data-telemetry-no onClick={() => answer(false)}>
+        <button class="secondary" data-telemetry-no onClick={() => answer(false)}>
           No thanks
         </button>
         <button class="primary" data-telemetry-yes onClick={() => answer(true)}>

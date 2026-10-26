@@ -25,10 +25,10 @@ export function ConfirmRemove({ title, children, label = "Remove", go, cancel }:
         <h2>{title}</h2>
         {children}
         <div class="prompt-buttons">
-          <button data-cancel-remove onClick={cancel}>
+          <button class="secondary" data-cancel-remove onClick={cancel}>
             Cancel
           </button>
-          <button class="danger" data-confirm-remove disabled={!ready} onClick={go}>
+          <button class="primary danger" data-confirm-remove disabled={!ready} onClick={go}>
             {label}
           </button>
         </div>

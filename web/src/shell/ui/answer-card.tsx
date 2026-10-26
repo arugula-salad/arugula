@@ -78,11 +78,11 @@ export function PermissionButtons({ ask, act }: { ask: Ask; act: (action: "allow
         Allow
       </button>
       {(ask.suggestions ?? []).slice(0, 2).map((s, i) => (
-        <button key={i} title={`Allow, and from now on: ${describe(s)}`} onClick={() => act("allow", { option: "always", suggestion: i })}>
+        <button key={i} class="secondary" title={`Allow, and from now on: ${describe(s)}`} onClick={() => act("allow", { option: "always", suggestion: i })}>
           Always: {describe(s)}
         </button>
       ))}
-      <button class="danger" onClick={() => act("deny")}>
+      <button class="secondary danger" onClick={() => act("deny")}>
         Deny
       </button>
       <button

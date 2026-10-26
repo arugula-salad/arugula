@@ -89,11 +89,11 @@ export function HostedMachines({ s }: { s: ControlSession }) {
                   <span class="dim">{d ? " · control may enroll hosted machines into it" : " · no hosted machines"}</span>
                 </span>
                 {d ? (
-                  <button class="control-revoke quiet-danger" disabled={!!busy} onClick={act(p.id, () => s.undelegate(d.delegation))}>
+                  <button class="secondary danger small" disabled={!!busy} onClick={act(p.id, () => s.undelegate(d.delegation))}>
                     Stop
                   </button>
                 ) : (
-                  <button disabled={!!busy} data-delegate={p.id} onClick={act(p.id, () => s.delegate(p.id, p.owner))}>
+                  <button class="secondary small" disabled={!!busy} data-delegate={p.id} onClick={act(p.id, () => s.delegate(p.id, p.owner))}>
                     Allow
                   </button>
                 )}

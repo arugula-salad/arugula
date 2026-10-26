@@ -123,21 +123,21 @@ export function FollowView({ fleet, pkey, close, back }: { fleet: Fleet; pkey: s
         </div>
         <div class="follow-tools">
           {paused && can && (
-            <button class="pri" data-continue onClick={() => void act({ action: "continue", pane: id })}>
+            <button class="primary small" data-continue onClick={() => void act({ action: "continue", pane: id })}>
               Continue
             </button>
           )}
           {file && p && (
-            <button data-open-here onClick={(e) => openMenu(e as unknown as MouseEvent, openHere(fleet, p, file, at, back, setErr))}>
+            <button class="secondary small" data-open-here onClick={(e) => openMenu(e as unknown as MouseEvent, openHere(fleet, p, file, at, back, setErr))}>
               Open here ▾
             </button>
           )}
           {file && p && claudes(fleet, host).length > 0 && can && (
-            <button data-mention onClick={(e) => openMenu(e as unknown as MouseEvent, mention(fleet, host, file, at, setErr))}>
+            <button class="secondary small" data-mention onClick={(e) => openMenu(e as unknown as MouseEvent, mention(fleet, host, file, at, setErr))}>
               Ask Claude ▾
             </button>
           )}
-          <button class="ghost" data-follow-close title="Stop following" onClick={close}>
+          <button class="secondary small" data-follow-close title="Stop following" onClick={close}>
             ✕
           </button>
         </div>

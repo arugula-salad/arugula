@@ -219,21 +219,21 @@ export function IssueView({
         actions={
           <span class="issue-actions">
             {writer && editing !== "title" && (
-              <button class="issue-action" data-issue-edit-title onClick={() => setEditing("title")}>
+              <button class="secondary small" data-issue-edit-title onClick={() => setEditing("title")}>
                 Edit title
               </button>
             )}
             {writer &&
               (issue.state === "closed" ? (
-                <button class="issue-action" data-issue-reopen onClick={() => void change({ state: "open" })}>
+                <button class="secondary small" data-issue-reopen onClick={() => void change({ state: "open" })}>
                   Reopen
                 </button>
               ) : (
                 <span class="issue-split">
-                  <button class="issue-action" data-issue-close onClick={() => void change({ state: "closed", reason: "completed" })}>
+                  <button class="secondary small" data-issue-close onClick={() => void change({ state: "closed", reason: "completed" })}>
                     Close issue
                   </button>
-                  <button class="issue-action" title="Close it for another reason" aria-label="Close it for another reason" data-issue-close-as onClick={closeMenu}>
+                  <button class="secondary small" title="Close it for another reason" aria-label="Close it for another reason" data-issue-close-as onClick={closeMenu}>
                     ▾
                   </button>
                 </span>
@@ -284,7 +284,7 @@ export function IssueView({
                 <span class="thread-name">{whoLabel(issue.author, issue.agent, nameOf)}</span>
                 <time title={new Date(issue.created_at).toLocaleString()}>{ago(issue.created_at)}</time>
                 {writer && editing !== "body" && (
-                  <button class="issue-action small" data-issue-edit-body onClick={() => setEditing("body")}>
+                  <button class="secondary small issue-edit" data-issue-edit-body onClick={() => setEditing("body")}>
                     Edit
                   </button>
                 )}
@@ -369,7 +369,7 @@ function Labels({ api, issue, change, writer }: { api: IssueApi; issue: NativeIs
       <h3>
         Labels
         {writer && (
-          <button class="issue-action small" title="Add or take off labels" data-issue-labels-edit onClick={pick}>
+          <button class="secondary small issue-edit" title="Add or take off labels" data-issue-labels-edit onClick={pick}>
             Edit
           </button>
         )}
@@ -413,7 +413,7 @@ function Assignees({
       <h3>
         Assignees
         {writer && (
-          <button class="issue-action small" title="Assign people in the project" data-issue-assignees-edit onClick={pick}>
+          <button class="secondary small issue-edit" title="Assign people in the project" data-issue-assignees-edit onClick={pick}>
             Edit
           </button>
         )}
@@ -467,7 +467,7 @@ function BodyEdit({ body, done }: { body: string; done: (b: string | null) => vo
     >
       <textarea rows={8} value={b} autoFocus aria-label="Description" data-issue-body-edit onInput={(e) => setB(e.currentTarget.value)} onKeyDown={(e) => e.key === "Escape" && done(null)} />
       <div class="prompt-buttons">
-        <button type="button" onClick={() => done(null)}>
+        <button class="secondary" type="button" onClick={() => done(null)}>
           Cancel
         </button>
         <button class="primary">Save</button>

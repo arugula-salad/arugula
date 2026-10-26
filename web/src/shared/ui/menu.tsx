@@ -292,7 +292,7 @@ export function PromptLayer() {
         )}
         <div class="prompt-buttons">
           {!p.notice && (
-            <button type="button" onClick={() => finish(null)}>
+            <button class="secondary" type="button" onClick={() => finish(null)}>
               Cancel
             </button>
           )}

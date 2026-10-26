@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { session } from "../session";
 import { toneClass } from "../swarm";
@@ -102,6 +103,8 @@ export function AgentTokens() {
   const [made, setMade] = useState<{ token: string; name: string } | null>(null);
   const [open, setOpen] = useState("");
   const [busy, setBusy] = useState(false);
+  // Revoke asks first (UI audit #158): the token is dead for good.
+  const [revoking, setRevoking] = useState<AgentToken | null>(null);
   const load = () =>
     call<{ tokens: AgentToken[]; mcp_url: string }>("/api/agent-tokens").then(
       (v) => {
@@ -173,7 +176,7 @@ export function AgentTokens() {
             </code>
           </p>
           <div class="prompt-buttons">
-            <button type="button" onClick={() => void navigator.clipboard?.writeText(made.token)}>
+            <button class="secondary" type="button" onClick={() => void navigator.clipboard?.writeText(made.token)}>
               Copy
             </button>
             <button type="button" class="primary" onClick={() => setMade(null)}>
@@ -193,11 +196,11 @@ export function AgentTokens() {
                   <bdi>{t.name}</bdi>
                 </b>
                 <span class="settings-card-act">
-                  <button class="control-linkish" data-agent-token-calls-open={t.id} onClick={() => setOpen(open === t.id ? "" : t.id)}>
+                  <button class="secondary small" data-agent-token-calls-open={t.id} onClick={() => setOpen(open === t.id ? "" : t.id)}>
                     {open === t.id ? "Hide calls" : "Calls"}
                   </button>
                   {t.live && (
-                    <button class="control-linkish" data-agent-token-revoke={t.id} onClick={() => void revoke(t.id)}>
+                    <button class="secondary danger small" data-agent-token-revoke={t.id} onClick={() => setRevoking(t)}>
                       Revoke
                     </button>
                   )}
@@ -213,7 +216,7 @@ export function AgentTokens() {
         </ul>
       )}
       {!making ? (
-        <button class="settings-btn" data-agent-token-new onClick={() => setMaking(true)}>
+        <button class="secondary settings-new" data-agent-token-new onClick={() => setMaking(true)}>
           New agent token
         </button>
       ) : (
@@ -264,7 +267,7 @@ export function AgentTokens() {
           )}
           <p class="dim">The token is shown once, and your devices get a notice that it was made.</p>
           <div class="prompt-buttons">
-            <button type="button" onClick={() => setMaking(false)}>
+            <button class="secondary" type="button" onClick={() => setMaking(false)}>
               Cancel
             </button>
             <button class="primary" disabled={busy || !projects.length || !powers.length} data-agent-token-make>
@@ -274,6 +277,20 @@ export function AgentTokens() {
         </form>
       )}
       {err ? <p class="control-error">{err}</p> : null}
+      {revoking && (
+        <ConfirmRemove
+          title={`Revoke ${revoking.name}?`}
+          label="Revoke"
+          cancel={() => setRevoking(null)}
+          go={() => {
+            const id = revoking.id;
+            setRevoking(null);
+            void revoke(id);
+          }}
+        >
+          <p>Its agent is refused from now on, everywhere. A token can't be revoked and used again: give the agent a new one.</p>
+        </ConfirmRemove>
+      )}
     </Section>
   );
 }

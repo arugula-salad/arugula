@@ -101,6 +101,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
                     <>
                       {pick(r)}{" "}
                       <button
+                        class="secondary small"
                         disabled={!!busy || !mine}
                         data-renew-run-grant={r.id}
                         onClick={act(r.id, async () => {
@@ -116,14 +117,14 @@ export function RunGrants({ s }: { s: ControlSession }) {
                     <input type="checkbox" data-stop-running checked={!!stop[r.id]} onChange={(e) => setStop({ ...stop, [r.id]: (e.target as HTMLInputElement).checked })} /> also
                     stop the runs going
                   </label>{" "}
-                  <button class="control-revoke quiet-danger" disabled={!!busy || !mine} data-revoke-run-grant={r.id} onClick={act(r.id, () => s.revokeRunGrants(r.id, delegationsOf(r), !!stop[r.id]))}>
+                  <button class="secondary danger small" disabled={!!busy || !mine} data-revoke-run-grant={r.id} onClick={act(r.id, () => s.revokeRunGrants(r.id, delegationsOf(r), !!stop[r.id]))}>
                     Revoke
                   </button>
                 </span>
               ) : (
                 <span>
                   {pick(r)}{" "}
-                  <button disabled={!!busy || !mine} data-sign-run-grant={r.id} onClick={act(r.id, () => s.signRunGrant(r.delegation, daysOf(r)))}>
+                  <button class="secondary small" disabled={!!busy || !mine} data-sign-run-grant={r.id} onClick={act(r.id, () => s.signRunGrant(r.delegation, daysOf(r)))}>
                     Allow runs
                   </button>
                 </span>

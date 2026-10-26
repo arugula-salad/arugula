@@ -26,7 +26,7 @@ html[data-scheme="light"] {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   font: inherit;
 }
 
@@ -126,9 +126,7 @@ html[data-finish="brushed"] .platform-toast {
   box-shadow: inset 0 1px 0 #fff3, 0 12px 36px #0008, 0 0 0 1px #0003;
 }
 
-/* Every button bevelled, as style.css does the dialogs': the deploy
-   links that are buttons, too. */
-html[data-finish="brushed"] .platform .button:not(.primary),
+/* The roll-back chip bevelled, as the buttons are (shared/buttons.css). */
 html[data-finish="brushed"] .deploy-roll-back {
   background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--raised);
   border-color: color-mix(in srgb, var(--raised) 60%, #000);

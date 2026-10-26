@@ -119,14 +119,14 @@ function AppearanceDialog({ close }: { close: () => void }) {
         </div>
         <p class="hint">Chat's rows: {DENSITIES.find((d) => d.id === a.density)?.hint.toLowerCase()}.</p>
         <div class="prompt-buttons">
-          <button
+          <button class="secondary"
             type="button"
             onClick={() => setAppearance({ palette: "default", finish: "flat", corners: "square", density: "cozy" })}
             disabled={a.palette === "default" && a.finish === "flat" && a.corners === "square" && a.density === "cozy"}
           >
             Reset
           </button>
-          <button type="button" onClick={close}>
+          <button class="secondary" type="button" onClick={close}>
             Done
           </button>
         </div>

@@ -860,7 +860,7 @@ function Card({
         <div class="ca" data-point={point.id}>
           {n === 1 && <PointChoices point={point} busy={busy} answer={(answer) => void run("answer", { content: { answer } })} />}
           {r.actions.includes("dismiss") && (
-            <button class="ghost" disabled={busy} onClick={() => void run("dismiss")}>
+            <button class="secondary small" disabled={busy} onClick={() => void run("dismiss")}>
               {all("Dismiss")}
             </button>
           )}
@@ -876,37 +876,37 @@ function Card({
       ) : (
         <div class="ca">
           {openFirst && (
-            <button class="pri" data-open-card onClick={open}>
+            <button class="primary small" data-open-card onClick={open}>
               Open
             </button>
           )}
           {r.actions.includes("rerun") && (
-            <button class="pri" data-rerun disabled={busy} onClick={() => void run("rerun")}>
+            <button class="primary small" data-rerun disabled={busy} onClick={() => void run("rerun")}>
               {all("Rerun")}
             </button>
           )}
           {r.actions.includes("continue") && (
-            <button class="pri" data-continue disabled={busy} onClick={() => void run("continue")}>
+            <button class="primary small" data-continue disabled={busy} onClick={() => void run("continue")}>
               {all("Continue")}
             </button>
           )}
           {r.actions.includes("allow") && (
-            <button class="pri" data-approve-gate={r.kind === "gate" ? "" : undefined} disabled={busy} onClick={() => void run("allow")}>
+            <button class="primary small" data-approve-gate={r.kind === "gate" ? "" : undefined} disabled={busy} onClick={() => void run("allow")}>
               {all(r.kind === "gate" ? "Approve" : "Allow")}
             </button>
           )}
           {r.actions.includes("expire") && (
-            <button data-expire-gate disabled={busy} title={EXPIRE_TITLE} onClick={() => void run("expire")}>
+            <button class="secondary small" data-expire-gate disabled={busy} title={EXPIRE_TITLE} onClick={() => void run("expire")}>
               {all("Expire")}
             </button>
           )}
           {r.actions.includes("deny") && r.ask?.what === "approve" && (
-            <button disabled={busy} onClick={() => void run("deny")}>
+            <button class="secondary danger small" disabled={busy} onClick={() => void run("deny")}>
               {all("Deny")}
             </button>
           )}
           {r.ask?.what === "question" && (
-            <button class="pri" onClick={open}>
+            <button class="primary small" onClick={open}>
               Answer…
             </button>
           )}
@@ -916,24 +916,24 @@ function Card({
           it's the main button above, and Dismiss. */}
       <div class="ca ca-nav">
         {!isPresence(first) && !openFirst && (
-          <button class="ghost" onClick={open}>
+          <button class="secondary small" onClick={open}>
             Open
           </button>
         )}
         {n === 1 && followable(first) && (
-          <button class="ghost" data-follow-card onClick={follow}>
+          <button class="secondary small" data-follow-card onClick={follow}>
             Follow
           </button>
         )}
         {/* #237: a pane that wants someone: bring them in. Its owner
             shares, as in the session menu; one pane's session only. */}
         {n === 1 && !isPresence(first) && first.session && fleet.role(first) === "owner" && (
-          <button class="ghost" data-share-card title={`Share ${first.session.name} with someone`} onClick={share}>
+          <button class="secondary small" data-share-card title={`Share ${first.session.name} with someone`} onClick={share}>
             Share
           </button>
         )}
         {can && !point && (r.actions.includes("dismiss") || r.kind === "ask" || r.kind === "diff") && (
-          <button class="ghost" data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
+          <button class="secondary small" data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
             {all("Dismiss")}
           </button>
         )}

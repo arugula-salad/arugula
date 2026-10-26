@@ -6,7 +6,7 @@
 // either way.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import { useModal } from "../../shared/ui/modal";
+import { CloseX, useModal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import type { FlagInfo } from "../../shared/proto.gen";
 
@@ -100,6 +100,7 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
   return (
     <div class="prompt-backdrop" role="dialog" aria-modal="true" aria-label="Developer settings" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <div ref={ref} class="prompt rules developer">
+        <CloseX close={close} />
         <h2>Developer settings</h2>
         <p class="hint">
           Features that aren't ready for everyone, on this machine. Each takes effect at once; <code>arugulad flags</code> shows the same
@@ -125,7 +126,7 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
               </label>
               {/* This machine's word taken back: control's, or the default. */}
               {f.source && f.local !== undefined ? (
-                <button type="button" class="flag-follow" aria-label={`${followLabel(f)} for ${f.title || f.name}`} onClick={() => void set(f.name, null)}>
+                <button type="button" class="secondary small flag-follow" aria-label={`${followLabel(f)} for ${f.title || f.name}`} onClick={() => void set(f.name, null)}>
                   {followLabel(f)}
                 </button>
               ) : null}
@@ -133,7 +134,7 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
           ))}
         </ul>
         <div class="prompt-buttons">
-          <button type="button" onClick={close}>
+          <button class="secondary" type="button" onClick={close}>
             Done
           </button>
         </div>

@@ -170,11 +170,11 @@ export function InboxPage() {
                     </div>
                     <div class="platform-inbox-actions">
                       {!e.seen_at && (
-                        <button class="control-linkish" data-inbox-seen={e.item} disabled={busy === key} onClick={() => void mark(e, { seen: true })}>
+                        <button class="secondary small" data-inbox-seen={e.item} disabled={busy === key} onClick={() => void mark(e, { seen: true })}>
                           Seen
                         </button>
                       )}
-                      <button class="control-linkish" data-inbox-done={e.item} disabled={busy === key} onClick={() => void mark(e, { done: true })}>
+                      <button class="secondary small" data-inbox-done={e.item} disabled={busy === key} onClick={() => void mark(e, { done: true })}>
                         Done
                       </button>
                     </div>
@@ -257,7 +257,7 @@ function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] })
                 {kindOf(r)} · {n} new in its thread{r.mentions ? ", mentioning you" : ""}
               </div>
               <div class="platform-inbox-actions">
-                <button class="control-linkish" title="Mark its thread read" data-inbox-thread-done={r.id} onClick={() => void chat.read(r.id, r.last)}>
+                <button class="secondary small" title="Mark its thread read" data-inbox-thread-done={r.id} onClick={() => void chat.read(r.id, r.last)}>
                   Done
                 </button>
               </div>

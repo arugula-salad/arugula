@@ -116,10 +116,10 @@ export function DocShareLayer() {
           <h2>Update shared copy?</h2>
           <p>{UPDATE_NOTE}</p>
           <div class="prompt-buttons">
-            <button type="button" onClick={close}>
+            <button class="secondary" type="button" onClick={close}>
               Cancel
             </button>
-            <button
+            <button class="secondary"
               type="button"
               data-doc-update-go
               onClick={() => {
@@ -141,7 +141,7 @@ export function DocShareLayer() {
         <p class="hint">Anyone with this link can open the Doc, with no account. It shows the Doc as it is now.</p>
         <CopyText text={o.url} share data-doc-link-url />
         <div class="prompt-buttons">
-          <button type="button" onClick={close}>
+          <button class="secondary" type="button" onClick={close}>
             Done
           </button>
         </div>

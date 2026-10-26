@@ -54,14 +54,14 @@ export function SettingsPage() {
           <Section id="account" title="Appearance & account" lede="How this device looks, your plan, and where the rest of your account is.">
             <ul class="platform-list settings-rows">
               <li>
-                <button class="control-linkish" data-open-appearance onClick={openAppearance}>
+                <button class="link" data-open-appearance onClick={openAppearance}>
                   Appearance…
                 </button>
                 <span class="dim">This device's palette, finish, corners and chat density.</span>
               </li>
               {billing?.billing && (
                 <li>
-                  <button class="control-linkish" data-open-plan onClick={() => setPlan(true)}>
+                  <button class="link" data-open-plan onClick={() => setPlan(true)}>
                     Plan and usage{billing.relay.warning ? " (over the free relay)" : ""}
                   </button>
                   <span class="dim">Your plan, and what you used this month.</span>

@@ -170,7 +170,7 @@ function Sandboxes({ close }: { close: () => void }) {
           ))}
         </ul>
         <div class="prompt-buttons">
-          <button type="button" onClick={close}>
+          <button class="secondary" type="button" onClick={close}>
             Close
           </button>
         </div>

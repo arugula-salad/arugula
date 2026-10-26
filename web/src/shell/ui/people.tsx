@@ -10,6 +10,7 @@ import { roleLabel } from "./roles";
 import type { MenuItem } from "../../shared/ui/menu";
 import { keyChanged, keyChangeSeen, personPin, pinPerson, verifyPerson, type ControlSession } from "../control";
 import { readVerifyCode, verifyWords } from "../e2e/words.ts";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import { countView } from "../../shared/telemetry";
 import { canScan, Scanner } from "./scan";
@@ -189,7 +190,7 @@ function TrustRequest({ client }: { client: Client }) {
           </select>
         </label>
         <div class="prompt-buttons">
-          <button onClick={() => client.answerTrust(r.pane, r.who, null)}>Not now</button>
+          <button class="secondary" onClick={() => client.answerTrust(r.pane, r.who, null)}>Not now</button>
           <button class="primary" data-trust onClick={() => client.answerTrust(r.pane, r.who, minutes)}>
             Allow
           </button>
@@ -211,7 +212,7 @@ export function ControlRequests({ client }: { client: Client }) {
           <b>{r.name}</b> asks to drive %{r.pane}.
         </p>
         <div class="prompt-buttons">
-          <button onClick={() => client.answerRequest(r.pane, false)}>Not now</button>
+          <button class="secondary" onClick={() => client.answerRequest(r.pane, false)}>Not now</button>
           <button class="primary" data-give onClick={() => client.answerRequest(r.pane, true)}>
             Hand over
           </button>
@@ -281,9 +282,9 @@ function VerifyPerson({ who, done, close }: { who: Person; done: () => void; clo
       ) : null}
       {err ? <p class="share-warning">{err}</p> : null}
       <div class="prompt-buttons">
-        <button onClick={close}>Cancel</button>
+        <button class="secondary" onClick={close}>Cancel</button>
         {canScan() && !scanning ? (
-          <button data-verify-scan onClick={() => setScanning(true)}>
+          <button class="secondary" data-verify-scan onClick={() => setScanning(true)}>
             Scan their code
           </button>
         ) : null}
@@ -338,6 +339,8 @@ export function ShareDialog({ client }: { client: Client }) {
   const [link, setLink] = useState<string | null>(null);
   // After a share with someone outside your teams: what they see next.
   const [asked, setAsked] = useState<string | null>(null);
+  // Taking someone off asks first (UI audit #158).
+  const [removing, setRemoving] = useState<Grant | null>(null);
   const load = async (s: SessionId | null = session) => {
     const r = await client.request(OPS["acl.get"].method, opPath("acl.get"));
     if (r.ok) {
@@ -505,16 +508,16 @@ export function ShareDialog({ client }: { client: Client }) {
                   {/* Always a cell, so Remove lines up whatever is here. */}
                   <span class="share-key">
                     {control && account && k ? (
-                      <button class="control-linkish share-warning" data-key-changed-row={g.principal} title="Their account key changed" onClick={() => warnFor(g, k)}>
+                      <button class="link share-warning" data-key-changed-row={g.principal} title="Their account key changed" onClick={() => warnFor(g, k)}>
                         ⚠ new key
                       </button>
                     ) : control && account && !verified(g) && rootOf(g) ? (
-                      <button class="control-linkish" data-verify-person={g.principal} onClick={() => setVerifying({ p: { account, name: g.name, root: rootOf(g)! } })}>
+                      <button class="link" data-verify-person={g.principal} onClick={() => setVerifying({ p: { account, name: g.name, root: rootOf(g)! } })}>
                         Verify
                       </button>
                     ) : null}
                   </span>
-                  <button class="control-revoke quiet-danger" onClick={() => void set(g.principal, null)}>
+                  <button class="secondary danger small" data-remove-grant={g.principal} onClick={() => setRemoving(g)}>
                     Remove
                   </button>
                 </li>
@@ -548,7 +551,7 @@ export function ShareDialog({ client }: { client: Client }) {
             <p key={x.pane} class="share-warning" data-secret={x.pane}>
               ⚠ %{x.pane} shows what looks like {x.kinds.join(" and ")} (a guess).{" "}
               <button
-                class="control-linkish"
+                class="link"
                 onClick={() => {
                   client.paneOp(x.pane, { op: "set_private", on: true });
                   setSecrets(secrets.filter((y) => y.pane !== x.pane));
@@ -577,7 +580,7 @@ export function ShareDialog({ client }: { client: Client }) {
               shared.
             </p>
             <div class="prompt-buttons">
-              <button onClick={() => setChanged(null)}>Cancel</button>
+              <button class="secondary" onClick={() => setChanged(null)}>Cancel</button>
               <button
                 class="primary"
                 data-key-verify
@@ -609,6 +612,7 @@ export function ShareDialog({ client }: { client: Client }) {
               .map((t) => (
                 <p key={t.team} class="share-team">
                   <button
+                    class="secondary"
                     data-share-team={t.team}
                     onClick={() =>
                       // Pinned to its founder, as this browser pinned the
@@ -673,6 +677,7 @@ export function ShareDialog({ client }: { client: Client }) {
           />
           <button
             type="button"
+            class="secondary"
             data-invite
             onClick={() => {
               const p = who.trim();
@@ -704,7 +709,7 @@ export function ShareDialog({ client }: { client: Client }) {
         {control && client.e2e ? (
           <p>
             <button
-              class="control-linkish"
+              class="link"
               data-make-link
               onClick={() =>
                 control!
@@ -720,9 +725,22 @@ export function ShareDialog({ client }: { client: Client }) {
         {link ? <CopyText text={link} share data-link /> : null}
         {err ? <p class="control-error">{err}</p> : null}
         <div class="prompt-buttons">
-          <button onClick={() => setSession(null)}>Done</button>
+          <button class="secondary" onClick={() => setSession(null)}>Done</button>
         </div>
       </div>
+      {removing && (
+        <ConfirmRemove
+          title={`Stop sharing ${name} with ${removing.name}?`}
+          cancel={() => setRemoving(null)}
+          go={() => {
+            const p = removing.principal;
+            setRemoving(null);
+            void set(p, null);
+          }}
+        >
+          <p>{removing.principal.startsWith("team:") ? "Its members lose" : "They lose"} it at once, and anyone watching is cut off. To let them back, share it again.</p>
+        </ConfirmRemove>
+      )}
     </div>
   );
 }

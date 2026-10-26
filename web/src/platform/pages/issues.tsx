@@ -194,7 +194,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
           {filter.assignee ? `Assignee: ${nameOf(filter.assignee) ?? "someone"}` : "Assignee"} <span class="caret">▾</span>
         </button>
         {narrowed && (
-          <button class="control-linkish" data-issues-clear onClick={clear}>
+          <button class="link" data-issues-clear onClick={clear}>
             Clear
           </button>
         )}
