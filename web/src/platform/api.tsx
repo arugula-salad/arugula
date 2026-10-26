@@ -5,13 +5,16 @@
 
 import { noMachines, type PlatformApi, type PlatformTeam } from "../shared/platform-api";
 import { PlatformBar } from "./bar";
-import { names, roomPath, routeProject } from "./links";
+import { names, roomPath } from "./links";
 import { current, go, pathOf, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { toast } from "./toast";
+import { barProject } from "./where";
 
 const chatIn = (view?: "activity" | "saved" | "search" | "threads", q?: string): Route | null => {
-  const project = routeProject() ?? session.personal()?.id;
+  // The project the bar is in (a DM's team's too, UI audit #159), else
+  // the first team's: chat is a team's.
+  const project = barProject(current()) ?? session.projects.find((p) => p.team)?.id ?? session.personal()?.id;
   return project ? { page: "chat", project, view, q } : null;
 };
 
@@ -26,7 +29,7 @@ export const platformApi: PlatformApi = {
       go(r ? pathOf(r, names) : "/");
     },
     closeChat() {
-      const project = routeProject();
+      const project = barProject(current());
       go(project ? pathOf({ page: "project", project }, names) : "/");
     },
     openRoom: (room, msg, thread) => go(roomPath(room, msg, thread)),

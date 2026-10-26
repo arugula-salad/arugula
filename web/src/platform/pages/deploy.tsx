@@ -16,6 +16,7 @@ import { follow } from "../router";
 import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
 import { ago } from "../settings/agent-tokens";
 import { deployTone, toneClass } from "../swarm";
+import { where } from "../where";
 
 export interface Deploy {
   id: string;
@@ -156,6 +157,8 @@ export function DeployPage({ id }: { id: string }) {
   useEffect(() => {
     get<Deploy>(`/api/deploys/${id}`).then(setD, (e: Error) => setError(e.message));
   }, [id]);
+  // The bar is in its project once that's known (UI audit #159).
+  useEffect(() => void (d && where.deployIn(d.id, d.project.id)), [d]);
   if (error) return <section class="platform-section"><p class="control-error">{error}</p></section>;
   if (!d) return <p class="platform-section dim">Loading…</p>;
   return (
