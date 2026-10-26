@@ -636,3 +636,75 @@ fn an_accounts_sessions_and_prompts_go_with_it() {
     assert_eq!((later.state, later.dropped_at), (PromptState::Dropped, Some(T0 + 1)));
     assert_eq!(db.session_events(&s.id).unwrap().len(), 2, "the history stays");
 }
+
+/// M257: what people ask of a session's box. An answer waits on the open
+/// request, the first wins, it's listed in the box's work until a report
+/// names it done, and a report naming one that isn't pending is refused;
+/// a permission is approved with one of its options; a cancel needs a
+/// turn under way; an end drops what's still pending.
+#[test]
+fn actions_wait_for_the_box_and_the_first_answer_wins() {
+    let db = Db::test();
+    let b = Machine::new();
+    seed(&db, Some(&b.id));
+    let s = session_in(&db, &b, State::Working, 1);
+    let answer = json!({ "question_0": "Blue" });
+    let ask = |kind, request: Option<&'static str>| NewAction {
+        by: "bob",
+        kind,
+        request,
+        answer: (kind == ActionKind::Answer).then_some(&answer),
+        option: None,
+        reason: None,
+    };
+    // Nothing is open yet.
+    let early = db.add_session_action(&s.id, &ask(ActionKind::Answer, None), T0).unwrap();
+    assert_eq!(early, Err(Refused::Moved { now: State::Working }));
+    let detail = json!({ "question": "which colour?", "request": "req_1", "ask": "question" }).to_string();
+    b.say(&db, &s.id, Kind::State, Some(State::NeedsInput), &detail, T0 + 20).unwrap();
+    let wrong = db.add_session_action(&s.id, &ask(ActionKind::Answer, Some("req_0")), T0 + 21).unwrap();
+    assert!(matches!(wrong, Err(Refused::Detail(_))), "{wrong:?}");
+    let approve = db.add_session_action(&s.id, &ask(ActionKind::Approve, None), T0 + 21).unwrap();
+    assert!(matches!(approve, Err(Refused::Detail(_))), "a question isn't approved: {approve:?}");
+    let a = db.add_session_action(&s.id, &ask(ActionKind::Answer, Some("req_1")), T0 + 22).unwrap().unwrap();
+    let second = db.add_session_action(&s.id, &ask(ActionKind::Answer, Some("req_1")), T0 + 23).unwrap();
+    assert_eq!(second, Err(Refused::Detail("someone answered it already")));
+    let work = db.session_work("hw_1").unwrap();
+    assert_eq!(work[0].actions.len(), 1);
+    assert_eq!((work[0].actions[0].id.as_str(), &work[0].actions[0].answer), (a.id.as_str(), &Some(answer.clone())));
+    // A report that names an action nobody asked is refused.
+    let made_up = json!({ "actions": ["sac_nobody"] }).to_string();
+    let refused = b.say(&db, &s.id, Kind::State, Some(State::Working), &made_up, T0 + 24);
+    assert!(matches!(refused, Err(Refused::Detail(_))), "{refused:?}");
+    let did = json!({ "actions": [a.id] }).to_string();
+    b.say(&db, &s.id, Kind::State, Some(State::Working), &did, T0 + 25).unwrap();
+    let done = db.session_actions(&s.id).unwrap();
+    assert_eq!(
+        (done[0].state, done[0].done_n),
+        (ActionState::Done, Some(db.session(&s.id).unwrap().unwrap().daemon_n))
+    );
+    assert!(db.session_work("hw_1").unwrap()[0].actions.is_empty());
+
+    // A permission: approved with one of its options, or not at all.
+    let detail = json!({ "question": "Bash: rm", "request": "req_2", "ask": "permission", "options": ["allow-once", "reject-once"] });
+    b.say(&db, &s.id, Kind::State, Some(State::NeedsInput), &detail.to_string(), T0 + 30).unwrap();
+    let as_answer = db.add_session_action(&s.id, &ask(ActionKind::Answer, None), T0 + 31).unwrap();
+    assert!(matches!(as_answer, Err(Refused::Detail(_))), "{as_answer:?}");
+    let other = NewAction { option: Some("allow-forever"), ..ask(ActionKind::Approve, None) };
+    assert!(matches!(db.add_session_action(&s.id, &other, T0 + 31).unwrap(), Err(Refused::Detail(_))));
+    let ok = NewAction { option: Some("allow-once"), ..ask(ActionKind::Approve, Some("req_2")) };
+    db.add_session_action(&s.id, &ok, T0 + 32).unwrap().unwrap();
+    // The box answered it itself: the approval nobody named is dropped.
+    b.say(&db, &s.id, Kind::State, Some(State::Working), "{}", T0 + 33).unwrap();
+    assert_eq!(db.session_actions(&s.id).unwrap()[1].state, ActionState::Dropped);
+
+    // A cancel, once, while a turn is under way; stopping drops it.
+    let c = db.add_session_action(&s.id, &ask(ActionKind::Cancel, None), T0 + 40).unwrap().unwrap();
+    let again = db.add_session_action(&s.id, &ask(ActionKind::Cancel, None), T0 + 41).unwrap();
+    assert!(matches!(again, Err(Refused::Detail(_))), "{again:?}");
+    control(&db, &s.id, State::Working, State::Stopped, T0 + 42).unwrap();
+    let all = db.session_actions(&s.id).unwrap();
+    assert_eq!(all.iter().find(|x| x.id == c.id).unwrap().state, ActionState::Dropped);
+    let ended = db.add_session_action(&s.id, &ask(ActionKind::Cancel, None), T0 + 43).unwrap();
+    assert_eq!(ended, Err(Refused::Moved { now: State::Stopped }));
+}

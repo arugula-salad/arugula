@@ -34,6 +34,7 @@ pub mod projects;
 pub mod push;
 pub mod run_logs;
 pub mod runs;
+pub mod sessions;
 pub mod team;
 pub mod telemetry;
 pub mod transcripts;

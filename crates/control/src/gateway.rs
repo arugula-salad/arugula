@@ -196,6 +196,14 @@ impl PlatformPort for PlatformAt {
         self.port().hosted_report(machine, report)
     }
 
+    fn hosted_session_report<'a>(
+        &'a self,
+        machine: &'a arugula_platform::work::HostedMachine,
+        report: &'a arugula_control_wire::work::SessionReport,
+    ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::Reported>> {
+        self.port().hosted_session_report(machine, report)
+    }
+
     fn hosted_secrets<'a>(
         &'a self,
         machine: &'a arugula_platform::work::HostedMachine,

@@ -542,8 +542,9 @@ async fn arugula_asks_which_box_and_repo() {
     let s = sessions(&app, &t).pop().expect("started");
     assert_eq!((s.repo.as_deref(), s.workspace.as_str(), s.parent_seq), (Some("o/web"), "hw_dev", p as u64));
     assert_eq!(s.branch, format!("arugula/{}-fix-the-canary", s.id));
-    let said = lines(&base, "ch_general", Some(p)).await;
-    assert_eq!(said[1], "@arugula is starting a session for b on dev, in o/web. Replies here go to it.");
+    // The session's card (M257) says it started.
+    let said = crate::sessions_hydrate_tests::cards(&base, "ch_general", Some(p)).await;
+    assert_eq!(said, [format!("session:{}", s.id)]);
 
     // A second box, none chosen: which box first, then which repo.
     add_box(&app, &t, "hw_stage", "staging", &["https://github.com/o/app"], None);

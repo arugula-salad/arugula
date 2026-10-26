@@ -20,6 +20,8 @@
 //                                  `?spec=…` narrow it
 //   /p/:project/runs/:run          a run (`?msg=N`: at that message in its
 //                                  thread)
+//   /p/:project/sessions/:ses      an agent session (M257): its card and
+//                                  history
 //   /dm/:room                      a direct message
 //   /p/:project/workspaces         its hosted workspaces
 //   /p/:project/workspaces/:id     a hosted workspace (`hw_…`)
@@ -54,6 +56,7 @@ export type Route =
   | { page: "issue"; project: string; issue: string; msg?: number }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
   | { page: "run"; project: string; run: string; msg?: number }
+  | { page: "session"; project: string; session: string }
   | { page: "chat"; project: string; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string }
   | { page: "dm"; room: string; msg?: number; thread?: number }
   | { page: "workspaces"; project: string }
@@ -180,6 +183,10 @@ export function parse(path: string, search = ""): Route {
     const run = idOf(parts[3]);
     return run?.startsWith("run_") ? { page: "run", project, run, ...msg } : missing;
   }
+  if (parts[2] === "sessions" && parts.length === 4) {
+    const session = idOf(parts[3]);
+    return session?.startsWith("ses_") ? { page: "session", project, session } : missing;
+  }
   if (parts[2] === "workspaces" && parts.length === 3) return { page: "workspaces", project };
   if (parts[2] === "workspaces" && parts.length === 4) {
     const workspace = idOf(parts[3]);
@@ -250,6 +257,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
     }
     case "run":
       return `/p/${s(r.project)}/runs/${s(r.run)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
+    case "session":
+      return `/p/${s(r.project)}/sessions/${r.session}`;
     case "issue":
       return `/p/${s(r.project)}/issues/${s(r.issue)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
     case "dm":

@@ -31,7 +31,8 @@
 //!   (`db::sessions::create_session_in`, `db::sessions::dispatch`), bound
 //!   to the room and the thread, its branch's slug from the ask's words,
 //!   its first prompt the hydrated thread ([`crate::sessions::hydrate`]).
-//!   A line says where it runs.
+//!   Its status card (M257, [`super::session_card::post_card`]) says
+//!   where it runs.
 //! - **Replies.** In a thread with a session going, a reply from its asker
 //!   or any owner or editor is a prompt, credited to its author
 //!   (`session_prompts.author`), queued while a turn runs; the session's
@@ -417,13 +418,8 @@ async fn launch(
     };
     let Some(s) = made else { anyhow::bail!("the session's project or workspace is gone") };
     info!(session = s.id, room = room.id, thread, workspace = w.id, "a thread asked @arugula: session made");
-    let name = super::name_of(app, asker).await?;
-    let who = if name.is_empty() { "its asker".to_owned() } else { name };
-    let place = match repo {
-        Some(r) => format!("on {}, in {r}", w.name),
-        None => format!("on {}, in no repo (its spec lists none)", w.name),
-    };
-    say(app, room, thread, &format!("@arugula is starting a session for {who} {place}. Replies here go to it."))?;
+    // Its status card (M257) says it started, and where, from here on.
+    super::session_card::post_card(app, &s)?;
     Ok(())
 }
 

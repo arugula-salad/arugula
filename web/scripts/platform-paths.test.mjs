@@ -114,3 +114,10 @@ test("id-only addresses, for links that don't know the project", () => {
     assert.deepEqual(parse(p, q ? `?${q}` : ""), r);
   }
 });
+
+test("an agent session (M257)", () => {
+  const S = "ses_0123456789abcdef0123456789abcdef";
+  assert.deepEqual(parse(`/p/${P}/sessions/${S}`), { page: "session", project: P, session: S });
+  assert.deepEqual(parse(pathOf({ page: "session", project: P, session: S })), { page: "session", project: P, session: S });
+  for (const p of [`/p/${P}/sessions`, `/p/${P}/sessions/run_00ff11ee`, `/p/${P}/sessions/${S}/x`]) assert.equal(parse(p).page, "missing", p);
+});

@@ -1,0 +1,246 @@
+/* An agent session's status card (M257): a swarm rail card in a chat
+   timeline. Each channel says one fact of the session, nothing is there
+   for decoration:
+
+   element        what it shows
+   -------------- ---------------------------------------------------------
+   bar, border    its state: queued and needs input warn, working accent,
+                  done ok, failed and stopped responding danger, stopped
+                  muted
+   state (display) its state in words
+   mono id        ses_ and 8 of its hex (its own page, where there is one)
+   mono time      how long it's run, or ran
+   mono line      its repo and branch, and the workspace it runs on
+   line           the tool it's on, the error it hit, or that its box went
+                  quiet
+   pre            its last turn's diffstat
+
+   Palette tokens only, so every appearance holds; the swarm's font stacks
+   where the page has them (control's platform page), else the UI's own. */
+
+.session-card {
+  --c: var(--muted);
+  --ct: var(--subtle);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 560px;
+  margin: 2px 0 4px;
+  padding: 9px 12px 9px 15px;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--divider));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--c) 7%, var(--surface));
+  color: var(--fg);
+  font-size: 13px;
+  animation: session-card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.session-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+}
+
+.session-card:is(:hover, :focus-within) {
+  box-shadow: 0 0 20px color-mix(in srgb, var(--c) 30%, transparent);
+}
+
+@keyframes session-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-card {
+    animation: none;
+  }
+}
+
+.session-card.large {
+  max-width: none;
+  padding: 14px 16px 14px 19px;
+  font-size: 14px;
+}
+
+.session-card.tone-accent {
+  --c: var(--accent);
+  --ct: var(--accent);
+}
+
+.session-card.tone-ok {
+  --c: var(--ok);
+  --ct: var(--ok);
+}
+
+.session-card.tone-warn {
+  --c: var(--warn);
+  --ct: var(--warn);
+}
+
+.session-card.tone-danger {
+  --c: var(--danger);
+  --ct: var(--danger);
+}
+
+.session-card-top,
+.session-card-where,
+.session-card-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.session-card-fill {
+  flex: 1;
+}
+
+.session-card-state {
+  color: var(--ct);
+  font: 800 17px/1 var(--f-display, "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.session-card.large .session-card-state {
+  font-size: 26px;
+}
+
+.session-card-what {
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.session-card-id,
+.session-card-time,
+.session-card-where {
+  font: 500 12px/1.3 var(--f-mono, ui-monospace, Menlo, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.session-card-id {
+  color: var(--subtle);
+}
+
+a.session-card-id:hover {
+  color: var(--accent);
+}
+
+.session-card-time {
+  color: var(--ct);
+}
+
+.session-card-where {
+  color: var(--subtle);
+}
+
+.session-card-branch {
+  overflow-wrap: anywhere;
+}
+
+.session-card-line {
+  margin: 0;
+}
+
+.session-card-line.bad {
+  color: var(--danger);
+}
+
+.session-card-line code {
+  font-family: var(--f-mono, ui-monospace, Menlo, monospace);
+}
+
+.session-card-turn {
+  font-size: 12px;
+}
+
+.session-card-turn .ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.session-card-turn pre {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--letterbox);
+  font: 12px/1.35 var(--f-mono, ui-monospace, Menlo, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The question card inside it keeps its own look, without its outer gap. */
+.session-card-ask .ask {
+  margin: 4px 0;
+}
+
+.session-card-buttons {
+  margin-top: 2px;
+}
+
+.session-card-buttons :is(button, a.button) {
+  padding: 3px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.session-card-buttons :is(button, a.button):not(:disabled):hover {
+  border-color: var(--c);
+}
+
+.session-card-buttons button:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+
+.session-card-buttons button.danger {
+  color: var(--danger);
+}
+
+.session-card-buttons button.danger:not(:disabled):hover {
+  border-color: var(--danger);
+}
+
+.session-card-foot {
+  font-size: 11px;
+}
+
+/* Its page's history. */
+.session-history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.session-history li {
+  display: grid;
+  grid-template-columns: 9ch 1fr auto;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.session-history time,
+.session-history .signed {
+  color: var(--dim);
+  font: 12px/1.4 var(--f-mono, ui-monospace, Menlo, monospace);
+  font-variant-numeric: tabular-nums;
+}
