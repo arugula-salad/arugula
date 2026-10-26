@@ -901,6 +901,47 @@ mod lifecycle {
         assert!(hub.gone().contains(&b6));
     }
 
+    /// A deleted workspace whose snapshot E2B never lets go waits a day at
+    /// most: then it's deleted, and the snapshot is an orphan the worker
+    /// keeps asking about, until it goes.
+    #[tokio::test]
+    async fn a_snapshot_held_past_a_day_is_left_as_an_orphan() {
+        let (hub, s, app, base, project) = on_fake().await;
+        let (_, w) = make(&base, "alice", &project, "dev").await;
+        let ws = w["id"].as_str().unwrap().to_owned();
+        let path = format!("/api/projects/{project}/workspaces/{ws}");
+        let now = now_ms();
+        drive(&app, now).await;
+        set_up(&app, &hub, &project, &ws, "m1", "Set up.", now + 3_000).await;
+        let b = look(&app, &ws, now + 3_000).await.unwrap();
+        seal(&app, &hub, &project, &b, "b1", now + 6_000).await;
+        call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+        drive(&app, now + 7_000).await;
+        assert_eq!(boxes(&s).last().unwrap(), &("snap1:default".to_owned(), ws.clone()));
+
+        s.lock().unwrap().linger = u32::MAX;
+        assert_eq!(call(&base, "alice", "DELETE", &path, None).await.0, 200);
+        let state = || app.db.hosted_any(&project, &ws).unwrap().map(|w| w.state).unwrap_or_default();
+        let hour = 3600 * 1000;
+        for t in [now + 8_000, now + hour, now + 23 * hour] {
+            drive(&app, t).await;
+            assert_eq!(state(), "deleting", "at +{} ms", t - now);
+        }
+        assert!(app.db.orphan_snapshot_ids().unwrap().is_empty());
+        drive(&app, now + 25 * hour).await;
+        assert_eq!(state(), "deleted", "a day at most");
+        assert_eq!(app.db.orphan_snapshot_ids().unwrap(), [("snap1:default".to_owned(), ws.clone())]);
+        assert_eq!(snapshots(&s), ["snap1:default"]);
+
+        // E2B lets go: the worker's next ask deletes it.
+        s.lock().unwrap().lingering.clear();
+        drive(&app, now + 25 * hour + 60_000).await;
+        assert_eq!(snapshots(&s), ["snap1:default"], "not asked again yet");
+        drive(&app, now + 25 * hour + snapshot::ORPHAN_MS + 1_000).await;
+        assert!(snapshots(&s).is_empty());
+        assert!(app.db.orphan_snapshot_ids().unwrap().is_empty());
+    }
+
     /// A builder whose daemon doesn't seal (an older template), and a
     /// snapshot the provider lost: no snapshot, and boxes from the template.
     #[tokio::test]

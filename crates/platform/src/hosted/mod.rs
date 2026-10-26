@@ -127,6 +127,12 @@ pub struct Args {
     /// 0: no snapshots, and every box runs its setup.
     #[arg(long, env = "ARUGULA_HOSTED_SNAPSHOT_HOURS")]
     pub hosted_snapshot_hours: Option<u64>,
+    /// Hours a deleted workspace waits for the provider to let go of its
+    /// snapshots (M263; 24 unless set): past it, it's deleted, and the
+    /// snapshots left go on the platform's orphans, which the worker keeps
+    /// asking the provider to delete.
+    #[arg(long, env = "ARUGULA_HOSTED_SNAPSHOT_HOLD_HOURS")]
+    pub hosted_snapshot_hold_hours: Option<u64>,
     /// Which providers the platform's own inference key covers (M185), for
     /// workspaces made by accounts on ARUGULA_CLOUD_ACCOUNTS: `anthropic`,
     /// `openai`, comma-separated. Each is a dedicated key with a hard
@@ -210,6 +216,7 @@ impl Args {
             runtime_cap: self.hosted_runtime_cap.filter(|s| *s > 0).map(Duration::from_secs),
             dial_wait: self.hosted_dial_wait.filter(|s| *s > 0).map(Duration::from_secs),
             snapshot_every: self.hosted_snapshot_hours.map(|h| Duration::from_secs(h * 3600)),
+            snapshot_hold: self.hosted_snapshot_hold_hours.map(|h| Duration::from_secs(h * 3600)),
             preview_domain: previews::domain(self.preview_domain.as_deref().unwrap_or(""))?,
             broker: broker::Config::new(
                 self.inference_anthropic_key,
@@ -250,6 +257,8 @@ pub struct Config {
     pub dial_wait: Option<Duration>,
     /// [`Args::hosted_snapshot_hours`], when set ([`Config::snapshot_every`]).
     pub snapshot_every: Option<Duration>,
+    /// [`Args::hosted_snapshot_hold_hours`], when set ([`Config::snapshot_hold`]).
+    pub snapshot_hold: Option<Duration>,
     /// Whose key agents run on, and the caps on the platform's (M185).
     pub inference: inference::Settings,
     /// Public previews' domain (M187), when they're on.
@@ -268,6 +277,7 @@ impl std::fmt::Debug for Config {
             .field("runtime_cap", &self.runtime_cap)
             .field("dial_wait", &self.dial_wait)
             .field("snapshot_every", &self.snapshot_every)
+            .field("snapshot_hold", &self.snapshot_hold)
             .field("inference", &self.inference)
             .field("preview_domain", &self.preview_domain)
             .field("broker", &self.broker)
@@ -294,6 +304,12 @@ impl Config {
     /// How long a woken box's daemon has to dial in.
     pub fn dial_wait(&self) -> Duration {
         self.dial_wait.unwrap_or(worker::DIAL_WAIT)
+    }
+
+    /// How long a deleted workspace waits for the provider to let go of
+    /// its snapshots (M263).
+    pub fn snapshot_hold(&self) -> Duration {
+        self.snapshot_hold.unwrap_or(snapshot::HOLD)
     }
 
     /// How often a workspace's snapshot is built again (M263): `None` when

@@ -239,6 +239,78 @@ impl Db {
         Ok(())
     }
 
+    /// A deleted workspace's delete found a snapshot still held: since when
+    /// that's so (the first time, `now`).
+    pub fn snapshot_held(&self, parent: &str, now: u64) -> Result<u64> {
+        let c = self.c();
+        c.execute(
+            "UPDATE hosted_workspaces SET snapshot_held_since = ?2 WHERE id = ?1 AND snapshot_held_since IS NULL",
+            params![parent, now],
+        )?;
+        Ok(c.query_row("SELECT snapshot_held_since FROM hosted_workspaces WHERE id = ?1", params![parent], |r| {
+            r.get::<Option<u64>>(0)
+        })
+        .optional()?
+        .flatten()
+        .unwrap_or(now))
+    }
+
+    /// A workspace deleted for good leaves its retired snapshots behind, on
+    /// the platform's list of orphans: the ids moved.
+    pub fn orphan_snapshots(&self, parent: &str, project: &str, now: u64) -> Result<Vec<String>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let Some(s) = read(&tx, parent)? else { return Ok(vec![]) };
+        for id in &s.retired {
+            tx.execute(
+                "INSERT INTO hosted_snapshot_orphans (snapshot_id, workspace_id, project_id, since, tried_at)
+                 VALUES (?1, ?2, ?3, ?4, ?4) ON CONFLICT (snapshot_id) DO NOTHING",
+                params![id, parent, project, now],
+            )?;
+        }
+        tx.execute("UPDATE hosted_workspaces SET snapshot_retired = '[]' WHERE id = ?1", params![parent])?;
+        tx.commit()?;
+        Ok(s.retired)
+    }
+
+    /// An orphan due to be asked again (last tried at or before `before`),
+    /// taken: its `tried_at` is `now`, so no other worker takes it. Its id
+    /// and workspace.
+    pub fn take_orphan_snapshot(&self, before: u64, now: u64) -> Result<Option<(String, String)>> {
+        let c = self.c();
+        let Some((id, ws, tried)) = c
+            .query_row(
+                "SELECT snapshot_id, workspace_id, tried_at FROM hosted_snapshot_orphans
+                 WHERE tried_at <= ?1 ORDER BY tried_at, snapshot_id LIMIT 1",
+                params![before],
+                |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?, r.get::<u64>(2)?)),
+            )
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        let took = c.execute(
+            "UPDATE hosted_snapshot_orphans SET tried_at = ?3 WHERE snapshot_id = ?1 AND tried_at = ?2",
+            params![id, tried, now],
+        )?;
+        Ok((took == 1).then_some((id, ws)))
+    }
+
+    /// The orphan `id` was deleted at the provider.
+    pub fn orphan_snapshot_gone(&self, id: &str) -> Result<()> {
+        self.c().execute("DELETE FROM hosted_snapshot_orphans WHERE snapshot_id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// The orphans, oldest first: id and workspace.
+    pub fn orphan_snapshot_ids(&self) -> Result<Vec<(String, String)>> {
+        self.c().query_map(
+            "SELECT snapshot_id, workspace_id FROM hosted_snapshot_orphans ORDER BY since, snapshot_id",
+            params![],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
     /// Workspace `id` is due now, unless a worker holds it.
     pub fn nudge_hosted(&self, id: &str) -> Result<()> {
         self.c().execute(

@@ -17,9 +17,16 @@
 --   hash and start, which say when the next is due. `snapshot_retired` is a
 --   JSON list of earlier snapshots still to delete, and `box_snapshot` the
 --   snapshot its box was made from (one isn't deleted while its box lives).
+--   `snapshot_held_since` is when a deleted workspace's delete first found
+--   a snapshot the provider still holds (E2B does while a box made from it
+--   exists, and a while after).
+-- - `hosted_snapshot_orphans`: snapshots a workspace deleted for good left
+--   behind, held by the provider past the platform's wait. The worker asks
+--   to delete each again from `tried_at` on, until it goes. `workspace_id`
+--   and `project_id` are whose it was.
 --
--- Additive: it lets `purpose` hold one more value and adds columns that
--- may be NULL or have a default. A build from before this one ignores the
+-- Additive: it lets `purpose` hold one more value, adds columns that may
+-- be NULL or have a default, and a table. A build from before this one ignores the
 -- columns, and lists and opens only `workspace` rows; it would take a
 -- builder's row like a workspace's and keep its box until it's deleted.
 -- SQLite changes a `CHECK` by making the table again, with every column it
@@ -65,7 +72,8 @@ CREATE TABLE hosted_workspaces_new (
     snapshot_try_hash TEXT,
     snapshot_try_at INTEGER,
     snapshot_retired TEXT NOT NULL DEFAULT '[]',
-    box_snapshot TEXT
+    box_snapshot TEXT,
+    snapshot_held_since INTEGER
 );
 INSERT INTO hosted_workspaces_new (id, project_id, name, spec, spec_hash, built_hash, provider, template, sandbox_id,
         state, asked, stage, stage_at, enroll_until, machine, error, lease, lease_until, created_by, created_at,
@@ -80,3 +88,12 @@ CREATE INDEX hosted_workspaces_project ON hosted_workspaces (project_id);
 CREATE UNIQUE INDEX hosted_workspaces_name ON hosted_workspaces (project_id, name) WHERE deleted_at IS NULL;
 CREATE INDEX hosted_workspaces_due ON hosted_workspaces (lease_until) WHERE deleted_at IS NULL;
 CREATE INDEX hosted_workspaces_parent ON hosted_workspaces (parent_id) WHERE parent_id IS NOT NULL;
+
+CREATE TABLE hosted_snapshot_orphans (
+    snapshot_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    since INTEGER NOT NULL,
+    tried_at INTEGER NOT NULL
+);
+CREATE INDEX hosted_snapshot_orphans_due ON hosted_snapshot_orphans (tried_at);

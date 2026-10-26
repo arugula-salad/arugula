@@ -388,8 +388,19 @@ async fn live_snapshots() {
         let (gone, tries, took) = delete_until_gone(&e2b, s).await;
         println!("cleanup delete snapshot {s}: {gone:?} after {tries} tries, {} ms", took.as_millis());
     }
-    let after = e2b.list(&tag).await;
-    println!("cleanup list: {after:?}");
+    // E2B's listing lags a delete (seen live: a deleted box still listed
+    // running just after): asked again with backoff for up to a minute.
+    let at = Instant::now();
+    let mut wait = Duration::from_secs(1);
+    let after = loop {
+        let after = e2b.list(&tag).await;
+        if after.as_ref().is_ok_and(Vec::is_empty) || at.elapsed() > Duration::from_secs(60) {
+            break after;
+        }
+        tokio::time::sleep(wait).await;
+        wait = (wait * 2).min(Duration::from_secs(10));
+    };
+    println!("cleanup list (after {} ms): {after:?}", at.elapsed().as_millis());
     let mut snaps_after = Vec::new();
     for b in &made {
         snaps_after.extend(e2b.list_snapshots(Some(b)).await.unwrap_or_default());

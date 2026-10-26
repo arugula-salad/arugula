@@ -121,7 +121,10 @@ pub async fn tick(app: &Platform) -> Result<bool> {
 
 pub(crate) async fn tick_at(app: &Platform, now: u64) -> Result<bool> {
     let Some(sub) = app.compute.clone() else { return Ok(false) };
-    let Some(mut job) = app.db.claim_hosted(now)? else { return Ok(false) };
+    let Some(mut job) = app.db.claim_hosted(now)? else {
+        // Nothing else due: snapshots deleted workspaces left (M263).
+        return super::snapshot::orphans(app, &*sub, now).await;
+    };
     let (done, next) = match step(app, &*sub, &mut job, now).await {
         Ok(d) => {
             job.usage = Some(super::usage::observed(&job, now));
@@ -147,7 +150,7 @@ async fn step(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64
         delete(app, sub, job).await?;
         // Its snapshots after its boxes: E2B holds one while a box made
         // from it exists, and for a while after (M263).
-        if !super::snapshot::forget(app, sub, job).await? {
+        if !super::snapshot::forget(app, sub, job, now).await? {
             return Ok((None, now + SNAPSHOT_RETRY_MS));
         }
         job.w.state = "deleted".into();
