@@ -16,7 +16,9 @@ export type MenuItem =
       /** Its chord, shown beside it here and in the command palette. */
       shortcut?: string;
     }
-  | { header: string }
+  /** `name`: the header holds a name (a channel's, a login), shown as
+   * written rather than in capitals (UI audit #169). */
+  | { header: string; name?: boolean }
   | "separator";
 
 interface OpenMenu {
@@ -122,7 +124,7 @@ export function MenuLayer() {
         item === "separator" ? (
           <div key={i} class="menu-sep" />
         ) : "header" in item ? (
-          <div key={i} class="menu-header">
+          <div key={i} class={item.name ? "menu-header named" : "menu-header"}>
             {item.header}
           </div>
         ) : (

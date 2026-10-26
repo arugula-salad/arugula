@@ -12,6 +12,7 @@ import type { ChatSavedItem } from "../proto";
 import { authorLabel } from "./agents";
 import { AuthorAvatar } from "./room";
 import { ViewHead, when, whereOf } from "./find";
+import { BookmarkIcon } from "./icons";
 
 export const HOUR = 3_600_000;
 
@@ -56,14 +57,15 @@ function SavedRow({ item, onError }: { item: ChatSavedItem; onError: (e: string)
         {!done && (
           <>
             <button data-saved-remind="hour" onClick={() => act(chat.save(item.room, item.seq, Date.now() + HOUR))}>
-              Remind in 1 h
+              Remind in 1 hour
             </button>
             <button data-saved-remind="tomorrow" onClick={() => act(chat.save(item.room, item.seq, tomorrowMorning()))}>
               Remind tomorrow
             </button>
           </>
         )}
-        <button data-saved-done onClick={() => act(chat.savedDone(item.room, item.seq, !done))}>
+        {/* Undo says what it undoes (UI audit #169). */}
+        <button data-saved-done title={done ? "Mark not done" : "Mark done"} onClick={() => act(chat.savedDone(item.room, item.seq, !done))}>
           {done ? "Undo" : "Done"}
         </button>
         <button data-saved-remove onClick={() => act(chat.unsave(item.room, item.seq))}>
@@ -74,7 +76,7 @@ function SavedRow({ item, onError }: { item: ChatSavedItem; onError: (e: string)
   );
 }
 
-/** Saved for later: the messages this person saved, to do first, then done
+/** Saved: the messages this person saved, to do first, then done
  * ones, each with its room, a link to it and what to do with it. */
 export function SavedView({ phone }: { phone: boolean }) {
   useSubscribe((fn) => chat.subscribe(fn));
@@ -87,10 +89,14 @@ export function SavedView({ phone }: { phone: boolean }) {
   const finished = items?.filter((i) => i.done !== null) ?? [];
   return (
     <section class="chat-thread chat-view" aria-label="Saved" data-chat-saved-view>
-      <ViewHead title="Saved for later" sub={items ? `${todo.length} to do` : undefined} phone={phone} />
+      <ViewHead title="Saved" sub={items ? `${todo.length} to do` : undefined} phone={phone} />
       <div class="thread-list">
         {items === null && <p class="thread-empty">Loading…</p>}
-        {items?.length === 0 && <p class="thread-empty">Nothing saved. Save a message from its menu to come back to it, with a reminder if you like. Only you see this.</p>}
+        {items?.length === 0 && (
+          <p class="thread-empty">
+            Nothing saved. Save a message with <BookmarkIcon size={12} /> on its hover bar to come back to it, or set a reminder from its ⋯ menu. Only you see this.
+          </p>
+        )}
         {err && <p class="thread-error">{err}</p>}
         {todo.length > 0 && (
           <ul class="chat-hits saved-list">

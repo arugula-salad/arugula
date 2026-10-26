@@ -72,8 +72,9 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   const project = barProject(r);
   const p = session.project(project);
   const here = sectionOf(r);
-  // Chat is a team's: a project without one opens the first team's.
-  const chatTo = project && p?.team ? pathOf({ page: "chat", project }, names) : "/chat";
+  // Each project's chat is its own rooms (UI audit #169): a team's
+  // channels and DMs, Personal's your machines' threads.
+  const chatTo = project ? pathOf({ page: "chat", project }, names) : "/chat";
   const pick = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
@@ -88,7 +89,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   const account = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
-      { header: me?.login || me?.name || "Signed in" },
+      { header: me?.login || me?.name || "Signed in", name: !!(me?.login || me?.name) },
       { label: "Account settings", run: () => go("/settings") },
       // This device's look, as in the shell's settings menu; on arugula.io
       // the two pages share it.

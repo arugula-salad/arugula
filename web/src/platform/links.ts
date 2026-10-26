@@ -2,15 +2,22 @@
 // with each id's current name for its slug.
 
 import { chat } from "../shared/chat-store";
+import { listedInChat } from "../shared/chat/unread";
 import { issues } from "../shared/issues/store";
 import { runs } from "./runs";
 import { current, pathOf, type Route } from "./router";
 import { session } from "./session";
 
-/** The project a room belongs to: its team's, else the reader's own. */
+/** The project a room belongs to: its team's; an object thread's, its
+ * object's; a room of no team (a machine's thread, an archive), the
+ * reader's own (UI audit #169: each project's chat lists its own rooms). A
+ * room not known yet stays in the route's project. */
 export function projectOfRoom(room: string): string | undefined {
   const r = chat.room(room);
-  return (r?.team ? session.ofTeam(r.team)?.id : undefined) ?? routeProject() ?? session.personal()?.id;
+  if (r?.kind === "object" && r.project) return r.project;
+  if (r?.team) return session.ofTeam(r.team)?.id ?? routeProject() ?? session.personal()?.id;
+  if (r) return session.personal()?.id;
+  return routeProject() ?? session.personal()?.id;
 }
 
 /** The project the route is in, if it's in one. */
@@ -22,7 +29,11 @@ export function routeProject(): string | undefined {
 /** The path a room is at, at message `msg`; with `thread`, the thread of
  * that message beside it (#106). */
 export function roomPath(room: string, msg?: number, thread?: number): string {
-  if (room.startsWith("dm_")) return pathOf({ page: "dm", room, msg, thread }, names);
+  // A DM is its team's project's (UI audit #169).
+  if (room.startsWith("dm_")) {
+    const project = projectOfRoom(room);
+    return project ? pathOf({ page: "dm", project, room, msg, thread }, names) : "/";
+  }
   // An issue's thread (M196) is on its issue's page.
   const r = chat.room(room);
   if (r?.kind === "object" && r.project && r.target?.startsWith("iss_")) return pathOf({ page: "issue", project: r.project, issue: r.target, msg }, names);
@@ -30,6 +41,14 @@ export function roomPath(room: string, msg?: number, thread?: number): string {
   if (r?.kind === "object" && r.project && r.target?.startsWith("run_")) return pathOf({ page: "run", project: r.project, run: r.target, msg }, names);
   const project = projectOfRoom(room);
   return project ? pathOf({ page: "chat", project, room, msg, thread }, names) : "/";
+}
+
+/** Where a chat route's room is when it's another project's (an old link,
+ * a slip), else null (UI audit #169: each project's chat is its own). */
+export function roomElsewhere(r: Route): string | null {
+  if ((r.page !== "chat" && r.page !== "dm") || !r.room) return null;
+  const x = chat.room(r.room);
+  return x && listedInChat(x) && projectOfRoom(x.id) !== r.project ? roomPath(x.id, r.msg, r.thread) : null;
 }
 
 /** Each id's name now, for its slug. */
@@ -48,10 +67,10 @@ export function resolve(r: Extract<Route, { page: "find" }>): string | null {
   if (!own) return null;
   if (r.what === "chat") {
     if (r.room) {
-      if (r.room.startsWith("dm_")) return pathOf({ page: "dm", room: r.room, ...(r.msg !== undefined ? { msg: r.msg } : {}) }, names);
-      // Its team's project, once chat has said what's in it.
+      // Its team's project (a DM's too, UI audit #169), once chat has said
+      // what's in it.
       if (chat.on === null) return null;
-      return roomPath(r.room, r.msg);
+      return roomPath(r.room, r.msg, r.thread);
     }
     const team = session.projects.find((p) => p.team)?.id;
     return pathOf({ page: "chat", project: team ?? own, ...(r.view ? { view: r.view, q: r.q } : {}) }, names);

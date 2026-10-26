@@ -42,6 +42,7 @@ import { ReplyTag, setThreadNav, ThreadFooter } from "./thread-ui";
 import { SessionCardMessage, sessionOf } from "./session-card";
 import { dmLabel } from "./members";
 import { useStickToBottom } from "./stick";
+import { BookmarkIcon } from "./icons";
 
 // ---- machines, by control's id for them
 
@@ -679,7 +680,8 @@ export function RoomMessage({
             data-msg-save
             onClick={() => save.run(ctx)}
           >
-            {save.on?.(ctx) ? "★" : "☆"}
+            {/* A bookmark, not ☆: that's a room's star (UI audit #169). */}
+            <BookmarkIcon on={save.on?.(ctx)} />
           </button>
         )}
         <button title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={panel === "menu"} data-msg-more onClick={() => setPanel(panel === "menu" ? null : "menu")}>
@@ -697,7 +699,9 @@ export function RoomMessage({
           )}
           {save && (
             <button type="button" role="menuitem" class="msg-item" aria-pressed={save.on?.(ctx)} data-msg-save onClick={() => (close(), save.run(ctx))}>
-              <span class="msg-item-icon" aria-hidden="true">{save.on?.(ctx) ? "★" : "☆"}</span>
+              <span class="msg-item-icon" aria-hidden="true">
+                <BookmarkIcon on={save.on?.(ctx)} />
+              </span>
               {save.label?.(ctx) ?? "Save for later"}
             </button>
           )}

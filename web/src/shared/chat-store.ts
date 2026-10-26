@@ -654,8 +654,9 @@ export class ChatStore {
   /** Everything the chat page lists read, as its button counts it. The
    * threads on objects stay as they are: they're read on their objects'
    * pages, or from the inbox. */
-  async readAll() {
-    await Promise.all(this.rooms.filter((r) => listedInChat(r) && r.unread).map((r) => this.read(r.id, r.last)));
+  /** Every listed room read; `only`: of these (a project's, UI audit #169). */
+  async readAll(only: (r: ChatRoom) => boolean = () => true) {
+    await Promise.all(this.rooms.filter((r) => listedInChat(r) && r.unread && only(r)).map((r) => this.read(r.id, r.last)));
   }
 
   // ---- messages

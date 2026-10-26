@@ -68,6 +68,13 @@
   margin-top: 8px;
 }
 
+/* Leaving, at the foot of Details, apart from the room's tools (UI audit
+   #169). */
+.members-leave {
+  display: block;
+  margin-top: 20px;
+}
+
 .members-remove {
   margin-left: auto;
 }

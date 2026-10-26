@@ -6,6 +6,7 @@ import {
   addSection,
   collapse,
   emptySidebar,
+  inScope,
   ordered,
   place,
   placed,
@@ -67,4 +68,15 @@ test("rooms sort by name or by activity, archived last, and unseen ones are skip
   assert.deepEqual(ordered(rs, "recent", label).map((r) => r.id), ["2", "1", "3", "4"]);
   assert.deepEqual(ordered([room("a", "x", 1), room("b", "y", 7)], "recent", label).map((r) => r.id), ["b", "a"]);
   assert.deepEqual(present(["3", "gone", "1"], rs).map((r) => r.id), ["3", "1"]);
+});
+
+test("a project's page lists its team's rooms, and Personal the rooms of no team (UI audit #169)", () => {
+  const ch = { id: "c", team: "t1" };
+  const other = { id: "o", team: "t2" };
+  const pane = { id: "p", team: null };
+  const acme = { team: "t1", name: "Acme" };
+  const own = { team: null, name: "Personal" };
+  assert.deepEqual([ch, other, pane].filter((r) => inScope(r, acme)).map((r) => r.id), ["c"]);
+  assert.deepEqual([ch, other, pane].filter((r) => inScope(r, own)).map((r) => r.id), ["p"]);
+  assert.deepEqual([ch, other, pane].filter((r) => inScope(r)).map((r) => r.id), ["c", "o", "p"]);
 });

@@ -96,3 +96,15 @@ export const sectionRooms = (x: ChatSection, rooms: ChatRoom[]): ChatRoom[] => p
 export function placed(s: ChatSidebar): Set<string> {
   return new Set([...s.starred, ...s.sections.flatMap((x) => x.rooms)]);
 }
+
+/** Which rooms a page of one project lists (UI audit #169): a team's
+ * project its team's channels and DMs, the reader's own (`team: null`)
+ * the rooms of no team, their machines' threads and archives. `name` heads
+ * the sidebar. A page with no scope (the shell's) lists every room. */
+export interface ChatScope {
+  team: string | null;
+  name: string;
+}
+
+/** Whether `r` is one `scope` lists; every room is, with none. */
+export const inScope = (r: ChatRoom, scope?: ChatScope): boolean => !scope || (scope.team ? r.team === scope.team : !r.team);

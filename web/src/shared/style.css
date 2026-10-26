@@ -640,6 +640,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   letter-spacing: 0.05em;
 }
 
+/* A header that holds a name keeps its case (UI audit #169). */
+.menu-header.named {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 /* A checkable item's dot hangs in the item's left padding, so its label
    lines up with the items around it. */
 .menu-check {
@@ -7607,6 +7613,13 @@ input.chat-search {
   overflow: hidden;
 }
 
+/* What a search matched (UI audit #169). */
+.chat-hit-text mark {
+  color: inherit;
+  background: color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: 2px;
+}
+
 .chat-switcher-back {
   position: fixed;
   inset: 0;
@@ -7702,10 +7715,11 @@ input.chat-search {
   border-bottom: 1px solid var(--divider);
 }
 
-.chat-workspace {
+/* Whose rooms these are, then ⋯ for the view's menu (UI audit #169). */
+.chat-side-name {
+  flex: 1;
   min-width: 0;
   padding: 4px 8px;
-  border-radius: 6px;
   font-size: 15px;
   font-weight: 700;
   overflow: hidden;
@@ -7713,8 +7727,25 @@ input.chat-search {
   white-space: nowrap;
 }
 
-.chat-workspace:hover {
+.chat-side-head .chat-workspace {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: var(--dim);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.chat-side-head .chat-workspace:hover {
+  color: var(--fg);
   background: var(--raised);
+}
+
+/* Drawn icons (./chat/icons.tsx) sit on the text's line. */
+.chat-sigil svg,
+.chat-section .chat-new svg {
+  display: inline-block;
+  vertical-align: -2px;
 }
 
 .chat-resize {
