@@ -23,6 +23,8 @@ interface OpenMenu {
   x: number;
   y: number;
   items: MenuItem[];
+  /** Opened from a menu button: the keys go into it (UI audit #171). */
+  focus: boolean;
 }
 
 let current: OpenMenu | null = null;
@@ -30,17 +32,30 @@ let current: OpenMenu | null = null;
  * runs, so a dialog the item opens returns the focus there when it shuts
  * (UI audit #150), and Escape gives it back too. */
 let opener: HTMLElement | null = null;
+/** The menu button it was opened from, which says it's expanded while it
+ * is (UI audit #171). */
+let from: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 /** The layers mounted, latest last: only it draws the menu (the swarm's,
  * over the tab view's), else each would close the other's on a click. */
 const layers: object[] = [];
 
-export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[]) {
+/** `opts.from`: the button that opens it (a ▾, a …): it gets
+ * `aria-expanded`, the first item gets the keys, and the focus goes back
+ * to it when the menu shuts. */
+export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[], opts: { from?: HTMLElement | null } = {}) {
   e.preventDefault();
-  if (!current) opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  current = { x: e.clientX, y: e.clientY, items };
+  if (!current) opener = opts.from ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  expanded(opts.from ?? null);
+  current = { x: e.clientX, y: e.clientY, items, focus: !!opts.from };
   changed();
+}
+
+function expanded(el: HTMLElement | null) {
+  if (from && from !== el) from.setAttribute("aria-expanded", "false");
+  from = el;
+  el?.setAttribute("aria-expanded", "true");
 }
 
 /** Close it, and put the focus back where it was when it opened. */
@@ -55,6 +70,7 @@ const tookEscape = new WeakSet<Event>();
 export const escapeTaken = (e: Event) => tookEscape.has(e);
 
 export function closeMenu() {
+  expanded(null);
   if (current) {
     current = null;
     changed();
@@ -95,15 +111,39 @@ export function MenuLayer() {
   }, []);
 
   const top = layers.at(-1) === me;
-  // Keep the menu on screen.
+  // Keep the menu on screen, a gutter from its edges (UI audit #171).
+  const focusIn = useRef(false);
   useLayoutEffect(() => {
     if (!current || !ref.current) return setPos(null);
     const r = ref.current.getBoundingClientRect();
+    focusIn.current = current.focus;
     setPos({
-      left: Math.max(4, Math.min(current.x, window.innerWidth - r.width - 4)),
-      top: Math.max(4, Math.min(current.y, window.innerHeight - r.height - 4)),
+      left: Math.max(8, Math.min(current.x, window.innerWidth - r.width - 8)),
+      top: Math.max(8, Math.min(current.y, window.innerHeight - r.height - 8)),
     });
   }, [current, top]);
+  // From a menu button, the first item has the keys once it's shown.
+  useEffect(() => {
+    if (!pos || !focusIn.current) return;
+    focusIn.current = false;
+    ref.current?.querySelector<HTMLElement>(".menu-item:not(:disabled)")?.focus({ preventScroll: true });
+  }, [pos]);
+  // The arrows, Home and End move between the items.
+  const onKey = (e: KeyboardEvent) => {
+    const items = [...(ref.current?.querySelectorAll<HTMLElement>(".menu-item:not(:disabled)") ?? [])];
+    if (!items.length) return;
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    const to =
+      e.key === "ArrowDown" ? (i + 1) % items.length
+      : e.key === "ArrowUp" ? (i <= 0 ? items.length - 1 : i - 1)
+      : e.key === "Home" ? 0
+      : e.key === "End" ? items.length - 1
+      : null;
+    if (to === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    items[to].focus();
+  };
 
   if (!current || !top) return null;
   return (
@@ -117,6 +157,7 @@ export function MenuLayer() {
         visibility: pos ? "visible" : "hidden",
       }}
       onContextMenu={(e) => e.preventDefault()}
+      onKeyDown={onKey}
     >
       {current.items.map((item, i) =>
         item === "separator" ? (

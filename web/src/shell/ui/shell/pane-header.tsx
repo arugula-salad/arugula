@@ -67,6 +67,7 @@ export function PaneHeader({
   cell,
   active,
   height = cell.height,
+  sizedElsewhere,
 }: {
   client: Client;
   tab: TabView;
@@ -75,6 +76,9 @@ export function PaneHeader({
   cell: Cell;
   active: boolean;
   height?: number;
+  /** Another window sizes the tab: a chip here says so, and its button
+   * takes the size for this window (UI audit #171). */
+  sizedElsewhere?: () => void;
 }) {
   const info = client.info(id);
   const title = client.title(id) || info?.command || `pane %${id}`;
@@ -142,6 +146,14 @@ export function PaneHeader({
         </span>
       )}
       <span class="pane-header-fill" />
+      {sizedElsewhere && (
+        <span class="pane-header-sized" data-sized-elsewhere title="Another window set this tab's size">
+          <span class="pane-header-sized-what">Sized by another window</span>
+          <button aria-label="Use this window's size" title="Use this window's size" onClick={sizedElsewhere}>
+            Use this one
+          </button>
+        </span>
+      )}
       <button
         class={`pane-header-button${focused ? " on" : ""}`}
         data-pane-expand={id}
