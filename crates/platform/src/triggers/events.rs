@@ -8,6 +8,17 @@
 //! | `check_failed` | `check_run` completed `failure` or `timed_out`; `status` `failure` or `error` | the check suite's head branch and its PRs' bases; the status's branches |
 //! | `push` | `push` to a branch (not a tag, not a delete) | the branch |
 //!
+//! Two more go to an agent session, never a rule (M260,
+//! [`crate::sessions::feedback`]): a `pull_request_review` submitted and a
+//! `pull_request_review_comment` made, on a PR from the repo's own branch
+//! (`RuleEvent::Review`). Both count from insiders only, by the
+//! review's or comment's `author_association`, as a PR's does.
+//!
+//! **A session's first.** Before any rule, an event on a session's branch
+//! (a check that failed on its head, a review on its PR) goes back to that
+//! session ([`crate::sessions::feedback::route`]), and to no rule: rules
+//! see the rest as before.
+//!
 //! A rule fires for a repo linked to its project (and the repo it names,
 //! if it names one), on a branch it names (`*` any run of characters) or
 //! any. Each match makes one run, keyed by the rule and the event's own
@@ -52,6 +63,10 @@ pub struct Seen {
     /// The branches it's on (a status's commit may be on several). Never a
     /// fork's.
     pub branches: Vec<String>,
+    /// The repo's own branches whose head it's about: a check's head
+    /// branch and its PRs' heads, a status's one branch, a reviewed PR's
+    /// head. Never a fork's. What finds a session's (M260).
+    pub heads: Vec<String>,
     /// From outside the repo: a fork, or someone who isn't its owner,
     /// member or collaborator, or a check run that doesn't say its head is
     /// in the repo.
@@ -74,7 +89,7 @@ pub fn seen(event: &str, v: &Value) -> Option<Seen> {
     let repo = v["repository"]["full_name"].as_str().filter(|r| r.contains('/'))?.to_owned();
     let s = |v: &Value| v.as_str().filter(|s| !s.is_empty()).map(str::to_owned);
     let ours = |r: &Value| r["id"].as_u64() == Some(repo_id);
-    let (rule, branches, outside, key, detail) = match event {
+    let (rule, branches, heads, outside, key, detail) = match event {
         "pull_request" if v["action"] == "opened" => {
             let pr = &v["pull_request"];
             let number = pr["number"].as_u64()?;
@@ -90,7 +105,7 @@ pub fn seen(event: &str, v: &Value) -> Option<Seen> {
             });
             let outside = fork || !insider(association.as_deref());
             let branches = s(&pr["base"]["ref"]).into_iter().collect();
-            (RuleEvent::PrOpened, branches, outside, format!("pr:{repo_id}:{number}"), detail)
+            (RuleEvent::PrOpened, branches, vec![], outside, format!("pr:{repo_id}:{number}"), detail)
         }
         "check_run"
             if v["action"] == "completed"
@@ -105,8 +120,13 @@ pub fn seen(event: &str, v: &Value) -> Option<Seen> {
             let ours_by_pr = !prs.is_empty() && prs.iter().all(|p| ours(&p["head"]["repo"]));
             let inside = ours(&suite["head_repository"]) || ours_by_pr;
             let mut branches: Vec<String> = prs.iter().filter_map(|p| s(&p["base"]["ref"])).collect();
+            let mut heads: Vec<String> = vec![];
             if inside {
                 branches.extend(s(&suite["head_branch"]));
+                heads.extend(s(&suite["head_branch"]));
+            }
+            for p in prs.iter().filter(|p| ours(&p["head"]["repo"])) {
+                heads.extend(s(&p["head"]["ref"]).filter(|h| !heads.contains(h)));
             }
             let detail = json!({
                 "check": s(&run["name"]),
@@ -115,15 +135,18 @@ pub fn seen(event: &str, v: &Value) -> Option<Seen> {
                 "head_repo": s(&suite["head_repository"]["full_name"]),
                 "fork": !inside,
             });
-            (RuleEvent::CheckFailed, branches, !inside, format!("check_run:{repo_id}:{id}"), detail)
+            (RuleEvent::CheckFailed, branches, heads, !inside, format!("check_run:{repo_id}:{id}"), detail)
         }
         // Only someone who may write to the repo, or an app on it, posts a
         // status, and its branches are the repo's that hold the commit.
         "status" if matches!(v["state"].as_str(), Some("failure" | "error")) => {
             let id = v["id"].as_u64()?;
             let detail = json!({ "check": s(&v["context"]), "sha": s(&v["sha"]), "conclusion": s(&v["state"]) });
-            let branches = v["branches"].as_array().into_iter().flatten().filter_map(|b| s(&b["name"])).collect();
-            (RuleEvent::CheckFailed, branches, false, format!("status:{repo_id}:{id}"), detail)
+            let branches: Vec<String> =
+                v["branches"].as_array().into_iter().flatten().filter_map(|b| s(&b["name"])).collect();
+            // A commit on several branches (merged on) is no one session's.
+            let heads = if branches.len() == 1 { branches.clone() } else { vec![] };
+            (RuleEvent::CheckFailed, branches, heads, false, format!("status:{repo_id}:{id}"), detail)
         }
         // A push needs write access to the repo.
         "push" if v["deleted"] != true => {
@@ -131,11 +154,50 @@ pub fn seen(event: &str, v: &Value) -> Option<Seen> {
             let sha = s(&v["after"])?;
             let key = format!("push:{repo_id}:{branch}:{sha}");
             let detail = json!({ "branch": branch, "sha": sha, "pusher": s(&v["pusher"]["name"]) });
-            (RuleEvent::Push, vec![branch], false, key, detail)
+            (RuleEvent::Push, vec![branch], vec![], false, key, detail)
+        }
+        // A review (M260): submitted, never a reviewer's own draft.
+        "pull_request_review"
+            if v["action"] == "submitted"
+                && v["review"]["state"].as_str().is_some_and(|st| !st.eq_ignore_ascii_case("pending")) =>
+        {
+            let (pr, review) = (&v["pull_request"], &v["review"]);
+            let id = review["id"].as_u64()?;
+            let association = s(&review["author_association"]);
+            let fork = !ours(&pr["head"]["repo"]);
+            let detail = json!({
+                "number": pr["number"].as_u64(),
+                "review": id,
+                "state": s(&review["state"]).map(|st| st.to_ascii_lowercase()),
+                "sha": s(&review["commit_id"]),
+                "author_association": association,
+                "fork": fork,
+            });
+            let outside = fork || !insider(association.as_deref());
+            let heads = if fork { vec![] } else { s(&pr["head"]["ref"]).into_iter().collect() };
+            (RuleEvent::Review, vec![], heads, outside, format!("review:{repo_id}:{id}"), detail)
+        }
+        // One of a review's inline comments (M260).
+        "pull_request_review_comment" if v["action"] == "created" => {
+            let (pr, comment) = (&v["pull_request"], &v["comment"]);
+            let id = comment["id"].as_u64()?;
+            let association = s(&comment["author_association"]);
+            let fork = !ours(&pr["head"]["repo"]);
+            let detail = json!({
+                "number": pr["number"].as_u64(),
+                "review": comment["pull_request_review_id"].as_u64(),
+                "comment": id,
+                "sha": s(&comment["commit_id"]),
+                "author_association": association,
+                "fork": fork,
+            });
+            let outside = fork || !insider(association.as_deref());
+            let heads = if fork { vec![] } else { s(&pr["head"]["ref"]).into_iter().collect() };
+            (RuleEvent::Review, vec![], heads, outside, format!("review_comment:{repo_id}:{id}"), detail)
         }
         _ => return None,
     };
-    Some(Seen { event: rule, repo_id, repo, branches, outside, key, detail })
+    Some(Seen { event: rule, repo_id, repo, branches, heads, outside, key, detail })
 }
 
 /// Whether `name` fits `pattern`, where `*` is any run of characters.
@@ -170,6 +232,9 @@ pub async fn fire(
     now: u64,
 ) -> anyhow::Result<Vec<(Rule, anyhow::Result<Started>)>> {
     let mut out = vec![];
+    if seen.event == RuleEvent::Review {
+        return Ok(out);
+    }
     for (rule, spec) in db.rules_for(seen.repo_id, seen.event)? {
         if !matches(&rule, seen) {
             continue;
@@ -209,14 +274,32 @@ pub async fn fire(
     Ok(out)
 }
 
-/// The webhook's hook: the runs a linked repo's event starts, after its
-/// mirror rows are written. `false` when a rule (or reading them) failed:
-/// the webhook forgets the delivery and answers 500, so GitHub's
-/// redelivery tries again (each run's key keeps it from starting twice).
+/// The webhook's hook: what goes back to a session (M260), else the runs a
+/// linked repo's event starts, after its mirror rows are written. `false`
+/// when a rule (or reading them, or a session's feedback) failed: the
+/// webhook forgets the delivery and answers 500, so GitHub's redelivery
+/// tries again (each run's key, and each feedback item's, keeps it from
+/// happening twice).
 pub async fn webhook(p: &std::sync::Arc<Platform>, event: &str, delivery: &str, v: &Value) -> bool {
+    let now = arugula_e2e::now_ms();
+    if let Err(e) = crate::sessions::feedback::suite_done(p, event, v, now) {
+        tracing::warn!(event, delivery, error = format!("{e:#}"), "a check suite on a session's branch");
+        return false;
+    }
     let Some(seen) = seen(event, v) else { return true };
+    match crate::sessions::feedback::route(p, &seen, v, now) {
+        Ok(crate::sessions::feedback::Routed::Elsewhere) => {}
+        Ok(routed) => {
+            tracing::info!(event, delivery, ?routed, "a webhook's event went to a session");
+            return true;
+        }
+        Err(e) => {
+            tracing::warn!(event, delivery, error = format!("{e:#}"), "sending a webhook's event to its session");
+            return false;
+        }
+    }
     let gate = super::Members(p.clone());
-    let fired = match fire(&p.db, &gate, &seen, delivery, arugula_e2e::now_ms()).await {
+    let fired = match fire(&p.db, &gate, &seen, delivery, now).await {
         Ok(f) => f,
         Err(e) => {
             tracing::warn!(event, delivery, error = format!("{e:#}"), "reading a webhook's event rules");

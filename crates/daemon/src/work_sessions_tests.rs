@@ -259,3 +259,43 @@ async fn a_push_from_a_bundle_moves_one_ref() {
     }
     assert!(found.is_empty(), "{found:?}");
 }
+
+/// A stop while a push ran cleaned the slot under it, and the push made
+/// its place again: once the push is back, an ended session's place goes,
+/// and a session that goes on keeps its.
+#[tokio::test]
+async fn a_push_back_after_an_end_cleans_again() {
+    let dir = crate::hosted::scratch("session-push-end");
+    let l = Session {
+        session: format!("ses_{}", "d".repeat(32)),
+        project: "prj_1".into(),
+        workspace: "hw_1".into(),
+        asker: "acct1".into(),
+        repo: Some("o/r".into()),
+        branch: format!("arugula/{}-fix", "d".repeat(8)),
+        user: AsUser { user: "arugula-no-such-user".into(), home: dir.join("home").display().to_string() },
+        checkout: dir.join("home/work").display().to_string(),
+        block: None,
+        taken_at: 1,
+        n: 0,
+        state: "working".into(),
+        ended: None,
+        handed: vec![],
+        turn: None,
+        notes: None,
+        acted: vec![],
+        unnamed: vec![],
+        error: None,
+        last_at: 0,
+        events: vec![],
+        pushed_head: None,
+    };
+    assert!(claim(&dir, &l));
+    let place = dir.join(super::super::DIR).join(DIR).join(format!("{}.push", l.session));
+    std::fs::create_dir_all(place.join("repo.git")).unwrap();
+    assert!(!push::clean_if_ended(&dir, &l).await);
+    assert!(place.exists(), "it goes on: kept for its next push");
+    update(&dir, &l.session, |now| now.ended = Some("control says it ended".into())).unwrap();
+    assert!(push::clean_if_ended(&dir, &l).await);
+    assert!(!place.exists(), "the push's place went with the session");
+}

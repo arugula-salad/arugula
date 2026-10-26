@@ -111,6 +111,15 @@ pub struct SessionCard {
     pub pr: Option<String>,
     /// A turn pushed its branch: its asker may draft its PR.
     pub pushed: bool,
+    /// How many CI rounds went back to it (M260), of at most `ci_max`.
+    #[serde(default)]
+    pub ci_rounds: u32,
+    #[serde(default)]
+    pub ci_max: u32,
+    /// CI failed again after its last round, and nobody in its thread has
+    /// prompted it since: it needs a person.
+    #[serde(default)]
+    pub needs_person: bool,
 }
 
 /// What a session's turn left, as its box reported it.

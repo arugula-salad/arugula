@@ -7,6 +7,8 @@
 //!   ends what nothing will take.
 //! - [`push`]: the token its box pushes the session's branch with (M259).
 //! - [`pr`]: its pull request, which its asker drafts and sends (M259).
+//! - [`feedback`]: CI's failures and reviews on its branch, back to it as
+//!   its next prompt (M260).
 //!
 //! **How sessions end besides** (each `stopped` by control, with a
 //! `reason` in its event's detail):
@@ -17,6 +19,7 @@
 //! - its project goes (only with its account or team): the session goes
 //!   with it (`db::sessions::erase_account`).
 
+pub mod feedback;
 pub mod hydrate;
 pub mod job;
 pub mod pr;

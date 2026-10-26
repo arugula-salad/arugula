@@ -16,6 +16,10 @@
 // What it asks is a question card (`../ask`), answered by any owner or
 // editor of its project; the platform passes the answer to the box.
 //
+// CI (M260): failures on its branch go back to it, at most `ci_max` rounds:
+// the card counts them ("CI round 1 of 2"), and once CI failed again after
+// the last, says it needs a person, until someone prompts it in the thread.
+//
 // Its PR (M259): once a turn pushed its branch, its asker opens a draft of
 // the PR here, prefilled from the repo's PR template and what the turns
 // left, edits it and sends it as themselves ("agents draft, people
@@ -406,6 +410,15 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           {idle[0].toUpperCase() + idle.slice(1)}.
         </p>
       )}
+      {c.needs_person ? (
+        <p class="session-card-line bad" data-session-ci="needs-person">
+          CI failed again after {c.ci_max} rounds: needs a person. Reply in the thread to take it on.
+        </p>
+      ) : c.ci_rounds > 0 ? (
+        <p class="session-card-line dim" data-session-ci={String(c.ci_rounds)}>
+          CI round {c.ci_rounds} of {c.ci_max}
+        </p>
+      ) : null}
       {c.turn && (
         <div class="session-card-turn" data-session-turn>
           <span class={c.turn.pushed ? "ok" : "dim"}>{c.turn.pushed ? "Pushed" : "Not pushed"}</span>
