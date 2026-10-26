@@ -967,3 +967,47 @@ fn three_tries_run_at_once_and_a_review_waits() {
         assert_eq!(t.last().and_then(|t| t.reply.clone()), None, "only a review's turn carries a reply");
     }
 }
+
+/// A Codex session asks nobody either (aru-115): its block runs codex-acp
+/// in `full-access`, Codex's counterpart of Claude Code's bypass, and what
+/// still asks the block allows. Its questions are elicitations, not
+/// permissions, so they still go to its card and come back answered.
+#[test]
+fn a_codex_session_asks_nobody_but_its_questions_reach_the_card() {
+    let Rig { _rt, f, marks, homes, d, .. } =
+        rig_with("codex", &[("ARUGULA_HOSTED_SESSION_HARNESSES", "claude,codex")]);
+    let s = ses('8');
+    f.start_as(&s, "codex", prompt(1, "acct1", "hello"), None, Some("codex"), false);
+    wait(&marks, &f, "its first turn", || f.state(&s) == "done");
+    let taken = f.of(&s).into_iter().find(|(r, _)| r.from == "queued").map(|(_, d)| d).unwrap();
+    assert_eq!(taken.harness.as_deref(), Some("codex"));
+    let block = block_of(&f, &s);
+
+    // A tool call: nobody's asked.
+    f.queue(&s, prompt(2, "acct1", "run touch it"));
+    wait(&marks, &f, "the allowed turn", || f.state(&s) == "done" && f.turns(&s).len() == 2);
+    assert!(f.of(&s).iter().all(|(r, _)| r.to != "needs_input"), "it asked nobody");
+    let lines = transcript(&d, block);
+    assert!(lines.iter().any(|l| l == "agent: Ran it."), "{lines:#?}");
+    assert!(lines.iter().any(|l| l == "note: Allowed touch it (a session on its box)"), "{lines:#?}");
+    let modes: String = std::fs::read_dir(homes.join("ses1/.fake-acp"))
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("fake-"))
+        .map(|e| std::fs::read_to_string(e.path()).unwrap())
+        .collect();
+    assert!(modes.contains(r#""mode": "full-access""#), "its session's mode: {modes}");
+    assert!(!lines.iter().any(|l| l.contains("Couldn't switch")), "{lines:#?}");
+
+    // A question goes to the card, and its answer comes back.
+    f.queue(&s, prompt(3, "acct1", "ask one"));
+    wait(&marks, &f, "the question", || f.state(&s) == "needs_input");
+    let (_, asked_d) = f.of(&s).into_iter().rfind(|(r, _)| r.to == "needs_input").unwrap();
+    assert_eq!(asked_d.ask.as_deref(), Some("question"), "{asked_d:?}");
+    let mut answer = action(1, "acct1", "answer");
+    answer.request = asked_d.request.clone();
+    answer.answer = Some(json!({ "question_0": "Blue" }));
+    f.ask(&s, answer);
+    wait(&marks, &f, "the answered turn", || f.state(&s) == "done" && f.turns(&s).len() == 3);
+    assert!(transcript(&d, block).iter().any(|l| l.starts_with("agent: ") && l.contains("Blue")));
+}

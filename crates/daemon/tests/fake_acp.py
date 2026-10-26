@@ -53,7 +53,8 @@ Prompts:
   mode           says the permission mode session/set_mode chose (it knows
                  claude-agent-acp's: default, acceptEdits, plan, auto, and
                  bypassPermissions, which it offers a user that isn't root;
-                 its tool calls still ask, as a bypass-immune one would)
+                 and codex-acp's: read-only, auto and full-access; its
+                 tool calls still ask, as a bypass-immune one would)
   look           says what came with the prompt (M71): its images' types,
                  and any other text blocks (an image's path, to an agent
                  that takes no images); the prompt's blocks are in
@@ -202,6 +203,8 @@ LAYOUT = {"question": "Which layout?", "header": "Layout", "multiSelect": False,
      "preview": "+------+--------------+\n| Nav  | Content Area |\n|      | goes here    |\n+------+--------------+"},
     {"label": "Top bar", "description": "Navigation across the top",
      "preview": "+---------------------+\n| Nav                 |\n+---------------------+\n| Content Area        |"}]}
+# claude-agent-acp's permission modes, then codex-acp's.
+MODES = ("default", "acceptEdits", "plan", "auto", "bypassPermissions", "read-only", "full-access")
 QUESTIONS = {"ask": [COLOUR, FRUIT, PET], "ask one": [COLOUR], "ask two": [FRUIT, PET], "ask preview": [LAYOUT]}
 
 
@@ -700,7 +703,7 @@ def handle(m):
         send({"id": mid, "result": {"configOptions": CONFIG_OPTIONS}})
     elif method == "session/set_mode":
         s = load(p.get("sessionId", ""))
-        if s is None or p.get("modeId") not in ("default", "acceptEdits", "plan", "auto", "bypassPermissions"):
+        if s is None or p.get("modeId") not in MODES:
             send({"id": mid, "error": {"code": -32602, "message": "Invalid Mode"}})
             return
         s["mode"] = p["modeId"]

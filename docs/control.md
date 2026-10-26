@@ -188,11 +188,12 @@ project's settings, and `--finish` on `cloud edit`; it isn't part of the
 spec's hash, so changing it needs no rebuild.
 
 **A session's agent asks no permission** on its box: Claude Code runs in
-`bypassPermissions`, and the block allows anything that still asks. The box
-is the blast radius (its own user, the firewall, no secrets; aru-115).
-Questions are another thing: the agent asks with AskUserQuestion, and the
-question goes to the session's card in the thread. The agent commits on the
-session's branch and doesn't push: the box runs the finish step and pushes.
+`bypassPermissions` (Codex in `full-access`), and the block allows anything
+that still asks. The box is the blast radius (its own user, the firewall,
+no secrets; aru-115). Questions are another thing: the agent asks with
+AskUserQuestion (Codex with its own form), and the question goes to the
+session's card in the thread. The agent commits on the session's branch
+and doesn't push: the box runs the finish step and pushes.
 A turn someone types in the session's block (the card's **Open**) is the
 session's too: the card shows it working, and it ends the same way, with
 the finish step, the push and the turn's report. On an Arugula issue's
