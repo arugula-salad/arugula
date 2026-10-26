@@ -115,6 +115,8 @@ pub mod session_live;
 pub mod sessions;
 #[cfg(test)]
 mod sessions_hydrate_tests;
+#[cfg(test)]
+mod sessions_tries_tests;
 pub mod stuck;
 #[cfg(test)]
 pub(crate) mod testing;

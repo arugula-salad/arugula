@@ -533,6 +533,11 @@ pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machin
         }
         let text = match s.state {
             State::Queued => String::new(),
+            // A review (M264) starts again from its own prompt: the diff
+            // and the thread as they were asked about.
+            _ if s.role == crate::db::sessions::Role::Review => {
+                app.db.session_prompts(&s.id)?.into_iter().next().map(|p| p.text).unwrap_or_default()
+            }
             _ => match crate::sessions::hydrate::after_rebuild(app, &s).await {
                 Ok(t) => t,
                 Err(e) => {

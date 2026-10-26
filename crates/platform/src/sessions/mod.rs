@@ -9,6 +9,9 @@
 //! - [`pr`]: its pull request, which its asker drafts and sends (M259).
 //! - [`feedback`]: CI's failures and reviews on its branch, back to it as
 //!   its next prompt (M260).
+//! - [`tries`]: Try 3, a session tried three ways and one kept (M264).
+//! - [`review`]: `@codex review`, a read-only session that reviews one's
+//!   pushed diff and posts what it found in the thread (M264).
 //!
 //! **How sessions end besides** (each `stopped` by control, with a
 //! `reason` in its event's detail):
@@ -24,3 +27,5 @@ pub mod hydrate;
 pub mod job;
 pub mod pr;
 pub mod push;
+pub mod review;
+pub mod tries;

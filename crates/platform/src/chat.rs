@@ -882,7 +882,7 @@ fn reactions_of(db: &Db, ms: &[&Message]) -> anyhow::Result<HashMap<(String, i64
 /// The `@words` in a text, lowercased: an `@` at the start or after
 /// anything but a letter or digit (not an email address), then letters,
 /// digits, `_`, `-` and `.` (not a trailing one).
-fn at_words(text: &str) -> Vec<String> {
+pub(crate) fn at_words(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut prev: Option<char> = None;
     for (i, c) in text.char_indices() {
@@ -932,8 +932,12 @@ pub(crate) async fn mentions(
     audience: &[String],
     author: &str,
 ) -> anyhow::Result<(Vec<String>, Vec<String>)> {
-    // `@arugula` is reserved (M256): it names nobody, and starts work.
-    let words: Vec<String> = at_words(text).into_iter().filter(|w| w != sessions::MENTION).collect();
+    // `@arugula` is reserved (M256): it names nobody, and starts work; so
+    // is `@codex`, which reviews (M264).
+    let words: Vec<String> = at_words(text)
+        .into_iter()
+        .filter(|w| w != sessions::MENTION && w != crate::sessions::review::MENTION)
+        .collect();
     if words.is_empty() {
         return Ok((vec![], vec![]));
     }
@@ -1076,7 +1080,7 @@ impl Hub {
 
     /// Keep `ev` (for `to` only, if it's someone's) for every machine's
     /// streams, then send this machine's what's new.
-    fn publish(&self, db: &Db, ev: ChatLive, to: Option<String>) {
+    pub(crate) fn publish(&self, db: &Db, ev: ChatLive, to: Option<String>) {
         let body = data(&ev);
         let e = NewChatEvent { kind: "live", body: &body, to: to.as_deref(), at: now_ms() };
         if let Err(e) = db.add_chat_event(&e) {
