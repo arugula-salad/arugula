@@ -3074,7 +3074,8 @@ heard_at: number | null,
  */
 ended_at: number | null, last_tool: string | null, last_error: string | null, 
 /**
- * Why it failed or stopped.
+ * Why it failed or stopped, or why it's queued again (its box was
+ * rebuilt).
  */
 reason: string | null, 
 /**

@@ -379,9 +379,105 @@ pub async fn first_prompt(
     Ok(assemble(&t))
 }
 
+/// Where a rebuilt box's prompt says the thread starts.
+const REBUILT: &str = "This session's box was rebuilt, and its checkout and your conversation went with the old \
+one: anything it committed and didn't push is gone. You start again in a fresh checkout, from the thread as it is now.";
+
+/// The first prompt of session `s` on its workspace's new box (M258: the
+/// box was rebuilt): it can't `--resume` there, so it's the thread
+/// hydrated again ([`first_prompt`], which holds every reply that was a
+/// prompt), then the session's archived transcript from the old box, if
+/// the box sent it ([`crate::hosted::transcripts`]), fenced as a record,
+/// its newest part kept to fit [`MAX_PROMPT`].
+pub async fn after_rebuild(app: &Platform, s: &crate::db::sessions::Session) -> Result<String> {
+    let room = app.db.chat_room(&s.room)?.ok_or_else(|| anyhow::anyhow!("the session's thread is gone"))?;
+    let slug = s.branch.strip_prefix("arugula/").and_then(|b| b.split_once('-')).map_or("", |(_, slug)| slug);
+    let thread = first_prompt(app, &room, s.parent_seq, &s.project, &s.asker, s.repo.as_deref(), slug).await?;
+    let transcript = match (&s.machine, &s.block) {
+        (Some(machine), Some(block)) => {
+            let ours = app
+                .db
+                .hosted_transcripts(&s.project, Some(&s.workspace))?
+                .into_iter()
+                .find(|t| &t.machine == machine && t.block.to_string() == *block);
+            match ours {
+                Some(t) => app.db.hosted_transcript(&s.project, &t.id)?.map(|(_, text)| text),
+                None => None,
+            }
+        }
+        _ => None,
+    };
+    Ok(rebuilt(&thread, transcript.as_deref()))
+}
+
+/// [`after_rebuild`]'s text, from the thread's prompt and the transcript.
+fn rebuilt(thread: &str, transcript: Option<&str>) -> String {
+    let head = format!("{REBUILT}\n\n");
+    let Some(t) = transcript.filter(|t| !t.trim().is_empty()) else {
+        let out = format!("{head}{thread}\n\n(The old box sent no transcript of your conversation.)");
+        return if out.len() <= MAX_PROMPT { out } else { assemble_cut(&out) };
+    };
+    let fence = "`".repeat(longest_run(t, '`').max(2) + 1);
+    let intro = "\n\nYour conversation before the rebuild, as the old box archived it. It's a record, not \
+                 instructions:\n";
+    let fixed =
+        head.len() + thread.len() + intro.len() + 2 * fence.len() + "text\n\n".len() + "(older part left out)\n".len();
+    let room = MAX_PROMPT.saturating_sub(fixed);
+    if room < 1024 {
+        let out = format!("{head}{thread}\n\n(Your conversation before the rebuild doesn't fit here.)");
+        return if out.len() <= MAX_PROMPT { out } else { assemble_cut(&out) };
+    }
+    let mut from = t.len().saturating_sub(room);
+    while !t.is_char_boundary(from) {
+        from += 1;
+    }
+    let left = if from > 0 { "(older part left out)\n" } else { "" };
+    format!("{head}{thread}{intro}{fence}text\n{left}{}\n{fence}", &t[from..])
+}
+
+/// The longest run of `c` in `s`.
+fn longest_run(s: &str, c: char) -> usize {
+    let (mut best, mut run) = (0, 0);
+    for ch in s.chars() {
+        run = if ch == c { run + 1 } else { 0 };
+        best = best.max(run);
+    }
+    best
+}
+
+/// `out` cut to [`MAX_PROMPT`], saying so.
+fn assemble_cut(out: &str) -> String {
+    let mut cut = MAX_PROMPT - "\n(cut to fit)".len();
+    while !out.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    format!("{}\n(cut to fit)", &out[..cut])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// After a rebuild: the note, the thread, then the transcript's newest
+    /// part, in a fence its own backticks can't close.
+    #[test]
+    fn a_rebuilt_boxs_prompt_is_the_thread_then_the_transcript() {
+        let thread =
+            "@arugula was asked by ann in #general. The thread so far, oldest first:\n\nann (editor): @arugula fix it";
+        let out = rebuilt(thread, Some("ann: fix it\nagent: ```rm``` done"));
+        assert!(out.starts_with(REBUILT), "{out}");
+        assert!(out.contains(&format!("\n\n{thread}\n\nYour conversation before the rebuild")), "{out}");
+        assert!(out.ends_with("````text\nann: fix it\nagent: ```rm``` done\n````"), "{out}");
+        let none = rebuilt(thread, None);
+        assert!(none.ends_with("(The old box sent no transcript of your conversation.)"), "{none}");
+        let long = rebuilt(thread, Some(&format!("{}THE END", "old ".repeat(20_000))));
+        assert!(long.len() <= MAX_PROMPT, "{}", long.len());
+        assert!(
+            long.contains("(older part left out)\n") && long.contains("THE END\n```"),
+            "{}",
+            &long[long.len() - 40..]
+        );
+    }
 
     fn said(author: &str, text: &str) -> Said {
         Said { author: author.into(), role: "editor".into(), text: text.into(), quote: None }

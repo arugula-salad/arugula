@@ -123,7 +123,7 @@ impl Follow {
                 cp.full_at = Some(now);
                 job.checkpoint = Some(serde_json::to_value(&cp)?);
                 db.checkpoint_job(job, now)?;
-            } else if now.saturating_sub(cp.full_at.unwrap_or(0).max(s.created_at)) > work::TAKE_MS {
+            } else if now.saturating_sub(cp.full_at.unwrap_or(0).max(s.updated_at)) > work::TAKE_MS {
                 let why = json!({ "reason": "not_taken: its hosted workspace didn't take it in 15 minutes" });
                 if control(&self.app, &s.id, State::Queued, State::Failed, why, now)? {
                     info!(session = s.id, "a session no box took failed");
