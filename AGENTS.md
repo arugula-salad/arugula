@@ -108,7 +108,8 @@ nothing marked `mux:` names the edge or the block kinds.
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
   conversations (`conversations/`), the IDE bridge (`ide/`, with the mux's half in `mux:ide/`), invites
-  (`invite/`), remote blocks (`remote.rs`), configured agent harnesses
+  (`invite/`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
+  configured agent harnesses
   (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
   (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`; the

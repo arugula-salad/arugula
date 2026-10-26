@@ -398,6 +398,10 @@ pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Insta
                     crate::sessions::pr::noted(p, repo);
                     crate::sessions::merged::seen(p, repo, &rows.items.iter().collect::<Vec<_>>());
                 }
+                let numbers: Vec<u64> =
+                    rows.items.iter().map(|i| i.number).chain(rows.events.iter().map(|e| e.number)).collect();
+                let shas: Vec<String> = rows.checks.iter().map(|c| c.head_sha.clone()).collect();
+                crate::boards::mirror_changed(p, repo, &numbers, &shas);
             }
             debug!(
                 event,

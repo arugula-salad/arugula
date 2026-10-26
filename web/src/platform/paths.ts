@@ -18,6 +18,9 @@
 //                                  `?q=…`, `?label=…`, `?assignee=…` narrow it
 //   /p/:project/issues/new         a new issue
 //   /p/:project/issues/:issue      an issue (`?msg=N`: at that comment)
+//   /p/:project/boards             its boards (live status board), when the
+//                                  `boards` Labs flag is on
+//   /p/:project/boards/:board      a board (`brd_…`)
 //   /p/:project/runs               its runs (M215): `?state=…`, `?trigger=…`,
 //                                  `?spec=…` narrow it
 //   /p/:project/runs/:run          a run (`?msg=N`: at that message in its
@@ -63,6 +66,8 @@ export type Route =
   | { page: "issues"; project: string; state?: "closed"; q?: string; label?: string; assignee?: string }
   | { page: "new-issue"; project: string }
   | { page: "issue"; project: string; issue: string; msg?: number }
+  | { page: "boards"; project: string }
+  | { page: "board"; project: string; board: string }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
   | { page: "run"; project: string; run: string; msg?: number }
   | { page: "session"; project: string; session: string }
@@ -186,6 +191,11 @@ export function parse(path: string, search = ""): Route {
     return room ? { page: "dm", project, room, ...msg, ...thread } : missing;
   }
   if (parts[2] === "issues") return issueRoute(project, parts.slice(3), q, msg) ?? missing;
+  if (parts[2] === "boards" && parts.length === 3) return { page: "boards", project };
+  if (parts[2] === "boards" && parts.length === 4) {
+    const board = idOf(parts[3]);
+    return board?.startsWith("brd_") ? { page: "board", project, board } : missing;
+  }
   if (parts[2] === "runs" && parts.length === 3) {
     const word = (k: string, ok: RegExp) => {
       const v = q.get(k);
@@ -261,6 +271,10 @@ export function pathOf(r: Route, names: Names = () => null): string {
     }
     case "new-issue":
       return `/p/${s(r.project)}/issues/new`;
+    case "boards":
+      return `/p/${s(r.project)}/boards`;
+    case "board":
+      return `/p/${s(r.project)}/boards/${s(r.board)}`;
     case "runs": {
       const q = new URLSearchParams();
       if (r.state) q.set("state", r.state);

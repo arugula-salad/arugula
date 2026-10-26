@@ -27,6 +27,7 @@ import { Installed, ProjectSettings } from "./pages/project-settings";
 import { SettingsPage } from "./pages/settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
+import { BoardPage, BoardsPage } from "./pages/boards";
 import { SessionPage } from "./pages/session";
 import { runs } from "./runs";
 import { runTitle } from "./runs-text";
@@ -67,6 +68,10 @@ function body(r: Route, lost: string | null) {
       return <NewIssuePage project={r.project} />;
     case "issue":
       return <IssuePage project={r.project} issue={r.issue} msg={r.msg} />;
+    case "boards":
+      return <BoardsPage project={r.project} />;
+    case "board":
+      return <BoardPage project={r.project} board={r.board} />;
     case "runs":
       return <RunsPage project={r.project} filter={{ state: r.state, trigger: r.trigger, spec: r.spec }} />;
     case "run":

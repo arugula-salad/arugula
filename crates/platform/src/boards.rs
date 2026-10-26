@@ -14,13 +14,20 @@
 //! With it off for the account, every route here answers 404, as if boards
 //! weren't there.
 //!
-//! **Pointers are stored, not resolved:** a row's `fi_`, `iss_`, `run_`,
-//! `hw_` id or agent block is kept as given, after a check of its shape.
-//! Later steps read the live state it points at.
+//! **Pointers are stored, and their state is read:** a row's `fi_`, `iss_`,
+//! `run_`, `hw_` id or agent block is kept as given, after a check of its
+//! shape. A read adds each `fi_` and `iss_` row's state now as `live`
+//! ([`resolve`]): one query for the mirror's items, one for their checks
+//! and one for the issues, through the reader's own forge access. `status`
+//! is the row's own and never changes with it.
+//!
+//! **Live:** a change to a board, to an issue a row points at, or (a
+//! webhook) to a mirrored item it points at pushes an object change
+//! ([`changed`]), so clients following the board read it again.
 //!
 //! [`db::boards`]: crate::db::boards
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use arugula_control_common::{ApiError, err, refusal};
 use arugula_control_wire::boards as wire;
@@ -35,7 +42,11 @@ use crate::{
     Platform,
     auth::Person,
     chat::flag_on,
-    db::boards::{self as db, Put, Refused},
+    db::{
+        boards::{self as db, Put, Refused},
+        forge::{CheckState, ForgeItem},
+    },
+    forge::viewer::{self, Viewer},
     issues::PERSONAL,
 };
 
@@ -187,6 +198,7 @@ fn view(s: db::Stored) -> wire::BoardView {
                         pointer: e.pointer,
                         note: e.note,
                         status: e.status,
+                        live: None,
                         created_at: e.created_at,
                         updated_at: e.updated_at,
                     });
@@ -197,8 +209,96 @@ fn view(s: db::Stored) -> wire::BoardView {
     wire::BoardView { board: s.board, zones }
 }
 
-fn read(app: &Platform, id: &str) -> Result<wire::BoardView, ApiError> {
-    Ok(view(app.db.board_stored(id)?.ok_or_else(no_board)?))
+/// A forge item's state now, from the checks on its head.
+fn live_item(i: &ForgeItem, repo: &str, checks: &[&CheckState]) -> wire::Live {
+    use wire::LiveState::*;
+    let state = match (i.kind.as_str(), i.state.as_str()) {
+        (_, "merged") => Merged,
+        (_, "closed") => Closed,
+        ("pr", _) => {
+            let red = |c: &&CheckState| {
+                c.status == "completed"
+                    && matches!(
+                        c.conclusion.as_deref(),
+                        Some("failure" | "error" | "timed_out" | "cancelled" | "action_required" | "startup_failure")
+                    )
+            };
+            if checks.iter().any(red) {
+                ChecksFailed
+            } else if checks.iter().any(|c| c.status != "completed") {
+                ChecksRunning
+            } else {
+                Open
+            }
+        }
+        _ => Open,
+    };
+    wire::Live { state, kind: i.kind.clone(), repo: Some(repo.to_owned()), number: i.number, title: i.title.clone() }
+}
+
+/// Add each `fi_` and `iss_` row's live state to `v`, as `account` may see
+/// it: items of the project's linked repos they may read, and its issues.
+async fn resolve(app: &Platform, account: &str, v: &mut wire::BoardView) -> Result<(), ApiError> {
+    let (items, issues) = app.db.board_targets(&v.board.id)?;
+    let mut live: HashMap<String, wire::Live> = HashMap::new();
+    if !items.is_empty() {
+        let repos = app.db.linked_repos(&v.board.project)?;
+        let checked = viewer::check(app, &Viewer::of(app, account).await?, &repos).await?;
+        let ids: Vec<&str> = items.iter().map(String::as_str).collect();
+        let found = app.db.forge_items_among(&checked.readable, &ids)?;
+        let heads: Vec<&str> = found.iter().filter_map(|i| i.head_sha.as_deref()).collect();
+        let checks = app.db.forge_checks_on_heads(&checked.readable, &heads)?;
+        for i in &found {
+            let repo = repos.iter().find(|r| r.repo_id == i.repo_id).map_or("", |r| r.full_name.as_str());
+            let mine: Vec<_> = checks
+                .iter()
+                .filter(|c| c.repo_id == i.repo_id && Some(c.head_sha.as_str()) == i.head_sha.as_deref())
+                .collect();
+            live.insert(i.id.clone(), live_item(i, repo, &mine));
+        }
+    }
+    if !issues.is_empty() {
+        let ids: Vec<&str> = issues.iter().map(String::as_str).collect();
+        for (id, number, title, closed) in app.db.issue_states(&v.board.project, &ids)? {
+            let state = if closed { wire::LiveState::Closed } else { wire::LiveState::Open };
+            live.insert(id, wire::Live { state, kind: "native".to_owned(), repo: None, number, title });
+        }
+    }
+    for row in v.zones.iter_mut().flat_map(|z| z.rows.iter_mut()) {
+        if let wire::Pointer::ForgeItem { id } | wire::Pointer::Issue { id } = &row.pointer {
+            row.live = live.get(id).cloned();
+        }
+    }
+    Ok(())
+}
+
+async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView, ApiError> {
+    let mut v = view(app.db.board_stored(id)?.ok_or_else(no_board)?);
+    resolve(app, account, &mut v).await?;
+    Ok(v)
+}
+
+/// The board `id`, in `project`, changed: pages showing it read it again
+/// (as for an issue, through its thread's readers).
+pub fn changed(app: &Platform, project: &str, id: &str) {
+    app.chat.object_changed(&app.db, &format!("project:{project}"), id);
+}
+
+/// A native issue changed: the boards that point at it.
+pub fn issue_changed(app: &Platform, issue: &str) {
+    match app.db.boards_on_issue(issue) {
+        Ok(boards) => boards.iter().for_each(|(b, p)| changed(app, p, b)),
+        Err(e) => tracing::warn!(error = %e, "boards: finding those on an issue"),
+    }
+}
+
+/// Mirror rows of `repo` were written (a webhook): the boards that point
+/// at the items they changed, or at items whose head a check landed on.
+pub fn mirror_changed(app: &Platform, repo: u64, numbers: &[u64], shas: &[String]) {
+    match app.db.boards_on_items(repo, numbers, shas) {
+        Ok(boards) => boards.iter().for_each(|(b, p)| changed(app, p, b)),
+        Err(e) => tracing::warn!(error = %e, "boards: finding those on a mirrored item"),
+    }
 }
 
 // ---------------------------------------------------------------- the seam
@@ -222,18 +322,18 @@ pub async fn create(
         .db
         .create_board(&id, title, account, now_ms(), wire::BOARDS_MAX)?
         .ok_or_else(|| bad(&format!("a project has at most {} boards", wire::BOARDS_MAX)))?;
-    read(app, &board.id)
+    read(app, account, &board.id).await
 }
 
 /// A board with its zones and rows in order, as `account` may read it.
 pub async fn get(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView, ApiError> {
     board_place(app, account, id, false).await?;
-    read(app, id)
+    read(app, account, id).await
 }
 
 /// Make or change a zone or a row (see [`wire::PutEntry`]).
 pub async fn put(app: &Platform, account: &str, id: &str, p: &wire::PutEntry) -> Result<wire::BoardView, ApiError> {
-    board_place(app, account, id, true).await?;
+    let board = board_place(app, account, id, true).await?;
     if let Some(i) = &p.id
         && id_ok(i, "row").is_err()
         && id_ok(i, "zon").is_err()
@@ -260,7 +360,8 @@ pub async fn put(app: &Platform, account: &str, id: &str, p: &wire::PutEntry) ->
         status: p.status,
     };
     app.db.put_entry(id, &put, now_ms(), wire::ZONES_MAX, wire::ROWS_MAX)?.map_err(refused)?;
-    read(app, id)
+    changed(app, &board.project, id);
+    read(app, account, id).await
 }
 
 /// Reorder a row or a zone.
@@ -271,7 +372,7 @@ pub async fn move_entry(
     entry: &str,
     m: &wire::MoveEntry,
 ) -> Result<wire::BoardView, ApiError> {
-    board_place(app, account, id, true).await?;
+    let board = board_place(app, account, id, true).await?;
     app.db
         .move_entry(
             id,
@@ -281,14 +382,16 @@ pub async fn move_entry(
             wire::ROWS_MAX,
         )?
         .map_err(refused)?;
-    read(app, id)
+    changed(app, &board.project, id);
+    read(app, account, id).await
 }
 
 /// Delete a row, or a zone and its rows.
 pub async fn delete(app: &Platform, account: &str, id: &str, entry: &str) -> Result<wire::BoardView, ApiError> {
-    board_place(app, account, id, true).await?;
+    let board = board_place(app, account, id, true).await?;
     app.db.delete_entry(id, entry, now_ms())?.map_err(refused)?;
-    read(app, id)
+    changed(app, &board.project, id);
+    read(app, account, id).await
 }
 
 // ---------------------------------------------------------------- routes

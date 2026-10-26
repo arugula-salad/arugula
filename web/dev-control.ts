@@ -50,7 +50,7 @@
 //   DEV_CONTROL_CHAT=1 control's chat (M123): team Acme with $DEV_CONTROL_LOGIN
 //                      its owner and DEV_CONTROL_LOGINS its members (their
 //                      browsers approved by headless devices of their own),
-//                      the team's `chat` flag on, and #general and a DM
+//                      the team's `chat` and `boards` flags on, and #general and a DM
 //                      seeded on the first run.
 //   DEV_CONTROL_HOSTED=1
 //                      hosted workspaces on for everyone (M179), against an
@@ -270,7 +270,7 @@ async function device(): Promise<Device> {
 /** DEV_CONTROL_CHAT=1 (M123): team Acme, with $DEV_CONTROL_LOGIN its owner
  * and everyone in DEV_CONTROL_LOGINS a member (each with a headless device
  * of their own, kept in the state directory, which approves their
- * browsers), control's `chat` flag on for it, and on the first run
+ * browsers), control's `chat` and `boards` flags on for it, and on the first run
  * #general and a DM with a few messages. Returns the others' devices. */
 async function seedChat(d: Device): Promise<Device[]> {
   const others: Device[] = [];
@@ -290,6 +290,7 @@ async function seedChat(d: Device): Promise<Device[]> {
   for (const o of others) await o.acceptInvite(team, await d.invite(team, "editor"));
   if (others.length) await d.admitAll(team);
   await d.api("/api/flags", { name: "chat", on: true, team });
+  await d.api("/api/flags", { name: "boards", on: true, team });
   const general = await d.api<{ id: string }>(`/api/chat/teams/${team}/channels`, { name: "general" });
   await d.api(`/api/chat/rooms/${general.id}/messages`, { text: "Morning! The deploy went out green." });
   for (const o of others) {

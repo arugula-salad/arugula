@@ -11,6 +11,7 @@ import "./forge";
 import "./invite";
 import "./doc";
 import "./team-chat";
+import "./board";
 
 export { makeBlockView, type BlockView } from "./view";
 export { openPort } from "./browser";

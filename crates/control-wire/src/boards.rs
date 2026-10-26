@@ -41,6 +41,7 @@ pub const ROWS_MAX: u64 = 200;
 /// What a row points at. `None` is free text. The ids are the platform's:
 /// `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardPointer"))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Pointer {
     #[default]
@@ -66,6 +67,7 @@ pub enum Pointer {
 
 /// Where a row stands. `None` says nothing.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardStatus"))]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     #[default]
@@ -79,6 +81,7 @@ pub enum Status {
 
 /// Zone or row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardEntryKind"))]
 #[serde(rename_all = "snake_case")]
 pub enum EntryKind {
     Zone,
@@ -87,12 +90,14 @@ pub enum EntryKind {
 
 /// A zone's kind: `proofs` is the board's last zone. Absent: a plain one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardZoneKind"))]
 #[serde(rename_all = "snake_case")]
 pub enum ZoneKind {
     Proofs,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectBoard"))]
 pub struct Board {
     pub id: String,
     pub project: String,
@@ -104,28 +109,69 @@ pub struct Board {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BoardList {
     pub project: String,
     pub boards: Vec<Board>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NewBoard {
     pub title: String,
 }
 
+/// What a row's `fi_` or `iss_` pointer is now, from data control already
+/// has (the forge mirror, the issues table): a separate fact, never written
+/// over the row's stored `status`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardLiveState"))]
+#[serde(rename_all = "snake_case")]
+pub enum LiveState {
+    /// A PR or an issue, open.
+    Open,
+    /// A PR, open, with checks still running.
+    ChecksRunning,
+    /// A PR, open, with red checks.
+    ChecksFailed,
+    Merged,
+    /// A PR closed unmerged, or an issue closed.
+    Closed,
+}
+
+/// The item a row points at, as it is now: what the page draws beside the
+/// row's own status, and the label of its link.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardLive"))]
+pub struct Live {
+    pub state: LiveState,
+    /// `pr` or `issue` (a mirrored one), or `native` for a native issue.
+    pub kind: String,
+    /// `OWNER/NAME` of a mirrored item; absent for a native issue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    pub number: u64,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardRow"))]
 pub struct Row {
     pub id: String,
     pub rev: u64,
     pub pointer: Pointer,
     pub note: String,
     pub status: Status,
+    /// A `fi_` or `iss_` pointer's state now, when the reader may see the
+    /// item ([`BoardView`] is read with it; a write's answer has it too).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live: Option<Live>,
     pub created_at: u64,
     pub updated_at: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardZone"))]
 pub struct Zone {
     pub id: String,
     pub rev: u64,
@@ -137,6 +183,7 @@ pub struct Zone {
 
 /// A board with its zones and rows, in order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BoardView {
     pub board: Board,
     pub zones: Vec<Zone>,
@@ -149,6 +196,7 @@ pub struct BoardView {
 /// `title`, `pointer` or `note` names `rev`; a change to `status` alone
 /// doesn't.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardPutEntry"))]
 pub struct PutEntry {
     #[serde(default)]
     pub id: Option<String>,
@@ -178,6 +226,7 @@ pub struct PutEntry {
 /// sibling), or last when there is none. A row may go to another `zone`
 /// (its own, if absent); a zone moves among zones, never past `proofs`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardMoveEntry"))]
 pub struct MoveEntry {
     #[serde(default)]
     pub rev: Option<u64>,
