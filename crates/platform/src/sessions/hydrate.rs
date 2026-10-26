@@ -41,7 +41,8 @@
 //!   ([`SessionPrompt::for_agent`]).
 //! - **Rules** say where it works, to commit on its branch and not push
 //!   (the box pushes it after the finish step), that the asker sends the
-//!   PR, to ask with AskUserQuestion (a question only in its reply ends the
+//!   PR, to name an Arugula issue the thread is on by its link (never
+//!   `#N`, which on GitHub is another), to ask with AskUserQuestion (a question only in its reply ends the
 //!   turn unanswered), how GitHub's text is to be read, and that replies
 //!   come as prompts. The repo's own `CLAUDE.md` and `AGENTS.md` are the box's to
 //!   read from the checkout (M255), not this prompt's.
@@ -109,6 +110,9 @@ pub struct Thread {
     pub repo: Option<String>,
     /// Its branch's slug.
     pub slug: String,
+    /// The Arugula issue the thread is on, if it's one's: its number and
+    /// its link.
+    pub issue: Option<(u64, String)>,
 }
 
 fn said_line(s: &Said) -> String {
@@ -137,6 +141,12 @@ fn rules(t: &Thread) -> String {
             t.asker
         )),
         None => out.push_str("- You work in no repo: this session has none to push to.\n"),
+    }
+    if let Some((n, url)) = &t.issue {
+        out.push_str(&format!(
+            "- This thread is on Arugula issue #{n}, not a GitHub one: refer to it by its link, {url}, never as #{n} \
+             in commits or the PR. On GitHub, #{n} is another issue, or none.\n"
+        ));
     }
     out.push_str(
         "- To ask the person something, use the AskUserQuestion tool: they answer on the card in the thread. A \
@@ -314,6 +324,16 @@ async fn item(app: &Platform, room: &Room, asker: &str) -> Result<Option<Item>> 
     Ok(Some(Item { line, texts }))
 }
 
+/// The Arugula issue `room` is the thread of, if it's one's: its number,
+/// and its link on the platform page (`<public>/issues/iss_…`).
+pub fn issue_of(app: &Platform, room: &Room) -> Result<Option<(u64, String)>> {
+    let Some(target) = room.target.as_deref().filter(|t| room.kind == "object" && t.starts_with("iss_")) else {
+        return Ok(None);
+    };
+    let Some(i) = app.db.issue(target)? else { return Ok(None) };
+    Ok(Some((i.number, format!("{}/issues/{}", app.cfg.public_url.trim_end_matches('/'), i.id))))
+}
+
 /// Where the thread is, for the header.
 fn place(room: &Room) -> String {
     match room.kind.as_str() {
@@ -383,6 +403,7 @@ pub async fn first_prompt(
         linked,
         repo: repo.map(Into::into),
         slug: slug.to_owned(),
+        issue: issue_of(app, room)?,
     };
     Ok(assemble(&t))
 }
@@ -500,6 +521,7 @@ mod tests {
             linked: vec![],
             repo: Some("o/app".into()),
             slug: "fix-it".into(),
+            issue: None,
         }
     }
 

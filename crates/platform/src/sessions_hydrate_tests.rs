@@ -530,3 +530,36 @@ async fn an_idle_done_session_ends_after_a_day() {
         "idle: ended after 2 hours idle; @arugula again to start a new one"
     );
 }
+
+/// On an Arugula issue's thread, the rules name the issue by its link:
+/// its `#N` on GitHub is another issue, or none (the live test's "Closes
+/// #2").
+#[tokio::test]
+async fn an_issues_thread_names_the_issue_by_its_link() {
+    let (_hub, app, base, t, _u, _keys) = platform(&["https://github.com/o/app.git"]).await;
+    let n = NewIssue { project: &t, title: "first", body: "", labels: &[], assignees: &[] };
+    app.db.create_issue(&n, Actor::person("a"), 1).unwrap().unwrap();
+    let n =
+        NewIssue { project: &t, title: "Add a farewell function", body: "Next to greet.", labels: &[], assignees: &[] };
+    let issue = app.db.create_issue(&n, Actor::person("a"), 2).unwrap().unwrap();
+    let (st, room) =
+        call(&base, "b", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": issue.id }))).await;
+    assert_eq!(st, 200, "{room}");
+    let id = room["id"].as_str().unwrap().to_owned();
+    post_in(&base, &id, "b", "@arugula please do this issue", None).await;
+
+    let s = sessions(&app, &t).pop().expect("a session");
+    let text = &app.db.session_prompts(&s.id).unwrap()[0].text;
+    let link = format!("https://control.example/issues/{}", issue.id);
+    assert!(
+        text.contains(&format!(
+            "- This thread is on Arugula issue #2, not a GitHub one: refer to it by its link, {link}, never as #2 in \
+             commits or the PR. On GitHub, #2 is another issue, or none.\n"
+        )),
+        "{text}"
+    );
+    // A channel's thread has no such rule.
+    let p = post_in(&base, "ch_general", "b", "@arugula tidy the README", None).await["seq"].as_i64().unwrap();
+    let s = sessions(&app, &t).into_iter().find(|s| s.parent_seq == p as u64).expect("its session");
+    assert!(!app.db.session_prompts(&s.id).unwrap()[0].text.contains("Arugula issue"));
+}
