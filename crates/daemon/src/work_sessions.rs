@@ -964,7 +964,7 @@ fn seen(s: &Value) -> Seen {
     let ask = || {
         s["asks"].as_array().into_iter().flatten().find(|a| a["accepted"] != true).map(|a| {
             let q = a["questions"][0]["question"].as_str().or(a["message"].as_str()).unwrap_or("a question");
-            ("question", a["id"].as_str().unwrap_or_default().to_owned(), q.to_owned(), vec![])
+            ("question", a["id"].as_str().unwrap_or_default().to_owned(), q.to_owned(), choices(a))
         })
     };
     Seen {
@@ -980,6 +980,19 @@ fn seen(s: &Value) -> Seen {
             .map(|t| t.iter().rev().map(|t| t["by"].as_str().map(str::to_owned)).collect())
             .unwrap_or_default(),
     }
+}
+
+/// A question's choices, by their labels, for the card's buttons (Arugula
+/// #214): only for one question that takes one answer, which a label
+/// answers whole (`question_0`). Anything else is answered in words.
+fn choices(ask: &Value) -> Vec<String> {
+    let qs = ask["questions"].as_array().map_or(&[][..], Vec::as_slice);
+    let [q] = qs else { return vec![] };
+    if q["multiSelect"] == true {
+        return vec![];
+    }
+    let labels = q["options"].as_array().into_iter().flatten().filter_map(|o| o["label"].as_str());
+    labels.filter(|l| !l.trim().is_empty()).take(12).map(|l| l.chars().take(200).collect()).collect()
 }
 
 /// One look at session `id`'s block, and what it calls for. `false` once

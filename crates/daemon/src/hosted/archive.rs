@@ -99,12 +99,21 @@ const FLUSH_WITHIN: Duration = Duration::from_secs(8);
 /// would send it. The blocks stay open; the box goes. Answered once the
 /// sends are done, or past [`FLUSH_WITHIN`]. A transcript the platform
 /// already has for a block stays as it was.
-pub async fn flush() -> OpAnswer {
+///
+/// `only` (`hosted.archive_blocks`, Arugula #214): just these blocks, when
+/// one session moves to another box and the rest stay. The platform keeps
+/// one transcript per block, so archiving the others now would keep them
+/// as they are now, not as they end.
+pub async fn flush(only: Option<&[u64]>) -> OpAnswer {
     let Some(control) = hosted() else {
         return OpAnswer::Cant { why: "not_hosted: this machine isn't a hosted workspace's box".into() };
     };
     let now = arugula_e2e::now_ms();
-    let posts: Vec<TranscriptPost> = crate::agent::open_transcripts().into_iter().map(|c| post(c, now)).collect();
+    let posts: Vec<TranscriptPost> = crate::agent::open_transcripts()
+        .into_iter()
+        .filter(|c| only.is_none_or(|b| b.contains(&c.block)))
+        .map(|c| post(c, now))
+        .collect();
     let n = posts.len();
     let sends = futures_util::future::join_all(posts.iter().map(|p| send(&control, p, 2)));
     match tokio::time::timeout(FLUSH_WITHIN, sends).await {

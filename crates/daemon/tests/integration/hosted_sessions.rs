@@ -1013,7 +1013,13 @@ fn three_tries_run_at_once_and_a_review_waits() {
     for id in [&p, &s2] {
         let t = f.turn_reports(id);
         assert_eq!(t.last().and_then(|t| t.finish.as_ref()).map(|f| f.ok), Some(true), "{t:?}");
-        assert_eq!(t.last().and_then(|t| t.reply.clone()), None, "only a review's turn carries a reply");
+        // Every turn carries the agent's last message, for its thread
+        // (Arugula #213): a try's too.
+        let reply = t.last().and_then(|t| t.reply.clone()).unwrap_or_default();
+        assert!(
+            !reply.is_empty() && reply.len() <= arugula_control_wire::work::REPLY_MAX,
+            "a try's turn carries its answer: {t:?}"
+        );
     }
 }
 

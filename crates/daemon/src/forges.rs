@@ -170,7 +170,8 @@ pub fn op_from_control(
             DaemonOp::ForgeSend(_) => arugula_control_wire::forge::OpAnswer::Unknown,
             DaemonOp::RunStart(s) => crate::hosted::runs::start(&app, &s),
             DaemonOp::RunRevoke(r) => crate::hosted::runs::revoke(&app, &r),
-            DaemonOp::HostedArchive(_) => crate::hosted::archive::flush().await,
+            DaemonOp::HostedArchive(_) => crate::hosted::archive::flush(None).await,
+            DaemonOp::HostedArchiveBlocks(b) => crate::hosted::archive::flush(Some(&b.blocks)).await,
         };
         let _ = answers.send(serde_json::to_string(&OpDone::new(ask.id, answer)).unwrap_or_default());
     });

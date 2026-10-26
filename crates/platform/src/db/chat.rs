@@ -678,6 +678,33 @@ impl Db {
         Ok(())
     }
 
+    /// The platform's open asks with `via` in `room` (Arugula #214), in the
+    /// thread under `parent` (the room's own messages for `None`), answered:
+    /// they mention nobody now, so they stop counting as anyone's mention.
+    /// Their numbers and parents.
+    pub fn close_chat_asks(&self, room: &str, parent: Option<i64>, via: &str) -> Result<Vec<(i64, Option<i64>)>> {
+        let c = self.c();
+        let open = "author = '' AND via = ?2 AND mentions <> '[]'";
+        match parent {
+            Some(p) => c.query_map(
+                &format!(
+                    "UPDATE chat_messages SET mentions = '[]' WHERE room = ?1 AND parent = ?3 AND {open}
+                     RETURNING seq, parent"
+                ),
+                params![room, via, p],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            ),
+            None => c.query_map(
+                &format!(
+                    "UPDATE chat_messages SET mentions = '[]' WHERE room = ?1 AND parent IS NULL AND {open}
+                     RETURNING seq, parent"
+                ),
+                params![room, via],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            ),
+        }
+    }
+
     /// Delete a message: its row and number stay, with nothing in them.
     pub fn delete_chat_message(&self, room: &str, seq: i64, at: u64) -> Result<()> {
         let mut c = self.c();

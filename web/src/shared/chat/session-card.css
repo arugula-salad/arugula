@@ -481,3 +481,66 @@ a.session-card-id:hover {
 .session-card:has(.session-tries) {
   max-width: 860px;
 }
+
+/* Asks (Arugula #214): what still needs a session's asker, as a form on
+   its card and on the ask that mentions them, in the thread and the
+   channel. A button per choice answers at once; words go with Send. An
+   answered ask is one dim line. */
+.session-ask-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+.session-ask-question {
+  font-weight: 600;
+}
+
+.session-ask-choices,
+.session-ask-words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.session-ask-choices button,
+.session-ask-words button,
+.session-move {
+  padding: 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, var(--line));
+  border-radius: var(--btn-radius);
+  background: var(--surface);
+  color: var(--fg);
+  font: 500 12px/1.4 var(--f-mono, ui-monospace, Menlo, monospace);
+}
+
+.session-ask-choices button:not(:disabled):hover,
+.session-ask-words button:not(:disabled):hover,
+.session-move:not(:disabled):hover {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 12%, var(--surface));
+}
+
+.session-ask-words input {
+  flex: 1;
+  min-width: 140px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.session-ask-done {
+  margin: 2px 0;
+  font-size: 12px;
+}
+
+/* Move to… (Arugula #214): a menu among the card's buttons. */
+.session-move {
+  padding: 3px 8px;
+  font-family: inherit;
+}

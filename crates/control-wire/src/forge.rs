@@ -186,7 +186,7 @@ pub const RUN_OPS: &[&str] = &["runs.start", "runs.revoke"];
 
 /// The hosted ops (Arugula #209) every daemon of this build knows: one
 /// that isn't a hosted machine answers them `cant`.
-pub const HOSTED_OPS: &[&str] = &["hosted.archive"];
+pub const HOSTED_OPS: &[&str] = &["hosted.archive", "hosted.archive_blocks"];
 
 /// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
@@ -255,6 +255,10 @@ pub enum DaemonOp {
     /// which takes them with it (Arugula #209).
     #[serde(rename = "hosted.archive")]
     HostedArchive(crate::transcripts::ArchiveOpen),
+    /// Archive just these agent blocks' transcripts now: one session moves
+    /// to another box (Arugula #214, Move to…), and the box stays.
+    #[serde(rename = "hosted.archive_blocks")]
+    HostedArchiveBlocks(crate::transcripts::ArchiveBlocks),
 }
 
 impl DaemonOp {
@@ -264,6 +268,7 @@ impl DaemonOp {
             DaemonOp::RunStart(_) => "runs.start",
             DaemonOp::RunRevoke(_) => "runs.revoke",
             DaemonOp::HostedArchive(_) => "hosted.archive",
+            DaemonOp::HostedArchiveBlocks(_) => "hosted.archive_blocks",
         }
     }
 }

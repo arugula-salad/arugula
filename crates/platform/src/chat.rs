@@ -2251,12 +2251,14 @@ async fn push(
     }
     let me = match agent {
         Some(a) => format!("{}'s agent on {}", name_of(app, author).await?, a.machine_name),
+        // The platform's own (an ask, Arugula #214).
+        None if author.is_empty() => format!("@{}", sessions::MENTION),
         None => name_of(app, author).await?,
     };
     // Posted for them by a product (M237): it says so, here as on the page.
     let me = match via {
-        Some(v) => format!("{me} via {v}"),
-        None => me,
+        Some(v) if !author.is_empty() => format!("{me} via {v}"),
+        _ => me,
     };
     if inboxed {
         let mut quiet = Vec::new();
@@ -2324,6 +2326,24 @@ async fn push(
         }
     });
     Ok(out)
+}
+
+/// Push `to` for an ask the platform posted for them, message `seq` (under
+/// `parent`, `also` sent to the channel): what still needs a session's
+/// asker (Arugula #214). As a mention of them is pushed: by their levels,
+/// not while they have it open or the room muted, at most once a minute
+/// per room, and in a native issue's or a mirrored item's thread through
+/// the inbox. Nobody else is pushed for it.
+pub(crate) async fn push_ask(
+    app: &Platform,
+    room: &Room,
+    (seq, parent, also): (i64, Option<i64>, bool),
+    text: &str,
+    to: &str,
+) -> anyhow::Result<Vec<ChatPushed>> {
+    let facts = Facts::of(app, None, &[room]).await?;
+    let thread = parent.map(|parent| ThreadPush { parent, also, followers: vec![] });
+    push(app, &facts, room, ("", None, None), thread, seq, text, &[to.to_owned()], &[], &[], false).await
 }
 
 /// The message `seq` in a room the person sees.

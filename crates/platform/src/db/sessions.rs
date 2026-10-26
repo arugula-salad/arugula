@@ -1294,6 +1294,81 @@ pub fn rebuilt_in(
     Ok(Ok(session_for_update(c, id)?.context("the session it moved")?))
 }
 
+/// Why a session is queued again on the workspace Move to… sent it to
+/// (Arugula #214).
+pub const MOVED: &str = "moved: moved to another workspace; starting again from the thread";
+/// ...when its old box archived no transcript of its conversation.
+pub const MOVED_LOST: &str = "moved: moved to another workspace, without the agent's conversation (its old box \
+                              sent no transcript); starting again from the thread";
+
+/// Session `id`, last seen `from`, moves to `workspace` (Move to…,
+/// Arugula #214), another live workspace of its project, in the caller's
+/// transaction. Only while nothing runs: a `queued` one just goes, its
+/// prompts with it, for the new workspace's box to take. A `done` one is
+/// queued again there, as a rebuilt box's is ([`rebuilt_in`]): control's
+/// move, saying [`MOVED`] (or [`MOVED_LOST`]), who moved it and where;
+/// its block, its machine and its actions were the old box's, so they go,
+/// and its queued prompts are dropped for `prompt`, which its first turn
+/// there starts with. Anything else is refused: a turn is under way, or
+/// it ended.
+#[allow(clippy::too_many_arguments)]
+pub fn moved_in(
+    c: &impl Sql,
+    id: &str,
+    from: State,
+    workspace: &str,
+    prompt: &NewPrompt,
+    lost: bool,
+    (by, to_name): (&str, &str),
+    at: u64,
+) -> Result<Result<Session, Refused>> {
+    let Some(s) = session_for_update(c, id)? else { return Ok(Err(Refused::NoSession)) };
+    if s.state != from {
+        return Ok(Err(Refused::Moved { now: s.state }));
+    }
+    if !matches!(from, State::Queued | State::Done) {
+        return Ok(Err(Refused::Disallowed { from, to: State::Queued }));
+    }
+    let there: Option<String> = c
+        .query_row(
+            "SELECT id FROM hosted_workspaces
+             WHERE id = ?1 AND project_id = ?2 AND deleted_at IS NULL AND purpose = 'workspace'",
+            params![workspace, s.project],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if there.is_none() || workspace == s.workspace {
+        return Ok(Err(Refused::Detail("that isn't another of the project's workspaces")));
+    }
+    if from == State::Done {
+        let reason = if lost { MOVED_LOST } else { MOVED };
+        let detail = serde_json::json!({ "reason": reason, "by": by, "workspace": workspace, "to_name": to_name });
+        let detail = detail.to_string();
+        if let Err(e) = move_session_in(c, id, &Move::Control { from, to: State::Queued, at, detail: &detail })? {
+            return Ok(Err(e));
+        }
+        c.execute(
+            "UPDATE session_prompts SET state = 'dropped', dropped_at = ?2 WHERE session_id = ?1 AND state = 'queued'",
+            params![id, at],
+        )?;
+        c.execute(
+            "UPDATE session_actions SET state = 'dropped', done_at = ?2 WHERE session_id = ?1 AND state = 'pending'",
+            params![id, at],
+        )?;
+    }
+    c.execute(
+        "UPDATE agent_sessions SET workspace_id = ?2, machine = NULL, block = NULL, updated_at = ?3 WHERE id = ?1",
+        params![id, workspace, at],
+    )?;
+    if from == State::Done {
+        let s = session_for_update(c, id)?.context("the session it moved")?;
+        if let Err(e) = queue_in(c, &s, prompt, at)? {
+            return Ok(Err(e));
+        }
+    }
+    Ok(Ok(session_for_update(c, id)?.context("the session it moved")?))
+}
+
 pub(super) fn session_for_update(c: &impl Sql, id: &str) -> Result<Option<Session>> {
     c.query_row(&format!("SELECT {COLS} FROM agent_sessions WHERE id = ?1{}", c.for_update()), params![id], session_row)
         .optional()
@@ -1768,6 +1843,40 @@ impl Db {
             tx.commit()?;
         }
         Ok(moved)
+    }
+
+    /// [`moved_in`] in a transaction of its own.
+    #[allow(clippy::too_many_arguments)]
+    pub fn move_session_to(
+        &self,
+        id: &str,
+        from: State,
+        workspace: &str,
+        prompt: &NewPrompt,
+        lost: bool,
+        by: (&str, &str),
+        at: u64,
+    ) -> Result<Result<Session, Refused>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let moved = moved_in(&tx, id, from, workspace, prompt, lost, by, at)?;
+        if moved.is_ok() {
+            tx.commit()?;
+        }
+        Ok(moved)
+    }
+
+    /// How many of `project`'s sessions each of its workspaces holds or
+    /// has queued (every one that hasn't ended), by workspace: how busy
+    /// its box is, for picking one (Arugula #214).
+    pub fn workspace_load(&self, project: &str) -> Result<std::collections::HashMap<String, u32>> {
+        let rows: Vec<(String, u64)> = self.c().query_map(
+            "SELECT workspace_id, count(*) FROM agent_sessions
+             WHERE project_id = ?1 AND state NOT IN ('failed', 'stopped') GROUP BY workspace_id",
+            params![project],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok(rows.into_iter().map(|(w, n)| (w, n as u32)).collect())
     }
 
     /// What a hosted machine on `workspace` pulls (M255): every session
