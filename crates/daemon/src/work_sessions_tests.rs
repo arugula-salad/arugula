@@ -103,7 +103,10 @@ fn each_report_is_the_sessions_next_signed() {
     let first: SessionDetail = serde_json::from_str(&l.events[0].report.detail).unwrap();
     assert_eq!(first.actions, ["sac_1"], "the actions done, named once");
     let beat: SessionDetail = serde_json::from_str(&l.events[1].report.detail).unwrap();
-    assert!(beat.actions.is_empty() && beat.tool.unwrap().len() < 5000, "a long tool title is cut");
+    assert!(
+        beat.actions.is_empty() && beat.tool.unwrap().chars().count() <= 200,
+        "a long tool title is cut to what control keeps"
+    );
 }
 
 /// The first prompt's notes: the repo's CLAUDE.md and AGENTS.md, as text.

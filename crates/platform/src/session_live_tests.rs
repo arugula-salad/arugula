@@ -187,11 +187,11 @@ async fn a_sessions_card_lives_in_its_thread_and_its_people_answer_it() {
     let other = HostedBox::new();
     let forged = other.signed(&app, &s.id, Kind::Heartbeat, None, json!({}));
     assert!(matches!(report(&app, &b0x.machine(&s_now), &forged).await.unwrap(), Reported::Refused { .. }));
+    // A report past a gap (one control refused) is taken: the gap stays
+    // a gap, and nothing after it is stopped (0.63.3).
     let skipped = b0x.signed_skipping(&app, &s.id, Kind::Heartbeat, None, json!({}), 1);
-    let Reported::Refused { next, .. } = report(&app, &b0x.machine(&s_now), &skipped).await.unwrap() else {
-        panic!("not refused")
-    };
-    assert_eq!(next, Some(s_now.daemon_n + 1));
+    assert_eq!(report(&app, &b0x.machine(&s_now), &skipped).await.unwrap(), Reported::Taken);
+    assert_eq!(app.db.session(&s.id).unwrap().unwrap().daemon_n, s_now.daemon_n + 2);
     b0x.say(&app, &s.id, Kind::Heartbeat, None, json!({ "tool": "Bash" })).await;
     b0x.say(&app, &s.id, Kind::Heartbeat, None, json!({ "tool": "Bash" })).await;
     assert_eq!(told(&app.db, &s.id), before + 2, "a heartbeat that changes nothing isn't told");

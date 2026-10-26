@@ -124,6 +124,9 @@ const NOTES_MAX: usize = 32 * 1024;
 /// The most of any one text a report's detail carries: the whole detail is
 /// at most 16 KiB.
 const TEXT_MAX: usize = 4 * 1024;
+/// The most of a tool's title a heartbeat sends, in bytes: control keeps
+/// 200 characters (an older control refused a longer one, 0.63.3).
+const TOOL_MAX: usize = 196;
 /// What a session whose block went away fails with.
 pub const BLOCK_GONE: &str = "its agent block is gone";
 /// The most of a finish step's output a turn's report carries, and its fix
@@ -342,8 +345,11 @@ impl Session {
             return;
         }
         d.actions.append(&mut self.unnamed);
-        for t in [&mut d.question, &mut d.error, &mut d.reason, &mut d.tool, &mut d.diffstat].into_iter().flatten() {
+        for t in [&mut d.question, &mut d.error, &mut d.reason, &mut d.diffstat].into_iter().flatten() {
             cut(t, TEXT_MAX);
+        }
+        if let Some(t) = &mut d.tool {
+            cut(t, TOOL_MAX);
         }
         let detail = serde_json::to_string(&d).unwrap_or_else(|_| "{}".into());
         self.n += 1;

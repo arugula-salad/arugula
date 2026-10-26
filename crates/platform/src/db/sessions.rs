@@ -32,12 +32,15 @@
 //!   when the first report arrives; from then on that machine only
 //!   (`machine`).
 //! - **No replays:** each of the machine's reports carries its number in
-//!   the session, `n`, from 1, which must be the next: a signed report is
-//!   good once. Control's events don't take a number, so they never make
-//!   the machine's next one wrong.
+//!   the session, `n`, from 1, which must be past the last one taken: a
+//!   signed report is good once. A report control refused leaves a gap the
+//!   next one steps over, rather than stopping every report after it (a
+//!   refused heartbeat wedged a live session, 0.63.3). Control's events
+//!   don't take a number, so they never make the machine's next one wrong.
 //! - **Events** are append-only: the tables refuse an `UPDATE`, and a
 //!   `DELETE` while the event's session is there. A heartbeat isn't one:
-//!   it takes its number and moves `heard_at` and `last_tool`, and leaves
+//!   it takes its number and moves `heard_at` and `last_tool` (cut to
+//!   [`TOOL_MAX`] characters), and leaves
 //!   no row, so a session waiting hours on a question doesn't fill the
 //!   table.
 //! - **What each report holds** ([`SessionDetail`]): a JSON object of at
@@ -89,6 +92,9 @@ pub const MAX_DETAIL: usize = 16 * 1024;
 
 /// The most a prompt may hold.
 pub const MAX_PROMPT: usize = 32 * 1024;
+
+/// The most of a heartbeat's tool title kept, in characters.
+pub const TOOL_MAX: usize = 200;
 
 /// The longest slug a session's branch takes.
 pub const MAX_SLUG: usize = 40;
@@ -811,6 +817,16 @@ fn said(s: &Option<String>) -> bool {
     s.as_deref().is_some_and(|s| !s.trim().is_empty())
 }
 
+/// `s`, cut to at most `max` characters, the last an ellipsis when cut.
+fn clip(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_owned();
+    }
+    let mut out: String = s.chars().take(max - 1).collect();
+    out.push('…');
+    out
+}
+
 /// The queued prompts of `session` among `ids`, each once: refused when
 /// one isn't.
 fn queued_among(c: &impl Sql, session: &str, ids: &[String]) -> Result<Result<(), Refused>> {
@@ -905,12 +921,9 @@ fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport) -> Result<Result<Ve
             }
             Ok(Ok(d.prompts))
         }
-        Kind::Heartbeat => {
-            if d.tool.as_deref().is_some_and(|t| t.chars().count() > 200) {
-                return refuse("a tool's name is at most 200 characters");
-            }
-            Ok(Ok(vec![]))
-        }
+        // A tool's title is the agent's (a Bash call's is its command line):
+        // a long one is cut when it's kept, never refused.
+        Kind::Heartbeat => Ok(Ok(vec![])),
         Kind::Error if !said(&d.error) => refuse("an error says what (error)"),
         Kind::Error => Ok(Ok(vec![])),
         Kind::Turn => {
@@ -1362,7 +1375,7 @@ pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(Sessi
             if r.session != s.id || own_machine(c, &s)?.as_deref() != Some(r.daemon.as_str()) {
                 return Ok(Err(Refused::OtherDaemon));
             }
-            if r.n != s.daemon_n + 1 {
+            if r.n <= s.daemon_n {
                 return Ok(Err(Refused::Seq { next: s.daemon_n + 1 }));
             }
             let seen = s.seen_as();
@@ -1420,7 +1433,7 @@ pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(Sessi
                     *now,
                     d.block.filter(|_| r.kind == Kind::State && r.from == State::Queued),
                     r.kind == Kind::Heartbeat,
-                    d.tool,
+                    d.tool.map(|t| clip(&t, TOOL_MAX)),
                     d.error.filter(|_| r.kind == Kind::Error)
                 ],
             )?;
