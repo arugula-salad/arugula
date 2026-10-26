@@ -2540,7 +2540,10 @@ button.att {
   gap: 6px;
 }
 
-/* Big enough to hit with a thumb. */
+/* Big enough to hit with a thumb. Its border says --divider, not --line:
+   a question can show in the swarm's rail, where --line is the swarm's
+   own dark set's (UI audit #198), and --divider is the palette's there
+   too. */
 .ask-option {
   display: flex;
   flex-direction: column;
@@ -2591,6 +2594,7 @@ button.att {
   overflow-x: auto;
 }
 
+/* --divider, not --line, as .ask-option's (UI audit #198). */
 .ask-other,
 .ask-field input[type="text"],
 .ask-field input[type="number"],
@@ -4359,7 +4363,9 @@ button.att {
 
 /* M28: following an editor, over the swarm's field. The panel is the
    page's palette, as the file block is (UI audit #152), not the swarm's
-   always-dark one: its words and lines take the palette's. */
+   always-dark one: its words and lines take the palette's (--divider is
+   the palette's line under the swarm, whose --line is its own; UI audit
+   #198). */
 .follow {
   --mute: var(--dim);
   --line: var(--divider);
