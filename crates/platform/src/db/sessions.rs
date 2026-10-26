@@ -3,7 +3,7 @@
 //! that start its turns. Who may start, prompt or stop one is the routes'
 //! (M256); this is storage and the one place a session's state changes
 //! ([`Db::move_session`]). The tables, with notes on their columns, are
-//! made by `0049_agent_sessions`; the states, the moves and the signed
+//! made by `0050_agent_sessions`; the states, the moves and the signed
 //! event are `arugula_e2e::session`'s, and what the hosted machine pulls
 //! and reports is `arugula_control_wire::work`'s.
 //!
