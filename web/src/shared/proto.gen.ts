@@ -1872,6 +1872,13 @@ drive: boolean | null, };
 export type Issue = { item: Item, events: Array<Event>, linked: Array<Linked>, };
 
 /**
+ * [`ISSUE_AGENT`]'s answer: the issue's thread and the message that asked,
+ * and the session it started, if it did (else the thread says why, or
+ * asks which box or repo).
+ */
+export type IssueAgent = { room: string, seq: number, session: string | null, };
+
+/**
  * A comment on an issue: a message in its thread.
  */
 export type IssueComment = { 
@@ -3179,6 +3186,11 @@ ports: Array<SessionPort>,
  */
 pr: string | null, 
 /**
+ * When its PR merged (M265): the thread is done, and the session ends
+ * once a turn under way does. Its card says "merged ✓".
+ */
+merged_at: number | null, 
+/**
  * A turn pushed its branch: its asker may draft its PR.
  */
 pushed: boolean, 
@@ -3192,7 +3204,6 @@ ci_rounds: number, ci_max: number,
  */
 needs_person: boolean, 
 /**
-
  * What it is (M264): `thread` (the thread's own, `@arugula`), `try` (a
  * Try 3's sibling of `parent_session`) or `review` (`@codex review`
  * of `parent_session`).
@@ -3340,6 +3351,18 @@ via: string | null,
  * The machine that sent it.
  */
 machine: string | null, };
+
+/**
+ * [`PROJECT_SESSION_STATS`]'s answer: of the project's sessions asked for
+ * in the last [`STATS_DAYS`] days, how many led to a PR (sent by its
+ * asker, or opened from its branch by hand) and how many merged, and the
+ * median time from the `@` to the PR.
+ */
+export type SessionStats = { days: number, sessions: number, prs_opened: number, prs_merged: number, 
+/**
+ * `None` until one led to a PR.
+ */
+median_to_pr_ms: number | null, };
 
 /**
  * One of a Try 3's sessions, as its parent's compare view shows it.

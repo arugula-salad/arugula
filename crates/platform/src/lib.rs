@@ -112,6 +112,8 @@ pub mod run_logs;
 mod runs_page_tests;
 pub mod secrets;
 pub mod session_live;
+#[cfg(test)]
+mod session_merged_tests;
 pub mod sessions;
 #[cfg(test)]
 mod sessions_hydrate_tests;

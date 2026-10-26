@@ -119,6 +119,31 @@ pub fn slug(text: &str) -> String {
     out
 }
 
+/// A slug for a session on native issue `number` (M265), as `arugula issue
+/// open` names an issue's branch: `i<number>-` and the title's first
+/// words (at most five, about 28 characters), else `i<number>`. At most
+/// [`MAX_SLUG`] bytes.
+pub fn issue_slug(number: u64, title: &str) -> String {
+    let title = title.to_lowercase().replace(['\'', '’'], "");
+    let mut words: Vec<String> = Vec::new();
+    for w in title.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()) {
+        let len: usize = words.iter().map(|w| w.len() + 1).sum();
+        if words.len() >= 5 || (len + w.len() > 28 && !words.is_empty()) {
+            break;
+        }
+        words.push(w.chars().take(28).collect());
+    }
+    let mut out = format!("i{number}");
+    for w in words {
+        if out.len() + 1 + w.len() > MAX_SLUG {
+            break;
+        }
+        out.push('-');
+        out.push_str(&w);
+    }
+    out
+}
+
 /// How many hex characters of a session's id its branch takes.
 pub const BRANCH_HEX: usize = 8;
 
@@ -232,6 +257,8 @@ pub struct Session {
     pub picked: Option<String>,
     pub picked_by: Option<String>,
     pub picked_at: Option<u64>,
+    /// When the mirror saw its PR merged (M265): its thread is done.
+    pub merged_at: Option<u64>,
 }
 
 impl Session {
@@ -627,7 +654,7 @@ impl AgentsOn {
 pub(super) const COLS: &str = "id, project_id, room_id, parent_seq, asker, workspace_id, machine, block, repo, \
                                branch, state, was_state, last_seq, daemon_n, heard_at, last_tool, last_error, pr, \
                                ci_rounds, created_at, updated_at, role, parent_session, harness, picked, \
-                               picked_by, picked_at";
+                               picked_by, picked_at, merged_at";
 const EVENT_COLS: &str = "session_id, seq, kind, from_state, to_state, at, detail, daemon, daemon_n, sig";
 const PROMPT_COLS: &str = "id, session_id, author, source, association, text, state, created_at, sent_at, dropped_at";
 const ACTION_COLS: &str =
@@ -669,6 +696,7 @@ pub(super) fn session_row(r: &Row) -> Result<Session> {
         picked: r.get(24)?,
         picked_by: r.get(25)?,
         picked_at: r.get(26)?,
+        merged_at: r.get(27)?,
     })
 }
 

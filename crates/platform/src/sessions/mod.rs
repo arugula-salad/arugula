@@ -12,6 +12,7 @@
 //! - [`tries`]: Try 3, a session tried three ways and one kept (M264).
 //! - [`review`]: `@codex review`, a read-only session that reviews one's
 //!   pushed diff and posts what it found in the thread (M264).
+//! - [`merged`]: its PR merged, so its thread is done (M265).
 //!
 //! **How sessions end besides** (each `stopped` by control, with a
 //! `reason` in its event's detail):
@@ -19,12 +20,15 @@
 //!   ([`crate::hosted::routes::delete`]), and its job sees it too;
 //! - its asker leaves the project (`asker_left`): when the team's roster
 //!   comes in (`Db::project_roster`);
+//! - its PR merges (`merged`, M265): when the mirror sees it, or once the
+//!   turn under way is done ([`merged`], [`job`]);
 //! - its project goes (only with its account or team): the session goes
 //!   with it (`db::sessions::erase_account`).
 
 pub mod feedback;
 pub mod hydrate;
 pub mod job;
+pub mod merged;
 pub mod pr;
 pub mod push;
 pub mod review;

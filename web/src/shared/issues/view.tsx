@@ -5,8 +5,9 @@
 // one column, in time order: the room's own view (../chat/room), with the
 // events between its messages. Agents' posts and events say whose agents
 // they are (M197), and the room says when an agent grant reaches it.
-// Owners and editors edit, close, reopen, label and assign; everyone in the
-// project comments.
+// Owners and editors edit, close, reopen, label and assign, and start an
+// agent session on it (Agent on this, M265: `@arugula` in its thread, as
+// them); everyone in the project comments.
 //
 // The view reads and changes the issue through `IssueApiContext`: the
 // platform's routes as the reader by default, or what the page says it.
@@ -15,7 +16,7 @@
 
 import { createContext, type ComponentChildren, type ComponentType } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
-import type { ChatRoom, IssueEvent, IssuePatch, IssuePatched, NativeIssue } from "../proto";
+import type { ChatRoom, IssueAgent, IssueEvent, IssuePatch, IssuePatched, NativeIssue } from "../proto";
 import { agentWhere } from "../agent-label";
 import { chat } from "../chat-store";
 import { MsgAvatar } from "../chat/avatar";
@@ -46,6 +47,9 @@ export interface IssueApi {
   /** Every label on the project's issues, where the reader has them
    * (UI audit #163): the menu offers those besides what `all` has. */
   labels?(project: string): Promise<string[]>;
+  /** Agent on this (M265): `@arugula` in its thread as the reader. Absent
+   * where the view can't write. */
+  agent?(id: string): Promise<IssueAgent>;
 }
 
 /** The platform's routes as the reader, unless the page says otherwise. */
@@ -243,6 +247,7 @@ export function IssueView({
         class="issue-head"
         actions={
           <span class="issue-actions">
+            {writer && api.agent && issue.state === "open" && <AgentOnThis id={id} agent={api.agent} />}
             {writer && editing !== "title" && (
               <button class="secondary small" data-issue-edit-title onClick={() => setEditing("title")}>
                 Edit title
@@ -351,6 +356,36 @@ export function IssueView({
         </div>
       </div>
     </section>
+  );
+}
+
+/** Agent on this: an `@arugula` in the issue's thread, as the reader. The
+ * thread then has the session's card, or the line saying why there's none
+ * (or asking which box or repo). */
+function AgentOnThis({ id, agent }: { id: string; agent: (id: string) => Promise<IssueAgent> }) {
+  const { toast } = usePlatformApi();
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      const r = await agent(id);
+      toast(r.session ? "An agent session started: its card is in the comments." : "@arugula answered in the comments.");
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      class="secondary small"
+      disabled={busy}
+      title="Start an agent session on this issue, on the project's hosted workspace: as if you wrote @arugula in its comments"
+      data-issue-agent
+      onClick={() => void go()}
+    >
+      Agent on this
+    </button>
   );
 }
 

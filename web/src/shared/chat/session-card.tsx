@@ -33,6 +33,8 @@
 // page and its diff on GitHub, and how many run and wait for a slot.
 // Pick keeps one; the others stop, "not picked". A review (`@codex
 // review`) shows as a card in the thread, "reviewed" once it's posted.
+//
+// Once it merges, the card says "merged ✓" (M265, ./session-done).
 
 import "./session-card.css";
 import { useEffect, useState } from "preact/hooks";
@@ -41,6 +43,7 @@ import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 import { usePlatformApi } from "../platform-api";
 import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionPick, SessionPr, SessionPrSent, SessionTry, SessionTryAsk, SessionView } from "../proto";
+import { DiffLink, MergedLine, mergedOf } from "./session-done";
 
 /** How long a turn may go without its box saying anything (`QUIET_MS`). */
 export const QUIET_MS = 60_000;
@@ -444,7 +447,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
     );
   }
   const quiet = isQuiet(c, now);
-  const { label, tone } = triedAs(c.state, c.reason) ?? stateOf(c.state, quiet);
+  const { label, tone } = mergedOf(c) ?? triedAs(c.state, c.reason) ?? stateOf(c.state, quiet);
   const short = c.session.replace(/^ses_/, "").slice(0, 8);
   const ended = c.state === "done" || c.state === "failed" || c.state === "stopped";
   const took = elapsed((c.ended_at ?? now) - c.created_at);
@@ -522,6 +525,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
       ) : c.state === "queued" ? (
         <p class="session-card-line dim">Waiting for its box to take it.</p>
       ) : null}
+      <MergedLine c={c} />
       {c.last_error && (
         <p class="session-card-line bad" data-session-error>
           {c.last_error}
@@ -613,6 +617,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             Preview ↗
           </button>
         )}
+        {review ? null : <DiffLink c={c} />}
         {review ? null : c.pr && /^https:\/\//.test(c.pr) ? (
           <a class="button" href={c.pr} target="_blank" rel="noopener" data-session-pr>
             PR ↗
