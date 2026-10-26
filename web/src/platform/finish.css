@@ -63,14 +63,6 @@ html[data-finish="aqua"] .platform-section {
   ) fixed;
 }
 
-/* A hosted workspace's head is its bar. */
-html[data-finish="aqua"] .platform-ws-head {
-  background:
-    linear-gradient(#fff5, #fff1 50%, #0000 51%, #0001),
-    var(--surface);
-  box-shadow: inset 0 -1px 0 #0003;
-}
-
 html[data-finish="aqua"] .chat-row.selected {
   color: var(--on-color);
   background: linear-gradient(#fff5, #fff0 50%, #0000 51%, #fff2), var(--accent);
@@ -108,13 +100,8 @@ html[data-finish="brushed"] .platform-section {
   background: var(--grain) fixed, linear-gradient(#fff1, #0001) fixed, var(--bg);
 }
 
-html[data-finish="brushed"] .platform-ws-head,
 html[data-finish="brushed"] .chat-side {
   background: var(--grain), linear-gradient(#fff2, #0001), var(--surface);
-}
-
-html[data-finish="brushed"] .platform-ws-head {
-  box-shadow: inset 0 1px 0 #fff3, inset 0 -1px 0 #0004;
 }
 
 html[data-finish="brushed"] .chat-row.selected,
@@ -176,7 +163,6 @@ html[data-finish="glass"] .platform-section {
   box-shadow: inset 0 1px 0 #fff2;
 }
 
-html[data-finish="glass"] .platform-ws-head,
 html[data-finish="glass"] .chat-side {
   background: color-mix(in srgb, var(--surface) 65%, transparent);
   backdrop-filter: blur(12px);

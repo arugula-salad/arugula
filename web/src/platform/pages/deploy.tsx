@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
+import { PageHeader } from "../../shared/ui/page-header";
 import { controlOrigin } from "../session";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
@@ -91,23 +92,27 @@ export const stateText = (state: string) => STATE[state] ?? state;
 export const approveHref = (id: string) => `${controlOrigin()}/#deploy=${id}`;
 
 /** One deploy's card. `link`: its heading opens the deploy's own page.
- * The plan's text is open on the deploy's own page, or with `planOpen`. */
-export function DeployCard({ d, link, planOpen }: { d: Deploy; link?: boolean; planOpen?: boolean }) {
+ * The plan's text is open on the deploy's own page, or with `planOpen`.
+ * On the deploy's own page its heading and state are the page's
+ * (`headless`). */
+export function DeployCard({ d, link, planOpen, headless }: { d: Deploy; link?: boolean; planOpen?: boolean; headless?: boolean }) {
   const path = `/deploys/${d.id}`;
   return (
     <article class="deploy-card" data-deploy-card={d.id} data-deploy-state={d.state}>
-      <header class="deploy-card-head">
-        <h2>
-          {link ? (
-            <a href={path} onClick={(e) => follow(e, path)}>
-              Deploy to {d.environment.name}
-            </a>
-          ) : (
-            <>Deploy to {d.environment.name}</>
-          )}
-        </h2>
-        <span class={`deploy-state deploy-state-${d.state}`}>{stateText(d.state)}</span>
-      </header>
+      {!headless && (
+        <header class="deploy-card-head">
+          <h2>
+            {link ? (
+              <a href={path} onClick={(e) => follow(e, path)}>
+                Deploy to {d.environment.name}
+              </a>
+            ) : (
+              <>Deploy to {d.environment.name}</>
+            )}
+          </h2>
+          <span class={`deploy-state deploy-state-${d.state}`}>{stateText(d.state)}</span>
+        </header>
+      )}
       <dl class="deploy-facts">
         <dt>Project</dt>
         <dd>{d.project.name}</dd>
@@ -176,9 +181,16 @@ export function DeployPage({ id }: { id: string }) {
   useEffect(() => void (d && where.deployIn(d.id, d.project.id)), [d]);
   if (error) return <section class="platform-section"><p class="control-error">{error}</p></section>;
   if (!d) return <p class="platform-section dim">Loading…</p>;
+  const settings = pathOf({ page: "project-settings", project: d.project.id }, names);
   return (
-    <section class="platform-section deploy-page" data-deploy-page={d.id}>
-      <DeployCard d={d} />
+    <section class="platform-section sw-page deploy-page" data-deploy-page={d.id}>
+      <PageHeader
+        title={`Deploy to ${d.environment.name}`}
+        named
+        back={{ href: settings, label: "Project settings", onClick: (e) => follow(e, settings) }}
+        state={<span class={`page-state ${toneClass(deployTone(d.state))}`}>{stateText(d.state)}</span>}
+      />
+      <DeployCard d={d} headless />
       {endedWhy(d) || (d.state === "failed" && d.run) ? (
         // Why it failed, and the run that has its log (UI audit #146).
         <p class="deploy-note" data-deploy-why>

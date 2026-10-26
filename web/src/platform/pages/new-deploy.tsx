@@ -11,6 +11,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { LinkedRepos } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { PageHeader } from "../../shared/ui/page-header";
 import { historyPath, planBody, repoFor, type DeployHistory, type Driver, type Environment } from "../deploys-text";
 import { names } from "../links";
 import { follow, pathOf, REPO } from "../router";
@@ -87,17 +88,11 @@ export function NewDeployPage({ project, env }: { project: string; env?: string 
   }, [environment, envName, repos, lastFrom, typed]);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const settings = pathOf({ page: "project-settings", project: p.id }, names);
-  const back = (
-    <p class="issue-back">
-      <a href={settings} onClick={(e) => follow(e, settings)}>
-        ‹ {p.name}: settings
-      </a>
-    </p>
-  );
+  const back = { href: settings, label: "Project settings", onClick: (e: MouseEvent) => follow(e, settings) };
   if (roleIn(p) === "viewer") {
     return (
-      <section class="platform-section">
-        {back}
+      <section class="platform-section sw-page">
+        <PageHeader title="Plan a deploy" back={back} />
         <p class="dim">A viewer reads the project's deploys, and doesn't plan them.</p>
       </section>
     );
@@ -123,9 +118,8 @@ export function NewDeployPage({ project, env }: { project: string; env?: string 
   };
   const ask = () => planned && void act(() => call<Deploy>("POST", `/api/deploys/${planned.id}/request`));
   return (
-    <section class="platform-section deploy-new-page" data-deploy-new-page={p.id}>
-      {back}
-      <h1>Deploy…</h1>
+    <section class="platform-section sw-page deploy-new-page" data-deploy-new-page={p.id}>
+      <PageHeader title="Plan a deploy" back={back} />
       {envs?.length === 0 ? (
         <p class="dim">The project has no environments yet: an owner makes one in its settings.</p>
       ) : planned ? null : (

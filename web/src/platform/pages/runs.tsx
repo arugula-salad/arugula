@@ -23,6 +23,7 @@ import type { ChatRoom } from "../../shared/proto";
 import type { RunEventView } from "../../shared/proto.gen";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
+import { PageHeader } from "../../shared/ui/page-header";
 import { ago } from "../../shared/issues/text";
 import "../../shared/issues/issues.css";
 import { names } from "../links";
@@ -75,10 +76,6 @@ function useWorkspaces(project: string): HostedWorkspace[] {
     return () => void (live = false);
   }, [project]);
   return ws;
-}
-
-function StateDot({ state }: { state: string }) {
-  return <span class={`run-dot ${tone(state)}`} title={STATES[state] ?? state} aria-label={STATES[state] ?? state} />;
 }
 
 /** What the list holds, as the swarm's bar counts its panes: the runs
@@ -164,22 +161,27 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
 
   return (
     <section class="platform-section sw-page runs-page" data-runs={p.id}>
-      <header class="issues-head">
-        <h1>Runs</h1>
-        {starter(p) && (
-          <button class="primary" data-run-start-open aria-expanded={starting} onClick={() => setStarting(!starting)}>
-            Start a run
-          </button>
-        )}
-      </header>
-      <p class="dim runs-about">
-        Runs go on this project's hosted workspaces: by hand, on a schedule, or on an event from a linked repo. Scheduled and event runs start under
-        the project's standing grant, in its{" "}
-        <a href={settings} onClick={(e) => follow(e, settings)}>
-          settings
-        </a>
-        .
-      </p>
+      <PageHeader
+        title="Runs"
+        actions={
+          starter(p) && (
+            <button class="primary" data-run-start-open aria-expanded={starting} onClick={() => setStarting(!starting)}>
+              Start a run
+            </button>
+          )
+        }
+        sub={
+          <>
+            Runs go on this project's hosted workspaces: by hand, on a schedule, or on an event from a linked repo. Scheduled and event runs start
+            under the project's standing grant, in its{" "}
+            <a href={settings} onClick={(e) => follow(e, settings)}>
+              settings
+            </a>
+            .
+          </>
+        }
+        stats={!!list?.length && <RunStats list={list} />}
+      />
       {starting && <StartRun p={p} specs={specs ?? []} workspaces={workspaces} done={() => setStarting(false)} />}
       <div class="issues-tools">
         <button class={filter.state ? "issues-filter on" : "issues-filter"} data-runs-state onClick={stateMenu}>
@@ -204,7 +206,6 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
           {narrowed ? "No runs match." : starter(p) ? "No runs yet. Start one, or give a run spec a schedule." : "No runs yet."}
         </p>
       )}
-      {!!list?.length && <RunStats list={list} />}
       <ul class="issues-list sw-cards" data-runs-list>
         {list?.map((r) => {
           const path = pathOf({ page: "run", project: p.id, run: r.id }, names);
@@ -545,20 +546,18 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
   const going = !ended(run.state);
   const by = startedBy(run, nameOf);
   return (
-    <section class="platform-section run-page" data-run={run.id} data-run-state={run.state}>
-      <p class="issue-back">
-        <a href={back} onClick={(e) => follow(e, back)} data-run-back>
-          ‹ Runs
-        </a>
-      </p>
-      <header class="issues-head run-head">
-        <StateDot state={run.state} />
-        <h1 data-run-title>{runTitle(run.op, spec?.name, run.deploy)}</h1>
-        <span class={`run-state ${tone(run.state)}`} data-run-state-label>
-          {STATES[run.state] ?? run.state}
-          {run.exit_code !== null && run.exit_code !== undefined ? ` · exit ${run.exit_code}` : ""}
-        </span>
-      </header>
+    <section class="platform-section sw-page run-page" data-run={run.id} data-run-state={run.state}>
+      <PageHeader
+        title={<span data-run-title>{runTitle(run.op, spec?.name, run.deploy)}</span>}
+        named
+        back={{ href: back, label: "Runs", onClick: (e) => follow(e, back), data: "run-back" }}
+        state={
+          <span class={`page-state ${toneClass(runTone(run.state))}`} data-run-state-label>
+            {STATES[run.state] ?? run.state}
+            {run.exit_code !== null && run.exit_code !== undefined ? ` · exit ${run.exit_code}` : ""}
+          </span>
+        }
+      />
       <dl class="run-facts">
         <dt>Started</dt>
         <dd data-run-started-by>

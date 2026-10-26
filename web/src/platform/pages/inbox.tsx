@@ -22,6 +22,7 @@ import { counted, threadNews } from "../../shared/chat/unread";
 import { issues } from "../../shared/issues/store";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { PageHeader } from "../../shared/ui/page-header";
 import { DraftList, useMyDrafts } from "../drafts";
 import { WaitingDeploys, useWaitingDeploys } from "./deploy";
 import { names, roomPath } from "../links";
@@ -106,27 +107,32 @@ export function InboxPage() {
   const unseen = shown.filter((e) => !e.seen_at).length + threads.length;
   return (
     <section class="platform-section sw-page platform-inbox" data-platform-inbox>
-      <h1>Inbox</h1>
-      {entries !== null && !empty && (
-        <div class="sw-stats" data-inbox-stats>
-          <span class={unseen ? "needs" : undefined}>
-            <b>{unseen}</b> unseen
-          </span>
-          <span>
-            <b>{shown.length + threads.length}</b> {shown.length + threads.length === 1 ? "item" : "items"}
-          </span>
-          {!!deploys?.length && (
-            <span>
-              <b>{deploys.length}</b> {deploys.length === 1 ? "deploy waits" : "deploys wait"}
-            </span>
-          )}
-          {drafts.length > 0 && (
-            <span>
-              <b>{drafts.length}</b> {drafts.length === 1 ? "draft" : "drafts"}
-            </span>
-          )}
-        </div>
-      )}
+      <PageHeader
+        title="Inbox"
+        stats={
+          entries !== null &&
+          !empty && (
+            <div class="sw-stats" data-inbox-stats>
+              <span class={unseen ? "needs" : undefined}>
+                <b>{unseen}</b> unseen
+              </span>
+              <span>
+                <b>{shown.length + threads.length}</b> {shown.length + threads.length === 1 ? "item" : "items"}
+              </span>
+              {!!deploys?.length && (
+                <span>
+                  <b>{deploys.length}</b> {deploys.length === 1 ? "deploy waits" : "deploys wait"}
+                </span>
+              )}
+              {drafts.length > 0 && (
+                <span>
+                  <b>{drafts.length}</b> {drafts.length === 1 ? "draft" : "drafts"}
+                </span>
+              )}
+            </div>
+          )
+        }
+      />
       {error && <p class="control-error">{error}</p>}
       {entries === null && !error && <p class="dim">Loading…</p>}
       {empty && <p class="dim" data-inbox-empty>Nothing wants you right now.</p>}
