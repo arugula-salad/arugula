@@ -30,6 +30,7 @@ import { ago } from "../../shared/issues/text";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { platformHref } from "../platform-links";
+import { BlockLoading, OpenOutside } from "./block-states";
 import { getControlSession } from "../ui/people";
 
 /** What the daemon says of it to everyone who sees the pane. */
@@ -166,15 +167,11 @@ export function NativeIssueBlock({ client, block, s, refresh }: { client: Client
         <span class="review-path">
           <b>{name}</b> <span class="ws-tag" title="A project's own issue, read through Arugula control">control</span>
         </span>
-        {there && (
-          <a class="browser-open" href={there} target="_blank" rel="noopener noreferrer" title="Open this issue on the platform page" data-issue-platform-link>
-            Open ↗
-          </a>
-        )}
+        {there && <OpenOutside href={there} data-issue-platform-link />}
       </div>
       <div class="review-body issue-block-body">
         {reader === null ? (
-          <p class="dim">Reading it from Arugula control…</p>
+          <BlockLoading what="the issue from Arugula control" />
         ) : reader.as === "me" ? (
           <IssueView key={id} id={id} place={reader.place} refresh={s.read_ms ?? undefined} foot={<Foot s={s} me />} Missing={({ what }) => <FromBlock s={s} owners={owners} what={what} />} />
         ) : (
@@ -193,7 +190,7 @@ function FromBlock({ s, owners, what }: { s: NativeIssueState; owners: OwnersRea
   if (!issue) {
     const why =
       s.loading || owners === undefined
-        ? "Reading it from Arugula control…"
+        ? "Loading the issue from Arugula control…"
         : owners === null
           ? `${s.number ? `#${s.number}: you` : "You"} can't read this here. Open it on the platform page if it's in a project of yours.`
           : (what ?? s.error ?? "Arugula control didn't say what it is.");
@@ -231,10 +228,11 @@ export function nativeIssueText(s: NativeIssueState): string {
 }
 
 /** What to call it in tabs and lists: the owner's read, else what this
- * page read as the person, else its number. */
+ * page read as the person, else its number, else that it's a project's
+ * issue (UI audit #177: not a bare "issue"). */
 export function nativeIssueTitle(s: NativeIssueState, owners: OwnersRead | null | undefined = ownersReads.get(s.pin.global_id)): string {
   const i = owners?.issue ?? issues.known(s.pin.global_id);
   if (i) return `#${i.number} ${i.title}`;
   if (owners?.number && owners.title) return `#${owners.number} ${owners.title}`;
-  return s.number ? `#${s.number}` : "issue";
+  return s.number ? `Issue #${s.number}` : "Project issue";
 }

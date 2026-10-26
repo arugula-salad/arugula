@@ -182,7 +182,7 @@ test("a stranger signs up and becomes the first device", async ({ browser }) => 
   await laptop.locator(".prompt .copy-text [data-copy]").first().click();
   await expect(laptop.locator(".prompt .copy-text [data-copy]").first()).toHaveText("Copied");
   expect(await clipboard()).toBe(recoveryCodes[0]);
-  await laptop.getByRole("button", { name: "Copy both" }).click();
+  await laptop.getByRole("button", { name: "Copy all" }).click();
   expect(await clipboard()).toBe(recoveryCodes.join("\n") + "\n");
   const saved = laptop.waitForEvent("download");
   await laptop.locator("[data-download-codes]").click();

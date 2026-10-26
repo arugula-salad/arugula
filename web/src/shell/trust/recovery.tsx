@@ -89,11 +89,11 @@ export function RecoveryCodes({ s }: { s: ControlSession }) {
       <p>If you lose every device that can approve new ones, one of these lets a new browser in. Each works once. Keep them somewhere safe and offline: they're shown only now, and this service never had them.</p>
       {s.recoveryCodes!.map((c) => (
         <p key={c}>
-          <CopyText text={c} data-recovery-code />
+          <CopyText text={c} groups data-recovery-code />
         </p>
       ))}
       <div class="prompt-buttons">
-        <CopyButton text={all} label="Copy both" />
+        <CopyButton text={all} label="Copy all" />
         <button class="secondary" data-download-codes onClick={() => download("arugula-recovery-codes.txt", all)}>
           Download .txt
         </button>

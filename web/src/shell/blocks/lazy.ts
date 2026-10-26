@@ -7,6 +7,7 @@
 import type { Client } from "../client";
 import { loadLabs, type Labs } from "../labs-load";
 import type { BlockType, PaneId } from "../../shared/proto";
+import { showLabsOff } from "./labs-off";
 import { registerBlock, type BlockView } from "./view";
 
 const LABS_BLOCKS = ["app", "workspace", "agents"] as const;
@@ -24,7 +25,7 @@ function rendererOf(labs: Labs, type: LabsBlock) {
 function lazyView(type: LabsBlock, client: Client, id: PaneId): BlockView {
   const host = document.createElement("div");
   host.className = "block block-loading";
-  host.textContent = "Loading…";
+  host.textContent = `Loading the ${TITLES[type].toLowerCase()} block…`;
   let inner: BlockView | null = null;
   let gone = false;
   let visible = true;
@@ -42,8 +43,7 @@ function lazyView(type: LabsBlock, client: Client, id: PaneId): BlockView {
     off = null;
     const flag = FLAGS[type];
     if (!client.flag(flag)) {
-      host.textContent = "This block is in Labs";
-      host.className = "block block-unknown";
+      showLabsOff(host, client, flag);
       return;
     }
     loadLabs().then(
@@ -62,7 +62,7 @@ function lazyView(type: LabsBlock, client: Client, id: PaneId): BlockView {
       },
       (e) => {
         console.error(`the ${type} block didn't load`, e);
-        host.textContent = `Couldn't load this ${TITLES[type]} block`;
+        host.textContent = `Couldn't load this ${TITLES[type].toLowerCase()} block.`;
       },
     );
   };

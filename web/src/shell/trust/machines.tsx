@@ -12,6 +12,7 @@ import type { ControlSession, Team } from "../control";
 import { splitJoinCode } from "../e2e/cert.ts";
 import { AccountButton } from "../ui/app-bar";
 import { MovingNote } from "../ui/moving-note";
+import { Mark } from "../ui/shell/icons";
 
 /** Ready, but no machine to show yet: the account's menu (#97), any team
  * this account is waiting on (#103), and how to add a machine (#98). */
@@ -20,7 +21,11 @@ export function NoMachines({ s }: { s: ControlSession }) {
   return (
     <div class="control-page">
       <header class="control-account" data-account-bar>
-        <span class="control-who">Arugula</span>
+        {/* The mark, as the app's bar has it (UI audit #179). */}
+        <span class="control-who control-brand">
+          <Mark />
+          Arugula
+        </span>
         <AccountButton client={null} />
       </header>
       <MenuLayer />
@@ -111,7 +116,7 @@ function JoinCodeForm({ s }: { s: ControlSession }) {
     >
       <input class="control-join-code" placeholder="XXXXX-XXXXX.XXXX-XXXX-XXXX-XXXX" value={code} onInput={(e) => setCode((e.target as HTMLInputElement).value)} aria-label="Join code" />
       <button type="submit" class="primary" disabled={!code.trim() || s.phase !== "ready"}>
-        Look up
+        Approve…
       </button>
     </form>
   );

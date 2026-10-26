@@ -7,7 +7,8 @@ import type { Client } from "../client";
 import { OPS, opPath } from "../ops";
 import type { OpenRequest, PaneId, Ports } from "../../shared/proto";
 import { askText, tellSetup, type PromptChoice } from "../../shared/ui/menu";
-import { BlockFrame } from "./block-frame";
+import { BlockFrame, RoutePill } from "./block-frame";
+import { BlockError, BlockLoading, OpenOutside } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
 
 export interface BrowserState {
@@ -103,7 +104,7 @@ export async function openPort(client: Client, where: { split?: PaneId; host?: n
 }
 
 function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: BrowserState | null }) {
-  if (!s) return <div class="browser-card">…</div>;
+  if (!s) return <BlockLoading what="the page" />;
   const call = (method: string, args: unknown = {}) => void client.api(`/api/blocks/${id}/call/${method}`, args);
   const port = s.port !== null;
   const where = (() => {
@@ -124,7 +125,7 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
           ↻
         </button>
         {port && s.machine && (
-          <span class="host-tag" title={`port ${s.port} on ${s.machine}`}>
+          <span class="host-tag" title={`Port ${s.port} on ${s.machine}, a throwaway VM`}>
             VM
           </span>
         )}
@@ -138,28 +139,24 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
         >
           <input name="url" value={shown(s)} spellcheck={false} autocomplete="off" />
         </form>
-        {/^https?:/.test(s.url) && (
-          <a class="browser-open" href={s.url} target="_blank" rel="noopener noreferrer" title="Open in a new tab" aria-label="Open in a new tab">
-            ↗
-          </a>
-        )}
+        <RoutePill id={id} />
+        {/^https?:/.test(s.url) && <OpenOutside href={s.url} />}
       </div>
       {s.error ? (
-        <div class="browser-card error">
-          <p>{port ? `Nothing is answering on ${where}` : `Couldn't load ${where}`}</p>
-          <p class="dim">{s.error}</p>
-          {port && <p class="dim">It shows again when the server is back.</p>}
-          <button class="primary" onClick={() => call("reload")}>Try again</button>
-        </div>
+        <BlockError title={port ? `Nothing is answering on ${where}` : `Couldn't load ${where}`} detail={s.error} retry={() => call("reload")}>
+          {port && <p class="block-error-detail">It shows again when the server is back.</p>}
+        </BlockError>
       ) : s.framable === false ? (
-        <div class="browser-card">
-          <p>{s.title ?? where} doesn't allow being shown inside another page.</p>
+        // The host, not the page's title: a long one flooded the card
+        // (UI audit #177).
+        <div class="block-empty" data-browser-refused>
+          <p>{where} doesn't allow being shown inside another page.</p>
           <a class="primary" href={s.url} target="_blank" rel="noopener noreferrer">
-            Open in new tab
+            Open in a new tab ↗
           </a>
         </div>
       ) : s.framable === null ? (
-        <div class="browser-card dim">Loading {where}…</div>
+        <BlockLoading what={where} />
       ) : port ? (
         // Its own origin, never the app's: the port's block origin, on
         // control's block domain or the daemon's own block site.

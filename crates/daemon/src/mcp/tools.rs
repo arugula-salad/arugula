@@ -3927,7 +3927,9 @@ impl Call<'_> {
     /// owner, or the agent that did. An agent a guest stands behind may
     /// not ask at all.
     async fn started_text(&self) -> Result<String, String> {
-        let Some(me) = self.me() else { return Ok("your own client".into()) };
+        // Not in a pane: the person's own client, whose card needs no
+        // more than the pane it names (UI audit #178).
+        let Some(me) = self.me() else { return Ok(String::new()) };
         if self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some() {
             return Err("only the owner's own agents may ask to invite someone".into());
         }

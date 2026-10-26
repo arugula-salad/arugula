@@ -93,7 +93,7 @@ export function ContextHeader({
           <HostButton path={false} />
         ) : (
           <span class="ws-host-name" title="This machine">
-            {directory.current || "This machine"}
+            {directory.current || client.hostName || "This machine"}
           </span>
         )}
         <ConnectionChip client={client} />

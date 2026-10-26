@@ -3,6 +3,7 @@
 // dialogs opened by name (the `arugula:control-panel` event), taking a
 // link out of the address bar, and how long ago something was.
 
+import { useEffect, useState } from "preact/hooks";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { qr, qrPath } from "../../shared/ui/qr";
 import type { ControlSession } from "../control";
@@ -22,6 +23,25 @@ export function Center({ children }: { children: preact.ComponentChildren }) {
         {children}
       </div>
     </div>
+  );
+}
+
+/** A waiting screen's one line (UI audit #179): that it's waiting, live,
+ * and for how long, rather than a dim "Waiting…" or three. */
+export function WaitingLine({ what = "Waiting for approval" }: { what?: string }) {
+  const [from] = useState(() => Date.now());
+  const [now, setNow] = useState(from);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const s = Math.floor((now - from) / 1000);
+  const took = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return (
+    <p class="control-waiting" role="status" data-waiting-line>
+      <span class="control-waiting-dot" aria-hidden="true" />
+      {what} <span class="dim">· {took}</span>
+    </p>
   );
 }
 

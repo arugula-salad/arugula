@@ -16,6 +16,7 @@ import { AdapterHelp, installAdapter, type Adapter } from "../ui/adapter";
 import { askText } from "../../shared/ui/menu";
 import { answeredLine, mayAnswer } from "../ui/term-ask";
 import { registerBlock, type BlockView } from "./view";
+import { BlockLoading } from "./block-states";
 import { openFile } from "./diff";
 import { AskCard, headline, type Ask, type Question } from "../../shared/ask";
 import { pick, store } from "../upload";
@@ -155,6 +156,16 @@ function WornBar({ s }: { s: AgentState }) {
           didn't carry over: {[...w.left_out.map((l) => l.name), ...w.skills_missing.map((m) => m.split(" ")[0])].join(", ")}
         </span>
       )}
+    </div>
+  );
+}
+
+/** What the block no longer holds, in the agent's and the chat's same
+ * words (UI audit #178). */
+export function EarlierNote({ n, id }: { n: number; id: PaneId }) {
+  return (
+    <div class="agent-note">
+      {n} earlier {n === 1 ? "entry isn't" : "entries aren't"} shown here: <code>arugula capture %{id}</code> has them.
     </div>
   );
 }
@@ -520,7 +531,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
     const el = scroller.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   });
-  if (!s) return <div class="agent-empty">Starting…</div>;
+  if (!s) return <BlockLoading what="the agent" />;
   const tools = s.entries.filter((e) => e.type === "tool");
   const liveFrom = tools.length > LIVE_TERMINALS ? (tools[tools.length - LIVE_TERMINALS] as Tool).id : null;
   let live = liveFrom === null;
@@ -533,6 +544,11 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
   // M29: who answered last, and whether this person may answer at all.
   const answered = client.info(id)?.answered ?? null;
   const can = !archived && mayAnswer(client, id);
+  // The daemon says an error twice, as a note and as the error: the strip
+  // by the composer says it, so the note it repeats doesn't (UI audit #178).
+  const last = s.entries.length - 1;
+  const repeats = !!s.error && s.entries[last]?.type === "note" && s.entries[last].text.toLowerCase().includes(s.error.toLowerCase());
+  const chip = archived ? "Archived" : s.pending.length || open.length ? "Needs you" : s.import && !s.import.continued ? (s.import.held ? "Open elsewhere" : "Conversation") : STATUS[s.status];
   return (
     <div
       class="agent"
@@ -547,13 +563,15 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
       }}
     >
       <div class="agent-bar">
-        <span class={`agent-status ${s.status}`}>
-          {archived ? "Archived" : s.pending.length || open.length ? "Needs you" : s.import && !s.import.continued ? (s.import.held ? "Open elsewhere" : "Conversation") : STATUS[s.status]}
-        </span>
+        <span class={`agent-status ${s.status}`}>{chip}</span>
         <span class="agent-name" title={s.server?.name ? `${s.server.name} ${s.server.version ?? ""}` : undefined}>
           {s.title ?? s.label}
         </span>
-        {s.vm && <span class="host-tag">VM</span>}
+        {s.vm && (
+          <span class="host-tag" title="Runs on this tab's throwaway VM">
+            VM
+          </span>
+        )}
         <span class="agent-spacer" />
         {s.cost && (
           <span class="agent-cost" title={`${s.turns} turns, ${s.tokens.total} tokens`}>
@@ -598,7 +616,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
-        {s.entries_from > 0 && <div class="agent-note">{s.entries_from} earlier entries: `arugula capture %{id}`</div>}
+        {s.entries_from > 0 && <EarlierNote n={s.entries_from} id={id} />}
         {rows(s.entries, (e, i) => {
           switch (e.type) {
             case "user":
@@ -619,6 +637,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
             case "thought":
               return <AgentMessage key={i} text={e.text} thought />;
             case "note":
+              if (repeats && i === last) return null;
               return (
                 <div key={i} class="agent-note">
                   {e.text}

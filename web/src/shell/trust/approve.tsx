@@ -7,7 +7,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { Modal } from "../../shared/ui/modal";
 import { AlongsideError, RefusedError, splitDeviceCode, takesSecret, type ControlSession, type DeviceCode, type JoinRequest } from "../control";
-import { fingerprint, normalizeCode, normalizeSecret, splitJoinCode, type Cert } from "../e2e/cert.ts";
+import { fingerprint, fromApp, normalizeCode, normalizeSecret, splitJoinCode, type Cert } from "../e2e/cert.ts";
 import { canScan, Scanner } from "../ui/scan";
 import { clearHash } from "./common";
 
@@ -34,6 +34,9 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
   const [typed, setTyped] = useState<Rest>(NO_REST);
   const [j, setJ] = useState<JoinRequest | null>(null);
   const [err, setErr] = useState("");
+  // Control doesn't know the code (UI audit #179): mistyped, or past its
+  // 15 minutes.
+  const [unknown, setUnknown] = useState(false);
   const [busy, setBusy] = useState(false);
   // Control refused an approval from here (#327): closing then isn't
   // turning the machine down. It keeps waiting for one that works.
@@ -49,6 +52,7 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
     // the devices that came with it (#761).
     setTyped({ rest: "", bad: null });
     setTypedCodes(new Map());
+    setUnknown(false);
     // This browser's own trust, fresh, before it offers Approve (#327).
     void s.refresh();
     s.showJoin(code).then(
@@ -56,7 +60,10 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
         setJ(j);
         setTo(j.team?.team ?? "");
       },
-      (e: Error) => setErr(e.message),
+      (e: Error) => {
+        setErr(e.message);
+        setUnknown(true);
+      },
     );
   }, [code]);
   // The machine's code is gone (approved elsewhere, expired): the device
@@ -75,6 +82,23 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
         <div class="prompt-buttons">
           <button class="primary" onClick={clearHash}>
             Done
+          </button>
+        </div>
+      </Modal>
+    );
+  // A code control doesn't know says so, in words, with nothing to approve
+  // (UI audit #179: it showed "no such code (expired?)" over Approve).
+  if (unknown && !j)
+    return (
+      <Modal close={clearHash}>
+        <h2>Add a machine?</h2>
+        <p data-join-unknown={code}>
+          No machine is waiting with code <b>{code}</b>. Codes last 15 minutes: run <code>arugulad join</code> on the machine again for a new one.
+        </p>
+        {/no such code/i.test(err) ? null : <p class="dim">{err}</p>}
+        <div class="prompt-buttons">
+          <button class="primary" onClick={clearHash}>
+            Close
           </button>
         </div>
       </Modal>
@@ -164,7 +188,9 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
               </div>
               {alongside.map((c) => (
                 <div key={c.device} class="control-both-card" data-join-alongside={c.device}>
-                  <div class="control-both-kind">{c.name} (browser)</div>
+                  <div class="control-both-kind">
+                    {c.name} ({kindWord(c)})
+                  </div>
                   {s.sealed(c) ? (
                     <>
                       <p data-pending={c.device} data-device-sealed>
@@ -302,6 +328,14 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
       </div>
     </Modal>
   );
+}
+
+/** What a device alongside a machine is, in a word (UI audit #179: they
+ * all read "browser", the app's window and a phone too). */
+function kindWord(c: Cert): string {
+  if (fromApp(c)) return "app";
+  if (c.kind === "cli") return "command line";
+  return /iPhone|Android/.test(c.name) ? "phone" : /iPad/.test(c.name) ? "tablet" : "browser";
 }
 
 /** Letters people read for digits in a join code: its alphabet has no
@@ -493,7 +527,7 @@ function CliJoin({
           . Once you approve, it shows its account's fingerprint: check it's this one there.
         </p>
       ) : null}
-      <p class="dim">It reaches your machines (directly or through control's relay, end to end encrypted) and can approve devices, as this one can.</p>
+      <p class="dim">It reaches your machines (directly or through control's relay, end-to-end encrypted) and can approve devices, as this one can.</p>
       <div class="prompt-buttons">
         <button class="secondary" data-cancel-join onClick={cancel}>
           {refused ? "Close" : "Cancel"}

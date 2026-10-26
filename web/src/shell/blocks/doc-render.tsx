@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import type { PaneId } from "../../shared/proto";
 import { plain } from "../../shared/ui/embeds";
 import { Markdown } from "../../shared/ui/markdown";
+import { BlockError, BlockLoading } from "./block-states";
 
 export interface Section {
   id: string;
@@ -96,15 +97,8 @@ export function DocBlock({ id, s, fresh, load, cached }: { id: PaneId; s: DocSta
       return <DocImage key={`${key}:${name}`} load={load} cached={cached} name={name} alt={alt} rev={revs.get(name)} />;
     };
   }, [kept, load, cached]);
-  if (!s) return <div class="browser-card dim">Loading…</div>;
-  if (s.error) {
-    return (
-      <div class="browser-card error" data-doc-block={id}>
-        <p>Can't show this Doc</p>
-        <p class="dim">{s.error}</p>
-      </div>
-    );
-  }
+  if (!s) return <BlockLoading what="the Doc" />;
+  if (s.error) return <BlockError data-doc-block={id} title="Can't show this Doc" detail={s.error} />;
   const done = s.entries.filter((e) => e.body !== null).length;
   return (
     <div class="doc" data-doc-block={id}>

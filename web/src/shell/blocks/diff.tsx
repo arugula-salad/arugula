@@ -12,6 +12,8 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { registerBlock, type BlockView } from "./view";
+import { askText } from "../../shared/ui/menu";
+import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
 import type { Span } from "../swarm/code";
 
 type Line = [" " | "+" | "-" | "\\", number, number, string];
@@ -217,7 +219,7 @@ function Hunks({ f, can, open, show }: { f: DiffFile; can: boolean; open?: (line
 }
 
 function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState | null }) {
-  if (!s) return <div class="browser-card dim">…</div>;
+  if (!s) return <BlockLoading what="the changes" />;
   const tab = client.tabOfPane(id);
   const session = tab ? client.sessionOfTab(tab.id) : undefined;
   const can = client.role(session ?? null) !== "viewer";
@@ -229,7 +231,7 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
       <div class="review-bar">
         <b class="review-name">{s.name ?? "…"}</b>
         {machine && (
-          <span class="host-tag" title={`on ${machine.name ?? machine.sprite}`}>
+          <span class="host-tag" title={`On ${machine.name ?? machine.sprite}, a throwaway VM`}>
             VM
           </span>
         )}
@@ -247,10 +249,11 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
             data-diff-base
             title="What the working tree is compared with"
             value={s.picked ?? ""}
-            onChange={(e) => {
+            onChange={async (e) => {
               let rev: string | null = e.currentTarget.value;
               e.currentTarget.value = s.picked ?? "";
-              if (rev === OTHER_BASE) rev = window.prompt("Compare with which revision?", s.picked ?? "")?.trim() ?? null;
+              // The page's own prompt, not the browser's (UI audit #178).
+              if (rev === OTHER_BASE) rev = (await askText("Compare with which revision?", s.picked ?? "", "a branch, tag or commit"))?.trim() ?? null;
               if (rev !== null) void client.api(`/api/blocks/${id}/call/base`, { rev }, "couldn't compare with that");
             }}
           >
@@ -276,14 +279,11 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
           </div>
         )}
         {s.error ? (
-          <div class="browser-card error">
-            <p>Can't show the changes</p>
-            <p class="dim">{s.error}</p>
-          </div>
+          <BlockError title="Can't show the changes" detail={s.error} retry={can ? () => call("refresh") : undefined} />
         ) : s.loading && !s.files.length ? (
-          <div class="browser-card dim">Reading the diff…</div>
+          <BlockLoading what="the changes" />
         ) : !s.files.length ? (
-          <div class="browser-card dim">Nothing changed ({s.against}).</div>
+          <BlockEmpty>Nothing changed ({s.against}).</BlockEmpty>
         ) : (
           s.files.map((f) => {
             const slash = f.path.lastIndexOf("/");

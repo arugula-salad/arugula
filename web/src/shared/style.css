@@ -2701,9 +2701,102 @@ button.att {
   line-height: 1.45;
 }
 
+/* Its text and the ✕ that puts it away (UI audit #179). */
+.control-moving {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.control-moving > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.control-moving-dismiss {
+  flex: none;
+  color: var(--dim);
+}
+
 .control-center h1 {
   margin: 0 0 8px;
   font-size: 22px;
+}
+
+/* The signed-out page's heading carries the mark (UI audit #179). */
+.control-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.control-brand .mark {
+  width: 32px;
+  height: 32px;
+}
+
+.control-who.control-brand {
+  gap: 8px;
+}
+
+.control-who.control-brand .mark {
+  width: 22px;
+  height: 22px;
+}
+
+/* The sign-outs under a screen, apart (they touched). */
+.control-signouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A screen's buttons in one row (UI audit #179), wrapping on a phone; a
+   recovery code's field, once open, takes a row of its own. */
+.control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.control-center .control-actions .primary {
+  margin-top: 0;
+}
+
+.control-actions .control-code {
+  flex-basis: 100%;
+  margin-top: 0;
+}
+
+/* A waiting screen's one line: a pulsing dot, and how long. */
+.control-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.control-waiting-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: control-waiting 1.6s ease-in-out infinite;
+}
+
+@keyframes control-waiting {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control-waiting-dot {
+    animation: none;
+  }
 }
 
 .control-center .primary,
@@ -3243,7 +3336,8 @@ button.att {
   color: var(--accent);
 }
 
-.control-cmd[data-recovery-code] {
+.control-cmd[data-recovery-code],
+.code-groups {
   word-break: normal;
   overflow-wrap: normal;
 }
