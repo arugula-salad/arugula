@@ -1,5 +1,5 @@
 // The Agents page (#403): a machine's agent recipes and its team's agents.
-// One daemon with the `agents` flag; Claude Code's adapter is the fake ACP
+// One daemon with the `agent-delegation` flag; Claude Code's adapter is the fake ACP
 // agent (playwright.config.ts). A project is added; a recipe is made in it
 // from the form, edited (a key the form doesn't know is kept), offered (the
 // Team tab lists it), run here (an agent block wearing it), and deleted.
@@ -23,7 +23,7 @@ test.afterAll(closeContexts);
 
 test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "arugula-e2e-agents-page-"));
-  writeFileSync(join(state, "flags.json"), JSON.stringify({ flags: { agents: true } }));
+  writeFileSync(join(state, "flags.json"), JSON.stringify({ flags: { "agent-delegation": true } }));
   // The daemon names a project by its real path; on macOS tmpdir() is a link.
   project = realpathSync(mkdtempSync(join(tmpdir(), "arugula-e2e-agents-proj-")));
   daemon = spawn(

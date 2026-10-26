@@ -119,25 +119,28 @@ test("a team's and an account's flags reach the machine, each saying where it co
   // No machine of the account has Developer settings: the page offers none.
   expect((await me.api<{ dev: boolean }>("/api/flags")).dev).toBe(false);
   await setOnControl("chat", true, team);
-  await setOnControl("workspaces", true, team);
+  await setOnControl("chant-workspaces", true, team);
+  // An older page's old name (aru-117) is stored as the new one.
   await setOnControl("workspaces", false);
   // Each set nudges the machine: the file may come before the last of them.
   const fromControl = () => {
     const f = join(state, "flags.control.json");
     return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
   };
+  // Control sends a renamed flag under its old name too, for a daemon from
+  // before the rename.
   await expect.poll(fromControl, { timeout: 20_000 }).toEqual({
-    account: { workspaces: false },
-    team: { chat: true, workspaces: true },
+    account: { "chant-workspaces": false, workspaces: false },
+    team: { chat: true, "chant-workspaces": true, workspaces: true },
   });
 
   await reopen(page);
   await expect(row(page, "chat").locator("input")).toBeChecked();
   await expect(row(page, "chat").locator("[data-flag-source]")).toHaveText("Set for your team on control");
   // The account's word beats the team's.
-  await expect(row(page, "workspaces").locator("input")).not.toBeChecked();
-  await expect(row(page, "workspaces").locator("[data-flag-source]")).toHaveText("Set for your account on control");
-  await expect(row(page, "vms").locator("[data-flag-source]")).toHaveCount(0);
+  await expect(row(page, "chant-workspaces").locator("input")).not.toBeChecked();
+  await expect(row(page, "chant-workspaces").locator("[data-flag-source]")).toHaveText("Set for your account on control");
+  await expect(row(page, "sandbox-providers").locator("[data-flag-source]")).toHaveCount(0);
   // Guest ssh and the agent catalog are the machine's alone: control won't
   // take them, and the dialog says so.
   await expect(setOnControl("guest-ssh", true, team)).rejects.toThrow(/400/);
@@ -169,7 +172,7 @@ test("the machine overrides control, and Use control's takes its word back", asy
 
 test("unset on control, the machine is back to the flag's default", async ({ page }) => {
   await setOnControl("chat", null, team);
-  await expect.poll(() => JSON.parse(readFileSync(join(state, "flags.control.json"), "utf8")).team, { timeout: 20_000 }).toEqual({ workspaces: true });
+  await expect.poll(() => JSON.parse(readFileSync(join(state, "flags.control.json"), "utf8")).team, { timeout: 20_000 }).toEqual({ "chant-workspaces": true, workspaces: true });
   await reopen(page);
   await expect(row(page, "chat").locator("input")).not.toBeChecked();
   await expect(row(page, "chat").locator("[data-flag-source]")).toHaveCount(0);

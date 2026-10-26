@@ -41,6 +41,13 @@ constrains:
 
 # A flag for each Labs feature, and Developer settings to turn them on
 
+*Which flags there are is now "Four Labs flags stay, renamed; the rest
+graduate or retire" (aru-117, 2026-10-26): `sandbox-providers`,
+`chant-workspaces`, `additional-forges` and `agent-delegation`, with `vms`,
+`workspaces`, `forges` and `agents` read as their old names forever; chat,
+docs, guest ssh and the swarm's views graduated, and studio's connector
+retired. The rest of this record stands.*
+
 Chat on a machine shouldn't need Fountain, studio and the rest on with it, so
 the one `labs` flag (above) is nine: `chat`, `huddles`, `vms`, `fountain`,
 `studio`, `workspaces`, `guest-ssh`, `swarm-themes`, `forges`. Each is a row

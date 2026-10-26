@@ -984,7 +984,7 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/machines";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::VMS);
+        const FLAG: Option<&'static str> = Some(crate::flags::SANDBOX_PROVIDERS);
         type Path = ();
         type Req = Empty;
         type Res = Vec<Machine>;
@@ -999,7 +999,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/machines/{id}/reset";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::VMS);
+        const FLAG: Option<&'static str> = Some(crate::flags::SANDBOX_PROVIDERS);
         type Path = u32;
         type Req = Empty;
         type Res = Empty;
@@ -1583,7 +1583,7 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/sandboxes";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::VMS);
+        const FLAG: Option<&'static str> = Some(crate::flags::SANDBOX_PROVIDERS);
         type Path = ();
         type Req = Empty;
         type Res = SandboxList;
@@ -1597,7 +1597,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/sandboxes/{name}/promote";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::VMS);
+        const FLAG: Option<&'static str> = Some(crate::flags::SANDBOX_PROVIDERS);
         type Path = String;
         type Req = PromoteRequest;
         type Res = Host;
@@ -1611,7 +1611,7 @@ pub mod ops {
         const METHOD: Method = Method::Delete;
         const PATH: &'static str = "/api/sandboxes/{name}/resident";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::VMS);
+        const FLAG: Option<&'static str> = Some(crate::flags::SANDBOX_PROVIDERS);
         type Path = String;
         type Req = Empty;
         type Res = Demoted;

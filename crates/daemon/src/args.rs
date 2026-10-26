@@ -441,10 +441,10 @@ const LABS_OPTIONS: [(&str, &str); 7] = [
     ("guest_ssh", flags::GUEST_SSH),
     ("guest_ssh_host", flags::GUEST_SSH),
     ("studio_file", flags::STUDIO),
-    ("wisp_url", flags::VMS),
-    ("wisp_token_file", flags::VMS),
-    ("loam_url", flags::VMS),
-    ("loam_key_file", flags::VMS),
+    ("wisp_url", flags::SANDBOX_PROVIDERS),
+    ("wisp_token_file", flags::SANDBOX_PROVIDERS),
+    ("loam_url", flags::SANDBOX_PROVIDERS),
+    ("loam_key_file", flags::SANDBOX_PROVIDERS),
 ];
 
 /// The command line, listing in `--help` the options `flags` turns on.

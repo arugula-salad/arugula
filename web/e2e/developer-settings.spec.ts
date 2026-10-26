@@ -47,7 +47,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["chat", "vms", "studio", "workspaces", "guest-ssh", "forges", "agents"] as const;
+const FLAGS = ["chat", "sandbox-providers", "studio", "chant-workspaces", "guest-ssh", "additional-forges", "agent-delegation"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -70,7 +70,7 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
   await expect(page.getByRole("menuitem", { name: "Share read-only link…" })).toBeVisible();
   const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
   await page.keyboard.press("Escape");
-  if (items.includes("New VM pane on the right")) out.push("vms");
+  if (items.includes("New VM pane on the right")) out.push("sandbox-providers");
   if (items.includes("Open a studio app…")) out.push("studio");
   if (items.includes("Invite over ssh…")) out.push("guest-ssh");
   const page_says = await page.evaluate(() => {
@@ -79,16 +79,16 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
       // Chat is control's, on its platform page (M155): the machine's flag
       // draws nothing here of its own, but the page has it.
       chat: c.flag("chat"),
-      workspaces: c.flag("workspaces"),
+      workspaces: c.flag("chant-workspaces"),
       forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
       // M76 is the daemon's and the CLI's; the page's catalog is M77's.
-      agents: c.flag("agents"),
+      agents: c.flag("agent-delegation"),
     };
   });
   if (page_says.chat) out.push("chat");
-  if (page_says.workspaces) out.push("workspaces");
-  if (page_says.forges) out.push("forges");
-  if (page_says.agents) out.push("agents");
+  if (page_says.workspaces) out.push("chant-workspaces");
+  if (page_says.forges) out.push("additional-forges");
+  if (page_says.agents) out.push("agent-delegation");
   return FLAGS.filter((f) => out.includes(f));
 }
 
@@ -166,19 +166,40 @@ test("each flag turns on its own feature and no other", async ({ page }) => {
   }
 });
 
+test("a renamed flag's old name still turns its feature on, under its new name", async ({ page }) => {
+  // aru-117: `PUT /api/flags/vms` is `sandbox-providers`; only new names show.
+  const pane = await start(page);
+  const renamed = [
+    ["vms", "sandbox-providers"],
+    ["workspaces", "chant-workspaces"],
+    ["forges", "additional-forges"],
+    ["agents", "agent-delegation"],
+  ] as const;
+  for (const [old, now] of renamed) {
+    expect((await setFlag(old, true)).ok, old).toBe(true);
+    expect(onNow(), old).toEqual([now]);
+    expect(await shown(page, pane), `${old} on`).toEqual([now]);
+    expect((await setFlag(old, false)).ok, old).toBe(true);
+    expect(await shown(page, pane), `${old} off`).toEqual([]);
+  }
+  await page.goto("/#developer");
+  await expect(dialog(page).locator('[data-flag="vms"]')).toHaveCount(0);
+  await expect(dialog(page).locator('[data-flag="sandbox-providers"]')).toHaveCount(1);
+});
+
 /** Requests that are each flag's feature (#347): its routes, and making
  * its blocks. Configs that don't parse, so with the flag on they fail past
  * the gate, in their own words, and nothing starts. (The swarm's
  * views have no route.) */
 const GATED: [Flag, string, string, unknown][] = [
-  ["vms", "GET", "/api/machines", undefined],
-  ["vms", "GET", "/api/sandboxes", undefined],
+  ["sandbox-providers", "GET", "/api/machines", undefined],
+  ["sandbox-providers", "GET", "/api/sandboxes", undefined],
   ["studio", "GET", "/api/studio", undefined],
   ["studio", "POST", "/api/blocks", { type: "app", config: { app: "nothing-here" }, local: true }],
-  ["workspaces", "POST", "/api/blocks", { type: "workspace", config: {}, local: true }],
+  ["chant-workspaces", "POST", "/api/blocks", { type: "workspace", config: {}, local: true }],
   ["guest-ssh", "GET", "/api/guests", undefined],
-  ["forges", "POST", "/api/blocks", { type: "forge", config: { repo: "o/r", number: 0, provider: "forgejo" }, local: true }],
-  ["agents", "GET", "/api/a2a/agents", undefined],
+  ["additional-forges", "POST", "/api/blocks", { type: "forge", config: { repo: "o/r", number: 0, provider: "forgejo" }, local: true }],
+  ["agent-delegation", "GET", "/api/a2a/agents", undefined],
 ];
 
 const ask = async (method: string, path: string, body: unknown) => {

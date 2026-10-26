@@ -1063,17 +1063,20 @@ const LIST: &[Kind] = &[
 /// of its group's table, and its arguments and its line in the description
 /// go with it. A caller who names one is refused, saying how to turn the
 /// flag on (#347: the handler or `ops::flagged` asks).
-const UNLISTED: [(&str, &str, &str); 3] =
-    [("list", "agents", flags::AGENTS), ("show", "app", flags::STUDIO), ("show", "workspace", flags::WORKSPACES)];
+const UNLISTED: [(&str, &str, &str); 3] = [
+    ("list", "agents", flags::AGENT_DELEGATION),
+    ("show", "app", flags::STUDIO),
+    ("show", "workspace", flags::CHANT_WORKSPACES),
+];
 
 /// Arguments of listed tools that aren't listed without their flag, by
 /// tool: throwaway VMs and sandboxes, and recipes. A caller who gives one
 /// is refused where the flag is off (a new machine, a recipe: #347), except
 /// `machine`, which names one already made.
 const UNLISTED_ARGS: [(&str, &[&str], &str); 3] = [
-    ("run", &["vm", "vm_tab", "image", "machine"], flags::VMS),
-    ("start_agent", &["vm"], flags::VMS),
-    ("start_agent", &["recipe"], flags::AGENTS),
+    ("run", &["vm", "vm_tab", "image", "machine"], flags::SANDBOX_PROVIDERS),
+    ("start_agent", &["vm"], flags::SANDBOX_PROVIDERS),
+    ("start_agent", &["recipe"], flags::AGENT_DELEGATION),
 ];
 
 /// The kinds daemon-side Managoat had (#942, `fountain_*` before the
@@ -1143,7 +1146,7 @@ fn defs(on: On) -> Vec<Def> {
         .filter(|d| d.flag.is_none_or(|f| on.has(f)))
         .filter(|d| crate::forges::BUILT || !FORGE_TOOLS.contains(&d.name))
         // M78: delegating is the agent catalog's.
-        .filter(|d| on.has(flags::AGENTS) || d.name != "delegate")
+        .filter(|d| on.has(flags::AGENT_DELEGATION) || d.name != "delegate")
         .map(|mut d| {
             let name = d.name;
             if let Args::Kinds { kinds, .. } = &mut d.args {
@@ -3480,8 +3483,8 @@ impl Call<'_> {
     /// Delegating (M78): a task for another machine's agent.
     async fn delegate(&self, kind: &str, a: DelegateArgs) -> Out {
         use crate::labs::agents::delegate as d;
-        if !crate::labs::on(self.app.control.state_dir(), flags::AGENTS) {
-            return Err("delegating is in Labs: `arugulad flags agents on` turns it on here".into());
+        if !crate::labs::on(self.app.control.state_dir(), flags::AGENT_DELEGATION) {
+            return Err("delegating is in Labs: `arugulad flags agent-delegation on` turns it on here".into());
         }
         // The owner's agents': a guest's agent asks no one's agents.
         if let Some(me) = self.me()
@@ -3550,8 +3553,8 @@ impl Call<'_> {
     /// The team's agent catalog (M77): the cards each machine offers.
     async fn team_agents(&self, a: ListTeamAgentsArgs) -> Out {
         use crate::labs::agents::catalog;
-        if !crate::labs::on(self.app.control.state_dir(), flags::AGENTS) {
-            return Err("the agent catalog is in Labs: `arugulad flags agents on` turns it on here".into());
+        if !crate::labs::on(self.app.control.state_dir(), flags::AGENT_DELEGATION) {
+            return Err("the agent catalog is in Labs: `arugulad flags agent-delegation on` turns it on here".into());
         }
         // The owner's agents': a guest's agent sees no catalog (#234's rule).
         if let Some(me) = self.me()

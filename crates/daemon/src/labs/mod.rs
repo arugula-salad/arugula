@@ -45,7 +45,7 @@ use crate::block::{Block, BlockCtx, BlockKind};
 use crate::forge::model::Provider as ForgeProvider;
 use crate::{block::BlockKinds, provider::Provider, server::App};
 
-// Agent recipes and their A2A cards (M76): the `agents` flag.
+// Agent recipes and their A2A cards (M76): the `agent-delegation` flag.
 #[cfg(feature = "labs")]
 pub mod agents;
 #[cfg(feature = "labs")]
@@ -112,11 +112,11 @@ pub fn on(state_dir: &Path, flag: &str) -> bool {
 }
 
 /// Whether this machine offers agents to its teams' members (#399): the
-/// `agents` flag is on and at least one recipe is offered. Until then no
-/// teammate's daemon gets in to a personal machine.
+/// `agent-delegation` flag is on and at least one recipe is offered. Until
+/// then no teammate's daemon gets in to a personal machine.
 #[cfg(feature = "labs")]
 pub fn offers_agents(state_dir: &Path) -> bool {
-    on(state_dir, arugula_proto::flags::AGENTS) && !agents::offers(state_dir).is_empty()
+    on(state_dir, arugula_proto::flags::AGENT_DELEGATION) && !agents::offers(state_dir).is_empty()
 }
 
 #[cfg(not(feature = "labs"))]
@@ -128,7 +128,7 @@ pub fn offers_agents(_state_dir: &Path) -> bool {
 /// interrupted, and ask again for those waiting on the owner.
 #[cfg(feature = "labs")]
 pub fn resume_tasks(app: &Arc<App>) {
-    if on(app.control.state_dir(), arugula_proto::flags::AGENTS) {
+    if on(app.control.state_dir(), arugula_proto::flags::AGENT_DELEGATION) {
         agents::tasks::resume(app);
     }
 }
@@ -153,10 +153,10 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
 #[cfg(feature = "labs")]
 pub fn kinds(kinds: &mut BlockKinds, invite: &crate::invite::Hook) {
     use crate::block::Make;
-    use arugula_proto::flags::{AGENTS, STUDIO, WORKSPACES};
-    kinds.add(BlockType::Agents, Flagged { flag: AGENTS, kind: agents::block::AgentsKind(invite.clone()) });
+    use arugula_proto::flags::{AGENT_DELEGATION, CHANT_WORKSPACES, STUDIO};
+    kinds.add(BlockType::Agents, Flagged { flag: AGENT_DELEGATION, kind: agents::block::AgentsKind(invite.clone()) });
     kinds.add(BlockType::App, Flagged { flag: STUDIO, kind: Make(apps::AppBlock::create) });
-    kinds.add(BlockType::Workspace, Flagged { flag: WORKSPACES, kind: Make(workspace::Workspace::create) });
+    kinds.add(BlockType::Workspace, Flagged { flag: CHANT_WORKSPACES, kind: Make(workspace::Workspace::create) });
 }
 
 /// A Labs block type that is made only where the machine has `flag` on
@@ -197,9 +197,9 @@ impl<K: crate::block::BlockKind> crate::block::BlockKind for Flagged<K> {
 pub fn block_flag(kind: BlockType) -> Option<&'static str> {
     use arugula_proto::flags;
     match kind {
-        BlockType::Agents => Some(flags::AGENTS),
+        BlockType::Agents => Some(flags::AGENT_DELEGATION),
         BlockType::App => Some(flags::STUDIO),
-        BlockType::Workspace => Some(flags::WORKSPACES),
+        BlockType::Workspace => Some(flags::CHANT_WORKSPACES),
         _ => None,
     }
 }
@@ -224,7 +224,7 @@ pub fn kinds(kinds: &mut BlockKinds, _invite: &crate::invite::Hook) {
 
 /// Whether a forge block of `provider` may be made or opened here. GitHub's
 /// always may; Forgejo's and GitLab's are Labs, so they need this build to
-/// have it and the machine to have turned on the `forges` flag.
+/// have it and the machine to have turned on the `additional-forges` flag.
 #[cfg(feature = "forge")]
 pub fn forge_allowed(provider: ForgeProvider, state_dir: &Path) -> Result<(), String> {
     let name = match provider {
@@ -232,10 +232,10 @@ pub fn forge_allowed(provider: ForgeProvider, state_dir: &Path) -> Result<(), St
         ForgeProvider::Forgejo => "Forgejo",
         ForgeProvider::Gitlab => "GitLab",
     };
-    if on(state_dir, arugula_proto::flags::FORGES) {
+    if on(state_dir, arugula_proto::flags::ADDITIONAL_FORGES) {
         Ok(())
     } else if BUILT {
-        Err(flag_off_as(&format!("{name} blocks are"), arugula_proto::flags::FORGES))
+        Err(flag_off_as(&format!("{name} blocks are"), arugula_proto::flags::ADDITIONAL_FORGES))
     } else {
         Err(not_built(&format!("A {name} block")))
     }
@@ -243,14 +243,14 @@ pub fn forge_allowed(provider: ForgeProvider, state_dir: &Path) -> Result<(), St
 
 /// Labs' forges and the user's logins for them, for MCP's `capabilities`
 /// (#229): `tea`'s Forgejo logins, and whether `glab` has gitlab.com's.
-/// None unless the `forges` flag is on.
+/// None unless the `additional-forges` flag is on.
 #[cfg(feature = "labs")]
 pub(crate) async fn forge_logins(
     runner: &crate::review::Runner,
     state_dir: &Path,
 ) -> Vec<crate::mcp::results::ForgeSignIn> {
     use crate::mcp::results::ForgeSignIn;
-    if !on(state_dir, arugula_proto::flags::FORGES) {
+    if !on(state_dir, arugula_proto::flags::ADDITIONAL_FORGES) {
         return Vec::new();
     }
     let mut out = Vec::new();
@@ -543,7 +543,7 @@ pub use wearing::{Worn, scrub};
 pub use absent::{Worn, scrub};
 
 /// A recipe (a Claude Code subagent file, M76) worn on this host by a block
-/// working in `cwd`. Needs the `agents` flag.
+/// working in `cwd`. Needs the `agent-delegation` flag.
 #[cfg(feature = "labs")]
 pub async fn wear_recipe(
     runner: &crate::review::Runner,
@@ -551,8 +551,8 @@ pub async fn wear_recipe(
     cwd: &Path,
     name: &str,
 ) -> Result<Worn, String> {
-    if !on(state_dir, arugula_proto::flags::AGENTS) {
-        return Err("agent recipes are in Labs: `arugulad flags agents on` turns them on here".into());
+    if !on(state_dir, arugula_proto::flags::AGENT_DELEGATION) {
+        return Err("agent recipes are in Labs: `arugulad flags agent-delegation on` turns them on here".into());
     }
     agents::wear::wear(runner, cwd, name).await
 }

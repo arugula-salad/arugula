@@ -74,7 +74,7 @@ fn setup(dir: &Path) -> Setup {
 fn daemon(s: &Setup, agents: bool) -> Daemon {
     let env: Vec<(&str, &str)> = s.env.iter().map(|(k, v)| (*k, v.as_str())).collect();
     Daemon::child_in(&[], &env, |state| {
-        arugula_proto::flags::set(state, arugula_proto::flags::AGENTS, agents).unwrap();
+        arugula_proto::flags::set(state, arugula_proto::flags::AGENT_DELEGATION, agents).unwrap();
     })
 }
 
@@ -143,7 +143,7 @@ fn recipes_and_cards_need_the_agents_flag() {
         assert_eq!(d.raw("GET", path, None).0, 404, "{path}");
     }
     // Turned on, read on the next request.
-    arugula_proto::flags::set(&d.state, arugula_proto::flags::AGENTS, true).unwrap();
+    arugula_proto::flags::set(&d.state, arugula_proto::flags::AGENT_DELEGATION, true).unwrap();
     assert_eq!(d.get("/api/a2a/agents")["agents"], json!([]));
 }
 

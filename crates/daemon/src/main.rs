@@ -644,7 +644,7 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
         return Ok(());
     };
     match switch {
-        None if flags::FLAGS.iter().any(|f| f.name == name) => println!("{}", state(flags::get(dir, name))),
+        None if flags::lookup(name).is_some() => println!("{}", state(flags::get(dir, name))),
         None => match flags::retired(name) {
             Some(why) => anyhow::bail!("{why}"),
             None => anyhow::bail!("no flag named {name} (see `arugulad flags`)"),
@@ -656,6 +656,8 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
                 args::Switch::Unset => flags::unset(dir, name),
             }
             .map_err(|e| anyhow::anyhow!("{e}"))?;
+            // An old name (aru-117) says the flag's name now.
+            let name = flags::canonical(name);
             let now = flags::explain(dir).into_iter().find(|(f, _)| f.name == name).map(|(_, s)| s);
             let now = now.expect("set accepted a known flag");
             println!("{name} is {} ({})", state(now.on), from(now.source));

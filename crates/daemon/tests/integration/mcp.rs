@@ -1580,10 +1580,10 @@ async fn capabilities_says_what_is_here_and_whether_hooks_are_live() {
 
     #[cfg(feature = "labs")]
     {
-        arugula_proto::flags::set(&d.state, "workspaces", true).unwrap();
+        arugula_proto::flags::set(&d.state, "chant-workspaces", true).unwrap();
         let c = call(&s, "capabilities", json!({})).await;
         assert!(c["blocks"].as_array().unwrap().iter().any(|b| b["kind"] == "workspace"), "{c}");
-        assert_eq!(c["flags"], json!(["workspaces"]), "{c}");
+        assert_eq!(c["flags"], json!(["chant-workspaces"]), "{c}");
     }
     s.cancel().await.unwrap();
 

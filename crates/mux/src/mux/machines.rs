@@ -11,7 +11,7 @@ impl Daemon {
     /// A new machine for the next pane; it's created when its first
     /// program starts.
     pub(super) fn new_machine(&mut self, image: Option<String>) -> Result<MachineId, String> {
-        crate::labs::flag(self.store.root(), arugula_proto::flags::VMS)?;
+        crate::labs::flag(self.store.root(), arugula_proto::flags::SANDBOX_PROVIDERS)?;
         if self.config.provider.is_none() {
             return Err(crate::labs::vms_unavailable(
                 "VM panes aren't set up: arugulad found no sandbox provider (a wisp token, or --loam-url and its key)",
@@ -25,7 +25,7 @@ impl Daemon {
     /// Someone else's sandbox, borrowed for the next pane's shell ("open
     /// shell", M4b): never created, reset or deleted by us.
     pub(super) fn borrow_machine(&mut self, sprite: &str) -> Result<MachineId, String> {
-        crate::labs::flag(self.store.root(), arugula_proto::flags::VMS)?;
+        crate::labs::flag(self.store.root(), arugula_proto::flags::SANDBOX_PROVIDERS)?;
         if self.config.provider.is_none() {
             return Err(crate::labs::vms_unavailable(
                 "no sandbox provider: arugulad found none (a wisp token, or --loam-url and its key)",
@@ -102,7 +102,7 @@ impl Daemon {
     /// "Share machine with tab": the pane's own machine becomes its tab's,
     /// and new splits in the tab join it.
     pub(super) fn share_machine(&mut self, pane: PaneId) -> Result<(), String> {
-        crate::labs::flag(self.store.root(), arugula_proto::flags::VMS)?;
+        crate::labs::flag(self.store.root(), arugula_proto::flags::SANDBOX_PROVIDERS)?;
         let tab = self.mux.tab_of(pane).map_err(|e| e.to_string())?;
         if self.tab_machine(tab).is_some() {
             return Err("this tab already has a machine".into());

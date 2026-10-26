@@ -11,7 +11,7 @@
 //!
 //! `fountain` left the flags with #942's F5, and daemon-side Managoat went
 //! after it: a `fountain` the flags file still names, on or off, changes
-//! nothing.
+//! nothing. The renamed flags' old names (aru-117) still work.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -42,21 +42,21 @@ fn set(state: &Path, flag: &str, on: bool) {
 fn requests() -> Vec<(&'static str, &'static str, String, Option<Value>)> {
     let block = |kind: &str, config: Value| Some(json!({ "type": kind, "config": config, "local": true }));
     vec![
-        ("vms", "GET", "/api/machines".into(), None),
-        ("vms", "POST", "/api/machines/1/reset".into(), Some(json!({}))),
-        ("vms", "GET", "/api/sandboxes".into(), None),
-        ("vms", "POST", "/api/run".into(), Some(json!({ "vm": true }))),
-        ("vms", "POST", "/api/run".into(), Some(json!({ "sandbox": "someone-elses" }))),
+        ("sandbox-providers", "GET", "/api/machines".into(), None),
+        ("sandbox-providers", "POST", "/api/machines/1/reset".into(), Some(json!({}))),
+        ("sandbox-providers", "GET", "/api/sandboxes".into(), None),
+        ("sandbox-providers", "POST", "/api/run".into(), Some(json!({ "vm": true }))),
+        ("sandbox-providers", "POST", "/api/run".into(), Some(json!({ "sandbox": "someone-elses" }))),
         // Configs that don't parse: on, they fail past the gate, in the
         // block type's own words, and nothing starts.
         ("studio", "GET", "/api/studio".into(), None),
         ("studio", "GET", "/api/studio/apps".into(), None),
         ("studio", "POST", "/api/blocks".into(), block("app", json!({ "app": "nothing-here" }))),
-        ("workspaces", "POST", "/api/blocks".into(), block("workspace", json!({}))),
+        ("chant-workspaces", "POST", "/api/blocks".into(), block("workspace", json!({}))),
         ("guest-ssh", "GET", "/api/guests".into(), None),
-        ("agents", "GET", "/api/a2a/agents".into(), None),
+        ("agent-delegation", "GET", "/api/a2a/agents".into(), None),
         (
-            "forges",
+            "additional-forges",
             "POST",
             "/api/blocks".into(),
             block("forge", json!({ "repo": "o/r", "number": 0, "provider": "forgejo" })),
@@ -152,6 +152,38 @@ fn managoat_is_gone_and_an_old_flag_changes_nothing() {
     }
 }
 
+/// The renamed flags' old names (aru-117) still turn their features on:
+/// in `flags.json`, through `PUT /api/flags/<old>` and `arugulad flags <old>
+/// on`. Only the new names are listed.
+#[test]
+fn an_old_flag_name_still_turns_its_feature_on() {
+    let d = daemon("flag-gates-aliases");
+    std::fs::write(d.state.join("flags.json"), r#"{"flags":{"vms":true}}"#).unwrap();
+    let (_, text) = d.raw("GET", "/api/sandboxes", None);
+    assert!(!text.contains("arugulad flags"), "vms in the file: {text}");
+    let listed = d.get("/api/flags");
+    let names: Vec<_> = listed.as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap().to_owned()).collect();
+    assert!(names.iter().all(|n| !["vms", "workspaces", "forges", "agents"].contains(&n.as_str())), "{names:?}");
+    assert!(listed.as_array().unwrap().iter().any(|f| f["name"] == "sandbox-providers" && f["on"] == true));
+
+    let (status, text) = d.raw("PUT", "/api/flags/agents", Some(json!({ "on": true })));
+    assert_eq!(status, 200, "{text}");
+    let row: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!((&row["name"], &row["on"]), (&json!("agent-delegation"), &json!(true)), "{row}");
+    let (_, text) = d.raw("GET", "/api/a2a/agents", None);
+    assert!(!text.contains("arugulad flags"), "agents set by its old name: {text}");
+
+    let out = arugula_testkit::command(Path::new(env!("CARGO_BIN_EXE_arugulad")))
+        .args(["flags", "forges", "on", "--state-dir"])
+        .arg(&d.state)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("additional-forges is on"));
+    let file: Value = serde_json::from_str(&std::fs::read_to_string(d.state.join("flags.json")).unwrap()).unwrap();
+    assert_eq!(file["flags"], json!({ "vms": true, "agent-delegation": true, "additional-forges": true }));
+}
+
 type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// The next message, as JSON.
@@ -210,8 +242,8 @@ fn a_hidden_command_says_how_to_turn_its_flag_on() {
     let cli = cli_bin();
     let run = |args: &[&str]| arugula_testkit::command(&cli).arg("--socket").arg(d.sock()).args(args).output().unwrap();
     for (flag, args) in [
-        ("vms", &["machines"][..]),
-        ("vms", &["sandboxes"][..]),
+        ("sandbox-providers", &["machines"][..]),
+        ("sandbox-providers", &["sandboxes"][..]),
         ("studio", &["studio"][..]),
         ("studio", &["app"][..]),
         ("guest-ssh", &["guests"][..]),

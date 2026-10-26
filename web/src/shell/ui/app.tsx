@@ -129,7 +129,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {state && <DocsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
-      <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
+      <InLabs on={client.flag("sandbox-providers")}>{(l) => <l.SandboxesLayer />}</InLabs>
       <RulesLayer />
       <DocShareLayer />
       <DeveloperLayer />
@@ -213,7 +213,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {state && <DocsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
-      <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
+      <InLabs on={client.flag("sandbox-providers")}>{(l) => <l.SandboxesLayer />}</InLabs>
       <RulesLayer />
       <DocShareLayer />
       <DeveloperLayer />
@@ -304,7 +304,7 @@ function AgentsPageLayer({ client }: { client: Client }) {
     return () => window.removeEventListener("hashchange", fn);
   }, []);
   if (!agentsRoute()) return null;
-  return <InLabs on={client.flag("agents")}>{(l) => <l.AgentsPage client={client} />}</InLabs>;
+  return <InLabs on={client.flag("agent-delegation")}>{(l) => <l.AgentsPage client={client} />}</InLabs>;
 }
 
 /** The Docs page (#1494): a chunk of its own, fetched while its route is
