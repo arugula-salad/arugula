@@ -76,7 +76,7 @@ export function SettingsPage() {
                 <a href={controlOrigin()} data-settings-control>
                   Sign-in, passkeys, devices, teams and usage reports
                 </a>
-                <span class="dim">On control's page, where your devices sign them.</span>
+                <span class="dim">On Control, where your devices sign them.</span>
               </li>
             </ul>
           </Section>

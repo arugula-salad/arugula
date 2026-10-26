@@ -246,7 +246,7 @@ pub async fn sign(
         return Err(refusal(
             StatusCode::CONFLICT,
             "delegation_not_live",
-            "that grant names a delegation that isn't the project's live one: an owner allows hosted machines again, then signs it",
+            "that grant names a delegation that isn't the project's live one: an owner allows cloud workspaces again on Control, then signs it",
         ));
     }
     match app.db.add_run_grant(&g, &account, now)? {
@@ -356,9 +356,9 @@ pub async fn start(
     let w = app
         .db
         .hosted_workspace(&project, &b.workspace)?
-        .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such hosted workspace"))?;
+        .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such cloud workspace"))?;
     let Some(machine) = w.machine.clone() else {
-        return Err(err(StatusCode::CONFLICT, "that hosted workspace's box hasn't enrolled yet"));
+        return Err(err(StatusCode::CONFLICT, "that cloud workspace's box hasn't enrolled yet"));
     };
     let op = DaemonOp::RunStart(RunStart {
         project: project.clone(),
@@ -381,10 +381,10 @@ pub async fn start(
         }
         OpAnswer::Offline => Err(err(
             StatusCode::SERVICE_UNAVAILABLE,
-            "that hosted workspace's machine isn't connected: open the workspace to wake it",
+            "that cloud workspace's machine isn't connected: open the workspace to wake it",
         )),
         OpAnswer::Unknown => {
-            Err(err(StatusCode::CONFLICT, "that hosted workspace's arugulad is older than runs: rebuild it"))
+            Err(err(StatusCode::CONFLICT, "that cloud workspace's arugulad is older than runs: rebuild it"))
         }
         OpAnswer::Failed { error } => Err(err(StatusCode::BAD_GATEWAY, &error)),
     }

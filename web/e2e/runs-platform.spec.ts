@@ -147,7 +147,7 @@ test("a team's runs: one started by hand, its view and its thread", async ({ bro
   await expect(view.locator("[data-run-command]")).toHaveText(`sh -c 'echo hi && exit 2'`);
   await expect(view.locator("[data-run-op-hash]")).toHaveText(/^[0-9a-f]{64}$/);
   await expect(view.locator("[data-run-started-by]")).toContainText("By hand, by alice");
-  await expect(view.locator("[data-run-live]")).toContainText("Waiting for its hosted workspace");
+  await expect(view.locator("[data-run-live]")).toContainText("Waiting for its cloud workspace");
   await expect(view.locator("[data-run-event]")).toHaveCount(1);
   // No box runs here, so the platform keeps no log of it: the page says so.
   await expect(view.locator("[data-run-log-note]")).toContainText("keeps no log");
@@ -242,7 +242,7 @@ test("a run that fails is in the inbox, and opens there; a phone reads it", asyn
   // send the run there, and fails it. The open view hears it move.
   sql((db) => db.prepare("UPDATE hosted_workspaces SET machine = ? WHERE project_id = ?").run(`m${hex()}`, project));
   await expect(view.locator("[data-run-state-label]")).toHaveText("Failed", { timeout: 30_000 });
-  await expect(view.locator("[data-run-event]").last()).toContainText("Arugula moved it to failed · runs go only to their project's hosted workspaces");
+  await expect(view.locator("[data-run-event]").last()).toContainText("Arugula moved it to failed · runs go only to their project's cloud workspaces");
 
   await alice.locator("[data-platform-inbox]").click();
   const entry = alice.locator(`[data-inbox-group="run_failed"] [data-inbox-entry="${started}"]`);

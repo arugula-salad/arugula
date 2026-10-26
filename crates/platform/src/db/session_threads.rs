@@ -17,7 +17,7 @@ use super::{
 /// Why a session stopped when its asker left the project.
 pub const ASKER_LEFT: &str = "asker_left: its asker isn't in the project any more";
 /// Why a session stopped when its workspace was deleted.
-pub const WORKSPACE_GONE: &str = "workspace_gone: its hosted workspace was deleted";
+pub const WORKSPACE_GONE: &str = "workspace_gone: its cloud workspace was deleted";
 
 /// Stop each of these sessions that hasn't ended, as control, saying
 /// `reason`: the ones it stopped.

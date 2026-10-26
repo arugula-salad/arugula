@@ -175,7 +175,7 @@ pub(crate) async fn changer(app: &Platform, account: &str, project: &str, beta: 
         return Err(err(StatusCode::FORBIDDEN, "a viewer can't change a project's runs"));
     }
     if beta && !app.hosted.allows(account) {
-        return Err(err(StatusCode::FORBIDDEN, "runs on hosted workspaces are in a limited beta"));
+        return Err(err(StatusCode::FORBIDDEN, "runs on cloud workspaces are in a limited beta"));
     }
     Ok(project)
 }
@@ -190,14 +190,14 @@ fn workspace_of(app: &Platform, project: &str, workspace: Option<&str>) -> Resul
         Some(w) => Ok(app
             .db
             .hosted_workspace(project, w)?
-            .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such hosted workspace in this project"))?
+            .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such cloud workspace in this project"))?
             .id),
         None => {
             let mut all = app.db.hosted_workspaces(project)?;
             match all.len() {
                 1 => Ok(all.remove(0).id),
-                0 => Err(err(StatusCode::CONFLICT, "this project has no hosted workspace to run on")),
-                _ => Err(bad("this project has more than one hosted workspace: say which")),
+                0 => Err(err(StatusCode::CONFLICT, "this project has no cloud workspace to run on")),
+                _ => Err(bad("this project has more than one cloud workspace: say which")),
             }
         }
     }
@@ -517,9 +517,9 @@ pub(crate) fn start_as(
         }
         Started::NoMachine => Err(err(
             StatusCode::CONFLICT,
-            "the hosted workspace has no machine yet: open it, and try again once it's ready",
+            "the cloud workspace has no machine yet: open it, and try again once it's ready",
         )),
-        Started::NoWorkspace => Err(err(StatusCode::NOT_FOUND, "no such hosted workspace in this project")),
+        Started::NoWorkspace => Err(err(StatusCode::NOT_FOUND, "no such cloud workspace in this project")),
         Started::NoProject => Err(err(StatusCode::NOT_FOUND, "no such project")),
         // A trigger's, not a start by hand's.
         other @ (Started::Outsider | Started::Capped | Started::Refused(_)) => {

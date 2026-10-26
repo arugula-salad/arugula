@@ -16,10 +16,13 @@ export { deployTone, issueTone, runTone } from "../shared/tones";
 /** The class that gives a card its tone. */
 export const toneClass = (t: Tone | null) => (t ? `sw-${t}` : "");
 
-/** A project: the reader's role in it. Their own project is theirs alone,
- * so they own it. */
+/** A project: the reader's role in it. Their own project, theirs alone,
+ * is muted, so its bar isn't a team owner's (UI audit #162); it has no
+ * team pill, so it isn't taken for one they only view. (Teal was the
+ * other choice, but it's the accent's near twin in the default palette.) */
 export function roleTone(role: string | null | undefined): Tone {
-  if (!role || role === "owner") return "accent";
+  if (!role) return "muted";
+  if (role === "owner") return "accent";
   return role === "editor" ? "info" : "muted";
 }
 

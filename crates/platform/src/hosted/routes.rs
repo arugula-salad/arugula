@@ -81,16 +81,16 @@ fn enabled(app: &Platform) -> Result<(), ApiError> {
 async fn changer(app: &Platform, account: &str, project: &str, making: bool) -> Result<String, ApiError> {
     let (project, role) = membership(app, account, project, true).await?;
     if role == TeamRole::Viewer {
-        return Err(err(StatusCode::FORBIDDEN, "a viewer can't change a project's hosted workspaces"));
+        return Err(err(StatusCode::FORBIDDEN, "a viewer can't change a project's cloud workspaces"));
     }
     if making && !app.hosted.allows(account) {
-        return Err(err(StatusCode::FORBIDDEN, "hosted workspaces are in a limited beta"));
+        return Err(err(StatusCode::FORBIDDEN, "cloud workspaces are in a limited beta"));
     }
     Ok(project)
 }
 
 fn found(w: Option<HostedWorkspace>) -> Result<HostedWorkspace, ApiError> {
-    w.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such hosted workspace"))
+    w.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such cloud workspace"))
 }
 
 pub async fn list(
@@ -124,12 +124,12 @@ pub async fn create(
     let w = match app.db.add_hosted_workspace(&id, &project, name, &b.spec, &account, MAX_PER_PROJECT, now_ms())? {
         Added::Made(w) => *w,
         Added::NameTaken => {
-            return Err(err(StatusCode::CONFLICT, &format!("this project has a hosted workspace called {name}")));
+            return Err(err(StatusCode::CONFLICT, &format!("this project has a cloud workspace called {name}")));
         }
         Added::Full => {
             return Err(err(
                 StatusCode::CONFLICT,
-                &format!("a project has at most {MAX_PER_PROJECT} hosted workspaces: delete one first"),
+                &format!("a project has at most {MAX_PER_PROJECT} cloud workspaces: delete one first"),
             ));
         }
     };
@@ -163,7 +163,7 @@ pub async fn rebuild(
     let project = changer(&app, &account, &project, true).await?;
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
     if !super::ask(&app, &w.id, Ask::Rebuild)? {
-        return Err(err(StatusCode::CONFLICT, "this hosted workspace is being deleted"));
+        return Err(err(StatusCode::CONFLICT, "this cloud workspace is being deleted"));
     }
     info!(%account, %project, workspace = %w.id, "asked to rebuild a hosted workspace");
     Ok(Json(found(app.db.hosted_workspace(&project, &w.id)?)?))

@@ -191,10 +191,10 @@ fn a_tick_fires_once() {
     let on = db.set_run_schedule(&s.id, "0 3 * * *", "UTC", true, 2_000, 2_000).unwrap().unwrap();
     assert_eq!(
         db.under_tx(|tx| fire(tx, &on, 3_000, None, 2_000)),
-        Fired::Skipped("its hosted workspace has no machine yet")
+        Fired::Skipped("its cloud workspace has no machine yet")
     );
     let after = db.run_schedule(&s.id).unwrap().unwrap();
-    assert_eq!((after.next_at, after.last_error.as_deref()), (3_000, Some("its hosted workspace has no machine yet")));
+    assert_eq!((after.next_at, after.last_error.as_deref()), (3_000, Some("its cloud workspace has no machine yet")));
     assert_eq!(runs_in(&db, "prj_a").len(), 1);
 }
 

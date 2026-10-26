@@ -207,7 +207,7 @@ async fn create(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u
     match job.stage.as_str() {
         "" => {
             let Some(template) = super::template(app) else {
-                return Ok(fail(job, "This control has no template for hosted workspaces.", now));
+                return Ok(fail(job, "This control has no template for cloud workspaces.", now));
             };
             let Some(ask) = enroll_ask(app, job, None)? else {
                 return Ok(fail(job, "The workspace's project is gone.", now));

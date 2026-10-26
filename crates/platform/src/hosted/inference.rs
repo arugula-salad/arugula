@@ -381,7 +381,7 @@ pub async fn turn(
         return Ok(TurnAnswer::refused(StatusCode::BAD_REQUEST, None, "agent: claude or codex"));
     };
     let Some(b) = the_box(app, workspace, machine)? else {
-        return Ok(TurnAnswer::refused(StatusCode::NOT_FOUND, None, "this machine isn't a live hosted workspace"));
+        return Ok(TurnAnswer::refused(StatusCode::NOT_FOUND, None, "this machine isn't a live cloud workspace"));
     };
     // A thread session's turn is its asker's (aru-115): on the project's
     // key it's kept as theirs; on the platform's it counts against their

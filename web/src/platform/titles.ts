@@ -52,9 +52,9 @@ export function titleOf(r: Route, k: Known): string {
     case "dm":
       return parts(k.room(r.room) ?? "Direct message", p);
     case "workspaces":
-      return parts("Workspaces", p);
+      return parts("Cloud workspaces", p);
     case "workspace":
-      return parts("Workspace", p);
+      return parts("Cloud workspace", p);
     case "project-settings":
       return parts("Settings", p);
     case "new-deploy":

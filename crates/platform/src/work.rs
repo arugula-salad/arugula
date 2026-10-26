@@ -138,9 +138,9 @@ impl Dispatch {
             w.machine.as_deref() == Some(run.daemon.as_str()) && !matches!(w.state.as_str(), "deleting" | "deleted")
         }) else {
             let reason = if waiting {
-                "not_hosted: runs go only to their project's hosted workspaces, and this one's machine isn't one"
+                "not_hosted: runs go only to their project's cloud workspaces, and this one's machine isn't one"
             } else {
-                "gone: its hosted workspace was deleted or made again"
+                "gone: its cloud workspace was deleted or made again"
             };
             fail(&self.app, db, &run.id, run.state, reason, now).await?;
             return Ok(Step::Done);
@@ -190,7 +190,7 @@ impl Dispatch {
                 db,
                 &run.id,
                 run.state,
-                "not_taken: its hosted workspace didn't ask for it in 15 minutes",
+                "not_taken: its cloud workspace didn't ask for it in 15 minutes",
                 now,
             )
             .await?;

@@ -5,9 +5,9 @@
 
    list               element            what it shows
    ------------------ ------------------ ---------------------------------------
-   Home: projects     bar                the reader's role: owner (their own
-                                         project too) accent, editor info,
-                                         viewer muted
+   Home: projects     bar                the reader's role: owner accent,
+                                         editor info, viewer muted; their own
+                                         project (theirs alone, no pill) muted
                       name (display)     the project's name
                       pill               people in its team (none on their own)
                       mono line          its id, prj_ and 8 of its hex
@@ -17,15 +17,23 @@
                                          accent, else none (.chat-count's)
                       name               # channel, @ person (underlined only
                                          on hover or focus)
+   Project: issues,   name               its title (underlined only on hover
+   runs                                  or focus)
+                      mono               an issue's #number; a run's state
+                                         and age
+                      bar                a run's, while it waits (warn) or
+                                         goes (accent)
    Workspaces         bar                its state: creating, enrolling,
    (project page and                     waking (or asked to wake) warn; ready
    /workspaces)                          ok; failed danger; paused, deleting
                                          muted
                       name (display)     its name
                       mono line          its id, hw_ and 8 of its hex · its
-                                         machine's id, or "no machine yet"
-                      dim line           its state in words, and whether it
-                                         wants a rebuild
+                                         machine's, labelled and short, or "no
+                                         machine yet"
+                      dim line           its state in words
+                      chip               "Wants a rebuild" (warn), when its
+                                         spec changed since its box was made
                       stats              workspaces; ready, on the way, paused,
                                          failed (each only when there are some)
    One workspace      mono               a closed agent's agent · closed · size
@@ -155,6 +163,32 @@
   text-transform: none;
   font-variant-numeric: tabular-nums;
   vertical-align: 2px;
+}
+
+/* A section's heading with what it does and its "All ›" (section-head.tsx,
+   UI audit #162): the heading plain, the link small and dim, on the
+   right. */
+.platform .sw-page .sw-section-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 24px 0 10px;
+}
+
+.platform .sw-page .sw-section-head h2 {
+  margin: 0;
+}
+
+.platform .sw-page .sw-section-head .sw-all {
+  margin-left: auto;
+  color: var(--dim);
+  font: 500 12px/1.3 var(--f-mono);
+  text-decoration: none;
+}
+
+.platform .sw-page .sw-section-head .sw-all:is(:hover, :focus-visible) {
+  color: var(--fg);
 }
 
 /* Chat, on the platform page (UI audit #157): denser than a page inside
@@ -287,8 +321,11 @@
   }
 }
 
-/* A card that is a link opens as a whole. */
+/* A card that is a link opens as a whole, and fills its cell, so the
+   cards in a row are one height (UI audit #162). */
 .platform .sw-cards a.sw-card {
+  box-sizing: border-box;
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -332,11 +369,25 @@
   }
 }
 
+/* As tall as a team's pill, so a card without one lines up with its
+   neighbours (UI audit #162). */
 .platform .sw-head {
   display: flex;
   align-items: baseline;
   gap: 8px;
   min-width: 0;
+  min-height: 20px;
+}
+
+/* A warning on a card (UI audit #165): "Wants a rebuild". */
+.platform .sw-chip {
+  align-self: flex-start;
+  padding: 1px 7px;
+  border: 1px solid var(--warn);
+  border-radius: var(--chip-radius);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--warn);
+  font: 600 11px/1.4 var(--f-mono);
 }
 
 .platform .sw-name {

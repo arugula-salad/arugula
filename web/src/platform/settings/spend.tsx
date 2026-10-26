@@ -71,7 +71,7 @@ export function ClaudeSpend({ p }: { p: PlatformProject }) {
       more={
         <p>
           At Anthropic's list prices, by who made the calls (or a product, for them) and whose key paid: the project's, their own, or Arugula's,
-          which has a monthly cap per account. Agent turns on the project's hosted workspaces are counted beside them: their calls go through
+          which has a monthly cap per account. Agent turns on the project's cloud workspaces are counted beside them: their calls go through
           a proxy that doesn't see their usage, so their tokens aren't priced here. Keys are never shown, here or anywhere.
         </p>
       }

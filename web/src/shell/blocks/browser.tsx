@@ -41,7 +41,7 @@ export function blocksOff(what: "port" | "editor") {
   void tellSetup(
     title,
     `${thing} is optional: each block gets a web origin of its own. ` +
-      "Join this machine to Arugula control and they open in control's page with nothing else set up. " +
+      "Join this machine to Arugula control and they open in Control with nothing else set up. " +
       "Without control, start arugulad with --block-listen 127.0.0.1:7701 for a browser on this computer " +
       "(arugulad install -- --block-listen 127.0.0.1:7701); from your phone or other machines it also needs a domain of yours.",
     { label: "How to turn it on (advanced setup)", href: ADVANCED + anchor },

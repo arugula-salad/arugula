@@ -23,8 +23,8 @@
 pub use arugula_control_wire::hosted::{EnrollAsk, EnrollGiven, Enrolled, SANDBOX_MS, TICKET_MS};
 
 /// What a person is told when the project has no delegation.
-pub const NO_DELEGATION: &str = "This project has no delegation for hosted machines: an owner signs one from a device \
-     (Hosted: the operator can read), then rebuild the workspace.";
+pub const NO_DELEGATION: &str = "This project has no delegation for cloud workspaces: an owner allows them from a device on Control \
+     (Devices and machines, Cloud workspaces), then rebuild the workspace.";
 
 /// What a person is told when the hub refused the box's enrollment as
 /// taken: the box was deleted, as nothing else may enroll in its place.

@@ -157,7 +157,7 @@ export function DeployCard({ d, link, planOpen, headless }: { d: Deploy; link?: 
           <a class="primary" href={approveHref(d.id)} data-deploy-approve>
             Approve
           </a>
-          <p class="dim deploy-why">Opens on control's page, where your device keys are. You confirm with a passkey there.</p>
+          <p class="dim deploy-why">Opens on Control, where your device keys are. You confirm with a passkey there.</p>
         </div>
       ) : null}
     </article>

@@ -60,7 +60,7 @@ pub const CALL: &str = "/api/mcp/call";
 /// How long a waking workspace's machine is waited for.
 const WAKE: Duration = Duration::from_secs(90);
 
-const WORKSPACE_ARG: &str = "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): \
+const WORKSPACE_ARG: &str = "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): \
 do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass \
 cloud_workspace again to reach them.";
 
@@ -96,7 +96,7 @@ pub(crate) fn with_workspace(
     Arc::new(s)
 }
 
-/// The hosted workspace a machine tool's call names, taken out of its
+/// The cloud workspace a machine tool's call names, taken out of its
 /// arguments. A `wait` on a Cloud workspace's tab (`tab`) is `wait`'s own.
 pub(crate) fn take_workspace(tool: &str, args: &mut Value) -> Option<Result<String, String>> {
     if !TOOLS.contains(&tool) {
@@ -113,19 +113,19 @@ pub(crate) fn take_workspace(tool: &str, args: &mut Value) -> Option<Result<Stri
     match o.remove(ARG)? {
         Value::Null => None,
         Value::String(s) if !s.trim().is_empty() => Some(Ok(s.trim().to_owned())),
-        v => Some(Err(format!("{ARG} is a hosted Cloud workspace's id or name, not {v}"))),
+        v => Some(Err(format!("{ARG} is a cloud workspace's id or name, not {v}"))),
     }
 }
 
-/// A tab of a hosted workspace: an agent block on its machine, by pane id.
+/// A tab of a cloud workspace: an agent block on its machine, by pane id.
 fn tab_pane(tab: &str) -> Result<Value, String> {
     let t = tab.trim().trim_start_matches('%');
     t.parse::<u64>().map(|n| json!(n)).map_err(|_| {
-        format!("{tab:?} isn't a hosted workspace's tab: they're its machine's agent blocks, by pane number (list kind cloud_tabs)")
+        format!("{tab:?} isn't a cloud workspace's tab: they're its machine's agent blocks, by pane number (list kind cloud_tabs)")
     })
 }
 
-/// A hosted workspace as control lists it.
+/// A cloud workspace as control lists it.
 #[derive(Debug, Clone, Deserialize)]
 struct Workspace {
     id: String,
@@ -166,17 +166,17 @@ fn out_of(r: CallToolResult) -> Out {
 impl Call<'_> {
     async fn hosted_workspaces(&self) -> Result<Vec<Workspace>, String> {
         let v = self.app().control.cloud(Method::GET, "/api/workspaces", None).await.map_err(|e| e.to_string())?;
-        serde_json::from_value(v["workspaces"].clone()).map_err(|e| format!("control's list of hosted workspaces: {e}"))
+        serde_json::from_value(v["workspaces"].clone()).map_err(|e| format!("control's list of cloud workspaces: {e}"))
     }
 
-    /// The hosted workspace `which` names, by id or name.
+    /// The cloud workspace `which` names, by id or name.
     async fn hosted_workspace(&self, which: &str) -> Result<Workspace, String> {
         let all = self.hosted_workspaces().await?;
         let found: Vec<&Workspace> = all.iter().filter(|w| w.id == which || w.name == which).collect();
         match found.as_slice() {
             [w] => Ok((*w).clone()),
-            [] => Err(format!("no hosted workspace {which} (list kind cloud_workspaces lists them)")),
-            _ => Err(format!("more than one hosted workspace is called {which}: name it by id")),
+            [] => Err(format!("no cloud workspace {which} (list kind cloud_workspaces lists them)")),
+            _ => Err(format!("more than one cloud workspace is called {which}: name it by id")),
         }
     }
 
@@ -195,7 +195,7 @@ impl Call<'_> {
                     Some(_) => {}
                     None => {
                         return Err(format!(
-                            "{}'s machine isn't one this machine accepts: its project's delegation must be signed by an owner, and its team known here (open control's page in a browser of this account once)",
+                            "{}'s machine isn't one this machine accepts: its project's delegation must be signed by an owner, and its team known here (open Control in a browser of this account once)",
                             w.name
                         ));
                     }
@@ -269,7 +269,7 @@ impl Call<'_> {
             None => return Err(format!("{} didn't answer {tool} in time", w.name)),
         };
         if let Some(s) = v["summary"].as_str() {
-            v["summary"] = json!(format!("On {} (hosted workspace {}): {s}", w.name, w.id));
+            v["summary"] = json!(format!("On {} (cloud workspace {}): {s}", w.name, w.id));
         }
         v["workspace"] = json!(w.id);
         Ok(v)
@@ -280,7 +280,7 @@ impl Call<'_> {
         self.app().control.enrolled().map(|e| e.saved.cert.name.clone()).unwrap_or_else(|| "another machine".into())
     }
 
-    /// The hosted workspaces, for `list kind cloud_workspaces`.
+    /// The cloud workspaces, for `list kind cloud_workspaces`.
     pub(crate) async fn hosted_rows(&self) -> Result<Vec<Value>, String> {
         let all = self.hosted_workspaces().await?;
         let online: Vec<String> = match peer::machines(&self.app().control).await {
@@ -302,7 +302,7 @@ impl Call<'_> {
 
     // ------------------------------------------------------------ cloud tools
 
-    /// `list kind cloud_tabs` for a hosted workspace: its machine's agent
+    /// `list kind cloud_tabs` for a cloud workspace: its machine's agent
     /// blocks.
     pub(crate) async fn hosted_tabs(&self, which: &str) -> Out {
         let v = self.on_workspace("list", which, json!({ "kind": "panes" })).await?;
@@ -317,7 +317,7 @@ impl Call<'_> {
         done(summary, json!({ "cloud_tabs": tabs, "panes": v["panes"] }))
     }
 
-    /// `read_cloud` for a hosted workspace.
+    /// `read_cloud` for a cloud workspace.
     pub(crate) async fn hosted_read(&self, kind: &str, which: &str, args: Value) -> Out {
         let tab = || tab_pane(args["tab"].as_str().unwrap_or_default());
         match kind {
@@ -345,7 +345,7 @@ impl Call<'_> {
         }
     }
 
-    /// `cloud` for a hosted workspace (all but `create`, which takes a
+    /// `cloud` for a cloud workspace (all but `create`, which takes a
     /// project instead).
     pub(crate) async fn hosted_drive(&self, kind: &str, which: &str, args: Value) -> Out {
         let tab = || tab_pane(args["tab"].as_str().unwrap_or_default());
@@ -354,9 +354,9 @@ impl Call<'_> {
                 let agent = match args["agent"].as_str() {
                     None | Some("claude" | "claude_code" | "curated_coding") => "claude",
                     Some("codex") => "codex",
-                    Some(a) => return Err(format!("a hosted workspace's tab runs claude or codex, not {a:?}")),
+                    Some(a) => return Err(format!("a cloud workspace's tab runs claude or codex, not {a:?}")),
                 };
-                let prompt = args["prompt"].as_str().ok_or("a hosted workspace's new tab needs its first prompt")?;
+                let prompt = args["prompt"].as_str().ok_or("a cloud workspace's new tab needs its first prompt")?;
                 let mut a = json!({ "agent": agent, "prompt": prompt });
                 for k in ["model", "cwd"] {
                     if !args[k].is_null() {
@@ -412,7 +412,7 @@ impl Call<'_> {
         }
     }
 
-    /// `cloud kind create` with a project: a hosted workspace in it.
+    /// `cloud kind create` with a project: a cloud workspace in it.
     pub(crate) async fn hosted_create(&self, project: &str, args: &Value) -> Out {
         let repos: Vec<Value> =
             args["repositories"].as_array().into_iter().flatten().map(|r| r["url"].clone()).collect();
@@ -429,7 +429,7 @@ impl Call<'_> {
         let id = w["id"].as_str().unwrap_or_default();
         done(
             format!(
-                "Made hosted workspace {id} ({}): its box is being made; list kind cloud_workspaces says when it's ready",
+                "Made cloud workspace {id} ({}): its box is being made; list kind cloud_workspaces says when it's ready",
                 w["name"].as_str().unwrap_or("?")
             ),
             json!({ "cloud_workspace": w }),
@@ -452,7 +452,7 @@ impl Call<'_> {
         b.call("cancel", json!({})).await.map(|_| ())
     }
 
-    /// `wait` on a hosted workspace's tab.
+    /// `wait` on a cloud workspace's tab.
     pub(crate) async fn hosted_wait(&self, which: &str, tab: &str, until: &str, timeout: Option<f64>) -> Out {
         let mut a = json!({ "pane": tab_pane(tab)?, "until": until });
         if let Some(t) = timeout {
@@ -465,12 +465,12 @@ impl Call<'_> {
 // ---------------------------------------------------------------- this machine's side
 
 /// What only a driving machine's call reaches (not an MCP tool here): a
-/// hosted workspace's files, diff and git status for `read_cloud`, and
+/// cloud workspace's files, diff and git status for `read_cloud`, and
 /// stopping an agent block's turn for `cloud kind interrupt`.
 pub const MACHINE_READ: &str = "machine_read";
 
 /// `POST /api/mcp/call`: a tool call another machine makes for an agent of
-/// its, on this one (M184: a hosted workspace's machine, driven by one of
+/// its, on this one (M184: a cloud workspace's machine, driven by one of
 /// its project's people's machines). Only the owner here: the machine got
 /// in as its person, an owner or an editor of the workspace.
 pub fn routes() -> Router<Arc<App>> {

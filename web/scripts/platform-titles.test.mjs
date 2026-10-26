@@ -27,7 +27,7 @@ test("each route has a title of its own", () => {
   assert.equal(t("/p/prj_aaaa/issues/new"), "New issue · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/settings"), "Settings · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/deploys/new"), "Deploy… · Acme · Arugula");
-  assert.equal(t("/p/prj_aaaa/workspaces"), "Workspaces · Acme · Arugula");
+  assert.equal(t("/p/prj_aaaa/workspaces"), "Cloud workspaces · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/chat/ch_dddd-general"), "#general · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/chat/activity"), "Activity · Chat · Acme · Arugula");
   assert.equal(t("/inbox"), "Inbox · Arugula");

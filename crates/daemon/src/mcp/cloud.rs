@@ -132,7 +132,7 @@ pub struct CloudCreateArgs {
     #[serde(default)]
     pub setup_script: Option<String>,
     /// The names of the secrets its box takes as env vars (set on
-    /// control's page).
+    /// Control).
     #[serde(default)]
     pub secrets: Vec<String>,
 }

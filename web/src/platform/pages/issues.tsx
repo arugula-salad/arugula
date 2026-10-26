@@ -23,6 +23,7 @@ import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
 import { issueTone, toneClass } from "../swarm";
 import { ThreadUnread } from "../thread-unread";
+import { SectionHead } from "../section-head";
 import { Missing } from "./project";
 
 /** Who's in a project: its team's roster, or its one person. */
@@ -58,7 +59,7 @@ export function IssuesOff() {
   return (
     <section class="platform-section sw-page" data-issues-off>
       <PageHeader title="Issues" />
-      <p class="dim">Issues come with chat, which is off for you. A team owner turns it on in the team's Labs, on control's page.</p>
+      <p class="dim">Issues come with chat, which is off for you. A team owner turns it on in the team's Labs, on Control.</p>
     </section>
   );
 }
@@ -245,11 +246,12 @@ function useHome(project: string): [IssueHome | null, (h: IssueHome) => void] {
 
 /** "New issue": the form here, or GitHub's page when the project's issues
  * live there (a menu of its repos when it links several). Nothing until
- * the home is known. `plus`: the project home's small `+`. */
-function NewIssueButton({ p, home, plus }: { p: PlatformProject; home: IssueHome | null; plus?: boolean }) {
+ * the home is known. `small`: the project home's, beside its heading. */
+function NewIssueButton({ p, home, small }: { p: PlatformProject; home: IssueHome | null; small?: boolean }) {
   if (!home) return null;
-  const cls = plus ? "chat-new" : "primary issues-new";
-  const label = plus ? "+" : home.home === "github" ? "New issue on GitHub ↗" : "New issue";
+  // The project home's is a small button beside its heading (UI audit #162).
+  const cls = small ? "secondary small" : "primary issues-new";
+  const label = home.home === "github" ? `${small ? "+ " : ""}New issue on GitHub ↗` : small ? "+ New issue" : "New issue";
   const title = home.home === "github" ? "New issue, on GitHub" : "New issue";
   if (home.home === "github" && home.repos.length === 1) {
     return (
@@ -262,13 +264,13 @@ function NewIssueButton({ p, home, plus }: { p: PlatformProject; home: IssueHome
     return (
       <button class={cls} title={title} aria-label={title} data-issue-new-github onClick={(e) => menuAt(e, [{ header: "New issue on" }, ...home.repos.map((r) => ({ label: `${r} ↗`, run: () => void open(githubNewIssue(r), "_blank", "noopener") }))])}>
         {label}
-        {!plus && <span class="caret"> ▾</span>}
+        <span class="caret"> ▾</span>
       </button>
     );
   }
   const to = pathOf({ page: "new-issue", project: p.id }, names);
   return (
-    <a class={cls} href={to} title={title} aria-label={plus ? title : undefined} data-issue-new={plus ? undefined : ""} data-project-new-issue={plus ? "" : undefined} onClick={(e) => follow(e, to)}>
+    <a class={cls} href={to} title={title} data-issue-new={small ? undefined : ""} data-project-new-issue={small ? "" : undefined} onClick={(e) => follow(e, to)}>
       {label}
     </a>
   );
@@ -465,11 +467,10 @@ function NewIssue({ p }: { p: PlatformProject }) {
  * one, for those who open them). */
 export function ProjectIssues({ p }: { p: PlatformProject }) {
   const [list, setList] = useState<NativeIssue[] | null>(null);
-  const [more, setMore] = useState(false);
   useEffect(() => {
     let live = true;
     issues.list(p.id, {}, undefined, 5).then(
-      (r) => live && (setList(r.issues), setMore(r.more)),
+      (r) => live && setList(r.issues),
       () => live && setList([]),
     );
     return () => void (live = false);
@@ -478,32 +479,22 @@ export function ProjectIssues({ p }: { p: PlatformProject }) {
   const all = pathOf({ page: "issues", project: p.id }, names);
   return (
     <>
-      <h2>
-        <a href={all} data-project-issues-link onClick={(e) => follow(e, all)}>
-          Issues
-        </a>{" "}
-        {mayWrite(p) && <NewIssueButton p={p} home={home} plus />}
-      </h2>
+      <SectionHead title="Issues" all={all} data="project-issues-link" action={mayWrite(p) && <NewIssueButton p={p} home={home} small />} />
       {list?.length === 0 && <p class="dim">No open issues.</p>}
-      <ul class="platform-list" data-project-issues>
+      {/* Rows, as the home's rooms are (UI audit #162): a title and its
+          number, no underline until hovered. */}
+      <ul class="platform-list sw-rows" data-project-issues>
         {list?.map((i) => {
           const to = pathOf({ page: "issue", project: p.id, issue: i.id }, names);
           return (
-            <li key={i.id}>
+            <li key={i.id} class="sw-row">
               <a href={to} data-project-issue={i.number} onClick={(e) => follow(e, to)}>
                 {i.title}
               </a>{" "}
-              <span class="dim">#{i.number}</span>
+              <span class="dim sw-mono">#{i.number}</span>
             </li>
           );
         })}
-        {more && (
-          <li>
-            <a href={all} class="dim" onClick={(e) => follow(e, all)}>
-              Every open issue
-            </a>
-          </li>
-        )}
       </ul>
     </>
   );

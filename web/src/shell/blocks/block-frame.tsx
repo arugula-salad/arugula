@@ -128,7 +128,7 @@ export function BlockFrame(p: FrameProps) {
         </>
       ) : (
         <>
-          <p>This block shows in Arugula control's page</p>
+          <p>This block shows in Control</p>
           <p class="dim">This machine has no block site of its own (--block-listen), so its ports and editors open from control.</p>
         </>
       )}

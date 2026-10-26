@@ -337,7 +337,7 @@ export function HostSection({ close }: { close: () => void }) {
               </span>
               {CLOUD}
               <span class="host-count">{cloudShown.length}</span>
-              <span class="host-caveat">{HOSTED_LABEL.split(": ")[1] ?? HOSTED_LABEL}</span>
+              <span class="host-caveat">{HOSTED_LABEL.split(" · ")[1] ?? HOSTED_LABEL}</span>
             </button>
           </h3>
           {cloudNow && <div class="host-list">{cloudShown.map(row)}</div>}
