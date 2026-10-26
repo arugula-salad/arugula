@@ -57,6 +57,7 @@ pub mod notify;
 pub mod objects;
 pub mod pg;
 pub mod planter;
+pub mod pr_drafts;
 pub mod previews;
 pub mod projects;
 pub mod redone;
