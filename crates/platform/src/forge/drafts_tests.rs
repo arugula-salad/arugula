@@ -307,7 +307,8 @@ pub(super) async fn pushed_session(app: &crate::Platform, gh: &super::links_test
     session_on(app, gh, team, "hw_pr", true).await
 }
 
-/// [`pushed_session`] on workspace `ws`, its one turn `pushed` or not.
+/// [`pushed_session`] on workspace `ws`, its one turn `pushed` or not;
+/// GitHub's compare of its branch has that turn's commit.
 pub(super) async fn session_on(
     app: &crate::Platform,
     gh: &super::links_tests::Shared,
@@ -317,6 +318,7 @@ pub(super) async fn session_on(
 ) -> String {
     let ses = session_with(app, gh, team, ws).await;
     turn(app, &ses, pushed);
+    gh.lock().unwrap().files.insert("acme/app:compare-commits".into(), "abc1234 Add notes".into());
     ses
 }
 
@@ -503,6 +505,34 @@ async fn a_sessions_pr_reads_its_commits_from_github_when_its_turns_name_none() 
     assert_eq!(v["title"], "Add a farewell function", "{v}");
     let body = v["body"].as_str().unwrap();
     assert!(body.ends_with(&format!(" in [its thread](https://app.example/issues/{}).\n", issue.id)), "{body}");
+}
+
+/// A box that committed, failed to push and was rebuilt lost its commit;
+/// the new box made it again and pushed. Both turns' reports name the
+/// commit, by different SHAs, but the PR holds one: its draft lists
+/// GitHub's compare, so the commit once (0.63.1's live test).
+#[tokio::test]
+async fn a_sessions_pr_lists_what_github_has_not_a_lost_commit() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    let (team, _) = world(&hub, &gh, &app).await;
+    let ses = session_with(&app, &gh, &team, "hw_pr").await;
+    turn_with(
+        &app,
+        &ses,
+        &json!({ "branch": "x", "head": "dc275ff", "pushed": false, "commits": ["dc275ff Add shout(name)"] }),
+    );
+    turn_with(
+        &app,
+        &ses,
+        &json!({ "branch": "x", "head": "6561b1e", "pushed": true, "commits": ["6561b1e Add shout(name)"] }),
+    );
+    gh.lock().unwrap().files.insert("acme/app:compare-commits".into(), "6561b1e Add shout(name)".into());
+    let (s, v) = call(&base, "alice", "GET", &format!("/api/sessions/{ses}/pr"), None).await;
+    assert_eq!(s, 200, "{v}");
+    let body = v["body"].as_str().unwrap();
+    assert!(body.starts_with("## Summary\n\n- Add shout(name)\n\n"), "{body}");
+    assert_eq!(body.matches("Add shout(name)").count(), 1, "{body}");
 }
 
 /// A session's branch that changes a CI workflow (which its push token

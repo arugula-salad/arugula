@@ -196,21 +196,29 @@ async fn compare(
         };
     }
     // A session's branch (M259): its commits, oldest first, as GitHub
-    // lists them, and the files it changes (one a line, kept as
-    // `owner/name:compare-files`).
+    // lists them (`SHA subject` a line, kept as `owner/name:compare-commits`,
+    // else two farewell ones), and the files it changes (one a line, kept
+    // as `owner/name:compare-files`).
     if spec.contains("...arugula/") {
-        let files: Vec<Value> = h
-            .lock()
-            .unwrap()
+        let g = h.lock().unwrap();
+        let files: Vec<Value> = g
             .files
             .get(&format!("{o}/{r}:compare-files"))
             .map(|f| f.lines().map(|f| json!({ "filename": f, "status": "modified" })).collect())
             .unwrap_or_default();
-        return Json(json!({ "status": "ahead", "ahead_by": 2, "commits": [
-            { "sha": "a1a1a1a1a1", "commit": { "message": "Add farewell(name)\n\nNext to greet." } },
-            { "sha": "b2b2b2b2b2", "commit": { "message": "Add a test for farewell" } },
-        ], "files": files }))
-        .into_response();
+        let commits: Vec<Value> = match g.files.get(&format!("{o}/{r}:compare-commits")) {
+            Some(c) => c
+                .lines()
+                .filter_map(|l| l.split_once(' '))
+                .map(|(sha, subject)| json!({ "sha": sha, "commit": { "message": subject } }))
+                .collect(),
+            None => vec![
+                json!({ "sha": "a1a1a1a1a1", "commit": { "message": "Add farewell(name)\n\nNext to greet." } }),
+                json!({ "sha": "b2b2b2b2b2", "commit": { "message": "Add a test for farewell" } }),
+            ],
+        };
+        return Json(json!({ "status": "ahead", "ahead_by": commits.len(), "commits": commits, "files": files }))
+            .into_response();
     }
     let sha = spec.split("...").next().unwrap_or_default();
     if h.lock().unwrap().on_main.contains(sha) {
