@@ -557,10 +557,10 @@ pub fn has_harness(h: &str) -> bool {
     }
     let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return false };
     let Some(a) = crate::agent::adapters::of(crate::agent::defs::Kind::Codex) else { return false };
-    let path = std::env::var("PATH").unwrap_or_default();
+    let path = std::env::var_os("PATH").unwrap_or_default();
     crate::agent::adapters::status(a, &home, &[]).ok()
         && (home.join(".local/bin/codex").is_file()
-            || path.split(':').filter(|d| !d.is_empty()).any(|d| Path::new(d).join("codex").is_file()))
+            || std::env::split_paths(&path).filter(|d| !d.as_os_str().is_empty()).any(|d| d.join("codex").is_file()))
 }
 
 /// The agent session `w` runs on here: the one asked for when the box
