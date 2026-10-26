@@ -21,11 +21,21 @@ use crate::util::print_json;
 
 /// The powers an agent gets over a scope (M197, M218's deploys.plan, and
 /// M216's over runs).
-const AGENT_POWERS: [&str; 7] =
-    ["threads.read", "threads.post", "issues.write", "deploys.plan", "runs.read", "runs.start", "runs.command"];
+const AGENT_POWERS: [&str; 9] = [
+    "threads.read",
+    "threads.post",
+    "issues.write",
+    "deploys.plan",
+    "runs.read",
+    "runs.start",
+    "runs.command",
+    "boards.read",
+    "boards.write",
+];
 
 /// Those over a project only.
-const PROJECT_ONLY: [&str; 5] = ["issues.write", "deploys.plan", "runs.read", "runs.start", "runs.command"];
+const PROJECT_ONLY: [&str; 7] =
+    ["issues.write", "deploys.plan", "runs.read", "runs.start", "runs.command", "boards.read", "boards.write"];
 
 /// Where an agent power reaches: one of the two.
 #[derive(clap::Args, Debug, Clone, Default)]
@@ -49,15 +59,17 @@ pub enum GrantsCmd {
     /// project (`--project`) or your DMs (`--dms`), deploys.plan over a
     /// project (plan deploys and ask for approval, never approve),
     /// runs.read, runs.start (its run specs) or runs.command (its own
-    /// commands) over a project, or cloud.drive again.
+    /// commands) over a project, boards.read (a project's status boards) or
+    /// boards.write (add rows, set notes and statuses, move rows; never
+    /// make or delete a zone) over a project, or cloud.drive again.
     /// Every room it reaches says whose agents read and post there, and what
     /// they write is labelled as your agent's on that machine.
     Add {
         /// The machine: its name or id.
         machine: String,
         /// One or more of threads.read, threads.post, issues.write,
-        /// deploys.plan, runs.read, runs.start, runs.command (or
-        /// cloud.drive, with no scope).
+        /// deploys.plan, runs.read, runs.start, runs.command, boards.read,
+        /// boards.write (or cloud.drive, with no scope).
         #[arg(required = true)]
         powers: Vec<String>,
         #[command(flatten)]
@@ -150,7 +162,7 @@ fn give(daemon: &str, power: &str, scope: Option<&Value>) -> anyhow::Result<Valu
         }
         (p, _) => bail!(
             "there's no power called {p}: threads.read, threads.post, issues.write, deploys.plan, runs.read, \
-             runs.start, runs.command or cloud.drive"
+             runs.start, runs.command, boards.read, boards.write or cloud.drive"
         ),
     }
 }

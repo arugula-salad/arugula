@@ -2597,6 +2597,54 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 
+# ---- platform: boards for a machine's agents (boards, step 3)
+# MCP's board tools, signed by the machine, behind the `boards` Labs flag.
+# The owner's role in the project is the ceiling, and the machine needs its
+# grant over it: `boards.read` to read, `boards.write` to change (which
+# reads too), asked on every call. An agent adds rows, sets a row's note and
+# status and moves rows; it never makes a board or makes, changes, moves or
+# deletes a zone, repoints a row, or deletes a row another hand added.
+
+[[route]]
+method = "GET"
+path = "/api/daemon/projects/{project}/boards"  # wire::boards::AGENT_PROJECT_BOARDS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A project's boards (`boards.read`)."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/boards/{id}"  # wire::boards::AGENT_BOARD
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A board with its zones and rows (`boards.read`)."
+
+[[route]]
+method = "PUT"
+path = "/api/daemon/boards/{id}/entries"  # wire::boards::AGENT_BOARD_ENTRIES
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Add a row to a zone, or set a row's note or status (`boards.write`); 409 `stale_rev` when the row moved on."
+
+[[route]]
+method = "DELETE"
+path = "/api/daemon/boards/{id}/entries/{entry}"  # wire::boards::AGENT_BOARD_ENTRY
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A row the same machine's agents added (`boards.write`); anything else is 403."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/entries/{entry}/move"  # wire::boards::AGENT_BOARD_ENTRY_MOVE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Move a row, within its zone or to another (`boards.write`)."
+
 # ---- platform: deploys and their approval (M218, platform step 7)
 # A project's environments and deploys (M217's storage). Members read; owners
 # and editors (or their agents) plan and ask; only an owner approves or

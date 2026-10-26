@@ -353,7 +353,7 @@ impl Call<'_> {
     }
 
     /// The current project's id (module docs).
-    async fn current_project(&self, project: Option<&str>) -> Result<String, String> {
+    pub(super) async fn current_project(&self, project: Option<&str>) -> Result<String, String> {
         let mut q = vec![];
         match project.map(str::trim).filter(|p| !p.is_empty()) {
             Some(p) => q.push(("project", p.to_owned())),
