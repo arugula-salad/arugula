@@ -142,13 +142,13 @@ fn notify(
 }
 
 /// Who did it, as a push names them: a person, or "<owner>'s agent on
-/// <machine>".
+/// <machine>" (an agent token's as a token's, UI audit #192).
 async fn actor_name(app: &Platform, by: Actor<'_>) -> anyhow::Result<String> {
     let me = chat::name_of(app, by.account).await?;
     Ok(match by.agent {
         Some(m) => {
             let machine = crate::grants::agent_names(app, &[m.to_owned()]).await?.remove(m).map(|d| d.name);
-            format!("{me}'s agent on {}", machine.unwrap_or_else(|| m.to_owned()))
+            crate::grants::agent_label(&me, m, machine.as_deref().unwrap_or(m))
         }
         None => me,
     })

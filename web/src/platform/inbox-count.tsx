@@ -16,6 +16,11 @@ import { session } from "./session";
 let entries: InboxEntry[] | null = null;
 const listeners = new Set<() => void>();
 
+/** Whether an entry counts as seen: marked so, or one that's done (a PR
+ * ready, merged or closed, an issue closed), which tells the reader
+ * something and asks nothing of them (UI audit #192). */
+export const isSeen = (e: InboxEntry) => !!e.seen_at || e.reason === "done";
+
 /** What the inbox page just read. */
 export function noteInbox(list: InboxEntry[]) {
   entries = list.filter((e) => e.reason !== "draft");
@@ -35,7 +40,7 @@ async function load() {
 export function inboxUnseen(): number {
   if (entries === null) return 0;
   const threads = chatStore() ? threadNews(chat.rooms, entries).length : 0;
-  return entries.filter((e) => !e.seen_at).length + threads;
+  return entries.filter((e) => !isSeen(e)).length + threads;
 }
 
 /** The count, beside the bar's Inbox: nothing while nothing's unseen. */

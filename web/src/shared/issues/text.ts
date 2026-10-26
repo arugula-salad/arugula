@@ -1,24 +1,27 @@
 // What an issue's page says (M201): a timeline event as a line, who did
-// it (a person, or "<owner>'s agent on <machine>", M197), how long ago,
+// it (a person, or "<owner>'s agent on <machine>", M197, or their agent
+// token, UI audit #192), how long ago,
 // and what a list asks the platform for. Plain functions, for the page
 // and its tests (scripts/issues.test.mjs).
 
 import type { ChatAgent, IssueEvent, NativeIssue } from "../proto";
+import { agentLabel, agentShort } from "../agent-label.ts";
 import { ago as timeAgo } from "../time.ts";
 
 /** An account's name now, or null for someone the page doesn't know. */
 export type NameOf = (account: string) => string | null | undefined;
 
-/** Who did something: a person by name, or their agent (M197). */
+/** Who did something: a person by name, or their agent (M197) on a
+ * machine or by a token (UI audit #192). */
 export function whoLabel(account: string, agent: ChatAgent | null, nameOf: NameOf): string {
   const name = account ? nameOf(account) || "someone who left" : "a deleted account";
-  return agent ? `${name}'s agent on ${agent.machine_name || "a machine that left"}` : name;
+  return agent ? agentLabel(name, agent, "a machine that left") : name;
 }
 
 /** Who, short, for a list's row (UI audit #163): a person by name, an
- * agent as `agent · <machine>`. */
+ * agent as `agent · <machine>` (or `agent token · <name>`). */
 export function whoShort(account: string, agent: ChatAgent | null, nameOf: NameOf): string {
-  if (agent) return `agent · ${agent.machine_name || "a machine that left"}`;
+  if (agent) return agentShort(agent, "a machine that left");
   return account ? nameOf(account) || "someone who left" : "a deleted account";
 }
 

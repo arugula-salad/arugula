@@ -336,11 +336,10 @@ pub(crate) async fn deploy_json(
     let by = |a: &Option<Actor>| match a {
         Some(Actor::Person(p)) => Some(name(p)).filter(|n| !n.is_empty()).unwrap_or_else(|| "a deleted account".into()),
         Some(Actor::Agent { account, machine }) => {
+            // A token's agent as a token's, never a machine's (UI audit #192).
             let m = machine_names.get(machine).map_or(machine.as_str(), |d| d.name.as_str());
-            format!(
-                "{}'s agent on {m}",
-                Some(name(account)).filter(|n| !n.is_empty()).unwrap_or_else(|| "someone".into())
-            )
+            let owner = Some(name(account)).filter(|n| !n.is_empty()).unwrap_or_else(|| "someone".into());
+            crate::grants::agent_label(&owner, machine, m)
         }
         Some(Actor::Run(r)) => format!("run {r}"),
         Some(Actor::Platform) => "the platform".into(),
@@ -715,11 +714,12 @@ async fn push_owners(app: &Platform, by: &Actor, d: &Deploy, env: &Environment, 
     };
     let asked = match by {
         // An agent with no machine (M230): its token's name, said as a
-        // token's, so it can't read as a machine's.
+        // token's, so it can't read as a machine's, in the page's words
+        // (UI audit #192).
         Actor::Agent { account, machine } if crate::db::projects::subject_kind(machine) == "agent" => {
             let token = app.db.agent_token(machine).ok().flatten().map_or_else(|| machine.clone(), |t| t.name);
             let owner = crate::chat::name_of(app, account).await.ok().filter(|n| !n.is_empty());
-            format!("{}'s agent token \u{2018}{token}\u{2019}", owner.as_deref().unwrap_or("someone"))
+            crate::grants::agent_label(owner.as_deref().unwrap_or("someone"), machine, &token)
         }
         Actor::Agent { machine, .. } => {
             let name = crate::grants::agent_names(app, std::slice::from_ref(machine))
