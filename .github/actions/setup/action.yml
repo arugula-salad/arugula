@@ -70,6 +70,14 @@ runs:
       if: inputs.rust == 'true' && env.SCCACHE_WEBDAV_PASSWORD != ''
       shell: bash
       run: |
+        # sccache won't start when its store doesn't answer (it reads one at
+        # startup, and SCCACHE_IGNORE_SERVER_IO_ERROR doesn't cover that), so
+        # every build would fail: if ci-cache is down, compile without it.
+        if ! curl -fsS -o /dev/null --max-time 10 -X PROPFIND -H 'Depth: 0' \
+            -u "arugula-ci:$SCCACHE_WEBDAV_PASSWORD" https://ci-cache.inevitable.fyi/; then
+          echo "::warning::ci-cache didn't answer: compiling without sccache"
+          exit 0
+        fi
         {
           echo "RUSTC_WRAPPER=sccache"
           echo "SCCACHE_WEBDAV_ENDPOINT=https://ci-cache.inevitable.fyi"
@@ -77,7 +85,7 @@ runs:
           echo "SCCACHE_WEBDAV_KEY_PREFIX=arugula"
           # sccache can't cache incremental builds.
           echo "CARGO_INCREMENTAL=0"
-          # If ci-cache is down, compile without it rather than fail.
+          # If the server goes away mid-build, compile without it.
           echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
         } >> "$GITHUB_ENV"
     - name: mise (Zig for libghostty, nextest)

@@ -616,6 +616,12 @@ jobs:
       - name: Compile through sccache
         if: env.SCCACHE_WEBDAV_PASSWORD != ''
         run: |
+          # Without it when it's down: sccache won't start (the setup action's).
+          if ! curl -fsS -o /dev/null --max-time 10 -X PROPFIND -H 'Depth: 0' \
+              -u "arugula-ci:$SCCACHE_WEBDAV_PASSWORD" https://ci-cache.inevitable.fyi/; then
+            echo "::warning::ci-cache didn't answer: compiling without sccache"
+            exit 0
+          fi
           {
             echo "RUSTC_WRAPPER=sccache"
             echo "SCCACHE_WEBDAV_ENDPOINT=https://ci-cache.inevitable.fyi"
