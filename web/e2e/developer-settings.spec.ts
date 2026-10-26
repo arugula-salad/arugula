@@ -47,7 +47,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["chat", "vms", "studio", "workspaces", "guest-ssh", "forges", "agents", "docs"] as const;
+const FLAGS = ["chat", "vms", "studio", "workspaces", "guest-ssh", "forges", "agents"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -83,14 +83,12 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
       forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
       // M76 is the daemon's and the CLI's; the page's catalog is M77's.
       agents: c.flag("agents"),
-      docs: c.flag("docs"),
     };
   });
   if (page_says.chat) out.push("chat");
   if (page_says.workspaces) out.push("workspaces");
   if (page_says.forges) out.push("forges");
   if (page_says.agents) out.push("agents");
-  if (page_says.docs) out.push("docs");
   return FLAGS.filter((f) => out.includes(f));
 }
 
@@ -234,6 +232,17 @@ test("the swarm's views are no flag: swarm-themes is retired", async ({ page }) 
   await page.goto("/#swarm");
   await expect(page.locator(".swarm")).toBeVisible();
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
+});
+
+test("Docs are no flag: docs is retired, and the rail offers them with every flag off", async ({ page }) => {
+  // Doc blocks, the doc tool and the Docs page left Labs (native #204); the
+  // old name is refused as any retired flag is.
+  const r = await setFlag("docs", true);
+  expect(r.ok).toBe(false);
+  expect(await r.text()).toContain("isn't a flag any more");
+  await open(page);
+  await expect(page.locator(".ws-rail [data-open-docs]")).toBeVisible();
+  expect((await ask("GET", "/api/docs", undefined)).status).toBe(200);
 });
 
 test("the flags are the owner's: someone else can't read or change them", async () => {

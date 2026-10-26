@@ -143,7 +143,6 @@ impl Doc {
     /// `doc_share_ask`, for the `doc` tool's `share` and nothing else: raises
     /// the card, or says where it stands. It never uploads.
     pub(super) async fn share_ask(&self, by: Option<String>) -> Result<Value, String> {
-        arugula_mux::labs::flag(&self.link.state_dir, arugula_proto::flags::DOCS)?;
         let by =
             by.filter(|b| b.starts_with("mcp:")).ok_or("an agent asks to share a Doc with the doc tool's share")?;
         let ctx = self.ctx().ok_or("this Doc can't ask here")?;
@@ -201,9 +200,6 @@ impl Doc {
             let _one = self.card.raising.lock().await;
             let Some(ctx) = self.ctx() else { return };
             if self.card.token.lock().unwrap().is_some() || self.closed() {
-                return;
-            }
-            if arugula_mux::labs::flag(&self.link.state_dir, arugula_proto::flags::DOCS).is_err() {
                 return;
             }
             // A card whose day is up (restored after a long stop) is never

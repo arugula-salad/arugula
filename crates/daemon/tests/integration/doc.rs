@@ -28,11 +28,10 @@ const FRIEND: &str = "friend@example.com";
 const EDITOR: &str = "pal@example.com";
 
 /// A daemon with its owner, FRIEND a viewer and EDITOR an editor of its
-/// session, the `docs` flag on, and the first terminal pane.
+/// session, and the first terminal pane.
 fn shared() -> (Daemon, u64, u64) {
     let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
     let d = Daemon::child_with(&args);
-    arugula_proto::flags::set(&d.state, "docs", true).unwrap();
     let p = &d.get("/api/panes")[0];
     let (pane, session) = (p["id"].as_u64().unwrap(), p["session"].as_u64().unwrap());
     d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": "viewer" }));
@@ -405,26 +404,15 @@ fn an_agent_blocks_approval_lets_doc_through_without_a_card() {
     d.wait(near, "needs-input");
 }
 
-#[cfg(feature = "labs")]
+/// Docs left Labs (native #204): offered and made with no flag, even where
+/// an older daemon's `flags.json` turned `docs` off, and a restart keeps
+/// the Doc, filled.
 #[test]
-fn the_flag_hides_the_doc_and_refuses_it_and_a_restart_keeps_it() {
+fn a_doc_needs_no_flag_and_a_restart_keeps_it() {
     let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
     let mut d = Daemon::child_with(&args);
+    std::fs::write(d.state.join("flags.json"), r#"{ "flags": { "docs": false } }"#).unwrap();
     let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
-    let m = Mcp::bridge(&d, Some(pane));
-
-    // Off: unlisted, not offered, and refused with how to turn it on.
-    let caps = m.call("capabilities", json!({})).unwrap();
-    assert!(caps["blocks"].as_array().unwrap().iter().all(|b| b["kind"] != "doc"), "{caps}");
-    let e = m.call("doc", outline(1)).unwrap_err();
-    assert!(e.contains("arugulad flags docs on"), "{e}");
-    let (status, text) = d.raw("POST", "/api/blocks", Some(json!({ "type": "doc", "config": { "title": "x" } })));
-    assert!((400..500).contains(&status) && text.contains("arugulad flags docs on"), "{status} {text}");
-    assert!(d.get("/api/panes").as_array().unwrap().iter().all(|p| p["type"] != "doc"));
-    drop(m);
-
-    // On: offered, and made.
-    arugula_proto::flags::set(&d.state, "docs", true).unwrap();
     let m = Mcp::bridge(&d, Some(pane));
     let caps = m.call("capabilities", json!({})).unwrap();
     let offer = caps["blocks"].as_array().unwrap().iter().find(|b| b["kind"] == "doc").cloned();
@@ -434,9 +422,6 @@ fn the_flag_hides_the_doc_and_refuses_it_and_a_restart_keeps_it() {
     m.call("doc", fill(doc, "s1", "First.")).unwrap();
     drop(m);
 
-    // A restart with the flag off still brings it back, filled: turning a
-    // flag off hides and refuses, it doesn't throw away.
-    arugula_proto::flags::set(&d.state, "docs", false).unwrap();
     d.stop();
     d.start();
     let state = d.state(doc);
@@ -444,11 +429,6 @@ fn the_flag_hides_the_doc_and_refuses_it_and_a_restart_keeps_it() {
     assert_eq!(bodies(&state), [Some("First.".into()), Some("Second.".into()), None]);
     assert_eq!(d.get(&format!("/api/blocks/{doc}"))["info"]["type"], "doc");
     let m = Mcp::bridge(&d, Some(pane));
-    let e = m.call("doc", fill(doc, "s3", "Third.")).unwrap_err();
-    assert!(e.contains("arugulad flags docs on"), "refused while the flag is off: {e}");
-
-    // Back on, the same Doc takes the rest, and the next restart has it all.
-    arugula_proto::flags::set(&d.state, "docs", true).unwrap();
     m.call("doc", fill(doc, "s3", "Third.")).unwrap();
     drop(m);
     d.stop();
@@ -826,17 +806,5 @@ fn only_the_owner_shares_a_doc_and_never_an_agent() {
     assert_eq!((said["shared"].clone(), said["can"].clone()), (Value::Null, json!(false)), "{text}");
     assert!(d.state(doc)["shared"].is_null());
 
-    // Off, it is refused like the rest of Docs (and says how to turn it on).
-    // A build without Labs has no flags to turn off.
-    #[cfg(feature = "labs")]
-    {
-        arugula_proto::flags::set(&d.state, "docs", false).unwrap();
-        let (status, text) = d.raw("POST", &path("doc_share"), Some(json!({})));
-        assert_eq!(status, 400, "{text}");
-        assert!(text.contains("Labs"), "{text}");
-        let (status, text) = d.raw("GET", &format!("/api/doc-links/{id}"), None);
-        assert_eq!(status, 404, "{text}");
-        assert!(text.contains("Labs"), "{text}");
-    }
     drop(m);
 }

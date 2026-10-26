@@ -49,7 +49,9 @@ in `FLAGS`, off by default. (`agents` came later; `fountain` went with
 one", below; `huddles` went when huddles were removed: "Huddles are
 removed", below; `swarm-themes` graduated on 2026-10-26: the swarm's city,
 hive and timeline views are everyone's, picked under the swarm's Theme and
-kept in the browser, so its flag is retired too.)
+kept in the browser, so its flag is retired too; so did `docs` (native
+#204): Doc blocks, the `doc` tool and the Docs page are on every machine,
+and sharing a Doc still asks the owner.)
 - **`labs` is no longer a flag; in the file it means all of them.** `labs`
   in `flags.json` is the answer for every flag
   the file doesn't name itself. A machine that had Labs keeps everything, one

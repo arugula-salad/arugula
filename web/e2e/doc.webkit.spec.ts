@@ -1,6 +1,6 @@
 // #963 on an iPhone (WebKit, docs/testing.md "Phones"): the same checks as
 // doc.spec.ts's, in the engine Safari uses. The daemon is the spec's own,
-// with the `docs` flag on (labs.ts). #964's too: WebKit's <img> of an SVG
+// with Labs on (labs.ts). #964's too: WebKit's <img> of an SVG
 // from a data: URL, and a chart drawn as SVG, which differ from Chrome's.
 // #965's too: a PNG from a data: URL, replaced under its name, with no blob:.
 

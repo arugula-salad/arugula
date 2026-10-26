@@ -995,14 +995,14 @@ const DOC: &[Kind] = &[
         name: "new",
         description: "A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.",
         schema: schema_for_type::<DocNewArgs>,
-        flag: Some(flags::DOCS),
+        flag: None,
     },
     super::ops::kind::<DocsList>(),
     Kind {
         name: "open",
         description: "Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.",
         schema: schema_for_type::<DocOpenArgs>,
-        flag: Some(flags::DOCS),
+        flag: None,
     },
     Kind {
         name: "fill",
@@ -1019,19 +1019,19 @@ A drawing: a ```svg fence holding one <svg> element, with xmlns="http://www.w3.o
 ```
 Every fence is checked before anything is written: a bad chart or drawing is refused with one line saying what to fix, and the section stays as it was."##,
         schema: schema_for_type::<DocFillArgs>,
-        flag: Some(flags::DOCS),
+        flag: None,
     },
     Kind {
         name: "asset",
         description: r##"Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {"kind": "asset", "block": 7, "name": "flow.png", "path": "/tmp/flow.png"}."##,
         schema: schema_for_type::<DocAssetArgs>,
-        flag: Some(flags::DOCS),
+        flag: None,
     },
     Kind {
         name: "share",
         description: r##"Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: "waiting"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it."##,
         schema: schema_for_type::<DocShareArgs>,
-        flag: Some(flags::DOCS),
+        flag: None,
     },
 ];
 
@@ -1186,13 +1186,11 @@ pub(crate) fn block_offers(on: On) -> Vec<results::BlockOffer> {
         }));
     }
     // #963: a Doc opens with its own tool, `new`.
-    if on.has(flags::DOCS) {
-        out.push(results::BlockOffer {
-            kind: "doc".into(),
-            open: "doc {kind: \"new\"}".into(),
-            about: "A report, plan or write-up the user watches fill in, section by section.".into(),
-        });
-    }
+    out.push(results::BlockOffer {
+        kind: "doc".into(),
+        open: "doc {kind: \"new\"}".into(),
+        about: "A report, plan or write-up the user watches fill in, section by section.".into(),
+    });
     out
 }
 
@@ -1334,7 +1332,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: false,
             open_world: false,
-            flag: Some(flags::DOCS),
+            flag: None,
             output: None,
         },
         Def {
@@ -3210,7 +3208,6 @@ impl<'a> Call<'a> {
     /// then its outline.
     async fn doc_new(&self, a: DocNewArgs) -> Out {
         let state = self.app.control.state_dir().to_owned();
-        crate::labs::flag(&state, flags::DOCS)?;
         let (beside, host) = self.beside(a.beside.as_ref()).await?;
         // Two doc new make two Docs: each is made here, before its block.
         let by = self.by();
@@ -3279,7 +3276,6 @@ impl<'a> Call<'a> {
     /// one the user (or another agent) had open stays theirs unless nobody
     /// started it, which the caller then does.
     async fn doc_open(&self, a: DocOpenArgs) -> Out {
-        crate::labs::flag(self.app.control.state_dir(), flags::DOCS)?;
         let (beside, host) = self.beside(a.beside.as_ref()).await?;
         confine(self.on_machine().await?, host.is_some())?;
         let req = DocOpenRequest { id: Some(a.doc.clone()), link: None, session: None, split: beside };
@@ -3306,7 +3302,6 @@ impl<'a> Call<'a> {
 
     /// `doc fill`: one section of a Doc this caller may drive.
     async fn doc_fill(&self, a: DocFillArgs) -> Out {
-        crate::labs::flag(self.app.control.state_dir(), flags::DOCS)?;
         let block = a.block.id()?;
         let p = self.drivable(block).await?;
         if p.info.kind != BlockType::Doc {
@@ -3325,7 +3320,6 @@ impl<'a> Call<'a> {
     /// `doc share`: ask the owner to share a Doc this caller may drive, or
     /// say what became of the ask. It never publishes: the owner's tap does.
     async fn doc_share(&self, a: DocShareArgs) -> Out {
-        crate::labs::flag(self.app.control.state_dir(), flags::DOCS)?;
         let block = a.block.id()?;
         let p = self.drivable(block).await?;
         if p.info.kind != BlockType::Doc {
@@ -3351,7 +3345,6 @@ impl<'a> Call<'a> {
     /// of the caller's or from base64.
     async fn doc_asset(&self, a: DocAssetArgs) -> Out {
         use base64::Engine;
-        crate::labs::flag(self.app.control.state_dir(), flags::DOCS)?;
         let block = a.block.id()?;
         let p = self.drivable(block).await?;
         if p.info.kind != BlockType::Doc {
@@ -4987,7 +4980,7 @@ mod tests {
     /// everyone's since M198.)
     #[test]
     fn the_prose_leaves_out_what_a_stranger_cant_use() {
-        let mut prose = vec![crate::mcp::instructions(fl(false))];
+        let mut prose = vec![crate::mcp::instructions()];
         prose.extend(list(Scope::Full, fl(false)).iter().map(|t| {
             format!(
                 "{}: {} {}",
@@ -5037,38 +5030,33 @@ mod tests {
         let start = with.iter().find(|t| t.name == "start_agent").unwrap();
         let managoat = Value::Object((*start.input_schema).clone()).to_string().contains("\"managoat\"");
         assert!(!managoat, "retired direct execution is never advertised");
-        let with = crate::mcp::instructions(fl(true));
-        assert!(!with.contains("thread") && !with.contains("@agent"), "{with}");
-        // Labs only adds the Doc sentence.
-        let without = crate::mcp::instructions(fl(false));
-        let plain = with.replace(&format!("{} ", flags::DOCS_STEERING), "");
-        assert!(with.len() > without.len() && plain == without);
-        assert!(with.contains(flags::DOCS_STEERING) && !without.contains("Artifact"), "{with}");
-        assert!(with.contains("not an Artifact") && with.contains("`doc share`"), "{with}");
-        // Both steer a new issue to native issues.
-        assert!(with.contains(flags::ISSUES_STEERING) && without.contains(flags::ISSUES_STEERING), "{without}");
-        // Both say when to show a PR (AR-7).
-        assert!(with.contains("show it (kind pr)") && without.contains("show it (kind pr)"), "{without}");
+        let text = crate::mcp::instructions();
+        assert!(!text.contains("thread") && !text.contains("@agent"), "{text}");
+        // Everyone's since Docs left Labs (native #204): the Doc sentence.
+        assert!(text.contains(flags::DOCS_STEERING), "{text}");
+        assert!(text.contains("not an Artifact") && text.contains("`doc share`"), "{text}");
+        // A new issue goes to native issues.
+        assert!(text.contains(flags::ISSUES_STEERING), "{text}");
+        // When to show a PR (AR-7).
+        assert!(text.contains("show it (kind pr)"), "{text}");
     }
 
-    /// #963: `doc` is a tool, with `new` and `fill`, only where `docs` is on;
-    /// then `capabilities` offers it. Without the flag it is not listed, and
-    /// its schema and prose are nowhere.
+    /// #963: `doc` is a tool, with `new` and `fill`, and `capabilities`
+    /// offers it: everywhere, with no flag, since Docs left Labs (native
+    /// #204).
     #[test]
-    fn doc_is_listed_only_with_its_flag() {
+    fn doc_is_listed_with_no_flag() {
         use arugula_proto::flags::On;
-        let docs = |on: On| defs(on).into_iter().find(|d| d.name == "doc");
-        assert!(docs(On::none()).is_none());
-        assert!(docs(On::all()).is_some());
-        let Some(Def { args: Args::Kinds { kinds, .. }, .. }) = docs(On::all()) else { panic!("doc has kinds") };
+        let Some(Def { args: Args::Kinds { kinds, .. }, .. }) = defs(On::none()).into_iter().find(|d| d.name == "doc")
+        else {
+            panic!("doc has kinds")
+        };
         assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "list", "open", "fill", "asset", "share"]);
-        let off = block_offers(On::none());
-        assert!(off.iter().all(|o| o.kind != "doc"), "{off:?}");
-        let on = block_offers(On::all());
-        let offer = on.iter().find(|o| o.kind == "doc").expect("capabilities offers a doc");
+        let offers = block_offers(On::none());
+        let offer = offers.iter().find(|o| o.kind == "doc").expect("capabilities offers a doc");
         assert_eq!(offer.open, "doc {kind: \"new\"}");
         // The schema carries the outline's shape.
-        let tool = list(Scope::Full, On::all()).into_iter().find(|t| t.name == "doc").unwrap();
+        let tool = list(Scope::Full, On::none()).into_iter().find(|t| t.name == "doc").unwrap();
         let schema = Value::Object((*tool.input_schema).clone()).to_string();
         assert!(schema.contains("heading") && schema.contains("intent") && schema.contains("markdown"), "{schema}");
         // ...and the picture's: a file or its bytes.

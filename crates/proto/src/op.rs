@@ -551,7 +551,6 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/doc-links/{id}";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::DOCS);
         // The URL holds the key that opens the Doc.
         const CREDENTIAL: bool = true;
         type Path = String;
@@ -568,7 +567,6 @@ pub mod ops {
         const METHOD: Method = Method::Delete;
         const PATH: &'static str = "/api/doc-links/{id}";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::DOCS);
         type Path = String;
         type Req = Empty;
         type Res = Empty;
@@ -583,7 +581,6 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/docs";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::DOCS);
         type Path = ();
         type Req = Empty;
         type Res = Vec<DocRow>;
@@ -598,7 +595,6 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/docs/open";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::DOCS);
         type Path = ();
         type Req = DocOpenRequest;
         type Res = DocOpened;
@@ -613,7 +609,6 @@ pub mod ops {
         const METHOD: Method = Method::Delete;
         const PATH: &'static str = "/api/docs/{id}";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::DOCS);
         type Path = String;
         type Req = Empty;
         type Res = Empty;

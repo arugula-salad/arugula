@@ -62,8 +62,8 @@ async function up(url: string) {
   throw new Error(`${url} didn't come up`);
 }
 
-/** A control (with a block domain or without), a machine joined to it with
- * the `docs` flag on, and the owner's headless device. */
+/** A control (with a block domain or without), a machine joined to it,
+ * and the owner's headless device. */
 async function rig(blockDomain: string | null, browser?: Page): Promise<Rig> {
   const procs: ChildProcess[] = [];
   const dirs: string[] = [];
@@ -592,7 +592,8 @@ test.describe("Shared Docs… in the account menu", () => {
   async function onControl() {
     await page.goto(`${r.control}/`);
     await expect.poll(() => page.evaluate(() => !!window.__arugula?.client.e2e && window.__arugula.client.connected), { timeout: 30_000 }).toBe(true);
-    await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("docs")), { timeout: 20_000 }).toBe(true);
+    // Docs have no flag (native #204): what waits is the machine's features.
+    await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null), { timeout: 20_000 }).toBe(true);
   }
   const open = async () => {
     await page.locator("[data-account-menu]").click();

@@ -131,12 +131,12 @@ export function controlMenuItems(s: ControlSession): MenuItem[] {
 
 /** The account's own items, in the account menu on every page (the bar's,
  * and the no-machines screen's, #97). Sign out is the menu's own, last. */
-export function accountItems(s: ControlSession, docs = false): MenuItem[] {
+export function accountItems(s: ControlSession): MenuItem[] {
   return [
     { label: "Teams…", run: openPanel("teams") },
     { label: "Devices and machines…", run: openPanel("devices") },
-    // #1066: follows the `docs` flag of the machine shown.
-    ...(docs ? [{ label: "Shared Docs…", run: openPanel("shared-docs") } as MenuItem] : []),
+    // #1066; everyone's since Docs left Labs (native #204).
+    { label: "Shared Docs…", run: openPanel("shared-docs") },
     { label: "Add a phone or browser…", run: openPanel("add-device") },
     { label: "Sign-in and account…", run: openPanel("account") },
     ...(platformOrigin() && s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: () => openPlatform("/settings") }] : []),
