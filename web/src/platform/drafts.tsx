@@ -112,7 +112,8 @@ async function sendDraft(d: ForgeDraft): Promise<DraftSent | null> {
 /** The draft GitHub's authorization came back for (`?draft_send=`), read
  * once as the page loads, before its router tidies the address: the
  * project page may mount more than once. */
-const backFor = new URLSearchParams(location.search).get(BACK);
+// A session's PR (`pdr_`, M259) comes back here too: its card reads it.
+const backFor = new URLSearchParams(location.search).get(BACK)?.replace(/^pdr_.*/, "") || null;
 let backDraft: Promise<ForgeDraft> | null = null;
 
 /** Back from GitHub's authorization: the draft it was for, read again,
