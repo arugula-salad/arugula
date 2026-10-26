@@ -12364,6 +12364,28 @@ html[data-workspace="new"] .thread-panel {
   color: var(--accent);
 }
 
+/* A finger's (UI audit #198): the link stays a line of text in the
+   header, and its target reaches 40px around it. Its line clips (for the
+   ellipsis), so the line takes the room as padding, given back as
+   margin. */
+@media (pointer: coarse) {
+  .chat-title > [data-chat-topic]:has(> .chat-topic.add) {
+    padding-block: 12px;
+    margin-block: -12px;
+  }
+
+  .chat-title .chat-topic.add {
+    position: relative;
+    overflow: visible;
+  }
+
+  .chat-title .chat-topic.add::before {
+    content: "";
+    position: absolute;
+    inset: -12px -8px;
+  }
+}
+
 .chat-pop-wrap {
   position: relative;
   flex: none;

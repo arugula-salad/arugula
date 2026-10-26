@@ -152,6 +152,15 @@ a.secondary.danger:hover {
   label:has(> input:is([type="checkbox"], [type="radio"])) {
     min-height: 40px;
   }
+
+  /* A field is as tall as the buttons beside it (UI audit #198). */
+  .field {
+    min-height: 40px;
+  }
+
+  .field.small {
+    min-height: 34px;
+  }
 }
 
 .primary:disabled,

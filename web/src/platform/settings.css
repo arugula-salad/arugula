@@ -81,6 +81,23 @@
   margin: 6px 0 0;
 }
 
+/* A finger, not a pointer (UI audit #198): More, a row's link and a
+   card's actions are as tall as a button (shared/buttons.css), and a
+   secret's box as tall as its field's. */
+@media (pointer: coarse) {
+  .platform .settings-more > summary,
+  .platform .settings-rows :is(a, .link),
+  .platform .settings-card-act :is(a, .link) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+  }
+
+  .platform .env-secret input {
+    height: 40px;
+  }
+}
+
 /* Appearance & account: what to open, and what it is. */
 .platform .settings-rows > li {
   display: flex;
