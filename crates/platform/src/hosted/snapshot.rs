@@ -137,13 +137,13 @@ fn on(app: &Platform) -> bool {
 
 /// The snapshot a new box of `job`'s workspace starts from: its current
 /// one, when it was built from the spec it has now on this release's
-/// template.
+/// template of its size (M266: the size is in the spec's hash too).
 pub fn source(app: &Platform, job: &HostedJob) -> Result<Option<String>> {
     if job.w.purpose != PURPOSE_WORKSPACE || !on(app) {
         return Ok(None);
     }
     let s = app.db.hosted_snapshots(&job.w.id)?;
-    let template = super::template(app);
+    let template = super::template(app, job.w.spec.size);
     Ok(match (s.id, s.hash, s.template) {
         (Some(id), Some(hash), Some(t)) if hash == job.spec_hash && template.as_deref() == Some(t.as_str()) => Some(id),
         _ => None,
@@ -182,7 +182,8 @@ pub async fn tend(app: &Platform, sub: &dyn Substrate, job: &HostedJob, now: u64
     if job.w.setup.as_ref().is_none_or(|s| s.status != SetupStatus::Ready.as_str()) {
         return Ok(());
     }
-    let Some(template) = super::template(app) else { return Ok(()) };
+    // Its builder is made from its spec, so from its size's template.
+    let Some(template) = super::template(app, job.w.spec.size) else { return Ok(()) };
     if !due(&s, &job.spec_hash, &template, every, now) {
         return Ok(());
     }

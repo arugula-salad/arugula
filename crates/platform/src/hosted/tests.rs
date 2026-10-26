@@ -200,7 +200,8 @@ pub(crate) async fn serve_on(
     serve_on_with(enroll, compute, template, |_| {}).await
 }
 
-async fn serve_on_with(
+/// [`serve_on`], its hosted config changed by `set` first.
+pub(crate) async fn serve_on_with(
     enroll: EnrollBy,
     compute: Arc<dyn Substrate>,
     template: &str,
