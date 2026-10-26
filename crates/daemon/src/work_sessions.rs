@@ -37,8 +37,8 @@
 //!   `needs_input` with what it asks, back, to `done`), a heartbeat every
 //!   [`HEARTBEAT`] while a turn is under way with the tool running now, the
 //!   agent's errors, and each turn's result (`turnwork`'s: branch, commits,
-//!   diffstat; `pushed` stays false until M259 pushes). Each is kept in the
-//!   ledger before it's sent, and sent in order until control takes it.
+//!   diffstat, and `pushed`). Each is kept in the ledger before it's sent,
+//!   and sent in order until control takes it.
 //! - **The finish step** ([`finish_turn`], M261): when the workspace's spec
 //!   has one (`just check`), it runs after each turn, before the push, as
 //!   the session's user in its checkout, with that user's environment
@@ -47,6 +47,11 @@
 //!   `working`, with its output as a prompt from the finish step; the
 //!   push waits for that turn's end, when it runs again. Failing twice, the
 //!   session is done, unpushed, and its card says why.
+//! - **Pushed** ([`push::push_turn`], M259): a turn that left commits of
+//!   its own pushes the session's branch, and only it, from a bundle its
+//!   user writes, through a repo of the daemon's own, with a token control
+//!   mints for that one push. A push that fails is the session's error,
+//!   and the turn says it didn't push.
 //! - **A slot is left clean** ([`clean_slot`]): when a session ends (or
 //!   fails), its checkout and its user's `~/.claude` go, so the next
 //!   session in that slot starts with nothing of it.
@@ -285,6 +290,9 @@ pub struct Session {
     pub last_at: u64,
     #[serde(default)]
     pub events: Vec<Kept>,
+    /// The commit its last push put on GitHub (M259).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pushed_head: Option<String>,
 }
 
 impl Session {
@@ -553,6 +561,7 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         error: None,
         last_at: 0,
         events: vec![],
+        pushed_head: None,
     };
     let fail = |mut l: Session, why: String| {
         info!(session = l.session, why, "hosted: a session can't start here");
@@ -1351,6 +1360,7 @@ async fn fail(app: &Arc<App>, id: &str, why: &str) {
 
 async fn stop_agent(app: &App, l: &Session) {
     BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&l.session);
+    push::clean(app.control.state_dir(), l).await;
     if let Some(block) = l.block {
         if let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten() {
             let _ = b.call("cancel", json!({})).await;
@@ -1425,6 +1435,9 @@ async fn send_all(app: &Arc<App>) {
         send(app, &l.session).await;
     }
 }
+
+#[path = "work_sessions_push.rs"]
+pub mod push;
 
 #[cfg(test)]
 #[path = "work_sessions_tests.rs"]

@@ -60,6 +60,11 @@ pub(crate) struct Gh {
     /// Logins whose installations are a user's, not an organization's
     /// (M232).
     pub(crate) user_accounts: std::collections::BTreeSet<String>,
+    /// Files on a repo's default branch, by `owner/name:path` (M259's PR
+    /// template).
+    pub(crate) files: BTreeMap<String, String>,
+    /// The permissions of each installation token minted, in order.
+    pub(crate) minted: Vec<Value>,
 }
 
 /// What the platform's real App (`arugula-io`) is granted today: it reads
@@ -122,7 +127,8 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
     // For one repository, no more than its installation grants. GitHub's
     // answer names the repository it covers, as M167 checks.
     assert_eq!(b["permissions"]["metadata"], "read");
-    let h = h.lock().unwrap();
+    let mut h = h.lock().unwrap();
+    h.minted.push(b["permissions"].clone());
     // By GitHub's id (a deploy's own repository), or by its short name.
     let by_id = b["repository_ids"][0].as_u64().and_then(|id| h.repos.iter().find(|(_, (i, _))| *i == id));
     if let Some((name, (id, _))) = by_id {
@@ -189,7 +195,9 @@ async fn compare(State(h): State<Shared>, Path((_, _, spec)): Path<(String, Stri
 async fn repo(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
     let name = format!("{o}/{r}");
     match h.lock().unwrap().repos.get(&name) {
-        Some((id, private)) => Json(json!({ "id": id, "full_name": name, "private": private })).into_response(),
+        Some((id, private)) => {
+            Json(json!({ "id": id, "full_name": name, "private": private, "default_branch": "main" })).into_response()
+        }
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -236,12 +244,26 @@ async fn post_as(
     Json(json!({ "number": 12, "html_url": format!("https://github.com{path}#posted") })).into_response()
 }
 
+/// A file on a repo's default branch, as GitHub's contents API answers.
+async fn contents(State(h): State<Shared>, Path((o, r, path)): Path<(String, String, String)>) -> Response {
+    use base64::Engine as _;
+    match h.lock().unwrap().files.get(&format!("{o}/{r}:{path}")) {
+        Some(text) => {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(text);
+            Json(json!({ "type": "file", "path": path, "encoding": "base64", "content": b64 })).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, Json(json!({ "message": "Not Found" }))).into_response(),
+    }
+}
+
 pub(crate) async fn fake_github(h: Shared) -> String {
     let r = Router::new()
         .route("/user", get(user))
         .route("/repos/{o}/{r}/issues/{n}/comments", post(post_as))
         .route("/repos/{o}/{r}/pulls/{n}/reviews", post(post_as))
         .route("/repos/{o}/{r}/issues", post(post_as))
+        .route("/repos/{o}/{r}/pulls", post(post_as))
+        .route("/repos/{o}/{r}/contents/{*path}", get(contents))
         .route("/repos/{o}/{r}/installation", get(installation))
         .route("/app/installations/{id}/access_tokens", post(token))
         .route("/repos/{o}/{r}", get(repo))

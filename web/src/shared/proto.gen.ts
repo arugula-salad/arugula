@@ -3113,9 +3113,13 @@ machine: string | null, block: string | null,
  */
 ports: Array<SessionPort>, 
 /**
- * The draft PR its asker sent (M259).
+ * The PR its asker sent (M259): its URL.
  */
-pr: string | null, };
+pr: string | null, 
+/**
+ * A turn pushed its branch: its asker may draft its PR.
+ */
+pushed: boolean, };
 
 /**
  * A turn's finish step (M261): the command, whether it passed, and when
@@ -3171,6 +3175,75 @@ export type SessionPort = { port: number, label: string,
 url: string | null, };
 
 /**
+ * A session's pull request, as its asker drafts it ([`SESSION_PR`]).
+ */
+export type SessionPr = { session: string, 
+/**
+ * `pdr_…`, once it's kept.
+ */
+id: string | null, 
+/**
+ * `owner/name`.
+ */
+repo: string, 
+/**
+ * The session's branch, which the PR is from.
+ */
+head: string, 
+/**
+ * The branch it goes into: the repo's default, unless its asker says.
+ */
+base: string, title: string, body: string, 
+/**
+ * Opened as a draft PR on GitHub.
+ */
+draft: boolean, 
+/**
+ * `new` (not kept yet: prefilled), `waiting`, `sending`, `sent` or
+ * `failed`.
+ */
+state: string, 
+/**
+ * Why the last send didn't get there.
+ */
+error: string | null, 
+/**
+ * The PR, once sent.
+ */
+url: string | null, number: number | null, 
+/**
+ * The repo's PR template the body started from, by its path.
+ */
+template: string | null, };
+
+/**
+ * [`SESSION_PR`]'s `PUT` body: what its asker wrote.
+ */
+export type SessionPrEdit = { title: string, body: string, draft?: boolean, base?: string, };
+
+/**
+ * [`SESSION_PR_SEND`]'s body: what to send (kept first, when given), and
+ * how: `browser` (GitHub's authorization in this browser, coming back to
+ * `back`, a path on the platform page) or `machine` (one of the asker's
+ * own).
+ */
+export type SessionPrSend = { edit?: SessionPrEdit, via?: string, back?: string, };
+
+/**
+ * [`SESSION_PR_SEND`]'s answer: the PR draft now, and GitHub's
+ * authorization page to go to when the send goes through the browser.
+ */
+export type SessionPrSent = { pr: SessionPr, authorize: string | null, 
+/**
+ * `token` or `machine`, once sent.
+ */
+via: string | null, 
+/**
+ * The machine that sent it.
+ */
+machine: string | null, };
+
+/**
  * What a session's turn left, as its box reported it.
  */
 export type SessionTurn = { at: number, pushed: boolean, head: string | null, 
@@ -3197,6 +3270,10 @@ export type SessionView = { card: SessionCard,
  * project.
  */
 may: boolean, 
+/**
+ * The reader asked for it: only they send its PR.
+ */
+asked: boolean, 
 /**
  * The platform's clock when it answered, so the page can tell a box
  * that went quiet whatever its own clock says.

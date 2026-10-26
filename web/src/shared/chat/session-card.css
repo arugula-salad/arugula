@@ -16,6 +16,8 @@
    pre            its last turn's diffstat
    finish line    what the workspace's finish step made of that turn (a
                   check, or "failed" and its last lines)
+   form           its PR as its asker drafts it (M259): the base, title,
+                  description, and whether it opens as a draft
 
    Palette tokens only, so every appearance holds; the swarm's font stacks
    where the page has them (control's platform page), else the UI's own. */
@@ -232,6 +234,56 @@ a.session-card-id:hover {
 
 .session-card-buttons button.danger:not(:disabled):hover {
   border-color: var(--danger);
+}
+
+/* Its PR's draft, as its asker writes it. */
+.session-pr {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--c) 40%, var(--divider));
+}
+
+.session-pr-where {
+  color: var(--subtle);
+  font: 500 12px/1.6 var(--f-mono, ui-monospace, Menlo, monospace);
+  overflow-wrap: anywhere;
+}
+
+.session-pr :is(input:not([type="checkbox"]), textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+
+.session-pr input.session-pr-base {
+  width: 16ch;
+  padding: 1px 6px;
+  font: inherit;
+}
+
+.session-pr textarea.session-pr-body {
+  min-height: 9em;
+  resize: vertical;
+  font: 12px/1.4 var(--f-mono, ui-monospace, Menlo, monospace);
+}
+
+.session-pr :is(input, textarea):focus-visible {
+  outline: none;
+  border-color: var(--c);
+}
+
+.session-pr-draft,
+.session-pr-note {
+  margin: 0;
+  font-size: 12px;
 }
 
 .session-card-foot {
