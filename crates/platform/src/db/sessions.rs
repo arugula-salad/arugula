@@ -63,9 +63,7 @@
 //!   its session (M223's rule for runs). Its handler is M256's.
 
 use anyhow::{Context as _, Result, bail};
-pub use arugula_control_wire::work::{
-    MAX_SESSIONS_PER_BOX, SessionAction, SessionDetail, SessionPrompt, SessionWork,
-};
+pub use arugula_control_wire::work::{MAX_SESSIONS_PER_BOX, SessionAction, SessionDetail, SessionPrompt, SessionWork};
 pub use arugula_e2e::session::{Kind, QUIET_MS, State};
 
 use super::{
@@ -642,7 +640,9 @@ fn action_row(r: &Row) -> Result<Action> {
 
 fn pending_actions(c: &impl Sql, session: &str) -> Result<Vec<Action>> {
     c.query_map(
-        &format!("SELECT {ACTION_COLS} FROM session_actions WHERE session_id = ?1 AND state = 'pending' ORDER BY at, id"),
+        &format!(
+            "SELECT {ACTION_COLS} FROM session_actions WHERE session_id = ?1 AND state = 'pending' ORDER BY at, id"
+        ),
         params![session],
         action_row,
     )
@@ -1230,7 +1230,9 @@ impl Db {
         if a.option.is_some() && (a.kind != ActionKind::Approve || !a.option.is_some_and(word)) {
             return refuse("only an approval names an option, one word");
         }
-        if a.reason.is_some() && (a.kind != ActionKind::Deny || a.reason.is_some_and(|r| r.chars().count() > MAX_REASON)) {
+        if a.reason.is_some()
+            && (a.kind != ActionKind::Deny || a.reason.is_some_and(|r| r.chars().count() > MAX_REASON))
+        {
             return refuse("only a denial says why, at most 1000 characters");
         }
         if a.request.is_some_and(|r| !word(r)) {

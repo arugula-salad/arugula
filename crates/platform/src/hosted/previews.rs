@@ -135,7 +135,7 @@ async fn workspace(
     Ok((project, w))
 }
 
-fn ports(app: &Platform, workspace: &str, now: u64) -> anyhow::Result<Vec<Port>> {
+pub(crate) fn ports(app: &Platform, workspace: &str, now: u64) -> anyhow::Result<Vec<Port>> {
     let public: std::collections::HashMap<u16, String> = app.db.public_ports(workspace, now)?.into_iter().collect();
     let domain = app.hosted.preview_domain.as_deref();
     Ok(app
