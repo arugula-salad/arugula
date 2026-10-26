@@ -3148,14 +3148,24 @@ A hosted workspace's box (#1235) is made from E2B's template
 release.yml's `template` job builds it (`scripts/ci-hosted-template
 publish`) from `packaging/hosted/Dockerfile` around the tag's static
 arugulad and arugula, with the ACP adapters, Codex, Node, git and gh
-pinned there. E2B starts `arugulad --hosted` at the end of the build and
-snapshots the box once `arugula-hosted-ready` passes, so a box starts with
-the daemon running. The platform makes boxes only from its own version's
+pinned there. E2B starts `arugulad --hosted` (under its supervisor) at the
+end of the build and snapshots the box once `arugula-hosted-ready` passes,
+so a box starts with the daemon running. The platform makes boxes only from its own version's
 tag (`crates/platform/src/compute/template.rs`); there's nothing else to
 record. Until a release's job has finished, E2B refuses creates for it.
 
 - **The key** is the repository secret `E2B_API_KEY`, a key for E2B's
   project. It never goes into a box.
+- **The daemon is supervised** (M258, Arugula #124). E2B runs a template's start
+  command once, at build, so the start command is
+  `arugula-hosted-start` (`packaging/hosted/start`): with systemd as PID 1
+  it starts `arugulad.service` (enabled, so it also starts at boot from a
+  filesystem-only snapshot), which restarts the daemon whenever it exits
+  and gives it `OOMScoreAdjust=-1000`; without systemd (loam, Docker) it
+  supervises the daemon itself, with a backoff. On a box: `systemctl
+  status arugulad`, and `cat /proc/$(pgrep -xo arugulad)/oom_score_adj`
+  says -1000 (a pane's `cat /proc/self/oom_score_adj` says 0).
+  `scripts/tests/hosted-supervisor.sh` checks it without a box.
 - **Nothing per box is in the template.** A snapshot can't read the
   create's env on a secure box (envd's `/envs` wants the access token), so
   the daemon makes its keys and enrolls only once it sees a new sandbox id

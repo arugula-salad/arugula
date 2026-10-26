@@ -75,7 +75,7 @@ pub fn observed(job: &HostedJob, at: u64) -> Observed {
     let running = match job.w.state.as_str() {
         _ if job.deleted_at.is_some() => Some(false),
         "deleting" => None,
-        "creating" | "enrolling" | "ready" => Some(job.sandbox.is_some()),
+        "creating" | "enrolling" | "ready" | "waking" => Some(job.sandbox.is_some()),
         _ => Some(false),
     };
     Observed { sandbox: job.sandbox.clone(), running, seen: job.seen.clone(), at }

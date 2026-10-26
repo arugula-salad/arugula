@@ -90,6 +90,8 @@ struct State {
     activity_down: bool,
     /// Machines on the relay (presence's machine dots).
     online: BTreeSet<String>,
+    /// `machines_online` fails.
+    online_down: bool,
     /// Products accounts let sign them in (M229), by account.
     products: BTreeMap<String, Vec<crate::hub::ProductLink>>,
     /// Issuer access tokens (M228): token, then its account and client.
@@ -213,14 +215,22 @@ impl TestHub {
         }
     }
 
+    /// Whether the hub can say which machines are on the relay.
+    pub(crate) fn online_down(&self, down: bool) {
+        self.state.lock().unwrap().online_down = down;
+    }
+
     /// The hub can't say which machines are working until one says again.
     pub(crate) fn activity_down(&self) {
         self.state.lock().unwrap().activity_down = true;
     }
 
-    /// The box of `workspace` enrolled, as `machine`.
+    /// The box of `workspace` enrolled, as `machine`, and its daemon is on
+    /// the relay (`set_online` takes it off).
     pub(crate) fn enroll(&self, workspace: &str, machine: &str) {
-        self.state.lock().unwrap().enrolled.insert(workspace.into(), machine.into());
+        let mut s = self.state.lock().unwrap();
+        s.enrolled.insert(workspace.into(), machine.into());
+        s.online.insert(machine.into());
     }
 
     /// Someone tried the enrollment of `workspace`'s box again.
@@ -612,6 +622,9 @@ impl HubPort for TestHub {
     fn machines_online<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<String>>> {
         self.called("machines_online");
         let s = self.state.lock().unwrap();
+        if s.online_down {
+            return Box::pin(async { anyhow::bail!("the hub is down") });
+        }
         done(machines.iter().filter(|m| s.online.contains(*m)).cloned().collect())
     }
 

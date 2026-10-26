@@ -1,0 +1,77 @@
+#!/bin/sh
+# The template's start command (M258, Arugula #124): keeps
+# `arugulad --hosted` running, protected from the OOM killer. E2B runs a
+# template's start command once, at build, and snapshots it running; it
+# never runs it again. So whatever restarts the daemon has to be running
+# in that snapshot, or start at boot.
+#
+# - **With systemd as PID 1** (E2B's boxes): arugulad.service supervises
+#   it (Restart=always, OOMScoreAdjust=-1000), and starts it at every boot,
+#   a box from a filesystem-only snapshot included. This only makes sure
+#   the unit is started, then stays, as a start command E2B snapshots.
+# - **Without** (loam, Docker), or if the unit can't be started: this is
+#   the supervisor. It gives itself an oom_score_adj of -1000, which the
+#   daemon inherits, and starts the daemon again whenever it exits, after
+#   1 s, doubling to 30 s while it keeps exiting within a minute. TERM, INT
+#   or HUP stops the daemon and then this. A daemon that already answers on
+#   the socket (one left from an earlier supervisor) is waited on, not
+#   doubled.
+#
+# The daemon's panes and agents don't keep the protection: its shim sets
+# their score back to 0 (crates/mux/src/shim.rs, `unprotect_oom`), so the
+# OOM killer takes a build before the daemon.
+#
+#   arugula-hosted-start [ARGS...]   ARGS: more for `arugulad --hosted`
+#
+# ARUGULAD is another daemon (scripts/tests/hosted-supervisor.sh).
+set -u
+daemon=${ARUGULAD:-/usr/local/bin/arugulad}
+say() { echo "arugula-hosted-start: $*" >&2; }
+
+if [ "$#" -eq 0 ] && [ -d /run/systemd/system ] && sudo -n systemctl start --no-block arugulad.service 2>/dev/null; then
+  say "arugulad.service runs the daemon"
+  exec sleep infinity
+fi
+
+# Lowering a score takes root: the template's sudo rule for `user`.
+if echo -1000 | sudo -n tee "/proc/$$/oom_score_adj" >/dev/null 2>&1; then
+  say "the daemon is protected from the OOM killer (oom_score_adj -1000)"
+else
+  say "can't lower oom_score_adj: the OOM killer may take the daemon"
+fi
+
+child=
+stop() {
+  trap - TERM INT HUP
+  if [ -n "$child" ]; then
+    kill -TERM "$child" 2>/dev/null
+    wait "$child" 2>/dev/null
+  fi
+  exit 0
+}
+trap stop TERM INT HUP
+# A sleep the traps cut short.
+pause() {
+  sleep "$1" &
+  wait $!
+}
+
+delay=1
+while :; do
+  if arugula-hosted-ready 2>/dev/null; then
+    pause 5
+    continue
+  fi
+  started=$(date +%s)
+  "$daemon" --hosted "$@" &
+  child=$!
+  wait "$child"
+  code=$?
+  child=
+  ran=$(($(date +%s) - started))
+  if [ "$ran" -ge 60 ]; then delay=1; fi
+  say "arugulad exited ($code) after ${ran} s: starting it again in ${delay} s"
+  pause "$delay"
+  delay=$((delay * 2))
+  if [ "$delay" -gt 30 ]; then delay=30; fi
+done

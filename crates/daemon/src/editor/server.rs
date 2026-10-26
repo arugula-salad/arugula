@@ -350,6 +350,16 @@ impl Server {
         }
         // It serves every block, not one pane.
         c.env_remove("ARUGULA_PANE");
+        // Nor does it keep a hosted daemon's OOM protection (M258), as a
+        // pane's program doesn't.
+        #[cfg(target_os = "linux")]
+        // SAFETY: unprotect_oom is async-signal-safe.
+        unsafe {
+            c.pre_exec(|| {
+                arugula_mux::shim::unprotect_oom();
+                Ok(())
+            });
+        }
         c
     }
 

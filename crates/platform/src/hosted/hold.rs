@@ -18,8 +18,10 @@
 //! pauses check first ([`super::worker`]). What's left is a race at the
 //! timeout: a turn that starts in the last few seconds before it may find
 //! its box pausing. Its daemon said busy at once, so the next tick's hold
-//! finds the box just paused, and wakes it ([`woke_mid_turn`]): the turn
-//! goes on, maybe with its network connections dropped.
+//! finds the box just paused, and asks the worker to wake it
+//! ([`woke_mid_turn`]), as an open does: the turn goes on, maybe with its
+//! network connections dropped, and the workspace is `ready` again once its
+//! daemon has dialed back in (M258).
 //!
 //! **The provider's cap on continuous running** ([`E2B_PRO_RUNTIME`]): a
 //! hold never moves the timeout past it, so at the cap the box pauses
@@ -135,7 +137,7 @@ pub async fn tick_at(app: &Platform, holds: &mut Holds, now: u64) -> Result<usiz
                 n += 1;
             }
             Err(compute::Error::NotFound) => {
-                if woke_mid_turn(&*sub, &b, timeout, app.hosted.runtime_cap(), now).await {
+                if woke_mid_turn(app, &*sub, &b, now).await {
                     holds.held(&b.workspace, now);
                 }
             }
@@ -151,23 +153,28 @@ pub async fn tick_at(app: &Platform, holds: &mut Holds, now: u64) -> Result<usiz
 const JUST_PAUSED_MS: u64 = 60_000;
 
 /// A hold found the box paused although its daemon says busy: the race at
-/// its timeout. If it paused just now, wake it, so the turn goes on.
-/// Whether it was woken. A box that's gone is the worker's to find, and so
-/// is one that ran to the provider's `cap`: the worker wakes it and says so.
-async fn woke_mid_turn(sub: &dyn Substrate, b: &Running, timeout: Duration, cap: Duration, now: u64) -> bool {
+/// its timeout. If it paused just now, ask the worker to wake it, so the
+/// turn goes on: the worker resumes it and waits for its daemon to dial in
+/// ([`super::worker`]). Whether that was asked. A box that's gone is the
+/// worker's to find, and so is one that ran to the provider's cap: the
+/// worker wakes it and says so.
+async fn woke_mid_turn(app: &Platform, sub: &dyn Substrate, b: &Running, now: u64) -> bool {
+    let cap = app.hosted.runtime_cap();
     let Ok(Some(s)) = sub.status(&b.sandbox).await else { return false };
     let ms = |t: &str| arugula_forge_github::util::time(t).and_then(|t| u64::try_from(t).ok());
     let (Some(started), Some(paused_at)) = (ms(&s.started_at), ms(&s.end_at)) else { return false };
     if s.state != State::Paused || now > paused_at + JUST_PAUSED_MS || ran_to_cap(started, paused_at, cap) {
         return false;
     }
-    match sub.resume(&b.sandbox, timeout).await {
-        Ok(_) => {
-            warn!(workspace = %b.workspace, "a hosted box paused as a turn started: woke it");
+    match super::ask(app, &b.workspace, super::Ask::Wake) {
+        Ok(true) => {
+            warn!(workspace = %b.workspace, "a hosted box paused as a turn started: waking it");
+            app.wakes.kick();
             true
         }
+        Ok(false) => false,
         Err(error) => {
-            warn!(workspace = %b.workspace, %error, "a hosted box paused as a turn started, and didn't wake");
+            warn!(workspace = %b.workspace, %error, "a hosted box paused as a turn started, and its wake wasn't asked");
             false
         }
     }

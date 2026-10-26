@@ -33,7 +33,11 @@
 //!   ([`usage`]).
 //! - **Waking on connect** (M182): when someone opens a workspace's machine
 //!   and its daemon isn't connected, the hub asks the platform to wake its
-//!   box, and the worker resumes it ([`wake`]).
+//!   box, and the worker resumes it ([`wake`]). A woken box is `waking`
+//!   until its daemon dials in again, and `ready` only then; one whose
+//!   daemon doesn't within [`Config::dial_wait`] is failed as needing a
+//!   rebuild, and the project's owners and editors are told (M258, Arugula #124).
+//!   The template supervises the daemon; the platform never reaches in.
 //! - **Pausing only between turns** (M181, "Hosted machines pause only
 //!   between turns", aru-094): the leader [`hold`]s a box while its daemon
 //!   says it's busy, and lets it pause itself when it's idle or silent.
@@ -109,6 +113,10 @@ pub struct Args {
     /// ([`hold::E2B_PRO_RUNTIME`] unless set; E2B's Hobby plan is 3600).
     #[arg(long, env = "ARUGULA_HOSTED_RUNTIME_CAP")]
     pub hosted_runtime_cap: Option<u64>,
+    /// Seconds a woken box's daemon has to dial in before the workspace is
+    /// marked as needing a rebuild ([`worker::DIAL_WAIT`] unless set).
+    #[arg(long, env = "ARUGULA_HOSTED_DIAL_WAIT")]
+    pub hosted_dial_wait: Option<u64>,
     /// Which providers the platform's own inference key covers (M185), for
     /// workspaces made by accounts on ARUGULA_CLOUD_ACCOUNTS: `anthropic`,
     /// `openai`, comma-separated. Each is a dedicated key with a hard
@@ -190,6 +198,7 @@ impl Args {
             cipher: cloud.master_key()?.map(std::sync::Arc::new),
             idle_timeout: self.hosted_idle_timeout.filter(|s| *s > 0).map(Duration::from_secs),
             runtime_cap: self.hosted_runtime_cap.filter(|s| *s > 0).map(Duration::from_secs),
+            dial_wait: self.hosted_dial_wait.filter(|s| *s > 0).map(Duration::from_secs),
             preview_domain: previews::domain(self.preview_domain.as_deref().unwrap_or(""))?,
             broker: broker::Config::new(
                 self.inference_anthropic_key,
@@ -226,6 +235,8 @@ pub struct Config {
     /// holds.
     pub idle_timeout: Option<Duration>,
     pub runtime_cap: Option<Duration>,
+    /// [`Args::hosted_dial_wait`], when set ([`Config::dial_wait`]).
+    pub dial_wait: Option<Duration>,
     /// Whose key agents run on, and the caps on the platform's (M185).
     pub inference: inference::Settings,
     /// Public previews' domain (M187), when they're on.
@@ -242,6 +253,7 @@ impl std::fmt::Debug for Config {
             .field("accounts", &self.accounts)
             .field("idle_timeout", &self.idle_timeout)
             .field("runtime_cap", &self.runtime_cap)
+            .field("dial_wait", &self.dial_wait)
             .field("inference", &self.inference)
             .field("preview_domain", &self.preview_domain)
             .field("broker", &self.broker)
@@ -263,6 +275,11 @@ impl Config {
     /// How long the provider lets a box run without a pause.
     pub fn runtime_cap(&self) -> Duration {
         self.runtime_cap.unwrap_or(hold::E2B_PRO_RUNTIME)
+    }
+
+    /// How long a woken box's daemon has to dial in.
+    pub fn dial_wait(&self) -> Duration {
+        self.dial_wait.unwrap_or(worker::DIAL_WAIT)
     }
 }
 
@@ -391,6 +408,23 @@ impl Ask {
 /// nothing else asked.
 pub fn ask(app: &Platform, workspace: &str, what: Ask) -> anyhow::Result<bool> {
     app.db.ask_hosted(workspace, what, arugula_e2e::now_ms())
+}
+
+/// A workspace's box changed (M258): it's a new box, with a new sandbox id
+/// and a new machine (`new_machine`), as after a rebuild. Called each time
+/// a box enrolls, so also for a workspace's first box, which has no
+/// sessions yet.
+///
+/// A thread's session (M254) that ran on the workspace's earlier box can't
+/// `--resume` there: that conversation's files went with the box. It comes
+/// back from a fresh hydration of the thread plus its archived transcript
+/// ([`transcripts`]) on `new_machine`. Empty until M254's session rows
+/// (which keep `machine`) are on main: M256 or M257 fills it in, moving each
+/// live session on `workspace` to `new_machine` and marking its next turn
+/// as a fresh start.
+pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machine: &str) -> anyhow::Result<()> {
+    let _ = (app, workspace, new_machine);
+    Ok(())
 }
 
 /// The lifecycle's background work, when this platform has a compute

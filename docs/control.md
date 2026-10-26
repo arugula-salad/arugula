@@ -100,6 +100,18 @@ in the platform's log.
 gate): a half-hour turn nobody watches, then the pause; and a box left
 overnight, paused in the morning with its panes still there.
 
+A woken box is `waking` until its daemon dials in again, and `ready` only
+then (M258, Arugula #124): opening it, the hold's wake as a turn starts, and the
+pause and resume before the cap all wait on it. One whose daemon doesn't
+dial in within 60 seconds (`ARUGULA_HOSTED_DIAL_WAIT`) is `failed`, saying
+it needs a rebuild: its box is paused again, and the project's owners and
+editors are pushed, not only whoever opened it. The platform never reaches
+into a box to start the daemon (it holds no way to). The template keeps it
+running instead: `arugulad.service` (`Restart=always`,
+`OOMScoreAdjust=-1000`), or the start command's own loop without systemd
+(`packaging/hosted/start`). Its panes and agents don't keep the OOM
+protection, so the kernel kills a runaway build first.
+
 On its first boot the box sets itself up from the spec (M183, #1244), in a
 pane in a session called `setup` that anyone on the project can watch like
 any pane: it clones the repos into `$HOME`, installs the packages with

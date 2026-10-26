@@ -100,6 +100,21 @@ RUN chmod 0755 /usr/local/bin/arugulad /usr/local/bin/arugula /usr/local/bin/aru
  && chmod 0644 /var/lib/loam/services/arugulad.json \
  && arugulad --version && arugula --version
 
+# ---- M258 (Arugula #124): the daemon is supervised ----------------------
+# Nothing else in a box restarts `arugulad --hosted` when it exits, and a
+# pause keeps a dead one dead. The start command (template.mjs, loam's
+# arugulad.json) is `arugula-hosted-start`: with systemd as PID 1 it starts
+# arugulad.service (Restart=always, OOMScoreAdjust=-1000, enabled here so it
+# starts at every boot); without, it's the supervisor itself. Checked by
+# scripts/tests/hosted-supervisor.sh. Other blocks go above or below this
+# one, not in it.
+COPY start /usr/local/bin/arugula-hosted-start
+COPY arugulad.service /etc/systemd/system/arugulad.service
+RUN chmod 0755 /usr/local/bin/arugula-hosted-start && chmod 0644 /etc/systemd/system/arugulad.service \
+ && mkdir -p /etc/systemd/system/multi-user.target.wants \
+ && ln -sf /etc/systemd/system/arugulad.service /etc/systemd/system/multi-user.target.wants/arugulad.service
+# ---- end M258 ------------------------------------------------------------
+
 # The adapters where the daemon looks first (agent/adapters.rs).
 USER user
 WORKDIR /home/user

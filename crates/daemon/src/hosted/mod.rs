@@ -26,6 +26,12 @@
 //!   can watch ([`setup`], M183).
 //! - **Archives closed agent blocks' transcripts** to its project
 //!   ([`archive`], M184).
+//! - **Is supervised** by the template (M258, Arugula #124): `arugula-hosted-start`
+//!   or `arugulad.service` (packaging/hosted) starts it again when it exits
+//!   and gives it an `oom_score_adj` of -1000, which it logs at start
+//!   ([`oom_protected`]). Its panes and agents give that up (their shim's
+//!   `unprotect_oom`). The platform marks a box whose daemon doesn't dial
+//!   in after a wake as needing a rebuild; nothing reaches in to restart it.
 //!
 //! It holds nothing else on the platform's behalf.
 
@@ -122,6 +128,11 @@ fn exec_self() -> anyhow::Result<std::convert::Infallible> {
 /// idle, its box's setup once it's in control, and, until then, waiting for
 /// its box and enrolling.
 pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
+    match oom_protected() {
+        Some(true) => info!("hosted: protected from the OOM killer (oom_score_adj -1000)"),
+        Some(false) => warn!("hosted: not protected from the OOM killer: is the template's supervisor running it?"),
+        None => {}
+    }
     let control = app.control.clone();
     let c = control.clone();
     resume::watch(Arc::new(move || c.resumed()));
@@ -149,6 +160,13 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
         let c = control.clone();
         enroll::run(url, ticket, state_dir, id_file, move || c.poke()).await;
     });
+}
+
+/// Whether this daemon's `oom_score_adj` is the supervisor's -1000:
+/// `None` where it can't be read.
+pub fn oom_protected() -> Option<bool> {
+    let score = std::fs::read_to_string("/proc/self/oom_score_adj").ok()?;
+    Some(score.trim().parse::<i32>().ok()? <= -1000)
 }
 
 /// A fresh directory for a test.
