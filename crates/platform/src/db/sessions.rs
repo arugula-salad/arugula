@@ -1230,14 +1230,21 @@ pub(super) fn queue_in(c: &impl Sql, s: &Session, p: &NewPrompt, at: u64) -> Res
 
 /// Why a session is queued again on its workspace's new box.
 pub const BOX_REBUILT: &str = "box_rebuilt: the box was rebuilt; starting again from the thread";
+/// ...when the old box archived no transcript of its conversation
+/// (Arugula #209: it was already gone, or didn't answer in time), so the
+/// agent starts again without it.
+pub const BOX_REBUILT_LOST: &str = "box_rebuilt: the box was rebuilt, and the agent's conversation was lost with it \
+                                    (the old box sent no transcript); starting again from the thread";
 
 /// Session `id`, last seen `from`, moves to its workspace's new box
 /// `machine` (M258: the box was rebuilt) in the caller's transaction. A
 /// session no box took yet only follows the workspace's machine. One that
-/// was taken is queued again: control's move, saying [`BOX_REBUILT`]. Its
-/// block was the old box's and its actions asked of that agent, so both
-/// go; its queued prompts are dropped for `prompt` (the thread hydrated
-/// again, which holds them), which the new box's first turn starts with.
+/// was taken is queued again: control's move, saying [`BOX_REBUILT`], or
+/// [`BOX_REBUILT_LOST`] when its conversation was `lost` (no transcript
+/// came from the old box). Its block was the old box's and its actions
+/// asked of that agent, so both go; its queued prompts are dropped for
+/// `prompt` (the thread hydrated again, which holds them), which the new
+/// box's first turn starts with.
 /// The box's report numbers go on from where they were.
 pub fn rebuilt_in(
     c: &impl Sql,
@@ -1245,6 +1252,7 @@ pub fn rebuilt_in(
     from: State,
     machine: &str,
     prompt: &NewPrompt,
+    lost: bool,
     at: u64,
 ) -> Result<Result<Session, Refused>> {
     if from == State::Queued {
@@ -1255,7 +1263,8 @@ pub fn rebuilt_in(
         c.execute("UPDATE agent_sessions SET machine = ?2 WHERE id = ?1", params![id, machine])?;
         return Ok(Ok(session_for_update(c, id)?.context("the session it moved")?));
     }
-    let detail = serde_json::json!({ "reason": BOX_REBUILT, "machine": machine }).to_string();
+    let reason = if lost { BOX_REBUILT_LOST } else { BOX_REBUILT };
+    let detail = serde_json::json!({ "reason": reason, "machine": machine }).to_string();
     let s = match move_session_in(c, id, &Move::Control { from, to: State::Queued, at, detail: &detail })? {
         Ok((s, _)) => s,
         Err(e) => return Ok(Err(e)),
@@ -1739,11 +1748,12 @@ impl Db {
         from: State,
         machine: &str,
         prompt: &NewPrompt,
+        lost: bool,
         at: u64,
     ) -> Result<Result<Session, Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
-        let moved = rebuilt_in(&tx, id, from, machine, prompt, at)?;
+        let moved = rebuilt_in(&tx, id, from, machine, prompt, lost, at)?;
         if moved.is_ok() {
             tx.commit()?;
         }

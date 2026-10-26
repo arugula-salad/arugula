@@ -49,8 +49,8 @@ use crate::{
     db::{
         session_merged::MERGED,
         sessions::{
-            ActionKind, DaemonReport, Event, Kind, Move, NOT_PICKED, NewAction, Refused, Role, Session, SessionDetail,
-            State,
+            ActionKind, BOX_REBUILT_LOST, DaemonReport, Event, Kind, Move, NOT_PICKED, NewAction, Refused, Role,
+            Session, SessionDetail, State,
         },
     },
     forge::links::membership,
@@ -193,6 +193,9 @@ fn line(e: &Event, name: &dyn Fn(&str) -> String) -> String {
     match (e.kind, e.from, e.to) {
         (Kind::State, None, _) => "Asked for".into(),
         (Kind::State, Some(State::Queued), State::Working) => "Its box took it".into(),
+        (Kind::State, Some(_), State::Queued) if d.reason.as_deref() == Some(BOX_REBUILT_LOST) => {
+            "Its box was rebuilt, and its conversation was lost with it: starting again from the thread".into()
+        }
         (Kind::State, Some(_), State::Queued) => "Its box was rebuilt: starting again from the thread".into(),
         (Kind::State, Some(State::Done), State::Working) => "A new turn started".into(),
         (Kind::State, Some(State::NeedsInput), State::Working) => "Answered: working again".into(),
