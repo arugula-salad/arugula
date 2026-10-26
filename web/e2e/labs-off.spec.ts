@@ -1,6 +1,7 @@
 // The default, which is what a stranger gets: a machine without the `labs`
-// flag shows no chat or threads, no studio, VM or sandbox, no
-// "Invite over ssh", and one swarm theme. The rest of the suite
+// flag shows no chat or threads, no studio, VM or sandbox, and no
+// "Invite over ssh" (Guest SSH access is a sharing setting, off by default,
+// native #205). The rest of the suite
 // runs with labs on (e2e/labs.ts), so this is the only proof of the default,
 // and it is in the set that always runs (`E2E_SET=rest`).
 //
@@ -88,7 +89,10 @@ async function noLabsItems(page: Page, pane: number) {
 }
 
 test("the host says labs is off, and what follows it", async () => {
-  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, studio: false, block_channels: false, flags: [] });
+  expect(await features()).toEqual({
+    ...{ labs: false, dev: false, blocks: false, vms: false, studio: false, block_channels: false },
+    ...{ guest_ssh: false, flags: [] },
+  });
 });
 
 test("links to Forgejo and GitLab stay plain links; GitHub's still open as blocks", async ({ page }) => {
@@ -271,8 +275,10 @@ test("setting the flag on the running daemon brings it all back, with no restart
   labs(state);
   expect(await features()).toEqual({
     ...{ labs: true, dev: true, blocks: false, vms: true, studio: true, block_channels: false },
-    // `labs`, the one switch from before, is every flag (#665).
-    flags: ["sandbox-providers", "studio", "chant-workspaces", "guest-ssh", "additional-forges", "agent-delegation"],
+    // `labs`, the one switch from before, is every flag (#665), and keeps guest ssh on as
+    // Guest SSH access, a sharing setting (native #205).
+    guest_ssh: true,
+    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation"],
   });
 
   await open(page);

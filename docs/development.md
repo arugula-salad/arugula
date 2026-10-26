@@ -28,8 +28,8 @@ the web client don't.
 
 ## Working on it
 
-What a new install hides until its flag is on (`arugulad flags vms on`, one
-to a feature: studio, workspaces, VMs, guest ssh, agents) is described
+What a new install hides until its flag is on (`arugulad flags sandbox-providers on`,
+one to a feature: studio, chant workspaces, sandbox providers, agent delegation) is described
 in [labs.md](labs.md); the public docs leave it out. Running control
 yourself, operating the hosted one and testing it are in
 [control-ops.md](control-ops.md).

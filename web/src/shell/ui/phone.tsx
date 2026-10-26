@@ -20,6 +20,7 @@ import { openPicker } from "./picker";
 import { NotifySection } from "./notify";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
+import { openSharing } from "./sharing";
 import { openGettingStarted } from "./welcome";
 import { openPalette } from "./palette";
 import { GateWhy } from "./gate-why";
@@ -341,6 +342,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                     Getting started
                   </button>
                   {owner && <button onClick={act(() => openMachineTelemetry(client))}>Usage and crash reports</button>}
+                  {owner && <button onClick={act(() => openSharing(client))}>Guest SSH access</button>}
                   {owner && client.hasDev() && <button onClick={act(() => openDeveloper(client))}>Developer settings</button>}
                 </div>
               </section>

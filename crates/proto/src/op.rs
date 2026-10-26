@@ -120,6 +120,8 @@ impl Request for crate::flags::FlagSetRequest {}
 
 impl Request for crate::telemetry::TelemetrySetRequest {}
 
+impl Request for crate::sharing::SharingSetRequest {}
+
 impl Request for crate::telemetry::TelemetryNoteRequest {}
 
 impl Request for crate::api::WaitRequest {}
@@ -257,6 +259,8 @@ macro_rules! every_op {
         $m!($crate::op::ops::TelemetryGet);
         $m!($crate::op::ops::TelemetrySet);
         $m!($crate::op::ops::TelemetryNote);
+        $m!($crate::op::ops::SharingGet);
+        $m!($crate::op::ops::SharingSet);
         $m!($crate::op::ops::RulesList);
         $m!($crate::op::ops::RulesForgetAll);
         $m!($crate::op::ops::RuleForget);
@@ -368,6 +372,7 @@ pub mod ops {
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
+        sharing::{Sharing, SharingSetRequest},
         telemetry::{TelemetryInfo, TelemetryNoteRequest, TelemetrySetRequest},
     };
 
@@ -498,6 +503,34 @@ pub mod ops {
         type Path = ();
         type Req = TelemetryNoteRequest;
         type Res = Empty;
+    }
+
+    /// `GET /api/sharing` (native #205): the machine's sharing settings
+    /// (Guest SSH access). The owner's in person, as telemetry's are.
+    pub struct SharingGet;
+
+    impl Op for SharingGet {
+        const NAME: &'static str = "sharing.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/sharing";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = Sharing;
+    }
+
+    /// `PUT /api/sharing` (native #205): the owner turns a sharing setting
+    /// on or off here. It counts at once; pages read `HostFeatures` again.
+    pub struct SharingSet;
+
+    impl Op for SharingSet {
+        const NAME: &'static str = "sharing.set";
+        const METHOD: Method = Method::Put;
+        const PATH: &'static str = "/api/sharing";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = SharingSetRequest;
+        type Res = Sharing;
     }
 
     /// `GET /api/rules`: standing tool permission rules.
@@ -1346,7 +1379,9 @@ pub mod ops {
     }
 
     /// `GET /api/guests` (M65): the ssh invites made here. A credential. A
-    /// build without Labs answers 501 to every method.
+    /// build without Labs answers 501 to every method. Like making and
+    /// revoking one, refused where Guest SSH access is off (a sharing
+    /// setting, `crate::sharing`, native #205; it was the `guest-ssh` flag).
     pub struct GuestsList;
 
     impl Op for GuestsList {
@@ -1354,7 +1389,6 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/guests";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::GUEST_SSH);
         const CREDENTIAL: bool = true;
         type Path = ();
         type Req = Empty;
@@ -1370,7 +1404,6 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/guests";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::GUEST_SSH);
         type Path = ();
         type Req = GuestInviteRequest;
         type Res = GuestInvite;
@@ -1384,7 +1417,6 @@ pub mod ops {
         const METHOD: Method = Method::Delete;
         const PATH: &'static str = "/api/guests/{id}";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::GUEST_SSH);
         type Path = u32;
         type Req = Empty;
         type Res = Empty;

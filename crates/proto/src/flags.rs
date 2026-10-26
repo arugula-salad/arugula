@@ -45,8 +45,7 @@
 //!   the account owns the machine, a team only reaches the machines in it.
 //!   So each flag is three-way in `flags.json`: on, off, or not named,
 //!   which follows control ([`unset`]). A [`Flag::local_only`] one
-//!   (`guest-ssh`, `agent-delegation`) ignores control: only `flags.json`
-//!   sets it.
+//!   (`agent-delegation`) ignores control: only `flags.json` sets it.
 //! - **A feature that leaves Labs takes its row with it.** Its name moves to
 //!   [`RETIRED`]: a file or a control push that still names it is read as
 //!   it always was, as a name that isn't a flag, and nothing follows, while
@@ -88,8 +87,6 @@ pub const SANDBOX_PROVIDERS: &str = "sandbox-providers";
 pub const STUDIO: &str = "studio";
 /// Chant workspace blocks. Was `workspaces`.
 pub const CHANT_WORKSPACES: &str = "chant-workspaces";
-/// Inviting a guest to a pane over plain ssh.
-pub const GUEST_SSH: &str = "guest-ssh";
 /// Forgejo and GitLab blocks, beside GitHub's. Was `forges`.
 pub const ADDITIONAL_FORGES: &str = "additional-forges";
 /// Agent recipes offered from this machine, the team's agent catalog and
@@ -124,8 +121,9 @@ pub struct Flag {
     pub default: bool,
     /// Only this machine's `flags.json` sets it (#347): control's word on
     /// it, for the account or the team, is ignored. For what opens a way
-    /// in or acts for the machine (guest ssh, offering agents), which the
-    /// machine's owner turns on there or not at all.
+    /// in or acts for the machine (offering agents), which the
+    /// machine's owner turns on there or not at all. (Guest ssh was one;
+    /// it is a sharing setting now, `crate::sharing`, native #205.)
     pub local_only: bool,
 }
 
@@ -150,7 +148,6 @@ pub const FLAGS: &[Flag] = &[
         "Chant workspaces",
         "Chant workspace blocks: a workspace's members, relationships and gates.",
     ),
-    local_row(GUEST_SSH, "Guest ssh", "Invite a guest to a pane over plain ssh."),
     row(ADDITIONAL_FORGES, "GitLab and Forgejo", "PR and issue blocks for GitLab and Forgejo, beside GitHub's."),
     local_row(
         AGENT_DELEGATION,
@@ -177,6 +174,12 @@ pub const RETIRED: &[(&str, &str)] = &[
     // Graduated (native #204): Doc blocks, the doc tool and the Docs page.
     // Sharing one is still the owner's tap, or a card that asks them.
     ("docs", "Docs are no longer in Labs: every machine has Doc blocks, the doc tool and the Docs page"),
+    // Graduated to a sharing setting (native #205), which reads this name
+    // once to keep a machine's choice ([`said_here`], `crate::sharing`).
+    (
+        "guest-ssh",
+        "Guest SSH access is a sharing setting now, off until the machine's owner turns it on: `arugulad sharing guest-ssh on`, or Guest SSH access… in the machine menu",
+    ),
     // Never a flag, but the name it would have now.
     (
         "managoat",
@@ -477,6 +480,15 @@ pub fn get(state_dir: &Path, name: &str) -> bool {
     lookup(name).is_some_and(|f| read(state_dir).state(&read_control(state_dir), f).on)
 }
 
+/// What this machine's `flags.json` says of `name`, by name or by `labs`
+/// (which was every flag), whether or not it is a flag now: how a feature
+/// that left Labs for a setting keeps the machine's choice (`guest-ssh`,
+/// native #205). Control's word isn't read.
+pub fn said_here(state_dir: &Path, name: &str) -> Option<bool> {
+    let doc = read(state_dir);
+    doc.says(name).or_else(|| doc.says(LABS))
+}
+
 /// Every flag with its state, from one read of each file.
 pub fn all(state_dir: &Path) -> Vec<(Flag, bool)> {
     explain(state_dir).into_iter().map(|(f, s)| (f, s.on)).collect()
@@ -627,13 +639,13 @@ mod tests {
         );
         // One flag turns on alone.
         assert_eq!(names(&d), [ADDITIONAL_FORGES]);
-        set(&d, GUEST_SSH, true).unwrap();
+        set(&d, CHANT_WORKSPACES, true).unwrap();
         set(&d, ADDITIONAL_FORGES, false).unwrap();
-        assert_eq!(names(&d), [GUEST_SSH]);
-        assert_eq!(all(&d).iter().filter(|(_, on)| *on).map(|(f, _)| f.name).collect::<Vec<_>>(), [GUEST_SSH]);
+        assert_eq!(names(&d), [CHANT_WORKSPACES]);
+        assert_eq!(all(&d).iter().filter(|(_, on)| *on).map(|(f, _)| f.name).collect::<Vec<_>>(), [CHANT_WORKSPACES]);
         assert_eq!(all(&d).len(), FLAGS.len());
         // All off is still an answer: the file stays, and so does the asking.
-        set(&d, GUEST_SSH, false).unwrap();
+        set(&d, CHANT_WORKSPACES, false).unwrap();
         assert!(!on(&d).any() && unlocked(&d));
         fs::remove_dir_all(&d).unwrap();
     }
@@ -815,18 +827,19 @@ mod tests {
         fs::remove_dir_all(&d).unwrap();
     }
 
-    /// Guest ssh and the agent catalog are the machine's alone: control
-    /// turns them neither on nor off.
+    /// The agent catalog is the machine's alone: control turns it neither
+    /// on nor off. (Guest ssh was too; it's a sharing setting now, which
+    /// control never writes, native #205.)
     #[test]
     fn control_has_no_say_in_a_local_only_flag() {
         let local: Vec<_> = FLAGS.iter().filter(|f| f.local_only).map(|f| f.name).collect();
-        assert_eq!(local, [GUEST_SSH, AGENT_DELEGATION]);
+        assert_eq!(local, [AGENT_DELEGATION]);
         let d = dir("local-only");
-        write_control(&d, &pushed(&[(GUEST_SSH, true)], &[(AGENT_DELEGATION, true), (ADDITIONAL_FORGES, true)]))
+        write_control(&d, &pushed(&[(AGENT_DELEGATION, true)], &[(AGENT_DELEGATION, true), (ADDITIONAL_FORGES, true)]))
             .unwrap();
         assert_eq!(names(&d), [ADDITIONAL_FORGES]);
         assert_eq!(
-            state_of(&d, GUEST_SSH),
+            state_of(&d, AGENT_DELEGATION),
             State { on: false, source: Source::Default, local: None, account: None, team: None }
         );
         assert_eq!(state_of(&d, AGENT_DELEGATION).source, Source::Default);

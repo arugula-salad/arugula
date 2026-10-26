@@ -31,6 +31,7 @@ pub mod keys;
 pub mod op;
 pub mod service;
 pub mod setup;
+pub mod sharing;
 pub mod shell_path;
 pub mod telemetry;
 #[cfg(all(test, feature = "ts"))]

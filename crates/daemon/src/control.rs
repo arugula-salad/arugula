@@ -3709,11 +3709,16 @@ pub(crate) mod tests {
     }
 
     /// #347: control refuses the flags only a machine sets, and the daemon
-    /// ignores them; both lists are one list.
+    /// ignores them; both lists are one list, but for `guest-ssh`, retired
+    /// into a sharing setting control never writes (native #205), which
+    /// control still refuses for daemons from before it.
     #[test]
     fn controls_local_only_flags_are_the_registrys() {
-        let registry: Vec<&str> = arugula_proto::flags::FLAGS.iter().filter(|f| f.local_only).map(|f| f.name).collect();
+        let mut registry: Vec<&str> =
+            arugula_proto::flags::FLAGS.iter().filter(|f| f.local_only).map(|f| f.name).collect();
+        registry.insert(0, arugula_proto::sharing::OLD_FLAG);
         assert_eq!(registry, wire::LOCAL_ONLY_FLAGS);
+        assert!(arugula_proto::flags::retired(arugula_proto::sharing::OLD_FLAG).is_some());
     }
 
     /// aru-117: control's renamed flags are the registry's, so what it

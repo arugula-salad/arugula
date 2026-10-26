@@ -20,27 +20,28 @@ pub struct Args {
     /// How long it works (e.g. 30m, 2h, 7d; a week at most).
     #[arg(long, default_value = "1h")]
     ttl: String,
-    /// An ssh invite instead of a link. (`--ssh` is taken: it
-    /// reaches a box over ssh, so `--ssh box share --guest` makes an
-    /// invite there.)
-    #[arg(long, hide = true)]
+    /// An ssh invite instead of a link, where the machine's owner has
+    /// turned on Guest SSH access (`arugulad sharing guest-ssh on`).
+    /// (`--ssh` is taken: it reaches a box over ssh, so `--ssh box share
+    /// --guest` makes an invite there.)
+    #[arg(long)]
     guest: bool,
     /// They may type, when nobody else is driving the pane.
-    #[arg(long, hide = true, requires = "guest")]
+    #[arg(long, requires = "guest")]
     rw: bool,
     /// Good for any number of logins until it ends.
-    #[arg(long, hide = true, requires = "guest")]
+    #[arg(long, requires = "guest")]
     reusable: bool,
     /// What to call them on their input [default: guest].
-    #[arg(long, hide = true, requires = "guest")]
+    #[arg(long, requires = "guest")]
     name: Option<String>,
     /// The address they should ssh to [default: the daemon's
     /// --guest-ssh-host, else its hostname]. Not through control.
-    #[arg(long = "addr", hide = true, requires = "guest", conflicts_with = "relay")]
+    #[arg(long = "addr", requires = "guest", conflicts_with = "relay")]
     addr: Option<String>,
     /// Through control's ssh jump host, or fail [default: when this
     /// machine is joined to control and no address is set].
-    #[arg(long, hide = true, requires = "guest")]
+    #[arg(long, requires = "guest")]
     relay: bool,
 }
 

@@ -752,8 +752,7 @@ export class Client {
   }
 
   /** Whether this machine has any Labs flag on: something a stranger
-   * doesn't get (chat, studio, VMs, guest ssh, the
-   * swarm's extra views). `flag` says which. Unlike `has`, unknown means no:
+   * doesn't get (chat, studio, VMs, agents, docs). `flag` says which. Unlike `has`, unknown means no:
    * control serves this page to older daemons too, which never say. */
   hasLabs(): boolean {
     return this.features?.labs === true;
@@ -768,6 +767,16 @@ export class Client {
     if (f?.labs !== true) return false;
     if (!f.flags) return true;
     return f.flags.includes(name) || FLAG_ALIASES.some(([old, now]) => now === name && f.flags!.includes(old));
+  }
+
+  /** Whether this machine's owner has turned on Guest SSH access, a
+   * sharing setting (native #205): a pane's menu offers *Invite over
+   * ssh…*. A daemon from before says it as the `guest-ssh` flag. */
+  guestSsh(): boolean {
+    const f = this.features;
+    if (f?.guest_ssh !== undefined) return f.guest_ssh;
+    // Not a flag name any more, so read the old daemon's list by hand.
+    return f?.labs === true && (!f.flags || f.flags.includes("guest-ssh"));
   }
 
   /** Whether this machine has asked for Developer settings (`arugulad flags`),

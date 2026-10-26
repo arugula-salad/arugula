@@ -302,6 +302,13 @@ pub struct HostFeatures {
     pub vms: bool,
     /// A studio is linked (`arugula studio login`).
     pub studio: bool,
+    /// Guest SSH access is on here (a sharing setting, native #205), in a
+    /// build that has it: the owner may invite a guest over ssh. Absent
+    /// from a daemon before it, where the `guest-ssh` flag in `flags`
+    /// says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub guest_ssh: Option<bool>,
     /// The names of the Labs flags that are on, whatever else each needs
     /// (a login, a provider). `None` from a daemon before #665: see `labs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

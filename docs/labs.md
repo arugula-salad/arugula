@@ -19,6 +19,21 @@ in `flags.json` does nothing, and a machine's old threads are no longer
 brought into control. [Threads and chat](#threads-and-chat) still
 describes it below.
 
+Guest ssh (inviting someone with only OpenSSH to a pane, M65) was the
+`guest-ssh` flag until it left Labs (2026-10-26, native #205). It is a
+sharing setting now, **Guest SSH access**, off until the machine's owner
+turns it on: *Guest SSH access…* in the machine's settings (the machine
+menu, the account menu's *This machine*, the phone's sheet), or
+`arugulad sharing guest-ssh on` on the machine. It is kept in
+`sharing.json` in the state directory (`arugula_proto::sharing`), which
+control never writes, so no push turns it on, as the flag was local-only.
+A machine that had the flag on (by name, or `labs`) keeps it on: the
+daemon writes the old flag's word there once, at its start. With it off,
+*Invite over ssh…* isn't offered and `/api/guests` (list, invite, revoke)
+is refused, saying how to turn it on. `arugula guests`, `arugula share
+--guest…` and `arugulad --guest-ssh`/`--guest-ssh-host` (the listener) are
+always in `--help` now; `guest-ssh` is a retired flag.
+
 ## Turning a feature on
 
 Each feature has a flag, off on a new install:
@@ -28,7 +43,6 @@ Each feature has a flag, off on a new install:
 | `sandbox-providers` | VM tabs and panes, machines and the sandboxes page, from your own sandbox provider (cloud workspaces are the platform's, and need no flag) |
 | `studio` | Studio app blocks |
 | `chant-workspaces` | Chant workspace blocks: a workspace's members, relationships and gates |
-| `guest-ssh` | *Invite over ssh…* for a guest with only OpenSSH |
 | `additional-forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on), until they fit platform projects and workflows |
 | `agent-delegation` | Agent recipes, offering them from this machine as A2A agents, the team's agent catalog and tasks between machines (#403); set only on the machine |
 
@@ -47,7 +61,6 @@ one isn't made.
 | `sandbox-providers` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `chant-workspaces` | chant workspace blocks |
-| `guest-ssh` | `/api/guests` (list, invite, revoke) |
 | `additional-forges` | Forgejo and GitLab blocks and webhooks |
 | `agent-delegation` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
 
@@ -92,18 +105,17 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
   [Threads and chat](#threads-and-chat)).
 - **No restart.** The daemon reads the flags whenever it's asked.
 - **Each feature still needs its own setup.** Studio needs a link, VMs a
-  sandbox provider, guest ssh its listener; a flag lets its
+  sandbox provider; a flag lets its
   feature be shown and used, and sets nothing up.
 
 ## What labs unhides
 
 - **CLI (`arugula --help`):** `studio`, `app`, `workspace`,
-  `agents`, `guests`, `machines`, `sandboxes`;
-  `agent --vm/--machine/--as`,
-  `run --vm/--vm-tab/--image/--sandbox`, and
-  `share --guest/--rw/--reusable/--relay/--addr/--name`
+  `agents`, `machines`, `sandboxes`;
+  `agent --vm/--machine/--as`, and
+  `run --vm/--vm-tab/--image/--sandbox`
   (`LABS_COMMANDS`, `LABS_OPTIONS` in `crates/cli/src/main.rs`).
-- **Daemon (`arugulad --help`):** `--guest-ssh`, `--guest-ssh-host`,
+- **Daemon (`arugulad --help`):**
   `--studio-file`, `--wisp-url`,
   `--wisp-token-file`, `--loam-url`,
   `--loam-key-file`

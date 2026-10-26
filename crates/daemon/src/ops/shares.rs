@@ -4,6 +4,9 @@
 //! both lists are credentials. A share is small enough to be done here;
 //! guests are Labs', so each goes through `crate::labs`, whose twin in a
 //! build without it answers the 501 every method of `/api/guests` gave.
+//! Guests need Guest SSH access on, a sharing setting (native #205; it was
+//! the `guest-ssh` flag): off, each is refused as a route that isn't there,
+//! saying how to turn it on, as a flag's are.
 
 use arugula_proto::{
     BlockType,
@@ -51,20 +54,33 @@ impl Handle for ShareRevoke {
     }
 }
 
+/// `Ok` where the owner has turned on Guest SSH access. A build without
+/// Labs answers past it, with what it lacks ([`crate::labs::guest_list`]'s
+/// twin), as it did past the flag.
+fn guest_ssh_on(cx: &Cx<'_>) -> Result<(), OpError> {
+    if crate::labs::BUILT && !arugula_proto::sharing::guest_ssh(cx.app.control.state_dir()) {
+        return Err(OpError::Status(StatusCode::NOT_FOUND, arugula_proto::sharing::GUEST_SSH_OFF.into()));
+    }
+    Ok(())
+}
+
 impl Handle for GuestsList {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Vec<GuestInvite>, OpError> {
+        guest_ssh_on(cx)?;
         Ok(crate::labs::guest_list(cx.app)?)
     }
 }
 
 impl Handle for GuestMint {
     async fn handle(cx: &Cx<'_>, _: (), req: GuestInviteRequest) -> Result<GuestInvite, OpError> {
+        guest_ssh_on(cx)?;
         Ok(crate::labs::guest_mint(cx.app, req).await?)
     }
 }
 
 impl Handle for GuestRevoke {
     async fn handle(cx: &Cx<'_>, id: u32, _: Empty) -> Result<Empty, OpError> {
+        guest_ssh_on(cx)?;
         crate::labs::guest_revoke(cx.app, id).await?;
         Ok(Empty {})
     }

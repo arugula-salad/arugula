@@ -47,7 +47,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["sandbox-providers", "studio", "chant-workspaces", "guest-ssh", "additional-forges", "agent-delegation"] as const;
+const FLAGS = ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -62,10 +62,12 @@ const onNow = () =>
     .filter(([, on]) => on)
     .map(([name]) => name);
 
-/** Which flags' features this page shows, each by its own sign. */
-async function shown(page: Page, pane: number): Promise<Flag[]> {
+/** Which flags' features this page shows, each by its own sign; and
+ * `guest-ssh` for *Invite over ssh…*, which is a sharing setting now
+ * (native #205), so no flag shows it. */
+async function shown(page: Page, pane: number): Promise<(Flag | "guest-ssh")[]> {
   await page.evaluate(() => window.__arugula.client.loadFeatures());
-  const out: Flag[] = [];
+  const out: (Flag | "guest-ssh")[] = [];
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
   await expect(page.getByRole("menuitem", { name: "Share read-only link…" })).toBeVisible();
   const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
@@ -85,7 +87,7 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
   if (page_says.workspaces) out.push("chant-workspaces");
   if (page_says.forges) out.push("additional-forges");
   if (page_says.agents) out.push("agent-delegation");
-  return FLAGS.filter((f) => out.includes(f));
+  return [...FLAGS, "guest-ssh" as const].filter((f) => out.includes(f));
 }
 
 async function start(page: Page) {
@@ -193,7 +195,6 @@ const GATED: [Flag, string, string, unknown][] = [
   ["studio", "GET", "/api/studio", undefined],
   ["studio", "POST", "/api/blocks", { type: "app", config: { app: "nothing-here" }, local: true }],
   ["chant-workspaces", "POST", "/api/blocks", { type: "workspace", config: {}, local: true }],
-  ["guest-ssh", "GET", "/api/guests", undefined],
   ["additional-forges", "POST", "/api/blocks", { type: "forge", config: { repo: "o/r", number: 0, provider: "forgejo" }, local: true }],
   ["agent-delegation", "GET", "/api/a2a/agents", undefined],
 ];
@@ -221,8 +222,39 @@ test("each flag's routes and blocks follow it: refused off, saying how to turn i
   }
 });
 
-test("an ssh invite from the pane's menu works with its flag on, and is refused once it's off", async ({ page }) => {
-  expect((await setFlag("guest-ssh", true)).ok).toBe(true);
+const setSharing = (guest_ssh: boolean, as?: string) =>
+  fetch(`${base}/api/sharing`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", ...(as ? { "tailscale-user-login": as } : {}) },
+    body: JSON.stringify({ guest_ssh }),
+  });
+
+const sharingDialog = (page: Page) => page.getByRole("dialog", { name: "Guest SSH access" });
+
+test("guest ssh is a sharing setting, off by default: the machine's settings turn the ssh invite on", async ({ page }) => {
+  // Not a flag any more (native #205): the old name is refused, saying where it went.
+  const old = await setFlag("guest-ssh", true);
+  expect(old.ok).toBe(false);
+  expect(await old.text()).toContain("sharing setting");
+  const pane = await start(page);
+  expect(await shown(page, pane)).toEqual([]);
+  const off = await ask("POST", "/api/guests", { pane });
+  expect(off.status).toBe(404);
+  expect(off.text).toContain("`arugulad sharing guest-ssh on`");
+
+  await page.locator(".ws-head [data-account-menu]").click();
+  await page.getByRole("menuitem", { name: "Guest SSH access…" }).click();
+  const sw = sharingDialog(page).getByRole("switch", { name: "Guest SSH access on this machine" });
+  await expect(sw).not.toBeChecked();
+  await sw.check();
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.guestSsh())).toBe(true);
+  expect(JSON.parse(readFileSync(join(state, "sharing.json"), "utf8"))).toEqual({ guest_ssh: true });
+  await sharingDialog(page).getByRole("button", { name: "Done", exact: true }).click();
+  expect(await shown(page, pane)).toEqual(["guest-ssh"]);
+});
+
+test("an ssh invite from the pane's menu works with Guest SSH access on, and is refused once it's off", async ({ page }) => {
+  expect((await setSharing(true)).ok).toBe(true);
   const pane = await start(page);
   await page.evaluate(() => window.__arugula.client.loadFeatures());
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
@@ -233,10 +265,10 @@ test("an ssh invite from the pane's menu works with its flag on, and is refused 
     await fetch(`${base}/api/guests/${i.id}`, { method: "DELETE" });
   }
   // Off: the menu loses it, and the route behind it says why.
-  expect((await setFlag("guest-ssh", false)).ok).toBe(true);
+  expect((await setSharing(false)).ok).toBe(true);
   const r = await ask("POST", "/api/guests", { pane });
   expect(r.status).toBe(404);
-  expect(r.text).toContain("`arugulad flags guest-ssh on`");
+  expect(r.text).toContain("`arugulad sharing guest-ssh on`");
   expect(await shown(page, pane)).toEqual([]);
 });
 
@@ -274,4 +306,8 @@ test("the flags are the owner's: someone else can't read or change them", async 
   expect((await setFlag("vms", true, other)).status).toBe(403);
   expect((await fetch(`${base}/api/flags`, { headers: { "tailscale-user-login": other } })).status).toBe(403);
   expect(onNow()).toEqual([]);
+  // Guest SSH access too (native #205).
+  expect((await setSharing(true, other)).status).toBe(403);
+  expect((await fetch(`${base}/api/sharing`)).ok).toBe(true);
+  expect(((await (await fetch(`${base}/api/sharing`)).json()) as { guest_ssh: boolean }).guest_ssh).toBe(false);
 });

@@ -30,7 +30,9 @@ pub struct TrustAnswer {
 
 /// Labs flags only a machine sets for itself (#347): control refuses to
 /// store them, and a daemon ignores them if sent. The daemon's tests check
-/// this is `arugula_proto::flags`'s `local_only` rows.
+/// this is `arugula_proto::flags`'s `local_only` rows, and `guest-ssh`,
+/// which is a sharing setting now (native #205) that control never writes:
+/// still refused, for daemons from before that.
 pub const LOCAL_ONLY_FLAGS: &[&str] = &["guest-ssh", "agent-delegation"];
 
 /// Labs flags that were renamed (aru-117): the old name, then the new.

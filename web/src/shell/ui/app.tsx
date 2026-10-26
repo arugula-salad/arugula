@@ -18,6 +18,7 @@ import { ControlRequests, ShareDialog } from "./people";
 import { directory } from "../hosts";
 import { DeveloperLayer } from "./developer";
 import { RulesLayer } from "./rules";
+import { SharingLayer } from "./sharing";
 import { DocShareLayer } from "./doc-share";
 import { ConversationsLayer } from "./conversations";
 import { PickerLayer } from "./picker";
@@ -133,6 +134,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <RulesLayer />
       <DocShareLayer />
       <DeveloperLayer />
+      <SharingLayer />
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />
@@ -217,6 +219,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <RulesLayer />
       <DocShareLayer />
       <DeveloperLayer />
+      <SharingLayer />
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />

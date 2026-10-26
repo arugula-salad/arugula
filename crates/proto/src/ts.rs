@@ -65,6 +65,8 @@ fn generate() -> String {
     c.visit::<crate::telemetry::TelemetryInfo>();
     c.visit::<crate::telemetry::TelemetrySetRequest>();
     c.visit::<crate::telemetry::TelemetryNoteRequest>();
+    c.visit::<crate::sharing::Sharing>();
+    c.visit::<crate::sharing::SharingSetRequest>();
     c.visit::<ControlState>();
     c.visit::<HostInfo>();
     c.visit::<InviteRequest>();
