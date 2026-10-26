@@ -42,6 +42,7 @@ import { usePlatformApi, type PlatformApi } from "../platform-api";
 import { ReplyTag, setThreadNav, ThreadFooter } from "./thread-ui";
 import { SessionCardMessage, sessionOf } from "./session-card";
 import { dmLabel } from "./members";
+import { useStickToBottom } from "./stick";
 
 // ---- machines, by control's id for them
 
@@ -240,6 +241,7 @@ export function RoomBody({
   between,
   empty,
   chip,
+  embedded,
 }: {
   room: ChatRoom;
   phone: boolean;
@@ -256,6 +258,10 @@ export function RoomBody({
   /** The host's header shows whose agents reach the room (a chip), so the
    * room doesn't repeat it above its messages. */
   chip?: boolean;
+  /** Part of a page about something else (an issue's or a run's): its box
+   * to write in doesn't take focus, so the page opens at its top (UI audit
+   * #144). */
+  embedded?: boolean;
 }) {
   useSubscribe((fn) => chat.subscribe(fn));
   // "Reply in thread" opens the thread where this room is shown (#106).
@@ -308,6 +314,7 @@ export function RoomBody({
   // names, once).
   const last = msgs?.at(-1)?.seq;
   const focused = useRef<number | null>(null);
+  useStickToBottom(list, () => stuck.current && focused.current === null);
   const topBefore = useRef<{ h: number; first?: number } | null>(null);
   useLayoutEffect(() => {
     const el = list.current;
@@ -465,7 +472,7 @@ export function RoomBody({
       </div>
       {error && <p class="thread-error">{error}</p>}
       {current.writable ? (
-        <RoomCompose room={current} phone={phone} quote={quote} setQuote={setQuote} setError={setError} name={name} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} />
+        <RoomCompose room={current} phone={phone} quote={quote} setQuote={setQuote} setError={setError} name={name} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} still={embedded} />
       ) : (
         <p class="thread-note" data-room-readonly>
           {readOnly(current)}
@@ -827,6 +834,7 @@ export function RoomCompose({
   name,
   editLast,
   thread,
+  still,
 }: {
   room: ChatRoom;
   phone: boolean;
@@ -839,6 +847,8 @@ export function RoomCompose({
   /** Writes a reply in the thread of this message (#106), with a draft of
    * its own and "Also send to the channel". */
   thread?: { parent: number };
+  /** Doesn't take focus when it opens (`RoomBody`'s `embedded`). */
+  still?: boolean;
 }) {
   const key = thread ? `chat.draft:thread:${room.id}:${thread.parent}` : `chat.draft:room:${room.id}`;
   const handle = thread ? threadComposeRef : composeRef;
@@ -862,8 +872,8 @@ export function RoomCompose({
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => keepDraft(key, text), [key, text]);
   useEffect(() => {
-    if (!phone) input.current?.focus();
-  }, [phone]);
+    if (!phone && !still) input.current?.focus();
+  }, [phone, still]);
   useLayoutEffect(() => {
     const el = input.current;
     if (!el) return;

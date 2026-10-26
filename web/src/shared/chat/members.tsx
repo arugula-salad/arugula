@@ -7,6 +7,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { ChatChannel, ChatPerson, ChatRoom } from "../proto";
 import type { ChatStore } from "../chat-store";
 import { usePlatformApi, type PlatformApi, type PlatformTeam } from "../platform-api";
+import { ConfirmRemove } from "../ui/confirm";
 import { MsgAvatar } from "./avatar";
 import "./members.css";
 
@@ -105,7 +106,7 @@ function NewChannel({ d, close }: { d: Extract<Dialog, { kind: "channel" }>; clo
         </label>
       </div>
       <div class="prompt-buttons">
-        <button type="button" onClick={close}>
+        <button class="secondary" type="button" onClick={close}>
           Cancel
         </button>
         <button type="submit" class="primary" disabled={busy || !name.trim()}>
@@ -171,7 +172,7 @@ function Browser({ d, close }: { d: Extract<Dialog, { kind: "browse" }>; close: 
         ))}
       </ul>
       <div class="prompt-buttons">
-        <button type="button" onClick={close}>
+        <button class="secondary" type="button" onClick={close}>
           Close
         </button>
       </div>
@@ -234,7 +235,7 @@ function NewDm({ d, close }: { d: Extract<Dialog, { kind: "dm" }>; close: () => 
         {full && " That's the most."}
       </p>
       <div class="prompt-buttons">
-        <button type="button" onClick={close}>
+        <button class="secondary" type="button" onClick={close}>
           Cancel
         </button>
         <button type="submit" class="primary" disabled={busy || !picked.length} data-dm-start>
@@ -279,6 +280,8 @@ export function LeaveButton({ store, room }: { store: ChatStore; room: ChatRoom 
 export function MemberTools({ store, room, people }: { store: ChatStore; room: ChatRoom; people: ChatPerson[] }) {
   const api = usePlatformApi();
   const [adding, setAdding] = useState(false);
+  // Taking someone out asks first (UI audit #158).
+  const [removing, setRemoving] = useState<ChatPerson | null>(null);
   const manage = room.kind === "channel" && store.canManage(room.id);
   const team = api.teams().find((t) => t.team === room.team);
   const here = new Set(people.map((p) => p.account));
@@ -292,8 +295,8 @@ export function MemberTools({ store, room, people }: { store: ChatStore; room: C
             <MsgAvatar who={p.account} name={p.name} />
             <span>{p.name}</span>
             {manage && p.account !== store.me && (
-              <button class="members-remove" title={`Remove ${p.name}`} aria-label={`Remove ${p.name}`} data-member-remove={p.account} onClick={() => void store.removeMember(room.id, p.account).catch(fail)}>
-                ✕
+              <button class="secondary danger small members-remove" aria-label={`Remove ${p.name}`} data-member-remove={p.account} onClick={() => setRemoving(p)}>
+                Remove
               </button>
             )}
           </li>
@@ -301,7 +304,7 @@ export function MemberTools({ store, room, people }: { store: ChatStore; room: C
       </ul>
       {manage && (
         <>
-          <button class="members-add" data-member-add onClick={() => setAdding(!adding)} aria-expanded={adding}>
+          <button class="secondary small members-add" data-member-add onClick={() => setAdding(!adding)} aria-expanded={adding}>
             Add people
           </button>
           {adding && (
@@ -311,7 +314,7 @@ export function MemberTools({ store, room, people }: { store: ChatStore; room: C
                 <li key={p.account}>
                   <MsgAvatar who={p.account} name={p.name} />
                   <span>{p.name}</span>
-                  <button data-member-invite={p.account} onClick={() => void store.addMembers(room.id, [p.account]).catch(fail)}>
+                  <button class="secondary small" data-member-invite={p.account} onClick={() => void store.addMembers(room.id, [p.account]).catch(fail)}>
                     Add
                   </button>
                 </li>
@@ -321,9 +324,22 @@ export function MemberTools({ store, room, people }: { store: ChatStore; room: C
         </>
       )}
       {room.kind === "dm" && room.others.length > 0 && team && (
-        <button class="members-add" data-dm-add onClick={() => newDmDialog(store, team, api)}>
+        <button class="secondary small members-add" data-dm-add onClick={() => newDmDialog(store, team, api)}>
           New conversation with more people
         </button>
+      )}
+      {removing && (
+        <ConfirmRemove
+          title={`Remove ${removing.name} from #${room.name}?`}
+          cancel={() => setRemoving(null)}
+          go={() => {
+            const who = removing.account;
+            setRemoving(null);
+            void store.removeMember(room.id, who).catch(fail);
+          }}
+        >
+          <p>They stop seeing it at once. Anyone who manages the channel can add them back.</p>
+        </ConfirmRemove>
       )}
     </>
   );

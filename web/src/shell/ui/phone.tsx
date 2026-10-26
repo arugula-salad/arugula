@@ -27,6 +27,7 @@ import { PointChoices, pointOf } from "./point-choices";
 import { shareSession } from "./people";
 import { accountHeader, useAccount } from "./app-bar";
 import { docShareItems } from "./doc-share";
+import { needsYou } from "../../shared/needs-you";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -38,7 +39,7 @@ export function PhoneHeader({ client }: { client: Client }) {
     <>
       <header class="bar phone-bar">
         <button class="sheet-button" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {client.state?.panes.some((p) => p.attention === "needs_input") ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
+          {client.state?.panes.some(needsYou) ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
           {session && (
             <>
               <span class="crumb">{session.name}</span> ›{" "}
@@ -79,8 +80,10 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
   };
   // Gates first (M34): a release waiting for a person is the most likely
   // reason to have opened this on a phone.
+  // What needs you, as the bell counts it: not what only finished (UI
+  // audit #154).
   const wanting = state.panes
-    .filter((p) => p.attention === "needs_input" || p.attention === "done")
+    .filter(needsYou)
     .sort((a, b) => Number(b.reason?.kind === "gate") - Number(a.reason?.kind === "gate"));
   const act = (fn: () => void) => () => {
     fn();
@@ -90,6 +93,9 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
   // #331: with no session, what opens a tab opens a session for it.
   const where = session ?? undefined;
   const owner = !state.roles;
+  // Someone who only watches this session (a viewer, or a read-only link's
+  // page) gets nothing that types or changes it (UI audit #149).
+  const watching = client.role() === "viewer";
   const closeTab =
     client.tab !== null && (client.tabMachine(client.tab) || paneIds(client.tabView(client.tab)!).length > 1);
   return (
@@ -149,6 +155,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
               </section>
             )}
               {/* What a phone is opened for most: right at the top. */}
+              {!watching && (
               <div class="sheet-actions sheet-quick">
                 <button
                   data-new-tab
@@ -179,6 +186,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                   </button>
                 )}
               </div>
+              )}
             <section class="sheet-sessions">
               <h2>Sessions</h2>
               {state.sessions.map((s) => {
@@ -230,7 +238,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
           {tab === "machines" && <HostSection close={close} />}
           {tab === "more" && (
             <>
-              {(active !== undefined || closeTab || (owner && session !== null)) && (
+              {!watching && (active !== undefined || closeTab || (owner && session !== null)) && (
                 <section class="sheet-group">
                   <h2>This pane</h2>
                   <div class="sheet-actions">
@@ -309,17 +317,19 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                       Changes
                     </button>
                   )}
-                  {active !== undefined && (
+                  {!watching && active !== undefined && (
                     // Where the active pane runs: its machine, or this host.
                     <button onClick={act(() => void openPort(client, { split: active, host: client.machine(active)?.id, local: !client.machine(active) }))}>
                       Open port
                     </button>
                   )}
-                  {client.has("vms") && session !== null && (
+                  {!watching && client.has("vms") && session !== null && (
                     <button onClick={act(() => void client.newVm({ session, tab: true }))}>New VM tab</button>
                   )}
                   {client.has("vms") && <button onClick={act(() => openSandboxes(client))}>Sandboxes</button>}
-                  <button onClick={act(() => client.intent({ op: "new_session", name: null, from_pane: active ?? null }))}>New session</button>
+                  {!watching && (
+                    <button onClick={act(() => client.intent({ op: "new_session", name: null, from_pane: active ?? null }))}>New session</button>
+                  )}
                 </div>
               </section>
               <section class="sheet-group sheet-you">

@@ -2,6 +2,7 @@
 // elsewhere, or choosing an item.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useModal } from "./modal";
 
 export type MenuItem =
   | {
@@ -25,6 +26,10 @@ interface OpenMenu {
 }
 
 let current: OpenMenu | null = null;
+/** What had the focus when the menu opened: an item gives it back before it
+ * runs, so a dialog the item opens returns the focus there when it shuts
+ * (UI audit #150), and Escape gives it back too. */
+let opener: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 /** The layers mounted, latest last: only it draws the menu (the swarm's,
@@ -33,8 +38,16 @@ const layers: object[] = [];
 
 export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[]) {
   e.preventDefault();
+  if (!current) opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   current = { x: e.clientX, y: e.clientY, items };
   changed();
+}
+
+/** Close it, and put the focus back where it was when it opened. */
+function closeAndReturn() {
+  const to = opener;
+  closeMenu();
+  if (to?.isConnected && to !== document.body) to.focus({ preventScroll: true });
 }
 
 /** Escapes a menu took (closing itself): a view under it lets them be. */
@@ -46,6 +59,7 @@ export function closeMenu() {
     current = null;
     changed();
   }
+  opener = null;
 }
 
 export function MenuLayer() {
@@ -62,7 +76,7 @@ export function MenuLayer() {
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || !current) return;
       tookEscape.add(e);
-      closeMenu();
+      closeAndReturn();
     };
     const down = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) closeMenu();
@@ -121,7 +135,9 @@ export function MenuLayer() {
             disabled={item.disabled}
             title={item.hint}
             onClick={() => {
-              closeMenu();
+              // Shut for good before the item runs: a dialog it opens finds
+              // no menu left over, and the focus where the menu was opened.
+              closeAndReturn();
               item.run();
             }}
           >
@@ -197,9 +213,21 @@ export function tellSetup(title: string, text: string, link: { label: string; hr
   });
 }
 
+/** Answer the open prompt (null: cancelled). */
+function finishPrompt(v: string | null) {
+  const p = prompt;
+  if (!p) return;
+  prompt = null;
+  promptListeners.forEach((fn) => fn());
+  p.done(v);
+}
+
 export function PromptLayer() {
   const [, setTick] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  // UI audit #150: a dialog like the others (Escape, the focus kept in).
+  useModal(form, () => finishPrompt(null), !!prompt);
   useEffect(() => {
     const fn = () => setTick((t) => t + 1);
     promptListeners.add(fn);
@@ -213,11 +241,7 @@ export function PromptLayer() {
   }, [prompt]);
   if (!prompt) return null;
   const p = prompt;
-  const finish = (v: string | null) => {
-    prompt = null;
-    promptListeners.forEach((fn) => fn());
-    p.done(v);
-  };
+  const finish = finishPrompt;
   return (
     <div
       class="prompt-backdrop"
@@ -226,6 +250,7 @@ export function PromptLayer() {
       onPointerDown={(e) => e.target === e.currentTarget && finish(null)}
     >
       <form
+        ref={form}
         class="prompt"
         aria-label={p.title}
         onSubmit={(e) => {
@@ -252,7 +277,6 @@ export function PromptLayer() {
             // Kept as typed: the page re-renders as panes change.
             onInput={(e) => (p.value = (e.target as HTMLInputElement).value)}
             placeholder={p.placeholder}
-            onKeyDown={(e) => e.key === "Escape" && finish(null)}
           />
         </label>
         )}
@@ -268,7 +292,7 @@ export function PromptLayer() {
         )}
         <div class="prompt-buttons">
           {!p.notice && (
-            <button type="button" onClick={() => finish(null)}>
+            <button class="secondary" type="button" onClick={() => finish(null)}>
               Cancel
             </button>
           )}

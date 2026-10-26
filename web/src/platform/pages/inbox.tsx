@@ -22,6 +22,7 @@ import { counted, threadNews } from "../../shared/chat/unread";
 import { issues } from "../../shared/issues/store";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { PageHeader } from "../../shared/ui/page-header";
 import { DraftList, useMyDrafts } from "../drafts";
 import { WaitingDeploys, useWaitingDeploys } from "./deploy";
 import { names, roomPath } from "../links";
@@ -106,27 +107,32 @@ export function InboxPage() {
   const unseen = shown.filter((e) => !e.seen_at).length + threads.length;
   return (
     <section class="platform-section sw-page platform-inbox" data-platform-inbox>
-      <h1>Inbox</h1>
-      {entries !== null && !empty && (
-        <div class="sw-stats" data-inbox-stats>
-          <span class={unseen ? "needs" : undefined}>
-            <b>{unseen}</b> unseen
-          </span>
-          <span>
-            <b>{shown.length + threads.length}</b> {shown.length + threads.length === 1 ? "item" : "items"}
-          </span>
-          {!!deploys?.length && (
-            <span>
-              <b>{deploys.length}</b> {deploys.length === 1 ? "deploy waits" : "deploys wait"}
-            </span>
-          )}
-          {drafts.length > 0 && (
-            <span>
-              <b>{drafts.length}</b> {drafts.length === 1 ? "draft" : "drafts"}
-            </span>
-          )}
-        </div>
-      )}
+      <PageHeader
+        title="Inbox"
+        stats={
+          entries !== null &&
+          !empty && (
+            <div class="sw-stats" data-inbox-stats>
+              <span class={unseen ? "needs" : undefined}>
+                <b>{unseen}</b> unseen
+              </span>
+              <span>
+                <b>{shown.length + threads.length}</b> {shown.length + threads.length === 1 ? "item" : "items"}
+              </span>
+              {!!deploys?.length && (
+                <span>
+                  <b>{deploys.length}</b> {deploys.length === 1 ? "deploy waits" : "deploys wait"}
+                </span>
+              )}
+              {drafts.length > 0 && (
+                <span>
+                  <b>{drafts.length}</b> {drafts.length === 1 ? "draft" : "drafts"}
+                </span>
+              )}
+            </div>
+          )
+        }
+      />
       {error && <p class="control-error">{error}</p>}
       {entries === null && !error && <p class="dim">Loading…</p>}
       {empty && <p class="dim" data-inbox-empty>Nothing wants you right now.</p>}
@@ -164,11 +170,11 @@ export function InboxPage() {
                     </div>
                     <div class="platform-inbox-actions">
                       {!e.seen_at && (
-                        <button class="control-linkish" data-inbox-seen={e.item} disabled={busy === key} onClick={() => void mark(e, { seen: true })}>
+                        <button class="secondary small" data-inbox-seen={e.item} disabled={busy === key} onClick={() => void mark(e, { seen: true })}>
                           Seen
                         </button>
                       )}
-                      <button class="control-linkish" data-inbox-done={e.item} disabled={busy === key} onClick={() => void mark(e, { done: true })}>
+                      <button class="secondary small" data-inbox-done={e.item} disabled={busy === key} onClick={() => void mark(e, { done: true })}>
                         Done
                       </button>
                     </div>
@@ -239,7 +245,7 @@ function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] })
           const issue = t.startsWith("iss_") ? issues.known(t) : undefined;
           const run = t.startsWith("run_") ? runs.known(t) : undefined;
           const ref = issue ? `${project}#${issue.number}` : run ? `${project}:` : project ? `${project} ·` : "";
-          const title = issue?.title ?? (run ? runTitle(run.op) : r.name);
+          const title = issue?.title ?? (run ? runTitle(run.op, null, run.deploy) : r.name);
           const n = counted(r);
           return (
             // As an entry's card: its bar is chat's colour for the room.
@@ -251,7 +257,7 @@ function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] })
                 {kindOf(r)} · {n} new in its thread{r.mentions ? ", mentioning you" : ""}
               </div>
               <div class="platform-inbox-actions">
-                <button class="control-linkish" title="Mark its thread read" data-inbox-thread-done={r.id} onClick={() => void chat.read(r.id, r.last)}>
+                <button class="secondary small" title="Mark its thread read" data-inbox-thread-done={r.id} onClick={() => void chat.read(r.id, r.last)}>
                   Done
                 </button>
               </div>

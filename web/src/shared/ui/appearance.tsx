@@ -2,7 +2,8 @@
 // account menu and Settings, M150): this device's palette, finish and
 // corners. Each choice applies at once, so the page behind is the preview.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { useModal } from "./modal";
 import { appearance, CORNERS, DENSITIES, darkDefault, FINISHES, onAppearance, palette, PALETTES, setAppearance, type Palette } from "../appearance";
 
 let shown = false;
@@ -34,13 +35,16 @@ export function AppearanceLayer() {
 }
 
 function AppearanceDialog({ close }: { close: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // UI audit #150: takes the focus, keeps it, and Escape closes it.
+  useModal(ref, close);
   const a = appearance();
   const dark = PALETTES.find((p) => p.id === darkDefault())!.name;
   // Nothing picked yet: the default's card is the one on.
   const picked = a.palette === "default" ? darkDefault() : a.palette;
   return (
-    <div class="prompt-backdrop" role="dialog" aria-label="Appearance" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="prompt appearance" data-appearance onKeyDown={(e) => e.key === "Escape" && close()}>
+    <div class="prompt-backdrop" role="dialog" aria-modal="true" aria-label="Appearance" onPointerDown={(e) => e.target === e.currentTarget && close()}>
+      <div ref={ref} class="prompt appearance" data-appearance>
         <h2>Appearance</h2>
         <p class="hint">On this device. The terminals follow the palette.</p>
         <button class="appearance-control-look" data-control-look onClick={() => setAppearance({ palette: "slate", finish: "flat", corners: "soft" })}>
@@ -115,14 +119,14 @@ function AppearanceDialog({ close }: { close: () => void }) {
         </div>
         <p class="hint">Chat's rows: {DENSITIES.find((d) => d.id === a.density)?.hint.toLowerCase()}.</p>
         <div class="prompt-buttons">
-          <button
+          <button class="secondary"
             type="button"
             onClick={() => setAppearance({ palette: "default", finish: "flat", corners: "square", density: "cozy" })}
             disabled={a.palette === "default" && a.finish === "flat" && a.corners === "square" && a.density === "cozy"}
           >
             Reset
           </button>
-          <button type="button" class="primary" onClick={close}>
+          <button class="secondary" type="button" onClick={close}>
             Done
           </button>
         </div>

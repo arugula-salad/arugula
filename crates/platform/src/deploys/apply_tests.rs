@@ -341,6 +341,10 @@ async fn an_approved_deploy_is_applied_by_its_run_with_its_secrets_once() {
     let failed = app.db.deploy_history(&id).unwrap().pop().unwrap();
     assert_eq!((failed.kind.as_str(), failed.actor.clone()), ("failed", format!("run {}", run.id)));
     assert_eq!(failed.detail_json().unwrap()["reason"], json!("the apply exited 3"));
+    // Its page says why, and which run (UI audit #146).
+    let (_, v) = call(&base, "a", "GET", &format!("/api/deploys/{id}"), None).await;
+    let last = v["events"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!((&last["detail"]["reason"], &last["run"]), (&json!("the apply exited 3"), &json!(run.id)), "{last}");
     let page = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             if let Some(p) = hub.pushes().into_iter().find(|(_, m, _)| m["tag"] == json!(format!("deploy-failed-{id}")))
@@ -600,6 +604,30 @@ async fn reserved_names_are_refused_and_only_a_browser_sets_a_secret() {
     assert_eq!(post(("x-test-cli", "a dev_cli")).await, 403, "a CLI's login");
     assert_eq!(post(("x-test-daemon", "a geek")).await, 403, "an agent's machine");
     assert_eq!(set_secret(&base, "a", &env, "APP_TOKEN").await.0, 200, "a browser's session");
+}
+
+/// UI audit #145: a deploy's run reads as its deploy, by its environment
+/// and its commit, wherever a run is named (its view, its inbox entry and
+/// push), and its box by name; never as its run's id.
+#[tokio::test]
+async fn a_deploys_run_reads_as_its_deploy() {
+    let (hub, app, base, t, _fake) = world().await;
+    let env = production(&base, &t).await;
+    assert_eq!(set_secret(&base, "a", &env, "APP_TOKEN").await.0, 200);
+    let (id, _) = approved(&base, &hub, &t, &env, "1a2b3c4d", 0).await;
+    boot(&app, &hub, &id).await;
+    let dr = app.db.deploy_run(&id).unwrap().expect("its run is made");
+    let run = app.db.run(&dr.run).unwrap().unwrap();
+    let (st, v) = call(&base, "a", "GET", &format!("/api/runs/{}", run.id), None).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(
+        v["deploy"],
+        json!({ "id": id, "environment": "production", "source_kind": "commit", "reference": crate::deploys_tests::full("1a2b3c4d") })
+    );
+    assert_eq!(v["workspace_name"], json!(id), "a deploy's box is named after its deploy");
+    let (_, list) = call(&base, "a", "GET", &format!("/api/projects/{t}/runs"), None).await;
+    assert_eq!(list["runs"][0]["deploy"]["environment"], "production", "{list}");
+    assert_eq!(crate::inbox::run_what(&app, &run).unwrap(), "Deploy production · 1a2b3c4");
 }
 
 /// M213: a deploy's box stays up for its run's last log chunk. A run its

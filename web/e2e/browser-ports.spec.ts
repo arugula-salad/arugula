@@ -182,11 +182,12 @@ test("a dev server beside a terminal: its own origin, hot reload, no way into Ar
   expect(existsSync(PWNED)).toBe(false);
   expect(await page.evaluate(() => window.__arugula.client.state!.panes.length)).toBe(before);
 
-  // The server dies: the block says so and asks for you...
+  // The server dies: the block says so, an error on it, not something
+  // that needs you (UI audit #154)...
   await vite!.close();
   vite = undefined;
   await expect(paneEl(page, block).locator(".browser-card")).toContainText(`Nothing is answering on :${VITE}`, { timeout: 15_000 });
-  await expect.poll(() => attention(page, block)).toBe("needs_input");
+  expect(await attention(page, block)).toBe("idle");
   // ...and when it's back, so is the page.
   await startVite();
   await expect(view.locator("#h")).toHaveText("hot", { timeout: 15_000 });

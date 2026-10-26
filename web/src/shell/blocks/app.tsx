@@ -198,7 +198,7 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
         <div class="browser-card error">
           <p>Couldn't get into {name}</p>
           <p class="dim">{error}</p>
-          <button onClick={() => setWant((w) => ({ n: w.n + 1 }))}>Try again</button>
+          <button class="primary" onClick={() => setWant((w) => ({ n: w.n + 1 }))}>Try again</button>
         </div>
       ) : (
         <>
@@ -210,7 +210,7 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
                 {hostOf(s.box_url)} hasn't sent a page in {STUCK_AFTER / 1000} seconds
                 {s.follower.state === "error" && s.follower.error ? ` (${s.follower.error})` : ""}. It shows here if it answers.
               </p>
-              <button onClick={() => setWant((w) => ({ n: w.n + 1 }))}>Try again</button>
+              <button class="primary" onClick={() => setWant((w) => ({ n: w.n + 1 }))}>Try again</button>
             </div>
           )}
           {/* The box's own origin, never the app's. */}

@@ -67,3 +67,9 @@ export function roomTone(unread: number, mentions: number): Tone | null {
   if (unread > 0 && mentions > 0) return "warn";
   return unread > 0 ? "accent" : null;
 }
+
+/** A native issue (M194): open is live work, closed is done (whatever the
+ * reason), neither good news nor a failure: never a failed run's color. */
+export function issueTone(state: string): Tone {
+  return state === "closed" ? "muted" : "ok";
+}

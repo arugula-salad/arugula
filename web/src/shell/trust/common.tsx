@@ -6,13 +6,23 @@
 import { useSubscribe } from "../../shared/ui/hooks";
 import { qr, qrPath } from "../../shared/ui/qr";
 import type { ControlSession } from "../control";
+import { MovingNote } from "../ui/moving-note";
 
 export function useControl(s: ControlSession) {
   useSubscribe((fn) => s.subscribe(fn));
 }
 
+/** A gate screen: centred while it fits the window, scrolling when it
+ * doesn't (UI audit #148). */
 export function Center({ children }: { children: preact.ComponentChildren }) {
-  return <div class="control-center">{children}</div>;
+  return (
+    <div class="control-gate">
+      <div class="control-center">
+        <MovingNote />
+        {children}
+      </div>
+    </div>
+  );
 }
 
 /** A link as a QR code, for a phone's camera. */

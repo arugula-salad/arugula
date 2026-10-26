@@ -35,7 +35,7 @@ function Words() {
         {words.map((w) => (
           <li key={w}>
             <b>{w}</b>
-            <button class="control-linkish" data-chat-keyword-remove={w} onClick={() => void save(words.filter((x) => x !== w))}>
+            <button class="secondary small" data-chat-keyword-remove={w} onClick={() => void save(words.filter((x) => x !== w))}>
               Remove
             </button>
           </li>
@@ -51,6 +51,7 @@ function Words() {
         }}
       >
         <input
+          class="field"
           value={draft}
           aria-label="A word or phrase to be notified of"
           placeholder="deploy failed"
@@ -58,7 +59,7 @@ function Words() {
           data-chat-keyword-input
           onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
         />
-        <button class="control-linkish" type="submit" data-chat-keyword-add>
+        <button class="primary" type="submit" data-chat-keyword-add>
           Add
         </button>
       </form>

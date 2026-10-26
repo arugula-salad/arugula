@@ -1,0 +1,50 @@
+/* A page's header (UI audit #157, ./page-header.tsx): the back link over
+   the title, the title's row (its state and the page's buttons beside
+   it), a line under it and its counts. This is the layout, wherever it's
+   drawn; the platform page sets it in the swarm's type (platform/swarm.css). */
+
+.page-head {
+  margin: 0 0 16px;
+}
+
+.page-back {
+  display: inline-block;
+  margin: 0 0 8px;
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.page-back:is(:hover, :focus-visible) {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+.page-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.page-title h1 {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The page's buttons keep to the right, and wrap under the title when the
+   row is too narrow for both. */
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.page-sub {
+  margin: 8px 0 0;
+  color: var(--dim);
+}

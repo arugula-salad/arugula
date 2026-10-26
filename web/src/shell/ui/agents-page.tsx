@@ -230,14 +230,14 @@ function RecipesTab({ client }: { client: Client }) {
             <p class="dim">{r.description}</p>
           </div>
           <div class="agents-buttons">
-            <button class="pri" data-run-here={r.name} disabled={busy} title="Open an agent block wearing this recipe, in its project" onClick={() => void runHere(r, project)}>
+            <button class="primary small" data-run-here={r.name} disabled={busy} title="Open an agent block wearing this recipe, in its project" onClick={() => void runHere(r, project)}>
               Run on {directory.current || "this machine"}
             </button>
-            <button data-edit={r.name} disabled={busy} title="Change its prompt, tools and model" onClick={() => edit(r)}>
+            <button class="secondary small" data-edit={r.name} disabled={busy} title="Change its prompt, tools and model" onClick={() => edit(r)}>
               Edit
             </button>
             {r.offered_from ? (
-              <button
+              <button class="secondary small"
                 data-unoffer={r.name}
                 disabled={busy}
                 title="Take it out of your team's catalog"
@@ -249,11 +249,11 @@ function RecipesTab({ client }: { client: Client }) {
                 Stop offering
               </button>
             ) : (
-              <button data-offer={r.name} disabled={busy} title="Put it in your team's catalog, so their agents can send it tasks" onClick={() => void offer(r, project)}>
+              <button class="secondary small" data-offer={r.name} disabled={busy} title="Put it in your team's catalog, so their agents can send it tasks" onClick={() => void offer(r, project)}>
                 Offer to team
               </button>
             )}
-            <button class="danger" data-delete={r.name} disabled={busy} title="Delete its file" onClick={() => setDeleting(r)}>
+            <button class="secondary danger small" data-delete={r.name} disabled={busy} title="Delete its file" onClick={() => setDeleting(r)}>
               Delete
             </button>
           </div>
@@ -269,10 +269,10 @@ function RecipesTab({ client }: { client: Client }) {
         <b>Offer to team</b> lets your team's agents send it tasks; you approve each one.
       </p>
       <div class="agents-actions">
-        <button class="pri" data-new-recipe disabled={busy} onClick={() => setForm({ f: { ...EMPTY }, inline: [] })}>
+        <button class="primary small" data-new-recipe disabled={busy} onClick={() => setForm({ f: { ...EMPTY }, inline: [] })}>
           + New recipe
         </button>
-        <button data-add-project disabled={busy} title="List the recipes in a project's .claude/agents" onClick={() => void addProject()}>
+        <button class="secondary small" data-add-project disabled={busy} title="List the recipes in a project's .claude/agents" onClick={() => void addProject()}>
           Add a project…
         </button>
         {said && (
@@ -428,10 +428,10 @@ function RecipeForm({
         <textarea name="prompt" value={f.prompt} rows={10} onInput={set("prompt")} placeholder="You are … When asked to …" />
       </label>
       <div class="ws-actions">
-        <button class="pri" type="submit" data-save-recipe disabled={busy || !f.name.trim() || !f.description.trim()}>
+        <button class="primary small" type="submit" data-save-recipe disabled={busy || !f.name.trim() || !f.description.trim()}>
           Save
         </button>
-        <button type="button" onClick={cancel}>
+        <button class="secondary small" type="button" onClick={cancel}>
           Cancel
         </button>
       </div>
@@ -506,7 +506,7 @@ function TeamTab({ client }: { client: Client }) {
         yours, the task waits here until you allow it.
       </p>
       <div class="agents-actions">
-        <button data-team-refresh disabled={busy} onClick={() => void load(true)}>
+        <button class="secondary small" data-team-refresh disabled={busy} onClick={() => void load(true)}>
           {busy ? "Refreshing…" : "Refresh"}
         </button>
       </div>
@@ -524,13 +524,13 @@ function TeamTab({ client }: { client: Client }) {
                   <p>{t.history?.[0]?.parts?.[0]?.text}</p>
                 </div>
                 <div class="agents-buttons">
-                  <button class="pri" disabled={busy} onClick={() => void answer(t.id, "once")}>
+                  <button class="primary small" disabled={busy} onClick={() => void answer(t.id, "once")}>
                     Allow once
                   </button>
-                  <button disabled={busy} title="Allow this person's tasks for this agent for an hour" onClick={() => void answer(t.id, "hour")}>
+                  <button class="secondary small" disabled={busy} title="Allow this person's tasks for this agent for an hour" onClick={() => void answer(t.id, "hour")}>
                     Allow for an hour
                   </button>
-                  <button class="danger" disabled={busy} onClick={() => void answer(t.id, "deny")}>
+                  <button class="secondary danger small" disabled={busy} onClick={() => void answer(t.id, "deny")}>
                     Deny
                   </button>
                 </div>
@@ -577,7 +577,7 @@ function TeamTab({ client }: { client: Client }) {
                 </div>
                 {!s.owner && s.online && (
                   <div class="agents-buttons">
-                    <button class="pri" data-run={a.name} disabled={busy} title={`Run it in its project on ${s.name}, and go to it`} onClick={() => void run(s, a.name)}>
+                    <button class="primary small" data-run={a.name} disabled={busy} title={`Run it in its project on ${s.name}, and go to it`} onClick={() => void run(s, a.name)}>
                       Run on {s.name}
                     </button>
                   </div>
@@ -622,7 +622,7 @@ function TeamTab({ client }: { client: Client }) {
                   </div>
                 </div>
                 <div class="agents-buttons">
-                  <button class="danger" disabled={busy} onClick={() => void client.request("POST", "/api/a2a/grants", { account: g.account, agent: g.agent }).then(() => load())}>
+                  <button class="secondary danger small" disabled={busy} onClick={() => void client.request("POST", "/api/a2a/grants", { account: g.account, agent: g.agent }).then(() => load())}>
                     Revoke
                   </button>
                 </div>

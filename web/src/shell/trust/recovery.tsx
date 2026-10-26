@@ -19,7 +19,7 @@ function NameLine({ s }: { s: ControlSession }) {
       <p class="dim">
         Name <b data-account-name>{s.name || "none yet"}</b>{" "}
         <button
-          class="control-linkish"
+          class="link"
           data-edit-name
           onClick={() => {
             setName(s.name);
@@ -42,7 +42,7 @@ function NameLine({ s }: { s: ControlSession }) {
       }}
     >
       <input data-name-input maxLength={64} value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} aria-label="Name" autoFocus />
-      <button type="submit" data-save-name disabled={!name.trim()}>
+      <button type="submit" class="primary" data-save-name disabled={!name.trim()}>
         Save
       </button>
       {err ? <p class="control-error">{err}</p> : null}
@@ -57,7 +57,7 @@ export function RecoveryForm({ s, label = "Lost your other devices? Use a recove
   // A button that looks like one (#327): as a link it read as a sentence.
   if (!open)
     return (
-      <button class="control-secondary" data-use-recovery onClick={() => setOpen(true)}>
+      <button class="secondary" data-use-recovery onClick={() => setOpen(true)}>
         {label}
       </button>
     );
@@ -70,7 +70,9 @@ export function RecoveryForm({ s, label = "Lost your other devices? Use a recove
       }}
     >
       <input placeholder="Recovery code" value={code} onInput={(e) => setCode((e.target as HTMLInputElement).value)} aria-label="Recovery code" data-recovery-input autoFocus={startOpen} />
-      <button type="submit">Use it</button>
+      <button type="submit" class="primary">
+        Use it
+      </button>
       {err ? <p class="control-error">{err}</p> : null}
     </form>
   );
@@ -91,7 +93,7 @@ export function RecoveryCodes({ s }: { s: ControlSession }) {
       ))}
       <div class="prompt-buttons">
         <CopyButton text={all} label="Copy both" />
-        <button data-download-codes onClick={() => download("arugula-recovery-codes.txt", all)}>
+        <button class="secondary" data-download-codes onClick={() => download("arugula-recovery-codes.txt", all)}>
           Download .txt
         </button>
       </div>
@@ -126,7 +128,7 @@ export function RecoveryAndName({ s }: { s: ControlSession }) {
         {s.canApprove("recovery") ? null : <span data-codes-elsewhere>Make new ones from a browser or phone: the desktop app doesn't. </span>}
         <button
           hidden={!s.canApprove("recovery")}
-          class={renewing ? "control-linkish danger" : "control-linkish"}
+          class={renewing ? "link danger" : "link"}
           data-new-codes
           onClick={() => {
             if (!renewing) return setRenewing(true);

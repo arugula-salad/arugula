@@ -83,10 +83,10 @@ function Principals({ client, id, s, close }: { client: Client; id: PaneId; s: W
       </label>
       <p class="dim ws-note">The chant principal its ledger records for an approval. A name not listed is passed as is.</p>
       <div class="ws-actions">
-        <button class="pri" data-ws-principals-save onClick={() => void save()}>
+        <button class="primary small" data-ws-principals-save onClick={() => void save()}>
           Save
         </button>
-        <button onClick={close}>Cancel</button>
+        <button class="secondary small" onClick={close}>Cancel</button>
       </div>
     </div>
   );
@@ -392,7 +392,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
             )}
           </p>
           {help && <p class="dim">{help}</p>}
-          {mayOpen && <button onClick={refresh}>Try again</button>}
+          {mayOpen && <button class="primary" onClick={refresh}>Try again</button>}
         </div>
       ) : (
         <div class="review-body ws-body">
@@ -412,16 +412,16 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                   </div>
                   <div class="ws-actions">
                     {mayApprove && (
-                      <button class="pri" data-approve disabled={busy !== null} onClick={() => void approve(g)}>
+                      <button class="primary small" data-approve disabled={busy !== null} onClick={() => void approve(g)}>
                         {busy === `approve:${gateKey(g)}` ? "Approving…" : "Approve"}
                       </button>
                     )}
                     {mayApprove && g.source.kind === "chant" && (
-                      <button data-expire disabled={busy !== null} title={EXPIRE_TITLE} onClick={() => void expire(g)}>
+                      <button class="secondary small" data-expire disabled={busy !== null} title={EXPIRE_TITLE} onClick={() => void expire(g)}>
                         {busy === `expire:${gateKey(g)}` ? "Expiring…" : "Expire"}
                       </button>
                     )}
-                    {mayOpen && <button onClick={() => runOp(g)}>Run {g.op}</button>}
+                    {mayOpen && <button class="secondary small" onClick={() => runOp(g)}>Run {g.op}</button>}
                   </div>
                 </div>
               ))}
@@ -482,23 +482,23 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                     {mayOpen && (
                       <div class="ws-actions">
                         {m.nested ? (
-                          <button data-open-nested onClick={() => nested(m)}>
+                          <button class="secondary small" data-open-nested onClick={() => nested(m)}>
                             Open
                           </button>
                         ) : (
                           <>
-                            <button onClick={() => shell(m.path)}>Shell</button>
-                            <button
+                            <button class="secondary small" onClick={() => shell(m.path)}>Shell</button>
+                            <button class="secondary small"
                               title={m.agents[0] ? `As agent session ${m.agents[0]}` : "The declaration binds no agent session to this member"}
                               onClick={() => agent(m)}
                             >
                               Agent
                             </button>
-                            <button onClick={() => changes(m)}>Changes</button>
-                            <button data-graph title="behold's estate graph, on this member" onClick={() => graph(m)}>
+                            <button class="secondary small" onClick={() => changes(m)}>Changes</button>
+                            <button class="secondary small" data-graph title="behold's estate graph, on this member" onClick={() => graph(m)}>
                               Graph
                             </button>
-                            <button data-run-op onClick={() => (setPicking(picking === m.name ? null : m.name), setTyped(""))}>
+                            <button class="secondary small" data-run-op onClick={() => (setPicking(picking === m.name ? null : m.name), setTyped(""))}>
                               Run op
                             </button>
                           </>
@@ -507,7 +507,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                     )}
                     {!m.nested && mayApprove && (
                       <div class="ws-actions">
-                        <button data-why-toggle={m.name} title="The decisions covering it, the leases and runs on it" onClick={() => toggleWhy(m)}>
+                        <button class="secondary small" data-why-toggle={m.name} title="The decisions covering it, the leases and runs on it" onClick={() => toggleWhy(m)}>
                           {why.has(m.name) ? "Hide why" : "Why"}
                         </button>
                       </div>
@@ -516,7 +516,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                     {mayOpen && picking === m.name && (
                       <div class="ws-actions" data-run-ops={m.name}>
                         {m.ops.map((op) => (
-                          <button key={op} data-op={op} onClick={() => (setPicking(null), run(m.path, op))}>
+                          <button class="secondary small" key={op} data-op={op} onClick={() => (setPicking(null), run(m.path, op))}>
                             {op}
                           </button>
                         ))}
@@ -526,7 +526,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                           onInput={(e) => setTyped(e.currentTarget.value)}
                           onKeyDown={(e) => e.key === "Enter" && runTyped(m)}
                         />
-                        <button disabled={!typed.trim()} onClick={() => runTyped(m)}>
+                        <button class="secondary small" disabled={!typed.trim()} onClick={() => runTyped(m)}>
                           Run
                         </button>
                       </div>

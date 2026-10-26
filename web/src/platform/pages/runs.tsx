@@ -16,13 +16,15 @@
 // (M196's object room on the run's id). While it goes, the view waits on
 // the platform for its next event (`since` and `wait`).
 
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { RoomBody } from "../../shared/chat/room";
 import type { ChatRoom } from "../../shared/proto";
 import type { RunEventView } from "../../shared/proto.gen";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
+import { PageHeader } from "../../shared/ui/page-header";
 import { ago } from "../../shared/issues/text";
 import "../../shared/issues/issues.css";
 import { names } from "../links";
@@ -33,7 +35,7 @@ import { mayWrite, nameIn } from "./issues";
 import { Missing } from "./project";
 import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type RunLogPage, type RunSpec, type RunView } from "../runs";
 import { runTone, toneClass, type Tone } from "../swarm";
-import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, startedBy, stripAnsi, tone, took } from "../runs-text";
+import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, deployTitle, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, startedBy, stripAnsi, tone, took, withoutExitNote, workspaceLabel } from "../runs-text";
 import { ThreadUnread } from "../thread-unread";
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
@@ -75,10 +77,6 @@ function useWorkspaces(project: string): HostedWorkspace[] {
     return () => void (live = false);
   }, [project]);
   return ws;
-}
-
-function StateDot({ state }: { state: string }) {
-  return <span class={`run-dot ${tone(state)}`} title={STATES[state] ?? state} aria-label={STATES[state] ?? state} />;
 }
 
 /** What the list holds, as the swarm's bar counts its panes: the runs
@@ -164,22 +162,27 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
 
   return (
     <section class="platform-section sw-page runs-page" data-runs={p.id}>
-      <header class="issues-head">
-        <h1>Runs</h1>
-        {starter(p) && (
-          <button class="primary" data-run-start-open aria-expanded={starting} onClick={() => setStarting(!starting)}>
-            Start a run
-          </button>
-        )}
-      </header>
-      <p class="dim runs-about">
-        Runs go on this project's hosted workspaces: by hand, on a schedule, or on an event from a linked repo. Scheduled and event runs start under
-        the project's standing grant, in its{" "}
-        <a href={settings} onClick={(e) => follow(e, settings)}>
-          settings
-        </a>
-        .
-      </p>
+      <PageHeader
+        title="Runs"
+        actions={
+          starter(p) && (
+            <button class="primary" data-run-start-open aria-expanded={starting} onClick={() => setStarting(!starting)}>
+              Start a run
+            </button>
+          )
+        }
+        sub={
+          <>
+            Runs go on this project's hosted workspaces: by hand, on a schedule, or on an event from a linked repo. Scheduled and event runs start
+            under the project's standing grant, in its{" "}
+            <a href={settings} onClick={(e) => follow(e, settings)}>
+              settings
+            </a>
+            .
+          </>
+        }
+        stats={!!list?.length && <RunStats list={list} />}
+      />
       {starting && <StartRun p={p} specs={specs ?? []} workspaces={workspaces} done={() => setStarting(false)} />}
       <div class="issues-tools">
         <button class={filter.state ? "issues-filter on" : "issues-filter"} data-runs-state onClick={stateMenu}>
@@ -192,7 +195,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
           {filter.spec ? `Spec: ${specName(filter.spec) ?? "one"}` : "Spec"} <span class="caret">▾</span>
         </button>
         {narrowed && (
-          <button class="control-linkish" data-runs-clear onClick={() => to({})}>
+          <button class="link" data-runs-clear onClick={() => to({})}>
             Clear
           </button>
         )}
@@ -204,19 +207,19 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
           {narrowed ? "No runs match." : starter(p) ? "No runs yet. Start one, or give a run spec a schedule." : "No runs yet."}
         </p>
       )}
-      {!!list?.length && <RunStats list={list} />}
       <ul class="issues-list sw-cards" data-runs-list>
         {list?.map((r) => {
           const path = pathOf({ page: "run", project: p.id, run: r.id }, names);
           const end = r.ended_at ?? (ended(r.state) ? null : Date.now());
-          const ws = r.workspace ? (workspaces.find((w) => w.id === r.workspace)?.name ?? r.workspace) : null;
+          // By name, not its `hw_…` id (UI audit #145).
+          const ws = r.workspace ? (workspaces.find((w) => w.id === r.workspace)?.name ?? workspaceLabel(r)) : null;
           return (
             // A card in the swarm's language (../swarm.css): its bar is the
             // run's state, which the meta line says in words.
             <li class={`issue-row run-row sw-card ${toneClass(runTone(r.state))}`} key={r.id} data-run-row={r.id} data-run-state={r.state}>
               <div class="issue-row-main">
                 <a href={path} class="issue-row-title run-title" onClick={(e) => follow(e, path)}>
-                  {runTitle(r.op, specName(r.source.spec))}
+                  {runTitle(r.op, specName(r.source.spec), r.deploy)}
                 </a>
                 <ThreadUnread target={r.id} />
                 <span class="issue-row-meta dim">
@@ -308,6 +311,8 @@ function StartRun({ p, specs, workspaces, done }: { p: PlatformProject; specs: R
 function Specs({ p, specs, workspaces, reread }: { p: PlatformProject; specs: RunSpec[] | null; workspaces: HostedWorkspace[]; reread: () => void }) {
   const can = starter(p);
   const [adding, setAdding] = useState(false);
+  // Delete and Remove ask first, in the page's own dialog (UI audit #158).
+  const [removing, setRemoving] = useState<{ title: string; label: string; what: string; body: string; go: () => Promise<unknown> } | null>(null);
   const act = async (what: string, f: () => Promise<unknown>) => {
     try {
       await f();
@@ -343,10 +348,22 @@ function Specs({ p, specs, workspaces, reread }: { p: PlatformProject; specs: Ru
                 <code class="run-spec-op">{s.instruction ?? commandLine(s.argv ?? [])}</code> <span class="dim">on {wsName(s.workspace)}</span>
                 {can && (
                   <span class="run-spec-actions">
-                    <button class="control-linkish" data-run-spec-run={s.name} onClick={() => void act("start it", async () => go(pathOf({ page: "run", project: p.id, run: (await runs.start(p.id, { spec: s.id })).id }, names)))}>
+                    <button class="secondary small" data-run-spec-run={s.name} onClick={() => void act("start it", async () => go(pathOf({ page: "run", project: p.id, run: (await runs.start(p.id, { spec: s.id })).id }, names)))}>
                       Run now
                     </button>
-                    <button class="control-linkish" data-run-spec-delete={s.name} onClick={() => confirm(`Delete the run spec ${s.name}, with its schedules and rules?`) && void act("delete it", () => runs.deleteSpec(p.id, s.id))}>
+                    <button
+                      class="secondary danger small"
+                      data-run-spec-delete={s.name}
+                      onClick={() =>
+                        setRemoving({
+                          title: `Delete the run spec ${s.name}?`,
+                          label: "Delete",
+                          what: "delete it",
+                          body: "Its schedules and event rules go with it. Runs it started stay in the list.",
+                          go: () => runs.deleteSpec(p.id, s.id),
+                        })
+                      }
+                    >
                       Delete
                     </button>
                   </span>
@@ -361,10 +378,22 @@ function Specs({ p, specs, workspaces, reread }: { p: PlatformProject; specs: Ru
                     {can && (
                       <>
                         {" "}
-                        <button class="control-linkish" onClick={() => void act("change it", () => runs.setSchedule(p.id, s.id, x.id, !x.enabled))}>
+                        <button class="secondary small" onClick={() => void act("change it", () => runs.setSchedule(p.id, s.id, x.id, !x.enabled))}>
                           {x.enabled ? "Turn off" : "Turn on"}
                         </button>{" "}
-                        <button class="control-linkish" data-run-schedule-delete={x.id} onClick={() => void act("remove it", () => runs.deleteSchedule(p.id, s.id, x.id))}>
+                        <button
+                          class="secondary danger small"
+                          data-run-schedule-delete={x.id}
+                          onClick={() =>
+                            setRemoving({
+                              title: `Remove the schedule ${x.cron}?`,
+                              label: "Remove",
+                              what: "remove it",
+                              body: `${s.name} stops running on it. To run on it again, add it again.`,
+                              go: () => runs.deleteSchedule(p.id, s.id, x.id),
+                            })
+                          }
+                        >
                           Remove
                         </button>
                       </>
@@ -379,10 +408,22 @@ function Specs({ p, specs, workspaces, reread }: { p: PlatformProject; specs: Ru
                     {can && (
                       <>
                         {" "}
-                        <button class="control-linkish" onClick={() => void act("change it", () => runs.setRule(p.id, s.id, x.id, !x.enabled))}>
+                        <button class="secondary small" onClick={() => void act("change it", () => runs.setRule(p.id, s.id, x.id, !x.enabled))}>
                           {x.enabled ? "Turn off" : "Turn on"}
                         </button>{" "}
-                        <button class="control-linkish" data-run-rule-delete={x.id} onClick={() => void act("remove it", () => runs.deleteRule(p.id, s.id, x.id))}>
+                        <button
+                          class="secondary danger small"
+                          data-run-rule-delete={x.id}
+                          onClick={() =>
+                            setRemoving({
+                              title: "Remove this event rule?",
+                              label: "Remove",
+                              what: "remove it",
+                              body: `${s.name} stops running on ${x.event.replace(/_/g, " ")}s. To run on them again, add it again.`,
+                              go: () => runs.deleteRule(p.id, s.id, x.id),
+                            })
+                          }
+                        >
                           Remove
                         </button>
                       </>
@@ -395,6 +436,20 @@ function Specs({ p, specs, workspaces, reread }: { p: PlatformProject; specs: Ru
           );
         })}
       </ul>
+      {removing && (
+        <ConfirmRemove
+          title={removing.title}
+          label={removing.label}
+          cancel={() => setRemoving(null)}
+          go={() => {
+            const r = removing;
+            setRemoving(null);
+            void act(r.what, r.go);
+          }}
+        >
+          <p>{removing.body}</p>
+        </ConfirmRemove>
+      )}
     </div>
   );
 }
@@ -446,10 +501,10 @@ function AddTrigger({ p, spec, act }: { p: PlatformProject; spec: RunSpec; act: 
   if (!open) {
     return (
       <p class="run-add-trigger">
-        <button class="control-linkish" data-run-schedule-add={spec.name} onClick={() => setOpen("schedule")}>
+        <button class="secondary small" data-run-schedule-add={spec.name} onClick={() => setOpen("schedule")}>
           + Schedule
         </button>{" "}
-        <button class="control-linkish" data-run-rule-add={spec.name} onClick={() => setOpen("rule")}>
+        <button class="secondary small" data-run-rule-add={spec.name} onClick={() => setOpen("rule")}>
           + Event rule
         </button>
       </p>
@@ -484,7 +539,7 @@ function AddTrigger({ p, spec, act }: { p: PlatformProject; spec: RunSpec; act: 
       <button class="primary" type="submit">
         Add
       </button>
-      <button type="button" class="control-linkish" onClick={() => setOpen(null)}>
+      <button type="button" class="secondary" onClick={() => setOpen(null)}>
         Cancel
       </button>
     </form>
@@ -544,20 +599,18 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
   const going = !ended(run.state);
   const by = startedBy(run, nameOf);
   return (
-    <section class="platform-section run-page" data-run={run.id} data-run-state={run.state}>
-      <p class="issue-back">
-        <a href={back} onClick={(e) => follow(e, back)} data-run-back>
-          ‹ Runs
-        </a>
-      </p>
-      <header class="issues-head run-head">
-        <StateDot state={run.state} />
-        <h1 data-run-title>{runTitle(run.op, spec?.name)}</h1>
-        <span class={`run-state ${tone(run.state)}`} data-run-state-label>
-          {STATES[run.state] ?? run.state}
-          {run.exit_code !== null && run.exit_code !== undefined ? ` · exit ${run.exit_code}` : ""}
-        </span>
-      </header>
+    <section class="platform-section sw-page run-page" data-run={run.id} data-run-state={run.state}>
+      <PageHeader
+        title={<span data-run-title>{runTitle(run.op, spec?.name, run.deploy)}</span>}
+        named
+        back={{ href: back, label: "Runs", onClick: (e) => follow(e, back), data: "run-back" }}
+        state={
+          <span class={`page-state ${toneClass(runTone(run.state))}`} data-run-state-label>
+            {STATES[run.state] ?? run.state}
+            {run.exit_code !== null && run.exit_code !== undefined ? ` · exit ${run.exit_code}` : ""}
+          </span>
+        }
+      />
       <dl class="run-facts">
         <dt>Started</dt>
         <dd data-run-started-by>
@@ -574,9 +627,18 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
           , {ago(run.created_at)}
           {run.started_at ? ` · ran ${took(run.started_at, run.ended_at ?? Date.now())}` : ""}
         </dd>
-        <dt>{op?.instruction !== null && op?.instruction !== undefined ? "Instruction" : "Command"}</dt>
+        <dt>{op?.deploy ? "Deploy" : op?.instruction !== null && op?.instruction !== undefined ? "Instruction" : "Command"}</dt>
         <dd>
-          {op ? (
+          {op?.deploy ? (
+            // A deploy's apply (M219): its deploy's page says what and
+            // where (UI audit #145).
+            <>
+              <a href={`/deploys/${op.deploy.deploy}`} onClick={(e) => follow(e, `/deploys/${op.deploy!.deploy}`)} data-run-deploy={op.deploy.deploy}>
+                {run.deploy ? deployTitle(run.deploy) : `Deploy ${op.deploy.deploy}`}
+              </a>
+              <span class="dim"> · driver {op.deploy.driver}</span>
+            </>
+          ) : op ? (
             <code class="run-command-line" data-run-command>
               {op.instruction ?? commandLine(op.argv)}
             </code>
@@ -612,7 +674,14 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
         ) : null}
         <dt>Where</dt>
         <dd>
-          Hosted workspace <code>{run.workspace ?? "—"}</code>, machine <code>{run.daemon.slice(0, 12)}</code>
+          {run.workspace ? (
+            <>
+              {run.deploy ? "Its deploy's own box" : `Hosted workspace${run.workspace_name ? ` ${run.workspace_name}` : ""}`} <code>{run.workspace}</code>
+            </>
+          ) : (
+            "No hosted workspace"
+          )}
+          , machine <code>{run.daemon.slice(0, 12)}</code>
           {run.grant ? <span class="dim"> · under the project's standing grant</span> : <span class="dim"> · no standing grant: it waits for an approval</span>}
         </dd>
       </dl>
@@ -721,8 +790,24 @@ function RunLog({ run }: { run: RunView }) {
       toast((e as Error).message);
     }
   };
-  const text = useMemo(() => stripAnsi((pages ?? []).map((p) => p.text).join("")), [pages]);
+  // The pane's own "press Enter for a shell" note goes (UI audit #146).
+  const text = useMemo(() => {
+    const t = stripAnsi((pages ?? []).map((p) => p.text).join(""));
+    return going ? t : withoutExitNote(t);
+  }, [pages, going]);
   const kept = !!pages?.some((p) => p.kept);
+  // A failed run's log opens at its end, where it says why (UI audit
+  // #146); one that goes stays there while it's followed at its end.
+  const box = useRef<HTMLPreElement>(null);
+  const opened = useRef(false);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || !text) return;
+    if (!opened.current) {
+      opened.current = true;
+      if (state === "failed") el.scrollTop = el.scrollHeight;
+    }
+  }, [text, state]);
   return (
     <div class="run-log" data-run-log={pages ? (kept ? "kept" : "none") : ""}>
       <h2>Log</h2>
@@ -736,7 +821,7 @@ function RunLog({ run }: { run: RunView }) {
               Earlier
             </button>
           )}
-          <pre class="run-log-text" data-run-log-text>
+          <pre class="run-log-text" data-run-log-text ref={box}>
             {text || (going ? "(nothing yet)" : "(empty)")}
           </pre>
           <p class="dim run-log-foot">{going ? "It follows the log while the run goes." : last?.end ? "The end of its log. Kept 30 days." : "Kept 30 days."}</p>
@@ -821,7 +906,7 @@ function RunThread({ run, msg }: { run: RunView; msg?: number }) {
       ) : (
         <div class="issue-thread chat-thread" data-run-thread={room?.id}>
           {room ? (
-            <RoomBody room={room} phone={phone} focus={msg} name={`run ${short(run.id)}`} empty="Nothing said about this run yet. Everyone in the project reads it; write @name to notify someone." />
+            <RoomBody room={room} phone={phone} focus={msg} embedded name={`run ${short(run.id)}`} empty="Nothing said about this run yet. Everyone in the project reads it; write @name to notify someone." />
           ) : (
             <p class="thread-note">{error ? `The thread didn't load: ${error}` : "Loading the thread…"}</p>
           )}

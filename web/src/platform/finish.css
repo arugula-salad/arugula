@@ -26,7 +26,7 @@ html[data-scheme="light"] {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   font: inherit;
 }
 
@@ -61,14 +61,6 @@ html[data-finish="aqua"] .platform-section {
     var(--bg) 0 2px,
     color-mix(in srgb, var(--bg) 90%, var(--fg)) 2px 4px
   ) fixed;
-}
-
-/* A hosted workspace's head is its bar. */
-html[data-finish="aqua"] .platform-ws-head {
-  background:
-    linear-gradient(#fff5, #fff1 50%, #0000 51%, #0001),
-    var(--surface);
-  box-shadow: inset 0 -1px 0 #0003;
 }
 
 html[data-finish="aqua"] .chat-row.selected {
@@ -108,13 +100,8 @@ html[data-finish="brushed"] .platform-section {
   background: var(--grain) fixed, linear-gradient(#fff1, #0001) fixed, var(--bg);
 }
 
-html[data-finish="brushed"] .platform-ws-head,
 html[data-finish="brushed"] .chat-side {
   background: var(--grain), linear-gradient(#fff2, #0001), var(--surface);
-}
-
-html[data-finish="brushed"] .platform-ws-head {
-  box-shadow: inset 0 1px 0 #fff3, inset 0 -1px 0 #0004;
 }
 
 html[data-finish="brushed"] .chat-row.selected,
@@ -139,9 +126,7 @@ html[data-finish="brushed"] .platform-toast {
   box-shadow: inset 0 1px 0 #fff3, 0 12px 36px #0008, 0 0 0 1px #0003;
 }
 
-/* Every button bevelled, as style.css does the dialogs': the deploy
-   links that are buttons, too. */
-html[data-finish="brushed"] .platform .button:not(.primary),
+/* The roll-back chip bevelled, as the buttons are (shared/buttons.css). */
 html[data-finish="brushed"] .deploy-roll-back {
   background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--raised);
   border-color: color-mix(in srgb, var(--raised) 60%, #000);
@@ -176,7 +161,6 @@ html[data-finish="glass"] .platform-section {
   box-shadow: inset 0 1px 0 #fff2;
 }
 
-html[data-finish="glass"] .platform-ws-head,
 html[data-finish="glass"] .chat-side {
   background: color-mix(in srgb, var(--surface) 65%, transparent);
   backdrop-filter: blur(12px);

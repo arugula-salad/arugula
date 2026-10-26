@@ -181,7 +181,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
           <textarea name="prompt" ref={promptRef} rows={4} value={prompt} placeholder="What should it do?" onInput={(e) => setPrompt(e.currentTarget.value)} />
         </label>
         <div class="prompt-buttons">
-          <button type="button" onClick={close}>
+          <button class="secondary" type="button" onClick={close}>
             Cancel
           </button>
           <button type="submit" class="primary" disabled={blocked}>

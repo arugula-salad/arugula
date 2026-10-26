@@ -89,7 +89,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
       </p>
       <RecoveryAndName s={s} />
       <h3 class="control-group">Where you're signed in</h3>
-      <ul class="control-devices" data-sessions>
+      <ul class="control-devices control-rows" data-sessions>
         {(sessions ?? []).map((x) => (
           <li key={x.id} data-session={x.id}>
             <span>
@@ -101,7 +101,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
               <span />
             ) : (
               <button
-                class={confirming === x.id ? "control-revoke danger" : "control-revoke"}
+                class={confirming === x.id ? "primary danger small" : "secondary danger small"}
                 data-end-session={x.id}
                 onClick={() => (confirming === x.id ? act(() => api(`/api/me/sessions/${x.id}/end`, {})) : setConfirming(x.id))}
               >
@@ -114,7 +114,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
       <p class="dim">
         {others ? `${others} other session${others === 1 ? "" : "s"}. ` : "Nowhere else. "}
         <button
-          class={confirming === "all" ? "control-linkish danger" : "control-linkish"}
+          class={confirming === "all" ? "link danger" : "link"}
           data-end-all
           onClick={() => {
             if (confirming !== "all") return setConfirming("all");
@@ -132,7 +132,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         <>
           <h3 class="control-group">Passkeys</h3>
           {keys && keys.passkeys.length === 0 ? <p class="dim">None.</p> : null}
-          <ul class="control-devices" data-passkeys>
+          <ul class="control-devices control-rows" data-passkeys>
             {(keys?.passkeys ?? []).map((k, i) => (
               <li key={k.id} data-passkey={k.id}>
                 <span data-passkey-name>{passkeyName(k, i)}</span>
@@ -141,7 +141,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
                   {k.used ? `, last used ${day(k.used)}` : ""}
                 </span>
                 <button
-                  class="control-revoke quiet-danger"
+                  class="secondary danger small"
                   data-remove-passkey={k.id}
                   disabled={(keys?.ways ?? 0) <= 1}
                   title={(keys?.ways ?? 0) <= 1 ? "Your only way to sign in" : undefined}
@@ -169,7 +169,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
             </ConfirmRemove>
           ) : null}
           {s.info.passkeys ? (
-            <button data-add-passkey onClick={() => act(() => s.addPasskey())}>
+            <button class="secondary" data-add-passkey onClick={() => act(() => s.addPasskey())}>
               Add a passkey
             </button>
           ) : null}
@@ -180,13 +180,13 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
       <h3 class="control-group">Delete your account</h3>
       <p class="dim">
         Removes your account from this control, with your devices, machines, sessions and passkeys.{" "}
-        <button class="control-linkish danger" data-delete-account onClick={() => setDeleting(true)}>
+        <button class="link danger" data-delete-account onClick={() => setDeleting(true)}>
           Delete account…
         </button>
       </p>
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
-        <button onClick={close}>Done</button>
+        <button class="secondary" onClick={close}>Done</button>
       </div>
     </>
   );
@@ -254,9 +254,9 @@ function DeleteAccount({ s, back }: { s: ControlSession; back: () => void }) {
       ) : null}
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
-        <button onClick={back}>Back</button>
+        <button class="secondary" onClick={back}>Back</button>
         <button
-          class="danger"
+          class="primary danger"
           data-delete-go
           disabled={blocked || !matches || busy}
           onClick={() => {
@@ -297,7 +297,7 @@ function LendDevice({ s }: { s: ControlSession }) {
         Agents on your machines may ask to use this device: its location, camera, microphone, clipboard, or you. You allow or
         deny each request here, while this page is open.
       </p>
-      <label class="control-confirm">
+      <label class="control-check">
         <input
           type="checkbox"
           data-lend-device

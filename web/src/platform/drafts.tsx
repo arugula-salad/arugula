@@ -13,6 +13,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { DraftSent, ForgeDraft, ForgeDrafts } from "../shared/proto.gen";
 import { platformFetch, refusalOf } from "../shared/maintenance";
+import { ConfirmRemove } from "../shared/ui/confirm";
 import { session } from "./session";
 import { toast } from "./toast";
 
@@ -155,7 +156,7 @@ export function SendResult({ draft, onClose }: { draft: ForgeDraft; onClose: () 
           </a>
         )}
       </span>
-      <button class="control-linkish" onClick={onClose} aria-label="Dismiss">
+      <button class="link" onClick={onClose} aria-label="Dismiss">
         ✕
       </button>
     </div>
@@ -175,6 +176,8 @@ export function DraftList({
   onSent?: (d: ForgeDraft) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  // Discard asks first (UI audit #158): a draft can't be got back.
+  const [discarding, setDiscarding] = useState<ForgeDraft | null>(null);
   const me = session.me?.account;
   const send = async (d: ForgeDraft) => {
     setBusy(d.id);
@@ -204,6 +207,7 @@ export function DraftList({
     }
   };
   return (
+    <>
     <ul class="platform-list platform-drafts" data-drafts>
       {drafts.map((d) => (
         <li key={d.id} data-draft={d.id}>
@@ -216,17 +220,34 @@ export function DraftList({
           {(d.error || d.state !== "waiting") && <div class="dim platform-draft-why">{outcome(d)}</div>}
           <div class="platform-draft-actions">
             {d.author === me && (
-              <button class="primary" data-draft-send={d.id} disabled={busy === d.id || d.state === "sending"} onClick={() => send(d)}>
+              <button class="primary small" data-draft-send={d.id} disabled={busy === d.id || d.state === "sending"} onClick={() => send(d)}>
                 {busy === d.id ? "Sending…" : "Send"}
               </button>
             )}
-            <button class="control-linkish" data-draft-discard={d.id} disabled={busy === d.id || d.state === "sending"} onClick={() => discard(d)}>
+            <button class="secondary danger small" data-draft-discard={d.id} disabled={busy === d.id || d.state === "sending"} onClick={() => setDiscarding(d)}>
               Discard
             </button>
           </div>
         </li>
       ))}
     </ul>
+    {discarding && (
+      <ConfirmRemove
+        title="Discard this draft?"
+        label="Discard"
+        cancel={() => setDiscarding(null)}
+        go={() => {
+          const d = discarding;
+          setDiscarding(null);
+          void discard(d);
+        }}
+      >
+        <p>
+          Its {draftKind(discarding).toLowerCase()} on {draftTarget(discarding)} is deleted, never sent.
+        </p>
+      </ConfirmRemove>
+    )}
+    </>
   );
 }
 

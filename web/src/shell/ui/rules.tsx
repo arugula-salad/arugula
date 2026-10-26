@@ -4,7 +4,9 @@
 // Opened from the account menu; each can be forgotten here.
 
 import { OPS, opPath } from "../ops";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { ConfirmRemove } from "../../shared/ui/confirm";
+import { CloseX, useModal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 
 interface Rule {
@@ -49,8 +51,12 @@ export function RulesLayer() {
 }
 
 function Rules({ client, close }: { client: Client; close: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // UI audit #150: takes the focus, keeps it, and Escape closes it.
+  useModal(ref, close);
   const [rules, setRules] = useState<Rule[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [forgetting, setForgetting] = useState(false);
 
   const load = async () => {
     try {
@@ -73,8 +79,9 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
   };
 
   return (
-    <div class="prompt-backdrop" role="dialog" aria-label="Permission rules" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="prompt rules" onKeyDown={(e) => e.key === "Escape" && close()}>
+    <div class="prompt-backdrop" role="dialog" aria-modal="true" aria-label="Permission rules" onPointerDown={(e) => e.target === e.currentTarget && close()}>
+      <div ref={ref} class="prompt rules">
+        <CloseX close={close} />
         <h2>Permission rules</h2>
         <p class="hint">
           Agent blocks on this machine allow these without asking. An approval card's <b>From now on…</b> makes one; a block's own{" "}
@@ -88,21 +95,36 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
               <span class="rule-text" title={r.from ? `Made when allowing ${r.from}` : undefined}>
                 {r.text}
               </span>
-              <button onClick={() => void forget(r.index)}>Forget</button>
+              <button class="secondary small" onClick={() => void forget(r.index)}>
+                Forget
+              </button>
             </li>
           ))}
         </ul>
         <div class="prompt-buttons">
           {rules && rules.length > 1 && (
-            <button type="button" class="danger" onClick={() => void forget(null)}>
+            <button type="button" class="secondary danger" onClick={() => setForgetting(true)}>
               Forget all
             </button>
           )}
-          <button type="button" onClick={close}>
-            Close
+          <button class="secondary" type="button" onClick={close}>
+            Done
           </button>
         </div>
       </div>
+      {forgetting && (
+        <ConfirmRemove
+          title={`Forget all ${rules?.length ?? ""} rules?`}
+          label="Forget all"
+          cancel={() => setForgetting(false)}
+          go={() => {
+            setForgetting(false);
+            void forget(null);
+          }}
+        >
+          <p>Agent blocks on this machine ask again before each of these.</p>
+        </ConfirmRemove>
+      )}
     </div>
   );
 }

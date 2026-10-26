@@ -3,6 +3,7 @@
 // reader's role in it, its pill the people in its team.
 
 import { useSubscribe } from "../../shared/ui/hooks";
+import { PageHeader } from "../../shared/ui/page-header";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { session } from "../session";
@@ -14,15 +15,19 @@ export function Home() {
   const teams = session.projects.filter((p) => p.team).length;
   return (
     <section class="platform-section sw-page" data-platform-home>
-      <h1>Projects</h1>
-      <div class="sw-stats">
-        <span>
-          <b>{session.projects.length}</b> {session.projects.length === 1 ? "project" : "projects"}
-        </span>
-        <span>
-          <b>{teams}</b> {teams === 1 ? "team" : "teams"}
-        </span>
-      </div>
+      <PageHeader
+        title="Projects"
+        stats={
+          <div class="sw-stats">
+            <span>
+              <b>{session.projects.length}</b> {session.projects.length === 1 ? "project" : "projects"}
+            </span>
+            <span>
+              <b>{teams}</b> {teams === 1 ? "team" : "teams"}
+            </span>
+          </div>
+        }
+      />
       <ul class="platform-cards sw-cards">
         {session.projects.map((p) => {
           const to = pathOf({ page: "project", project: p.id }, names);

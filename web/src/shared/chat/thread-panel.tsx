@@ -12,6 +12,7 @@ import { useSubscribe } from "../ui/hooks";
 import { RoomCompose, RoomMessage, roomLabel, threadComposeRef } from "./room";
 import { usePlatformApi } from "../platform-api";
 import { newFrom, repliesOf } from "./threads";
+import { useStickToBottom } from "./stick";
 
 /** How near the bottom still counts as at it, for following new replies. */
 const NEAR_BOTTOM = 80;
@@ -51,6 +52,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
   // scrolled to once.
   const last = replies.at(-1)?.seq;
   const focused = useRef<number | null>(null);
+  useStickToBottom(list, () => stuck.current && focused.current === null);
   useLayoutEffect(() => {
     const el = list.current;
     if (!el || !t) return;
@@ -94,7 +96,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
   const toNewest = () => list.current?.scrollTo({ top: list.current.scrollHeight });
   return (
     <aside
-      class="chat-details thread-panel"
+      class="chat-details chat-thread-panel"
       aria-label="Thread"
       data-thread-panel={parent}
       onKeyDown={(e) => {

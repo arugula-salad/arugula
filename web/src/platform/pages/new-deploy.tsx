@@ -11,7 +11,8 @@ import { useEffect, useState } from "preact/hooks";
 import type { LinkedRepos } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { planBody, type Driver, type Environment } from "../deploys-text";
+import { PageHeader } from "../../shared/ui/page-header";
+import { historyPath, planBody, repoFor, type DeployHistory, type Driver, type Environment } from "../deploys-text";
 import { names } from "../links";
 import { follow, pathOf, REPO } from "../router";
 import { session } from "../session";
@@ -40,6 +41,11 @@ export function NewDeployPage({ project, env }: { project: string; env?: string 
   const [environment, setEnvironment] = useState(env ?? "");
   const [commit, setCommit] = useState("");
   const [repo, setRepo] = useState("");
+  // A repo typed by hand stays when the environment changes.
+  const [typed, setTyped] = useState(false);
+  // Where each environment's last deploy came from (null: none), for the
+  // repo it offers (UI audit #147).
+  const [lastFrom, setLastFrom] = useState<Record<string, string | null>>({});
   const [rollBack, setRollBack] = useState(false);
   const [planned, setPlanned] = useState<Deploy | null>(null);
   const [err, setErr] = useState("");
@@ -61,24 +67,32 @@ export function NewDeployPage({ project, env }: { project: string; env?: string 
       (v) => {
         const linked = v.repos.filter((r) => r.purge_after === null).map((r) => r.full_name);
         setRepos(linked);
-        setRepo((was) => was || linked[0] || "");
       },
       () => {},
     );
   }, [project]);
+  useEffect(() => {
+    if (!environment || environment in lastFrom) return;
+    const known = (where: string | null) => setLastFrom((m) => ({ ...m, [environment]: where }));
+    call<DeployHistory>("GET", historyPath(project, environment, 1)).then(
+      (v) => {
+        const s = v.deploys[0]?.source;
+        known(s?.kind === "commit" && REPO.test(s.where) ? s.where : null);
+      },
+      () => known(null),
+    );
+  }, [project, environment]);
+  const envName = envs?.find((e) => e.id === environment)?.name;
+  useEffect(() => {
+    if (!typed && environment in lastFrom) setRepo(repoFor(envName, repos, lastFrom[environment]));
+  }, [environment, envName, repos, lastFrom, typed]);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const settings = pathOf({ page: "project-settings", project: p.id }, names);
-  const back = (
-    <p class="issue-back">
-      <a href={settings} onClick={(e) => follow(e, settings)}>
-        ‹ {p.name}: settings
-      </a>
-    </p>
-  );
+  const back = { href: settings, label: "Project settings", onClick: (e: MouseEvent) => follow(e, settings) };
   if (roleIn(p) === "viewer") {
     return (
-      <section class="platform-section">
-        {back}
+      <section class="platform-section sw-page">
+        <PageHeader title="Plan a deploy" back={back} />
         <p class="dim">A viewer reads the project's deploys, and doesn't plan them.</p>
       </section>
     );
@@ -104,9 +118,8 @@ export function NewDeployPage({ project, env }: { project: string; env?: string 
   };
   const ask = () => planned && void act(() => call<Deploy>("POST", `/api/deploys/${planned.id}/request`));
   return (
-    <section class="platform-section deploy-new-page" data-deploy-new-page={p.id}>
-      {back}
-      <h1>Deploy…</h1>
+    <section class="platform-section sw-page deploy-new-page" data-deploy-new-page={p.id}>
+      <PageHeader title="Plan a deploy" back={back} />
       {envs?.length === 0 ? (
         <p class="dim">The project has no environments yet: an owner makes one in its settings.</p>
       ) : planned ? null : (
@@ -138,7 +151,17 @@ export function NewDeployPage({ project, env }: { project: string; env?: string 
           </label>
           <label>
             Repo
-            <input required list="deploy-repos" placeholder="OWNER/NAME" value={repo} data-deploy-repo onInput={(e) => setRepo(e.currentTarget.value)} />
+            <input
+              required
+              list="deploy-repos"
+              placeholder="OWNER/NAME"
+              value={repo}
+              data-deploy-repo
+              onInput={(e) => {
+                setRepo(e.currentTarget.value);
+                setTyped(true);
+              }}
+            />
             <datalist id="deploy-repos">
               {repos.map((r) => (
                 <option key={r} value={r} />

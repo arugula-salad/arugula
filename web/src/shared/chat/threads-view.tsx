@@ -74,7 +74,7 @@ export function ThreadsView({ store, phone }: { store: ChatStore; phone: boolean
   const n = shown.length;
   return (
     <section class="chat-thread chat-view" aria-label="Threads" data-chat-threads-view>
-      <header class="chat-head">
+      <header class="chat-head chat-view-head">
         {phone && (
           <button class="chat-back" title="Every room" onClick={() => nav.openChat()}>
             ‹

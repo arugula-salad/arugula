@@ -5,7 +5,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { COMMIT, environmentBody, historyPath, holdable, lastMoved, planBody, secretNote, shortRef } from "../src/platform/deploys-text.ts";
+import { COMMIT, environmentBody, historyPath, holdable, lastMoved, planBody, repoFor, secretNote, shortRef } from "../src/platform/deploys-text.ts";
 import { REPO } from "../src/platform/paths.ts";
 
 // As `GET /api/projects/{project}/drivers` answers (crates/platform's
@@ -76,4 +76,14 @@ test("an environment's history: its page of the project's deploys, and when each
   assert.equal(lastMoved({ created_at: 1, decided_at: 2, finished_at: null }), 2);
   assert.equal(lastMoved({ created_at: 1, decided_at: null, finished_at: null }), 1);
   assert.equal(shortRef("0123456789abcdef0123456789abcdef01234567"), "0123456789ab");
+});
+
+test("Deploy… offers the environment's repo: its last deploy's, else the one named as it is, else the first (UI audit #147)", () => {
+  const linked = ["arugula-salad/arugula", "arugula-salad/beds-smoke"];
+  assert.equal(repoFor("beds-smoke", linked, null), "arugula-salad/beds-smoke");
+  assert.equal(repoFor("Beds-Smoke", linked), "arugula-salad/beds-smoke");
+  assert.equal(repoFor("beds-smoke", linked, "acme/other"), "acme/other");
+  assert.equal(repoFor("production", linked, null), "arugula-salad/arugula");
+  assert.equal(repoFor(undefined, linked), "arugula-salad/arugula");
+  assert.equal(repoFor("production", [], null), "");
 });

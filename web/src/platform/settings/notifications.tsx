@@ -56,9 +56,9 @@ export function NotificationSettings() {
   const run = (patch: Parameters<typeof setNotify>[0]) => setNotify(patch).then(() => setErr(""), (e: Error) => setErr(e.message));
   const level = (key: "channels" | "dms" | "threads", label: string) => (
     <li>
-      <label>
-        {label}{" "}
-        <select value={p[key]} data-notify-default={key} onChange={(e) => void run({ [key]: e.currentTarget.value as NotifyLevel })}>
+      <label class="settings-field">
+        {label}
+        <select class="field" value={p[key]} data-notify-default={key} onChange={(e) => void run({ [key]: e.currentTarget.value as NotifyLevel })}>
           {LEVELS.map((l) => (
             <option key={l.level} value={l.level}>
               {l.label}
@@ -90,30 +90,37 @@ export function NotificationSettings() {
         <li>
           <strong>{p.paused ? (snoozed && p.snooze_until ? `Paused ${untilText(p.snooze_until)}` : "Paused by your quiet hours") : "Not paused"}</strong>{" "}
           {snoozePresets().map((s) => (
-            <button key={s.label} class="control-linkish" data-notify-snooze={s.label} onClick={() => void run({ snooze_until: s.until })}>
+            <button key={s.label} class="secondary small" data-notify-snooze={s.label} onClick={() => void run({ snooze_until: s.until })}>
               {s.label}
             </button>
           ))}
           {snoozed && (
-            <button class="control-linkish" data-notify-resume onClick={() => void run({ snooze_until: 0 })}>
+            <button class="secondary small" data-notify-resume onClick={() => void run({ snooze_until: 0 })}>
               Resume now
             </button>
           )}
         </li>
         <li>
-          <label>
-            <input type="checkbox" checked={p.all_notices} data-notify-all onChange={(e) => void run({ all_notices: e.currentTarget.checked })} /> Pausing covers
-            every notice, not just chat's
+          <label class="settings-switch">
+            <input
+              type="checkbox"
+              role="switch"
+              class="sw-switch"
+              checked={p.all_notices}
+              data-notify-all
+              onChange={(e) => void run({ all_notices: e.currentTarget.checked })}
+            />
+            <span>Pausing covers every notice, not just chat's</span>
           </label>
           <span class="dim">Inbox items and deploy approvals wait too. Alerts about your account never do.</span>
         </li>
       </ul>
       <h3>Quiet hours</h3>
-      <ul class="platform-list settings-rows" data-notify-schedule>
+      <ul class="platform-list settings-rows notify-schedule" data-notify-schedule>
         <li>
-          <label>
-            Time zone{" "}
-            <input list="notify-zones" value={zone} data-notify-tz onInput={(e) => setTz(e.currentTarget.value)} />
+          <label class="settings-field">
+            Time zone
+            <input class="field" list="notify-zones" value={zone} data-notify-tz onInput={(e) => setTz(e.currentTarget.value)} />
           </label>
           <datalist id="notify-zones">
             {zones().map((z) => (
@@ -121,23 +128,26 @@ export function NotificationSettings() {
             ))}
           </datalist>
           {zone !== deviceZone() && (
-            <button class="control-linkish" onClick={() => setTz(deviceZone())}>
+            <button class="link small" onClick={() => setTz(deviceZone())}>
               Use this device's ({deviceZone()})
             </button>
           )}
         </li>
         {DAYS.map((d, i) => (
           <li key={d} data-notify-day={d}>
-            <label>
+            <label class="settings-switch notify-day">
               <input
                 type="checkbox"
+                role="switch"
+                class="sw-switch"
                 checked={mine[i].on}
                 onChange={(e) => setRows(mine.map((r, j) => (j === i ? { ...r, on: e.currentTarget.checked } : r)))}
-              />{" "}
-              {d}
+              />
+              <span>{d}</span>
             </label>
             <input
               type="time"
+              class="field small"
               value={mine[i].from}
               disabled={!mine[i].on}
               aria-label={`${d} from`}
@@ -146,6 +156,7 @@ export function NotificationSettings() {
             <span class="dim">to</span>
             <input
               type="time"
+              class="field small"
               value={mine[i].to}
               disabled={!mine[i].on}
               aria-label={`${d} to`}
@@ -156,7 +167,7 @@ export function NotificationSettings() {
         ))}
         <li>
           <button
-            class="control-linkish"
+            class="primary"
             data-notify-save
             disabled={rows === null && tz === null}
             onClick={() => void run({ tz: zone, quiet: windowsOf(mine) }).then(() => (setRows(null), setTz(null)))}

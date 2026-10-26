@@ -1,7 +1,7 @@
 // The attention drawer (M111, #1026): what waits on you, on every machine,
 // from the fleet model the swarm already builds. The
-// header's bell, the footer's "needs input" and the sidebar's Needs you
-// open it. Selecting an item shows what it would run, where and who asks;
+// header's bell, the footer's "needs you" and the sidebar's Needs you
+// open it, and count the same (shared/needs-you, UI audit #154). Selecting an item shows what it would run, where and who asks;
 // Allow and Deny (or the question's answer) go through the existing
 // `act`, and Go to pane only goes there. Looking at the drawer, or closing
 // it, never answers or dismisses anything. Viewers see the items without
@@ -12,7 +12,8 @@ import { type Client } from "../../client";
 import type { FleetPane } from "../../fleet";
 import { directory } from "../../hosts";
 import { OPS, opPath } from "../../ops";
-import { gateKey, type ActRequest, type PaneInfo, type Reason } from "../../../shared/proto";
+import { gateKey, type ActRequest, type PaneInfo } from "../../../shared/proto";
+import { needsYou, NEEDS_YOU } from "../../../shared/needs-you";
 import { cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../swarm/model";
 import { AskCard, type Ask } from "../../../shared/ask";
 import { PermissionBody, PermissionButtons, permissionTarget, VIEWER_NOTE } from "../answer-card";
@@ -30,7 +31,7 @@ export interface AttentionItem {
   p: FleetPane;
   /** On the machine this page shows (its own client acts on it). */
   here: boolean;
-  /** It asks something of you now (the bell counts these); else it failed. */
+  /** It asks something of you now; else it failed. Both need you. */
   waiting: boolean;
   /** You may only watch it. */
   viewer: boolean;
@@ -38,14 +39,9 @@ export interface AttentionItem {
   tab?: string;
 }
 
-const failed = (r: Reason | null) => r?.kind === "failed" || r?.kind === "exited";
-
-function wants(info: PaneInfo): boolean {
-  if (info.attention === "needs_input") return true;
-  // A failure waits too, until someone looks or dismisses it; a plain
-  // "finished" doesn't (the swarm's rail and Chat's Activity have those).
-  return info.attention === "done" && failed(info.reason ?? null);
-}
+// A failure waits too, until someone looks or dismisses it; a plain
+// "finished" doesn't (the swarm's rail and Chat's Activity have those).
+const wants = needsYou;
 
 /** Owner-only asks (#234 invites, M79 tasks from another agent). */
 const ownersOnly = (info: PaneInfo) => info.ask?.source === "invite" || info.ask?.source === "a2a";
@@ -60,7 +56,7 @@ export function attentionItems(client: Client): AttentionItem[] {
   if (st) {
     for (const info of st.panes) {
       // A pane from another machine in this layout: its own machine lists it.
-      if (info.type === "remote" || !wants(info)) continue;
+      if (!wants(info)) continue;
       const tab = client.tabOfPane(info.id);
       const sid = tab ? (client.sessionOfTab(tab.id) ?? null) : null;
       const s = st.sessions.find((x) => x.id === sid);
@@ -98,9 +94,9 @@ export function attentionItems(client: Client): AttentionItem[] {
   return out.sort((a, b) => Number(b.waiting) - Number(a.waiting) || since(b) - since(a));
 }
 
-/** How many wait on you, for the bell. */
+/** How many need you, on every machine: the bell's and the footer's. */
 export function waitingCount(client: Client): number {
-  return attentionItems(client).filter((i) => i.waiting).length;
+  return attentionItems(client).length;
 }
 
 /** Re-render on the shown machine's state and the fleet's. */
@@ -161,7 +157,7 @@ export function AttentionBell({ client }: { client: Client }) {
   useAttentionTick(client);
   const open = useAttentionOpen();
   const n = waitingCount(client);
-  const label = n ? `Needs you: ${n} waiting` : "Needs you: nothing waiting";
+  const label = n ? `${NEEDS_YOU}: ${n}` : `${NEEDS_YOU}: nothing`;
   return (
     <button
       class={`ws-bell${n ? " has" : ""}${open ? " on" : ""}`}
@@ -396,12 +392,12 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
               </button>
             )}
             {r.actions.includes("deny") && (
-              <button disabled={busy} onClick={() => run("deny")}>
+              <button class="secondary danger" disabled={busy} onClick={() => run("deny")}>
                 Deny
               </button>
             )}
             {r.actions.includes("dismiss") && (
-              <button disabled={busy} onClick={() => run("dismiss")}>
+              <button class="secondary" disabled={busy} onClick={() => run("dismiss")}>
                 Dismiss
               </button>
             )}
@@ -409,7 +405,7 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
         ) : null}
       </div>
       <div class="ws-att-go">
-        <button class="ws-att-goto" data-attention-goto onClick={() => goToItem(client, item)} title="Show it, on its machine; this doesn't answer it">
+        <button class="secondary small" data-attention-goto onClick={() => goToItem(client, item)} title="Show it, on its machine; this doesn't answer it">
           Go to pane
         </button>
       </div>

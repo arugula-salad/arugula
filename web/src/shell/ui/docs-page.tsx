@@ -122,10 +122,10 @@ function Page({ client }: { client: Client }) {
                 </p>
               </div>
               <div class="agents-buttons">
-                <button class="pri" data-open-doc disabled={busy} title={r.open === null || r.open === undefined ? "Show it in this session" : "It's open: bring it forward"} onClick={() => void open(r)}>
+                <button class="primary small" data-open-doc disabled={busy} title={r.open === null || r.open === undefined ? "Show it in this session" : "It's open: bring it forward"} onClick={() => void open(r)}>
                   Open
                 </button>
-                <button class="danger" data-delete-doc disabled={busy} title="Delete it for good" onClick={() => setDeleting(r)}>
+                <button class="secondary danger small" data-delete-doc disabled={busy} title="Delete it for good" onClick={() => setDeleting(r)}>
                   Delete
                 </button>
               </div>

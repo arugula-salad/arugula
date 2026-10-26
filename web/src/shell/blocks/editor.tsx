@@ -58,7 +58,7 @@ function EditorBlock({ client, id, s }: { client: Client; id: PaneId; s: EditorS
       <div class="browser-card error">
         <p>VS Code couldn't open {s.name || "here"}</p>
         <p class="dim">{s.error ?? (server.is === "failed" ? server.error : "")}</p>
-        {!s.error && <button onClick={() => void client.api(`/api/blocks/${id}/call/start`, {})}>Try again</button>}
+        {!s.error && <button class="primary" onClick={() => void client.api(`/api/blocks/${id}/call/start`, {})}>Try again</button>}
       </div>
     );
   }
