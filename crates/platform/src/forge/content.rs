@@ -124,6 +124,15 @@ fn login(v: &Value) -> Option<String> {
     v["login"].as_str().map(str::to_owned)
 }
 
+/// GitHub's `author_association` on an item, a comment or a review: one
+/// word of capitals and `_` (`OWNER`, `FIRST_TIME_CONTRIBUTOR`), else none.
+fn association(v: &Value) -> Option<String> {
+    v["author_association"]
+        .as_str()
+        .filter(|a| !a.is_empty() && a.len() <= 64 && a.bytes().all(|b| b.is_ascii_uppercase() || b == b'_'))
+        .map(str::to_owned)
+}
+
 /// A PR's or an issue's body (`GET pulls/N`, `issues/N`, a list's, or a
 /// webhook's item): an empty one is a body too.
 pub fn body_row(repo_id: u64, number: u64, v: &Value) -> Option<ContentRow> {
@@ -140,6 +149,7 @@ pub fn body_row(repo_id: u64, number: u64, v: &Value) -> Option<ContentRow> {
         reply_to: None,
         created_at: ingest::ms(&v["created_at"]).unwrap_or(0),
         updated_at: ingest::ms(&v["updated_at"]).unwrap_or(0),
+        association: association(v),
     })
 }
 
@@ -160,6 +170,7 @@ pub fn comment_row(repo_id: u64, number: u64, kind: &str, v: &Value) -> Option<C
         reply_to: v["in_reply_to_id"].as_u64(),
         created_at,
         updated_at: ingest::ms(&v["updated_at"]).unwrap_or(created_at),
+        association: association(v),
     })
 }
 
@@ -184,6 +195,7 @@ pub fn review_row(repo_id: u64, number: u64, v: &Value) -> Option<ContentRow> {
         reply_to: None,
         created_at: at,
         updated_at: at,
+        association: association(v),
     })
 }
 

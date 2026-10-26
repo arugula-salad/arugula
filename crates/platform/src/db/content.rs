@@ -45,6 +45,10 @@ pub struct ContentRow {
     /// GitHub's times, in ms.
     pub created_at: u64,
     pub updated_at: u64,
+    /// What the author is to the repo, as GitHub said with the text
+    /// (`author_association`: `OWNER`, `CONTRIBUTOR`, `NONE` …). `None` for
+    /// a row mirrored before it was kept.
+    pub association: Option<String>,
 }
 
 /// Everything but the text, which is never printed.
@@ -57,12 +61,13 @@ impl std::fmt::Debug for ContentRow {
             .field("github_id", &self.github_id)
             .field("body", &format_args!("<{} bytes>", self.body.len()))
             .field("updated_at", &self.updated_at)
+            .field("association", &self.association)
             .finish_non_exhaustive()
     }
 }
 
 const COLUMNS: &str = "repo_id, number, kind, github_id, author_login, author_id, body, path, line, reply_to, \
-                       created_at, updated_at";
+                       created_at, updated_at, author_association";
 
 fn content_row(r: &Row) -> Result<ContentRow> {
     Ok(ContentRow {
@@ -78,6 +83,7 @@ fn content_row(r: &Row) -> Result<ContentRow> {
         reply_to: r.get(9)?,
         created_at: r.get(10)?,
         updated_at: r.get(11)?,
+        association: r.get(12)?,
     })
 }
 
@@ -119,11 +125,12 @@ fn quiet<T>(r: Result<T>) -> Result<T> {
 fn upsert(c: &impl Sql, w: &ContentRow) -> Result<()> {
     quiet(c.execute(
         &format!(
-            "INSERT INTO forge_content ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            "INSERT INTO forge_content ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT (repo_id, kind, github_id) DO UPDATE SET number = excluded.number,
                  author_login = excluded.author_login, author_id = excluded.author_id, body = excluded.body,
                  path = excluded.path, line = excluded.line, reply_to = excluded.reply_to,
-                 created_at = excluded.created_at, updated_at = excluded.updated_at
+                 created_at = excluded.created_at, updated_at = excluded.updated_at,
+                 author_association = excluded.author_association
              WHERE excluded.updated_at >= forge_content.updated_at"
         ),
         params![
@@ -138,7 +145,8 @@ fn upsert(c: &impl Sql, w: &ContentRow) -> Result<()> {
             w.line,
             w.reply_to,
             w.created_at,
-            w.updated_at
+            w.updated_at,
+            w.association
         ],
     ))?;
     Ok(())
@@ -160,9 +168,10 @@ pub fn apply(c: &impl Sql, repo_id: u64, change: &Change) -> Result<()> {
         Change::Opened(w) | Change::Upsert(w) => upsert(c, w),
         Change::Body(w) => {
             quiet(c.execute(
-                "UPDATE forge_content SET body = ?1, author_login = ?2, author_id = ?3, updated_at = ?4
+                "UPDATE forge_content SET body = ?1, author_login = ?2, author_id = ?3, updated_at = ?4,
+                     author_association = COALESCE(?7, author_association)
                  WHERE repo_id = ?5 AND number = ?6 AND kind = 'body' AND updated_at <= ?4",
-                params![w.body, w.author_login, w.author_id, w.updated_at, repo_id, w.number],
+                params![w.body, w.author_login, w.author_id, w.updated_at, repo_id, w.number, w.association],
             ))?;
             Ok(())
         }
