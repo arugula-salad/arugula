@@ -26,6 +26,9 @@
 //! - a Try 3's three sessions (M264) run at once, each in a slot of its
 //!   own, on the harness asked for, and a review waits for a slot, then
 //!   runs read-only: no finish step, no push, and its reply reported.
+//! - before a rebuild (Arugula #209), control's `hosted.archive` over the
+//!   relay sends each open agent block's transcript, a session's too, and
+//!   the blocks stay open.
 
 use std::{
     collections::BTreeMap,
@@ -83,6 +86,12 @@ struct Fake {
     /// Every push token the box asked for (M259), and those it revoked.
     pushes: Arc<Mutex<Vec<Value>>>,
     revoked: Arc<Mutex<Vec<String>>>,
+    /// The relay socket, to ask the box an op on (Arugula #209), and what
+    /// the box said on it.
+    relay: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<String>>>>,
+    said: Arc<Mutex<Vec<Value>>>,
+    /// The transcripts the box archived (M184).
+    transcripts: Arc<Mutex<Vec<Value>>>,
 }
 
 impl Fake {
@@ -114,6 +123,9 @@ impl Fake {
             asked: Default::default(),
             pushes: Default::default(),
             revoked: Default::default(),
+            relay: Default::default(),
+            said: Default::default(),
+            transcripts: Default::default(),
         }
     }
 
@@ -262,8 +274,41 @@ async fn trust(Axum(f): Axum<Fake>) -> Response {
     }
 }
 
-async fn dial(up: WebSocketUpgrade) -> Response {
-    up.on_upgrade(|mut ws| async move { while let Some(Ok(_)) = ws.recv().await {} })
+/// The relay socket: what the box says on it is kept, and what's sent to
+/// [`Fake::relay`] goes to it.
+async fn dial(Axum(f): Axum<Fake>, up: WebSocketUpgrade) -> Response {
+    up.on_upgrade(|ws| async move {
+        use axum::extract::ws::Message;
+        use futures_util::{SinkExt as _, StreamExt as _};
+        let (mut tx, mut rx) = ws.split();
+        let (asks, mut asked) = tokio::sync::mpsc::unbounded_channel::<String>();
+        *f.relay.lock().unwrap() = Some(asks);
+        loop {
+            tokio::select! {
+                m = rx.next() => match m {
+                    Some(Ok(Message::Text(t))) => {
+                        if let Ok(v) = serde_json::from_str::<Value>(t.as_str()) {
+                            f.said.lock().unwrap().push(v);
+                        }
+                    }
+                    Some(Ok(_)) => {}
+                    _ => break,
+                },
+                Some(a) = asked.recv() => {
+                    if tx.send(Message::Text(a.into())).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// A transcript the box archived (M184), kept as the platform would.
+async fn archived(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
+    let mut all = f.transcripts.lock().unwrap();
+    all.push(b);
+    Json(json!({ "id": format!("htx_{}", all.len()) }))
 }
 
 /// Every session that hasn't ended, as the platform lists them (the box
@@ -343,6 +388,7 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/installation/token", axum::routing::delete(revoke))
             .route("/api/hosted/turns", post(turn))
             .route("/api/hosted/turns/{turn}/end", post(turn_end))
+            .route("/api/hosted/transcripts", post(archived))
             .with_state(f.clone());
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let at = format!("http://{}", l.local_addr().unwrap());
@@ -1013,4 +1059,37 @@ fn a_codex_session_asks_nobody_but_its_questions_reach_the_card() {
     f.ask(&s, answer);
     wait(&marks, &f, "the answered turn", || f.state(&s) == "done" && f.turns(&s).len() == 3);
     assert!(transcript(&d, block).iter().any(|l| l.starts_with("agent: ") && l.contains("Blue")));
+}
+
+/// Before a rebuild (Arugula #209): control asks the box `hosted.archive`
+/// over its relay. Each open agent block's transcript goes, as closing it
+/// would send it, a session's with what it was asked; then it answers. The
+/// blocks stay open.
+#[test]
+fn a_box_archives_its_open_agents_before_a_rebuild() {
+    let Rig { _rt, f, marks, d, .. } = rig("archive");
+    let a = ses('a');
+    f.start(&a, "fix-readme", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "session a's first turn", || f.state(&a) == "done");
+    let block = block_of(&f, &a);
+    wait(&marks, &f, "the box said its ops", || {
+        f.said.lock().unwrap().iter().any(|v| v["t"] == "ops" && v["ops"].to_string().contains("hosted.archive"))
+    });
+    assert!(f.transcripts.lock().unwrap().is_empty(), "nothing closed yet");
+
+    let ask = json!({ "t": "op", "id": "rebuild-1", "op": { "op": "hosted.archive" } }).to_string();
+    f.relay.lock().unwrap().as_ref().expect("the relay socket").send(ask).unwrap();
+    let answer = || {
+        let said = f.said.lock().unwrap();
+        said.iter().find(|v| v["t"] == "op.done" && v["id"] == "rebuild-1").map(|v| v["answer"].clone())
+    };
+    wait(&marks, &f, "the archive's answer", || answer().is_some());
+    assert_eq!(answer().unwrap()["answer"], "done");
+    let kept = f.transcripts.lock().unwrap().clone();
+    let ours = kept.iter().find(|t| t["block"] == block).unwrap_or_else(|| panic!("the session's block: {kept:#?}"));
+    assert!(ours["text"].as_str().unwrap().contains("hello"), "{ours}");
+    assert_eq!(ours["agent"], "claude");
+    assert!(ours["closed_at"].as_u64().unwrap() > 0);
+    // Still open: its transcript is there to read.
+    assert!(transcript(&d, block).iter().any(|l| l.starts_with("user: hello")));
 }

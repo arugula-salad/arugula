@@ -7,7 +7,7 @@
 //! | anything, delete asked | delete every box it has (by its metadata too), then `deleted` |
 //! | `creating` | the create's journal: ask the hub for a ticket (ticket mode), note `sent`, make the box; `sent` with no answer kept: find it by its metadata, never make it again; `made`: record its enrollment by sandbox id |
 //! | `enrolling` | wait for the hub to say its box enrolled, then `ready`; past the enrollment's end, delete the box (fail closed) |
-//! | `ready`, `paused` | a rebuild (which clears what the old box's setup said), wake or pause asked; else read its state (never waking it), and near the provider's runtime cap pause and resume it between turns ([`super::hold`]) |
+//! | `ready`, `paused` | a rebuild (which first asks a running box to archive its open agents' transcripts, Arugula #209, and clears what the old box's setup said), wake or pause asked; else read its state (never waking it), and near the provider's runtime cap pause and resume it between turns ([`super::hold`]) |
 //! | `waking` | resumed (a wake, or the runtime cap's pause and resume): `ready` once its daemon dials in; past [`super::Config::dial_wait`], `failed` as needing a rebuild, its box paused, and the project's owners and editors pushed (M258) |
 //! | a snapshot's builder, enrolled | wait for its setup and wipe, snapshot it, delete it ([`super::snapshot`], M263) |
 //!
@@ -67,6 +67,11 @@ const CAP_WAKE_MS: u64 = 120_000;
 /// two of a resume when it's alive (M180), and its supervisor starts it
 /// again within half a minute when it isn't (M258).
 pub const DIAL_WAIT: Duration = Duration::from_secs(60);
+/// How long a running box's daemon has to archive its open agents'
+/// transcripts before a rebuild deletes it (Arugula #209,
+/// [`super::Config::archive_wait`]): the rebuild goes ahead after it
+/// whatever the box said. The daemon gives itself less.
+pub const ARCHIVE_WAIT: Duration = Duration::from_secs(10);
 /// How often a waking box's machine is looked for on the relay.
 const DIAL_LOOK_MS: u64 = 1_000;
 /// How long after a create whose answer was lost the box is looked for
@@ -162,6 +167,7 @@ async fn step(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64
     }
     match asked.as_deref() {
         Some("rebuild") => {
+            archive_first(app, job).await;
             delete(app, sub, job).await?;
             job.w.state = "creating".into();
             job.w.error = None;
@@ -217,6 +223,38 @@ pub(super) async fn delete(app: &Platform, sub: &dyn Substrate, job: &mut Hosted
     job.stage = String::new();
     job.stage_at = None;
     Ok(())
+}
+
+/// Before a rebuild deletes a running box (Arugula #209): ask its daemon
+/// to archive its open agent blocks' transcripts now (`hosted.archive`),
+/// as each would on closing (M184), since the box goes with them open. A
+/// session moved to the new box starts from its conversation then
+/// ([`super::sessions_on_box_changed`]). It has [`ARCHIVE_WAIT`] to answer;
+/// the rebuild goes ahead whatever it says. A box that isn't running (or
+/// whose daemon isn't on the relay, which the hub answers at once) is
+/// rebuilt straight away, as is one whose daemon is from before the op.
+async fn archive_first(app: &Platform, job: &HostedJob) {
+    use arugula_control_wire::{
+        forge::{DaemonOp, OpAnswer},
+        transcripts::ArchiveOpen,
+    };
+    let Some(machine) = job.w.machine.as_deref().filter(|_| job.w.state == "ready") else { return };
+    let op = DaemonOp::HostedArchive(ArchiveOpen::default());
+    match tokio::time::timeout(app.hosted.archive_wait(), app.hub.daemon_op(machine, &op)).await {
+        Ok(Ok(OpAnswer::Done { .. })) => {
+            tracing::info!(workspace = %job.w.id, %machine, "a hosted box archived its agents' transcripts before its rebuild")
+        }
+        Ok(Ok(OpAnswer::Offline | OpAnswer::Unknown)) => {}
+        Ok(Ok(said)) => {
+            tracing::warn!(workspace = %job.w.id, %machine, ?said, "a hosted box didn't archive every agent's transcript before its rebuild")
+        }
+        Ok(Err(e)) => {
+            tracing::warn!(workspace = %job.w.id, %machine, error = %e, "the hub didn't ask a hosted box to archive its transcripts")
+        }
+        Err(_) => {
+            tracing::warn!(workspace = %job.w.id, %machine, "a hosted box didn't archive its transcripts in time: rebuilding it")
+        }
+    }
 }
 
 /// The create's journal (module docs).

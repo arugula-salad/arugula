@@ -221,6 +221,7 @@ impl Args {
             idle_timeout: self.hosted_idle_timeout.filter(|s| *s > 0).map(Duration::from_secs),
             runtime_cap: self.hosted_runtime_cap.filter(|s| *s > 0).map(Duration::from_secs),
             dial_wait: self.hosted_dial_wait.filter(|s| *s > 0).map(Duration::from_secs),
+            archive_wait: None,
             snapshot_every: self.hosted_snapshot_hours.map(|h| Duration::from_secs(h * 3600)),
             snapshot_hold: self.hosted_snapshot_hold_hours.map(|h| Duration::from_secs(h * 3600)),
             preview_domain: previews::domain(self.preview_domain.as_deref().unwrap_or(""))?,
@@ -264,6 +265,9 @@ pub struct Config {
     pub runtime_cap: Option<Duration>,
     /// [`Args::hosted_dial_wait`], when set ([`Config::dial_wait`]).
     pub dial_wait: Option<Duration>,
+    /// How long a box has to archive its agents' transcripts before a
+    /// rebuild ([`Config::archive_wait`]; tests set it).
+    pub archive_wait: Option<Duration>,
     /// [`Args::hosted_snapshot_hours`], when set ([`Config::snapshot_every`]).
     pub snapshot_every: Option<Duration>,
     /// [`Args::hosted_snapshot_hold_hours`], when set ([`Config::snapshot_hold`]).
@@ -286,6 +290,7 @@ impl std::fmt::Debug for Config {
             .field("idle_timeout", &self.idle_timeout)
             .field("runtime_cap", &self.runtime_cap)
             .field("dial_wait", &self.dial_wait)
+            .field("archive_wait", &self.archive_wait)
             .field("snapshot_every", &self.snapshot_every)
             .field("snapshot_hold", &self.snapshot_hold)
             .field("inference", &self.inference)
@@ -314,6 +319,12 @@ impl Config {
     /// How long a woken box's daemon has to dial in.
     pub fn dial_wait(&self) -> Duration {
         self.dial_wait.unwrap_or(worker::DIAL_WAIT)
+    }
+
+    /// How long a box's daemon has to archive its open agents' transcripts
+    /// before a rebuild deletes the box (Arugula #209).
+    pub fn archive_wait(&self) -> Duration {
+        self.archive_wait.unwrap_or(worker::ARCHIVE_WAIT)
     }
 
     /// How long a deleted workspace waits for the provider to let go of
@@ -523,7 +534,9 @@ pub fn ask(app: &Platform, workspace: &str, what: Ask) -> anyhow::Result<bool> {
 /// hydration of the thread plus its archived transcript ([`transcripts`],
 /// `sessions::hydrate::after_rebuild`) as its asker's prompt: the new box
 /// takes it as it takes any queued session. Its card says the box was
-/// rebuilt. A session already on `new_machine` is left as it is, so this
+/// rebuilt, and that its conversation was lost when the old box archived
+/// none (Arugula #209: the worker asks a live box to before it deletes it,
+/// [`worker`]'s rebuild). A session already on `new_machine` is left as it is, so this
 /// may run again for the same enrollment.
 pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machine: &str) -> anyhow::Result<()> {
     use crate::db::sessions::{NewPrompt, Source, State};
@@ -531,15 +544,17 @@ pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machin
         if s.machine.as_deref() == Some(new_machine) {
             continue;
         }
-        let text = match s.state {
-            State::Queued => String::new(),
+        // Its prompt on the new box, and whether its conversation was lost
+        // with the old one (Arugula #209), as its card says.
+        let (text, lost) = match s.state {
+            State::Queued => (String::new(), false),
             // A review (M264) starts again from its own prompt: the diff
             // and the thread as they were asked about.
             _ if s.role == crate::db::sessions::Role::Review => {
-                app.db.session_prompts(&s.id)?.into_iter().next().map(|p| p.text).unwrap_or_default()
+                (app.db.session_prompts(&s.id)?.into_iter().next().map(|p| p.text).unwrap_or_default(), false)
             }
             _ => match crate::sessions::hydrate::after_rebuild(app, &s).await {
-                Ok(t) => t,
+                Ok(r) => (r.text, r.lost),
                 Err(e) => {
                     tracing::warn!(
                         session = s.id,
@@ -553,7 +568,7 @@ pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machin
         };
         let prompt = NewPrompt { author: &s.asker, source: Source::Member, association: None, text: &text };
         let now = arugula_e2e::now_ms();
-        match app.db.session_rebuilt(&s.id, s.state, new_machine, &prompt, now)? {
+        match app.db.session_rebuilt(&s.id, s.state, new_machine, &prompt, lost, now)? {
             Ok(_) => {
                 tracing::info!(
                     session = s.id,

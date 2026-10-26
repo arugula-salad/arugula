@@ -44,6 +44,15 @@ pub(crate) struct TestHub {
     pub(crate) feed_slow: AtomicBool,
 }
 
+/// What a machine does when it's asked an op, in place of an answer set
+/// with [`TestHub::answers_ops`] (Arugula #209: a box archives its
+/// transcripts through the platform, then answers).
+pub(crate) type OpHook = Arc<
+    dyn Fn(String, arugula_control_wire::forge::DaemonOp) -> BoxFuture<'static, arugula_control_wire::forge::OpAnswer>
+        + Send
+        + Sync,
+>;
+
 #[derive(Default)]
 struct State {
     accounts: BTreeSet<String>,
@@ -62,6 +71,7 @@ struct State {
     /// ops asked, in order.
     op_answers: BTreeMap<String, arugula_control_wire::forge::OpAnswer>,
     ops: Vec<(String, arugula_control_wire::forge::DaemonOp)>,
+    op_hook: Option<OpHook>,
     /// It runs GitHub's authorization for a send (M168).
     authorizes: bool,
     /// Accounts' devices (M218).
@@ -271,6 +281,11 @@ impl TestHub {
     /// How a machine answers ops from now on (M168).
     pub(crate) fn answers_ops(&self, daemon: &str, a: arugula_control_wire::forge::OpAnswer) {
         self.state.lock().unwrap().op_answers.insert(daemon.into(), a);
+    }
+
+    /// What every machine does when it's asked an op from now on.
+    pub(crate) fn on_ops(&self, hook: OpHook) {
+        self.state.lock().unwrap().op_hook = Some(hook);
     }
 
     /// The ops asked of machines, in order.
@@ -537,6 +552,11 @@ impl HubPort for TestHub {
         self.called("daemon_op");
         let mut s = self.state.lock().unwrap();
         s.ops.push((daemon.into(), op.clone()));
+        if let Some(hook) = s.op_hook.clone() {
+            drop(s);
+            let answer = hook(daemon.into(), op.clone());
+            return Box::pin(async move { Ok(answer.await) });
+        }
         done(s.op_answers.get(daemon).cloned().unwrap_or(arugula_control_wire::forge::OpAnswer::Offline))
     }
 

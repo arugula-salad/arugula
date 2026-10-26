@@ -27,6 +27,15 @@ use crate::{
 /// (`hw_dev`), whose spec clones `repos`, and whose box enrolled as the
 /// returned keys' machine. The routes, t's project and u's.
 pub(crate) async fn platform(repos: &[&str]) -> (Arc<TestHub>, Arc<Platform>, String, String, String, DeviceKeys) {
+    platform_with(repos, |_| {}).await
+}
+
+/// [`platform`], changed by `set` first (a compute provider for its
+/// worker, say).
+pub(crate) async fn platform_with(
+    repos: &[&str],
+    set: impl FnOnce(&mut Platform),
+) -> (Arc<TestHub>, Arc<Platform>, String, String, String, DeviceKeys) {
     let hub = Arc::new(TestHub::default());
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer), ("y", TeamRole::Editor)]);
     hub.team("u", &[("c", TeamRole::Owner)]);
@@ -38,6 +47,7 @@ pub(crate) async fn platform(repos: &[&str]) -> (Arc<TestHub>, Arc<Platform>, St
     };
     let mut p = Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
     p.hosted = crate::hosted::Config { accounts: vec!["a".into(), "b".into(), "x".into()], ..Default::default() };
+    set(&mut p);
     let app = Arc::new(p);
     crate::projects::follow(&app).await.unwrap();
     crate::cache::catch_up(&app).await.unwrap();
@@ -493,6 +503,130 @@ async fn a_rebuilt_boxs_sessions_start_again_from_the_thread() {
     // Again for the same enrollment: nothing moves.
     crate::hosted::sessions_on_box_changed(&app, "hw_dev", &new.id()).await.unwrap();
     assert_eq!(app.db.session(&s.id).unwrap().unwrap().state, State::Working);
+}
+
+/// t's project on the fake provider, its `hw_dev` box on the old machine
+/// (as [`platform_with`] has it), and a session the old box took (block 7)
+/// and finished. Arugula #209.
+async fn rebuild_rig(
+    archive_wait: Option<std::time::Duration>,
+) -> (Arc<TestHub>, Arc<Platform>, String, String, DeviceKeys, Session) {
+    let fake = Arc::new(crate::hosted::tests::Fake::default());
+    let (hub, app, base, t, _u, old) = platform_with(&["https://github.com/o/app"], |p| {
+        p.compute = Some(fake);
+        p.hosted.template = Some("tpl".into());
+        p.hosted.archive_wait = archive_wait;
+    })
+    .await;
+    hub.delegate(&t);
+    post_in(&base, "ch_general", "b", "@arugula fix the canary", None).await;
+    let s = sessions(&app, &t).pop().unwrap();
+    let first = app.db.session_prompts(&s.id).unwrap()[0].id.clone();
+    let took = json!({ "prompts": [first], "block": "7" }).to_string();
+    box_says(&app, &old, &s.id, 1, State::Queued, State::Working, &took);
+    box_says(&app, &old, &s.id, 2, State::Working, State::Done, "{}");
+    (hub, app, base, t, old, s)
+}
+
+/// Rebuild `hw_dev` through the worker, its new box enrolling as `new`:
+/// the session's prompt on the new box.
+async fn rebuild(hub: &TestHub, app: &Platform, s: &Session, new: &DeviceKeys) -> String {
+    assert!(crate::hosted::ask(app, "hw_dev", crate::hosted::Ask::Rebuild).unwrap());
+    let now = arugula_e2e::now_ms();
+    crate::hosted::tests::drive(app, now).await;
+    hub.enroll("hw_dev", &new.id());
+    crate::hosted::tests::drive(app, now + 3_000).await;
+    let after = app.db.session(&s.id).unwrap().unwrap();
+    assert_eq!((after.state, after.machine.as_deref()), (State::Queued, Some(new.id().as_str())));
+    app.db.session_prompts(&s.id).unwrap().pop().unwrap().text
+}
+
+/// A rebuilt box (Arugula #209): before the worker deletes the running
+/// box, it asks the box's daemon to archive its open agents' transcripts
+/// (`hosted.archive`), and the box sends them through the platform's own
+/// path (`PlatformPort::hosted_transcript`) while it's still the
+/// workspace's machine. The session that moves to the new box starts from
+/// the thread and that transcript, and its card says only that the box
+/// was rebuilt.
+#[tokio::test]
+async fn a_rebuild_archives_the_old_boxs_conversation_first() {
+    use arugula_control_wire::{
+        forge::{DaemonOp, OpAnswer},
+        transcripts::TranscriptPost,
+    };
+
+    use crate::{PlatformPort as _, db::sessions::BOX_REBUILT};
+    let (hub, app, base, _t, old, s) = rebuild_rig(None).await;
+    let body = "b: fix the canary\nagent: I changed canary.rs, committed, and the push failed";
+    let weak = Arc::downgrade(&app);
+    hub.on_ops(Arc::new(move |machine, op| {
+        let app = weak.clone();
+        Box::pin(async move {
+            let (Some(app), DaemonOp::HostedArchive(_)) = (app.upgrade(), op) else { return OpAnswer::Unknown };
+            let post = TranscriptPost {
+                block: 7,
+                agent: "claude".into(),
+                title: "fix the canary".into(),
+                cwd: None,
+                started_at: 1,
+                closed_at: 2,
+                cut: false,
+                text: body.into(),
+            };
+            match app.hosted_transcript("hw_dev", &machine, &post).await.unwrap() {
+                crate::Archived::Kept { .. } => OpAnswer::Done { url: None },
+                refused => OpAnswer::Failed { error: format!("{refused:?}") },
+            }
+        })
+    }));
+
+    let new = DeviceKeys::generate();
+    let text = rebuild(&hub, &app, &s, &new).await;
+    let asked: Vec<String> = hub.ops_asked().into_iter().map(|(m, op)| format!("{m} {}", op.name())).collect();
+    assert_eq!(asked, [format!("{} hosted.archive", old.id())], "the old box, once");
+    assert!(text.starts_with("This session's box was rebuilt"), "{text}");
+    assert!(text.ends_with(&format!("```text\n{body}\n```")), "the old box's transcript: {text}");
+    let (st, view) = call(&base, "b", "GET", &format!("/api/sessions/{}", s.id), None).await;
+    assert_eq!(st, 200, "{view}");
+    assert_eq!(view["card"]["reason"], BOX_REBUILT);
+    let last = view["events"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(last["text"], "Its box was rebuilt: starting again from the thread", "{last}");
+}
+
+/// A rebuilt box that archived nothing (Arugula #209): one whose daemon
+/// doesn't answer in time is rebuilt anyway, after the wait, and one
+/// that isn't running (here, failed: its daemon never came back) isn't
+/// asked. Either way the session starts again from the thread alone, and
+/// its card says the conversation was lost.
+#[tokio::test]
+async fn a_rebuild_with_no_transcript_says_the_conversation_was_lost() {
+    use arugula_control_wire::forge::OpAnswer;
+
+    use crate::db::sessions::BOX_REBUILT_LOST;
+    let lost = "Its box was rebuilt, and its conversation was lost with it: starting again from the thread";
+
+    // Its daemon never answers: the rebuild goes on after the wait.
+    let (hub, app, base, _t, old, s) = rebuild_rig(Some(std::time::Duration::from_millis(200))).await;
+    hub.on_ops(Arc::new(|_, _| Box::pin(std::future::pending::<OpAnswer>())));
+    let started = std::time::Instant::now();
+    let text = rebuild(&hub, &app, &s, &DeviceKeys::generate()).await;
+    assert!(started.elapsed() < std::time::Duration::from_secs(5), "{:?}", started.elapsed());
+    assert_eq!(hub.ops_asked().len(), 1, "it was asked");
+    assert!(text.ends_with("(The old box sent no transcript of your conversation.)"), "{text}");
+    let (_, view) = call(&base, "b", "GET", &format!("/api/sessions/{}", s.id), None).await;
+    assert_eq!(view["card"]["reason"], BOX_REBUILT_LOST);
+    assert_eq!(view["events"].as_array().unwrap().last().unwrap()["text"], lost);
+    drop(old);
+
+    // A failed box (its daemon never came back) isn't asked at all.
+    let (hub, app, base, _t, _old, s) = rebuild_rig(None).await;
+    app.db.c().execute("UPDATE hosted_workspaces SET state = 'failed' WHERE id = 'hw_dev'", params![]).unwrap();
+    let text = rebuild(&hub, &app, &s, &DeviceKeys::generate()).await;
+    assert!(hub.ops_asked().is_empty(), "{:?}", hub.ops_asked());
+    assert!(text.ends_with("(The old box sent no transcript of your conversation.)"), "{text}");
+    let (_, view) = call(&base, "b", "GET", &format!("/api/sessions/{}", s.id), None).await;
+    assert_eq!(view["card"]["reason"], BOX_REBUILT_LOST);
+    assert_eq!(view["events"].as_array().unwrap().last().unwrap()["text"], lost);
 }
 
 /// A done session with no prompt for a day ends (M261): `stopped`, saying

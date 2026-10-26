@@ -420,7 +420,7 @@ one: anything it committed and didn't push is gone. You start again in a fresh c
 /// prompt), then the session's archived transcript from the old box, if
 /// the box sent it ([`crate::hosted::transcripts`]), fenced as a record,
 /// its newest part kept to fit [`MAX_PROMPT`].
-pub async fn after_rebuild(app: &Platform, s: &crate::db::sessions::Session) -> Result<String> {
+pub async fn after_rebuild(app: &Platform, s: &crate::db::sessions::Session) -> Result<Rebuilt> {
     let room = app.db.chat_room(&s.room)?.ok_or_else(|| anyhow::anyhow!("the session's thread is gone"))?;
     let slug = s.branch.strip_prefix("arugula/").and_then(|b| b.split_once('-')).map_or("", |(_, slug)| slug);
     let thread = first_prompt(app, &room, s.parent_seq, &s.project, &s.asker, s.repo.as_deref(), slug).await?;
@@ -438,7 +438,17 @@ pub async fn after_rebuild(app: &Platform, s: &crate::db::sessions::Session) -> 
         }
         _ => None,
     };
-    Ok(rebuilt(&thread, transcript.as_deref()))
+    let lost = transcript.as_deref().is_none_or(|t| t.trim().is_empty());
+    Ok(Rebuilt { text: rebuilt(&thread, transcript.as_deref()), lost })
+}
+
+/// [`after_rebuild`]'s prompt, and whether the conversation was lost: the
+/// old box archived no transcript of it (Arugula #209), which its card
+/// says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rebuilt {
+    pub text: String,
+    pub lost: bool,
 }
 
 /// [`after_rebuild`]'s text, from the thread's prompt and the transcript.
