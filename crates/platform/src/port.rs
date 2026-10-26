@@ -16,7 +16,7 @@ use arugula_control_wire::{
     hosted::{SetupPlan, SetupReport},
     run_logs::{Upload, UploadGiven, Uploaded},
     transcripts::TranscriptPost,
-    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionReport, Work},
+    work::{ArtifactGiven, PushAsk, PushGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionReport, Work},
 };
 
 pub use crate::hosted::{inference::TurnAnswer, previews::PublicPreview, transcripts::Archived};
@@ -170,6 +170,18 @@ pub trait PlatformPort: Send + Sync {
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         let _ = (machine, report);
         Box::pin(async { anyhow::bail!("this platform doesn't take sessions' reports") })
+    }
+
+    /// A token for a hosted machine's push of one of its sessions' branch
+    /// (M259), for the hub's `POST /api/hosted/work/session/push`. A
+    /// platform from before M259 gives none.
+    fn hosted_session_push<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a PushAsk,
+    ) -> BoxFuture<'a, anyhow::Result<PushGiven>> {
+        let _ = (machine, ask);
+        Box::pin(async { Ok(PushGiven::Refused { why: "this platform doesn't push sessions' branches".into() }) })
     }
 
     /// A hosted machine's deploy run's secrets (M219), for the hub's `POST
@@ -415,6 +427,13 @@ impl PlatformPort for Platform {
                 Some(t) => forge::send::How::Token(t),
                 None => forge::send::How::Machine,
             };
+            // A session's PR (M259) comes back through the same callback.
+            if draft.starts_with(crate::sessions::pr::PREFIX) {
+                return Ok(match crate::sessions::pr::send(self, account, draft, how).await {
+                    Ok(s) => forge::send::Outcome { pr: s.pr.url, ..Default::default() },
+                    Err(e) => forge::send::Outcome { refused: Some(e.1), ..Default::default() },
+                });
+            }
             Ok(forge::send::send(self, account, draft, how).await.into())
         })
     }
@@ -468,6 +487,14 @@ impl PlatformPort for Platform {
         report: &'a SessionReport,
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         Box::pin(crate::session_live::report(self, machine, report))
+    }
+
+    fn hosted_session_push<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a PushAsk,
+    ) -> BoxFuture<'a, anyhow::Result<PushGiven>> {
+        Box::pin(crate::sessions::push::token(self, machine, ask))
     }
 
     fn hosted_secrets<'a>(

@@ -42,7 +42,7 @@ use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke, Standing},
     hosted::{EnrollAsk, EnrollGiven, Enrolled, SetupPlan, SetupReport, WakeAnswer},
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionReport, Work},
+    work::{ArtifactGiven, PushAsk, PushGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionReport, Work},
 };
 
 use crate::{
@@ -310,6 +310,12 @@ struct ReportArgs {
 struct SessionReportArgs {
     machine: HostedMachine,
     report: SessionReport,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SessionPushArgs {
+    machine: HostedMachine,
+    ask: PushAsk,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -876,6 +882,14 @@ impl PlatformPort for HttpPlatform {
         Box::pin(self.0.call("hosted_session_report", a))
     }
 
+    fn hosted_session_push<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a PushAsk,
+    ) -> BoxFuture<'a, anyhow::Result<PushGiven>> {
+        Box::pin(self.0.call("hosted_session_push", SessionPushArgs { machine: machine.clone(), ask: ask.clone() }))
+    }
+
     fn hosted_secrets<'a>(
         &'a self,
         machine: &'a HostedMachine,
@@ -1022,6 +1036,10 @@ async fn platform_call(
             "hosted_session_report" => {
                 let a: SessionReportArgs = args(&body)?;
                 answer(p.hosted_session_report(&a.machine, &a.report).await?)?
+            }
+            "hosted_session_push" => {
+                let a: SessionPushArgs = args(&body)?;
+                answer(p.hosted_session_push(&a.machine, &a.ask).await?)?
             }
             "hosted_secrets" => {
                 let a: SecretsArgs = args(&body)?;
