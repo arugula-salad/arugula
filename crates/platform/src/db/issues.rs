@@ -633,6 +633,39 @@ impl Db {
     pub fn issue_count(&self, project: &str) -> Result<u64> {
         self.c().query_row("SELECT count(*) FROM issues WHERE project_id = ?1", params![project], |r| r.get(0))
     }
+
+    /// Every label on a project's issues, open or closed, sorted: what a
+    /// label menu offers (UI audit #163).
+    pub fn issue_labels(&self, project: &str) -> Result<Vec<String>> {
+        let lists = self
+            .c()
+            .query_map("SELECT labels FROM issues WHERE project_id = ?1", params![project], |r| r.get::<String>(0))?;
+        let mut all = std::collections::BTreeSet::new();
+        for l in lists {
+            all.extend(serde_json::from_str::<Vec<String>>(&l)?);
+        }
+        Ok(all.into_iter().collect())
+    }
+
+    /// Who last closed each of these issues, by id: their latest `closed`
+    /// event's actor and agent (UI audit #163: a closed row says who).
+    pub fn closers(&self, issues: &[&str]) -> Result<HashMap<String, (String, Option<String>)>> {
+        if issues.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let marks = (1..=issues.len()).map(|n| format!("?{n}")).collect::<Vec<_>>().join(", ");
+        let args: Vec<Value> = issues.iter().map(|i| Value::Text((*i).into())).collect();
+        let sql = format!(
+            "SELECT {EVENT_COLS} FROM issue_events WHERE kind = 'closed' AND issue_id IN ({marks}) ORDER BY id"
+        );
+        // Oldest first: a later close overwrites an earlier one.
+        Ok(self
+            .c()
+            .query_map(&sql, &list(&args), event_row)?
+            .into_iter()
+            .map(|e| (e.issue, (e.actor, e.actor_agent)))
+            .collect())
+    }
 }
 
 /// What deleting an account takes from issues, inside the platform's

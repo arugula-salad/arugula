@@ -122,6 +122,15 @@ pub struct Issue {
     pub created_at: u64,
     pub updated_at: u64,
     pub closed_at: Option<u64>,
+    /// Who closed a closed one (an agent's owner's account), as its latest
+    /// `closed` event says: a list's row names them (UI audit #163).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub closed_by: Option<String>,
+    /// The agent that closed it for its owner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub closed_by_agent: Option<ChatAgent>,
 }
 
 /// `GET /api/projects/{project}/issues`'s query. Each that's given narrows
@@ -262,6 +271,10 @@ pub struct IssueHome {
     /// It has issues in both places: native ones and a linked repo. The
     /// page says so.
     pub both: bool,
+    /// Every label on its native issues, open or closed, sorted: what the
+    /// label menus offer (UI audit #163).
+    #[serde(default)]
+    pub labels: Vec<String>,
 }
 
 /// `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with

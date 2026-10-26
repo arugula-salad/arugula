@@ -1258,6 +1258,7 @@ mod tests {
             repos: repos.iter().map(|r| (*r).to_owned()).collect(),
             native_issues: 0,
             both: false,
+            labels: vec![],
         };
         assert_eq!(home_says(false, Some(&home("native", &[])), false).unwrap(), None);
         assert_eq!(
@@ -1307,6 +1308,8 @@ mod tests {
             created_at: 0,
             updated_at: 0,
             closed_at: Some(0),
+            closed_by: None,
+            closed_by_agent: None,
         };
         let names =
             HashMap::from([("acc_me".to_owned(), "Jake".to_owned()), ("acc_al".to_owned(), "Alice".to_owned())]);
