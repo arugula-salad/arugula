@@ -111,6 +111,9 @@ pub mod run_logs;
 #[cfg(test)]
 mod runs_page_tests;
 pub mod secrets;
+pub mod sessions;
+#[cfg(test)]
+mod sessions_hydrate_tests;
 pub mod stuck;
 #[cfg(test)]
 pub(crate) mod testing;

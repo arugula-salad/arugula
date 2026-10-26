@@ -64,6 +64,7 @@ pub mod run_grants;
 pub mod run_logs;
 pub mod run_work;
 pub mod runs;
+pub mod session_threads;
 pub mod sessions;
 pub mod sql;
 pub mod triggers;

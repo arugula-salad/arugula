@@ -45,9 +45,11 @@
 //!   starts with, which become `sent`; taking a session names its agent
 //!   block; `failed` says why; a `turn` names the session's own branch;
 //!   an `error` says what. The wire module's docs list them.
-//! - **At most [`MAX_SESSIONS_PER_BOX`]** sessions on a workspace have a
-//!   turn under way: a machine's take, or a done session's next turn, past
-//!   that is refused ([`Refused::Busy`]) and may be sent again later.
+//! - **At most [`MAX_SESSIONS_PER_BOX`]** sessions on a workspace hold a
+//!   slot on its box: taken and not ended (`working`, `needs_input`,
+//!   `unresponsive` or `done`; a done one keeps its checkout for its next
+//!   turn). A machine's take past that is refused ([`Refused::Busy`]) and
+//!   may be sent again later.
 //! - **Prompts** are `queued` until a turn starts with them (`sent`), or
 //!   `dropped`: their author took them back, or the session ended first.
 //! - **The job** that follows a session is its `session` job on
@@ -392,7 +394,7 @@ pub enum Refused {
     OtherDaemon,
     /// A machine's report that isn't its next.
     Seq { next: u64 },
-    /// The box has [`MAX_SESSIONS_PER_BOX`] turns under way: later.
+    /// The box holds [`MAX_SESSIONS_PER_BOX`] sessions: later.
     Busy,
     /// The detail isn't a JSON object of at most [`MAX_DETAIL`] bytes, or
     /// doesn't fit the move.
@@ -410,7 +412,7 @@ impl std::fmt::Display for Refused {
             Refused::Reporter => f.write_str("not a move this reporter may make"),
             Refused::OtherDaemon => f.write_str("the report isn't from this session's machine"),
             Refused::Seq { next } => write!(f, "the machine's next report is {next}"),
-            Refused::Busy => write!(f, "the box has {MAX_SESSIONS_PER_BOX} sessions under way"),
+            Refused::Busy => write!(f, "the box holds {MAX_SESSIONS_PER_BOX} sessions"),
             Refused::Detail(why) | Refused::Prompt(why) => f.write_str(why),
         }
     }
@@ -568,12 +570,12 @@ fn queued_among(c: &impl Sql, session: &str, ids: &[String]) -> Result<Result<()
     Ok(Ok(()))
 }
 
-/// How many sessions on `workspace` other than `but` have a turn under
-/// way.
+/// How many sessions on `workspace` other than `but` hold a slot on its
+/// box: taken and not ended, a done one too.
 fn under_way(c: &impl Sql, workspace: &str, but: &str) -> Result<usize> {
     let n: u64 = c.query_row(
         "SELECT count(*) FROM agent_sessions
-         WHERE workspace_id = ?1 AND id <> ?2 AND state IN ('working', 'needs_input', 'unresponsive')",
+         WHERE workspace_id = ?1 AND id <> ?2 AND state IN ('working', 'needs_input', 'unresponsive', 'done')",
         params![workspace, but],
         |r| r.get(0),
     )?;
@@ -1061,7 +1063,8 @@ impl Db {
             params![workspace],
             session_row,
         )?;
-        let busy = live.iter().filter(|s| matches!(s.state, State::Working | State::NeedsInput | State::Unresponsive));
+        // Every live session but a queued one holds a slot, a done one too.
+        let busy = live.iter().filter(|s| s.state != State::Queued);
         let mut room = MAX_SESSIONS_PER_BOX.saturating_sub(busy.count());
         let mut out = Vec::new();
         for s in live {

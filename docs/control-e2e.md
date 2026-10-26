@@ -817,6 +817,17 @@ follow.
   written to disk. The PR is a draft its asker sends, with their one-use
   user token.
 
+**Who starts one** (M256, `crates/platform/src/chat/sessions.rs`): an owner
+or editor of the project, on the hosted beta's list, by writing `@arugula`
+in one of its channels or in the thread on one of its issues or PRs. A
+viewer, or anyone else, gets a line in the thread saying why, and nothing
+runs. Replies in the thread from the asker or another owner or editor are
+the session's next prompts, credited to whoever wrote them; a viewer's are
+only chat. The first prompt is the thread itself, with each link the asker
+can read resolved to what control holds of it
+(`crates/platform/src/sessions/hydrate.rs`). A session stops when its
+workspace is deleted or its asker leaves the project.
+
 **What control can do with sessions:** what it can with runs, on that
 project's hosted box: it chooses what each turn is told. **What it can't:**
 start one on a person's machine, report a session's turn for the box, or
