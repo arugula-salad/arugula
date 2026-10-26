@@ -2001,7 +2001,11 @@ export class ControlSession {
     const pub = new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey));
     const res = await request("POST", "/api/links", { session, key: hex(pub), ttl_secs: ttlSecs, history });
     if (!res.ok) throw new Error((await res.json<{ error?: string }>().catch(() => null))?.error ?? "couldn't make a link");
-    return `${this.info.url}/#link=${d.id}.${d.cert.noise}.${hex(seed)}.${hex(pub)}`;
+    // UI audit #149: when it ends rides along, so its page can say so (the
+    // daemon ends it then either way). A link made before says only that
+    // it's read-only.
+    const expires = (await res.json<{ expires?: number }>().catch(() => null))?.expires;
+    return `${this.info.url}/#link=${d.id}.${d.cert.noise}.${hex(seed)}.${hex(pub)}${typeof expires === "number" ? `.${expires}` : ""}`;
   }
 
   /** Approve another device's request: sign its certificate. With the

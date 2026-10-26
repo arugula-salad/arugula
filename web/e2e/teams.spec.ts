@@ -511,6 +511,8 @@ test("a read-only link works logged out, and dies at expiry", async ({ browser }
   await expect.poll(() => stranger.evaluate(() => window.__arugula?.client.connected), { timeout: 20_000 }).toBe(true);
   expect(await stranger.evaluate(() => window.__arugula.control)).toBeNull();
   await ready(stranger, pane);
+  // It says what it is, and when it ends (UI audit #149).
+  await expect(stranger.locator("[data-read-only-link]")).toContainText(/^Read-only link · end/);
   await alice.evaluate((p) => window.__arugula.client.paneOp(p, { op: "take_control" }), pane);
   await run(alice, pane, "echo live-$((6*7))", "live-42");
   await expect.poll(() => text(stranger, pane)).toContain("live-42");
