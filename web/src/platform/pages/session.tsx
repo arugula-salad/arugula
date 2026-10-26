@@ -11,7 +11,7 @@ import { follow } from "../router";
 import { session as platform } from "../session";
 import { Missing } from "./project";
 
-const when = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const when = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
 export function SessionPage({ project, session }: { project: string; session: string }) {
   const [view, setView] = useState<SessionView | null>(null);
