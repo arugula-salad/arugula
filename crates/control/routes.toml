@@ -900,6 +900,14 @@ note = "A hosted machine's signed report on one of its agent sessions (M257): a 
 
 [[route]]
 method = "POST"
+path = "/api/hosted/work/session/push"  # wire::work::WORK_SESSION_PUSH
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A token for one push of an agent session's branch (M259): the platform mints it only for the machine's own live session and that session's branch exactly, on its linked repo, with contents: write and no workflows; the box revokes it after (PlatformPort::hosted_session_push)."
+
+[[route]]
+method = "POST"
 path = "/api/hosted/work/secrets"  # wire::work::WORK_SECRETS
 process = "hub"
 auth = "hosted"
@@ -1971,6 +1979,30 @@ process = "platform"
 auth = "session"
 clients = ["page"]
 note = "Ask an agent session's box to answer its question, approve or deny its permission, or cancel its turn (M257): its project's owners and editors; the first answer wins."
+
+[[route]]
+method = "GET"
+path = "/api/sessions/{ses}/pr"  # wire::sessions::SESSION_PR
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "An agent session's pull request as its asker drafts it (M259): kept, or prefilled from the repo's PR template and the session's turns. Its asker only, while they may read the repo."
+
+[[route]]
+method = "PUT"
+path = "/api/sessions/{ses}/pr"  # wire::sessions::SESSION_PR
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Keep an agent session's PR draft (M259): its asker only, until it's sent."
+
+[[route]]
+method = "POST"
+path = "/api/sessions/{ses}/pr/send"  # wire::sessions::SESSION_PR_SEND
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Send an agent session's PR as its asker (M259): POST repos/{repo}/pulls with a one-use user token (via browser), else one of their machines with gh. A machine is refused (403, agents_draft); with no way it waits (409, no_way)."
 
 [[route]]
 method = "GET"

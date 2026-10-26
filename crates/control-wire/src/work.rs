@@ -58,6 +58,12 @@
 //!     Work`): `branch` (the session's, `arugula/<8 hex>-<slug>`: the only ref
 //!     it may push), `head`, `pushed`, `commits`, `diffstat` and
 //!     `uncommitted`.
+//! - **Pushing** (M259). At the end of a turn that left commits, the box
+//!   pushes the session's branch, and only it: it asks
+//!   [`WORK_SESSION_PUSH`] for a token for that push ([`PushAsk`]), which
+//!   the platform mints only for the session's own branch on the session's
+//!   repo, with `contents: write` alone, and the box revokes it after. The
+//!   turn's `pushed` says whether it got there.
 //! - **Actions** come as [`SessionAction`]s in [`SessionWork::actions`]:
 //!   what people asked of the session that only the box can do (`answer`
 //!   its open question, `approve` or `deny` its open permission, `cancel`
@@ -97,6 +103,11 @@ pub const TAKES_SESSION: &str = "session";
 /// `POST` [`SessionReport`], signed as the hosted machine: something it
 /// says of one of its sessions. Answered [`Reported`].
 pub const WORK_SESSION_REPORT: &str = "/api/hosted/work/session";
+
+/// `POST` [`PushAsk`], signed as the hosted machine (M259): a token to
+/// push one of its sessions' branch, minted for that push. Answered
+/// [`PushGiven`].
+pub const WORK_SESSION_PUSH: &str = "/api/hosted/work/session/push";
 
 /// The most sessions a box holds at once: taken and not ended (`working`,
 /// `needs_input`, `unresponsive` or `done`; a done one keeps its slot and
@@ -439,6 +450,39 @@ pub struct SessionDetail {
     /// To `needs_input` for a permission: its option ids.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<String>,
+}
+
+/// [`WORK_SESSION_PUSH`]'s body: which session, and the ref it pushes,
+/// which must be the session's own branch exactly.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PushAsk {
+    pub session: String,
+    pub branch: String,
+}
+
+/// [`WORK_SESSION_PUSH`]'s answer.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PushGiven {
+    /// An installation token for the session's repo alone, with
+    /// `contents: write` and nothing else (no `workflows`), minted for this
+    /// push: the box hands it to git in one process's environment, never
+    /// to a file, then revokes it at `revoke` (`DELETE`, the token as its
+    /// bearer). `expires_at` is GitHub's.
+    Given { token: String, expires_at: String, revoke: String },
+    /// Not given, and asking again won't change that.
+    Refused { why: String },
+}
+
+impl std::fmt::Debug for PushGiven {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PushGiven::Given { expires_at, .. } => {
+                f.debug_struct("Given").field("expires_at", expires_at).finish_non_exhaustive()
+            }
+            PushGiven::Refused { why } => f.debug_struct("Refused").field("why", why).finish(),
+        }
+    }
 }
 
 /// One state change, signed by the machine that made it.
