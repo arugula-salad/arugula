@@ -15,6 +15,7 @@ Prompts:
                  (git repo) and leaves it uncommitted, commits a new file B,
                  and says "done" (AR-1, #1475)
   slow           streams for ~10s unless cancelled
+  slowly…        slow, with anything after it (a session's notes)
   remember WORD  remembers WORD; "recall" says it (across processes)
   crash          exits with code 3 mid-turn
   env NAME       says NAME from its environment ("ENV NAME=value", or
@@ -418,7 +419,7 @@ def prompt(mid, p):
             f.write(body + "\n")
         msg(f"Wrote {name}.")
     elif text.startswith("work "):
-        a, b = text.split(" ")[1:3]
+        a, b = text.split("\n")[0].split(" ")[1:3]
         cwd = s.get("cwd") or "."
         update(sid, s, {"sessionUpdate": "agent_thought_chunk", "messageId": f"t{n}",
                         "content": {"type": "text", "text": "pondering the edit"}})
@@ -477,7 +478,7 @@ def prompt(mid, p):
                         "kind": "read", "status": "pending"})
         update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "failed"})
         msg("Couldn't read it.")
-    elif text == "slow":
+    elif text == "slow" or text.startswith("slowly"):
         for i in range(50):
             if sid in cancelled:
                 cancelled.discard(sid)
