@@ -22,6 +22,8 @@ test("another client's new tab doesn't pull the focus", async ({ browser }) => {
   // Record which tab A is viewing now.
   const aViewingBefore = await myTab(a);
   expect(aViewingBefore).toBe(tab1.id);
+  // reset() made A's session: let that 3 s pass, so only the rename is recent.
+  await a.waitForTimeout(3100);
 
   // A renames the current tab (doesn't create anything).
   await a.evaluate((tabId) => {
@@ -30,14 +32,16 @@ test("another client's new tab doesn't pull the focus", async ({ browser }) => {
   }, tab1.id);
 
   // Within 3 seconds, B creates a new tab.
+  const tabs = () => a.evaluate(() => window.__arugula.client.state!.tabs.length);
+  const before = await tabs();
   await a.waitForTimeout(500);
   await b.evaluate(() => {
     const c = window.__arugula.client;
-    c.intent({ op: "new_tab", session: c.session, from_pane: null });
+    c.intent({ op: "new_tab", session: c.session!, from_pane: null });
   });
 
-  // Give the state some time to propagate.
-  await a.waitForTimeout(500);
+  // A has seen B's tab arrive, still inside the 3 s.
+  await expect.poll(tabs, { timeout: 2000 }).toBe(before + 1);
 
   // A should still be viewing the original tab, not B's new one.
   const aViewingAfter = await myTab(a);
