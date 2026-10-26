@@ -110,6 +110,7 @@ export function WorkspaceSize({ p }: { p: PlatformProject }) {
           >
             {list.length > 1 && <span class="sw-mono">{w.name}</span>}
             <select
+              class="field"
               aria-label={`Size of ${w.name}`}
               value={value}
               disabled={!changes || busy === w.id}
@@ -137,7 +138,7 @@ export function WorkspaceSize({ p }: { p: PlatformProject }) {
               </span>
             )}
             {w.rebuild_needed && (
-              <span class="settings-size-rebuild" data-size-rebuild>
+              <span data-size-rebuild>
                 <span class="sw-chip">Wants a rebuild</span>
                 <CopyText text={`arugula cloud rebuild ${w.name} --project ${p.id}`} />
               </span>

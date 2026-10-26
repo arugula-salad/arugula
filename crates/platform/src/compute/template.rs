@@ -253,7 +253,12 @@ mod tests {
         for size in Size::ALL {
             let c = size.class();
             let suffix = size.name().strip_prefix(NAME).unwrap();
-            let line = format!("  {size}) echo '{} {}{}{suffix}' ;;", c.cpus, c.memory_mb, if suffix.is_empty() { "" } else { " " });
+            let line = format!(
+                "  {size}) echo '{} {}{}{suffix}' ;;",
+                c.cpus,
+                c.memory_mb,
+                if suffix.is_empty() { "" } else { " " }
+            );
             assert!(script.contains(&line), "ci-hosted-template has no line: {line}");
             assert!(c.cpus <= 8 && c.memory_mb <= 8192, "{size}: more than E2B's Hobby plan builds");
         }

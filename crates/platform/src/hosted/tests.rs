@@ -812,7 +812,8 @@ async fn the_size_chooses_the_template() {
     assert_eq!(status, 201, "{small}");
     assert_eq!(small["spec"].get("size"), None, "small is left out: {small}");
     let spec = json!({ "repos": ["https://github.com/acme/app"], "size": "large" });
-    let (status, large) = call(&base, "alice", "POST", &workspaces, Some(json!({ "name": "large", "spec": spec }))).await;
+    let (status, large) =
+        call(&base, "alice", "POST", &workspaces, Some(json!({ "name": "large", "spec": spec }))).await;
     assert_eq!(status, 201, "{large}");
     assert_eq!(large["spec"]["size"], "large");
     let bad = json!({ "name": "huge", "spec": { "size": "huge" } });
@@ -863,7 +864,10 @@ async fn the_size_chooses_the_template() {
     assert_eq!(status, 200);
     drive(&app, now + 80_000).await;
     let rebuilt = fake.creates().last().cloned().unwrap();
-    assert_eq!((rebuilt.template.as_str(), rebuilt.metadata["arugula_workspace"].as_str()), (&*current(Size::Large), small_id));
+    assert_eq!(
+        (rebuilt.template.as_str(), rebuilt.metadata["arugula_workspace"].as_str()),
+        (&*current(Size::Large), small_id)
+    );
     hub.enroll(small_id, "m-small-2");
     drive(&app, now + 83_000).await;
     let w = show(&base, &project, small_id).await;
@@ -883,7 +887,10 @@ async fn the_size_chooses_the_template() {
             serve_with(EnrollBy::Sandbox, |c| c.template_large = large.map(Into::into)).await;
         hub.delegate(&project);
         let body = json!({ "name": "big", "spec": { "size": "large" } });
-        assert_eq!(call(&base, "alice", "POST", &format!("/api/projects/{project}/workspaces"), Some(body)).await.0, 201);
+        assert_eq!(
+            call(&base, "alice", "POST", &format!("/api/projects/{project}/workspaces"), Some(body)).await.0,
+            201
+        );
         make(&base, "alice", &project, "small").await;
         drive(&app, now_ms()).await;
         let mut made = templates(&fake);
