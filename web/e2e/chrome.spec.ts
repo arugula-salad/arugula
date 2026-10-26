@@ -384,7 +384,7 @@ test.describe("accessibility", () => {
 
     // The terminal has the keys; the palette moves them to the tabs.
     await page.keyboard.press("Control+Shift+KeyP");
-    await expect(page.getByRole("textbox", { name: "Command", exact: true })).toBeFocused();
+    await expect(page.getByRole("combobox", { name: "Command", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the tabs");
     await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the tabs");
     await page.keyboard.press("Enter");
@@ -401,7 +401,7 @@ test.describe("accessibility", () => {
     await expect.poll(() => tab(page).then((t) => t.id)).toBe(t1);
     // A state change doesn't take the keys from a tab a keyboard is on.
     await page.keyboard.press("Control+Shift+KeyP");
-    await expect(page.getByRole("textbox", { name: "Command", exact: true })).toBeFocused();
+    await expect(page.getByRole("combobox", { name: "Command", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the tabs");
     await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the tabs");
     await page.keyboard.press("Enter");
@@ -411,7 +411,7 @@ test.describe("accessibility", () => {
     await expect(page.locator(`[data-tab-id="${t1}"]`)).toBeFocused();
     // And the sidebar: the palette puts the keys in its search.
     await page.keyboard.press("Control+Shift+KeyP");
-    await expect(page.getByRole("textbox", { name: "Command", exact: true })).toBeFocused();
+    await expect(page.getByRole("combobox", { name: "Command", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the sessions");
     await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the sessions");
     await page.keyboard.press("Enter");

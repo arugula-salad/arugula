@@ -670,7 +670,7 @@ test("with every device lost, a recovery code lets a new browser in, once", asyn
   // browser hears which device did (#105). It can ask again.
   const laptopName = await laptop.evaluate(() => window.__arugula.control!.enrollment!.cert.name);
   await laptop.locator("[data-reject]").click();
-  await expect(again.locator("[data-turned-down]")).toContainText(`${laptopName} turned this browser down`, { timeout: 10_000 });
+  await expect(again.locator("[data-turned-down]")).toContainText(`${laptopName} of yours turned this browser down`, { timeout: 10_000 });
   await again.locator("[data-try-again]").click();
   await expect(again.getByText("Approve this browser")).toBeVisible();
   await expect(laptop.locator("[data-pending]")).toBeVisible({ timeout: 20_000 });

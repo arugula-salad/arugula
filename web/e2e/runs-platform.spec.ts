@@ -190,7 +190,7 @@ test("a running run's pane is on control's page; the list narrows by state", asy
   const pane = view.locator("[data-run-pane]");
   await expect(pane).toHaveText(/pane %3/);
   expect(await pane.getAttribute("href")).toMatch(new RegExp(`/#pane=${machine}\\.3$`));
-  await expect(view.locator("[data-run-event]")).toHaveText([/made it/, /its machine \(signed\) moved it to running · in pane %3/]);
+  await expect(view.locator("[data-run-event]")).toHaveText([/made it/, /Its machine \(signed\) moved it to running · in pane %3/]);
 });
 
 test("a run's kept log, its tail first then earlier, followed while it runs; its artifact downloads", async () => {

@@ -612,8 +612,11 @@ test.describe("Shared Docs… in the account menu", () => {
     await expect(row).toContainText("mini");
     await expect(row).toContainText(/\d+(\.\d)? (KB|MB)/);
     await expect(row).toContainText("opened");
-    // Control knows no title or text.
-    await expect(page.locator("[data-shared-docs]")).not.toContainText(MARK);
+    // Control knows no title or text: the row's title comes from its
+    // machine (UI audit #174), and control's own list has none of it.
+    await expect(row.locator("[data-shared-doc-title]")).toHaveText(`Report ${MARK}`);
+    const listed = await page.evaluate(async () => (await fetch("/api/doc-links", { credentials: "same-origin" })).text());
+    expect(listed).not.toContain(MARK);
     if (SHOTS) await page.screenshot({ path: join(SHOTS, "shared-docs.png") });
 
     await expect(row.locator("[data-copy-doc-link]")).toBeEnabled();

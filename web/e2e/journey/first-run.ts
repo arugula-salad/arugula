@@ -173,7 +173,8 @@ export async function firstRun(j: Journey, app: App, actor: string, machine: str
       await expect(p.getByText(/asks to join/)).toBeVisible();
       await expect(p.getByText(/Check it's the code/)).toBeHidden();
       await expect(p.getByText(/Your account:/)).toBeHidden();
-      await p.getByRole("button", { name: /^Approve/ }).click();
+      // Exact: the join-code field behind it has its own "Approve…" (#179).
+      await p.getByRole("button", { name: "Approve", exact: true }).click();
       await expect(p.getByRole("heading", { name: "Add a machine?", exact: true })).toBeHidden({ timeout: 20_000 });
       await expect(start().getByText("Is this your account?")).toBeHidden();
     },

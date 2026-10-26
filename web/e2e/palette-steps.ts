@@ -153,7 +153,8 @@ export async function phone(page: Page) {
   await sheetTab(page, "More");
   await page.getByRole("button", { name: "Commands" }).click();
   await expect(palette(page)).toBeVisible();
-  const box = (await palette(page).locator(".palette").boundingBox())!;
+  // The dialog is the palette itself (UI audit #176).
+  const box = (await palette(page).boundingBox())!;
   const view = page.viewportSize()!;
   expect(box.width).toBeGreaterThanOrEqual(view.width - 1);
   expect(box.height).toBeGreaterThan(view.height * 0.8);
