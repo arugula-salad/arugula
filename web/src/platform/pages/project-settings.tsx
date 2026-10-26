@@ -5,7 +5,8 @@
 // `/installed`, which comes here with the repo filled in. Each linked repo
 // has a switch for content mirroring (M166), with what turning it on means.
 // Then its environments, their secrets and "Deploy…" (M252), its
-// standing grant for runs (M211), for its owners the agent tokens over it
+// standing grant for runs (M211), its hosted workspaces' finish step for
+// agent sessions (M261), for its owners the agent tokens over it
 // and its own secrets (M230), what its Claude calls cost (M231), and the
 // apps products keep in it (M236). Each part is a section
 // (../settings/section), as /settings's are: a heading, one line, the rest
@@ -23,6 +24,7 @@ import { follow, go, pathOf, REPO } from "../router";
 import { session } from "../session";
 import { Missing } from "./project";
 import { RunGrant } from "../settings/runs";
+import { FinishStep } from "../settings/finish-step";
 import { Environments } from "../settings/environments";
 import { ProjectAgents } from "../settings/project-agents";
 import { ClaudeSpend } from "../settings/spend";
@@ -218,6 +220,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
           </Section>
           <Environments p={p} />
           <RunGrant project={p.id} />
+          <FinishStep p={p} />
           <ProjectAgents p={p} />
           <ClaudeSpend p={p} />
           <ClientApps p={p} />
