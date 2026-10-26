@@ -15,10 +15,11 @@
 //!   a prompt, and the agent's conversation goes on;
 //! - with three sessions on the box a fourth waits, until one is stopped;
 //! - the workspace's finish step (M261) runs after each turn as the
-//!   session's user: passing, the session is done; failing, the agent gets
-//!   one fix turn with its output, and failing again it's done, unpushed;
-//! - a session that ends leaves its slot clean: its checkout and its
-//!   user's `~/.claude` go.
+//!   session's user: passing, the turn is pushed and the session done;
+//!   failing, the agent gets one fix turn with its output, pushed if it
+//!   passes then, and failing again it's done, unpushed;
+//! - a session that ends leaves its slot clean: what its pushes left, its
+//!   checkout and its user's `~/.claude` go.
 //! - a turn that commits pushes the session's branch, and only it, with a
 //!   token control mints for that push and the box revokes after (M259); a
 //!   turn with nothing new pushes nothing.
@@ -693,24 +694,36 @@ fn a_hosted_machine_runs_sessions() {
 }
 
 /// M261: the workspace's finish step, after each turn and before the push,
-/// as the session's user in its checkout. It passes: one turn, done. It
-/// fails, and the agent's one fix makes it pass. It fails twice: no third
-/// try, done with the failure on its turn's report (the card's). And an
-/// ended session's slot is left clean.
+/// as the session's user in its checkout. It passes: one turn, pushed,
+/// done. It fails, and the agent's one fix makes it pass: the fixed turn
+/// is pushed. It fails twice: no third try, done, unpushed, with the
+/// failure on its turn's report (the card's). And an ended session's slot
+/// is left clean, its push's repo too.
 #[test]
 fn a_finish_step_runs_after_each_turn() {
-    let Rig { _rt, f, marks, homes, sudo_log, d, .. } = rig("finish");
+    let Rig { _rt, f, marks, homes, sudo_log, d, state, remote, .. } = rig("finish");
     let step = |cmd: &str| Some(FinishStep { command: cmd.into(), timeout_s: 0 });
     let finish = |d: &SessionDetail| d.finish.clone().expect("the turn says what its finish step did");
+    // The push tokens asked for session `id` (M259), and where its branch
+    // is on GitHub.
+    let pushes = |id: &str| f.pushes.lock().unwrap().iter().filter(|p| p["session"] == id).count();
+    let on_github =
+        |branch: &str| git(&remote, &["for-each-ref", "--format=%(objectname)", &format!("refs/heads/{branch}")]);
 
-    // It passes: one turn, and it's done.
+    // It passes: one turn, pushed, and it's done. (Each turn commits, so
+    // each has something to push.)
     let p = ses('1');
-    f.start_with(&p, "pass", prompt(1, "acct1", "hello"), step("test -d .git && echo all good"));
+    let work = "work README.md NOTES.md";
+    f.start_with(&p, "pass", prompt(1, "acct1", work), step("test -d .git && echo all good"));
     wait(&marks, &f, "the passing session's turn", || f.state(&p) == "done");
     let turns = f.turn_reports(&p);
     assert_eq!(turns.len(), 1, "{turns:?}");
     let ok = FinishResult { ok: true, command: "test -d .git && echo all good".into(), output_tail: String::new() };
     assert_eq!(finish(&turns[0]), ok);
+    assert_eq!(turns[0].pushed, Some(true), "{turns:?}");
+    assert_eq!(pushes(&p), 1);
+    let head = git(&homes.join("ses1").join("work").join(&p), &["rev-parse", "HEAD"]);
+    assert_eq!(on_github(&format!("arugula/{}-pass", &p[4..12])), head);
     let said = std::fs::read_to_string(&sudo_log).unwrap();
     assert!(
         said.lines().any(|l| l.starts_with("-n -u ses1 -- env -i HOME=") && l.contains(" timeout -k 10 900 sh -c ")),
@@ -721,7 +734,7 @@ fn a_finish_step_runs_after_each_turn() {
     // output) makes it pass: still one turn of the thread's.
     let x = ses('2');
     let cmd = "test -f FIXED || { echo FIXED is missing; exit 1; }";
-    f.start_with(&x, "fix", prompt(2, "acct1", "hello"), step(cmd));
+    f.start_with(&x, "fix", prompt(2, "acct1", work), step(cmd));
     wait(&marks, &f, "the fixed session", || f.state(&x) == "done" && f.turn_reports(&x).len() == 2);
     let turns = f.turn_reports(&x);
     let first = finish(&turns[0]);
@@ -730,6 +743,12 @@ fn a_finish_step_runs_after_each_turn() {
         "{first:?}"
     );
     assert_eq!(finish(&turns[1]), FinishResult { ok: true, command: cmd.into(), output_tail: String::new() });
+    // The push waits for the fix: the failed turn isn't pushed, the fixed
+    // one is, once.
+    assert_eq!((turns[0].pushed, turns[1].pushed), (Some(false), Some(true)), "{turns:?}");
+    assert_eq!(pushes(&x), 1);
+    let head = git(&homes.join("ses2").join("work").join(&x), &["rev-parse", "HEAD"]);
+    assert_eq!(on_github(&format!("arugula/{}-fix", &x[4..12])), head);
     assert_eq!(
         f.moves(&x),
         [
@@ -749,7 +768,7 @@ fn a_finish_step_runs_after_each_turn() {
 
     // It fails twice: done, unpushed, with no third try.
     let z = ses('3');
-    f.start_with(&z, "broken", prompt(3, "acct1", "hello"), step("echo it is broken; exit 3"));
+    f.start_with(&z, "broken", prompt(3, "acct1", work), step("echo it is broken; exit 3"));
     wait(&marks, &f, "the broken session", || f.state(&z) == "done" && f.turn_reports(&z).len() == 2);
     let n = f.pulls();
     wait(&marks, &f, "more pulls", || f.pulls() > n + 10);
@@ -761,14 +780,19 @@ fn a_finish_step_runs_after_each_turn() {
         assert_eq!(t.pushed, Some(false), "a failed finish step isn't pushed");
     }
     assert_eq!(f.state(&z), "done");
+    assert_eq!(pushes(&z), 0, "it asked for no token");
+    assert_eq!(on_github(&format!("arugula/{}-broken", &z[4..12])), "", "nothing of it reached GitHub");
 
     // A session that ends leaves its slot clean: its checkout and its
     // user's ~/.claude go.
     let claude = homes.join("ses2").join(".claude");
     std::fs::create_dir_all(claude.join("projects")).unwrap();
     std::fs::write(claude.join("projects").join("x.jsonl"), "{}\n").unwrap();
+    // And what its push left: the daemon's own repo for it.
+    let pushed = state.join("work").join("sessions").join(format!("{x}.push"));
+    assert!(pushed.join("repo.git").exists(), "{pushed:?}");
     f.stop(&x);
     let checkout = homes.join("ses2").join("work").join(&x);
-    wait(&marks, &f, "x's slot cleaned", || !checkout.exists() && !claude.exists());
+    wait(&marks, &f, "x's slot cleaned", || !checkout.exists() && !claude.exists() && !pushed.exists());
     assert!(homes.join("ses1").join("work").join(&p).exists(), "the others' are left alone");
 }
