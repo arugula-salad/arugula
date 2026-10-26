@@ -725,8 +725,12 @@ fn a_finish_step_runs_after_each_turn() {
     let head = git(&homes.join("ses1").join("work").join(&p), &["rev-parse", "HEAD"]);
     assert_eq!(on_github(&format!("arugula/{}-pass", &p[4..12])), head);
     let said = std::fs::read_to_string(&sudo_log).unwrap();
+    // Under coreutils' `timeout` where there is one (every hosted box);
+    // where there's none (macOS), the daemon's own limit is the one.
+    let timeout = ["/usr/bin/timeout", "/bin/timeout"].into_iter().any(|t| std::path::Path::new(t).exists());
+    let how = if timeout { "timeout -k 10 900 sh -c " } else { " sh -c " };
     assert!(
-        said.lines().any(|l| l.starts_with("-n -u ses1 -- env -i HOME=") && l.contains(" timeout -k 10 900 sh -c ")),
+        said.lines().any(|l| l.starts_with("-n -u ses1 -- env -i HOME=") && l.contains(how)),
         "it runs as the session's user, for 15 minutes at most: {said}"
     );
 

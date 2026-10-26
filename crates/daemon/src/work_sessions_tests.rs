@@ -160,6 +160,7 @@ fn a_session_pushes_only_its_own_branch() {
     }
 }
 
+#[cfg(unix)]
 fn git_in(dir: &Path, args: &[&str]) -> String {
     let out = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
     assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
@@ -171,6 +172,7 @@ fn git_in(dir: &Path, args: &[&str]) -> String {
 /// and only it. A bundle of `main`, of another session's branch, or of
 /// more than the one ref is refused, and nothing the agent planted in its
 /// checkout runs.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_push_from_a_bundle_moves_one_ref() {
     let dir = crate::hosted::scratch("session-push");

@@ -1199,18 +1199,19 @@ pub async fn finish_turn(
 }
 
 /// `step` as user `u` in `checkout`: whether it exited 0 in time, and the
-/// last of what it printed. `timeout` (coreutils) kills it and what it
-/// started when its time is up; the daemon gives up a little after.
+/// last of what it printed. `timeout` (coreutils, on every hosted box)
+/// kills it and what it started when its time is up; where there's none
+/// (macOS), the daemon's own limit a little after is the only one.
 async fn run_finish(u: &AsUser, checkout: &str, step: &FinishStep) -> (bool, String) {
     use tokio::io::AsyncReadExt as _;
     let secs = if step.timeout_s == 0 { FINISH_TIMEOUT_S } else { step.timeout_s };
     // The checkout and the command are arguments, never in the script.
     let script = "cd -- \"$1\" || exit 125\nexec 2>&1\nexec sh -c \"$2\"";
-    let argv: Vec<String> =
-        ["timeout", "-k", "10", &secs.to_string(), "sh", "-c", script, "sh", checkout, &step.command]
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
+    let mut argv: Vec<String> = match ["/usr/bin/timeout", "/bin/timeout"].into_iter().find(|t| Path::new(t).exists()) {
+        Some(t) => vec![t.to_owned(), "-k".into(), "10".into(), secs.to_string()],
+        None => vec![],
+    };
+    argv.extend(["sh", "-c", script, "sh", checkout, &step.command].into_iter().map(str::to_owned));
     let run = async {
         let mut child = u
             .command(&[], &argv)
