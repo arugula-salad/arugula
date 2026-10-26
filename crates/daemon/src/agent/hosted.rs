@@ -185,32 +185,15 @@ pub fn env_here(kind: Kind, auth: Auth) -> Vec<(String, String)> {
 /// Give up the daemon's protection from the OOM killer in what `c` starts:
 /// a hosted box's supervisor gives the daemon an `oom_score_adj` of -1000
 /// (M258), which everything it starts inherits; a session's git (and what
-/// a planted config runs) is as killable as any. Only a negative score is
-/// raised to 0, which needs no privilege. The same as M258's
-/// `arugula_mux::shim::unprotect_oom`, which the shim calls for agents and
-/// panes: at integration this calls that.
+/// a planted config runs) is as killable as any. It runs
+/// [`arugula_mux::shim::unprotect_oom`], which the shim calls for agents
+/// and panes, between fork and exec.
 pub fn unprotect_oom(c: &mut tokio::process::Command) {
     #[cfg(target_os = "linux")]
-    // SAFETY: open, read, write and close on a fixed path and our own
-    // buffer, all async-signal-safe, between fork and exec.
+    // SAFETY: unprotect_oom is async-signal-safe.
     unsafe {
         c.pre_exec(|| {
-            use nix::libc;
-            let path = c"/proc/self/oom_score_adj";
-            let mut b = [0u8; 8];
-            let fd = libc::open(path.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC);
-            if fd < 0 {
-                return Ok(());
-            }
-            let n = libc::read(fd, b.as_mut_ptr().cast(), b.len());
-            libc::close(fd);
-            if n > 0 && b[0] == b'-' {
-                let fd = libc::open(path.as_ptr(), libc::O_WRONLY | libc::O_CLOEXEC);
-                if fd >= 0 {
-                    libc::write(fd, b"0".as_ptr().cast(), 1);
-                    libc::close(fd);
-                }
-            }
+            arugula_mux::shim::unprotect_oom();
             Ok(())
         });
     }
