@@ -5,7 +5,7 @@
 // thread (shared/chat/room's `RoomBody`), which clears both.
 
 import { chat } from "../shared/chat-store";
-import { objectUnread, projectUnread } from "../shared/chat/unread";
+import { chatUnread, objectUnread, projectUnread } from "../shared/chat/unread";
 import { useSubscribe } from "../shared/ui/hooks";
 
 const said = (n: number, mention: boolean) => `${n} new in its thread${mention ? ", mentioning you" : ""}`;
@@ -37,6 +37,24 @@ export function PlaceUnread({ project, prefix }: { project: string; prefix: "iss
     <span class={mention ? "thread-unread place-unread mention" : "thread-unread place-unread"} title={title} data-place-unread={n}>
       <span class="thread-unread-dot" aria-hidden="true" />
       <span aria-hidden="true">{mention ? `@${n}` : n}</span>
+      <span class="place-unread-said">{title}</span>
+    </span>
+  );
+}
+
+/** The count on the bar's Chat (UI audit #193), as control's Chat button
+ * counts: in a project its chat's rooms (a team's channels and DMs, or
+ * Personal's threads), elsewhere every room chat lists; `@N` when any of
+ * it mentions the reader. The bar it's in listens to chat. */
+export function ChatPlaceUnread({ team }: { team?: string | null }) {
+  const { n, mention } = chatUnread(chat.rooms, team);
+  if (!n) return null;
+  const title = `${n} unread in ${team !== undefined ? "this project's" : "your"} chat${mention ? ", mentioning you" : ""}`;
+  const shown = n > 99 ? "99+" : n;
+  return (
+    <span class={mention ? "thread-unread place-unread mention" : "thread-unread place-unread"} title={title} data-chat-count={n}>
+      <span class="thread-unread-dot" aria-hidden="true" />
+      <span aria-hidden="true">{mention ? `@${shown}` : shown}</span>
       <span class="place-unread-said">{title}</span>
     </span>
   );

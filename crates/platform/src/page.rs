@@ -9,7 +9,9 @@
 //!
 //! It's a single-page app with real paths (`/p/:project/chat/:room`…), so
 //! any path without a file extension is `index.html`; a missing file with
-//! one (`/assets/app-x.js`) is a 404. The hub sets the page's headers
+//! one (`/assets/app-x.js`) is a 404. A path whose first segment no route
+//! starts with is `index.html` too (the page says Not found), as a 404
+//! (UI audit #193). The hub sets the page's headers
 //! ([`CSP`] and the rest) on everything on its host.
 
 use std::{borrow::Cow, path::PathBuf};
@@ -34,6 +36,12 @@ struct Build;
 /// `'unsafe-inline'` for styles alone.
 pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
 
+/// The first path segments the page's router (`web/src/platform/paths.ts`)
+/// has routes under: a page path that starts with any other is answered
+/// as a 404 (UI audit #193). This is a copy of `TOP` there; keep the two
+/// in step (a test below reads it).
+pub const PAGES: &[&str] = &["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys"];
+
 /// Where the page's files come from: the build embedded in this binary, or
 /// a directory (development: `vite build --watch` writes there).
 #[derive(Debug, Clone, Default)]
@@ -55,7 +63,8 @@ impl Page {
     }
 
     /// The answer to `method` on `path`: the file, else (for a path
-    /// without an extension) `index.html`.
+    /// without an extension) `index.html`, as a 404 when no route starts
+    /// with its first segment.
     pub fn serve(&self, method: &Method, path: &str) -> Response {
         if !matches!(*method, Method::GET | Method::HEAD) {
             let mut r = StatusCode::METHOD_NOT_ALLOWED.into_response();
@@ -75,8 +84,11 @@ impl Page {
         if last.contains('.') {
             return StatusCode::NOT_FOUND.into_response();
         }
+        let first = path.split('/').next().unwrap_or(path);
         match self.file("index.html") {
-            Some(data) => file("index.html", data),
+            Some(data) if path == "index.html" || PAGES.contains(&first) => file("index.html", data),
+            // Still the page, which says Not found, but not a 200.
+            Some(data) => (StatusCode::NOT_FOUND, file("index.html", data)).into_response(),
             None => (StatusCode::NOT_FOUND, "the platform page isn't built: run `just web`").into_response(),
         }
     }
@@ -145,7 +157,7 @@ mod tests {
     #[tokio::test]
     async fn paths_are_the_page_and_files_are_files() {
         let (d, page) = dir();
-        for p in ["/", "/p/prj_8f2k-arugula", "/p/prj_8f2k/chat/ch_1", "/dm/r", "/settings", "/agents/"] {
+        for p in ["/", "/p/prj_8f2k-arugula", "/p/prj_8f2k/chat/ch_1", "/dm/r", "/settings", "/inbox/"] {
             let r = page.serve(&Method::GET, p);
             assert_eq!(r.status(), 200, "{p}");
             assert_eq!(header(&r, header::CONTENT_TYPE), "text/html; charset=utf-8");
@@ -160,11 +172,44 @@ mod tests {
         for p in ["/assets/gone.js", "/favicon.ico", "/../Cargo.toml", "/assets/../index.html", "/.env", "/p//x"] {
             assert_eq!(page.serve(&Method::GET, p).status(), 404, "{p}");
         }
+        // A first segment no route starts with: the page (it says Not
+        // found), as a 404 (UI audit #193).
+        for p in ["/agents", "/agents/", "/nope/p/prj_1", "/P/prj_1", "/index"] {
+            let r = page.serve(&Method::GET, p);
+            assert_eq!((r.status().as_u16(), header(&r, header::CONTENT_TYPE)), (404, "text/html; charset=utf-8"), "{p}");
+            assert!(body(r).await.contains("id=root"), "{p}");
+        }
         let r = page.serve(&Method::POST, "/");
         assert_eq!((r.status().as_u16(), header(&r, header::ALLOW)), (405, "GET, HEAD"));
         std::fs::remove_file(d.join("index.html")).unwrap();
         assert_eq!(page.serve(&Method::GET, "/p/x").status(), 404, "not built");
         let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// `PAGES` is the web router's `TOP`, and every first segment its
+    /// `parse` compares is in it: a route added there without a copy here
+    /// would be a 404 (UI audit #193).
+    #[test]
+    fn pages_are_the_web_routers_first_segments() {
+        let ts = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/src/platform/paths.ts")).unwrap();
+        let quoted = |s: &str| -> Vec<String> { s.split('"').skip(1).step_by(2).map(str::to_owned).collect() };
+        let top = ts.split("export const TOP = [").nth(1).and_then(|s| s.split(']').next()).expect("TOP in paths.ts");
+        let mut top = quoted(top);
+        let mut pages: Vec<String> = PAGES.iter().map(|s| s.to_string()).collect();
+        top.sort();
+        pages.sort();
+        assert_eq!(top, pages, "PAGES here and TOP in web/src/platform/paths.ts");
+        // `parts[0] === "chat"`, `parts[0] !== "p"`: the literal after each.
+        let read: Vec<String> = ts
+            .split("parts[0] ")
+            .skip(1)
+            .filter(|s| s.starts_with("=== \"") || s.starts_with("!== \""))
+            .filter_map(|s| quoted(&s.chars().skip(4).take(36).collect::<String>()).into_iter().next())
+            .collect();
+        assert!(read.len() >= 5, "parse's first segments: {read:?}");
+        for seg in read {
+            assert!(PAGES.contains(&seg.as_str()), "{seg:?}: parse reads it, PAGES lacks it");
+        }
     }
 
     /// Out of process, the page is answered only for the hub.
