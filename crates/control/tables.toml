@@ -1196,6 +1196,17 @@ note = "Those of sessions that go, go. On the rest they stay, naming no one who 
 seen_by = ["litestream", "e2b", "anthropic"]
 
 [[table]]
+name = "pr_drafts"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "An agent session's pull request as its asker drafts it (M259): the session, the repo, its branch and base, the title and body (prefilled from the repo's PR template and the session's turns), whether it opens as a draft on GitHub, its state, and the PR's number and URL once its asker sent it."
+why_asleep = "The asker edits and sends a session's PR from their phone with every machine asleep."
+with_account = "deleted"
+note = "Its PR drafts, and those of sessions that go with it. A sent PR stays on GitHub, and its link on the session."
+seen_by = ["litestream", "github"]
+
+[[table]]
 name = "deploy_approvals"
 plane = "platform"
 process = "platform"
