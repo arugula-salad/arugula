@@ -252,6 +252,12 @@ pub enum RuleEvent {
     CheckFailed,
     /// A push to a branch.
     Push,
+    /// A review, or a review's inline comment, on a PR (M260): no rule
+    /// names it (it isn't in [`RuleEvent::ALL`], and isn't read from a
+    /// request), it goes back to the PR's session
+    /// (`sessions::feedback`).
+    #[serde(skip)]
+    Review,
 }
 
 impl RuleEvent {
@@ -262,6 +268,7 @@ impl RuleEvent {
             RuleEvent::PrOpened => "pr_opened",
             RuleEvent::CheckFailed => "check_failed",
             RuleEvent::Push => "push",
+            RuleEvent::Review => "review",
         }
     }
 

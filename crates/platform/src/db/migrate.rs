@@ -414,6 +414,18 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0053_pr_drafts.sql"),
         additive: true,
     },
+    Migration {
+        version: 54,
+        name: "hosted_snapshots",
+        sql: include_str!("../../migrations/sqlite/0054_hosted_snapshots.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 55,
+        name: "session_feedback",
+        sql: include_str!("../../migrations/sqlite/0055_session_feedback.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -736,6 +748,18 @@ const POSTGRES: &[Migration] = &[
         version: 53,
         name: "pr_drafts",
         sql: include_str!("../../migrations/postgres/0053_pr_drafts.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 54,
+        name: "hosted_snapshots",
+        sql: include_str!("../../migrations/postgres/0054_hosted_snapshots.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 55,
+        name: "session_feedback",
+        sql: include_str!("../../migrations/postgres/0055_session_feedback.sql"),
         additive: true,
     },
 ];

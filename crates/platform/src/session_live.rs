@@ -293,6 +293,9 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         ports,
         pr: s.pr.clone(),
         pushed,
+        ci_rounds: s.ci_rounds,
+        ci_max: crate::db::session_feedback::MAX_CI_ROUNDS,
+        needs_person: crate::sessions::feedback::needs_person(app, s)?,
     };
     let lines = events
         .iter()

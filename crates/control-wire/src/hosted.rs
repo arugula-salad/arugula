@@ -87,8 +87,9 @@ pub struct EnrollAsk {
     /// hub makes a ticket for the box's env (`ARUGULA_HOSTED_TICKET`).
     #[serde(default)]
     pub sandbox: Option<String>,
-    /// What the box is for: [`DEPLOY`] for one deploy's run (M219), which
-    /// nobody is routed to; `None` for a people's workspace.
+    /// What the box is for: [`DEPLOY`] for one deploy's run (M219), or
+    /// [`SNAPSHOT`] to build a workspace's snapshot (M263), which nobody is
+    /// routed to; `None` for a people's workspace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purpose: Option<String>,
 }
@@ -96,6 +97,11 @@ pub struct EnrollAsk {
 /// A box made for one deploy's run (M219): it takes that run only, lets
 /// nobody in, and is deleted after.
 pub const DEPLOY: &str = "deploy";
+
+/// A box made to build a workspace's snapshot (M263): it runs the
+/// workspace's setup, wipes itself ([`SEALED`]) and is snapshotted, then
+/// deleted. It lets nobody in and takes no runs or sessions.
+pub const SNAPSHOT: &str = "snapshot";
 
 /// What the hub answers an [`EnrollAsk`].
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -182,8 +188,8 @@ pub struct Enrollment {
     /// `None` from a control from before: the box keeps what it pinned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legacy_app_children: Option<LegacyAppChildren>,
-    /// What the box is for (M219): [`DEPLOY`], or `None` for a people's
-    /// workspace. A box that hears `deploy` stays one.
+    /// What the box is for (M219): [`DEPLOY`] or [`SNAPSHOT`], or `None` for
+    /// a people's workspace. A box that hears either stays one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purpose: Option<String>,
 }
@@ -338,8 +344,17 @@ pub struct SetupReport {
 
 /// Why a setup failed: `exit` (its step exited non-zero), `pane_closed`
 /// (its pane went before it finished), `start` (it couldn't start: no
-/// home to clone into, or no pane).
-pub const SETUP_REASONS: &[&str] = &["exit", "pane_closed", "start"];
+/// home to clone into, or no pane). A snapshot's builder (M263) also says
+/// why its wipe didn't take: `seal_short` (a secret's value is too short
+/// to look for), `seal_left` (a secret was still on the box after it),
+/// `seal` (the wipe itself failed).
+pub const SETUP_REASONS: &[&str] = &["exit", "pane_closed", "start", "seal_short", "seal_left", "seal"];
+
+/// The step a snapshot's builder (M263) says once its setup ran and it
+/// wiped itself for the snapshot, with `ready`. A box made from the
+/// snapshot says [`FROM_SNAPSHOT`], with `ready`, and runs no setup.
+pub const SEALED: &str = "sealed";
+pub const FROM_SNAPSHOT: &str = "snapshot";
 
 // Never the sandbox id or the ticket: each is a bearer secret while its
 // enrollment lasts. Never a clone's password or a secret's value.

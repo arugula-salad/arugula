@@ -1207,6 +1207,28 @@ note = "Its PR drafts, and those of sessions that go with it. A sent PR stays on
 seen_by = ["litestream", "github"]
 
 [[table]]
+name = "session_feedback"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "What came back from GitHub to an agent session (M260): a CI round (the head commit whose checks failed) or a review (its id, the PR's number, the reviewer's GitHub login, numeric id, author_association and the review's state), when it's due, and whether it was sent to the session (the prompt, and a CI round's number), refused (the session had its CI rounds) or dropped (the session had ended)."
+why_asleep = "CI fails on a session's PR, or a teammate reviews it on GitHub, and the session takes it up with every person's machine asleep."
+with_account = "none"
+note = "It names GitHub's people, not accounts. Those of sessions that go, go."
+seen_by = ["litestream"]
+
+[[table]]
+name = "session_feedback_items"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "What a session's feedback gathered (M260), each once: a failed check's name, conclusion, link and the end of its output, or a review's text and its inline comments' text with their file and line, as GitHub's webhook brought them."
+why_asleep = "A session's CI round or review is gathered from GitHub's webhooks with every person's machine asleep."
+with_account = "none"
+note = "GitHub's text, not an account's. Those of sessions that go, go."
+seen_by = ["litestream", "e2b", "anthropic"]
+
+[[table]]
 name = "deploy_approvals"
 plane = "platform"
 process = "platform"
@@ -1305,6 +1327,17 @@ why_asleep = "A project's people read what its hosted workspaces' agents did aft
 with_account = "partly"
 note = "Those of its personal project and its disbanded teams' projects go. A team's stay with its project: its other people read them."
 seen_by = ["litestream"]
+
+[[table]]
+name = "hosted_snapshot_orphans"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A hosted workspace's snapshot (M263, an E2B template id) that the provider still held when its workspace was deleted for good, whose workspace and project it was, since when, and when the worker last asked to delete it."
+why_asleep = "The worker deletes it at the provider with every machine off."
+with_account = "none"
+note = "It names no account. A row goes once the provider deletes the snapshot."
+seen_by = ["litestream", "e2b"]
 
 [[table]]
 name = "hosted_usage"

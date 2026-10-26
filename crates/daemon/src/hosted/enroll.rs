@@ -56,9 +56,15 @@ pub enum NotEnrolled {
 }
 
 /// Wait for a new box: a sandbox id in `file` other than the one there
-/// now (the snapshot's, or the template build's), or one at all.
-pub async fn new_box(file: &Path) -> String {
-    let built = resume::stamp(file).map(|(id, _)| id);
+/// now (the snapshot's, or the template build's), or one at all. A box
+/// from a workspace's snapshot (M263) boots from disk with its own id
+/// there already: `snapshot_of` (the builder's id) is then the one that
+/// isn't new, and any other is this box's at once.
+pub async fn new_box(file: &Path, snapshot_of: Option<&str>) -> String {
+    let built = match snapshot_of {
+        Some(of) => Some(of.to_owned()),
+        None => resume::stamp(file).map(|(id, _)| id),
+    };
     info!(snapshot = built.as_deref().unwrap_or("none"), "hosted: waiting for a box of its own");
     loop {
         if let Some((id, _)) = resume::stamp(file)
@@ -295,6 +301,8 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             revocations,
             deploy: purpose.as_deref() == Some(hosted::DEPLOY)
                 || prev.and_then(|p| p.hosted.as_ref()).is_some_and(|h| h.deploy),
+            builder: purpose.as_deref() == Some(hosted::SNAPSHOT)
+                || prev.and_then(|p| p.hosted.as_ref()).is_some_and(|h| h.builder),
             legacy_app_children,
         }),
     })
@@ -650,7 +658,7 @@ mod tests {
         // The snapshot's id isn't a new box: only another is.
         let waiting = tokio::spawn({
             let file = file.clone();
-            async move { new_box(&file).await }
+            async move { new_box(&file, None).await }
         });
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(!waiting.is_finished());

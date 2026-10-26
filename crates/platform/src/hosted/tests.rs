@@ -174,15 +174,26 @@ impl Substrate for Fake {
 /// The platform has the fake provider, template `tpl`, and lets anyone
 /// make workspaces but carol.
 pub(crate) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
+    let fake = Arc::new(Fake::default());
+    let (hub, app, base, project) = serve_on(enroll, fake.clone(), "tpl").await;
+    (hub, fake, app, base, project)
+}
+
+/// [`serve`] on another provider, with template `template` (M263's
+/// snapshots run on the E2B adapter against its fake).
+pub(crate) async fn serve_on(
+    enroll: EnrollBy,
+    compute: Arc<dyn Substrate>,
+    template: &str,
+) -> (Arc<TestHub>, Arc<Platform>, String, String) {
     let hub = Arc::new(TestHub::default());
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("vic", TeamRole::Viewer)]);
     hub.team("t2", &[("olga", TeamRole::Owner), ("carol", TeamRole::Owner)]);
-    let fake = Arc::new(Fake::default());
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
     let mut p = Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
-    p.compute = Some(fake.clone());
+    p.compute = Some(compute);
     p.hosted = Config {
-        template: Some("tpl".into()),
+        template: Some(template.into()),
         enroll,
         accounts: vec!["alice".into(), "bob".into(), "vic".into(), "olga".into()],
         cipher: Some(Arc::new(crate::secrets::SecretCipher::new(&"5e".repeat(32)).unwrap())),
@@ -194,7 +205,7 @@ pub(crate) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Pla
     let base = format!("http://{}", l.local_addr().unwrap());
     let router = crate::testing::router(app.clone());
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
-    (hub, fake, app, base, project)
+    (hub, app, base, project)
 }
 
 /// Every step due at `now`.

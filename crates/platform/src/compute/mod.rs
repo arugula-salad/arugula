@@ -4,7 +4,8 @@
 //!
 //! The substrate does a box's lifecycle and nothing else: create, resume,
 //! pause, delete, status, list and hold, and (when the provider keeps them)
-//! the runs it billed. No exec, files or ports: the
+//! the runs it billed and snapshots of a box (M263), which a box is then
+//! made from as from a template. No exec, files or ports: the
 //! daemon in the box (`arugulad --hosted`, M180) dials out and brings
 //! those. Beside the lifecycle, egress rules (M185): [`Rules`] that set
 //! headers on a box's outbound requests at the provider's egress proxy, so
@@ -174,6 +175,8 @@ pub enum Error {
     /// The provider refused, and nothing changed: a 4xx (but 404, 408 and
     /// 429), as `409` for a box mid-transition.
     Refused { status: u16, code: Option<String> },
+    /// The provider has no such call (loam's E2B API has no snapshots).
+    Unsupported,
     /// The provider couldn't, for now: 408, 429 or a 5xx. `retry_after`
     /// is its `Retry-After`, in seconds, when it gave one.
     Unavailable { status: u16, code: Option<String>, retry_after: Option<u64> },
@@ -192,6 +195,7 @@ impl std::fmt::Display for Error {
             Error::Unavailable { status, code: c, .. } => {
                 write!(f, "the compute provider is unavailable: HTTP {status}{}", code(c))
             }
+            Error::Unsupported => write!(f, "the compute provider doesn't do that"),
             Error::Unreachable => write!(f, "the compute provider didn't answer"),
             Error::Invalid => write!(f, "the compute provider's answer wasn't understood"),
         }
@@ -248,6 +252,49 @@ pub trait Substrate: Send + Sync {
         let _ = (id, rules);
         no_rules()
     }
+
+    /// Whether this provider takes snapshots at all (M263): E2B does, loam's
+    /// E2B API doesn't. Never makes or wakes anything.
+    fn snapshots<'a>(&'a self) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(async { Ok(false) })
+    }
+
+    /// Snapshot a running box (M263): the snapshot's id, which
+    /// [`Substrate::create`] takes as a template. It outlives the box, and
+    /// costs until [`Substrate::delete_snapshot`]. The box keeps running.
+    /// [`Error::Unsupported`] where the provider has no snapshots.
+    fn snapshot<'a>(&'a self, id: &'a str, mode: Mode) -> BoxFuture<'a, Result<String>> {
+        let _ = (id, mode);
+        no_snapshots()
+    }
+
+    /// The snapshots there are, every one or `of` one box's.
+    fn list_snapshots<'a>(&'a self, of: Option<&'a str>) -> BoxFuture<'a, Result<Vec<String>>> {
+        let _ = of;
+        no_snapshots()
+    }
+
+    /// Delete a snapshot. One already gone is fine.
+    fn delete_snapshot<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<()>> {
+        let _ = id;
+        no_snapshots()
+    }
+}
+
+/// What a snapshot keeps of a box (M263).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// Memory and disk: a box made from it carries on where the source was,
+    /// its processes running.
+    Full,
+    /// The disk alone: a box made from it boots from that disk, and nothing
+    /// that ran in the source's memory is in it.
+    Filesystem,
+}
+
+/// What a provider without snapshots answers.
+fn no_snapshots<'a, T: Send + 'a>() -> BoxFuture<'a, Result<T>> {
+    Box::pin(async { Err(Error::Unsupported) })
 }
 
 /// What a provider without egress rules answers.

@@ -1246,7 +1246,10 @@ pub fn start(app: Arc<App>) {
             .collect();
         loop {
             send_all(&app, &mut open).await;
-            if me(&app).is_some() {
+            // A snapshot's builder (M263) takes nothing: it sets up, wipes
+            // itself and goes.
+            let builder = app.control.enrolled().is_some_and(|e| e.saved.hosted.as_ref().is_some_and(|h| h.builder));
+            if me(&app).is_some() && !builder {
                 // Only a deploy's own box (M219) takes deploys; a box with
                 // session users takes sessions (M255).
                 let takes: &[&str] = if deploy::deploy_box(&app) {

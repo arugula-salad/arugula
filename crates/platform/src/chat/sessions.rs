@@ -144,7 +144,7 @@ async fn handle(app: &Platform, room: &Room, author: &str, seq: i64, parent: Opt
 }
 
 /// Post the platform's line in the thread.
-fn say(app: &Platform, room: &Room, thread: u64, text: &str) -> Result<i64> {
+pub(crate) fn say(app: &Platform, room: &Room, thread: u64, text: &str) -> Result<i64> {
     let parent = (thread > 0).then_some(thread as i64);
     let seq = app.db.add_chat_message(
         &room.id,
