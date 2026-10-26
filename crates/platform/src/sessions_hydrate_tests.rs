@@ -108,6 +108,14 @@ pub(crate) fn sessions(app: &Platform, project: &str) -> Vec<Session> {
 
 /// The box takes `s`, starting its first turn with its queued prompts, as
 /// its machine (`keys`) signs it.
+/// The box's signed report `n` on session `s`, `from` to `to`.
+pub(crate) fn box_says(app: &Platform, keys: &DeviceKeys, s: &str, n: u64, from: State, to: State, detail: &str) {
+    let id = keys.id();
+    let ev = arugula_e2e::session::Event { session: s, n, kind: Kind::State, from, to, at: 5, detail, daemon: &id };
+    let r = DaemonReport::verify(&ev, &hex::encode(keys.sign_public()), &ev.sign(keys)).unwrap();
+    app.db.move_session(s, &Move::Daemon { report: &r, now: arugula_e2e::now_ms() }).unwrap().unwrap();
+}
+
 pub(crate) fn take(app: &Platform, keys: &DeviceKeys, s: &str) {
     let prompts: Vec<String> = app
         .db
@@ -326,4 +334,46 @@ async fn the_job_follows_the_session_to_its_end() {
     assert_eq!(s3.state, State::Stopped);
     let last = app.db.session_events(&s3.id).unwrap().pop().unwrap();
     assert!(last.detail.contains("asker_left"), "{}", last.detail);
+}
+
+/// A done session keeps its slot on the box (its checkout, for its next
+/// turn): with three done, a fourth waits queued, past the 15 minutes, and
+/// isn't failed as not taken. Once one ends, its 15 minutes count from
+/// then.
+#[tokio::test]
+async fn a_done_session_holds_its_slot_so_a_fourth_waits() {
+    let (_hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
+    let follow = crate::sessions::job::Follow { app: app.clone() };
+    for ask in ["one", "two", "three"] {
+        post_in(&base, "ch_general", "b", &format!("@arugula {ask}"), None).await;
+        let s = sessions(&app, &t).into_iter().find(|s| s.state == State::Queued).unwrap();
+        take(&app, &keys, &s.id);
+        box_says(&app, &keys, &s.id, 2, State::Working, State::Done, "{}");
+    }
+    post_in(&base, "ch_general", "b", "@arugula four", None).await;
+    let fourth = sessions(&app, &t).into_iter().find(|s| s.state == State::Queued).unwrap();
+    assert!(app.db.session_work("hw_dev").unwrap().iter().all(|w| w.session != fourth.id), "not offered");
+    // Every due job, stepped at `now`.
+    let run = async |now: u64| {
+        while let Some(mut job) = app.db.claim_job(&[JobKind::Session], now).unwrap() {
+            match follow.step(&app.db, &mut job, &Clock::new(move || now)).await.unwrap() {
+                Step::Again(next) => app.db.release_job(&job, next, now).unwrap(),
+                _ => app.db.finish_job(&job, JobEnd::Done, None, now).unwrap(),
+            }
+        }
+    };
+    let late = fourth.created_at + crate::work::TAKE_MS + 1;
+    run(late).await;
+    assert_eq!(app.db.session(&fourth.id).unwrap().unwrap().state, State::Queued, "it waits for room");
+
+    // One ends: room, and the fourth's 15 minutes start.
+    let done = sessions(&app, &t).into_iter().find(|s| s.state == State::Done).unwrap();
+    app.db.move_session(&done.id, &Move::Control { from: State::Done, to: State::Stopped, at: late, detail: "{}" })
+        .unwrap()
+        .unwrap();
+    assert!(app.db.session_work("hw_dev").unwrap().iter().any(|w| w.session == fourth.id), "offered");
+    run(late + crate::work::WAITING_MS).await;
+    assert_eq!(app.db.session(&fourth.id).unwrap().unwrap().state, State::Queued, "room only just made");
+    run(late + crate::work::TAKE_MS + crate::work::WAITING_MS).await;
+    assert_eq!(app.db.session(&fourth.id).unwrap().unwrap().state, State::Failed, "not taken with room");
 }

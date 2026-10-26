@@ -26,7 +26,7 @@
 //! - **Pulling.** A machine that says it takes sessions ([`TAKES_SESSION`])
 //!   gets, in [`Work::sessions`], every session on its workspace that
 //!   hasn't ended, on every pull: the queued ones to take (no more than
-//!   the box's [`MAX_SESSIONS_PER_BOX`] under way), the rest so it sees
+//!   the box's [`MAX_SESSIONS_PER_BOX`] held), the rest so it sees
 //!   their new prompts, and its own last report number (`n`). One the
 //!   machine runs that's no longer listed has ended (stopped, failed): it
 //!   stops the agent.
@@ -88,9 +88,9 @@ pub const TAKES_SESSION: &str = "session";
 /// says of one of its sessions. Answered [`Reported`].
 pub const WORK_SESSION_REPORT: &str = "/api/hosted/work/session";
 
-/// The most sessions a box runs turns for at once (`working`,
-/// `needs_input` or `unresponsive`): another waits `queued`, or its prompt
-/// does.
+/// The most sessions a box holds at once: taken and not ended (`working`,
+/// `needs_input`, `unresponsive` or `done`; a done one keeps its slot and
+/// its checkout for its next turn). Another waits `queued`.
 pub const MAX_SESSIONS_PER_BOX: usize = 3;
 
 /// `POST` [`SecretsAsk`], signed as the hosted machine (M219): the

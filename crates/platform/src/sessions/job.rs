@@ -13,7 +13,8 @@
 //!   it's busy, which holds it (M181).
 //! - **Not taken:** a `queued` session no box took in [`work::TAKE_MS`]
 //!   while its box had room fails, saying so. One waiting for room (the
-//!   box runs [`MAX_SESSIONS_PER_BOX`] turns) waits.
+//!   box holds [`MAX_SESSIONS_PER_BOX`] sessions, done ones too) waits,
+//!   and its wait is counted from when room was made.
 //! - **Gone quiet:** a turn under way whose box hasn't reported for
 //!   [`QUIET_MS`] is marked `unresponsive` (`Db::mark_unresponsive`'s
 //!   rule, for this one session).
@@ -54,6 +55,9 @@ pub struct Checkpoint {
     /// When the job last asked for its box's wake.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub woke_at: Option<u64>,
+    /// When the job last saw a queued session's box with no room for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full_at: Option<u64>,
 }
 
 /// The `session` kind's handler.
@@ -103,21 +107,28 @@ impl Follow {
         let busy = db
             .session_work(&s.workspace)?
             .iter()
-            .filter(|x| x.session != s.id && matches!(x.state.as_str(), "working" | "needs_input"))
+            .filter(|x| x.session != s.id && x.state != State::Queued.as_str())
             .count();
-        // Not taken while its box had room.
-        if state == State::Queued && busy < MAX_SESSIONS_PER_BOX && now.saturating_sub(s.created_at) > work::TAKE_MS {
-            let why = json!({ "reason": "not_taken: its hosted workspace didn't take it in 15 minutes" });
-            if control(db, &s.id, State::Queued, State::Failed, why, now)? {
-                info!(session = s.id, "a session no box took failed");
-            }
-            return Ok(Step::Done);
-        }
         let mut cp = job
             .checkpoint
             .as_ref()
             .and_then(|c| serde_json::from_value::<Checkpoint>(c.clone()).ok())
             .unwrap_or_default();
+        // Not taken while its box had room: counted from its making, or
+        // from when the job last saw the box full.
+        if state == State::Queued {
+            if busy >= MAX_SESSIONS_PER_BOX {
+                cp.full_at = Some(now);
+                job.checkpoint = Some(serde_json::to_value(&cp)?);
+                db.checkpoint_job(job, now)?;
+            } else if now.saturating_sub(cp.full_at.unwrap_or(0).max(s.created_at)) > work::TAKE_MS {
+                let why = json!({ "reason": "not_taken: its hosted workspace didn't take it in 15 minutes" });
+                if control(db, &s.id, State::Queued, State::Failed, why, now)? {
+                    info!(session = s.id, "a session no box took failed");
+                }
+                return Ok(Step::Done);
+            }
+        }
         let quiet = w.state == "paused" || s.heard_at.is_none_or(|h| now.saturating_sub(h) > work::QUIET_MS);
         if waiting && quiet && cp.woke_at.is_none_or(|t| now.saturating_sub(t) >= work::WAKE_EVERY_MS) {
             cp.woke_at = Some(now);
