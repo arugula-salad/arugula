@@ -23,7 +23,9 @@
 //! - **The messages** are the thread's: the message it hangs off and its
 //!   replies, or for an object's own thread (an issue's, a mirrored PR's)
 //!   the room's list. Deleted ones and the platform's own system lines are
-//!   left out. `<role>` is the author's in the project now (`owner`,
+//!   left out, and so are the asker's answers to its which-box and
+//!   which-repo questions (`chat::sessions::answers`): they were for the
+//!   platform, and the agent read one as a stray message. `<role>` is the author's in the project now (`owner`,
 //!   `editor`, `viewer`, `left` once they're out of it), `agent` for a
 //!   machine's agent's message (`<owner>'s agent`), and `via <product>` for
 //!   one a product posted for its author. A message quoting a pane's lines
@@ -356,8 +358,12 @@ pub async fn first_prompt(
     repo: Option<&str>,
     slug: &str,
 ) -> Result<String> {
+    let ms = messages(app, room, parent_seq)?;
+    // The platform's which-box and which-repo questions (its lines, with no
+    // author) and the asker's answers to them were for the platform.
+    let answers = crate::chat::sessions::answers(app, project, asker, &ms)?;
     let ms: Vec<Message> =
-        messages(app, room, parent_seq)?.into_iter().filter(|m| m.deleted.is_none() && !m.author.is_empty()).collect();
+        ms.into_iter().filter(|m| m.deleted.is_none() && !m.author.is_empty() && !answers.contains(&m.seq)).collect();
     let mut people: Vec<String> = ms.iter().map(|m| m.author.clone()).collect();
     people.push(asker.to_owned());
     people.sort();

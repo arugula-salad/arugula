@@ -88,7 +88,7 @@ use super::{
 use crate::Deleted;
 
 /// The most a report's or control's detail may hold.
-pub const MAX_DETAIL: usize = 16 * 1024;
+pub const MAX_DETAIL: usize = arugula_control_wire::work::SESSION_DETAIL_MAX;
 
 /// The most a prompt may hold.
 pub const MAX_PROMPT: usize = 32 * 1024;
@@ -935,9 +935,6 @@ fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport) -> Result<Result<Ve
             }
             if s.role == Role::Review && d.pushed == Some(true) {
                 return refuse("a review pushes nothing");
-            }
-            if d.reply.is_some() && s.role != Role::Review {
-                return refuse("only a review's turn carries a reply");
             }
             Ok(Ok(vec![]))
         }

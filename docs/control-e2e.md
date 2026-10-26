@@ -840,7 +840,11 @@ native issue, writes `@arugula` in the issue's thread as the person who
 pressed it, so it's that mention, checks and all; the session's branch is
 named for the issue (`i<number>-<title's words>`). A workspace's finish step (its spec's `finish`, M261) runs on the
 box after each turn, as the session's user; a turn whose finish step fails
-twice isn't pushed.
+twice isn't pushed. Each turn's report carries the agent's last message,
+which control posts in the session's thread as its asker's, `via` the
+session (`crates/platform/src/sessions/answer.rs`): once per report it
+keeps, with no mentions, never through chat's post, so it wakes nobody
+and prompts nothing.
 
 **Try 3 and reviews** (M264, `crates/platform/src/sessions/tries.rs` and
 `review.rs`). From a session's card, an owner or editor on the beta's list

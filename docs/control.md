@@ -216,7 +216,17 @@ session's branch can change `.github/workflows/`, and whoever reviews its
 PR checks those changes.
 A turn someone types in the session's block (the card's **Open**) is the
 session's too: the card shows it working, and it ends the same way, with
-the finish step, the push and the turn's report. On an Arugula issue's
+the finish step, the push and the turn's report.
+**Each turn's answer goes in the thread.** When a turn ends, pushed or
+not, the agent's last message is posted as a reply in the session's
+thread (only there, not also in the channel), as the asker's `via`
+`session:<ses>`, like a review's post. Past 2,000 characters it's cut,
+ending with a link to the session's page for the rest. It's plain text:
+an `@` in it names nobody, and it never prompts the session or starts
+one. An empty message posts nothing, and a box from before this (one
+that reports no reply) posts nothing either. The platform's which-box
+and which-repo questions, and the asker's answers to them, stay out of
+the session's first prompt: they were for the platform. On an Arugula issue's
 thread the agent names the issue by its link on the platform page
 (`https://app.arugula.io/issues/iss_…`), never `#N`: on GitHub that's
 another issue. The asker's draft PR is titled after the issue (else the

@@ -56,6 +56,15 @@ export function sessionOf(m: ChatMessage): string | null {
   return !m.author && v.startsWith("session:ses_") ? v.slice("session:".length) : null;
 }
 
+/** A session's answer (a turn's last message, posted in its thread as its
+ * asker's `via` the session): the badge's words and its title, or null. */
+export function answerVia(m: ChatMessage, name: string): { label: string; title: string } | null {
+  const v = m.via ?? "";
+  if (!m.author || !v.startsWith("session:ses_")) return null;
+  const short = v.slice("session:ses_".length, "session:ses_".length + 8);
+  return { label: `agent session ${short}`, title: `What agent session ${short} said at the end of a turn, posted for ${name}` };
+}
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await platformFetch(path, {
     method,

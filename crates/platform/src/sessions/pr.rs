@@ -335,12 +335,16 @@ fn summary(commits: &[String], turns: &[SessionDetail], ci: bool) -> String {
     out.trim_start_matches('\n').to_owned()
 }
 
+/// Session `s`'s page on the platform's page.
+pub fn session_link(app: &Platform, s: &Session) -> String {
+    format!("{}/p/{}/sessions/{}", app.cfg.page(), s.project, s.id)
+}
+
 /// The body's footer: where it came from, linking the session and its
 /// thread.
 fn footer(app: &Platform, s: &Session, asker: &str, thread: Option<&str>) -> String {
     let short: String = s.id.trim_start_matches("ses_").chars().take(8).collect();
-    let public = app.cfg.page();
-    let mut out = format!("Opened from Arugula agent session [`{short}`]({public}/p/{}/sessions/{})", s.project, s.id);
+    let mut out = format!("Opened from Arugula agent session [`{short}`]({})", session_link(app, s));
     if !asker.is_empty() {
         out.push_str(&format!(", asked for by {asker}"));
     }
@@ -402,6 +406,7 @@ fn ask_of(app: &Platform, s: &Session, room: &crate::db::chat::Room) -> anyhow::
             m.author == s.asker
                 && m.deleted.is_none()
                 && m.agent.is_none()
+                && m.via.is_none()
                 && m.at <= s.created_at
                 && crate::chat::sessions::asks(&m.text)
         })
