@@ -36,8 +36,11 @@ export async function newDoc(post: Post, term: PaneId, title = "Quarterly plan")
 export const fill = (post: Post, doc: number, section: string, markdown: string) =>
   post(`/api/blocks/${doc}/call/doc_fill`, { section, markdown });
 
-/** Show `doc` on a phone, where one block is up at a time. */
+/** Show `doc` on a phone, where one block is up at a time. A block opened a
+ * moment ago isn't in the client's state yet, and `setActive` ignores a pane
+ * it doesn't know (the race `Client.showWhenKnown` is for), so wait for it. */
 export async function bring(page: Page, doc: number) {
+  await page.waitForFunction((d) => !!window.__arugula.client.info(d), doc);
   await page.evaluate((d) => window.__arugula.client.setActive(d), doc);
 }
 
