@@ -6714,6 +6714,9 @@ button.diff-why-run {
 
 .msg-gutter {
   display: flex;
+  /* The picture (and its dot and badge) at the top of a long message, not
+     stretched down it (UI audit #156). */
+  align-items: flex-start;
   justify-content: center;
 }
 
@@ -8050,16 +8053,24 @@ input.chat-search {
   color: var(--dim);
 }
 
-.chat-members .avatar {
-  width: 20px;
-  height: 20px;
+/* The header's faces: small, overlapping (UI audit #156: they were full
+   size, a 200px chip that squeezed the room's name). */
+.chat-members {
+  --msg-gutter: 20px;
+}
+
+.chat-members > :not(:last-child) {
   margin-right: -4px;
+}
+
+.chat-members .msg-avatar {
   border-radius: 5px;
   font-size: 9px;
   box-shadow: 0 0 0 2px var(--bg);
 }
 
-.chat-members span {
+/* The count (not the faces' own spans). */
+.chat-members > span:last-child {
   margin-left: 10px;
 }
 
@@ -8301,9 +8312,41 @@ input.chat-search {
 
 .chat-title {
   flex: 1;
-  min-width: 0;
+  /* The name truncates last: the buttons wrap under it first (below). */
+  min-width: min(8em, 100%);
   display: flex;
   flex-direction: column;
+}
+
+/* A room too narrow for its name and its buttons in one row (the Details
+   or a thread panel open beside it, a narrow window or block): the name
+   keeps the first row, the buttons take a row of their own under it, as
+   a phone's do. The room's width, not the window's (UI audit #156). */
+.chat-thread {
+  container: chat-room / inline-size;
+}
+
+.chat-thread > .chat-head > :not(.chat-title) {
+  flex: none;
+}
+
+@container chat-room (max-width: 600px) {
+  .chat-head {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .chat-head .chat-title {
+    flex: 1 1 100%;
+  }
+
+  .chat-head .chat-back + .chat-title {
+    flex-basis: calc(100% - 48px);
+  }
+
+  .chat-head .chat-title + * {
+    margin-left: auto;
+  }
 }
 
 /* A phone's room header has more buttons than width (pins, about, star,
@@ -11935,6 +11978,7 @@ html[data-workspace="new"] .thread-panel {
 .msg-image {
   display: block;
   max-width: 100%;
+  min-width: 0;
   padding: 0;
   border: 1px solid var(--divider);
   border-radius: 6px;
@@ -11950,6 +11994,13 @@ html[data-workspace="new"] .thread-panel {
   max-width: min(100%, 360px);
   max-height: 320px;
   object-fit: contain;
+}
+
+/* Sized from the file's own size (files-ui's pictureSize): only a narrower
+   room shrinks it, keeping its shape. */
+.msg-image img[style] {
+  max-width: 100%;
+  max-height: none;
 }
 
 .msg-media {
