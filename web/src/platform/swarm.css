@@ -130,8 +130,11 @@
   text-transform: uppercase;
 }
 
+/* A written name wraps where a page's one word doesn't: its lines get room,
+   or a wrapped issue title's "#1" ran into the line above (UI audit #199). */
 .platform .page-head h1.named {
   letter-spacing: 0;
+  line-height: 1.1;
   text-transform: none;
 }
 
