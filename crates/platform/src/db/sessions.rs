@@ -1426,6 +1426,12 @@ impl Db {
             params![workspace],
             session_row,
         )?;
+        // The workspace's finish step (M261), sent with each session.
+        let finish = c
+            .query_row("SELECT spec FROM hosted_workspaces WHERE id = ?1", params![workspace], |r| r.get::<String>(0))
+            .optional()?
+            .and_then(|spec| serde_json::from_str::<crate::hosted::Spec>(&spec).ok())
+            .and_then(|spec| spec.finish_step());
         // Every live session but a queued one holds a slot, a done one too.
         let busy = live.iter().filter(|s| s.state != State::Queued);
         let mut room = MAX_SESSIONS_PER_BOX.saturating_sub(busy.count());
@@ -1456,6 +1462,7 @@ impl Db {
                 n: s.daemon_n,
                 prompts: prompts.iter().map(Prompt::wire).collect(),
                 actions: pending_actions(&c, &s.id)?.iter().map(Action::wire).collect(),
+                finish: finish.clone(),
             });
         }
         Ok(out)

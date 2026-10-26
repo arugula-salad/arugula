@@ -56,8 +56,9 @@
 //!   - `error`: `error`, what went wrong.
 //!   - `turn`: what the daemon's turn work found (`arugula_proto::api::
 //!     Work`): `branch` (the session's, `arugula/<8 hex>-<slug>`: the only ref
-//!     it may push), `head`, `pushed`, `commits`, `diffstat` and
-//!     `uncommitted`.
+//!     it may push), `head`, `pushed`, `commits`, `diffstat`,
+//!     `uncommitted`, and `finish`: what the workspace's finish step did
+//!     ([`FinishStep`], M261).
 //! - **Actions** come as [`SessionAction`]s in [`SessionWork::actions`]:
 //!   what people asked of the session that only the box can do (`answer`
 //!   its open question, `approve` or `deny` its open permission, `cancel`
@@ -286,6 +287,39 @@ pub struct SessionWork {
     /// ([`SessionDetail::actions`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<SessionAction>,
+    /// The workspace's finish step (M261), if its spec has one: what the
+    /// box runs after each turn, before it pushes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finish: Option<FinishStep>,
+}
+
+/// A workspace's finish step (M261): a command (`just check`) the box runs
+/// as the session's user, in its checkout, after each turn and before the
+/// push. When it fails the agent gets one more turn to fix it, with its
+/// output; when that fails too, the branch isn't pushed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FinishStep {
+    /// A shell command, run with `sh -c`.
+    pub command: String,
+    /// How long it may run, in seconds ([`FINISH_TIMEOUT_S`] when 0).
+    #[serde(default)]
+    pub timeout_s: u64,
+}
+
+/// How long a finish step runs when its spec doesn't say: 15 minutes.
+pub const FINISH_TIMEOUT_S: u64 = 15 * 60;
+
+/// What a turn's finish step did (M261), on the turn's report.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FinishResult {
+    /// It exited 0 within its time.
+    pub ok: bool,
+    /// The command, as the spec has it.
+    pub command: String,
+    /// The last of what it printed (stdout and stderr, at most 4 KiB):
+    /// only when it failed.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub output_tail: String,
 }
 
 /// Something a person asked of a session that only its box can do: answer
@@ -439,6 +473,10 @@ pub struct SessionDetail {
     /// To `needs_input` for a permission: its option ids.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<String>,
+    /// A turn's: what its finish step did (M261), when the workspace has
+    /// one. A failed one isn't pushed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finish: Option<FinishResult>,
 }
 
 /// One state change, signed by the machine that made it.

@@ -826,7 +826,13 @@ the session's next prompts, credited to whoever wrote them; a viewer's are
 only chat. The first prompt is the thread itself, with each link the asker
 can read resolved to what control holds of it
 (`crates/platform/src/sessions/hydrate.rs`). A session stops when its
-workspace is deleted or its asker leaves the project.
+workspace is deleted or its asker leaves the project, and when it's been
+done a day with no prompt (`ARUGULA_SESSION_IDLE_END`, in seconds): a done
+session holds one of its box's three slots, which this frees, and the box
+removes its checkout and its user's `~/.claude`. `@arugula` again starts a
+new one. A workspace's finish step (its spec's `finish`, M261) runs on the
+box after each turn, as the session's user; a turn whose finish step fails
+twice isn't pushed.
 
 **What control can do with sessions:** what it can with runs, on that
 project's hosted box: it chooses what each turn is told. **What it can't:**
