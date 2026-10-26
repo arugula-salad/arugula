@@ -1307,6 +1307,17 @@ note = "Those of its personal project and its disbanded teams' projects go. A te
 seen_by = ["litestream"]
 
 [[table]]
+name = "hosted_snapshot_orphans"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A hosted workspace's snapshot (M263, an E2B template id) that the provider still held when its workspace was deleted for good, whose workspace and project it was, since when, and when the worker last asked to delete it."
+why_asleep = "The worker deletes it at the provider with every machine off."
+with_account = "none"
+note = "It names no account. A row goes once the provider deletes the snapshot."
+seen_by = ["litestream", "e2b"]
+
+[[table]]
 name = "hosted_usage"
 plane = "platform"
 process = "platform"

@@ -168,7 +168,7 @@ fn owners_for(app: &App, account: &str) -> anyhow::Result<Vec<String>> {
 /// beyond what their person may.
 pub(crate) fn may_reach(app: &App, account: &str, id: &str) -> anyhow::Result<Option<bool>> {
     let Some(row) = app.db.hosted(id)? else { return Ok(None) };
-    // A deploy's box (M219): nobody.
+    // A deploy's box (M219), or a snapshot's builder (M263): nobody.
     if row.purpose.is_some() {
         return Ok(Some(false));
     }
@@ -182,7 +182,8 @@ pub(crate) fn may_reach(app: &App, account: &str, id: &str) -> anyhow::Result<Op
 pub(crate) fn directory(app: &App, account: &str) -> anyhow::Result<Vec<Value>> {
     let mut out = Vec::new();
     for h in app.db.hosted_of(&owners_for(app, account)?)? {
-        // A deploy's box (M219) isn't anyone's to see.
+        // A deploy's box (M219) or a snapshot's builder (M263) isn't
+        // anyone's to see.
         if h.purpose.is_some() {
             continue;
         }
@@ -268,7 +269,8 @@ pub(crate) fn ask(db: &Db, key: &str, a: &EnrollAsk) -> anyhow::Result<EnrollGiv
     )? {
         Recorded::New => {
             if let Some(p) = &a.purpose {
-                anyhow::ensure!(p == arugula_control_wire::hosted::DEPLOY, "a box's purpose is deploy, or none");
+                use arugula_control_wire::hosted::{DEPLOY, SNAPSHOT};
+                anyhow::ensure!(p == DEPLOY || p == SNAPSHOT, "a box's purpose is deploy, snapshot, or none");
                 db.set_enrollment_purpose(&hash(&credential), p)?;
             }
             info!(project = a.project, workspace = a.workspace, via, purpose = ?a.purpose, "a hosted enrollment recorded");
