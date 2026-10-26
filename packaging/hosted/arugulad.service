@@ -1,0 +1,39 @@
+# `arugulad --hosted` on a box with systemd as PID 1, as E2B's are (M258,
+# Arugula #124).
+# Enabled in the template (multi-user.target.wants), so it starts at every
+# boot, and the start command (`arugula-hosted-start`) makes sure it's
+# started at the template's build, when E2B snapshots it running.
+#
+# - Restart=always, and never giving up (StartLimitIntervalSec=0): nothing
+#   else restarts the daemon in a box, and a pause keeps a dead one dead.
+# - OOMScoreAdjust=-1000: the OOM killer takes anything else first. Its
+#   shim sets the panes' and agents' score back to 0.
+# - Type=simple: no NOTIFY_SOCKET, so the daemon runs as under the start
+#   command, without the systemd user manager a box doesn't have.
+# - KillMode=process: a restart stops only the daemon. Its panes' shims
+#   keep their terminals for the next one (`--hosted` keeps panes).
+# - It waits for envd's sandbox id, written at each /init: the daemon
+#   reads it to know its box (M180).
+[Unit]
+Description=Arugula's hosted daemon (arugulad --hosted)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=user
+Group=user
+WorkingDirectory=/home/user
+Environment=HOME=/home/user USER=user LOGNAME=user SHELL=/bin/bash
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStartPre=/bin/sh -c 'until [ -s /run/e2b/.E2B_SANDBOX_ID ]; do sleep 0.1; done'
+ExecStart=/usr/local/bin/arugulad --hosted
+TimeoutStartSec=infinity
+Restart=always
+RestartSec=1
+RestartSteps=5
+RestartMaxDelaySec=30
+KillMode=process
+OOMScoreAdjust=-1000
+
+[Install]
+WantedBy=multi-user.target

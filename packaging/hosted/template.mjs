@@ -1,8 +1,8 @@
 // Builds the hosted workspace's E2B template (M177) from a context
-// directory scripts/ci-hosted-template made: Dockerfile, ready, arugulad.json,
-// arugulad and arugula. E2B starts `arugulad --hosted` at the end of the
-// build and snapshots the box once the ready check passes, so a box made
-// from it has the daemon running already.
+// directory scripts/ci-hosted-template made: Dockerfile, ready, start,
+// arugulad.service, arugulad.json, arugulad and arugula. E2B runs the start
+// command at the end of the build and snapshots the box once the ready
+// check passes, so a box made from it has the daemon running already.
 //
 //   node template.mjs CONTEXT NAME TAG [--start CMD] [--dry-run]
 //
@@ -13,10 +13,11 @@
 import path from 'node:path'
 import { Template } from 'e2b'
 
-// The hosted daemon, waiting for its sandbox id to change (M180), and the
-// check that it's up. --start replaces the first for a test build with a
-// daemon older than --hosted.
-const START = 'arugulad --hosted'
+// The hosted daemon, waiting for its sandbox id to change (M180), under its
+// supervisor (`start`, M258: E2B runs this once, so it must be what keeps
+// the daemon running), and the check that it's up. --start replaces the
+// first for a test build with a daemon older than --hosted.
+const START = 'arugula-hosted-start'
 const READY = 'arugula-hosted-ready'
 // A box's size: the template's, as E2B gives a box its template's.
 const CPUS = 2
