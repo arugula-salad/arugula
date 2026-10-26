@@ -206,7 +206,10 @@ lints the daemon with neither, and with each alone.
   and Vite on 5173, leaving your daily daemon alone.
 - `just proto-ts`: regenerate `web/src/shared/proto.gen.ts`.
 - In a worktree, set `CARGO_TARGET_DIR` to a directory of its own, so
-  parallel builds don't share one `target/`. A new one builds cold;
+  parallel builds don't share one `target/`, and put it under `~/.cache`
+  (`~/.cache/arugula-<worktree>-target`), not in or beside the worktree:
+  a machine can keep its caches on a disk of their own, and its cleanup
+  knows where to look. A new one builds cold;
   `just build-cache` sets up caches its worktrees share (Ghostty's Zig
   build, sccache), per machine (docs/development.md, "Caches for
   worktrees").
