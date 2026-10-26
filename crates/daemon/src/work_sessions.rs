@@ -53,8 +53,8 @@
 //!   mints for that one push. A push that fails is the session's error,
 //!   and the turn says it didn't push.
 //! - **A slot is left clean** ([`clean_slot`]): when a session ends (or
-//!   fails), its checkout and its user's `~/.claude` go, so the next
-//!   session in that slot starts with nothing of it.
+//!   fails), what its pushes left, its checkout and its user's `~/.claude`
+//!   go, so the next session in that slot starts with nothing of it.
 //! - **People's answers** ([`SessionAction`]: a question's answer, a
 //!   permission's approval or denial, cancelling the turn) are done once
 //!   each, as the person who asked, and named in the next report.
@@ -1352,7 +1352,7 @@ async fn end(app: &Arc<App>, id: &str, why: &str) {
     let Some((l, _)) = update(&dir, id, |now| now.ended = Some(why.to_owned())) else { return };
     info!(session = id, why, "hosted: a session ended; stopping its agent");
     stop_agent(app, &l).await;
-    clean_slot(&l).await;
+    clean_slot(&dir, &l).await;
 }
 
 /// Session `id` fails here, saying `why`, and its agent is stopped.
@@ -1373,13 +1373,12 @@ async fn fail(app: &Arc<App>, id: &str, why: &str) {
     };
     warn!(session = id, why, "hosted: a session failed");
     stop_agent(app, &l).await;
-    clean_slot(&l).await;
+    clean_slot(&dir, &l).await;
     send(app, id).await;
 }
 
 async fn stop_agent(app: &App, l: &Session) {
     BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&l.session);
-    push::clean(app.control.state_dir(), l).await;
     if let Some(block) = l.block {
         if let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten() {
             let _ = b.call("cancel", json!({})).await;
@@ -1391,11 +1390,14 @@ async fn stop_agent(app: &App, l: &Session) {
     }
 }
 
-/// Leave an ended session's slot clean for the next session in it: its
-/// checkout and its user's `~/.claude` (its agent's conversations) go.
-/// Removed as the session's user, who owns them: never as root, through
-/// paths the agent could have made links of.
-pub async fn clean_slot(l: &Session) {
+/// Leave an ended session's slot clean for the next session in it: what
+/// its pushes left ([`push::clean`]: the daemon's repo and bundle under
+/// `dir`), then its checkout and its user's `~/.claude` (its agent's
+/// conversations). The slot's are removed as the session's user, who owns
+/// them: never as root, through paths the agent could have made links of.
+/// `end` and `fail` call it, once each session.
+pub async fn clean_slot(dir: &Path, l: &Session) {
+    push::clean(dir, l).await;
     let claude = Path::new(&l.user.home).join(".claude").display().to_string();
     match as_user(&l.user, &["rm", "-rf", "--", &l.checkout, &claude]).await {
         Ok(_) => info!(session = l.session, user = l.user.user, "hosted: cleaned an ended session's slot"),
