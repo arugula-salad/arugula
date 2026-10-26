@@ -111,7 +111,7 @@ pub(super) fn works_in(room: &Room) -> bool {
     }
 }
 
-fn asks(text: &str) -> bool {
+pub(crate) fn asks(text: &str) -> bool {
     at_words(text).iter().any(|w| w == MENTION)
 }
 

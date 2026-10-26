@@ -185,6 +185,22 @@ session's card shows the failure and its last lines. It's one field in the
 project's settings, and `--finish` on `cloud edit`; it isn't part of the
 spec's hash, so changing it needs no rebuild.
 
+**A session's agent asks no permission** on its box: Claude Code runs in
+`bypassPermissions`, and the block allows anything that still asks. The box
+is the blast radius (its own user, the firewall, no secrets; aru-115).
+Questions are another thing: the agent asks with AskUserQuestion, and the
+question goes to the session's card in the thread. The agent commits on the
+session's branch and doesn't push: the box runs the finish step and pushes.
+A turn someone types in the session's block (the card's **Open**) is the
+session's too: the card shows it working, and it ends the same way, with
+the finish step, the push and the turn's report. On an Arugula issue's
+thread the agent names the issue by its link, never `#N`: on GitHub that's
+another issue. The asker's draft PR is titled after the issue (else the
+newest pushed commit, else the ask's first line). Its body puts the
+commits, the last turn's diffstat and the finish step's result under the
+template's `## Summary` (or its first section), and its footer links the
+session and its thread.
+
 **Runs and their triggers (M214, platform step 7).** A run executes on one
 of a project's hosted workspaces. It starts by hand, on a schedule, or on a
 linked repo's event, and the platform makes it `pending` and queues its job

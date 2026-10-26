@@ -27,6 +27,17 @@
 //!   as its author's (the block's transcript says whose). The first also
 //!   carries the repo's `CLAUDE.md` and `AGENTS.md` as text: Claude Code's
 //!   `settingSources: ["project"]` would load the repo's hooks too.
+//! - **Its block is followed, not only what it hands in** ([`step`]). A
+//!   turn started in the block itself (someone typed there from the card's
+//!   Open, or the agent woke itself) is reported as a turn's start
+//!   (`in_block`, with who typed it when the block says), and goes to the
+//!   same end as the box's own: the finish step, the push, the turn's
+//!   report. A question it asks goes out as `needs_input`; one answered in
+//!   the block moves it back with no action named. The thread's prompts
+//!   wait for it.
+//! - **Nothing asks permission** ([`agent_config`]): the agent runs in
+//!   `bypassPermissions`, and the block allows what still asks. Questions
+//!   (AskUserQuestion) aren't permissions, and still go to the card.
 //! - **At most once.** Before a prompt goes to the block, the ledger
 //!   (`<state>/work/sessions/ID.json`, fsynced) says it's handed; after a
 //!   restart between the two, the block's own log (its queue and turns)
@@ -293,6 +304,12 @@ pub struct Session {
     /// The commit its last push put on GitHub (M259).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pushed_head: Option<String>,
+    /// The block's turns when the box last followed one to its end: one
+    /// past that with none under way here was started in the block itself
+    /// ([`step`]). `None` in a ledger from before it was kept, until the
+    /// next look.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turns_seen: Option<u64>,
 }
 
 impl Session {
@@ -562,6 +579,7 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         last_at: 0,
         events: vec![],
         pushed_head: None,
+        turns_seen: Some(0),
     };
     let fail = |mut l: Session, why: String| {
         info!(session = l.session, why, "hosted: a session can't start here");
@@ -752,15 +770,21 @@ fn notes(repo: &Path) -> Option<String> {
     })
 }
 
-/// The agent a session's block runs: Claude Code, unless a test names a
-/// command (`ARUGULA_HOSTED_SESSION_AGENT`), which still runs as kind
-/// `claude`, under M185's gate.
+/// The agent a session's block runs: Claude Code in `bypassPermissions`,
+/// unless a test names a command (`ARUGULA_HOSTED_SESSION_AGENT`), which
+/// still runs as kind `claude`, under M185's gate.
 fn agent_config(l: &Session) -> Value {
     let mut c = json!({
         "agent": "claude",
         "cwd": l.checkout,
         "title": format!("session {}", l.session),
         "run_as": l.user,
+        // Nothing asks before it runs (aru-115: the box, as its own user
+        // behind the firewall, is the blast radius); AskUserQuestion
+        // still does, and goes to the card. What still asks in this mode
+        // the block allows itself (`agent`'s permissions). Codex sessions
+        // (M264) will want their own mode: codex-acp's `full-access`.
+        "permission_mode": "bypassPermissions",
     });
     if let Some(cmd) = std::env::var("ARUGULA_HOSTED_SESSION_AGENT").ok().filter(|c| !c.trim().is_empty()) {
         c["command"] = json!(crate::agent::defs::split_command(&cmd));
@@ -818,6 +842,17 @@ struct Seen {
     open: Option<(&'static str, String, String, Vec<String>)>,
     tool: Option<String>,
     error: Option<String>,
+    /// Whose each turn's prompt was, oldest first, of the last few
+    /// (`None`: the block's owner's, or the agent's own).
+    by: Vec<Option<String>>,
+}
+
+impl Seen {
+    /// Whose the block's turn number `n` (from 0) was, if it says.
+    fn by_at(&self, n: u64) -> Option<String> {
+        let from = self.turns.saturating_sub(self.by.len() as u64);
+        n.checked_sub(from).and_then(|i| self.by.get(i as usize).cloned().flatten())
+    }
 }
 
 fn seen(s: &Value) -> Seen {
@@ -843,6 +878,11 @@ fn seen(s: &Value) -> Seen {
         open: perm.or_else(ask),
         tool: s["current_tool"]["title"].as_str().map(str::to_owned),
         error: s["error"].as_str().map(str::to_owned),
+        // `recent_turns` is newest first.
+        by: s["recent_turns"]
+            .as_array()
+            .map(|t| t.iter().rev().map(|t| t["by"].as_str().map(str::to_owned)).collect())
+            .unwrap_or_default(),
     }
 }
 
@@ -954,6 +994,7 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 let branch = l.branch.clone();
                 let (k, m, base, again) = (keys.clone(), me.clone(), s.turns, fix.clone());
                 say(Box::new(move |now| {
+                    now.turns_seen = Some(base);
                     let pushed = match pushed {
                         Ok(Some(head)) => {
                             now.pushed_head = Some(head);
@@ -1037,7 +1078,33 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
         None => {
             BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
             let next = work.as_ref().and_then(|w| w.prompts.iter().find(|p| !l.handed.contains(&p.id)).cloned());
-            if let Some(p) = next {
+            let Some(seen_turns) = l.turns_seen else {
+                // A ledger from before it was kept: from now on.
+                let turns = s.turns;
+                say(Box::new(move |now| now.turns_seen = Some(turns)));
+                return true;
+            };
+            if l.now() == State::Done && (s.turns > seen_turns || s.queued > 0) {
+                // A turn started in the block itself (someone typed there,
+                // or the agent woke itself): followed like the box's own,
+                // to the same end (finish step, push, turn report). The
+                // thread's prompts wait for it.
+                let by = s.by_at(seen_turns);
+                let (k, m) = (keys.clone(), me.clone());
+                info!(session = id, "hosted: a turn started in the session's block");
+                say(Box::new(move |now| {
+                    now.turn = Some(Turn {
+                        prompts: vec![],
+                        base: seen_turns,
+                        sent: true,
+                        at: now_ms(),
+                        fix: None,
+                        cancelled: false,
+                    });
+                    let d = SessionDetail { in_block: true, by, ..Default::default() };
+                    now.push(&k, &m, Kind::State, State::Working, d);
+                }));
+            } else if let Some(p) = next {
                 hand(app, &b, id, p, &keys, &me, s.turns).await;
             } else if !l.unnamed.is_empty() {
                 // An action with no turn to do it to (a cancel too late):
@@ -1092,7 +1159,7 @@ async fn give(
     if let Some(n) = &l.notes {
         text.push_str(n);
     }
-    match b.call_by("send", json!({ "text": text }), Some(&p.author)).await {
+    match b.call_by("send", json!({ "text": text }), Some(p.who())).await {
         Ok(_) => {
             update(dir, id, |now| started(now, keys, me));
         }
