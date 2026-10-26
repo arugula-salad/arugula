@@ -299,3 +299,197 @@ async fn discarding() {
     assert_eq!((s, v["state"].as_str()), (200, Some("discarded")), "{v}");
     assert!(!v.to_string().contains("secret"));
 }
+
+/// A session on team t1's project (M259), asked for by alice, working in
+/// `acme/app` on the workspace whose box is `box1`, with one turn that
+/// pushed a commit (`turn` adds more). The session's id.
+pub(super) async fn pushed_session(app: &crate::Platform, gh: &super::links_tests::Shared, team: &str) -> String {
+    session_on(app, gh, team, "hw_pr", true).await
+}
+
+/// [`pushed_session`] on workspace `ws`, its one turn `pushed` or not.
+pub(super) async fn session_on(
+    app: &crate::Platform,
+    gh: &super::links_tests::Shared,
+    team: &str,
+    ws: &str,
+    pushed: bool,
+) -> String {
+    use crate::db::sessions::{NewPrompt, NewSession, Source};
+    {
+        // As `arugula-io` is installed (S42 q2): it writes contents and
+        // workflows too.
+        let mut g = gh.lock().unwrap();
+        g.repos.insert("acme/app".into(), (77, true));
+        let mut grant = super::links_tests::granted();
+        grant["contents"] = "write".into();
+        grant["workflows"] = "write".into();
+        g.grants.insert("acme/app".into(), grant);
+    }
+    let crate::db::hosted::Added::Made(ws) =
+        app.db.add_hosted_workspace(ws, team, ws, &Default::default(), "alice", 10, 1).unwrap()
+    else {
+        panic!("no workspace");
+    };
+    let room = format!("rm_{}", ws.id);
+    let new = NewSession {
+        project: team,
+        room: &room,
+        parent_seq: 1,
+        asker: "alice",
+        workspace: &ws.id,
+        repo: Some("acme/app"),
+        slug: "add-notes",
+        prompt: NewPrompt { author: "alice", source: Source::Member, association: None, text: "add notes" },
+    };
+    let (s, _) = app.db.create_session(&new, 1).unwrap().unwrap();
+    app.db
+        .c()
+        .execute("UPDATE agent_sessions SET machine = 'box1', state = 'done' WHERE id = ?1", params![s.id])
+        .unwrap();
+    turn(app, &s.id, pushed);
+    s.id
+}
+
+/// A turn of session `ses`, as its box reported it: one commit, pushed or
+/// not.
+pub(super) fn turn(app: &crate::Platform, ses: &str, pushed: bool) {
+    let c = app.db.c();
+    let seq: u64 =
+        c.query_row("SELECT last_seq + 1 FROM agent_sessions WHERE id = ?1", params![ses], |r| r.get(0)).unwrap();
+    let detail = json!({ "branch": "x", "head": "abc1234", "pushed": pushed, "commits": ["abc1234 Add notes"],
+                         "diffstat": " NOTES.md | 1 +\n 1 file changed, 1 insertion(+)" });
+    c.execute(
+        "INSERT INTO session_events (session_id, seq, kind, from_state, to_state, at, detail)
+         VALUES (?1, ?2, 'turn', 'working', 'working', 5, ?3)",
+        params![ses, seq, detail.to_string()],
+    )
+    .unwrap();
+    c.execute("UPDATE agent_sessions SET last_seq = ?2 WHERE id = ?1", params![ses, seq]).unwrap();
+}
+
+/// A session's PR (M259): its asker reads it prefilled from the repo's PR
+/// template and the turns (the one commit's subject for its title, the
+/// commits and diffstat in its body, the repo's default branch for its
+/// base), edits it and keeps it. Nobody else drafts it: another member is
+/// told only its asker does, and someone who can't read the repo, or isn't
+/// in the project, finds no session.
+#[tokio::test]
+async fn a_sessions_pr_is_drafted_by_its_asker() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    let (team, _) = world(&hub, &gh, &app).await;
+    gh.lock().unwrap().files.insert("acme/app:.github/pull_request_template.md".into(), "## What\n\n## Why\n".into());
+    let ses = pushed_session(&app, &gh, &team).await;
+    let branch = app.db.session(&ses).unwrap().unwrap().branch;
+    let path = format!("/api/sessions/{ses}/pr");
+    // A later turn whose finish step failed (M261) wasn't pushed: its
+    // commit isn't on GitHub, so the PR leaves it out.
+    {
+        let c = app.db.c();
+        let detail = json!({ "branch": "x", "head": "def5678", "pushed": false, "commits": ["def5678 Break the build"],
+                             "diffstat": " BROKEN.md | 1 +\n 1 file changed, 1 insertion(+)",
+                             "finish": { "ok": false, "command": "just check", "output_tail": "error" } });
+        c.execute(
+            "INSERT INTO session_events (session_id, seq, kind, from_state, to_state, at, detail)
+             SELECT id, last_seq + 1, 'turn', 'working', 'working', 6, ?2 FROM agent_sessions WHERE id = ?1",
+            params![ses, detail.to_string()],
+        )
+        .unwrap();
+        c.execute("UPDATE agent_sessions SET last_seq = last_seq + 1 WHERE id = ?1", params![ses]).unwrap();
+    }
+
+    let (s, v) = call(&base, "alice", "GET", &path, None).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!((v["state"].as_str(), v["id"].as_str()), (Some("new"), None));
+    assert_eq!((v["title"].as_str(), v["base"].as_str()), (Some("Add notes"), Some("main")));
+    assert_eq!((v["head"].as_str(), v["repo"].as_str()), (Some(branch.as_str()), Some("acme/app")));
+    assert_eq!(v["template"], ".github/pull_request_template.md");
+    assert_eq!(v["draft"], true);
+    let body = v["body"].as_str().unwrap();
+    assert!(body.starts_with("## What\n\n## Why\n\n---\n\nOpened from Arugula agent session"), "{body}");
+    assert!(body.contains("- abc1234 Add notes") && body.contains("NOTES.md | 1 +"), "{body}");
+    assert!(!body.contains("def5678") && !body.contains("BROKEN.md"), "only what's on GitHub: {body}");
+
+    // bob edits the project but didn't ask: he's told; carol (no GitHub
+    // sign-in, so no read of the private repo) and eve (not in the
+    // project) find no session.
+    let (s, v) = call(&base, "bob", "GET", &path, None).await;
+    assert_eq!(s, 403, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("only the session's asker"), "{v}");
+    for who in ["carol", "eve"] {
+        assert_eq!(call(&base, who, "GET", &path, None).await.0, 404, "{who}");
+    }
+    let edit = json!({ "title": "Notes, at last", "body": "Adds NOTES.md.", "draft": false });
+    assert_eq!(call(&base, "bob", "PUT", &path, Some(edit.clone())).await.0, 403);
+
+    // Its asker keeps it, and reads it back as kept.
+    let (s, v) = call(&base, "alice", "PUT", &path, Some(edit)).await;
+    assert_eq!(s, 200, "{v}");
+    assert!(v["id"].as_str().unwrap().starts_with("pdr_"), "{v}");
+    assert_eq!(
+        (v["state"].as_str(), v["title"].as_str(), v["draft"].as_bool()),
+        (Some("waiting"), Some("Notes, at last"), Some(false))
+    );
+    let (_, again) = call(&base, "alice", "GET", &path, None).await;
+    assert_eq!((again["id"].clone(), again["body"].clone()), (v["id"].clone(), json!("Adds NOTES.md.")));
+    // A PR into its own branch, or with no title, isn't one.
+    let bad = json!({ "title": "x", "body": "", "base": branch });
+    assert_eq!(call(&base, "alice", "PUT", &path, Some(bad)).await.0, 400);
+    assert_eq!(call(&base, "alice", "PUT", &path, Some(json!({ "title": " ", "body": "" }))).await.0, 400);
+}
+
+/// The push token (M259, S42 q2): the platform mints one only for the
+/// session's own box, for exactly the session's branch, on its linked repo,
+/// with `contents: write` and no `workflows`; a push outside `arugula/*`
+/// (`main`), another session's branch, another machine, or a session that
+/// ended gets none.
+#[tokio::test]
+async fn a_push_outside_its_branch_is_refused() {
+    use arugula_control_wire::work::{PushAsk, PushGiven};
+
+    use crate::{PlatformPort as _, work::HostedMachine};
+
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, _) = serve(&hub).await;
+    let (team, _) = world(&hub, &gh, &app).await;
+    let ses = pushed_session(&app, &gh, &team).await;
+    let branch = app.db.session(&ses).unwrap().unwrap().branch;
+    let m = |machine: &str| HostedMachine {
+        project: team.clone(),
+        workspace: "hw_pr".into(),
+        machine: machine.into(),
+        sign: String::new(),
+    };
+    let ask = |b: &str| PushAsk { session: ses.clone(), branch: b.into() };
+    let other = format!("arugula/{}-x", "f".repeat(8));
+    for (machine, b) in [("box1", "main"), ("box1", other.as_str()), ("box1", "arugula/"), ("box2", branch.as_str())] {
+        let got = app.hosted_session_push(&m(machine), &ask(b)).await.unwrap();
+        assert!(matches!(got, PushGiven::Refused { .. }), "{machine} {b}: {got:?}");
+    }
+    assert!(gh.lock().unwrap().minted.is_empty(), "nothing minted for them");
+
+    let got = app.hosted_session_push(&m("box1"), &ask(&branch)).await.unwrap();
+    let PushGiven::Given { token, revoke, .. } = &got else { panic!("{got:?}") };
+    assert_eq!(token, "ghs_fake");
+    assert!(revoke.ends_with("/installation/token"), "{revoke}");
+    assert!(!format!("{got:?}").contains("ghs_fake"), "never printed");
+    assert_eq!(gh.lock().unwrap().minted, [json!({ "metadata": "read", "contents": "write" })], "no workflows");
+    let logged: Vec<(String, String, String)> = app
+        .db
+        .c()
+        .query_map(
+            "SELECT caller, purpose, permissions FROM github_token_mints WHERE kind = 'installation' AND repo_id = 77",
+            params![],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(logged.len(), 1, "{logged:?}");
+    assert_eq!((logged[0].0.as_str(), logged[0].1.as_str()), ("alice", "session:push"));
+    assert!(!logged[0].2.contains("workflows"), "{logged:?}");
+
+    // Once it ended, no more.
+    app.db.c().execute("UPDATE agent_sessions SET state = 'stopped' WHERE id = ?1", params![ses]).unwrap();
+    let got = app.hosted_session_push(&m("box1"), &ask(&branch)).await.unwrap();
+    assert!(matches!(got, PushGiven::Refused { .. }), "{got:?}");
+}

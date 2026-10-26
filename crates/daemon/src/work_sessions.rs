@@ -37,8 +37,8 @@
 //!   `needs_input` with what it asks, back, to `done`), a heartbeat every
 //!   [`HEARTBEAT`] while a turn is under way with the tool running now, the
 //!   agent's errors, and each turn's result (`turnwork`'s: branch, commits,
-//!   diffstat; `pushed` stays false until M259 pushes). Each is kept in the
-//!   ledger before it's sent, and sent in order until control takes it.
+//!   diffstat, and `pushed`). Each is kept in the ledger before it's sent,
+//!   and sent in order until control takes it.
 //! - **The finish step** ([`finish_turn`], M261): when the workspace's spec
 //!   has one (`just check`), it runs after each turn, before the push, as
 //!   the session's user in its checkout, with that user's environment
@@ -47,9 +47,14 @@
 //!   `working`, with its output as a prompt from the finish step; the
 //!   push waits for that turn's end, when it runs again. Failing twice, the
 //!   session is done, unpushed, and its card says why.
+//! - **Pushed** ([`push::push_turn`], M259): a turn that left commits of
+//!   its own pushes the session's branch, and only it, from a bundle its
+//!   user writes, through a repo of the daemon's own, with a token control
+//!   mints for that one push. A push that fails is the session's error,
+//!   and the turn says it didn't push.
 //! - **A slot is left clean** ([`clean_slot`]): when a session ends (or
-//!   fails), its checkout and its user's `~/.claude` go, so the next
-//!   session in that slot starts with nothing of it.
+//!   fails), what its pushes left, its checkout and its user's `~/.claude`
+//!   go, so the next session in that slot starts with nothing of it.
 //! - **People's answers** ([`SessionAction`]: a question's answer, a
 //!   permission's approval or denial, cancelling the turn) are done once
 //!   each, as the person who asked, and named in the next report.
@@ -285,6 +290,9 @@ pub struct Session {
     pub last_at: u64,
     #[serde(default)]
     pub events: Vec<Kept>,
+    /// The commit its last push put on GitHub (M259).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pushed_head: Option<String>,
 }
 
 impl Session {
@@ -553,6 +561,7 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         error: None,
         last_at: 0,
         events: vec![],
+        pushed_head: None,
     };
     let fail = |mut l: Session, why: String| {
         info!(session = l.session, why, "hosted: a session can't start here");
@@ -932,14 +941,33 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 };
                 let result = b.call("turn_result", json!({})).await.ok().filter(|v| !v.is_null());
                 let r: Option<arugula_proto::api::TurnResult> = result.and_then(|v| serde_json::from_value(v).ok());
-                // M259 pushes here, only when `may_push`, and says so in
-                // `pushed`.
+                // The push, only when the finish step passed (or there's
+                // none) and no fix is owed: the commit now on GitHub, nothing
+                // to push, or why it didn't.
                 let may_push = fix.is_none() && finished.may_push();
                 info!(session = id, may_push, fix = fix.is_some(), "hosted: a session's turn ended");
-                let pushed = false;
+                let pushed = if may_push { push::push_turn(app, &l).await } else { Ok(None) };
                 let branch = l.branch.clone();
                 let (k, m, base, again) = (keys.clone(), me.clone(), s.turns, fix.clone());
                 say(Box::new(move |now| {
+                    let pushed = match pushed {
+                        Ok(Some(head)) => {
+                            now.pushed_head = Some(head);
+                            true
+                        }
+                        Ok(None) => false,
+                        Err(why) => {
+                            let error = Some(format!("couldn't push {}: {why}", now.branch));
+                            now.push(
+                                &k,
+                                &m,
+                                Kind::Error,
+                                State::Working,
+                                SessionDetail { error, ..Default::default() },
+                            );
+                            false
+                        }
+                    };
                     let w = r.and_then(|r| r.work);
                     let d = SessionDetail {
                         branch: Some(w.as_ref().map_or(branch, |w| w.branch.clone())),
@@ -1324,7 +1352,7 @@ async fn end(app: &Arc<App>, id: &str, why: &str) {
     let Some((l, _)) = update(&dir, id, |now| now.ended = Some(why.to_owned())) else { return };
     info!(session = id, why, "hosted: a session ended; stopping its agent");
     stop_agent(app, &l).await;
-    clean_slot(&l).await;
+    clean_slot(&dir, &l).await;
 }
 
 /// Session `id` fails here, saying `why`, and its agent is stopped.
@@ -1345,7 +1373,7 @@ async fn fail(app: &Arc<App>, id: &str, why: &str) {
     };
     warn!(session = id, why, "hosted: a session failed");
     stop_agent(app, &l).await;
-    clean_slot(&l).await;
+    clean_slot(&dir, &l).await;
     send(app, id).await;
 }
 
@@ -1362,11 +1390,14 @@ async fn stop_agent(app: &App, l: &Session) {
     }
 }
 
-/// Leave an ended session's slot clean for the next session in it: its
-/// checkout and its user's `~/.claude` (its agent's conversations) go.
-/// Removed as the session's user, who owns them: never as root, through
-/// paths the agent could have made links of.
-pub async fn clean_slot(l: &Session) {
+/// Leave an ended session's slot clean for the next session in it: what
+/// its pushes left ([`push::clean`]: the daemon's repo and bundle under
+/// `dir`), then its checkout and its user's `~/.claude` (its agent's
+/// conversations). The slot's are removed as the session's user, who owns
+/// them: never as root, through paths the agent could have made links of.
+/// `end` and `fail` call it, once each session.
+pub async fn clean_slot(dir: &Path, l: &Session) {
+    push::clean(dir, l).await;
     let claude = Path::new(&l.user.home).join(".claude").display().to_string();
     match as_user(&l.user, &["rm", "-rf", "--", &l.checkout, &claude]).await {
         Ok(_) => info!(session = l.session, user = l.user.user, "hosted: cleaned an ended session's slot"),
@@ -1425,6 +1456,9 @@ async fn send_all(app: &Arc<App>) {
         send(app, &l.session).await;
     }
 }
+
+#[path = "work_sessions_push.rs"]
+pub mod push;
 
 #[cfg(test)]
 #[path = "work_sessions_tests.rs"]

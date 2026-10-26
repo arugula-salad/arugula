@@ -557,6 +557,23 @@ impl<T: TokenSource> Github<T> {
         })
     }
 
+    /// Open a pull request from `head` into `base` (as a draft on GitHub
+    /// when `draft`): its number, and where it is.
+    pub async fn new_pr(
+        &self,
+        repo: &str,
+        title: &str,
+        body: &str,
+        head: &str,
+        base: &str,
+        draft: bool,
+    ) -> Result<(u64, Sent), Error> {
+        let req = json!({ "title": title, "body": body, "head": head, "base": base, "draft": draft });
+        let (v, _) = self.send(reqwest::Method::POST, repo, &format!("repos/{repo}/pulls"), Some(&req)).await?;
+        let n = v["number"].as_u64().ok_or_else(|| Error::Http("GitHub didn't say the PR's number".into()))?;
+        Ok((n, Sent { url: v["html_url"].as_str().map(str::to_owned), said: format!("opened #{n}") }))
+    }
+
     /// Open an issue: its number, and where it is.
     pub async fn new_issue(&self, repo: &str, title: &str, body: &str) -> Result<(u64, Sent), Error> {
         let req = json!({ "title": title, "body": body });

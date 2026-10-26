@@ -15,10 +15,14 @@
 //!   a prompt, and the agent's conversation goes on;
 //! - with three sessions on the box a fourth waits, until one is stopped;
 //! - the workspace's finish step (M261) runs after each turn as the
-//!   session's user: passing, the session is done; failing, the agent gets
-//!   one fix turn with its output, and failing again it's done, unpushed;
-//! - a session that ends leaves its slot clean: its checkout and its
-//!   user's `~/.claude` go.
+//!   session's user: passing, the turn is pushed and the session done;
+//!   failing, the agent gets one fix turn with its output, pushed if it
+//!   passes then, and failing again it's done, unpushed;
+//! - a session that ends leaves its slot clean: what its pushes left, its
+//!   checkout and its user's `~/.claude` go.
+//! - a turn that commits pushes the session's branch, and only it, with a
+//!   token control mints for that push and the box revokes after (M259); a
+//!   turn with nothing new pushes nothing.
 
 use std::{
     collections::BTreeMap,
@@ -73,6 +77,9 @@ struct Fake {
     pulls: Arc<Mutex<u32>>,
     /// Every turn the box asked M185's gate for, as it asked.
     asked: Arc<Mutex<Vec<Value>>>,
+    /// Every push token the box asked for (M259), and those it revoked.
+    pushes: Arc<Mutex<Vec<Value>>>,
+    revoked: Arc<Mutex<Vec<String>>>,
 }
 
 impl Fake {
@@ -102,6 +109,8 @@ impl Fake {
             refused: Default::default(),
             pulls: Default::default(),
             asked: Default::default(),
+            pushes: Default::default(),
+            revoked: Default::default(),
         }
     }
 
@@ -280,6 +289,21 @@ async fn turn(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
     Json(json!({ "turn": "trn_1", "pays": "project", "auth": "key" }))
 }
 
+/// The push token for a session's branch, as the platform mints it (M259).
+async fn push_token(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
+    f.pushes.lock().unwrap().push(b);
+    let revoke = format!("{}/installation/token", f.url.lock().unwrap());
+    Json(json!({ "kind": "given", "token": PUSH_TOKEN, "expires_at": "2099-01-01T00:00:00Z", "revoke": revoke }))
+}
+
+async fn revoke(Axum(f): Axum<Fake>, h: axum::http::HeaderMap) -> StatusCode {
+    let bearer = h.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+    f.revoked.lock().unwrap().push(bearer);
+    StatusCode::NO_CONTENT
+}
+
+const PUSH_TOKEN: &str = "ghs_m259_push_token_for_the_test";
+
 async fn turn_end() -> Json<Value> {
     Json(json!({ "ended": true }))
 }
@@ -293,6 +317,8 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/api/relay/dial", get(dial))
             .route("/api/hosted/work", get(work))
             .route("/api/hosted/work/session", post(report))
+            .route("/api/hosted/work/session/push", post(push_token))
+            .route("/installation/token", axum::routing::delete(revoke))
             .route("/api/hosted/turns", post(turn))
             .route("/api/hosted/turns/{turn}/end", post(turn_end))
             .with_state(f.clone());
@@ -396,6 +422,11 @@ struct Rig {
     homes: PathBuf,
     sudo_log: PathBuf,
     d: arugula_testkit::Daemon,
+    /// The box's state dir, the workspace's clone, and the bare repo that
+    /// stands in for GitHub for the push (M259).
+    state: PathBuf,
+    repo: PathBuf,
+    remote: PathBuf,
 }
 
 /// A hosted box, enrolled into a fake control, whose workspace has a clone
@@ -419,6 +450,12 @@ fn rig(tag: &str) -> Rig {
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);
     git(&repo, &["remote", "add", "origin", "https://github.com/acme/app.git"]);
+    // GitHub, for the push: a bare repo with the workspace's main.
+    let github = marks.join("github");
+    let remote = github.join("acme/app.git");
+    std::fs::create_dir_all(&remote).unwrap();
+    git(&remote, &["init", "-q", "--bare", "-b", "main"]);
+    git(&repo, &["push", "-q", remote.to_str().unwrap(), "main"]);
     let state = marks.join("state");
     std::fs::create_dir_all(&state).unwrap();
     std::fs::write(
@@ -461,17 +498,18 @@ fn rig(tag: &str) -> Rig {
         .env("ARUGULA_HOSTED_SUDO", &sudo)
         .env("ARUGULA_HOSTED_SESSION_AGENT", &agent)
         .env("ARUGULA_SESSION_HEARTBEAT_MS", "400")
+        .env("ARUGULA_GITHUB_GIT", format!("file://{}", github.display()))
         .env("RUST_LOG", "info")
         .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
         .wait_secs(30)
         .start();
     wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
-    Rig { _rt: rt, f, marks, homes, sudo_log, d }
+    Rig { _rt: rt, f, marks, homes, sudo_log, d, state, repo, remote }
 }
 
 #[test]
 fn a_hosted_machine_runs_sessions() {
-    let Rig { _rt, f, marks, homes, sudo_log, mut d } = rig("main");
+    let Rig { _rt, f, marks, homes, sudo_log, mut d, state, repo, remote } = rig("main");
 
     // A session's first prompt: a turn as ses1, in its own clone, on its
     // branch, with the repo's CLAUDE.md as text.
@@ -488,7 +526,8 @@ fn a_hosted_machine_runs_sessions() {
     let branch = format!("arugula/{}-fix-readme", &a[4..12]);
     let (_, turn) = of.iter().find(|(r, _)| r.kind == "turn").unwrap();
     assert_eq!(turn.branch.as_deref(), Some(branch.as_str()), "{turn:?}");
-    assert_eq!(turn.pushed, Some(false), "M259 pushes");
+    assert_eq!(turn.pushed, Some(false), "nothing of its own to push");
+    assert!(f.pushes.lock().unwrap().is_empty(), "so it asked for no token");
     let gated = f.asked.lock().unwrap().clone();
     assert_eq!(gated, [json!({ "agent": "claude", "session": a })], "its turns are its asker's");
     let checkout = homes.join("ses1").join("work").join(&a);
@@ -544,6 +583,16 @@ fn a_hosted_machine_runs_sessions() {
     assert!(turn.commits.iter().any(|c| c.ends_with(" add NOTES.md")), "{turn:?}");
     assert_eq!(turn.uncommitted, Some(1), "README.md, edited, not committed");
     assert_eq!(git(&checkout, &["log", "-1", "--format=%s"]), "add NOTES.md");
+    // That turn pushed its branch, and only it, with a token for that push,
+    // revoked after.
+    assert_eq!(turn.pushed, Some(true), "{turn:?}");
+    assert_eq!(*f.pushes.lock().unwrap(), [json!({ "session": a, "branch": branch })]);
+    assert_eq!(*f.revoked.lock().unwrap(), [format!("Bearer {PUSH_TOKEN}")]);
+    let head = git(&checkout, &["rev-parse", "HEAD"]);
+    assert_eq!(
+        git(&remote, &["for-each-ref", "--format=%(refname) %(objectname)"]),
+        format!("refs/heads/{branch} {head}\nrefs/heads/main {}", git(&repo, &["rev-parse", "main"]))
+    );
     let slow = lines.iter().position(|l| l == "user: slow").unwrap();
     assert_eq!(lines[slow - 1], "note: A follow-up from acct1", "{lines:#?}");
     assert!(f.of(&a).iter().any(|(_, d)| d.actions == [action(1, "", "").id]), "the cancel is named once it's done");
@@ -627,27 +676,54 @@ fn a_hosted_machine_runs_sessions() {
     let (status, _) = d.raw("GET", &format!("/api/blocks/{b_block}"), None);
     assert_eq!(status, 404, "b's agent block closed when it was stopped");
     assert!(!homes.join("ses2").join("work").join(&b).exists(), "b's checkout went with it");
+
+    // No turn after the one that committed pushed again (nothing new), and
+    // the token is in no file on the box.
+    assert_eq!(f.pushes.lock().unwrap().len(), 1);
+    let mut todo = vec![state.clone(), homes.clone()];
+    while let Some(dir) = todo.pop() {
+        for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() && !p.is_symlink() {
+                todo.push(p);
+            } else if let Ok(b) = std::fs::read(&p) {
+                assert!(!b.windows(PUSH_TOKEN.len()).any(|w| w == PUSH_TOKEN.as_bytes()), "the token is in {p:?}");
+            }
+        }
+    }
 }
 
 /// M261: the workspace's finish step, after each turn and before the push,
-/// as the session's user in its checkout. It passes: one turn, done. It
-/// fails, and the agent's one fix makes it pass. It fails twice: no third
-/// try, done with the failure on its turn's report (the card's). And an
-/// ended session's slot is left clean.
+/// as the session's user in its checkout. It passes: one turn, pushed,
+/// done. It fails, and the agent's one fix makes it pass: the fixed turn
+/// is pushed. It fails twice: no third try, done, unpushed, with the
+/// failure on its turn's report (the card's). And an ended session's slot
+/// is left clean, its push's repo too.
 #[test]
 fn a_finish_step_runs_after_each_turn() {
-    let Rig { _rt, f, marks, homes, sudo_log, d } = rig("finish");
+    let Rig { _rt, f, marks, homes, sudo_log, d, state, remote, .. } = rig("finish");
     let step = |cmd: &str| Some(FinishStep { command: cmd.into(), timeout_s: 0 });
     let finish = |d: &SessionDetail| d.finish.clone().expect("the turn says what its finish step did");
+    // The push tokens asked for session `id` (M259), and where its branch
+    // is on GitHub.
+    let pushes = |id: &str| f.pushes.lock().unwrap().iter().filter(|p| p["session"] == id).count();
+    let on_github =
+        |branch: &str| git(&remote, &["for-each-ref", "--format=%(objectname)", &format!("refs/heads/{branch}")]);
 
-    // It passes: one turn, and it's done.
+    // It passes: one turn, pushed, and it's done. (Each turn commits, so
+    // each has something to push.)
     let p = ses('1');
-    f.start_with(&p, "pass", prompt(1, "acct1", "hello"), step("test -d .git && echo all good"));
+    let work = "work README.md NOTES.md";
+    f.start_with(&p, "pass", prompt(1, "acct1", work), step("test -d .git && echo all good"));
     wait(&marks, &f, "the passing session's turn", || f.state(&p) == "done");
     let turns = f.turn_reports(&p);
     assert_eq!(turns.len(), 1, "{turns:?}");
     let ok = FinishResult { ok: true, command: "test -d .git && echo all good".into(), output_tail: String::new() };
     assert_eq!(finish(&turns[0]), ok);
+    assert_eq!(turns[0].pushed, Some(true), "{turns:?}");
+    assert_eq!(pushes(&p), 1);
+    let head = git(&homes.join("ses1").join("work").join(&p), &["rev-parse", "HEAD"]);
+    assert_eq!(on_github(&format!("arugula/{}-pass", &p[4..12])), head);
     let said = std::fs::read_to_string(&sudo_log).unwrap();
     assert!(
         said.lines().any(|l| l.starts_with("-n -u ses1 -- env -i HOME=") && l.contains(" timeout -k 10 900 sh -c ")),
@@ -658,7 +734,7 @@ fn a_finish_step_runs_after_each_turn() {
     // output) makes it pass: still one turn of the thread's.
     let x = ses('2');
     let cmd = "test -f FIXED || { echo FIXED is missing; exit 1; }";
-    f.start_with(&x, "fix", prompt(2, "acct1", "hello"), step(cmd));
+    f.start_with(&x, "fix", prompt(2, "acct1", work), step(cmd));
     wait(&marks, &f, "the fixed session", || f.state(&x) == "done" && f.turn_reports(&x).len() == 2);
     let turns = f.turn_reports(&x);
     let first = finish(&turns[0]);
@@ -667,6 +743,12 @@ fn a_finish_step_runs_after_each_turn() {
         "{first:?}"
     );
     assert_eq!(finish(&turns[1]), FinishResult { ok: true, command: cmd.into(), output_tail: String::new() });
+    // The push waits for the fix: the failed turn isn't pushed, the fixed
+    // one is, once.
+    assert_eq!((turns[0].pushed, turns[1].pushed), (Some(false), Some(true)), "{turns:?}");
+    assert_eq!(pushes(&x), 1);
+    let head = git(&homes.join("ses2").join("work").join(&x), &["rev-parse", "HEAD"]);
+    assert_eq!(on_github(&format!("arugula/{}-fix", &x[4..12])), head);
     assert_eq!(
         f.moves(&x),
         [
@@ -686,7 +768,7 @@ fn a_finish_step_runs_after_each_turn() {
 
     // It fails twice: done, unpushed, with no third try.
     let z = ses('3');
-    f.start_with(&z, "broken", prompt(3, "acct1", "hello"), step("echo it is broken; exit 3"));
+    f.start_with(&z, "broken", prompt(3, "acct1", work), step("echo it is broken; exit 3"));
     wait(&marks, &f, "the broken session", || f.state(&z) == "done" && f.turn_reports(&z).len() == 2);
     let n = f.pulls();
     wait(&marks, &f, "more pulls", || f.pulls() > n + 10);
@@ -698,14 +780,19 @@ fn a_finish_step_runs_after_each_turn() {
         assert_eq!(t.pushed, Some(false), "a failed finish step isn't pushed");
     }
     assert_eq!(f.state(&z), "done");
+    assert_eq!(pushes(&z), 0, "it asked for no token");
+    assert_eq!(on_github(&format!("arugula/{}-broken", &z[4..12])), "", "nothing of it reached GitHub");
 
     // A session that ends leaves its slot clean: its checkout and its
     // user's ~/.claude go.
     let claude = homes.join("ses2").join(".claude");
     std::fs::create_dir_all(claude.join("projects")).unwrap();
     std::fs::write(claude.join("projects").join("x.jsonl"), "{}\n").unwrap();
+    // And what its push left: the daemon's own repo for it.
+    let pushed = state.join("work").join("sessions").join(format!("{x}.push"));
+    assert!(pushed.join("repo.git").exists(), "{pushed:?}");
     f.stop(&x);
     let checkout = homes.join("ses2").join("work").join(&x);
-    wait(&marks, &f, "x's slot cleaned", || !checkout.exists() && !claude.exists());
+    wait(&marks, &f, "x's slot cleaned", || !checkout.exists() && !claude.exists() && !pushed.exists());
     assert!(homes.join("ses1").join("work").join(&p).exists(), "the others' are left alone");
 }
