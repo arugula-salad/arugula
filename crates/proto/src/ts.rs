@@ -176,6 +176,10 @@ fn generate() -> String {
         // Its project's numbers, and Agent on this (M265).
         c.visit::<SessionStats>();
         c.visit::<IssueAgent>();
+        // Move to…, and asks as forms (Arugula #214).
+        c.visit::<SessionMove>();
+        c.visit::<ChatAsk>();
+        c.visit::<ChatAskAnswer>();
     }
     // Native issues (M195).
     {

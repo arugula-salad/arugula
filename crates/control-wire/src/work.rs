@@ -72,10 +72,11 @@
 //!   the turn), oldest first, on every pull until a report names them in
 //!   its detail's `actions`. Each is done once. On `-> needs_input` the
 //!   box says what's open: `request` (its id), `ask` (`permission` or
-//!   `question`), `options` (a permission's option ids) and `question`
-//!   (the words shown). Stopping the session isn't an action: control
-//!   moves it to `stopped`, it leaves the list (or the box's next report
-//!   is refused with `now: stopped`), and the box stops the agent.
+//!   `question`), `options` (a permission's option ids, or a question's
+//!   choices) and `question` (the words shown). Stopping the session
+//!   isn't an action: control moves it to `stopped`, it leaves the list
+//!   (or the box's next report is refused with `now: stopped`), and the
+//!   box stops the agent.
 //! - **Prompts** come as [`SessionPrompt`]s; a turn gives the agent each
 //!   one's [`SessionPrompt::for_agent`]: a member's text plain, GitHub's
 //!   fenced as quoted data with its `author_association`. A person's
@@ -536,7 +537,8 @@ pub struct SessionDetail {
     /// To `needs_input`: `permission` or `question`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ask: Option<String>,
-    /// To `needs_input` for a permission: its option ids.
+    /// To `needs_input` for a permission: its option ids; for a question,
+    /// its first question's choices, by their labels (Arugula #214).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<String>,
     /// A turn's: what its finish step did (M261), when the workspace has

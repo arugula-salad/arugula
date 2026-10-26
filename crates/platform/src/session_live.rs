@@ -49,8 +49,8 @@ use crate::{
     db::{
         session_merged::MERGED,
         sessions::{
-            ActionKind, BOX_REBUILT_LOST, DaemonReport, Event, Kind, Move, NOT_PICKED, NewAction, Refused, Role,
-            Session, SessionDetail, State,
+            ActionKind, BOX_REBUILT_LOST, DaemonReport, Event, Kind, MOVED_LOST, Move, NOT_PICKED, NewAction, Refused,
+            Role, Session, SessionDetail, State,
         },
     },
     forge::links::membership,
@@ -71,6 +71,8 @@ pub fn record(app: &Platform, id: &str, m: &Move) -> anyhow::Result<Result<(Sess
         && (!events.is_empty() || s.last_tool != tool)
     {
         app.chat.session(&app.db, s);
+        // What it asked is answered once it isn't waiting (Arugula #214).
+        crate::sessions::asks::settle(app, s);
     }
     Ok(moved)
 }
@@ -81,6 +83,7 @@ pub fn told(app: &Platform, ids: &[String]) -> anyhow::Result<()> {
     for id in ids {
         if let Some(s) = app.db.session(id)? {
             app.chat.session(&app.db, &s);
+            crate::sessions::asks::settle(app, &s);
         }
     }
     Ok(())
@@ -129,6 +132,8 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &SessionReport) -> any
             if let Err(e) = crate::sessions::answer::reported(app, &s, &events) {
                 warn!(session = s.id, error = %format!("{e:#}"), "a turn's answer");
             }
+            // What its agent asks now is an ask for its asker (Arugula #214).
+            crate::sessions::asks::opened(app, &s, &events).await;
             Ok(Reported::Taken)
         }
         Err(why) => {
@@ -153,7 +158,7 @@ fn no_session() -> ApiError {
 
 /// The session, if `account` is a member of its project, with whether they
 /// may act on it (an owner or editor).
-async fn readable(app: &Platform, account: &str, id: &str, now: bool) -> Result<(Session, bool), ApiError> {
+pub(crate) async fn readable(app: &Platform, account: &str, id: &str, now: bool) -> Result<(Session, bool), ApiError> {
     let s = app.db.session(id)?.ok_or_else(no_session)?;
     match membership(app, account, &s.project, now).await {
         Ok((_, role)) => Ok((s, role != TeamRole::Viewer)),
@@ -197,6 +202,18 @@ fn line(e: &Event, name: &dyn Fn(&str) -> String) -> String {
     match (e.kind, e.from, e.to) {
         (Kind::State, None, _) => "Asked for".into(),
         (Kind::State, Some(State::Queued), State::Working) => "Its box took it".into(),
+        (Kind::State, Some(_), State::Queued) if d.reason.as_deref().is_some_and(|r| r.starts_with("moved: ")) => {
+            let to = serde_json::from_str::<serde_json::Value>(&e.detail)
+                .ok()
+                .and_then(|v| v["to_name"].as_str().map(str::to_owned))
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| "another workspace".into());
+            let lost = if d.reason.as_deref() == Some(MOVED_LOST) { ", without its conversation" } else { "" };
+            match by {
+                Some(n) => format!("Moved to {to} by {n}{lost}: starting again from the thread"),
+                None => format!("Moved to {to}{lost}: starting again from the thread"),
+            }
+        }
         (Kind::State, Some(_), State::Queued) if d.reason.as_deref() == Some(BOX_REBUILT_LOST) => {
             "Its box was rebuilt, and its conversation was lost with it: starting again from the thread".into()
         }
@@ -391,6 +408,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         ran: ran_on(&events),
         tries,
         picked,
+        moves: vec![],
     };
     let lines = events
         .iter()
@@ -405,6 +423,10 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         })
         .collect();
     let asked = !s.asker.is_empty() && s.asker == reader;
+    let mut card = card;
+    if may || asked {
+        card.moves = crate::sessions::moves::places(app, s).await?;
+    }
     Ok(SessionView { card, may, asked, now: now_ms(), events: lines })
 }
 
@@ -484,6 +506,9 @@ pub async fn act(
         Ok(_) => {
             let after = app.db.session(&id)?.ok_or_else(no_session)?;
             app.chat.session(&app.db, &after);
+            if kind.answers() {
+                crate::sessions::asks::close_session(&app, &after)?;
+            }
             Ok(Json(view(&app, &after, true, &account).await?))
         }
         Err(Refused::Detail(why)) if why.starts_with("only") || why.starts_with("an answer") => {

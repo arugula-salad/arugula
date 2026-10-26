@@ -846,6 +846,29 @@ session (`crates/platform/src/sessions/answer.rs`): once per report it
 keeps, with no mentions, never through chat's post, so it wakes nobody
 and prompts nothing.
 
+**Which box, and what it asks** (Arugula #214,
+`crates/platform/src/sessions/pool.rs`, `asks.rs` and `moves.rs`). A
+session runs on the workspace the project's agents run on, if someone
+chose one, else its only one. With several and none chosen, it picks one
+itself: of those whose spec has the repo, one that's awake (ready and
+online) with a free slot first, then the least busy, then by name. The
+repo is the one the ask names (`owner/name`, or a name only one repo
+has), else the only one the boxes have. It asks only when it must: when
+the boxes have several repos and the ask names none, an ask lists them,
+and when the ask names a repo the project linked that no box has, a line
+says so. What still needs the asker (which repo, or a question the
+session's agent asks) is a message in the thread, also sent to the
+channel, that mentions them: an unread mention and a push, until it's
+answered. It's a form there, a button per choice, and a press answers
+it; a reply naming the repo still does. Only the asker answers which
+repo; owners and editors answer the agent, as on its card. **Move to…**
+on the card sends a queued or done session (never mid-turn) to another
+of the project's workspaces with its repo, for its asker, an owner or an
+editor: its next turn starts there from the thread, and from its
+conversation when its old box archives the session's block first
+(`hosted.archive_blocks`: that block only, since the box's other
+sessions go on).
+
 **Try 3 and reviews** (M264, `crates/platform/src/sessions/tries.rs` and
 `review.rs`). From a session's card, an owner or editor on the beta's list
 can run it two more ways at once: two sibling sessions re-run its first

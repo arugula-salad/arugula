@@ -447,3 +447,19 @@ async fn a_push_back_after_an_end_cleans_again() {
     assert!(push::clean_if_ended(&dir, &l).await);
     assert!(!place.exists(), "the push's place went with the session");
 }
+
+/// A question's choices go to the card as buttons (Arugula #214): one
+/// question taking one answer only.
+#[test]
+fn a_questions_choices_go_to_the_card() {
+    let one = json!({ "id": "q1", "questions": [
+        { "question": "Which colour?", "multiSelect": false, "options": [{ "label": "Red" }, { "label": "Blue" }] }] });
+    assert_eq!(choices(&one), ["Red", "Blue"]);
+    let many = json!({ "questions": [
+        { "question": "Which colour?", "multiSelect": true, "options": [{ "label": "Red" }] }] });
+    assert!(choices(&many).is_empty());
+    let two = json!({ "questions": [{ "question": "a", "options": [{ "label": "x" }] }, { "question": "b" }] });
+    assert!(choices(&two).is_empty());
+    let s = seen(&json!({ "asks": [one] }));
+    assert_eq!(s.open, Some(("question", "q1".into(), "Which colour?".into(), vec!["Red".into(), "Blue".into()])));
+}

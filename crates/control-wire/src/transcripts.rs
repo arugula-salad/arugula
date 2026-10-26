@@ -53,6 +53,17 @@ pub struct TranscriptPost {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveOpen {}
 
+/// `hosted.archive_blocks` (Arugula #214): [`ArchiveOpen`] for these agent
+/// blocks only. The platform asks before Move to… takes a session off a
+/// box that stays up: its conversation goes with it, and the box's other
+/// blocks are archived when they close, as they end (one transcript per
+/// block is kept). A daemon from before it answers that it doesn't know
+/// the op.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchiveBlocks {
+    pub blocks: Vec<u64>,
+}
+
 /// The platform kept it: its id (`htx_…`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TranscriptArchived {

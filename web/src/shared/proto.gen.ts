@@ -273,6 +273,47 @@ export type ChatAddMembers = { accounts: Array<string>, };
 export type ChatAgent = { machine: string, machine_name: string, };
 
 /**
+ * An ask's form (Arugula #214, [`ASK`]): which repo a thread's `@arugula`
+ * works in, when the project's workspaces have several and the ask named
+ * none.
+ */
+export type ChatAsk = { room: string, seq: number, 
+/**
+ * The thread it's in (`None`: the room's own messages, an issue's).
+ */
+parent: number | null, 
+/**
+ * `repo`.
+ */
+kind: string, 
+/**
+ * Whom it waits on, and their name now.
+ */
+asker: string, asker_name: string, question: string, 
+/**
+ * One button each.
+ */
+choices: Array<string>, 
+/**
+ * It still waits on its asker: nobody answered it, and no later ask in
+ * its thread took its place.
+ */
+open: boolean, 
+/**
+ * The reader is its asker, so the buttons are theirs.
+ */
+mine: boolean, 
+/**
+ * The session its answer started, once it's answered.
+ */
+session: string | null, };
+
+/**
+ * [`ASK`]'s `POST` body: the choice pressed.
+ */
+export type ChatAskAnswer = { choice: string, };
+
+/**
  * `POST /api/chat/presence`: a page's heartbeat, every 15 s while it's
  * open, and the answer is what it shows. `idle`: the page hasn't been
  * used for 10 minutes. `gone`: it's closing (sent as a beacon), so the
@@ -3334,7 +3375,13 @@ tries: Array<SessionTry>,
  * The one of [`SessionCard::tries`] kept, once one is picked; on a
  * sibling, its parent's pick.
  */
-picked: string | null, };
+picked: string | null, 
+/**
+ * Where Move to… may send it (Arugula #214): its project's other
+ * workspaces that have its repo, by name. Empty unless the reader may
+ * move it (its asker, an owner or an editor) and it's queued or done.
+ */
+moves: Array<SessionPlace>, };
 
 /**
  * A turn's finish step (M261): the command, whether it passed, and when
@@ -3360,6 +3407,11 @@ signed: boolean,
 text: string, };
 
 /**
+ * [`SESSION_MOVE`]'s body: the workspace it goes to.
+ */
+export type SessionMove = { workspace: string, };
+
+/**
  * What a session waits on a person for.
  */
 export type SessionOpen = { 
@@ -3376,7 +3428,8 @@ ask: string | null,
  */
 question: string | null, 
 /**
- * A permission's option ids.
+ * A permission's option ids, or a question's choices, by their labels
+ * (Arugula #214: a button each; its own words still go too).
  */
 options: Array<string>, at: number, };
 
@@ -3384,6 +3437,19 @@ options: Array<string>, at: number, };
  * [`SESSION_PICK`]'s body: the session kept, one of the Try 3's.
  */
 export type SessionPick = { session: string, };
+
+/**
+ * One of a project's workspaces, as Move to… lists it.
+ */
+export type SessionPlace = { workspace: string, name: string, 
+/**
+ * Its box is up now (ready and online).
+ */
+awake: boolean, 
+/**
+ * How many of its project's sessions it holds or has queued.
+ */
+busy: number, };
 
 /**
  * One of a workspace's dev servers.

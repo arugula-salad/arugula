@@ -263,6 +263,11 @@ fn routes() -> Routes {
         .route(arugula_control_wire::sessions::SESSION_PICK, post(crate::sessions::tries::pick))
         .route(arugula_control_wire::sessions::PROJECT_SESSION_STATS, get(crate::sessions::merged::stats))
         .route(arugula_control_wire::sessions::ISSUE_AGENT, post(crate::chat::sessions::issue_agent))
+        .route(arugula_control_wire::sessions::SESSION_MOVE, post(crate::sessions::moves::route))
+        .route(
+            arugula_control_wire::sessions::ASK,
+            get(crate::chat::sessions::ask_show).post(crate::chat::sessions::ask_answer),
+        )
         // Reading runs, and a machine's agents' runs (M216).
         .route(wire_runs::RUN, get(crate::triggers::read::show))
         .route(wire_runs::RUN_LOG, get(crate::triggers::read::log))

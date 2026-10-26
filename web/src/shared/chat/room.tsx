@@ -40,6 +40,7 @@ import { useSubscribe } from "../ui/hooks";
 import { useChatShown } from "./shown";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 import { ReplyTag, setThreadNav, ThreadFooter } from "./thread-ui";
+import { AskMessage, askOfMessage } from "./ask-card";
 import { answerVia, SessionCardMessage, sessionOf } from "./session-card";
 import { dmLabel } from "./members";
 import { useStickToBottom } from "./stick";
@@ -566,6 +567,8 @@ export function RoomMessage({
   if (m.system) return <SystemLine room={room} m={m} />;
   // M257: an agent session's card, drawn live in place of its message.
   if (sessionOf(m) && m.deleted === null) return <SessionCardMessage room={room} m={m} />;
+  // Arugula #214: what a session still needs from its asker, as a form.
+  if (askOfMessage(m) && m.deleted === null) return <AskMessage room={room} m={m} />;
   if (m.deleted !== null) {
     return (
       <div class="thread-msg first deleted" data-msg={m.seq}>
