@@ -133,11 +133,11 @@ test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async 
   await page.keyboard.press("ControlOrMeta+Shift+KeyP");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await expect(palette).toBeVisible();
-  await palette.getByRole("textbox", { name: "Command" }).fill("chat");
+  await palette.getByRole("combobox", { name: "Command" }).fill("chat");
   await expect(palette.getByRole("option", { name: /chat/i }).filter({ hasNotText: "Start a chat" })).toHaveCount(0);
-  await palette.getByRole("textbox", { name: "Command" }).fill("docs");
-  await expect(palette.getByRole("option", { name: /^Docs\b|Open Doc/ })).toHaveCount(0);
-  await palette.getByRole("textbox", { name: "Command" }).fill("split");
+  await palette.getByRole("combobox", { name: "Command" }).fill("docs");
+  await expect(palette.getByRole("option", { name: /Go to Docs|Open Doc/ })).toHaveCount(0);
+  await palette.getByRole("combobox", { name: "Command" }).fill("split");
   await expect(palette.getByRole("option").first()).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(palette).toBeHidden();

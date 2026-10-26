@@ -35,6 +35,10 @@ export function setAccount(a: Account) {
   account = a;
 }
 
+/** The account now, for the command palette's Account commands (UI audit
+ * #176); null on a daemon's own page. */
+export const currentAccount = (): Account | null => account;
+
 /** The account, kept current; null on a daemon's own page. The bar's menu
  * and the phone's sheet (#820) both show its items. */
 export function useAccount(): Account | null {

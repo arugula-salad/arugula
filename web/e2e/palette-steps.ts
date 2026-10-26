@@ -6,7 +6,7 @@ import { newDoc, type Post } from "./doc-steps";
 import { active, paneEl, panes, ready, reset, tabsInSession, text, type as typeIn, sheetTab } from "./helpers";
 
 const palette = (page: Page) => page.getByRole("dialog", { name: "Command palette" });
-const filter = (page: Page) => palette(page).getByRole("textbox", { name: "Command" });
+const filter = (page: Page) => palette(page).getByRole("combobox", { name: "Command" });
 const rows = (page: Page) => palette(page).getByRole("option");
 
 /** Type into the palette and run the best match with Enter. */

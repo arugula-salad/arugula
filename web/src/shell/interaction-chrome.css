@@ -44,7 +44,10 @@
 .add-pane-actions { flex: none; padding: 16px 22px; border-top: 1px solid var(--raised); background: var(--surface); }
 .picker.palette { width: min(760px, calc(100vw - 32px)); max-height: min(680px, 80dvh); border: 1px solid var(--raised-hover); border-radius: 10px; overflow: hidden; box-shadow: 0 24px 90px #0009; }
 .palette-search { display: flex; align-items: center; padding: 6px 20px; gap: 12px; border-bottom: 1px solid var(--raised); color: var(--accent); }
-.palette-search .picker-filter { flex: 1; min-width: 0; padding: 16px 0; border: 0; margin: 0; background: transparent; font-size: 16px; box-shadow: none; }
+/* Sans, as the rows under it (UI audit #176); 16px on a phone (style.css), where less zooms the page. */
+.palette-search .picker-filter { flex: 1; min-width: 0; padding: 16px 0; border: 0; margin: 0; background: transparent; font-family: inherit; font-size: 15px; box-shadow: none; }
+.palette.phone .palette-search .picker-filter { font-size: 16px; }
+.palette-badge { margin-left: 6px; padding: 0 6px; border-radius: var(--chip-radius); background: var(--accent); color: var(--on-color); font-size: 10px; font-weight: 600; vertical-align: 1px; }
 .palette-results-heading { display: flex; justify-content: space-between; gap: 12px; padding: 14px 20px 8px; color: var(--dim); font-size: 11px; }
 .palette .picker-list { padding: 4px 10px 12px; }
 .palette-row { min-height: 58px; padding: 10px; gap: 12px; box-sizing: border-box; border: 1px solid transparent; border-radius: 6px; }

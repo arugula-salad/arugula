@@ -1,6 +1,10 @@
 // Where the swarm lives (M26): `/#swarm`, beside the tabs. `#swarm=N` or
 // `#swarm=<daemon>.N` (a notification's deep link) opens it at pane N's card.
 
+/** What the swarm is, in the same words wherever it's offered: the rail,
+ * the places, the machine menu, the palette (UI audit #176). */
+export const SWARM_ABOUT = "every pane on all machines";
+
 export interface SwarmRoute {
   /** A pane to show: its daemon (through control), and its id. */
   focus: { daemon?: string; pane: number } | null;
