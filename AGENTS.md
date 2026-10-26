@@ -156,11 +156,12 @@ removed").
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
 `chat`, `vms`, `studio`, `workspaces`, `guest-ssh`,
-`swarm-themes`, `forges`, `agents`, `docs`. A feature that leaves takes its row out
+`forges`, `agents`, `docs`. A feature that leaves takes its row out
 of `FLAGS` and puts its name in `flags::RETIRED`, so an old file naming it
 is ignored: `fountain` (daemon-side Managoat, removed: DECISIONS.md
-"Daemon-side Managoat is removed") and `huddles` (DECISIONS.md "Huddles are
-removed"). They're named flags in `flags.json` in the state
+"Daemon-side Managoat is removed"), `huddles` (DECISIONS.md "Huddles are
+removed") and `swarm-themes` (the swarm's views, graduated: every swarm
+offers them under Theme). They're named flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
 read on every call, never cached), set by `arugulad flags chat on` or the
 owner's *Developer settings…* in the web client (`flags.list` and `flag.set`

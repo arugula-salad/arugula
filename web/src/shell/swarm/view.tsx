@@ -32,16 +32,10 @@ const THEME_KEY = "arugula.swarm.theme";
 /** How the swarm is drawn. Blocks is the field; the city is 3D; the hive is a
  * cell per pane and the timeline a lane per pane over time. */
 export type Theme = "blocks" | "city" | "hive" | "timeline";
-/** The themes on offer without labs. The others are built but only a machine
- * with labs offers them. With one, there's no picker. */
-export const THEMES: Theme[] = ["blocks"];
-const ALL_THEMES: Theme[] = ["blocks", "city", "hive", "timeline"];
-
-/** The themes to offer: `THEMES`, or all of them where the home machine has
- * labs. */
-export function offeredThemes(labs: boolean): Theme[] {
-  return labs ? ALL_THEMES : THEMES;
-}
+/** Every theme, offered to everyone under Theme: a setting of the swarm's,
+ * kept in this browser. They left Labs (the `swarm-themes` flag is
+ * retired); all but blocks are chunks of their own, fetched when picked. */
+export const THEMES: Theme[] = ["blocks", "city", "hive", "timeline"];
 
 /** A done card leaves the rail by itself after this long. */
 
@@ -56,13 +50,11 @@ function savedBy(): GroupBy {
   }
 }
 
-/** The theme this browser picked last. Whether it's on offer waits for the
- * machine's features, which arrive after the first draw: it's kept until
- * then, not thrown away. */
+/** The theme this browser picked last. */
 function savedTheme(): Theme {
   try {
     const v = localStorage.getItem(THEME_KEY) as Theme | null;
-    return v && ALL_THEMES.includes(v) ? v : "blocks";
+    return v && THEMES.includes(v) ? v : "blocks";
   } catch {
     return "blocks";
   }
@@ -109,7 +101,6 @@ export function SwarmView({
   fleet,
   back,
   focus,
-  home,
   inBar,
 }: {
   fleet: Fleet;
@@ -117,19 +108,13 @@ export function SwarmView({
   /** Under the bar every place shares, whose Panes goes back: no button
    * of its own for that. */
   inBar?: boolean;
-  /** The machine this page is of: its labs say whether the extra themes
-   * are offered. */
-  home: string | null;
   /** Opened from a notification: the pane to show, and its card. */
   focus?: { host: string; pane: number } | null;
 }) {
   useSubscribe((fn) => fleet.subscribe(fn));
   const phone = usePhone();
   const [by, setBy] = useState<GroupBy>(savedBy);
-  const [chosen, setChosen] = useState<Theme>(savedTheme);
-  // Read on each render: the features arrive after the first one.
-  const themes = offeredThemes(!!home && !!fleet.clientOf(home)?.flag("swarm-themes"));
-  const theme = themes.includes(chosen) ? chosen : "blocks";
+  const [theme, setChosen] = useState<Theme>(savedTheme);
   const [peek, setPeek] = useState<{ key: string; x: number; y: number; text: string } | null>(null);
   const [tipGone, setTipGone] = useState(() => {
     try {
@@ -452,18 +437,16 @@ export function SwarmView({
             ))}
           </div>
         </div>
-        {themes.length > 1 && (
-          <div>
-            <div class="swarm-seg-l">Theme</div>
-            <div class="swarm-seg" role="group" aria-label="Theme">
-              {themes.map((t) => (
-                <button key={t} data-theme-pick={t} aria-pressed={t === theme} onClick={() => pickTheme(t)}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-                </button>
-              ))}
-            </div>
+        <div>
+          <div class="swarm-seg-l">Theme</div>
+          <div class="swarm-seg" role="group" aria-label="Theme">
+            {THEMES.map((t) => (
+              <button key={t} data-theme-pick={t} aria-pressed={t === theme} onClick={() => pickTheme(t)}>
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
         <div class="swarm-tools">
           <button data-fit onClick={() => field.current?.fitAll()}>
             Fit

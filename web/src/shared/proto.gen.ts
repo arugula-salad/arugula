@@ -3722,7 +3722,6 @@ export const FLAGS = [
   { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
   { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false, local_only: false },
   { name: "guest-ssh", title: "Guest ssh", about: "Invite a guest to a pane over plain ssh.", default: false, local_only: true },
-  { name: "swarm-themes", title: "Extra swarm views", about: "The swarm's other views beside the default.", default: false, local_only: false },
   { name: "forges", title: "Forgejo and GitLab", about: "PR and issue blocks for Forgejo and GitLab, beside GitHub's.", default: false, local_only: false },
   { name: "agents", title: "Agent catalog", about: "Offer Claude Code subagents from this machine, and see the ones your team offers.", default: false, local_only: true },
   { name: "docs", title: "Docs", about: "Agents build documents in a block beside their pane.", default: false, local_only: false },

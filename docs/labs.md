@@ -26,7 +26,6 @@ Each feature has a flag, off on a new install:
 | `studio` | Studio app blocks |
 | `workspaces` | Chant workspace blocks |
 | `guest-ssh` | *Invite over ssh…* for a guest with only OpenSSH |
-| `swarm-themes` | The swarm's city, hive and timeline views |
 | `forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on) |
 | `agents` | Offering Claude Code subagents from this machine as A2A agents, and the team's agent catalog (#403) |
 | `docs` | Doc blocks: a report, plan or write-up an agent builds beside its pane, section by section (#962), kept in a library you can list and reopen (#1492) |
@@ -48,7 +47,6 @@ one isn't made.
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `workspaces` | chant workspace blocks |
 | `guest-ssh` | `/api/guests` (list, invite, revoke) |
-| `swarm-themes` | nothing on the daemon: it's only the page's |
 | `forges` | Forgejo and GitLab blocks and webhooks |
 | `agents` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
 | `docs` | new Doc blocks, the `doc` tool by name, and the Doc library's `/api/docs…` (list, open, delete) |
@@ -110,9 +108,9 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
 - **Web client:** `Client.has("vms" | "studio")` and
   `hasLabs()` and `flag(name)` in `web/src/shell/client.ts`: VM panes and tabs,
   *Sandboxes…*, *Split (local)* and a VM tab's *Machine* items, studio
-  apps, *Open as workspace*, *Invite over ssh…*, threads, chat,
-  and the swarm's city, hive and timeline themes
-  (`web/src/shell/swarm/view.tsx`).
+  apps, *Open as workspace*, *Invite over ssh…*, threads and chat.
+  The swarm's city, hive and timeline views left Labs (2026-10-26): every
+  swarm offers them under *Theme*, and `swarm-themes` is a retired flag.
 - **Machines (VMs).** A *machine* (`--machine mN`, `mN:PATH`, `--machine
   local`, MCP `run`'s `machine`) is a VM or sandbox from the provider
   (`crates/mux/src/labs/machine.rs`). Examples that use them: `arugula open

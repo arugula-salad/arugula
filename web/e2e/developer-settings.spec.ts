@@ -47,7 +47,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents", "docs"] as const;
+const FLAGS = ["chat", "vms", "studio", "workspaces", "guest-ssh", "forges", "agents", "docs"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -80,7 +80,6 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
       // draws nothing here of its own, but the page has it.
       chat: c.flag("chat"),
       workspaces: c.flag("workspaces"),
-      themes: c.flag("swarm-themes"),
       forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
       // M76 is the daemon's and the CLI's; the page's catalog is M77's.
       agents: c.flag("agents"),
@@ -89,7 +88,6 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
   });
   if (page_says.chat) out.push("chat");
   if (page_says.workspaces) out.push("workspaces");
-  if (page_says.themes) out.push("swarm-themes");
   if (page_says.forges) out.push("forges");
   if (page_says.agents) out.push("agents");
   if (page_says.docs) out.push("docs");
@@ -227,14 +225,15 @@ test("an ssh invite from the pane's menu works with its flag on, and is refused 
   expect(await shown(page, pane)).toEqual([]);
 });
 
-test("the extra swarm views follow their flag", async ({ page }) => {
-  expect((await setFlag("swarm-themes", true)).ok).toBe(true);
+test("the swarm's views are no flag: swarm-themes is retired", async ({ page }) => {
+  // Every swarm offers its four views (they left Labs); the old name is
+  // refused as any retired flag is, and an old file naming it is ignored.
+  const r = await setFlag("swarm-themes", true);
+  expect(r.ok).toBe(false);
   await open(page);
   await page.goto("/#swarm");
   await expect(page.locator(".swarm")).toBeVisible();
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
-  await expect(page.locator("[data-open-chat]")).toHaveCount(0);
-  expect((await setFlag("swarm-themes", false)).ok).toBe(true);
 });
 
 test("the flags are the owner's: someone else can't read or change them", async () => {

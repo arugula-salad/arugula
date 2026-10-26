@@ -47,7 +47,9 @@ the one `labs` flag (above) is nine: `chat`, `huddles`, `vms`, `fountain`,
 in `FLAGS`, off by default. (`agents` came later; `fountain` went with
 #942's F5, a retired flag ever since: "A retired flag is a name that isn't
 one", below; `huddles` went when huddles were removed: "Huddles are
-removed", below.)
+removed", below; `swarm-themes` graduated on 2026-10-26: the swarm's city,
+hive and timeline views are everyone's, picked under the swarm's Theme and
+kept in the browser, so its flag is retired too.)
 - **`labs` is no longer a flag; in the file it means all of them.** `labs`
   in `flags.json` is the answer for every flag
   the file doesn't name itself. A machine that had Labs keeps everything, one

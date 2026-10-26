@@ -85,8 +85,6 @@ pub const STUDIO: &str = "studio";
 pub const WORKSPACES: &str = "workspaces";
 /// Inviting a guest to a pane over plain ssh.
 pub const GUEST_SSH: &str = "guest-ssh";
-/// The swarm's views beside the default.
-pub const SWARM_THEMES: &str = "swarm-themes";
 /// Forgejo and GitLab blocks, beside GitHub's.
 pub const FORGES: &str = "forges";
 /// Agent recipes offered from this machine, and the team's agent catalog.
@@ -141,7 +139,6 @@ pub const FLAGS: &[Flag] = &[
     row(STUDIO, "Studio apps", "Studio app blocks. Needs a linked studio."),
     row(WORKSPACES, "Chant workspaces", "Chant workspace blocks."),
     local_row(GUEST_SSH, "Guest ssh", "Invite a guest to a pane over plain ssh."),
-    row(SWARM_THEMES, "Extra swarm views", "The swarm's other views beside the default."),
     row(FORGES, "Forgejo and GitLab", "PR and issue blocks for Forgejo and GitLab, beside GitHub's."),
     local_row(
         AGENTS,
@@ -161,6 +158,8 @@ pub const RETIRED: &[(&str, &str)] = &[
         "Direct Managoat execution is retired: agents in the cloud run on Cloud workspaces in your Arugula projects",
     ),
     ("huddles", "Huddles (voice calls on a session) were removed from Arugula"),
+    // Graduated, not removed: every swarm offers its four views now.
+    ("swarm-themes", "The swarm's views are no longer in Labs: every swarm offers them under Theme"),
     // Never a flag, but the name it would have now.
     (
         "managoat",

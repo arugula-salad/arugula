@@ -167,17 +167,19 @@ test("without labs the page never requests the Labs chunk", async ({ page }) => 
   expect(asked.filter((u) => LABS_CHUNK.test(u))).toEqual([]);
 });
 
-test("the swarm has one theme and no picker, whatever this browser saved", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("arugula.swarm.theme", "city"));
+test("without labs the swarm still offers its four views, and keeps what this browser saved", async ({ page }) => {
+  // The views left Labs (the swarm-themes flag is retired): Theme is a
+  // setting of the swarm's for everyone, kept in the browser.
+  await page.addInitScript(() => localStorage.setItem("arugula.swarm.theme", "hive"));
   await open(page);
   await page.goto("/#swarm");
   await expect(page.locator(".swarm")).toBeVisible();
   await expect(page.locator(".swarm-bar")).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
+  await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
+  await expect(page.locator(".swarm")).toHaveAttribute("data-theme", "hive");
+  await page.locator('[data-theme-pick="blocks"]').click();
   await expect(page.locator(".swarm")).toHaveAttribute("data-theme", "blocks");
-  await expect(page.locator("[data-theme-pick]")).toHaveCount(0);
-  await expect(page.getByText("Theme", { exact: true })).toHaveCount(0);
-  await expect(page.locator("canvas.swarm-city")).toHaveCount(0);
   // Its tiles show no unread: chat is control's (M125), and there's none here.
   // (The fleet reads its panes after the swarm draws: wait for them.)
   await expect.poll(() => page.evaluate(() => window.__arugula.fleet.panes.length)).toBeGreaterThan(0);
@@ -281,7 +283,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   expect(await features()).toEqual({
     ...{ labs: true, dev: true, blocks: false, vms: true, studio: true, block_channels: false },
     // `labs`, the one switch from before, is every flag (#665).
-    flags: ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents", "docs"],
+    flags: ["chat", "vms", "studio", "workspaces", "guest-ssh", "forges", "agents", "docs"],
   });
 
   await open(page);
