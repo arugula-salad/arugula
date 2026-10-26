@@ -380,6 +380,7 @@ mod tests {
             pointer,
             note: note.into(),
             status,
+            live: None,
             agent: None,
             created_at: 0,
             updated_at: 0,
