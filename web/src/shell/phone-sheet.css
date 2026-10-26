@@ -58,7 +58,7 @@
 
 .sheet-group {
   padding-top: 8px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .sheet-panel > .sheet-group:first-child {
@@ -108,7 +108,7 @@
   gap: 2px;
   margin: 0 10px 10px;
   padding: 3px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--chip-radius);
   background: var(--bg);
 }

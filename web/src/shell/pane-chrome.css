@@ -6,8 +6,8 @@
 
 .grid.pane-chrome .pane-header.live {
   box-sizing: border-box;
-  padding: 0 7px 0 9px;
-  gap: 7px;
+  padding: 0 var(--space-2);
+  gap: var(--space-2);
   border-radius: var(--radius, 0) var(--radius, 0) 0 0;
   background: var(--chrome-panel, var(--surface));
   color: var(--subtle);
@@ -96,7 +96,7 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   border-radius: 0;
 }
 
-.grid.pane-chrome .pane-header.live { gap: 9px; }
+.grid.pane-chrome .pane-header.live { gap: var(--space-2); }
 /* Two sizes in the header: 13px for the title, 11px for everything about
    it (UI audit #171). */
 .grid.pane-chrome .pane-header-n {

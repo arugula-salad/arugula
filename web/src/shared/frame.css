@@ -6,7 +6,9 @@
 .frame {
   /* The shell's `.app.ws` says the same in style.css. */
   --head-h: 44px;
-  /* style.css's --line-strong (UI audit #180). */
+  /* style.css's --line-strong (UI audit #180). The frame's own rules use
+     that; pane-chrome.css keeps this name, as its grid also shows outside
+     the frame, where it falls back to --raised (UI audit #181). */
   --chrome-line: var(--line-strong);
   --chrome-panel: color-mix(in srgb, var(--bg) 60%, var(--surface));
   --chrome-selected: color-mix(in srgb, var(--accent) 14%, var(--surface));
@@ -16,7 +18,7 @@
 .ws-head {
   padding-left: 0;
   gap: 10px;
-  border-bottom-color: var(--chrome-line);
+  border-bottom-color: var(--line-strong);
 }
 
 /* "Arugula / Control" on the shell, "Arugula / Projects" on the platform
@@ -29,7 +31,7 @@
   gap: 10px;
   padding: 0 18px;
   box-sizing: border-box;
-  border-right: 1px solid var(--chrome-line);
+  border-right: 1px solid var(--line-strong);
   color: var(--subtle);
   font-size: 12px;
   font-weight: 500;

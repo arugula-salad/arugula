@@ -262,7 +262,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   height: 24px;
   margin: 0 6px;
   padding: 0 4px 0 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--btn-radius);
   background: var(--bg);
   color: var(--dim);
@@ -296,7 +296,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   gap: 6px;
   padding: 0 10px;
   white-space: nowrap;
-  border-left: 1px solid var(--divider);
+  border-left: 1px solid var(--line);
 }
 
 .account-button:hover {
@@ -540,7 +540,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 6px 6px 6px 12px;
   border-radius: var(--card-radius);
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   box-shadow: var(--shadow-md);
   color: var(--dim);
   font-size: 12px;
@@ -849,7 +849,7 @@ button.att {
 .sheet-card {
   border-radius: var(--card-radius);
   background: var(--bg);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   padding: 2px 4px;
 }
 
@@ -858,7 +858,7 @@ button.att {
 }
 
 .sheet-session.here {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--divider));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
 }
 
 .sheet-session-head {
@@ -894,7 +894,7 @@ button.att {
   min-height: 38px;
   font-size: 14px;
   color: var(--dim);
-  border-left: 2px solid var(--divider);
+  border-left: 2px solid var(--line);
   border-radius: 0 var(--card-radius) var(--card-radius) 0;
 }
 
@@ -1390,7 +1390,7 @@ button.att {
   align-items: center;
   padding: 4px;
   background: var(--surface);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .browser-bar button,
@@ -1419,7 +1419,7 @@ button.att {
   width: 100%;
   height: 26px;
   padding: 0 8px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
@@ -1489,7 +1489,7 @@ button.att {
   padding: 4px 8px;
   font-size: 12px;
   color: var(--dim);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 /* ---- hosts (M4a): which daemon this window shows */
@@ -1498,7 +1498,7 @@ button.att {
   padding: 0 10px;
   white-space: nowrap;
   color: var(--info);
-  border-right: 1px solid var(--divider);
+  border-right: 1px solid var(--line);
 }
 
 .host-button:hover {
@@ -1512,7 +1512,7 @@ button.att {
   padding: 0 10px;
   white-space: nowrap;
   color: var(--dim);
-  border-right: 1px solid var(--divider);
+  border-right: 1px solid var(--line);
 }
 
 .host-crumb {
@@ -1558,7 +1558,7 @@ button.att {
   align-items: center;
   padding: 5px 8px;
   background: var(--surface);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
 
@@ -1587,7 +1587,7 @@ button.att {
   align-items: center;
   padding: 4px 8px;
   background: var(--surface);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   font-size: 12px;
 }
 
@@ -1671,7 +1671,7 @@ button.att {
 
 /* #79: turns Continue won't remember, folded and dimmed. */
 .agent-forgotten {
-  border-left: 2px dashed var(--divider);
+  border-left: 2px dashed var(--line);
   padding-left: 8px;
 }
 
@@ -1698,7 +1698,7 @@ button.att {
 
 .agent-tool {
   flex-shrink: 0;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-left: 3px solid var(--dim);
   border-radius: var(--field-radius);
   background: var(--surface);
@@ -1824,7 +1824,7 @@ button.att {
   gap: 8px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--raised);
+  border-top: 1px solid var(--line);
 }
 
 .agent-perm-standing label {
@@ -1867,7 +1867,7 @@ button.att {
   align-items: center;
   justify-content: space-between;
   padding: 6px 0;
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
 }
 
 .rules-list .rule-text {
@@ -1954,7 +1954,7 @@ button.att {
   gap: 6px;
   align-items: flex-end;
   padding: 6px 8px 8px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
   background: var(--surface);
 }
 
@@ -2138,7 +2138,7 @@ button.att {
   font-size: 12px;
   color: var(--fg);
   background: var(--bg);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
 }
 
@@ -3107,7 +3107,7 @@ button.att {
   gap: 12px;
   margin-top: 14px;
   padding-top: 10px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .team-lock p {
@@ -3129,7 +3129,7 @@ button.att {
   align-items: center;
   gap: 10px;
   padding: 6px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 @media (max-width: 700px) {
@@ -3270,7 +3270,7 @@ button.att {
 
 .control-both-card {
   padding: 8px 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   min-width: 0;
   overflow-wrap: anywhere;
@@ -3285,7 +3285,7 @@ button.att {
 .control-aside {
   margin-top: 14px;
   padding: 8px 12px;
-  border-left: 2px solid var(--divider);
+  border-left: 2px solid var(--line);
   color: var(--dim);
 }
 
@@ -3590,7 +3590,7 @@ button.att {
   align-items: center;
   gap: 4px 14px;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .control-who {
@@ -4304,7 +4304,7 @@ button.att {
   align-items: center;
   gap: 14px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
   background: var(--surface);
   min-width: 0;
 }
@@ -4348,7 +4348,7 @@ button.att {
   padding: 4px 12px;
   font-size: 12px;
   color: var(--mute);
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
 }
 .follow-note.paused {
   color: var(--warn);
@@ -4393,7 +4393,7 @@ button.att {
   padding: 4px 8px;
   min-height: 34px;
   background: var(--surface);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -4467,7 +4467,7 @@ button.att {
 }
 
 .diff-file {
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .diff-file-head {
@@ -4547,7 +4547,7 @@ button.att {
   gap: 2px 10px;
   padding: 3px 8px;
   font: 12px/1.4 system-ui, sans-serif;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
 
@@ -4807,7 +4807,7 @@ button.diff-why-run {
 }
 
 .ws-gate + .ws-gate {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .ws-gate-what {
@@ -4846,7 +4846,7 @@ button.diff-why-run {
 .ws-why {
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -4896,7 +4896,7 @@ button.diff-why-run {
 
 .ws-card {
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   padding: 8px 10px;
   display: flex;
@@ -5099,7 +5099,7 @@ button.diff-why-run {
   font-size: 12px;
   padding: 2px 9px;
   border-radius: var(--chip-radius);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   background: var(--surface);
   color: var(--fg);
 }
@@ -5154,7 +5154,7 @@ button.diff-why-run {
   }
 
   .forge-two > .forge-side {
-    border-left: 1px solid var(--divider);
+    border-left: 1px solid var(--line);
     padding-left: 18px;
   }
 }
@@ -5163,7 +5163,7 @@ button.diff-why-run {
   font-size: 12px;
   margin: 3px 0 0 12px;
   padding-left: 8px;
-  border-left: 2px solid var(--divider);
+  border-left: 2px solid var(--line);
   overflow-wrap: anywhere;
 }
 
@@ -5203,7 +5203,7 @@ button.diff-why-run {
   gap: 6px 12px;
   margin: 0 -12px -14px;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
   background: var(--bg);
 }
 
@@ -5259,7 +5259,7 @@ button.diff-why-run {
 
 .doc-pending {
   padding: 8px 10px;
-  border: 1px dashed var(--divider);
+  border: 1px dashed var(--line);
   border-radius: var(--field-radius);
   color: var(--dim);
   font-size: 13px;
@@ -5370,7 +5370,7 @@ button.diff-why-run {
 
 .md pre {
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   padding: 8px 10px;
   overflow-x: auto;
@@ -5389,7 +5389,7 @@ button.diff-why-run {
 
 .md hr {
   border: 0;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
   margin: 1em 0;
 }
 
@@ -5405,7 +5405,7 @@ button.diff-why-run {
 
 .md th,
 .md td {
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   padding: 3px 8px;
   text-align: left;
 }
@@ -5414,7 +5414,7 @@ button.diff-why-run {
 .md details {
   margin: 0 0 0.7em;
   padding: 4px 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
 }
 
@@ -5527,7 +5527,7 @@ button.diff-why-run {
 }
 
 .forge-draft + .forge-draft {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .forge-want {
@@ -6009,7 +6009,7 @@ button.diff-why-run {
   align-items: center;
   gap: 2px;
   padding-left: 8px;
-  border-left: 1px solid var(--divider);
+  border-left: 1px solid var(--line);
 }
 
 /* Recipes and Team are the Agents page's own tabs, not more places: small,
@@ -6144,7 +6144,7 @@ button.diff-why-run {
   padding: 10px 12px;
   border-radius: var(--card-radius);
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
 }
 
 /* What went wrong on the Agents and Docs pages, the same red. */
@@ -6181,7 +6181,7 @@ button.diff-why-run {
   gap: 12px;
   margin: 0 12px;
   padding: 8px 4px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 /* Cleared while the pointer was over the list: held in place, faded. */
@@ -6282,7 +6282,7 @@ button.diff-why-run {
   max-width: 760px;
   border-radius: var(--card-radius);
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   text-align: left;
 }
 
@@ -6317,7 +6317,7 @@ button.diff-why-run {
   box-sizing: border-box;
   padding: 4px 8px;
   border-radius: var(--field-radius);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   background: var(--bg);
   color: var(--fg);
 }
@@ -6414,7 +6414,7 @@ button.diff-why-run {
   padding: 8px 10px;
   border-radius: var(--card-radius);
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   min-width: 0;
 }
 
@@ -6441,7 +6441,7 @@ button.diff-why-run {
 }
 
 .worn-mcp {
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
 }
 
 .offer-actions {
@@ -6581,7 +6581,7 @@ button.diff-why-run {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-left: 1px solid var(--divider);
+  border-left: 1px solid var(--line);
   box-shadow: var(--shadow-md);
 }
 
@@ -6599,7 +6599,7 @@ button.diff-why-run {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .thread-panel header strong {
@@ -6637,7 +6637,7 @@ button.diff-why-run {
   flex: none;
   margin: 0;
   padding: 10px 12px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .thread-error {
@@ -6654,7 +6654,7 @@ button.diff-why-run {
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .thread-offer p {
@@ -6800,7 +6800,7 @@ button.diff-why-run {
 .thread-text code {
   padding: 1px 4px;
   border-radius: var(--tag-radius);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   background: var(--letterbox);
   color: var(--peach);
   font: 12px ui-monospace, monospace;
@@ -6834,7 +6834,7 @@ button.diff-why-run {
 .msg-code {
   margin: 4px 0;
   padding: 8px 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--letterbox);
   font: 12px/1.4 ui-monospace, monospace;
@@ -6856,12 +6856,12 @@ button.diff-why-run {
 .msg-new::after {
   content: "";
   flex: 1;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .msg-day span {
   padding: 2px 12px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--chip-radius);
   color: var(--fg);
 }
@@ -6888,7 +6888,7 @@ button.diff-why-run {
   right: 16px;
   z-index: 1;
   display: none;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
@@ -6926,7 +6926,7 @@ button.diff-why-run {
   flex-direction: column;
   min-width: 190px;
   padding: 4px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
@@ -6980,7 +6980,7 @@ button.diff-why-run {
 .react-menu.with-items > .react-menu-items:not(:first-child) {
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 /* "↓ 3 new messages", floating over the bottom of a list scrolled up. The
@@ -7090,7 +7090,7 @@ button.diff-why-run {
   align-items: center;
   gap: 5px;
   padding: 1px 8px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--chip-radius);
   background: var(--raised);
   color: var(--dim);
@@ -7134,7 +7134,7 @@ button.diff-why-run {
   display: flex;
   gap: 2px;
   padding: 4px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
@@ -7482,7 +7482,7 @@ button.thread-quote:hover {
   margin: 0;
   padding: 4px;
   list-style: none;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
@@ -7653,7 +7653,7 @@ button.thread-quote:hover {
   display: flex;
   gap: 8px;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .chat-block-bar .chat-search {
@@ -7690,7 +7690,7 @@ button.thread-quote:hover {
   height: 24px;
   padding: 0 10px;
   border-radius: var(--field-radius);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   background: var(--bg);
   color: var(--dim);
   text-align: left;
@@ -7750,7 +7750,7 @@ input.chat-search {
   width: 100%;
   margin: 8px 0;
   padding: 8px 12px 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   text-align: left;
   --msg-gutter: 28px;
@@ -7809,7 +7809,7 @@ input.chat-search {
 
 .chat-switcher {
   width: min(560px, calc(100vw - 32px));
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--panel-radius);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
@@ -7821,7 +7821,7 @@ input.chat-search {
   width: 100%;
   padding: 14px 16px;
   border: 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   background: none;
   color: var(--fg);
   font: inherit;
@@ -7878,7 +7878,7 @@ input.chat-search {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-right: 1px solid var(--divider);
+  border-right: 1px solid var(--line);
 }
 
 .chat-side-head {
@@ -7888,7 +7888,7 @@ input.chat-search {
   height: 49px;
   padding: 0 8px;
   box-sizing: border-box;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 /* Whose rooms these are, then ⋯ for the view's menu (UI audit #169). */
@@ -8091,7 +8091,7 @@ input.chat-search {
   align-items: center;
   gap: 0;
   padding: 3px 8px 3px 4px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--btn-radius);
   color: var(--dim);
 }
@@ -8137,7 +8137,7 @@ input.chat-search {
   width: 340px;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--divider);
+  border-left: 1px solid var(--line);
   background: var(--bg);
 }
 
@@ -8156,7 +8156,7 @@ input.chat-search {
 
 .chat-peek {
   margin-bottom: 8px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--letterbox);
   overflow: hidden;
@@ -8166,7 +8166,7 @@ input.chat-search {
   display: block;
   width: 100%;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   text-align: left;
   color: var(--dim);
   font-size: 12px;
@@ -8323,7 +8323,7 @@ input.chat-search {
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .chat-head > strong {
@@ -8462,7 +8462,7 @@ input.chat-search {
   font: inherit;
   background: var(--surface);
   color: var(--fg);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--btn-radius);
   padding: 6px;
 }
@@ -8585,7 +8585,7 @@ input.chat-search {
 .forge-status {
   font-size: 12px;
   padding: 8px 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
 }
@@ -8639,7 +8639,7 @@ input.chat-search {
   font: inherit;
   color: var(--fg);
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   padding: 7px 9px;
   width: 100%;
@@ -8658,7 +8658,7 @@ input.chat-search {
 }
 
 .forge-preview {
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   padding: 10px 12px;
   min-height: 320px;
@@ -8741,7 +8741,7 @@ input.chat-search {
   min-height: 220px;
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .ws-graph + .review-body {
@@ -8923,7 +8923,7 @@ input.chat-search {
   overflow: hidden;
   border-radius: var(--field-radius);
   background: var(--bg);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
 }
 
 .sample-bar {
@@ -8975,7 +8975,7 @@ html[data-finish="brushed"] .sized-elsewhere button {
   border-radius: 4px;
   background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--raised);
   color: var(--fg);
-  border: 1px solid color-mix(in srgb, var(--raised) 60%, #000);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, #000);
   box-shadow: inset 0 1px 0 #fff6, 0 1px 1px #0004;
 }
 
@@ -9325,7 +9325,7 @@ a.ws-ov-name, a.ws-ov-pane { text-decoration: none; }
   padding: 6px 0 8px;
   box-sizing: border-box;
   background: var(--letterbox);
-  border-right: 1px solid var(--raised);
+  border-right: 1px solid var(--line);
   app-region: drag;
   -webkit-app-region: drag;
 }
@@ -9424,7 +9424,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   padding: 0 0 0 10px;
   box-sizing: border-box;
   background: var(--surface);
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
   app-region: drag;
   -webkit-app-region: drag;
 }
@@ -9471,7 +9471,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   gap: 5px;
   height: 20px;
   padding: 0 8px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--chip-radius);
   color: var(--dim);
   font-size: 11px;
@@ -9568,7 +9568,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   margin: 0;
   gap: 8px;
   padding: 0 6px 0 10px;
-  border-color: var(--raised);
+  border-color: var(--line);
   background: var(--bg);
 }
 
@@ -9580,7 +9580,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-share {
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--btn-radius);
   color: var(--fg);
 }
@@ -9592,7 +9592,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-head .account-button {
   align-self: stretch;
-  border-left: 1px solid var(--raised);
+  border-left: 1px solid var(--line);
 }
 
 .ws-row {
@@ -9610,7 +9610,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   flex-direction: column;
   min-height: 0;
   background: var(--surface);
-  border-right: 1px solid var(--raised);
+  border-right: 1px solid var(--line);
 }
 
 /* A narrow window: over the panes, so their terminals keep their size. */
@@ -9668,7 +9668,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   margin: 2px 10px 8px;
   padding: 0 8px;
   height: 30px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--bg);
   color: var(--dim);
@@ -9874,7 +9874,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   align-items: stretch;
   padding: 0 6px;
   background: var(--surface);
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
 }
 
 .ws-tabs .tabbar {
@@ -9889,7 +9889,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-tabs .tab.selected {
-  border-color: var(--raised);
+  border-color: var(--line);
   box-shadow: inset 0 2px 0 var(--accent);
 }
 
@@ -9912,7 +9912,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   flex-direction: column;
   min-height: 0;
   background: var(--surface);
-  border-top: 1px solid var(--raised);
+  border-top: 1px solid var(--line);
   font-size: 12px;
 }
 
@@ -10153,7 +10153,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   gap: 14px;
   padding: 0 12px;
   background: var(--surface);
-  border-top: 1px solid var(--raised);
+  border-top: 1px solid var(--line);
   color: var(--dim);
   font-size: 12px;
   white-space: nowrap;
@@ -10196,7 +10196,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-hint kbd {
   padding: 0 5px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--tag-radius);
   font: 11px system-ui, sans-serif;
   color: var(--subtle);
@@ -10285,7 +10285,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-left: 1px solid var(--raised);
+  border-left: 1px solid var(--line);
   box-shadow: var(--shadow-md);
 }
 
@@ -10294,7 +10294,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   align-items: center;
   gap: 8px;
   padding: 12px 10px 8px 16px;
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
 }
 
 .ws-att-head h2 {
@@ -10312,7 +10312,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   max-height: 38%;
   overflow-y: auto;
   padding: 6px;
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
   scrollbar-width: thin;
 }
 
@@ -10386,7 +10386,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   gap: 6px;
   margin: 0 0 14px;
   padding: 10px 12px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--bg);
 }
@@ -10429,7 +10429,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-att-go {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid var(--raised);
+  border-top: 1px solid var(--line);
 }
 
 .ws-att-foot {
@@ -10438,7 +10438,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 16px;
-  border-top: 1px solid var(--raised);
+  border-top: 1px solid var(--line);
   color: var(--dim);
   font-size: 12px;
 }
@@ -10483,7 +10483,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-ov-back {
   height: 30px;
   padding: 0 12px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--btn-radius);
   color: var(--fg);
 }
@@ -10502,7 +10502,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-ov-session {
   min-width: 0;
   padding: 10px 12px 12px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--panel-radius);
   background: var(--surface);
 }
@@ -10605,7 +10605,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-ov-pane.active {
-  border-color: var(--raised);
+  border-color: var(--line);
 }
 
 .ws-ov-kind {
@@ -10892,7 +10892,7 @@ html[data-workspace="new"] .thread-panel {
   height: 34px;
   padding: 0 10px;
   background: var(--bg);
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
   color: var(--dim);
   font-size: 12px;
   white-space: nowrap;
@@ -10965,13 +10965,13 @@ html[data-workspace="new"] .thread-panel {
 }
 
 .pane-toolbar > .pt-add {
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   color: var(--fg);
 }
 
 .pt-add kbd {
   padding: 0 4px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--tag-radius);
   font: 10px system-ui, sans-serif;
   color: var(--muted);
@@ -10998,7 +10998,7 @@ html[data-workspace="new"] .thread-panel {
   gap: 10px;
   padding: 14px;
   background: var(--surface);
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   box-shadow: var(--shadow-lg);
   color: var(--fg);
@@ -11023,7 +11023,7 @@ html[data-workspace="new"] .thread-panel {
   flex-wrap: wrap;
   gap: 2px;
   padding: 2px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--bg);
 }
@@ -11056,7 +11056,7 @@ html[data-workspace="new"] .thread-panel {
   height: 28px;
   padding: 0 8px;
   box-sizing: border-box;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--bg);
   color: var(--fg);
@@ -11076,7 +11076,7 @@ html[data-workspace="new"] .thread-panel {
   flex: none;
   height: 28px;
   padding: 0 12px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--btn-radius);
 }
 
@@ -11196,7 +11196,7 @@ html[data-workspace="new"] .thread-panel {
 .ws-stale {
   flex: none;
   padding: 5px 12px;
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--warn) 12%, var(--surface));
   color: var(--fg);
   font-size: 12px;
@@ -11335,7 +11335,7 @@ html[data-workspace="new"] .thread-panel {
   max-height: 60vh;
   overflow-y: auto;
   padding: 10px 12px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: 0 6px 24px color-mix(in srgb, var(--letterbox) 45%, transparent);
@@ -11394,7 +11394,7 @@ html[data-workspace="new"] .thread-panel {
   display: flex;
   justify-content: flex-end;
   padding: 2px 8px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 /* Chat's Markdown (#109): a message is a line of talk, not a document.
@@ -11434,7 +11434,7 @@ html[data-workspace="new"] .thread-panel {
 }
 
 .md.md-chat code {
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   background: var(--letterbox);
   color: var(--peach);
 }
@@ -11515,7 +11515,7 @@ html[data-workspace="new"] .thread-panel {
   max-width: calc(100vw - 24px);
   height: 340px;
   max-height: 60dvh;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
@@ -11542,7 +11542,7 @@ html[data-workspace="new"] .thread-panel {
   display: flex;
   overflow-x: auto;
   padding: 0 4px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .emoji-cats button {
@@ -11625,7 +11625,7 @@ html[data-workspace="new"] .thread-panel {
   width: 100%;
   max-width: 440px;
   padding: 8px 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-left: 3px solid var(--raised-hover);
   border-radius: var(--card-radius);
   background: var(--surface);
@@ -11848,7 +11848,7 @@ html[data-workspace="new"] .thread-panel {
   flex-direction: column;
   min-width: 190px;
   padding: 4px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
@@ -11884,7 +11884,7 @@ html[data-workspace="new"] .thread-panel {
 
 .saved-actions button {
   padding: 2px 8px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--chip-radius);
   color: var(--dim);
 }
@@ -12021,7 +12021,7 @@ html[data-workspace="new"] .thread-panel {
   max-width: 100%;
   min-width: 0;
   padding: 0;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--surface);
   overflow: hidden;
@@ -12078,7 +12078,7 @@ html[data-workspace="new"] .thread-panel {
   box-sizing: border-box;
   width: min(100%, 320px);
   padding: 8px 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--surface);
 }
@@ -12204,7 +12204,7 @@ html[data-workspace="new"] .thread-panel {
   max-height: min(420px, 70vh);
   overflow-y: auto;
   padding: 12px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
@@ -12247,7 +12247,7 @@ html[data-workspace="new"] .thread-panel {
 
 .chat-pins li {
   padding: 8px 0;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .chat-pin-who {

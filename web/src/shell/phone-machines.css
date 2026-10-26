@@ -11,7 +11,7 @@
   min-height: 44px;
   margin: 0 4px 6px;
   padding: 0 12px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
   color: var(--fg);
@@ -139,7 +139,7 @@
 .host-add {
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .host-add button {

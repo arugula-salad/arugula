@@ -19,7 +19,7 @@
 .issues-states button {
   height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--btn-radius);
   background: var(--surface);
   color: var(--fg);
@@ -96,7 +96,7 @@ details.issues-note > summary {
   list-style: none;
   margin: 12px 0 0;
   padding: 0;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
 }
 
@@ -112,7 +112,7 @@ details.issues-note > summary {
 }
 
 .issue-row + .issue-row {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .issue-row-main {
@@ -230,7 +230,7 @@ details.issues-note > summary {
   gap: 24px;
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .issue-side {
@@ -283,7 +283,7 @@ details.issues-note > summary {
 .issue-thread .md code {
   padding: 1px 4px;
   border-radius: var(--tag-radius);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   background: var(--letterbox);
   color: var(--peach);
   font: 12px ui-monospace, monospace;
@@ -438,7 +438,7 @@ details.issues-note > summary {
 .issue-stale {
   margin: 8px 0 0;
   padding: 6px 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   color: var(--subtle);
   font-size: 12px;

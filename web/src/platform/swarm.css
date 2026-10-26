@@ -304,7 +304,7 @@
   position: relative;
   margin: 0;
   padding: 10px 12px 10px 14px;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--divider));
+  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line));
   border-radius: var(--card-radius);
   background: color-mix(in srgb, var(--c) 7%, var(--surface));
   animation: sw-card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
@@ -318,7 +318,7 @@
     background: oklch(from var(--c) 0.955 min(calc(c * 0.4), 0.05) h);
   }
   html[data-scheme="light"] .platform .sw-cards .sw-card.seen {
-    border-color: var(--divider);
+    border-color: var(--line);
     background: var(--surface);
   }
 }
@@ -356,7 +356,7 @@
 
 /* An inbox entry once seen: still there, no longer calling. */
 .platform .sw-cards .sw-card.seen {
-  border-color: var(--divider);
+  border-color: var(--line);
   background: var(--surface);
 }
 

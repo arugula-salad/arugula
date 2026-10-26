@@ -17,7 +17,7 @@
 
 .thread-footer:hover,
 .thread-footer:focus-visible {
-  border-color: var(--divider);
+  border-color: var(--line);
   background: var(--surface);
 }
 
@@ -103,7 +103,7 @@
 .chat-info.thread-follow {
   width: auto;
   padding: 0 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   font-size: 12px;
 }
 
