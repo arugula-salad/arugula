@@ -55,6 +55,19 @@ test("the Chat button counts what chat lists, and only that", () => {
   assert.deepEqual(chatUnread([room("channel", { unread: 9, mentions: 1, muted: true })]), { n: 1, mention: true });
 });
 
+test("a project's Chat counts its own chat's rooms: a team's, or Personal's (UI audit #193)", () => {
+  const rooms = [
+    room("channel", { unread: 2, mentions: 1, level: "all" }),
+    room("dm", { team: "t2", unread: 3 }),
+    room("pane", { unread: 4 }),
+    room("object", { unread: 9, target: "iss_1" }),
+  ];
+  assert.deepEqual(chatUnread(rooms, "t1"), { n: 2, mention: true });
+  assert.deepEqual(chatUnread(rooms, "t2"), { n: 3, mention: false });
+  assert.deepEqual(chatUnread(rooms, null), { n: 4, mention: false }, "Personal: the rooms of no team");
+  assert.deepEqual(chatUnread(rooms), { n: 9, mention: true }, "every room chat lists");
+});
+
 test("an issue's or a run's row counts its own thread", () => {
   const rooms = [thread("iss_a", { unread: 3 }), thread("run_b", { unread: 2, mentions: 1 }), room("pane", { target: "iss_a", unread: 7 })];
   assert.deepEqual({ ...objectUnread(rooms, "iss_a"), room: undefined }, { n: 3, mention: false, room: undefined });

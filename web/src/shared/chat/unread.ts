@@ -57,12 +57,15 @@ export function listedInChat(r: ChatRoom): boolean {
 }
 
 /** The Chat button's count, and whether any of it mentions me: the rooms
- * chat lists, muted ones by their mentions. */
-export function chatUnread(rooms: readonly ChatRoom[]): { n: number; mention: boolean } {
+ * chat lists, muted ones by their mentions. With `team`, only one
+ * project's chat's (UI audit #193, as `inScope` in ./sidebar): a team's
+ * rooms, or (`null`, Personal) the rooms of no team. */
+export function chatUnread(rooms: readonly ChatRoom[], team?: string | null): { n: number; mention: boolean } {
   let n = 0;
   let mention = false;
   for (const r of rooms) {
     if (!listedInChat(r)) continue;
+    if (team !== undefined && (team ? r.team !== team : !!r.team)) continue;
     n += counted(r);
     mention ||= r.mentions > 0;
   }
