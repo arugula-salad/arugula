@@ -122,9 +122,9 @@ fn said_line(s: &Said) -> String {
 
 fn rules(t: &Thread) -> String {
     let branch = if t.slug.is_empty() {
-        "arugula/<this session's id>".to_owned()
+        "arugula/<8 hex of this session's id>".to_owned()
     } else {
-        format!("arugula/<this session's id>-{}", t.slug)
+        format!("arugula/<8 hex of this session's id>-{}", t.slug)
     };
     let mut out = String::from("Rules:\n");
     match &t.repo {
