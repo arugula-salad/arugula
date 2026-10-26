@@ -1692,6 +1692,10 @@ async fn an_agent_drives_cloud_workspaces_through_control() {
     assert!(why.contains("give project"), "{why}");
     let mut create = create;
     create["project"] = json!("prj_a");
+    create["size"] = json!("huge");
+    let why = refused(&s, "cloud", create.clone()).await;
+    assert!(why.contains("size is small or large"), "{why}");
+    create["size"] = json!("large");
     let made = call(&s, "cloud", create).await;
     assert_eq!(made["cloud_workspace"]["id"], "hw_0a", "{made}");
     {
@@ -1699,6 +1703,7 @@ async fn an_agent_drives_cloud_workspaces_through_control() {
         assert_eq!(bodies[0]["name"], "App box", "{bodies:?}");
         assert_eq!(bodies[0]["spec"]["repos"], json!(["https://github.com/example/app"]), "{bodies:?}");
         assert_eq!(bodies[0]["spec"]["packages"], json!(["ffmpeg", "pnpm"]), "{bodies:?}");
+        assert_eq!(bodies[0]["spec"]["size"], "large", "{bodies:?}");
     }
     let listed = call(&s, "list", json!({ "kind": "cloud_workspaces" })).await;
     let row = &listed["cloud_workspaces"][0];
