@@ -225,7 +225,9 @@ $0.0000045 a GiB-second, `hosted::usage::PRICES`):
 
 A paused box costs nothing, and `arugula-platform usage` reports each
 box's hours by its size, as E2B reports it. Sessions run on the
-workspace's box, so they get its size.
+workspace's box, so they get its size, and its snapshot (M263) is built on
+its size's template: after a size change, its next box starts from the
+template until a new snapshot is made.
 
 **Runs and their triggers (M214, platform step 7).** A run executes on one
 of a project's hosted workspaces. It starts by hand, on a schedule, or on a
