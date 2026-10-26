@@ -67,8 +67,7 @@ impl Handle for PaneAttention {
 impl Handle for PaneFollowUp {
     async fn handle(cx: &Cx<'_>, id: PaneId, req: FollowUpRequest) -> Result<FollowedUp, OpError> {
         let app = cx.app;
-        let who = cx.principal()?;
-        let by = crate::api::who_is(app, who).await.ok_or_else(shutting_down)?;
+        let by = cx.driver().await?.ok_or_else(shutting_down)?;
         if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {
             let name = (by.who != "owner").then_some(by.name.as_str());
             b.call_by("send", serde_json::json!({ "text": req.text }), name).await.map_err(bad)?;
