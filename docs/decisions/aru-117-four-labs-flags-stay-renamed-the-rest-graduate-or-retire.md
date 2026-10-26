@@ -9,8 +9,8 @@ source:
 question: "Which Labs features stay behind a flag, what are those flags called, and what becomes of the others and of their old names?"
 options:
   - id: "a"
-    label: "Keep four flags under clearer names, old names read forever; graduate chat, docs, guest ssh and the swarm's views; retire studio's connector"
-    how: "sandbox-providers, chant-workspaces, additional-forges and agent-delegation stay in Labs. vms, workspaces, forges and agents are aliases of them wherever a name comes in, in one table, and are listed nowhere. Chat and Docs are for everyone; guest ssh is a sharing setting, off by default; the swarm's views are a preference under Theme. The daemon's studio login and token connector goes, and chat's legacy thread import goes with no replacement. Each flag that leaves is a RETIRED name (aru-066)."
+    label: "Keep four flags under clearer names, old names read forever; graduate chat, docs, guest ssh and the swarm's views; retire studio's connector once the platform covers it"
+    how: "sandbox-providers, chant-workspaces, additional-forges and agent-delegation stay in Labs. vms, workspaces, forges and agents are aliases of them wherever a name comes in, in one table, and are listed nowhere. Chat and Docs are for everyone; guest ssh is a sharing setting, off by default; the swarm's views are a preference under Theme. The `studio` flag stays until the platform covers what its connector does; chat's legacy thread import goes with no replacement. Each flag that leaves is a RETIRED name (aru-066)."
     tradeoff: "Every place a flag name comes in has to resolve an alias, forever, and control has to learn the renames, which it didn't know before (aru-068)."
   - id: "b"
     label: "Rename the four flags with no aliases"
@@ -27,7 +27,7 @@ rejected:
   - option: "b"
     why: "A rename must not turn anything off: the old names stay readable forever."
   - option: "c"
-    why: "Chat, Docs, guest ssh and the swarm's views are finished features; studio's connector is superseded by the platform's app access."
+    why: "Chat, Docs, guest ssh and the swarm's views are finished features; studio's connector is to be superseded by the platform's app access."
 supersedes:
   - decision: "aru-064"
 evidence:
@@ -111,11 +111,14 @@ that still names it changes nothing:
 - **`swarm-themes`**: the swarm's city, hive and timeline views are
   everyone's, picked under the swarm's Theme and kept in the browser.
 
-**Studio's connector is retired.** The daemon's own studio login and
+**Studio's connector retires later.** The daemon's own studio login and
 personal-access-token connector (linking a studio, `/api/studio…`, its
-token) goes, with the `studio` flag (`RETIRED`). Opening apps beside
-terminals goes through the platform's app access; what that doesn't cover
-yet is follow-up work, not a reason to keep the connector.
+token) is to go, with the `studio` flag (then `RETIRED`), and opening apps
+beside terminals is to go through the platform's app access. It stays, behind
+`studio`, until the platform covers what the connector's hud follower does
+(a box agent's asks, hud gates as attention, sending prompts, Records) and
+signing in to an app in its frame is checked (Jake, 2026-10-26: native #206
+held).
 
 Where: `crates/proto/src/flags.rs` (`FLAGS`, `ALIASES`, `canonical`, `lookup`, `RETIRED`), `crates/control-wire/src/team.rs` (`FLAG_ALIASES`, `LOCAL_ONLY_FLAGS`), `crates/control/src/labs_flags.rs` and `db.rs` (`migrate`), `crates/daemon/src/ops/flags.rs`, `crates/daemon/src/main.rs` (`flags_cli`), `web/src/shell/client.ts` (`flag`), [docs/labs.md](../labs.md).
 From: Jake's Labs flags rethink (2026-10-26), native Arugula #202 to #207; swarm-themes in PR #1543.
