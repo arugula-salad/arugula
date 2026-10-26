@@ -14,6 +14,8 @@
    line           the tool it's on, the error it hit, or that its box went
                   quiet
    pre            its last turn's diffstat
+   finish line    what the workspace's finish step made of that turn (a
+                  check, or "failed" and its last lines)
 
    Palette tokens only, so every appearance holds; the swarm's font stacks
    where the page has them (control's platform page), else the UI's own. */
@@ -180,6 +182,20 @@ a.session-card-id:hover {
   font: 12px/1.35 var(--f-mono, ui-monospace, Menlo, monospace);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* The workspace's finish step (M261): a line, and a failure's last lines. */
+.session-card-finish,
+.session-card-finish p {
+  margin: 4px 0 0;
+}
+
+.session-card-finish code {
+  font-family: var(--f-mono, ui-monospace, Menlo, monospace);
+}
+
+.session-card-finish .bad {
+  color: var(--danger);
 }
 
 /* The question card inside it keeps its own look, without its outer gap. */

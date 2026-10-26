@@ -13,7 +13,12 @@
 //!   people give come back to the agent;
 //! - a daemon restart, between turns or mid-turn, neither loses nor doubles
 //!   a prompt, and the agent's conversation goes on;
-//! - with three sessions on the box a fourth waits, until one is stopped.
+//! - with three sessions on the box a fourth waits, until one is stopped;
+//! - the workspace's finish step (M261) runs after each turn as the
+//!   session's user: passing, the session is done; failing, the agent gets
+//!   one fix turn with its output, and failing again it's done, unpushed;
+//! - a session that ends leaves its slot clean: its checkout and its
+//!   user's `~/.claude` go.
 
 use std::{
     collections::BTreeMap,
@@ -24,7 +29,7 @@ use std::{
 
 use arugula_control_wire::{
     hosted::{EnrollRequest, Enrollment},
-    work::{SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork, Work},
+    work::{FinishResult, FinishStep, SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork, Work},
 };
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,
@@ -106,6 +111,11 @@ impl Fake {
 
     /// A new session, queued with its first prompt.
     fn start(&self, id: &str, slug: &str, prompt: SessionPrompt) {
+        self.start_with(id, slug, prompt, None);
+    }
+
+    /// [`Fake::start`], on a workspace whose spec has a finish step.
+    fn start_with(&self, id: &str, slug: &str, prompt: SessionPrompt, finish: Option<FinishStep>) {
         let work = SessionWork {
             session: id.into(),
             project: PROJECT.into(),
@@ -117,6 +127,7 @@ impl Fake {
             n: 0,
             prompts: vec![prompt],
             actions: vec![],
+            finish,
         };
         self.sessions.lock().unwrap().insert(id.into(), Ses { work, stopped: false });
     }
@@ -183,6 +194,11 @@ impl Fake {
 
     fn pulls(&self) -> u32 {
         *self.pulls.lock().unwrap()
+    }
+
+    /// Session `id`'s turn reports' details, in order.
+    fn turn_reports(&self, id: &str) -> Vec<SessionDetail> {
+        self.of(id).into_iter().filter(|(r, _)| r.kind == "turn").map(|(_, d)| d).collect()
     }
 }
 
@@ -372,12 +388,23 @@ fn asked(lines: &[String], text: &str) -> usize {
     lines.iter().filter(|l| l.starts_with(&format!("user: {text}"))).count()
 }
 
-#[test]
-fn a_hosted_machine_runs_sessions() {
+/// The box under test, its fake control, and where they keep things.
+struct Rig {
+    _rt: tokio::runtime::Runtime,
+    f: Fake,
+    marks: PathBuf,
+    homes: PathBuf,
+    sudo_log: PathBuf,
+    d: arugula_testkit::Daemon,
+}
+
+/// A hosted box, enrolled into a fake control, whose workspace has a clone
+/// of acme/app, with stand-ins for its session users and their agent.
+fn rig(tag: &str) -> Rig {
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     let f = Fake::new();
     let url = serve(&rt, f.clone());
-    let marks: PathBuf = std::env::temp_dir().join(format!("arugula-hosted-sessions-{}", std::process::id()));
+    let marks: PathBuf = std::env::temp_dir().join(format!("arugula-hosted-sessions-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
 
@@ -420,7 +447,7 @@ fn a_hosted_machine_runs_sessions() {
     let fake = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fake_acp.py");
     let agent = format!("sh -c 'FAKE_ACP_DIR=$HOME/.fake-acp exec python3 {}'", fake.display());
 
-    let mut d = arugulad!("hostedsessions")
+    let d = arugulad!(tag)
         .no_wisp()
         .no_tailscale()
         .state_dir(&state)
@@ -439,6 +466,12 @@ fn a_hosted_machine_runs_sessions() {
         .wait_secs(30)
         .start();
     wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
+    Rig { _rt: rt, f, marks, homes, sudo_log, d }
+}
+
+#[test]
+fn a_hosted_machine_runs_sessions() {
+    let Rig { _rt, f, marks, homes, sudo_log, mut d } = rig("main");
 
     // A session's first prompt: a turn as ses1, in its own clone, on its
     // branch, with the repo's CLAUDE.md as text.
@@ -593,4 +626,86 @@ fn a_hosted_machine_runs_sessions() {
     assert!(homes.join("ses2").join("work").join(&e).join(".git").exists(), "in the slot b had");
     let (status, _) = d.raw("GET", &format!("/api/blocks/{b_block}"), None);
     assert_eq!(status, 404, "b's agent block closed when it was stopped");
+    assert!(!homes.join("ses2").join("work").join(&b).exists(), "b's checkout went with it");
+}
+
+/// M261: the workspace's finish step, after each turn and before the push,
+/// as the session's user in its checkout. It passes: one turn, done. It
+/// fails, and the agent's one fix makes it pass. It fails twice: no third
+/// try, done with the failure on its turn's report (the card's). And an
+/// ended session's slot is left clean.
+#[test]
+fn a_finish_step_runs_after_each_turn() {
+    let Rig { _rt, f, marks, homes, sudo_log, d } = rig("finish");
+    let step = |cmd: &str| Some(FinishStep { command: cmd.into(), timeout_s: 0 });
+    let finish = |d: &SessionDetail| d.finish.clone().expect("the turn says what its finish step did");
+
+    // It passes: one turn, and it's done.
+    let p = ses('1');
+    f.start_with(&p, "pass", prompt(1, "acct1", "hello"), step("test -d .git && echo all good"));
+    wait(&marks, &f, "the passing session's turn", || f.state(&p) == "done");
+    let turns = f.turn_reports(&p);
+    assert_eq!(turns.len(), 1, "{turns:?}");
+    let ok = FinishResult { ok: true, command: "test -d .git && echo all good".into(), output_tail: String::new() };
+    assert_eq!(finish(&turns[0]), ok);
+    let said = std::fs::read_to_string(&sudo_log).unwrap();
+    assert!(
+        said.lines().any(|l| l.starts_with("-n -u ses1 -- env -i HOME=") && l.contains(" timeout -k 10 900 sh -c ")),
+        "it runs as the session's user, for 15 minutes at most: {said}"
+    );
+
+    // It fails, and the agent's fix (a turn from the finish step, with its
+    // output) makes it pass: still one turn of the thread's.
+    let x = ses('2');
+    let cmd = "test -f FIXED || { echo FIXED is missing; exit 1; }";
+    f.start_with(&x, "fix", prompt(2, "acct1", "hello"), step(cmd));
+    wait(&marks, &f, "the fixed session", || f.state(&x) == "done" && f.turn_reports(&x).len() == 2);
+    let turns = f.turn_reports(&x);
+    let first = finish(&turns[0]);
+    assert!(
+        !first.ok && first.output_tail.contains("FIXED is missing") && first.output_tail.ends_with("(exit 1)"),
+        "{first:?}"
+    );
+    assert_eq!(finish(&turns[1]), FinishResult { ok: true, command: cmd.into(), output_tail: String::new() });
+    assert_eq!(
+        f.moves(&x),
+        [
+            ("state", "queued", "working"),
+            ("turn", "working", "working"),
+            ("turn", "working", "working"),
+            ("state", "working", "done")
+        ]
+        .map(|(k, a, b)| (k.to_owned(), a.to_owned(), b.to_owned()))
+    );
+    assert_eq!(f.turns(&x).len(), 1, "the fix isn't a prompt of the thread's");
+    let lines = transcript(&d, block_of(&f, &x));
+    let at = lines.iter().position(|l| l.starts_with("user: The finish step failed")).expect("the fix prompt");
+    assert_eq!(lines[at - 1], "note: A follow-up from the finish step", "{lines:#?}");
+    assert!(lines[at].contains("FIXED is missing"), "with its output: {lines:#?}");
+    assert!(homes.join("ses2").join("work").join(&x).join("FIXED").exists());
+
+    // It fails twice: done, unpushed, with no third try.
+    let z = ses('3');
+    f.start_with(&z, "broken", prompt(3, "acct1", "hello"), step("echo it is broken; exit 3"));
+    wait(&marks, &f, "the broken session", || f.state(&z) == "done" && f.turn_reports(&z).len() == 2);
+    let n = f.pulls();
+    wait(&marks, &f, "more pulls", || f.pulls() > n + 10);
+    let turns = f.turn_reports(&z);
+    assert_eq!(turns.len(), 2, "no third try: {turns:?}");
+    for t in &turns {
+        let r = finish(t);
+        assert!(!r.ok && r.output_tail == "it is broken\n(exit 3)", "{r:?}");
+        assert_eq!(t.pushed, Some(false), "a failed finish step isn't pushed");
+    }
+    assert_eq!(f.state(&z), "done");
+
+    // A session that ends leaves its slot clean: its checkout and its
+    // user's ~/.claude go.
+    let claude = homes.join("ses2").join(".claude");
+    std::fs::create_dir_all(claude.join("projects")).unwrap();
+    std::fs::write(claude.join("projects").join("x.jsonl"), "{}\n").unwrap();
+    f.stop(&x);
+    let checkout = homes.join("ses2").join("work").join(&x);
+    wait(&marks, &f, "x's slot cleaned", || !checkout.exists() && !claude.exists());
+    assert!(homes.join("ses1").join("work").join(&p).exists(), "the others' are left alone");
 }

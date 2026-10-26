@@ -8,7 +8,9 @@
 //
 // It says the session's state (queued, working, needs input, done,
 // failed, stopped responding, stopped), its repo and branch, how long it's
-// run, the tool it's on or the error it hit, and what its last turn left.
+// run, the tool it's on or the error it hit, and what its last turn left,
+// with what the workspace's finish step made of it (M261): "finish: ✓ just
+// check", or "finish failed:" and the last lines of its output.
 // A box that hasn't been heard from for 60 s is "stopped responding" here
 // at once, against the platform's clock, before the platform marks it so.
 // What it asks is a question card (`../ask`), answered by any owner or
@@ -81,6 +83,16 @@ export function elapsed(ms: number): string {
   if (m < 60) return `${m}m ${String(s % 60).padStart(2, "0")}s`;
   const h = Math.floor(m / 60);
   return `${h}h ${String(m % 60).padStart(2, "0")}m`;
+}
+
+/** The last `n` lines of a finish step's output. */
+export function lastLines(text: string, n = 6): string {
+  return text.trimEnd().split("\n").slice(-n).join("\n");
+}
+
+/** What an idle session's stop says (M261, the platform's `idle: …`). */
+export function idleOf(c: SessionCard): string | null {
+  return c.state === "stopped" && c.reason?.startsWith("idle: ") ? c.reason.slice("idle: ".length) : null;
 }
 
 /** A permission's option id in words: `allow-once` is "Allow once". */
@@ -217,6 +229,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   const open = (hash: string, inPage: () => void) => (api.controlHref ? window.open(api.controlHref(hash), "_blank", "noopener") : inPage());
   const block = c.block && /^\d+$/.test(c.block) ? c.block : null;
   const asking = askOf(c);
+  const idle = idleOf(c);
   const port = c.ports[0];
   const page = api.sessionHref?.(c.project, c.session);
   return (
@@ -266,6 +279,11 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           {c.reason.replace(/^[a-z_]+: /, "")}
         </p>
       )}
+      {idle && (
+        <p class="session-card-line dim" data-session-idle>
+          {idle[0].toUpperCase() + idle.slice(1)}.
+        </p>
+      )}
       {c.turn && (
         <div class="session-card-turn" data-session-turn>
           <span class={c.turn.pushed ? "ok" : "dim"}>{c.turn.pushed ? "Pushed" : "Not pushed"}</span>
@@ -275,6 +293,19 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             {c.turn.uncommitted ? ` · ${c.turn.uncommitted} uncommitted` : ""}
           </span>
           {c.turn.diffstat && <pre data-session-diffstat>{c.turn.diffstat}</pre>}
+          {c.turn.finish &&
+            (c.turn.finish.ok ? (
+              <p class="session-card-finish" data-session-finish="ok">
+                finish: <span class="ok">✓</span> <code>{c.turn.finish.command}</code>
+              </p>
+            ) : (
+              <div class="session-card-finish" data-session-finish="failed">
+                <p class="bad">
+                  finish failed: <code>{c.turn.finish.command}</code>
+                </p>
+                {c.turn.finish.output_tail && <pre data-session-finish-output>{lastLines(c.turn.finish.output_tail)}</pre>}
+              </div>
+            ))}
         </div>
       )}
       {asking &&

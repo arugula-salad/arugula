@@ -116,3 +116,16 @@ fn the_repos_notes_are_text() {
     );
     assert!(!n.contains("AGENTS.md"), "an empty one is left out");
 }
+
+/// M261: the finish step's output goes to the agent fenced, in a fence its
+/// own backticks can't close, and only its last 4 KiB.
+#[test]
+fn the_finish_steps_output_is_fenced() {
+    let r = FinishResult { ok: false, command: "just check".into(), output_tail: "error:\n````\nnot a fence\n".into() };
+    let p = fix_prompt(&r);
+    assert!(p.contains("It ran `just check` in your checkout"), "{p}");
+    assert!(p.contains("\n`````text\nerror:\n````\nnot a fence\n`````\n"), "{p}");
+    let long = format!("{}é{}", "a".repeat(5000), "b".repeat(4095));
+    let kept = last(&long, 4096);
+    assert!(kept.len() <= 4096 && kept.ends_with('b') && kept.starts_with('b'), "on a character's edge");
+}
