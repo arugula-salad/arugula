@@ -541,7 +541,7 @@ async fn arugula_asks_which_box_and_repo() {
     post_in(&base, "ch_general", "b", "web, please", Some(p)).await;
     let s = sessions(&app, &t).pop().expect("started");
     assert_eq!((s.repo.as_deref(), s.workspace.as_str(), s.parent_seq), (Some("o/web"), "hw_dev", p as u64));
-    assert_eq!(s.branch, format!("arugula/{}-fix-the-canary", s.id));
+    assert_eq!(s.branch, format!("arugula/{}-fix-the-canary", &s.id[4..12]));
     // The session's card (M257) says it started.
     let said = crate::sessions_hydrate_tests::cards(&base, "ch_general", Some(p)).await;
     assert_eq!(said, [format!("session:{}", s.id)]);
