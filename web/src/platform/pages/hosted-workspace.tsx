@@ -102,7 +102,13 @@ const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.rou
 /** What its new boxes start from (M263): a snapshot made from its spec,
  * set up, or the template, and why the latest build failed. */
 function SnapshotLine({ s }: { s: Snapshot }) {
-  const made = s.built_at ? `New boxes start from a snapshot made ${when(s.built_at)}, set up.` : "New boxes run their setup.";
+  const made = s.built_at ? (
+    <>
+      New boxes start from a snapshot made <Time at={s.built_at} on />, set up.
+    </>
+  ) : (
+    "New boxes run their setup."
+  );
   return (
     <div data-hosted-snapshot={s.status}>
       <p class="dim">
