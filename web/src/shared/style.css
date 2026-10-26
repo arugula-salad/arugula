@@ -1128,6 +1128,8 @@ button.att {
 
 .att.failed {
   color: var(--danger);
+  /* "!" (UI audit #185): heavy enough to read at the badge's size. */
+  font-weight: 800;
 }
 
 @keyframes pulse {
