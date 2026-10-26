@@ -2342,6 +2342,60 @@ auth = "daemon"
 clients = ["daemon"]
 note = "An opted-in machine's forge blocks' attention, items and reasons without titles (M171's shadow period): compared with the owner's inbox and logged, nothing returned but counts. Rate-limited per account."
 
+# ---- platform: boards (live status board, step 1)
+# A project's boards, for its members: a team's owners and editors change
+# them, its viewers read them; anyone else gets 404. Behind the `boards`
+# Labs flag (the account's, else a team's): without it every route here
+# answers 404. `{project}` is a project's id or `personal`.
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/boards"  # wire::boards::PROJECT_BOARDS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project's boards, oldest first."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/boards"  # wire::boards::PROJECT_BOARDS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Makes a board in the project: owners and editors."
+
+[[route]]
+method = "GET"
+path = "/api/boards/{id}"  # wire::boards::BOARD
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A board with its zones and rows in order: any member."
+
+[[route]]
+method = "PUT"
+path = "/api/boards/{id}/entries"  # wire::boards::BOARD_ENTRIES
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Makes or changes a zone or a row (owners and editors). A change to a title, pointer or note names the rev it read and is refused with 409 stale_rev if the entry moved on; a status alone needs none."
+
+[[route]]
+method = "DELETE"
+path = "/api/boards/{id}/entries/{entry}"  # wire::boards::BOARD_ENTRY
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Deletes a row, or a zone and its rows: owners and editors."
+
+[[route]]
+method = "POST"
+path = "/api/boards/{id}/entries/{entry}/move"  # wire::boards::BOARD_ENTRY_MOVE
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Reorders a row or a zone, within or between zones: owners and editors."
+
 # ---- platform: native issues (M195, platform step 6)
 # A project's own issues, for its members: a team's owners and editors
 # change them, its viewers read them; anyone else gets 404. Behind chat's

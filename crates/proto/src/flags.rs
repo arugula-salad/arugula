@@ -93,6 +93,8 @@ pub const FORGES: &str = "forges";
 pub const AGENTS: &str = "agents";
 /// Doc blocks: a document an agent builds beside its pane.
 pub const DOCS: &str = "docs";
+/// Boards: a project's live status board, which is control's.
+pub const BOARDS: &str = "boards";
 
 /// What an agent is told where `docs` is on (#1486), in one wording: the
 /// MCP server's instructions carry it, and so does the context
@@ -149,6 +151,7 @@ pub const FLAGS: &[Flag] = &[
         "Offer Claude Code subagents from this machine, and see the ones your team offers.",
     ),
     row(DOCS, "Docs", "Agents build documents in a block beside their pane."),
+    row(BOARDS, "Boards", "A project's live status board, which needs control."),
 ];
 
 /// Flags that were, and why they aren't: a feature that left Labs. A file

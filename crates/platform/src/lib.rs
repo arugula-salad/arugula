@@ -44,6 +44,7 @@ pub mod agent_tokens;
 mod agents_tests;
 pub mod auth;
 pub mod billing;
+pub mod boards;
 pub mod boxes;
 #[cfg(test)]
 mod boxes_tests;
