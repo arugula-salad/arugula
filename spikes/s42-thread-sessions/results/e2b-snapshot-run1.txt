@@ -1,0 +1,48 @@
+ok   no s42 sandboxes before
+info builder made: i06ja0wve0wx8ncv1gs6e from base in 169 ms
+info builder kernel and init: 6.1.158+ PID USER CMD 1 root /sbin/init uid=1000(user) gid=1000(user) groups=1000(user),27(sudo) sudo-ok
+ok   builder: setup-like writes
+info builder look: {"id":"i06ja0wve0wx8ncv1gs6e","uptime":"41.25","pid1":"/sbin/init ","state_dir":1,"daemon_key":"f98022c11786","control_json":1,"revokes":1,"setup_json":1,"box_note":"i06ja0wve0wx8ncv1gs6e","ledger":1,"npmrc":1,"built":1,"secret_proc":1,"secret_in_environ":1,"secret_on_disk":"/var/log/journal/891af3ce8f324cc7b6ccef7d7709ecbd/user-1000.journal /home/user/.npmrc /home/user/.git-credentials ","create_
+ok   builder holds the secret in a process
+info snapshot (full): 3clf3m37g4jje71wvbdn:default names=[] in 1001 ms
+info builder deleted: i06ja0wve0wx8ncv1gs6e true
+info child1 made: izxnlqm99262k7onc07um from 3clf3m37g4jje71wvbdn:default in 657 ms
+info child1 look: {"id":"izxnlqm99262k7onc07um","uptime":"70.28","pid1":"/sbin/init ","state_dir":1,"daemon_key":"f98022c11786","control_json":1,"revokes":1,"setup_json":1,"box_note":"i06ja0wve0wx8ncv1gs6e","ledger":1,"npmrc":1,"built":1,"secret_proc":1,"secret_in_environ":1,"secret_on_disk":"/var/log/journal/891af3ce8f324cc7b6ccef7d7709ecbd/user-1000.journal /home/user/.npmrc /home/user/.git-credentials ","create_
+ok   child1: the sandbox id file names the new box: i06ja0wve0wx8ncv1gs6e -> izxnlqm99262k7onc07um
+info child1: memory carried (process from the builder still running): 1
+info child1: create env seen by a new command: child1
+info child1: unwiped, old state carried: key=f98022c11786 control=1 revokes=1 setup=1 note=i06ja0wve0wx8ncv1gs6e disk=/var/log/journal/891af3ce8f324cc7b6ccef7d7709ecbd/user-1000.journal /home/user/.npmrc /home/user/.git-credentials
+info child1: metadata and template: {"metadata":{"arugula_spike":"s42","s42_box":"child1"},"templateId":"3clf3m37g4jje71wvbdn"}
+info child1: wipe: removed /var/log/journal/891af3ce8f324cc7b6ccef7d7709ecbd/user-1000.journal removed /home/user/.npmrc removed /home/user/.git-credentials
+info child1: arugulad started fresh: 2088 2097 2026-10-25T23:27:44.956199Z  INFO arugulad: listening socket=/home/user/.local/state/arugula/sock 2026-10-25T23:27:44.957736Z  INFO arugulad::hosted::enroll: hosted: waiting for a box of its own snapshot=izxnlqm99262k7onc07um 2026-10-25T23:27:44.959521Z  INFO arugula_m
+info child1 wiped look: {"id":"izxnlqm99262k7onc07um","uptime":"87.11","pid1":"/sbin/init ","state_dir":1,"daemon_key":"","control_json":0,"revokes":0,"setup_json":0,"box_note":"","ledger":0,"npmrc":0,"built":1,"secret_proc":0,"secret_in_environ":0,"secret_on_disk":"/var/log/journal/891af3ce8f324cc7b6ccef7d7709ecbd/user-1000.journal ","create_env":"child1","arugulad":"2088"}
+FAIL child1: nothing left to carry
+info snapshot (full): ul39zvug5qhdlzt2ii89:default names=[] in 540 ms
+info snapshot (filesystem): rjlgvucdxpapnc6oo87f:default names=[] in 214 ms
+info child1 deleted: izxnlqm99262k7onc07um true
+info child2 (full) made: ib67941tvdpllhp33icnh from ul39zvug5qhdlzt2ii89:default in 517 ms
+info child2 (full) look: {"id":"ib67941tvdpllhp33icnh","uptime":"123.91","pid1":"/sbin/init ","state_dir":1,"daemon_key":"b502d944c411","control_json":0,"revokes":0,"setup_json":0,"box_note":"ib67941tvdpllhp33icnh","ledger":0,"npmrc":0,"built":1,"secret_proc":0,"secret_in_environ":0,"secret_on_disk":"/var/log/journal/891af3ce8f324cc7b6ccef7d7709ecbd/user-1000.journal ","create_env":"child2","arugulad":"2088"}
+ok   child2 (full): the sandbox id file names the new box: izxnlqm99262k7onc07um -> ib67941tvdpllhp33icnh
+ok   child2 (full): no old daemon state (control.json, revokes, setup, ledger)
+FAIL child2 (full): no secret on disk or in a process
+ok   child2 (full): setup's real work is there
+info child2 (full): arugulad: 2088 2097 2026-10-25T23:27:53.977737Z  WARN arugulad::hosted::enroll: hosted: can't enroll yet error=can't reach control at http://127.0.0.1:9: error sending request for url (http://127.0.0.1:9/api/hosted/enroll): client error (Connect): tcp connect error: Connection refused (os error 111) 2026-10-25T23:27:54.486713Z  WARN arugu
+ok   child2 (full): arugulad running
+ok   child2 (full): the daemon noted the new box as its own: ib67941tvdpllhp33icnh vs ib67941tvdpllhp33icnh
+ok   child2 (full): a daemon key of its own, made in the new box: b502d944c411 (old f98022c11786)
+info child2 deleted: ib67941tvdpllhp33icnh true
+info child2 (filesystem) made: ix2fd31afl101wqota1g9 from rjlgvucdxpapnc6oo87f:default in 2099 ms
+info child2 (filesystem) look: {"id":"ix2fd31afl101wqota1g9","uptime":"40.72","pid1":"/sbin/init ","state_dir":1,"daemon_key":"","control_json":0,"revokes":0,"setup_json":0,"box_note":"","ledger":0,"npmrc":0,"built":1,"secret_proc":0,"secret_in_environ":0,"secret_on_disk":"/var/log/journal/891af3ce8f324cc7b6ccef7d7709ecbd/user-1000.journal /var/log/journal/891af3ce8f324cc7b6ccef7d7709ecbd/user-1000@00065eb292ad2a79-7e76631e18cf
+ok   child2 (filesystem): the sandbox id file names the new box: izxnlqm99262k7onc07um -> ix2fd31afl101wqota1g9
+ok   child2 (filesystem): no old daemon state (control.json, revokes, setup, ledger)
+FAIL child2 (filesystem): no secret on disk or in a process
+ok   child2 (filesystem): setup's real work is there
+info child2 (filesystem): arugulad: 2026-10-25T23:27:44.957736Z  INFO arugulad::hosted::enroll: hosted: waiting for a box of its own snapshot=izxnlqm99262k7onc07um
+info child2 (filesystem): arugulad running: false nothing starts it at boot here
+info child2 deleted: ix2fd31afl101wqota1g9 true
+info cleanup: delete snapshot: 3clf3m37g4jje71wvbdn:default true
+info cleanup: delete snapshot: ul39zvug5qhdlzt2ii89:default true
+info cleanup: delete snapshot: rjlgvucdxpapnc6oo87f:default true
+ok   cleanup: s42 sandboxes left: none
+ok   cleanup: s42 snapshots left: none
+FAILED 3
