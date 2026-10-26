@@ -118,20 +118,20 @@ test("a machine that hasn't asked isn't offered Developer settings, and #develop
   expect(existsSync(join(state, "flags.json"))).toBe(false);
 });
 
-const workspacesFlag = (page: Page) => page.evaluate(() => window.__arugula.client.flag("workspaces"));
+const workspacesFlag = (page: Page) => page.evaluate(() => window.__arugula.client.flag("chant-workspaces"));
 
 test("turning chant workspaces on in the dialog turns on them, and nothing else, without a reload", async ({ page }) => {
   const pane = await start(page);
   await page.goto("/#developer");
   // Chat isn't a flag (native #203): it's control's, by team.
   await expect(dialog(page).locator('[data-flag="chat"]')).toHaveCount(0);
-  await dialog(page).locator('[data-flag="workspaces"] input').check();
+  await dialog(page).locator('[data-flag="chant-workspaces"] input').check();
   await expect.poll(() => workspacesFlag(page)).toBe(true);
   await expect(dialog(page).locator("[data-flag] input:checked")).toHaveCount(1);
-  expect(onNow()).toEqual(["workspaces"]);
+  expect(onNow()).toEqual(["chant-workspaces"]);
   await dialog(page).getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog(page)).toBeHidden();
-  expect(await shown(page, pane)).toEqual(["workspaces"]);
+  expect(await shown(page, pane)).toEqual(["chant-workspaces"]);
   // The swarm's views are no flag's: all four, whatever is on.
   await page.goto("/#swarm");
   await expect(page.locator(".swarm")).toBeVisible();
@@ -143,8 +143,8 @@ test("once asked for, the account menu offers them; off takes chant workspaces a
   expect(await workspacesFlag(page)).toBe(true);
   await page.locator(".ws-head [data-account-menu]").click();
   await page.getByRole("menuitem", { name: "Developer settings…" }).click();
-  await expect(dialog(page).locator('[data-flag="workspaces"] input')).toBeChecked();
-  await dialog(page).locator('[data-flag="workspaces"] input').uncheck();
+  await expect(dialog(page).locator('[data-flag="chant-workspaces"] input')).toBeChecked();
+  await dialog(page).locator('[data-flag="chant-workspaces"] input').uncheck();
   await expect.poll(() => workspacesFlag(page)).toBe(false);
   expect(onNow()).toEqual([]);
   await page.keyboard.press("Escape");

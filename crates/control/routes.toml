@@ -1998,6 +1998,38 @@ clients = ["page"]
 note = "Send an agent session's PR as its asker (M259): POST repos/{repo}/pulls with a one-use user token (via browser), else one of their machines with gh. A machine is refused (403, agents_draft); with no way it waits (409, no_way)."
 
 [[route]]
+method = "POST"
+path = "/api/sessions/{ses}/try"  # wire::sessions::SESSION_TRY
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Try 3 (M264): two siblings of an agent session re-run its first prompt beside it, each in a slot of its box, on the harnesses asked for (claude, codex). Owners and editors who may start work on hosted workspaces; once per session."
+
+[[route]]
+method = "POST"
+path = "/api/sessions/{ses}/pick"  # wire::sessions::SESSION_PICK
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Keep one of a Try 3's sessions (M264): the others stop, not picked. Owners and editors; once."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/sessions/stats"  # wire::sessions::PROJECT_SESSION_STATS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's agent sessions in numbers (M265): of those asked for in the last 30 days, how many led to a PR and how many merged, and the median time from the @ to the PR. Any member."
+
+[[route]]
+method = "POST"
+path = "/api/issues/{issue}/agent"  # wire::sessions::ISSUE_AGENT
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Agent on this (M265): @arugula written in a native issue's thread as the caller, starting a session there. Owners and editors on the hosted beta; refused while a session is going on the issue."
+
+[[route]]
 method = "GET"
 path = "/api/runs/{run}"  # wire::runs::RUN
 process = "platform"
@@ -2366,6 +2398,60 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "An opted-in machine's forge blocks' attention, items and reasons without titles (M171's shadow period): compared with the owner's inbox and logged, nothing returned but counts. Rate-limited per account."
+
+# ---- platform: boards (live status board, step 1)
+# A project's boards, for its members: a team's owners and editors change
+# them, its viewers read them; anyone else gets 404. Behind the `boards`
+# Labs flag (the account's, else a team's): without it every route here
+# answers 404. `{project}` is a project's id or `personal`.
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/boards"  # wire::boards::PROJECT_BOARDS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project's boards, oldest first."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/boards"  # wire::boards::PROJECT_BOARDS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Makes a board in the project: owners and editors."
+
+[[route]]
+method = "GET"
+path = "/api/boards/{id}"  # wire::boards::BOARD
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A board with its zones and rows in order: any member."
+
+[[route]]
+method = "PUT"
+path = "/api/boards/{id}/entries"  # wire::boards::BOARD_ENTRIES
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Makes or changes a zone or a row (owners and editors). A change to a title, pointer or note names the rev it read and is refused with 409 stale_rev if the entry moved on; a status alone needs none."
+
+[[route]]
+method = "DELETE"
+path = "/api/boards/{id}/entries/{entry}"  # wire::boards::BOARD_ENTRY
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Deletes a row, or a zone and its rows: owners and editors."
+
+[[route]]
+method = "POST"
+path = "/api/boards/{id}/entries/{entry}/move"  # wire::boards::BOARD_ENTRY_MOVE
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Reorders a row or a zone, within or between zones: owners and editors."
 
 # ---- platform: native issues (M195, platform step 6)
 # A project's own issues, for its members: a team's owners and editors

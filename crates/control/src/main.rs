@@ -502,6 +502,7 @@ impl App {
         let cfg = arugula_platform::Config {
             public_url: public_url.into(),
             sites: vec![public_url.into()],
+            page_url: String::new(),
             relay_free_bytes: 0,
         };
         let (platform, hub_port) = platform(
@@ -1080,6 +1081,7 @@ async fn run() -> anyhow::Result<()> {
             // The platform page's own origin too: a link to it is one of
             // ours (chat's previews, #108).
             sites: sites.iter().map(|s| s.url.clone()).chain(platform_host.iter().map(|p| p.origin.clone())).collect(),
+            page_url: platform_host.as_ref().map(|p| p.origin.clone()).unwrap_or_default(),
             relay_free_bytes: a.relay_free_mb * 1_000_000,
         };
         info!("the platform runs in process");

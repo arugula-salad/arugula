@@ -11,7 +11,7 @@ use axum::{
     routing::{MethodRouter, get, post, put},
 };
 
-use arugula_control_wire::{issues, runs as wire_runs};
+use arugula_control_wire::{boards, issues, runs as wire_runs};
 
 use crate::{
     Platform, agent_mcp, agent_tokens, billing, chat, clients, deploys, forge, grants, hosted, links, projects,
@@ -27,7 +27,7 @@ use crate::{
 /// drafts on them (M170); the inbox (M171); native issues' (M195), for
 /// agents too (M200); hosted workspaces (M179) and their inference keys
 /// (M185), and the inference broker (M231); the standing project grant for runs (M211); what starts runs
-/// (M214); reading runs, and a machine's agents' runs (M216); runs'
+/// (M214); boards (step 1 of the status board); reading runs, and a machine's agents' runs (M216); runs'
 /// artifacts (M213); hosted agents' archived transcripts (M184); agents
 /// with no machine, their grant tokens and MCP endpoint (M230); the
 /// platform page's linked products (M229); and studio as a client (M236).
@@ -168,6 +168,12 @@ fn routes() -> Routes {
         .route(issues::AGENT_PROJECT_ISSUE, get(crate::issues::agent::by_number))
         .route(issues::AGENT_ISSUE, get(crate::issues::agent::get).patch(crate::issues::agent::patch))
         .route(issues::AGENT_ISSUE_EVENTS, get(crate::issues::agent::events))
+        // Boards, behind the `boards` flag.
+        .route(boards::PROJECT_BOARDS, get(crate::boards::list_route).post(crate::boards::create_route))
+        .route(boards::BOARD, get(crate::boards::get_route))
+        .route(boards::BOARD_ENTRIES, put(crate::boards::put_route))
+        .route(boards::BOARD_ENTRY, axum::routing::delete(crate::boards::delete_route))
+        .route(boards::BOARD_ENTRY_MOVE, post(crate::boards::move_route))
         // Deploys and their approval (M218).
         .route(deploys::ENVIRONMENTS, get(deploys::environments).post(deploys::create_environment))
         .route(deploys::PROJECT_DEPLOYS, get(deploys::list).post(deploys::plan_route))
@@ -247,6 +253,11 @@ fn routes() -> Routes {
             get(crate::sessions::pr::show).put(crate::sessions::pr::save),
         )
         .route(arugula_control_wire::sessions::SESSION_PR_SEND, post(crate::sessions::pr::route))
+        // Try 3 and its pick (M264).
+        .route(arugula_control_wire::sessions::SESSION_TRY, post(crate::sessions::tries::start))
+        .route(arugula_control_wire::sessions::SESSION_PICK, post(crate::sessions::tries::pick))
+        .route(arugula_control_wire::sessions::PROJECT_SESSION_STATS, get(crate::sessions::merged::stats))
+        .route(arugula_control_wire::sessions::ISSUE_AGENT, post(crate::chat::sessions::issue_agent))
         // Reading runs, and a machine's agents' runs (M216).
         .route(wire_runs::RUN, get(crate::triggers::read::show))
         .route(wire_runs::RUN_LOG, get(crate::triggers::read::log))

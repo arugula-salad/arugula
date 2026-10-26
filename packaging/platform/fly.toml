@@ -65,6 +65,10 @@ kill_timeout = "25s"
   ARUGULA_PLATFORM_HUB = "http://illogical-control.internal:7691"
   # The hub's site, where billing's checkout comes back to.
   ARUGULA_CONTROL_URL = "https://control.arugula.io"
+  # The platform page's host, as the hub's ARUGULA_PLATFORM_HOST: links to
+  # issues, threads and sessions (in a session's prompt, a PR's body) are
+  # on it.
+  ARUGULA_PLATFORM_HOST = "app.arugula.io"
   # Public previews of hosted workspaces' ports (M187), as the hub serves
   # them (packaging/control/fly.toml).
   ARUGULA_PREVIEW_DOMAIN = "arugula.site"

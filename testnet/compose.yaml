@@ -213,6 +213,8 @@ services:
       # On `postgres` with ARUGULA_TESTNET_POSTGRES=1 (M143), as control's.
       ARUGULA_PLATFORM_DATABASE_URL: ${ARUGULA_TESTNET_POSTGRES:+postgres://postgres:testnet@postgres:5432/platform}
       RUST_LOG: arugula_platform=debug
+      # The platform page's host, as control's: links to the page are on it.
+      ARUGULA_PLATFORM_HOST: app.control.test
       # Anyone here may start runs on a hosted workspace (M212's `runs`).
       ARUGULA_HOSTED_ACCOUNTS: "*"
       # The platform's Anthropic key pays for agent turns (M185) in

@@ -3011,7 +3011,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace in a project: a machine with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?, size?}: A new Cloud workspace in a project: a machine of a size (small, or large for big builds) with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -3025,6 +3025,14 @@
               "url"
             ],
             "type": "object"
+          },
+          "CloudSize": {
+            "description": "A Cloud workspace's size (the platform's, M266).",
+            "enum": [
+              "small",
+              "large"
+            ],
+            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3148,6 +3156,17 @@
               "string",
               "null"
             ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CloudSize"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: Its machine's size: small (2 vCPU, 2 GiB, the default) or large (8\nvCPU, 8 GiB, for big builds such as Rust's)."
           },
           "tab": {
             "description": "prompt, answer: The tab: an agent block on its machine, by pane number. interrupt, close_tab: The tab: an agent block on its machine, by pane number (list kind\ncloud_tabs).",
@@ -6898,7 +6917,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace in a project: a machine with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?, size?}: A new Cloud workspace in a project: a machine of a size (small, or large for big builds) with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -6912,6 +6931,14 @@
               "url"
             ],
             "type": "object"
+          },
+          "CloudSize": {
+            "description": "A Cloud workspace's size (the platform's, M266).",
+            "enum": [
+              "small",
+              "large"
+            ],
+            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -7035,6 +7062,17 @@
               "string",
               "null"
             ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CloudSize"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: Its machine's size: small (2 vCPU, 2 GiB, the default) or large (8\nvCPU, 8 GiB, for big builds such as Rust's)."
           },
           "tab": {
             "description": "prompt, answer: The tab: an agent block on its machine, by pane number. interrupt, close_tab: The tab: an agent block on its machine, by pane number (list kind\ncloud_tabs).",
@@ -10622,7 +10660,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace in a project: a machine with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?, size?}: A new Cloud workspace in a project: a machine of a size (small, or large for big builds) with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -10636,6 +10674,14 @@
               "url"
             ],
             "type": "object"
+          },
+          "CloudSize": {
+            "description": "A Cloud workspace's size (the platform's, M266).",
+            "enum": [
+              "small",
+              "large"
+            ],
+            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -10759,6 +10805,17 @@
               "string",
               "null"
             ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CloudSize"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: Its machine's size: small (2 vCPU, 2 GiB, the default) or large (8\nvCPU, 8 GiB, for big builds such as Rust's)."
           },
           "tab": {
             "description": "prompt, answer: The tab: an agent block on its machine, by pane number. interrupt, close_tab: The tab: an agent block on its machine, by pane number (list kind\ncloud_tabs).",
@@ -14509,7 +14566,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace in a project: a machine with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?, size?}: A new Cloud workspace in a project: a machine of a size (small, or large for big builds) with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -14523,6 +14580,14 @@
               "url"
             ],
             "type": "object"
+          },
+          "CloudSize": {
+            "description": "A Cloud workspace's size (the platform's, M266).",
+            "enum": [
+              "small",
+              "large"
+            ],
+            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -14646,6 +14711,17 @@
               "string",
               "null"
             ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CloudSize"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: Its machine's size: small (2 vCPU, 2 GiB, the default) or large (8\nvCPU, 8 GiB, for big builds such as Rust's)."
           },
           "tab": {
             "description": "prompt, answer: The tab: an agent block on its machine, by pane number. interrupt, close_tab: The tab: an agent block on its machine, by pane number (list kind\ncloud_tabs).",

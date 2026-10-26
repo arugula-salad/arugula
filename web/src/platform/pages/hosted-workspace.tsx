@@ -24,6 +24,7 @@ import { controlOrigin, session } from "../session";
 import { toneClass, workspaceTone, type Tone } from "../swarm";
 import { Missing } from "./project";
 import { Time } from "../../shared/ui/time";
+import { SIZES, sizeOf } from "../settings/workspace-size";
 
 /** A hosted workspace, as the platform answers it. */
 interface HostedWorkspace {
@@ -36,6 +37,8 @@ interface HostedWorkspace {
   error: string | null;
   rebuild_needed: boolean;
   created_at: number;
+  /** What its box is built from: only its size is read here (M266). */
+  spec: { size?: string };
   /** Its snapshot (M263): what its new boxes start from, set up. */
   snapshot?: Snapshot;
 }
@@ -292,6 +295,9 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
             {/* Its ids, which its card shows short (UI audit #165). */}
             <p class="hosted-ids sw-mono" data-hosted-ids>
               <code>{w.id}</code>
+              <span data-hosted-size={sizeOf(w.spec ?? {})}>
+                {` · ${sizeOf(w.spec ?? {})}, ${SIZES.find((s) => s.size === sizeOf(w.spec ?? {}))?.box}`}
+              </span>
               {w.machine && (
                 <>
                   {" · machine "}

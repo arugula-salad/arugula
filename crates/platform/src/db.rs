@@ -12,7 +12,7 @@
 //! Each feature brings its own queries as it moves in (billing's in
 //! [`billing`], M139; chat's in [`chat`], M138;
 //! projects, team members and grants in [`projects`]; the forge mirror in
-//! [`forge`], M162; native issues in [`issues`], M194; runs in [`runs`],
+//! [`forge`], M162; native issues in [`issues`], M194; boards in [`boards`]; runs in [`runs`],
 //! M210; environments and deploys in [`deploys`], M217; what starts runs
 //! in [`triggers`], M214), and flips their
 //! `process` in `crates/control/tables.toml` to `platform`. Their tables
@@ -29,6 +29,7 @@ use rusqlite::Connection;
 
 pub mod agent_tokens;
 pub mod billing;
+pub mod boards;
 pub mod chat;
 pub mod chat_files;
 pub mod chat_people;
@@ -67,6 +68,7 @@ pub mod run_logs;
 pub mod run_work;
 pub mod runs;
 pub mod session_feedback;
+pub mod session_merged;
 pub mod session_threads;
 pub mod sessions;
 pub mod sql;

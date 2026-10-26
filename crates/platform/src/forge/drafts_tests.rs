@@ -315,6 +315,18 @@ pub(super) async fn session_on(
     ws: &str,
     pushed: bool,
 ) -> String {
+    let ses = session_with(app, gh, team, ws).await;
+    turn(app, &ses, pushed);
+    ses
+}
+
+/// [`session_on`] with no turn yet.
+pub(super) async fn session_with(
+    app: &crate::Platform,
+    gh: &super::links_tests::Shared,
+    team: &str,
+    ws: &str,
+) -> String {
     use crate::db::sessions::{NewPrompt, NewSession, Source};
     {
         // As `arugula-io` is installed (S42 q2): it writes contents and
@@ -347,18 +359,22 @@ pub(super) async fn session_on(
         .c()
         .execute("UPDATE agent_sessions SET machine = 'box1', state = 'done' WHERE id = ?1", params![s.id])
         .unwrap();
-    turn(app, &s.id, pushed);
     s.id
 }
 
 /// A turn of session `ses`, as its box reported it: one commit, pushed or
 /// not.
 pub(super) fn turn(app: &crate::Platform, ses: &str, pushed: bool) {
+    let detail = json!({ "branch": "x", "head": "abc1234", "pushed": pushed, "commits": ["abc1234 Add notes"],
+                         "diffstat": " NOTES.md | 1 +\n 1 file changed, 1 insertion(+)" });
+    turn_with(app, ses, &detail);
+}
+
+/// A turn of session `ses` whose report's detail is `detail`.
+pub(super) fn turn_with(app: &crate::Platform, ses: &str, detail: &Value) {
     let c = app.db.c();
     let seq: u64 =
         c.query_row("SELECT last_seq + 1 FROM agent_sessions WHERE id = ?1", params![ses], |r| r.get(0)).unwrap();
-    let detail = json!({ "branch": "x", "head": "abc1234", "pushed": pushed, "commits": ["abc1234 Add notes"],
-                         "diffstat": " NOTES.md | 1 +\n 1 file changed, 1 insertion(+)" });
     c.execute(
         "INSERT INTO session_events (session_id, seq, kind, from_state, to_state, at, detail)
          VALUES (?1, ?2, 'turn', 'working', 'working', 5, ?3)",
@@ -407,9 +423,18 @@ async fn a_sessions_pr_is_drafted_by_its_asker() {
     assert_eq!(v["template"], ".github/pull_request_template.md");
     assert_eq!(v["draft"], true);
     let body = v["body"].as_str().unwrap();
-    assert!(body.starts_with("## What\n\n## Why\n\n---\n\nOpened from Arugula agent session"), "{body}");
-    assert!(body.contains("- abc1234 Add notes") && body.contains("NOTES.md | 1 +"), "{body}");
-    assert!(!body.contains("def5678") && !body.contains("BROKEN.md"), "only what's on GitHub: {body}");
+    // Its summary under the template's first section, the rest kept, and
+    // a footer linking the session.
+    assert!(body.starts_with("## What\n\n- Add notes\n\nThe last turn's changes:\n"), "{body}");
+    assert!(body.contains("NOTES.md | 1 +") && body.contains("\n```\n\n## Why\n\n---\n\n"), "{body}");
+    assert!(
+        body.contains(&format!(
+            "Opened from Arugula agent session [`{}`](https://app.example/p/{team}/sessions/{ses})",
+            &ses[4..12]
+        )),
+        "{body}"
+    );
+    assert!(!body.contains("def5678") && !body.contains("Break the build") && !body.contains("BROKEN.md"), "{body}");
 
     // bob edits the project but didn't ask: he's told; carol (no GitHub
     // sign-in, so no read of the private repo) and eve (not in the
@@ -439,9 +464,77 @@ async fn a_sessions_pr_is_drafted_by_its_asker() {
     assert_eq!(call(&base, "alice", "PUT", &path, Some(json!({ "title": " ", "body": "" }))).await.0, 400);
 }
 
+/// A session whose pushed turns' reports name no commits (they were made
+/// in a turn typed in its block, which 0.62.1's box didn't follow) still
+/// gets them in its draft, from GitHub's compare of the branch, newest
+/// first, with the newest's subject as its title.
+#[tokio::test]
+async fn a_sessions_pr_reads_its_commits_from_github_when_its_turns_name_none() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    let (team, _) = world(&hub, &gh, &app).await;
+    let ses = session_with(&app, &gh, &team, "hw_pr").await;
+    turn_with(&app, &ses, &json!({ "branch": "x", "head": "abc1234", "pushed": true }));
+    let (s, v) = call(&base, "alice", "GET", &format!("/api/sessions/{ses}/pr"), None).await;
+    assert_eq!(s, 200, "{v}");
+    let body = v["body"].as_str().unwrap();
+    assert!(body.starts_with("## Summary\n\n- Add a test for farewell\n- Add farewell(name)\n"), "{body}");
+    assert_eq!(v["title"], "Add a test for farewell");
+
+    // On an Arugula issue's thread, the issue's title is the PR's, and the
+    // footer links the thread: the issue.
+    use crate::db::issues::{Actor, NewIssue};
+    let n = NewIssue { project: &team, title: "Add a farewell function", body: "", labels: &[], assignees: &[] };
+    let issue = app.db.create_issue(&n, Actor::person("alice"), 1).unwrap().unwrap();
+    let room = crate::db::chat::Room {
+        id: "rm_hw_pr".into(),
+        scope: "team:t1".into(),
+        kind: "object".into(),
+        name: "issue #1".into(),
+        machine: None,
+        target: Some(issue.id.clone()),
+        created_by: "alice".into(),
+        created: 1,
+        archived: None,
+        last_seq: 0,
+    };
+    app.db.add_chat_room(&room, &["alice"], Some(&team)).unwrap();
+    let (_, v) = call(&base, "alice", "GET", &format!("/api/sessions/{ses}/pr"), None).await;
+    assert_eq!(v["title"], "Add a farewell function", "{v}");
+    let body = v["body"].as_str().unwrap();
+    assert!(body.ends_with(&format!(" in [its thread](https://app.example/issues/{}).\n", issue.id)), "{body}");
+}
+
+/// A session's branch that changes a CI workflow (which its push token
+/// may, aru-115 amended) gets a warning at the top of its PR's summary,
+/// from GitHub's compare of the branch; one that doesn't, none.
+#[tokio::test]
+async fn a_sessions_pr_says_when_it_changes_ci() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    let (team, _) = world(&hub, &gh, &app).await;
+    let ses = pushed_session(&app, &gh, &team).await;
+    let path = format!("/api/sessions/{ses}/pr");
+    gh.lock().unwrap().files.insert("acme/app:compare-files".into(), "NOTES.md".into());
+    let (s, v) = call(&base, "alice", "GET", &path, None).await;
+    assert_eq!(s, 200, "{v}");
+    assert!(!v["body"].as_str().unwrap().contains("CI workflows"), "{v}");
+    gh.lock().unwrap().files.insert("acme/app:compare-files".into(), "NOTES.md\n.github/workflows/test.yml".into());
+    let (_, v) = call(&base, "alice", "GET", &path, None).await;
+    let body = v["body"].as_str().unwrap();
+    assert!(
+        body.starts_with(
+            "## Summary\n\n**⚠ This PR changes CI workflows** (`.github/workflows/`): check them before merging.\n\n- Add notes\n"
+        ),
+        "{body}"
+    );
+}
+
 /// The push token (M259, S42 q2): the platform mints one only for the
 /// session's own box, for exactly the session's branch, on its linked repo,
-/// with `contents: write` and no `workflows`; a push outside `arugula/*`
+/// with `contents: write` and `workflows: write` (aru-115, amended
+/// 2026-10-26: a branch that began before main changed CI needs it); a
+/// push outside `arugula/*`
 /// (`main`), another session's branch, another machine, or a session that
 /// ended gets none.
 #[tokio::test]
@@ -474,7 +567,11 @@ async fn a_push_outside_its_branch_is_refused() {
     assert_eq!(token, "ghs_fake");
     assert!(revoke.ends_with("/installation/token"), "{revoke}");
     assert!(!format!("{got:?}").contains("ghs_fake"), "never printed");
-    assert_eq!(gh.lock().unwrap().minted, [json!({ "metadata": "read", "contents": "write" })], "no workflows");
+    assert_eq!(
+        gh.lock().unwrap().minted,
+        [json!({ "metadata": "read", "contents": "write", "workflows": "write" })],
+        "with workflows"
+    );
     let logged: Vec<(String, String, String)> = app
         .db
         .c()
@@ -486,7 +583,7 @@ async fn a_push_outside_its_branch_is_refused() {
         .unwrap();
     assert_eq!(logged.len(), 1, "{logged:?}");
     assert_eq!((logged[0].0.as_str(), logged[0].1.as_str()), ("alice", "session:push"));
-    assert!(!logged[0].2.contains("workflows"), "{logged:?}");
+    assert!(logged[0].2.contains(r#""workflows":"write""#), "{logged:?}");
 
     // Once it ended, no more.
     app.db.c().execute("UPDATE agent_sessions SET state = 'stopped' WHERE id = ?1", params![ses]).unwrap();

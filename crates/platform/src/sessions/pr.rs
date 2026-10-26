@@ -12,12 +12,17 @@
 //! - **Prefilled** ([`show`]): until the asker keeps one, the draft is
 //!   the repo's PR template (`.github/pull_request_template.md` and the
 //!   other places GitHub looks, read from the base branch with the App's
-//!   read token) and what the session's pushed turns left: the commits,
-//!   and the last pushed turn's diffstat. A later turn that didn't push
-//!   (its finish step failed, M261, or its push did) isn't on GitHub, so
-//!   it's left out. The title is the one commit's subject, or the
-//!   session's slug in words. The base is the repo's default branch. It's
-//!   a draft PR on GitHub unless the asker says not.
+//!   read token) and what the session's pushed turns left, under its
+//!   `## Summary` (or its first section; one of its own without a
+//!   template): the commits' subjects (from GitHub's compare when the
+//!   turns' reports have none), the last pushed turn's diffstat, and its
+//!   finish step's result. A later turn that didn't push (its finish step
+//!   failed, M261, or its push did) isn't on GitHub, so it's left out.
+//!   The footer links the session and its thread. The title is the first
+//!   there is of: the title of the issue the thread is on, the newest
+//!   pushed commit's subject, the ask's first line, the session's slug in
+//!   words. The base is the repo's default branch. It's a draft PR on
+//!   GitHub unless the asker says not.
 //! - **Sent** ([`send`]) as a forge draft is: the browser hop for a
 //!   one-use user token (the hub's GitHub callback hands it back through
 //!   `PlatformPort::send_draft`, which knows a PR draft by its `pdr_`),
@@ -25,6 +30,8 @@
 //!   call, `POST repos/{repo}/pulls`, as them. A token that may not write
 //!   there, or none, leaves it to one of their machines (`forge.send`, kind
 //!   `pr`, with their `gh`). Only once a turn pushed the branch.
+//! - **Merged** (M265): once a PR from its branch merged, nothing is kept
+//!   or sent any more, and the session's `pr` is the PR that merged.
 //! - **After:** the session's `pr` is the PR's URL, so its card shows it,
 //!   and the PR's thread says where it came from once the mirror has the
 //!   PR ([`noted`], `chat::session_card::note_pr`): now, if the PR's
@@ -112,6 +119,16 @@ async fn asker_of(app: &Platform, account: &str, ses: &str) -> Result<(Session, 
     Ok((s, link, v))
 }
 
+/// A session whose PR merged (M265) is done: there's no PR left to draft
+/// or send, and its card links the one that merged.
+fn not_merged(s: &Session) -> Result<(), ApiError> {
+    match (s.merged_at, &s.pr) {
+        (Some(_), Some(pr)) => Err(err(StatusCode::CONFLICT, &format!("its pull request merged already: {pr}"))),
+        (Some(_), None) => Err(err(StatusCode::CONFLICT, "its pull request merged already")),
+        (None, _) => Ok(()),
+    }
+}
+
 /// Every turn's detail, oldest first.
 fn turns(app: &Platform, s: &Session) -> anyhow::Result<Vec<SessionDetail>> {
     Ok(app
@@ -148,32 +165,35 @@ fn good_branch(b: &str) -> bool {
         && b.bytes().all(|c| c.is_ascii_graphic() && !b"~^:?*[\\@{".contains(&c))
 }
 
-/// GET `path` on GitHub's API with the App's read token for `link`.
-async fn app_get(app: &Platform, link: &LinkedRepo, path: &str) -> Option<Value> {
+/// GET `path` on GitHub's API with the App's read token for `link`,
+/// accepting `accept`: GitHub's answer when it's a success.
+pub(crate) async fn app_read(app: &Platform, link: &LinkedRepo, path: &str, accept: &str) -> Option<reqwest::Response> {
     let gh = app.github.as_ref()?;
     let t = gh
         .read_token(&Caller::of(app, "platform"), link.installation_id, Repo::Id(link.repo_id), Purpose::Read)
         .await
-        .map_err(|e| warn!(repo = link.full_name, error = format!("{e:#}"), "no read token for a session's PR"))
+        .map_err(|e| warn!(repo = link.full_name, error = format!("{e:#}"), "no read token for a session's repo"))
         .ok()?;
     let r = app
         .http
         .get(format!("{}/{path}", gh.api.trim_end_matches('/')))
         .bearer_auth(t.secret())
-        .header("Accept", "application/vnd.github+json")
+        .header("Accept", accept)
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header("User-Agent", "arugula-control")
         .send()
         .await
         .ok()?;
-    if !r.status().is_success() {
-        return None;
-    }
-    r.json().await.ok()
+    r.status().is_success().then_some(r)
+}
+
+/// GET `path` on GitHub's API with the App's read token for `link`.
+async fn app_get(app: &Platform, link: &LinkedRepo, path: &str) -> Option<Value> {
+    app_read(app, link, path, "application/vnd.github+json").await?.json().await.ok()
 }
 
 /// The repo's default branch, as GitHub says (`main` when it doesn't).
-async fn default_branch(app: &Platform, link: &LinkedRepo) -> String {
+pub(crate) async fn default_branch(app: &Platform, link: &LinkedRepo) -> String {
     app_get(app, link, &format!("repos/{}", link.full_name))
         .await
         .and_then(|v| v["default_branch"].as_str().map(str::to_owned))
@@ -203,14 +223,35 @@ async fn template(app: &Platform, link: &LinkedRepo, base: &str) -> Option<(Stri
     None
 }
 
-/// The title the draft starts with: the one commit's subject, else the
-/// session's slug in words.
-fn title_for(s: &Session, commits: &[String]) -> String {
-    let subject = |c: &String| c.split_once(' ').map(|(_, m)| m.trim().to_owned());
-    if let [one] = commits
-        && let Some(t) = subject(one).filter(|t| !t.is_empty())
-    {
-        return t.chars().take(TITLE_MAX).collect();
+/// A `"SHA subject"` commit's subject.
+fn subject(c: &str) -> &str {
+    c.split_once(' ').map_or("", |(_, m)| m.trim())
+}
+
+/// `t` with its first letter capitalised, at most [`TITLE_MAX`].
+fn titled(t: &str) -> String {
+    let mut c = t.trim().chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().chain(c).take(TITLE_MAX).collect(),
+        None => String::new(),
+    }
+}
+
+/// The title the draft starts with, the first there is of: the title of
+/// the issue its thread is on, the newest pushed commit's subject, the
+/// first line of the ask (without its mentions), the session's slug in
+/// words.
+fn title_for(s: &Session, issue: Option<&str>, commits: &[String], ask: Option<&str>) -> String {
+    if let Some(t) = issue.map(titled).filter(|t| !t.is_empty()) {
+        return t;
+    }
+    if let Some(t) = commits.first().map(|c| titled(subject(c))).filter(|t| !t.is_empty()) {
+        return t;
+    }
+    let line = ask.and_then(|a| a.lines().map(str::trim).find(|l| !l.is_empty())).unwrap_or("");
+    let words: Vec<&str> = line.split_whitespace().filter(|w| !w.starts_with('@')).collect();
+    if let Some(t) = Some(titled(&words.join(" "))).filter(|t| !t.is_empty()) {
+        return t;
     }
     let short: String = s.id.trim_start_matches("ses_").chars().take(8).collect();
     let slug = s.branch.strip_prefix("arugula/").and_then(|b| b.strip_prefix(&short)).unwrap_or("");
@@ -222,9 +263,8 @@ fn title_for(s: &Session, commits: &[String]) -> String {
     }
 }
 
-/// What the (pushed) turns left, for the body: each commit once (newest
-/// first), and the last turn's diffstat.
-fn summary(s: &Session, asker: &str, turns: &[SessionDetail]) -> (Vec<String>, String) {
+/// Each commit the (pushed) turns made, once, newest first.
+fn commits_of(turns: &[SessionDetail]) -> Vec<String> {
     let mut commits: Vec<String> = vec![];
     for d in turns.iter().rev() {
         for c in &d.commits {
@@ -233,43 +273,206 @@ fn summary(s: &Session, asker: &str, turns: &[SessionDetail]) -> (Vec<String>, S
             }
         }
     }
-    let short: String = s.id.trim_start_matches("ses_").chars().take(8).collect();
-    let by = if asker.is_empty() { String::new() } else { format!(", asked for by {asker}") };
-    let mut out = format!("Opened from Arugula agent session `{short}`{by}.\n");
-    if !commits.is_empty() {
-        out.push_str("\nCommits:\n");
-        for c in &commits {
-            out.push_str(&format!("- {c}\n"));
+    commits
+}
+
+/// GitHub's compare of the branch with `base`, from where they part.
+async fn compared(app: &Platform, link: &LinkedRepo, base: &str, head: &str) -> Option<Value> {
+    app_get(app, link, &format!("repos/{}/compare/{base}...{head}", link.full_name)).await
+}
+
+/// The compare's commits, newest first, as `"SHA subject"`: for a session
+/// whose turns' reports have none (a turn typed in its block before the
+/// box followed those, 0.62.1).
+fn commits_in(v: &Value) -> Vec<String> {
+    let mut out: Vec<String> = v["commits"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| {
+            let sha: String = c["sha"].as_str()?.chars().take(7).collect();
+            let subject = c["commit"]["message"].as_str()?.lines().next()?.trim().to_owned();
+            Some(format!("{sha} {subject}"))
+        })
+        .collect();
+    out.reverse();
+    out
+}
+
+/// Whether the compare's branch changes a CI workflow: a file under
+/// `.github/workflows/`, or one moved from there. The push token may
+/// (aru-115, amended), so the reviewer is told.
+fn changes_ci(v: &Value) -> bool {
+    let ci = |f: &Value| f.as_str().is_some_and(|f| f.starts_with(".github/workflows/"));
+    v["files"].as_array().into_iter().flatten().any(|f| ci(&f["filename"]) || ci(&f["previous_filename"]))
+}
+
+/// The summary's first line when the branch changes CI.
+const CHANGES_CI: &str = "**⚠ This PR changes CI workflows** (`.github/workflows/`): check them before merging.";
+
+/// What the (pushed) turns left, for the body's summary: a warning when
+/// the branch changes CI (`ci`), each commit's subject, the last turn's
+/// diffstat, and what the last pushed turn's finish step did. Empty when
+/// they left nothing to say.
+fn summary(commits: &[String], turns: &[SessionDetail], ci: bool) -> String {
+    let mut out = String::new();
+    if ci {
+        out.push_str(&format!("{CHANGES_CI}\n\n"));
+    }
+    for c in commits {
+        let subject = subject(c);
+        if !subject.is_empty() {
+            out.push_str(&format!("- {subject}\n"));
         }
     }
     if let Some(stat) = turns.iter().rev().find_map(|d| d.diffstat.clone()).filter(|d| !d.trim().is_empty()) {
         out.push_str(&format!("\nThe last turn's changes:\n\n```text\n{}\n```\n", stat.trim_end()));
     }
-    (commits, out)
+    if let Some(f) = turns.last().and_then(|d| d.finish.as_ref()) {
+        let how = if f.ok { "passed" } else { "failed" };
+        out.push_str(&format!("\nThe finish step, `{}`, {how}.\n", f.command.replace('`', "'")));
+    }
+    out.trim_start_matches('\n').to_owned()
+}
+
+/// The body's footer: where it came from, linking the session and its
+/// thread.
+fn footer(app: &Platform, s: &Session, asker: &str, thread: Option<&str>) -> String {
+    let short: String = s.id.trim_start_matches("ses_").chars().take(8).collect();
+    let public = app.cfg.page();
+    let mut out = format!("Opened from Arugula agent session [`{short}`]({public}/p/{}/sessions/{})", s.project, s.id);
+    if !asker.is_empty() {
+        out.push_str(&format!(", asked for by {asker}"));
+    }
+    if let Some(t) = thread {
+        out.push_str(&format!(" in [its thread]({t})"));
+    }
+    out.push_str(".\n");
+    out
+}
+
+/// Whether `line` is a Markdown heading.
+fn heading(line: &str) -> bool {
+    let t = line.trim_start();
+    let hashes = t.chars().take_while(|c| *c == '#').count();
+    (1..=6).contains(&hashes) && t[hashes..].starts_with([' ', '\t'])
+}
+
+/// The body: the summary under the template's `## Summary` (or its first
+/// section; a `## Summary` of its own before a template with none), the
+/// rest of the template as it is, then the footer.
+fn body_for(template: Option<&str>, summary: &str, footer: &str) -> String {
+    let template = template.map(str::trim_end).filter(|t| !t.trim().is_empty());
+    let mut out = match (template, summary.trim().is_empty()) {
+        (None, true) => String::new(),
+        (None, false) => format!("## Summary\n\n{}", summary.trim_end()),
+        (Some(t), true) => t.to_owned(),
+        (Some(t), false) => {
+            let lines: Vec<&str> = t.lines().collect();
+            let named =
+                |l: &&str| heading(l) && l.trim_start().trim_start_matches('#').trim().eq_ignore_ascii_case("summary");
+            match lines.iter().position(named).or_else(|| lines.iter().position(|l| heading(l))) {
+                Some(i) => {
+                    let mut b = lines[..=i].join("\n");
+                    b.push_str(&format!("\n\n{}\n", summary.trim_end()));
+                    let rest = lines[i + 1..].join("\n");
+                    if !rest.trim().is_empty() {
+                        b.push('\n');
+                        b.push_str(rest.trim_start_matches('\n'));
+                    }
+                    b.trim_end().to_owned()
+                }
+                None => format!("## Summary\n\n{}\n\n{t}", summary.trim_end()),
+            }
+        }
+    };
+    if !out.is_empty() {
+        out.push_str("\n\n---\n\n");
+    }
+    out.push_str(footer);
+    out
+}
+
+/// The asker's message that started session `s`, in its thread.
+fn ask_of(app: &Platform, s: &Session, room: &crate::db::chat::Room) -> anyhow::Result<Option<String>> {
+    let ms = crate::sessions::hydrate::messages(app, room, s.parent_seq)?;
+    Ok(ms
+        .into_iter()
+        .rfind(|m| {
+            m.author == s.asker
+                && m.deleted.is_none()
+                && m.agent.is_none()
+                && m.at <= s.created_at
+                && crate::chat::sessions::asks(&m.text)
+        })
+        .map(|m| m.text))
+}
+
+/// The title of the issue session `s`'s thread is on, if it's one's that
+/// `v` reads (an Arugula issue, or a mirrored GitHub one), and the
+/// thread's link on the platform page.
+async fn thread_of(
+    app: &Platform,
+    v: &Viewer,
+    s: &Session,
+    room: &crate::db::chat::Room,
+) -> anyhow::Result<(Option<String>, Option<String>)> {
+    let public = app.cfg.page();
+    let target = room.target.as_deref().filter(|_| room.kind == "object");
+    if let Some(t) = target.filter(|t| t.starts_with("iss_")) {
+        let i = app.db.issue(t)?;
+        return Ok((i.map(|i| i.title), Some(format!("{public}/issues/{t}"))));
+    }
+    if let Some(t) = target.filter(|t| t.starts_with("fi_"))
+        && let Some((readable, _)) =
+            crate::forge::viewer::item(app, v, t).await.map_err(|e| anyhow::anyhow!("{}", e.1))?
+        && let Some(i) = app.db.forge_item(&readable, t)?
+    {
+        return Ok(((i.kind == "issue").then_some(i.title), None));
+    }
+    let msg = if s.parent_seq > 0 { format!("?msg={}", s.parent_seq) } else { String::new() };
+    Ok(match room.kind.as_str() {
+        "channel" => (None, Some(format!("{public}/chat/{}{msg}", room.id))),
+        "dm" => (None, Some(format!("{public}/dm/{}{msg}", room.id))),
+        _ => (None, None),
+    })
 }
 
 /// The draft as the asker sees it: kept, or prefilled now.
-async fn draft_view(app: &Platform, s: &Session, link: &LinkedRepo, account: &str) -> anyhow::Result<SessionPr> {
+async fn draft_view(app: &Platform, s: &Session, link: &LinkedRepo, v: &Viewer) -> anyhow::Result<SessionPr> {
     if let Some(d) = app.db.pr_draft_of(&s.id)? {
         return Ok(wire(&d, now_ms()));
     }
     let base = default_branch(app, link).await;
     let turns = on_github(turns(app, s)?);
-    let names = app.cache.accounts(&*app.hub, &[account.to_owned()]).await?;
-    let asker = names.get(account).map(|a| a.name.clone()).unwrap_or_default();
-    let (commits, said) = summary(s, &asker, &turns);
-    let tpl = template(app, link, &base).await;
-    let body = match &tpl {
-        Some((_, t)) if !t.trim().is_empty() => format!("{}\n\n---\n\n{said}", t.trim_end()),
-        _ => said,
+    let names = app.cache.accounts(&*app.hub, std::slice::from_ref(&v.account)).await?;
+    let asker = names.get(&v.account).map(|a| a.name.clone()).unwrap_or_default();
+    let mut commits = commits_of(&turns);
+    let cmp = if turns.is_empty() { None } else { compared(app, link, &base, &s.branch).await };
+    if commits.is_empty() {
+        commits = cmp.as_ref().map(commits_in).unwrap_or_default();
+    }
+    let ci = cmp.as_ref().is_some_and(changes_ci);
+    let (issue, thread, ask) = match app.db.chat_room(&s.room)? {
+        Some(room) => {
+            let (issue, thread) = thread_of(app, v, s, &room).await?;
+            (issue, thread, ask_of(app, s, &room)?)
+        }
+        None => (None, None, None),
     };
+    let tpl = template(app, link, &base).await;
+    let body = body_for(
+        tpl.as_ref().map(|(_, t)| t.as_str()),
+        &summary(&commits, &turns, ci),
+        &footer(app, s, &asker, thread.as_deref()),
+    );
     Ok(SessionPr {
         session: s.id.clone(),
         id: None,
         repo: link.full_name.clone(),
         head: s.branch.clone(),
         base,
-        title: title_for(s, &commits),
+        title: title_for(s, issue.as_deref(), &commits, ask.as_deref()),
         body,
         draft: true,
         state: "new".into(),
@@ -304,12 +507,13 @@ pub async fn show(
     Person { account }: Person,
     Path(ses): Path<String>,
 ) -> Result<Json<SessionPr>, ApiError> {
-    let (s, link, _) = asker_of(&app, &account, &ses).await?;
-    Ok(Json(draft_view(&app, &s, &link, &account).await?))
+    let (s, link, v) = asker_of(&app, &account, &ses).await?;
+    Ok(Json(draft_view(&app, &s, &link, &v).await?))
 }
 
 /// Keep what the asker wrote, checked.
 async fn keep(app: &Platform, s: &Session, link: &LinkedRepo, e: &SessionPrEdit) -> Result<PrDraft, ApiError> {
+    not_merged(s)?;
     let title = e.title.trim();
     if title.is_empty() || title.chars().count() > TITLE_MAX {
         return Err(err(StatusCode::BAD_REQUEST, "a PR needs a title of at most 256 characters"));
@@ -417,6 +621,7 @@ pub async fn send(app: &Platform, account: &str, id: &str, how: How) -> Result<S
     if d.author != account {
         return Err(err(StatusCode::FORBIDDEN, "only the session's asker sends its PR: it goes out as them"));
     }
+    not_merged(&s)?;
     let now = now_ms();
     match d.state.as_str() {
         "sent" => return Err(err(StatusCode::CONFLICT, "it was sent already")),
@@ -635,5 +840,112 @@ mod tests {
         assert_eq!(number_of("https://github.com/acme/app/pull/12"), Some(12));
         assert_eq!(number_of("https://github.com/acme/app/issues/12"), None);
         assert_eq!(back_path("//evil"), "/");
+    }
+
+    fn session(branch: &str) -> Session {
+        Session {
+            id: format!("ses_abcd1234{}", "0".repeat(24)),
+            project: "prj_1".into(),
+            room: "rm_1".into(),
+            parent_seq: 0,
+            asker: "acct1".into(),
+            workspace: "hw_1".into(),
+            machine: None,
+            block: None,
+            repo: Some("o/app".into()),
+            branch: branch.into(),
+            state: crate::db::sessions::State::Done,
+            was: None,
+            last_seq: 0,
+            daemon_n: 0,
+            heard_at: None,
+            last_tool: None,
+            last_error: None,
+            pr: None,
+            ci_rounds: 0,
+            created_at: 0,
+            updated_at: 0,
+            role: crate::db::sessions::Role::Thread,
+            parent_session: None,
+            harness: "claude".into(),
+            picked: None,
+            picked_by: None,
+            picked_at: None,
+            merged_at: None,
+        }
+    }
+
+    /// The live test's title was the slug ("Please do this issue add
+    /// farewell name"): the issue's title comes first, then the newest
+    /// pushed commit's subject, then the ask's first line, then the slug.
+    #[test]
+    fn a_drafts_title() {
+        let s = session("arugula/abcd1234-please-do-this-issue-add-farewell-name");
+        let commits = ["b2 Add a test for farewell".to_owned(), "a1 Add farewell(name)".to_owned()];
+        let ask = "@arugula please do this issue: add farewell(name)\nBefore you write any code, ask me";
+        assert_eq!(title_for(&s, Some("Add a farewell function"), &commits, Some(ask)), "Add a farewell function");
+        assert_eq!(title_for(&s, None, &commits, Some(ask)), "Add a test for farewell");
+        assert_eq!(title_for(&s, None, &[], Some(ask)), "Please do this issue: add farewell(name)");
+        assert_eq!(title_for(&s, Some(" "), &[], Some("@arugula")), "Please do this issue add farewell name");
+    }
+
+    /// A workflow file added, changed, removed or moved away is CI's; a
+    /// file elsewhere that names `.github/workflows` isn't.
+    #[test]
+    fn what_changes_ci() {
+        let files = |fs: Value| json!({ "files": fs });
+        assert!(changes_ci(&files(json!([{ "filename": "README.md" }, { "filename": ".github/workflows/test.yml" }]))));
+        assert!(changes_ci(&files(json!([{ "filename": "ci.yml", "previous_filename": ".github/workflows/ci.yml" }]))));
+        assert!(!changes_ci(&files(
+            json!([{ "filename": "docs/.github/workflows/x.yml" }, { "filename": ".github/CODEOWNERS" }])
+        )));
+        assert!(!changes_ci(&json!({ "commits": [] })), "a compare without files");
+    }
+
+    /// The summary goes under the template's `## Summary`, else its first
+    /// section, else a `## Summary` of its own; the rest is kept, and the
+    /// footer ends it.
+    #[test]
+    fn a_drafts_body() {
+        let turn = SessionDetail {
+            pushed: Some(true),
+            diffstat: Some(" greet.py | 4 ++++\n 1 file changed".into()),
+            finish: Some(arugula_control_wire::work::FinishResult {
+                ok: true,
+                command: "just check".into(),
+                output_tail: String::new(),
+            }),
+            ..Default::default()
+        };
+        let commits = ["b2 Add a test".to_owned(), "a1 Add farewell".to_owned()];
+        let said = summary(&commits, std::slice::from_ref(&turn), false);
+        assert_eq!(
+            said,
+            "- Add a test\n- Add farewell\n\nThe last turn's changes:\n\n```text\n greet.py | 4 ++++\n 1 file \
+             changed\n```\n\nThe finish step, `just check`, passed.\n"
+        );
+        // A branch that changes CI leads with a warning for its reviewer.
+        assert_eq!(summary(&commits, &[turn], true), format!("{CHANGES_CI}\n\n{said}"));
+        assert_eq!(summary(&[], &[], true), format!("{CHANGES_CI}\n\n"));
+        let foot = "Opened from Arugula agent session x.\n";
+        let tpl = "## What\n<!-- what it does -->\n\n## Summary\n\n## Testing\n- [ ] tests\n";
+        assert_eq!(
+            body_for(Some(tpl), "- Add farewell\n", foot),
+            "## What\n<!-- what it does -->\n\n## Summary\n\n- Add farewell\n\n## Testing\n- [ ] tests\n\n---\n\n\
+             Opened from Arugula agent session x.\n"
+        );
+        assert_eq!(
+            body_for(Some("## What\n\n## Why\n"), "- Add farewell\n", foot),
+            "## What\n\n- Add farewell\n\n## Why\n\n---\n\nOpened from Arugula agent session x.\n"
+        );
+        assert_eq!(
+            body_for(Some("Thanks for the PR!"), "- Add farewell\n", foot),
+            "## Summary\n\n- Add farewell\n\nThanks for the PR!\n\n---\n\nOpened from Arugula agent session x.\n"
+        );
+        assert_eq!(
+            body_for(None, "- Add farewell\n", foot),
+            "## Summary\n\n- Add farewell\n\n---\n\nOpened from Arugula agent session x.\n"
+        );
+        assert_eq!(body_for(None, "", foot), foot);
     }
 }

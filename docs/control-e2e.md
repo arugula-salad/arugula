@@ -814,7 +814,7 @@ follow.
   heard from again. Those events have no signature.
 - **One branch, no sends.** The box pushes `arugula/<session>-<slug>` and
   nothing else, with an installation token minted for each push and never
-  written to disk. The PR is a draft its asker sends, with their one-use
+  written to disk (the repo's contents and workflows: aru-115, amended). The PR is a draft its asker sends, with their one-use
   user token.
 
 **Who starts one** (M256, `crates/platform/src/chat/sessions.rs`): an owner
@@ -829,10 +829,28 @@ can read resolved to what control holds of it
 workspace is deleted or its asker leaves the project, and when it's been
 done a day with no prompt (`ARUGULA_SESSION_IDLE_END`, in seconds): a done
 session holds one of its box's three slots, which this frees, and the box
-removes its checkout and its user's `~/.claude`. `@arugula` again starts a
-new one. A workspace's finish step (its spec's `finish`, M261) runs on the
+removes its checkout and its user's `~/.claude`. It stops too when a PR
+from its branch merges (M265, whoever opened the PR, once a turn under way
+is done): its card says "merged ✓", and its thread is done and leaves the
+Threads view. `@arugula` again starts a new one. **Agent on this**, on a
+native issue, writes `@arugula` in the issue's thread as the person who
+pressed it, so it's that mention, checks and all; the session's branch is
+named for the issue (`i<number>-<title's words>`). A workspace's finish step (its spec's `finish`, M261) runs on the
 box after each turn, as the session's user; a turn whose finish step fails
 twice isn't pushed.
+
+**Try 3 and reviews** (M264, `crates/platform/src/sessions/tries.rs` and
+`review.rs`). From a session's card, an owner or editor on the beta's list
+can run it two more ways at once: two sibling sessions re-run its first
+prompt on the same box, each in a slot of its own and on its own branch,
+on Claude Code or Codex, as the session's asker. A sibling with no free
+slot waits. Picking one stops the others; what they pushed stays on
+GitHub, and the rest goes with their checkouts. `@codex review` in a
+session's thread starts a read-only session that's given the session's
+pushed diff (read from GitHub with the App's read token) and the thread,
+both fenced as data: its box runs no finish step and pushes nothing, the
+platform mints it no push token, and its reply is posted in the thread as
+its asker's, after which it ends.
 
 **What control can do with sessions:** what it can with runs, on that
 project's hosted box: it chooses what each turn is told. **What it can't:**
@@ -1578,10 +1596,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 139 tables in two planes ("Two planes, two trust rules"):
+Control's database has 141 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (44 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (95 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (97 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1700,13 +1718,15 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `run_artifacts` | metadata | What a run left behind: each file's name, size, digest and key in the run-log bucket. The files themselves are in the bucket (M213), not here. | A run's artifacts are listed and fetched with every machine asleep. | partly: those of runs that go, go; their files expire from the bucket. Every row goes after 30 days, as the bucket's files do. | The run-log bucket |
 | `run_log_chunks` | metadata | Where a hosted run's log is in the run-log bucket (M213): each chunk's number, its offset and size in the pane's output, its SHA-256 and its key. The log itself is in the bucket, which the platform reads. | A run's log is read on the platform page and by the CLI with every machine asleep. | partly: those of runs that go with their projects, go. Every row goes after 30 days, as the bucket's files do. | The run-log bucket |
 | `run_upload_urls` | metadata | Each upload URL the platform signed for a hosted run (M213): its key in the run-log bucket, log or artifact, its size, when it was signed and when it expires. They count against the run's caps and the project's daily bytes while they're out. | Hosted runs send their logs while every person's machine is asleep, and the caps hold then too. | partly: those of runs that go with their projects, go, and their files with them. Every row goes a day after its URL expires; the file at a key nobody said they used goes from the bucket then. |  |
-| `agent_sessions` | **plaintext** | A thread's agent session (M254): its project, the thread it was asked in (a room and a message number), whose mention started it (it runs as them, on the project's key), the hosted workspace it runs on and that box's machine (the only one whose reports move it), its agent block, repo and the one branch it may push, its state (queued, working, needs input, done, failed, unresponsive or stopped), when the platform last heard from the box, the last tool it ran and the last error it hit (as the agent said it), the draft PR its asker sent, how many times CI sent it back, and its times. | A session is asked for, followed and shown in its thread with every person's machine asleep; the box it runs on is the project's, not theirs. | partly: the sessions of projects that go with it go. The rest stay, naming no one who asked. | E2B |
+| `agent_sessions` | **plaintext** | A thread's agent session (M254): its project, the thread it was asked in (a room and a message number), whose mention started it (it runs as them, on the project's key), the hosted workspace it runs on and that box's machine (the only one whose reports move it), its agent block, repo and the one branch it may push, its state (queued, working, needs input, done, failed, unresponsive or stopped), when the platform last heard from the box, the last tool it ran and the last error it hit (as the agent said it), the draft PR its asker sent (or the one opened from its branch), how many times CI sent it back, when that PR merged (its thread is done then), and its times; and (M264) what it is to its thread (the thread's own, a Try 3's sibling of another session, or a review of one) with that session, the agent it asked for (Claude Code or Codex), and on a Try 3's parent the one kept, who picked it and when. | A session is asked for, followed and shown in its thread with every person's machine asleep; the box it runs on is the project's, not theirs. | partly: the sessions of projects that go with it go. The rest stay, naming no one who asked. | E2B |
 | `session_events` | **plaintext** | An agent session's history, append-only (never changed, and never deleted while its session is there): each change of state, error and turn's result, numbered in the session, when, a small detail (the prompts a turn started with, the question it asked, why it failed, the error, the branch it pushed with its commits and diffstat), and, when the box's machine reported it, that machine's id, its report number and its signature over it. | A session's history shows, and is checked, with every person's machine asleep. | partly: those of sessions that go, go. The rest stay as written: they name machines, not people, and a signature names its signer. |  |
 | `session_prompts` | **plaintext** | What starts an agent session's turns: each prompt's text as written, who wrote it (an account, or a GitHub login for text from GitHub, with its author_association), and whether it's queued, sent to the box or dropped, and when. | A prompt queued in a thread waits for the session's box with every person's machine asleep. | partly: those of sessions that go, go. On the rest its prompts stay blank, with no author, and those still queued are dropped. | E2B, Anthropic |
 | `session_actions` | **plaintext** | What people asked of an agent session that only its box can do (M257): answer its open question (the answer as given), approve or deny its open permission (the option, or why not), or cancel the turn; who asked, when, and whether the box did it (with the number of the report that said so) or the session ended first. | A teammate answers a session's question from their phone, and the box picks it up, with every person's machine asleep. | partly: those of sessions that go, go. On the rest they stay, naming no one who asked, an answer's text blanked. | E2B, Anthropic |
 | `pr_drafts` | **plaintext** | An agent session's pull request as its asker drafts it (M259): the session, the repo, its branch and base, the title and body (prefilled from the repo's PR template and the session's turns), whether it opens as a draft on GitHub, its state, and the PR's number and URL once its asker sent it. | The asker edits and sends a session's PR from their phone with every machine asleep. | yes: its PR drafts, and those of sessions that go with it. A sent PR stays on GitHub, and its link on the session. | GitHub |
 | `session_feedback` | **plaintext** | What came back from GitHub to an agent session (M260): a CI round (the head commit whose checks failed) or a review (its id, the PR's number, the reviewer's GitHub login, numeric id, author_association and the review's state), when it's due, and whether it was sent to the session (the prompt, and a CI round's number), refused (the session had its CI rounds) or dropped (the session had ended). | CI fails on a session's PR, or a teammate reviews it on GitHub, and the session takes it up with every person's machine asleep. | nothing of one: it names GitHub's people, not accounts. Those of sessions that go, go. |  |
 | `session_feedback_items` | **plaintext** | What a session's feedback gathered (M260), each once: a failed check's name, conclusion, link and the end of its output, or a review's text and its inline comments' text with their file and line, as GitHub's webhook brought them. | A session's CI round or review is gathered from GitHub's webhooks with every person's machine asleep. | nothing of one: gitHub's text, not an account's. Those of sessions that go, go. | E2B, Anthropic |
+| `boards` | **plaintext** | A project's live status board: its title, who made it and when. | A board shows on a teammate's phone with every machine asleep. | partly: those of projects that go with it go. The rest stay, with no creator. |  |
+| `board_entries` | **plaintext** | A board's zones and rows, in order: a zone's title and kind (proofs is last); a row's one-line note, its status, and what it points at (a forge item, an issue, a run or a Cloud workspace by id, or an agent block by machine and pane); each with its rev, which a write must name. | A board's rows are read and edited from a phone with every machine asleep. | partly: those of projects that go with it go. The rest stay: they name no account. |  |
 | `deploy_approvals` | metadata | A deploy's approvals and denies (M218): S37's work approval over the deploy's operation (its environment, plan's digest, source and planned event's hash), signed by a project owner's device. Which deploy, its event in the log, the decision, the operation's hash, the approver's account, the device that signed and its name then, by when the apply must start, the signature, the passkey assertion the hub checked over the approval (credential id, clientDataJSON, authenticatorData, signature), and when; and when a start used it up, by which run (M219). | An owner approves a deploy from their phone and a driver run checks it, with every machine asleep. | partly: those of projects that go with it go. The rest are kept as signed, the account's id in them included, as its events are: rewriting one would break its signature. |  |
 | `deploy_runs` | metadata | The run that applies an approved deploy (M219): which deploy and run, the approval it applies, the hosted workspace it runs on, the environment's driver then, when it was made, when its machine was given the environment's secrets (once), and when the project's owners were told its apply failed (once). No secret: those are sealed in project_secrets and given only to the run's machine, while it runs. | A deploy's run applies it on the project's hosted workspace, and its log takes the deploy's start only from that run, with every owner's device asleep. | partly: those of deploys that go with its projects go. |  |
 | `platform_migrations` | metadata | Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum, whether it's additive (older builds may start past it) and when it ran, or that it was found already in place on a database made before migrations. | The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up. | nothing of one |  |

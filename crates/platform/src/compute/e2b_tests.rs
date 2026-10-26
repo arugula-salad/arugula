@@ -85,7 +85,8 @@ async fn create(AxState(s): AxState<S>, m: Method, uri: Uri, h: HeaderMap, Json(
     }
     let mut f = s.lock().unwrap();
     let from = body["templateID"].as_str().unwrap_or_default();
-    if from != "base" && !f.snapshots.contains_key(from) {
+    // Templates: `base`, and `base-large` for M266's large workspaces.
+    if from != "base" && from != "base-large" && !f.snapshots.contains_key(from) {
         return error(404, None);
     }
     f.made += 1;
@@ -651,7 +652,7 @@ mod lifecycle {
         chat_tests::{TestHub, call},
         hosted::{
             EnrollBy, snapshot,
-            tests::{drive, make, serve_on, show},
+            tests::{drive, make, serve_on, serve_on_with, show},
         },
     };
 
@@ -1017,5 +1018,47 @@ mod lifecycle {
         assert_eq!(asked, 1);
         assert_eq!(boxes(&s).len(), 1);
         assert!(show(&base, &project, &ws).await.get("snapshot").is_none());
+    }
+
+    /// M266: a workspace's snapshot follows its size. A large one's builder
+    /// is made from the large template, so its snapshot is large too; once
+    /// its size changes, its spec's hash does, and the rebuild starts from
+    /// the small template rather than the large snapshot.
+    #[tokio::test]
+    async fn a_snapshot_follows_the_workspaces_size() {
+        let (e2b, s, _) = fake().await;
+        let (hub, app, base, project) = serve_on_with(EnrollBy::Sandbox, Arc::new(e2b), "base", |c| {
+            c.template_large = Some("base-large".into());
+        })
+        .await;
+        hub.delegate(&project);
+        let spec = json!({ "repos": ["https://github.com/acme/app"], "size": "large" });
+        let (status, w) = call(
+            &base,
+            "alice",
+            "POST",
+            &format!("/api/projects/{project}/workspaces"),
+            Some(json!({ "name": "big", "spec": spec })),
+        )
+        .await;
+        assert_eq!(status, 201, "{w}");
+        let ws = w["id"].as_str().unwrap().to_owned();
+        let path = format!("/api/projects/{project}/workspaces/{ws}");
+        let now = now_ms();
+        drive(&app, now).await;
+        set_up(&app, &hub, &project, &ws, "m1", "Set up.", now + 3_000).await;
+        let b = look(&app, &ws, now + 3_000).await.expect("a build once it set up");
+        assert_eq!(boxes(&s), [("base-large".to_owned(), ws.clone()), ("base-large".to_owned(), b.clone())]);
+        seal(&app, &hub, &project, &b, "b1", now + 6_000).await;
+        assert_eq!(snap(&show(&base, &project, &ws).await)["status"], "ready");
+
+        // Small again: the large snapshot isn't its box's any more.
+        let mut spec = w["spec"].clone();
+        spec["size"] = json!("small");
+        let (status, w) = call(&base, "alice", "PUT", &format!("{path}/spec"), Some(spec)).await;
+        assert_eq!((status, w["rebuild_needed"].as_bool()), (200, Some(true)), "{w}");
+        call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+        drive(&app, now + 8_000).await;
+        assert_eq!(boxes(&s).last().unwrap(), &("base".to_owned(), ws.clone()));
     }
 }

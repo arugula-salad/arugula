@@ -27,7 +27,7 @@ options:
     tradeoff: "A machine would act on GitHub as the project with nobody sending it, against \"agents draft, people send\", and a token that pushes any ref can push to main."
 choice:
   option: "a"
-  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129."
+  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes."
 rejected:
   - option: "b"
     why: "Agents on personal machines are never woken by other people's mentions: a person's machine runs what its person starts."
@@ -59,6 +59,8 @@ constrains:
   - "path:crates/daemon/src/work_sessions_push.rs"
   - "path:crates/platform/src/sessions/push.rs"
   - "path:crates/platform/src/sessions/pr.rs"
+  - "path:crates/platform/src/sessions/tries.rs"
+  - "path:crates/platform/src/sessions/review.rs"
 ---
 
 # A thread's agent session runs on the project's hosted box
@@ -76,6 +78,15 @@ agents draft while people send".
   are never woken by other people's mentions: on them, mentions are still
   read, not pushed. `@arugula` comes first; `@<recipe>` (a project recipe's
   agent) comes later.
+- **Try 3 and `@codex review`** (M264). From a session's card, an owner or
+  editor can run it two more ways at once: two siblings of it re-run its
+  first prompt on the same box, each in a slot of its own, on Claude Code
+  or Codex, and they pick one to keep; the others stop. `@codex` is
+  reserved as `@arugula` is, with the same rule for who may ask: `@codex
+  review` in a session's thread starts a read-only session given its pushed
+  diff and the thread as data, which pushes nothing and posts its review
+  in the thread. Both are sessions on the project's hosted box, as the
+  asker, like any other.
 - **One card in the timeline.** The session's status card is the one card
   kind a chat timeline shows; everything else in it stays a message.
 - **It runs as the asker, on the project's key.** The session is the
@@ -108,10 +119,29 @@ agents draft while people send".
     sessions' branches are refused before git runs.
   - The platform mints the token only for the session's own box, for the
     session's branch exactly, on its linked repo, with `contents: write`
-    alone: without `workflows`, GitHub refuses a push that changes
-    `.github/workflows/`. The box revokes it once it pushed.
+    and `workflows: write` (amended below). The box revokes it once it
+    pushed.
+  - **Amended (Jake, 2026-10-26): the push token writes workflows too.**
+    It was `contents: write` alone, so that GitHub would refuse a push that
+    changes `.github/workflows/`. But GitHub compares a new branch's tree
+    with the default branch's, not with the commit it began from: once
+    main changes a workflow file after a session began, the session's
+    branch, which has the older file, reads as an edit, and GitHub refuses
+    every push of it ("refusing to allow … to create or update workflow
+    … without workflows scope"). Fetching main first doesn't help. The
+    v0.63.0 live test hit this on a real repo, and any session that falls
+    behind a main that changed CI would. So the token now has `workflows:
+    write`, still for the one repo, per push, revoked after, and still
+    only for the session's own `arugula/*` branch. What it means: a
+    session's agent can change CI files on its branch, and a person
+    reviewing its PR must check workflow changes before merging. The PR's
+    draft says when the branch changes anything under
+    `.github/workflows/`.
   - Even so, an `arugula/*` push runs the repo's existing push workflows on
-    code the agent wrote, as a member's pushed branch would.
+    code the agent wrote, as a member's pushed branch would. Since the
+    amendment that includes a workflow the agent itself changed on its
+    branch: an `on: push` workflow runs from the pushed branch's own file,
+    with the repository's secrets, before anyone reviews the PR.
   - What this doesn't stop is an agent that gets from its session user to
     the daemon's user, which could use a token in the seconds it lives. A
     git proxy in control that holds the token and reads the ref list would

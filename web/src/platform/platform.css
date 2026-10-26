@@ -1003,3 +1003,46 @@ html[data-corners="square"] .platform-section {
 .frame-place .chat-count {
   margin-left: var(--space-1);
 }
+
+/* A project's agent sessions in numbers (M265). */
+.session-stats {
+  margin-top: 12px;
+}
+
+.session-stats h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--subtle);
+  font-weight: 600;
+}
+
+.session-stat-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.session-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 72px;
+  padding: 8px 12px;
+  border: 1px solid var(--raised);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+}
+
+.session-stat b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-stat span {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.session-stat-to {
+  color: var(--dim);
+}

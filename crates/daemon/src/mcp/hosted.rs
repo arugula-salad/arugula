@@ -418,11 +418,17 @@ impl Call<'_> {
             args["repositories"].as_array().into_iter().flatten().map(|r| r["url"].clone()).collect();
         let mut packages: Vec<Value> = args["apt"].as_array().cloned().unwrap_or_default();
         packages.extend(args["npm"].as_array().cloned().unwrap_or_default());
-        let spec = json!({
+        let mut spec = json!({
             "repos": repos, "packages": packages,
             "setup": args["setup_script"].as_str().unwrap_or_default(),
             "env": args["secrets"].as_array().cloned().unwrap_or_default(),
         });
+        // Small unless asked.
+        match &args["size"] {
+            Value::Null => {}
+            Value::String(z) if z == "small" || z == "large" => spec["size"] = json!(z),
+            z => return Err(format!("size is small or large, not {z}")),
+        }
         let body = json!({ "name": args["name"], "spec": spec });
         let path = format!("/api/projects/{project}/workspaces");
         let w = self.app().control.cloud(Method::POST, &path, Some(&body)).await.map_err(|e| e.to_string())?;

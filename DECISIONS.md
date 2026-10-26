@@ -119,6 +119,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-111](docs/decisions/aru-111-a-hosted-mcp-endpoint-serves-agents-with-no-mach.md): A hosted MCP endpoint serves agents with no machine
 - [aru-112](docs/decisions/aru-112-the-claude-credential-broker-and-its-metering-mo.md): The Claude credential broker and its metering move to the platform
 - [aru-115](docs/decisions/aru-115-a-thread-s-agent-session-runs-on-the-project-s-h.md): A thread's agent session runs on the project's hosted box
+- [aru-116](docs/decisions/aru-116-a-board-is-the-project-s-tracker-and-its-object-daemons.md): A board is the project's tracker, a platform object daemons report agent blocks to
 
 ## Federation and control
 

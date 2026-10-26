@@ -263,6 +263,20 @@ fn a_session_lives_across_turns() {
     let nope = b.say(&db, &s.id, Kind::State, Some(State::Working), &sent_twice, T0 + 7);
     assert!(matches!(nope.unwrap_err(), Refused::Detail(_)), "a sent prompt starts no second turn");
 
+    // A turn someone started in the session's block (its Open button)
+    // names no prompts, and says so: from done only.
+    let third = db.queue_prompt(&s.id, &member("and the about page"), T0 + 7).unwrap().unwrap();
+    let mixed = json!({ "in_block": true, "prompts": [third.id] }).to_string();
+    let nope = b.say(&db, &s.id, Kind::State, Some(State::Working), &mixed, T0 + 7);
+    assert!(matches!(nope.unwrap_err(), Refused::Detail(_)), "a block's turn names no prompts");
+    let in_block = json!({ "in_block": true, "by": "jhgaylor" }).to_string();
+    let (s, _) = b.say(&db, &s.id, Kind::State, Some(State::Working), &in_block, T0 + 7).unwrap();
+    assert_eq!(s.state, State::Working);
+    assert_eq!(db.session_prompts(&s.id).unwrap()[2].state, PromptState::Queued, "the thread's waits");
+    let nope = b.say(&db, &s.id, Kind::State, Some(State::NeedsInput), &in_block, T0 + 7);
+    assert!(matches!(nope.unwrap_err(), Refused::Detail(_)), "only a turn's start is the block's");
+    b.report(&db, &s.id, State::Done, T0 + 7).unwrap();
+
     // An error leaves it where it is; a failure says why.
     let (s, _) = b.say(&db, &s.id, Kind::Error, None, r#"{"error":"rate limited"}"#, T0 + 8).unwrap();
     assert_eq!((s.state, s.last_error.as_deref()), (State::Done, Some("rate limited")));

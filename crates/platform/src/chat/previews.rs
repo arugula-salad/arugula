@@ -143,6 +143,7 @@ fn own_host(app: &Platform, u: &Url) -> bool {
     matches!(host.as_str(), "app.arugula.io" | "control.arugula.io")
         || app.cfg.sites.iter().any(known)
         || known(&app.cfg.public_url)
+        || known(&app.cfg.page_url)
 }
 
 /// The id at the front of a path segment, before its slug: the shape

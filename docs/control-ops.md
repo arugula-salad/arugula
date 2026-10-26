@@ -192,6 +192,12 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     process it forwards the page's GETs to the platform, signed like every
     forwarded call, and the platform serves its own embedded copy. Its
     page ships with the platform, not with a daemon release.
+  - The platform builds links to the page (an issue's, a thread's, a
+    session's, in a session's first prompt and its PR's body) on this
+    host. In process it has the hub's; out of process it reads its own
+    `ARUGULA_PLATFORM_HOST` (`packaging/platform/fly.toml` sets
+    `app.arugula.io`). Unset, those links are on control's public URL,
+    where nothing answers them.
   - Every answer there has the platform page's own CSP (its own scripts
     and styles, `connect-src 'self'`, no `unsafe-eval`, no frames either
     way), `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, HSTS
@@ -3143,16 +3149,29 @@ arugula's `.infisical.json` is):
 
 ### Hosted workspaces' template
 
-A hosted workspace's box (#1235) is made from E2B's template
-`arugula-workspace`, tagged with the release: `arugula-workspace:v0.58.0`.
-release.yml's `template` job builds it (`scripts/ci-hosted-template
+A hosted workspace's box (#1235) is made from one of two E2B templates,
+one per workspace size (M266, Arugula #201), each tagged with the release:
+
+| Size | Template | vCPU | Memory |
+|---|---|---|---|
+| small | `arugula-workspace:vX.Y.Z` | 2 | 2048 MiB |
+| large | `arugula-workspace-large:vX.Y.Z` | 8 | 8192 MiB |
+
+E2B fixes a box's size when its template is built, so they're two builds
+of the same context. release.yml's `template` job, once per size (a
+matrix: a failed one is re-run alone), builds them (`scripts/ci-hosted-template
 publish`) from `packaging/hosted/Dockerfile` around the tag's static
 arugulad and arugula, with the ACP adapters, Codex, Node, git and gh
 pinned there. E2B starts `arugulad --hosted` (under its supervisor) at the
 end of the build and snapshots the box once `arugula-hosted-ready` passes,
-so a box starts with the daemon running. The platform makes boxes only from its own version's
-tag (`crates/platform/src/compute/template.rs`); there's nothing else to
-record. Until a release's job has finished, E2B refuses creates for it.
+so a box starts with the daemon running. The platform makes a workspace's
+box only from its own version's tag of its size's template
+(`crates/platform/src/compute/template.rs`); there's nothing else to
+record. Until a release's job for a size has finished, E2B refuses creates
+of that size for it. 8 vCPU and 8 GiB are the most E2B's Hobby plan builds
+(Pro builds more: <https://docs.e2b.dev/sandbox-template/customize-cpu-ram>).
+The sizes are in `scripts/ci-hosted-template` (`size_of`) and in `Size`,
+and a test checks they're the same.
 
 - **The key** is the repository secret `E2B_API_KEY`, a key for E2B's
   project. It never goes into a box.
@@ -3172,9 +3191,15 @@ record. Until a release's job has finished, E2B refuses creates for it.
   in `/run/e2b/.E2B_SANDBOX_ID` (M180).
 - **By hand:** `scripts/ci-hosted-template image DIR` builds it with
   Docker from DIR's `just static` binaries; `dry-run vX.Y.Z DIR` prints
-  what E2B would be sent. A test build goes under another name
-  (`ARUGULA_TEMPLATE_NAME=arugula-workspace-test`), and is deleted after
-  (`e2b template delete`).
+  what E2B would be sent, for each size. A test build goes under another
+  name (`ARUGULA_TEMPLATE_NAME=arugula-workspace-test`, and
+  `arugula-workspace-test-large` for large), with
+  `ARUGULA_TEMPLATE_SIZES=small` for one size only, and is deleted after
+  (`e2b template delete`). `scripts/tests/hosted-template.sh` checks the
+  dry run builds both.
+- **A control with its own template** (loam, testnet):
+  `ARUGULA_HOSTED_TEMPLATE` names the one every size is made from, and
+  `ARUGULA_HOSTED_TEMPLATE_LARGE` large's, when it has one.
 - **loam** builds no templates: an operator maps an image to an E2B
   template name. `ci-hosted-template image DIR BASE`, with BASE loam's
   `loam-e2b` image, builds the same file for it, and loam starts the daemon

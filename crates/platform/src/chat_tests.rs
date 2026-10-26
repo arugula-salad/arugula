@@ -329,7 +329,12 @@ impl TestHub {
     }
 
     pub(crate) fn flag(&self, owner: &str, on: bool) {
-        self.state.lock().unwrap().flags.entry(owner.into()).or_default().insert(FLAG.into(), on);
+        self.flag_named(owner, FLAG, on);
+    }
+
+    /// The Labs flag `name`, set for `owner`.
+    pub(crate) fn flag_named(&self, owner: &str, name: &str, on: bool) {
+        self.state.lock().unwrap().flags.entry(owner.into()).or_default().insert(name.into(), on);
         self.change(ChangeKind::LabsFlag, owner);
     }
 

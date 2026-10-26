@@ -29,10 +29,19 @@
 //!   repo too.
 //! - **Starting:** the session and its job in one transaction
 //!   (`db::sessions::create_session_in`, `db::sessions::dispatch`), bound
-//!   to the room and the thread, its branch's slug from the ask's words,
-//!   its first prompt the hydrated thread ([`crate::sessions::hydrate`]).
+//!   to the room and the thread, its branch's slug from the ask's words
+//!   (on a native issue, from the issue: `i<number>-<title's words>`, as
+//!   `arugula issue open` names its branches), its first prompt the
+//!   hydrated thread ([`crate::sessions::hydrate`]).
+//! - **Agent on this** ([`issue_agent`], M265) on a native issue writes
+//!   [`AGENT_ON_THIS`] in the issue's thread as the person who pressed it,
+//!   so it's exactly an `@arugula` there: the same checks, questions and
+//!   session.
 //!   Its status card (M257, [`super::session_card::post_card`]) says
 //!   where it runs.
+//! - **`@codex review`** (M264, [`crate::sessions::review`]): in a thread
+//!   with a session going, a read-only review of what it pushed, posted in
+//!   the thread. It's never a prompt to the session.
 //! - **Replies.** In a thread with a session going, a reply from its asker
 //!   or any owner or editor is a prompt, credited to its author
 //!   (`session_prompts.author`), queued while a turn runs; the session's
@@ -44,18 +53,24 @@
 //! thread. A failure here is logged: the message was posted either way.
 
 use anyhow::Result;
-use arugula_control_wire::chat::{ChatLive, SYSTEM_VIA};
+use arugula_control_common::{ApiError, err};
+use arugula_control_wire::{
+    chat::{ChatLive, SYSTEM_VIA},
+    sessions::IssueAgent,
+};
 use arugula_e2e::{now_ms, team::TeamRole};
+use axum::http::StatusCode;
 use tracing::{info, warn};
 
 use super::at_words;
 use crate::{
     Platform,
+    auth::Person,
     db::{
         Taken,
         chat::{Message, NewMessage, Room},
         hosted::HostedWorkspace,
-        sessions::{AgentsOn, NewPrompt, NewSession, Source, create_session_in, dispatch, slug},
+        sessions::{AgentsOn, NewPrompt, NewSession, Source, create_session_in, dispatch, issue_slug, slug},
     },
     sessions::hydrate,
     triggers::{Cannot, may_start},
@@ -111,12 +126,17 @@ pub(super) fn works_in(room: &Room) -> bool {
     }
 }
 
-fn asks(text: &str) -> bool {
+pub(crate) fn asks(text: &str) -> bool {
     at_words(text).iter().any(|w| w == MENTION)
 }
 
 async fn handle(app: &Platform, room: &Room, author: &str, seq: i64, parent: Option<i64>, text: &str) -> Result<()> {
     let thread = thread_of(room, seq, parent);
+    // `@codex review` (M264): a review of the thread's session, never a
+    // prompt to it.
+    if crate::sessions::review::mentions(text) && works_in(room) {
+        return crate::sessions::review::asked(app, room, thread, author, text).await;
+    }
     if let Some(s) = app.db.session_on_thread(&room.id, thread)? {
         return reply(app, &s, author, text).await;
     }
@@ -171,7 +191,7 @@ pub(crate) fn say(app: &Platform, room: &Room, thread: u64, text: &str) -> Resul
 }
 
 /// Why `who` can't start a session, in a line.
-fn refusal(who: &str, why: Cannot) -> String {
+pub(crate) fn refusal(who: &str, why: Cannot) -> String {
     match why {
         Cannot::Viewer => format!("@arugula needs an owner or editor of this project to ask: {who} can only view it."),
         Cannot::Unlisted => {
@@ -388,7 +408,15 @@ async fn launch(
 ) -> Result<()> {
     let ask = waiting_ask(app, room, thread, i64::MAX).await?.map(|(m, _)| m.text).unwrap_or_default();
     let words: Vec<&str> = ask.split_whitespace().filter(|w| !w.starts_with('@')).collect();
-    let slug = slug(&words.join(" "));
+    // On a native issue, the branch is named for the issue (M265).
+    let issue = match room.target.as_deref().filter(|t| room.kind == "object" && t.starts_with("iss_")) {
+        Some(t) => app.db.issue(t)?,
+        None => None,
+    };
+    let slug = match &issue {
+        Some(i) => issue_slug(i.number, &i.title),
+        None => slug(&words.join(" ")),
+    };
     let prompt = hydrate::first_prompt(app, room, thread, project, asker, repo, &slug).await?;
     let new = NewSession {
         project,
@@ -447,6 +475,41 @@ async fn reply(app: &Platform, s: &crate::db::sessions::Session, author: &str, t
         Err(why) => info!(session = s.id, refused = %why, "a reply in a session's thread wasn't queued"),
     }
     Ok(())
+}
+
+/// What Agent on this writes in an issue's thread, as its presser.
+pub const AGENT_ON_THIS: &str = "@arugula work on this issue";
+
+/// `POST /api/issues/{issue}/agent`: Agent on this (module docs). Refused
+/// up front for whoever `@arugula` would refuse, and while a session is
+/// going on the issue (a reply in its thread prompts that one).
+pub async fn issue_agent(
+    axum::extract::State(app): axum::extract::State<std::sync::Arc<Platform>>,
+    Person { account }: Person,
+    axum::extract::Path(issue): axum::extract::Path<String>,
+) -> Result<axum::Json<IssueAgent>, ApiError> {
+    let none = || err(StatusCode::NOT_FOUND, "no such issue");
+    if !issue.starts_with("iss_") {
+        return Err(none());
+    }
+    let i = app.db.issue(&issue)?.ok_or_else(none)?;
+    match may_start(&app, &i.project, &account).await? {
+        None => {}
+        Some(Cannot::Outside) => return Err(none()),
+        Some(why) => return Err(err(StatusCode::FORBIDDEN, &refusal("you", why).replace("you isn't", "you aren't"))),
+    }
+    let axum::Json(room) = super::open_object(&app, &account, &issue).await?;
+    if app.db.session_on_thread(&room.id, 0)?.is_some() {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "an agent session is going on this issue: reply in its thread to prompt it",
+        ));
+    }
+    let post = arugula_control_wire::chat::ChatPost { text: AGENT_ON_THIS.into(), ..Default::default() };
+    let posted = super::post_full(&app, &account, None, None, &room.id, post).await?;
+    let session = app.db.session_on_thread(&room.id, 0)?.filter(|s| s.asker == account).map(|s| s.id);
+    info!(issue, room = room.id, session = ?session, "agent on this issue");
+    Ok(axum::Json(IssueAgent { room: room.id, seq: posted.seq, session }))
 }
 
 #[cfg(test)]

@@ -19,7 +19,9 @@
 //!    (`core.hooksPath=/dev/null`), no system or global config, and none of
 //!    the agent's.
 //! 4. The token comes from control for this push alone (`WORK_SESSION_PUSH`:
-//!    the session's repo, `contents: write`, no `workflows`), reaches git
+//!    the session's repo, `contents: write` and `workflows: write`, since
+//!    GitHub refuses a branch that began before main changed CI without
+//!    it: aru-115, amended), reaches git
 //!    through a credential helper reading one process's environment (never
 //!    a file, never argv), and is revoked once the push is done.
 //!

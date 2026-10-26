@@ -18,6 +18,9 @@
                   check, or "failed" and its last lines)
    form           its PR as its asker drafts it (M259): the base, title,
                   description, and whether it opens as a draft
+   compare view   a Try 3's three side by side (M264): each one's bar and
+                  border its state (kept ok, not picked muted), its harness,
+                  its diffstat, its finish, its page and its diff, and Pick
 
    Palette tokens only, so every appearance holds; the swarm's font stacks
    where the page has them (control's platform page), else the UI's own. */
@@ -311,4 +314,170 @@ a.session-card-id:hover {
   color: var(--dim);
   font: 12px/1.4 var(--f-mono, ui-monospace, Menlo, monospace);
   font-variant-numeric: tabular-nums;
+}
+
+/* Try 3 (M264): the button and the agents the two more run on. */
+.session-try3 {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.session-try3 button {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.session-try3 select {
+  padding: 2px 4px;
+  border: 1px solid var(--divider);
+  border-left: 0;
+  border-radius: 0 5px 5px 0;
+  background: var(--surface);
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+/* Its compare view: the three side by side, each a small card of its own
+   whose bar is its state. */
+.session-tries {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--c) 40%, var(--divider));
+}
+
+.session-tries-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.session-try {
+  --c: var(--muted);
+  --ct: var(--subtle);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 6px 8px 6px 11px;
+  border: 1px solid color-mix(in srgb, var(--c) 40%, var(--divider));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--c) 6%, var(--surface));
+  font-size: 12px;
+}
+
+.session-try::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+}
+
+.session-try.tone-accent {
+  --c: var(--accent);
+  --ct: var(--accent);
+}
+
+.session-try.tone-ok {
+  --c: var(--ok);
+  --ct: var(--ok);
+}
+
+.session-try.tone-warn {
+  --c: var(--warn);
+  --ct: var(--warn);
+}
+
+.session-try.tone-danger {
+  --c: var(--danger);
+  --ct: var(--danger);
+}
+
+.session-try.kept {
+  border-color: var(--ok);
+}
+
+.session-try-top,
+.session-try-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+}
+
+.session-try-n {
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.session-try-state {
+  color: var(--ct);
+  font: 800 13px/1 var(--f-display, "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.session-try-harness {
+  color: var(--subtle);
+}
+
+.session-try pre {
+  margin: 0;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--letterbox);
+  font: 11px/1.35 var(--f-mono, ui-monospace, Menlo, monospace);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.session-try-none,
+.session-try-finish {
+  margin: 0;
+}
+
+.session-try-finish code,
+.session-try-links {
+  font-family: var(--f-mono, ui-monospace, Menlo, monospace);
+}
+
+.session-try-finish .ok {
+  color: var(--ok);
+}
+
+.session-try-finish .bad {
+  color: var(--danger);
+}
+
+.session-try-links a {
+  color: var(--subtle);
+}
+
+.session-try-links a:hover {
+  color: var(--accent);
+}
+
+.session-try-links button {
+  padding: 1px 8px;
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg);
+  font: 12px/1.4 inherit;
+}
+
+.session-try-links button:not(:disabled):hover {
+  border-color: var(--ok);
+}
+
+/* The three side by side want more room than one card. */
+.session-card:has(.session-tries) {
+  max-width: 860px;
 }
