@@ -308,10 +308,11 @@ pub fn good_id(id: &str) -> bool {
     id.strip_prefix("ses_").is_some_and(|h| h.len() == 32 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
 }
 
-/// Whether `branch` is session `id`'s own (`arugula/<id>-<slug>`), and a
-/// ref git takes as it is.
+/// Whether `branch` is session `id`'s own (`arugula/<the first 8 hex of
+/// its id>-<slug>`, as the platform names it), and a ref git takes as it is.
 pub fn good_branch(id: &str, branch: &str) -> bool {
-    let Some(rest) = branch.strip_prefix("arugula/").and_then(|r| r.strip_prefix(id)) else { return false };
+    let Some(short) = id.strip_prefix("ses_").and_then(|h| h.get(..8)) else { return false };
+    let Some(rest) = branch.strip_prefix("arugula/").and_then(|r| r.strip_prefix(short)) else { return false };
     let slug = rest.strip_prefix('-').unwrap_or(rest);
     (rest.is_empty() || (rest.starts_with('-') && !slug.is_empty()))
         && slug.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))

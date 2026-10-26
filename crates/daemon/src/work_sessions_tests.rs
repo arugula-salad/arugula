@@ -7,17 +7,19 @@ fn a_session_names_only_its_own_branch() {
     for bad in ["ses_", "ses_../x", &format!("ses_{}", "A".repeat(32)), &format!("run_{}", "a".repeat(32))] {
         assert!(!good_id(bad), "{bad}");
     }
-    assert!(good_branch(&id, &format!("arugula/{id}-fix-login")));
-    assert!(good_branch(&id, &format!("arugula/{id}")));
+    let short = &id[4..12];
+    assert!(good_branch(&id, &format!("arugula/{short}-fix-login")));
+    assert!(good_branch(&id, &format!("arugula/{short}")));
     let other = format!("ses_{}", "b".repeat(32));
     for bad in [
         "main".to_owned(),
-        format!("arugula/{other}-fix"),
-        format!("arugula/{id}-fix/../main"),
-        format!("arugula/{id}x"),
-        format!("arugula/{id}-"),
-        format!("arugula/{id}-a b"),
-        format!("refs/heads/arugula/{id}-x"),
+        format!("arugula/{}-fix", &other[4..12]),
+        format!("arugula/{id}-fix"),
+        format!("arugula/{short}-fix/../main"),
+        format!("arugula/{short}x"),
+        format!("arugula/{short}-"),
+        format!("arugula/{short}-a b"),
+        format!("refs/heads/arugula/{short}-x"),
     ] {
         assert!(!good_branch(&id, &bad), "{bad}");
     }
