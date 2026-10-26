@@ -451,9 +451,9 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 61,
+        version: 60,
         name: "ci_rounds_required",
-        sql: include_str!("../../migrations/sqlite/0061_ci_rounds_required.sql"),
+        sql: include_str!("../../migrations/sqlite/0060_ci_rounds_required.sql"),
         additive: true,
     },
 ];
@@ -817,9 +817,9 @@ const POSTGRES: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 61,
+        version: 60,
         name: "ci_rounds_required",
-        sql: include_str!("../../migrations/postgres/0061_ci_rounds_required.sql"),
+        sql: include_str!("../../migrations/postgres/0060_ci_rounds_required.sql"),
         additive: true,
     },
 ];

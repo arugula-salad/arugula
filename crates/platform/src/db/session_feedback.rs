@@ -15,7 +15,7 @@
 //!   its [`MAX_CI_ROUNDS`]), or drops it (the session ended, or a review
 //!   said nothing). What comes for a batch after that is late, and kept
 //!   out.
-//! - **Not required** (Arugula #210, `0061_ci_rounds_required`): a CI
+//! - **Not required** (Arugula #210, `0060_ci_rounds_required`): a CI
 //!   batch none of whose failed checks the base branch requires is dropped
 //!   `not_required`, and spends no round. Unlike the rest it isn't
 //!   settled for good: a check that fails on its commit later opens it
