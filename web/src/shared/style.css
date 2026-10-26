@@ -276,7 +276,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .commands-button:hover {
-  border-color: var(--raised-hover);
+  border-color: var(--line-strong);
   color: var(--fg);
 }
 
@@ -1118,7 +1118,7 @@ button.att {
   padding: 8px;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
   outline: none;
 }
@@ -1141,7 +1141,7 @@ button.att {
   font: 13px ui-monospace, monospace;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--btn-radius);
 }
 
@@ -2005,7 +2005,7 @@ button.att {
   font: inherit;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--card-radius);
   outline: none;
   field-sizing: content;
@@ -2118,7 +2118,7 @@ button.att {
   padding: 8px;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
 }
 
@@ -2221,7 +2221,7 @@ button.att {
   gap: 4px 8px;
   align-items: center;
   padding: 6px 0;
-  border-top: 1px solid var(--raised-hover);
+  border-top: 1px solid var(--line-strong);
 }
 
 .sandbox-name {
@@ -2300,7 +2300,7 @@ button.att {
   padding: 8px;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
   outline: none;
 }
@@ -3034,7 +3034,7 @@ button.att {
   padding: 6px 8px;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
   width: 10rem;
 }
@@ -3056,7 +3056,7 @@ button.att {
   max-width: 100%;
   font: 14px ui-monospace, monospace;
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
 }
 
@@ -3139,7 +3139,7 @@ button.att {
 .unused-badge {
   background: none;
   color: var(--dim);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
 }
 
 .control-unused {
@@ -3595,7 +3595,7 @@ button.att {
   padding: 4px;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
 }
 
@@ -4357,7 +4357,7 @@ button.att {
   font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--fg);
   background: var(--surface);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--tag-radius);
   resize: vertical;
 }
@@ -4775,7 +4775,7 @@ button.diff-why-run {
   align-items: baseline;
   padding: 10px 8px 2px;
   font-weight: 600;
-  border-top: 1px solid var(--raised-hover);
+  border-top: 1px solid var(--line-strong);
 }
 
 .conv-host:first-child {
@@ -4818,7 +4818,7 @@ button.diff-why-run {
   border-radius: var(--tag-radius);
   font-size: 11px;
   color: var(--dim);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
 }
 
 .conv-source.desktop {
@@ -4844,7 +4844,7 @@ button.diff-why-run {
   padding: 6px 12px;
   font-size: 12px;
   color: var(--dim);
-  border-bottom: 1px solid var(--raised-hover);
+  border-bottom: 1px solid var(--line-strong);
 }
 /* M34: chant workspace blocks. */
 .ws-body {
@@ -5474,7 +5474,7 @@ button.diff-why-run {
 
 .md blockquote {
   padding-left: 10px;
-  border-left: 3px solid var(--raised-hover);
+  border-left: 3px solid var(--line-strong);
   color: var(--dim);
 }
 
@@ -6173,7 +6173,7 @@ button.diff-why-run {
 .agents-empty {
   margin: 0 8px 16px;
   padding: 16px 18px;
-  border: 1px dashed var(--raised-hover);
+  border: 1px dashed var(--line-strong);
   border-radius: var(--card-radius);
   line-height: 1.5;
 }
@@ -7320,7 +7320,7 @@ button.diff-why-run {
   margin: 4px 0;
   padding: 6px 8px;
   text-align: left;
-  border-left: 3px solid var(--raised-hover);
+  border-left: 3px solid var(--line-strong);
   border-radius: var(--tag-radius);
   background: var(--letterbox);
 }
@@ -7368,7 +7368,7 @@ button.thread-quote:hover {
   display: grid;
   grid-template-columns: 1fr auto auto auto;
   align-items: end;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--card-radius);
   background: var(--letterbox);
 }
@@ -7437,7 +7437,7 @@ button.thread-quote:hover {
 .chat-quote-pick {
   margin: 0 0 8px;
   padding: 8px;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--card-radius);
   background: var(--surface);
   max-height: 50vh;
@@ -7476,7 +7476,7 @@ button.thread-quote:hover {
   font: 12px/1.35 ui-monospace, monospace;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--tag-radius);
   padding: 6px;
 }
@@ -7522,7 +7522,7 @@ button.thread-quote:hover {
   font: inherit;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
   padding: 6px 8px;
 }
@@ -7848,7 +7848,7 @@ button.thread-quote:hover {
 
 .chat-search:hover,
 .chat-search:focus {
-  border-color: var(--raised-hover);
+  border-color: var(--line-strong);
   color: var(--fg);
   outline: none;
 }
@@ -8426,7 +8426,7 @@ input.chat-search {
   padding: 6px 8px;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
 }
 
@@ -11611,7 +11611,7 @@ html[data-workspace="new"] .thread-panel {
 }
 
 .md.md-chat blockquote {
-  border-left-color: var(--raised-hover);
+  border-left-color: var(--line-strong);
 }
 
 .md.md-chat table {
@@ -11707,7 +11707,7 @@ html[data-workspace="new"] .thread-panel {
   font: inherit;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
   outline: none;
 }
@@ -11806,7 +11806,7 @@ html[data-workspace="new"] .thread-panel {
   max-width: 440px;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  border-left: 3px solid var(--raised-hover);
+  border-left: 3px solid var(--line-strong);
   border-radius: var(--card-radius);
   background: var(--surface);
   color: var(--fg);
@@ -12104,7 +12104,7 @@ html[data-workspace="new"] .thread-panel {
   box-sizing: border-box;
   max-width: 100%;
   padding: 4px 6px;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--chip-radius);
   background: var(--surface);
   font-size: 12px;

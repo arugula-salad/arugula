@@ -665,7 +665,7 @@ html[data-corners="square"] .platform-section {
   box-sizing: border-box;
   height: 28px;
   padding: 4px 8px;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
@@ -951,7 +951,7 @@ html[data-corners="square"] .platform-section {
   min-width: 0;
   height: 30px;
   padding: 4px 8px;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);

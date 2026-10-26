@@ -195,7 +195,7 @@
   width: 32px;
   height: 18px;
   margin: 0;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: radial-gradient(circle closest-side, var(--knob) 0 calc(100% - 1px), transparent 100%) 0% 50% / 16px 16px no-repeat,
     var(--raised);
@@ -431,7 +431,7 @@ html[data-corners="square"] .platform input.sw-switch {
   display: inline-block;
   margin-left: 8px;
   padding: 1px var(--space-2);
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--chip-radius);
   font: 500 11px/1.4 var(--f-mono);
   color: var(--dim);
@@ -645,7 +645,7 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .settings-chip {
   display: inline-flex;
   align-items: stretch;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--chip-radius);
   overflow: hidden;
   font: 500 11px/1.5 var(--f-mono);
@@ -709,7 +709,7 @@ html[data-corners="square"] .platform input.sw-switch {
 /* A rollback: a tag, as a repo's private is, not a button. */
 .platform .deploy-table .deploy-roll-back {
   padding: 0 6px;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--chip-radius);
   background: none;
   box-shadow: none;

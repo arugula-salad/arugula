@@ -255,7 +255,7 @@ html[data-finish="glass"] .primary {
   box-sizing: border-box;
   min-height: 32px;
   padding: 6px 8px;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
