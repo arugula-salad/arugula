@@ -31,7 +31,8 @@ use std::sync::Arc;
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::sessions::{
-    SessionAct, SessionAnswered, SessionCard, SessionLine, SessionOpen, SessionPort, SessionTurn, SessionView,
+    SessionAct, SessionAnswered, SessionCard, SessionFinish, SessionLine, SessionOpen, SessionPort, SessionTurn,
+    SessionView,
 };
 use arugula_control_wire::work::{Reported, SessionReport};
 use arugula_e2e::{now_ms, team::TeamRole};
@@ -201,10 +202,15 @@ fn line(e: &Event, name: &dyn Fn(&str) -> String) -> String {
         (Kind::Turn, ..) => {
             let n = d.commits.len();
             let commits = format!("{n} commit{}", if n == 1 { "" } else { "s" });
+            let finish = match &d.finish {
+                Some(f) if f.ok => format!(" (finish passed: {})", f.command),
+                Some(f) => format!(" (finish failed: {})", f.command),
+                None => String::new(),
+            };
             if d.pushed == Some(true) {
-                format!("Turn pushed {}: {commits}", d.branch.unwrap_or_default())
+                format!("Turn pushed {}: {commits}{finish}", d.branch.unwrap_or_default())
             } else {
-                format!("Turn left {commits}, not pushed")
+                format!("Turn left {commits}, not pushed{finish}")
             }
         }
         (Kind::Heartbeat, ..) => "Heard from its box".into(),
@@ -236,6 +242,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<Sessi
             commits: d.commits,
             diffstat: d.diffstat,
             uncommitted: d.uncommitted,
+            finish: d.finish.map(|f| SessionFinish { ok: f.ok, command: f.command, output_tail: f.output_tail }),
         }
     });
     let open = (s.seen_as() == State::NeedsInput).then(|| last_state(State::NeedsInput)).flatten().map(|e| {
