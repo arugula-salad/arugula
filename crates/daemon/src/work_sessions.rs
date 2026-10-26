@@ -941,14 +941,33 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 };
                 let result = b.call("turn_result", json!({})).await.ok().filter(|v| !v.is_null());
                 let r: Option<arugula_proto::api::TurnResult> = result.and_then(|v| serde_json::from_value(v).ok());
-                // M259 pushes here, only when `may_push`, and says so in
-                // `pushed`.
+                // The push, only when the finish step passed (or there's
+                // none) and no fix is owed: the commit now on GitHub, nothing
+                // to push, or why it didn't.
                 let may_push = fix.is_none() && finished.may_push();
                 info!(session = id, may_push, fix = fix.is_some(), "hosted: a session's turn ended");
-                let pushed = false;
+                let pushed = if may_push { push::push_turn(app, &l).await } else { Ok(None) };
                 let branch = l.branch.clone();
                 let (k, m, base, again) = (keys.clone(), me.clone(), s.turns, fix.clone());
                 say(Box::new(move |now| {
+                    let pushed = match pushed {
+                        Ok(Some(head)) => {
+                            now.pushed_head = Some(head);
+                            true
+                        }
+                        Ok(None) => false,
+                        Err(why) => {
+                            let error = Some(format!("couldn't push {}: {why}", now.branch));
+                            now.push(
+                                &k,
+                                &m,
+                                Kind::Error,
+                                State::Working,
+                                SessionDetail { error, ..Default::default() },
+                            );
+                            false
+                        }
+                    };
                     let w = r.and_then(|r| r.work);
                     let d = SessionDetail {
                         branch: Some(w.as_ref().map_or(branch, |w| w.branch.clone())),
