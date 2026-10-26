@@ -204,6 +204,10 @@ impl Adapter for Github {
         true
     }
 
+    fn merge_styles<'a>(&'a self, repo: &'a str) -> BoxFuture<'a, Result<Option<Vec<String>>, Error>> {
+        Box::pin(Github::merge_styles(self, repo))
+    }
+
     fn read_only(&self) -> Option<String> {
         self.tokens().via_app().map(|_| {
             "read-only: no gh login here, so it reads through Arugula control's GitHub App; writes go out as you, so they need your own login (`gh auth login`, then refresh)".to_owned()

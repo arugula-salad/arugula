@@ -1427,7 +1427,14 @@ hook: boolean,
 /**
  * M172: it's the platform's item, read through Arugula control.
  */
-pin: ForgePin | null, };
+pin: ForgePin | null, 
+/**
+ * The ways this repository lets a pull request be merged, as the
+ * `merge` method names them (UI audit #196: GitHub's `allow_*`), so
+ * Merge offers only those. None when it isn't known: the forge
+ * doesn't say, or says only to someone who can push.
+ */
+merge_styles?: Array<string>, };
 
 /**
  * A body, a comment, a review's text or a review comment.

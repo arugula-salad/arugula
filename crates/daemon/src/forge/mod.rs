@@ -106,7 +106,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::{info, warn};
 
-use self::model::{Event, EventLine, Item, ItemKind, ItemText, Me, Pr, Provider, Review, Reviewer, Want};
+use self::model::{Event, EventLine, Item, ItemKind, ItemState, ItemText, Me, Pr, Provider, Review, Reviewer, Want};
 use crate::{
     block::{Block, BlockCtx, Summary, no_method},
     mux::AskReply,
@@ -268,6 +268,12 @@ pub trait Adapter: Send + Sync {
     fn default_branch<'a>(&'a self, repo: &'a str) -> BoxFuture<'a, Result<String, Error>> {
         let _ = repo;
         Box::pin(async { Err(Error::Http("this forge doesn't say its default branch yet".into())) })
+    }
+    /// The ways the repository lets a pull request be merged, in the
+    /// `merge` method's words, when the forge says (UI audit #196).
+    fn merge_styles<'a>(&'a self, repo: &'a str) -> BoxFuture<'a, Result<Option<Vec<String>>, Error>> {
+        let _ = repo;
+        Box::pin(async { Ok(None) })
     }
     /// Why it can only read (GitLab with no glab login), if it can't write.
     fn read_only(&self) -> Option<String> {
@@ -805,6 +811,20 @@ impl ForgeBlock {
             let h = had.clone().unwrap_or_default();
             (h.reviews, h.item.requested, h.events)
         };
+        // UI audit #196: how the repository lets it be merged, so Merge
+        // offers only those; read again with the rest (a cached answer
+        // costs nothing), and kept as it was when the forge won't say.
+        let styles = if moved && polled.item.state == ItemState::Open && a.read_only().is_none() {
+            match a.merge_styles(&repo).await {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    warn!(pane = self.ctx.id, error = %e, "the repository's merge methods");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         *self.fingerprint.lock().unwrap() = Some(polled.fingerprint);
         let mut item = polled.item;
         item.requested = requested;
@@ -823,6 +843,9 @@ impl ForgeBlock {
             st.read_only = a.read_only();
             st.rerun = rerun(&pr, a.rerun_api() && st.read_only.is_none());
             st.rate = a.rate();
+            if let Some(s) = styles {
+                st.merge_styles = s;
+            }
             st.pr = Some(pr);
         }
         self.after_read(had.is_none());

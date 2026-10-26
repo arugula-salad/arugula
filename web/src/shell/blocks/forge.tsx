@@ -244,6 +244,15 @@ const MERGE_STYLES: Record<string, [string, string][]> = {
   forgejo: [["merge", "Merge commit"], ["squash", "Squash"], ["rebase", "Rebase"], ["rebase-merge", "Rebase, then a merge commit"], ["fast-forward-only", "Fast-forward only"]],
 };
 
+/** The ways to merge to offer: the forge's, less those the repository
+ * doesn't allow when it says (UI audit #196). */
+function mergeStyles(provider: string, allowed: string[] | undefined): [string, string][] {
+  const all = MERGE_STYLES[provider] ?? MERGE_STYLES.forgejo;
+  if (!allowed) return all;
+  const ok = all.filter(([v]) => allowed.includes(v));
+  return ok.length ? ok : all;
+}
+
 /** Whether the block follows its item (UI audit #177: with a title, as
  * the file and diff blocks' have; none while it can't read it). */
 function LiveTag({ s }: { s: ForgeState }) {
@@ -686,9 +695,10 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
   };
   const gitlab = s?.provider === "gitlab";
   // UI audit #178: the forge's ways to merge, to pick from, rather than a
-  // word to type.
+  // word to type; #196: only the ones the repository allows, when the
+  // forge says (a squash-only repo offers Squash alone).
   const merge = async () => {
-    const styles = MERGE_STYLES[s?.provider ?? ""] ?? MERGE_STYLES.forgejo;
+    const styles = mergeStyles(s?.provider ?? "", s?.merge_styles);
     const choices: PromptChoice[] = styles.map(([value, label]) => ({ value, label }));
     const style = await askText(`Merge #${s?.number ?? ""}`, "", "pick how, or type a method", Promise.resolve(choices));
     if (style?.trim()) await call("merge", { style: style.trim() }, "couldn't merge");
