@@ -44,11 +44,25 @@ the platform's `grants` table (`crates/platform/src/db/projects.rs`, "Grants,
 not impersonation" in [DECISIONS.md](../DECISIONS.md)), and the routes are
 the platform's behind the hub's gate (`crates/platform/src/grants.rs`).
 
+**Linking GitHub to an account (#208).** An account signed in some other
+way (a passkey) links its GitHub account in Sign-in and account: Link
+GitHub goes to `/auth/github?link=1`, which keeps the account and that
+sign-in's session under a state `link.<nonce>` for ten minutes, and
+GitHub's account picker comes back to the same callback. The callback
+links the numeric GitHub id to that account only when it comes back to
+the same session, and only if no other account signs in with that id
+(else "That GitHub account already signs in to another Arugula account",
+and nothing changes) and this one has no other GitHub account linked. It
+never merges accounts, starts a session or switches account, and it
+revokes the user token after reading `/user`. Unlink
+(`POST /api/me/github/unlink`) is refused (409) when GitHub is the
+account's last way to sign in (`crates/control/src/github_link.rs`).
+
 **Linked repos (M163, #1209).** A GitHub repo is linked to one project, by
 a member of it (the account, for a personal project; a team's owner or
 editor) who is an admin or maintainer of the repo on GitHub. Control checks
-that by the person's numeric GitHub id (from signing in with GitHub),
-through a read-only installation token of its GitHub App. Where the App
+that by the person's numeric GitHub id (from signing in with GitHub, or
+linking it in Sign-in and account, #208), through a read-only installation token of its GitHub App. Where the App
 isn't installed for the repo, the answer is a 409 with `reason:
 "install_app"` and GitHub's page to install it, whose `state` is
 `<project>:<owner>/<name>`; the App's setup URL is the platform page's

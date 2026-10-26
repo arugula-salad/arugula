@@ -47,6 +47,7 @@ mod forge_wire;
 mod gateway;
 #[cfg(test)]
 mod gateway_wire;
+mod github_link;
 #[cfg(test)]
 mod grants_wire;
 mod guest_jump;
@@ -409,6 +410,8 @@ pub struct App {
     pub app_codes: app_signin::Codes,
     /// GitHub authorizations under way for a person's send (M168).
     pub sends: forge_send::Starts,
+    /// Links of GitHub to a signed-in account under way (#208).
+    pub github_links: github_link::Starts,
     pub limits: limit::Limits,
     pub vapid: push::Vapid,
     /// Live push endpoints' open streams (`push_live.rs`).
@@ -540,6 +543,7 @@ impl App {
             passkeys: Default::default(),
             app_codes: Default::default(),
             sends: Default::default(),
+            github_links: Default::default(),
             limits: limit::Limits::new(None),
             vapid,
             live: Default::default(),
@@ -615,6 +619,7 @@ fn routes() -> Routes {
         .route("/api/me/sessions/{id}/end", post(account::end_session))
         .route("/api/me/passkeys", get(account::passkeys))
         .route("/api/me/passkeys/{id}/remove", post(account::remove_passkey))
+        .route("/api/me/github/unlink", post(github_link::unlink))
         .route("/api/me/delete", get(account::preview).post(account::delete))
         .route("/api/me/notices/{id}/seen", post(teams::notice_seen))
         .route("/api/devices", get(api::devices).post(api::enroll))
@@ -1150,6 +1155,7 @@ async fn run() -> anyhow::Result<()> {
         passkeys: Default::default(),
         app_codes: Default::default(),
         sends: Default::default(),
+        github_links: Default::default(),
         limits: limit::Limits::new(a.trust_proxy_header),
         vapid,
         live: Default::default(),

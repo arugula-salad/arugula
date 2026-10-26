@@ -473,6 +473,8 @@ pub struct Start {
     /// so it takes the person's click, not a redirect GitHub answers alone.
     #[serde(default)]
     reauth: bool,
+    /// `link=1`: link GitHub to the account signed in (#208), not sign in.
+    link: Option<String>,
 }
 
 /// Only paths on this site, never `//elsewhere`.
@@ -484,7 +486,7 @@ fn safe_next(next: Option<&str>) -> String {
 }
 
 /// Back to the site the sign-in started on (#507): its cookies are there.
-fn callback_url(app: &App, headers: &HeaderMap) -> String {
+pub(crate) fn callback_url(app: &App, headers: &HeaderMap) -> String {
     format!("{}/auth/github/callback", app.cfg.site(headers).url)
 }
 
@@ -492,9 +494,12 @@ pub async fn github_start(State(app): State<Arc<App>>, headers: HeaderMap, Query
     let Some(gh) = &app.cfg.github else {
         return (StatusCode::NOT_FOUND, "GitHub sign-in isn't configured here").into_response();
     };
-    let state = token();
     let next = safe_next(q.next.as_deref());
     let callback = callback_url(&app, &headers);
+    if matches!(q.link.as_deref(), Some("1" | "true")) {
+        return crate::github_link::start(&app, &headers, gh, next, callback);
+    }
+    let state = token();
     let mut params = vec![("client_id", gh.client_id.as_str()), ("redirect_uri", &callback), ("state", &state)];
     if q.reauth {
         params.push(("prompt", "select_account"));
@@ -530,9 +535,9 @@ struct TokenResponse {
 }
 
 #[derive(Deserialize)]
-struct GithubUser {
-    id: u64,
-    login: String,
+pub(crate) struct GithubUser {
+    pub(crate) id: u64,
+    pub(crate) login: String,
 }
 
 pub async fn github_callback(
@@ -547,6 +552,10 @@ pub async fn github_callback(
     // A person's send (M168), not a sign-in.
     if q.state.as_deref().is_some_and(|s| s.starts_with(crate::forge_send::STATE_PREFIX)) {
         return crate::forge_send::finish(&app, &headers, q).await;
+    }
+    // Linking GitHub to the account signed in (#208), not a sign-in.
+    if q.state.as_deref().is_some_and(|s| s.starts_with(crate::github_link::STATE_PREFIX)) {
+        return crate::github_link::finish(&app, &headers, q).await;
     }
     match github_finish(&app, &headers, q).await {
         Ok((account, next)) => {
@@ -589,8 +598,19 @@ async fn github_finish(app: &App, headers: &HeaderMap, q: Callback) -> Result<(S
     };
     let next = safe_next(unbase64_url(next).as_deref());
     let access = exchange(app, gh, &code, &callback_url(app, headers)).await?;
-    let user: GithubUser = app
-        .http
+    let user = github_user(app, gh, &access).await?;
+    let new_id = new_account_id();
+    let account = app
+        .db
+        .account_for("github", &user.id.to_string(), &user.login, &new_id, now_ms())
+        .map_err(|e| e.to_string())?;
+    app.analytics.signed_in(&account, "github", account == new_id);
+    Ok((account, next))
+}
+
+/// Who a user token is on GitHub.
+pub(crate) async fn github_user(app: &App, gh: &crate::Github, access: &str) -> Result<GithubUser, String> {
+    app.http
         .get(format!("{}/user", gh.api))
         .bearer_auth(access)
         .header(header::USER_AGENT, "arugula-control")
@@ -602,14 +622,7 @@ async fn github_finish(app: &App, headers: &HeaderMap, q: Callback) -> Result<(S
         .map_err(|e| e.to_string())?
         .json()
         .await
-        .map_err(|e| e.to_string())?;
-    let new_id = new_account_id();
-    let account = app
-        .db
-        .account_for("github", &user.id.to_string(), &user.login, &new_id, now_ms())
-        .map_err(|e| e.to_string())?;
-    app.analytics.signed_in(&account, "github", account == new_id);
-    Ok((account, next))
+        .map_err(|e| e.to_string())
 }
 
 /// GitHub's code for a user token, with `gh`'s client: the token, or why
