@@ -283,13 +283,16 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-weight: 700;
 }
 
-/* The swarm under the shared bar. */
+/* The swarm under the shared bar: as wide as left and right leave it
+   (beside the rail), not .bar's 100%, which ran it 56px off the right
+   edge and hid half the account button (UI audit #153). */
 .swarm-shell > .bar {
   position: fixed;
   z-index: 21;
   top: 0;
   left: 0;
   right: 0;
+  width: auto;
 }
 
 .swarm-shell > .swarm {
