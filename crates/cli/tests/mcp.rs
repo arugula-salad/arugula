@@ -9,7 +9,12 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     os::unix::net::UnixListener,
     process::{Command, Stdio},
+    sync::atomic::{AtomicUsize, Ordering},
 };
+
+/// Counts the socket dirs, so no two requests in a process share one: the
+/// tests run in parallel, and two can ask for the same pane.
+static DIRS: AtomicUsize = AtomicUsize::new(0);
 
 /// The headers of the one request `arugula mcp` sends for a line, with
 /// `ARUGULA_PANE` as given.
@@ -25,14 +30,16 @@ fn headers_sent_with(var: &str, pane: Option<&str>, env: &[(&str, &str)]) -> Str
     }
     let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#;
     let answer = r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#;
-    first_request(&format!("mcp-{var}-{}", pane.unwrap_or("none")), &["mcp"], &env, Some(line), answer)
+    first_request(&["mcp"], &env, Some(line), answer)
 }
 
 /// The head (lowercase) of the first request `arugula ARGS` sends to a
 /// socket of ours, which answers it with `answer`. Neither name of the
 /// pane variable, nor `CLAUDE_CONFIG_DIR`, unless `env` says.
-fn first_request(name: &str, args: &[&str], env: &[(&str, &str)], stdin: Option<&str>, answer: &str) -> String {
-    let dir = std::env::temp_dir().join(format!("ilg-cli-{name}-{}", std::process::id()));
+fn first_request(args: &[&str], env: &[(&str, &str)], stdin: Option<&str>, answer: &str) -> String {
+    // Short, for a Unix socket's path (104 bytes on macOS).
+    let n = DIRS.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("ilg-cli-{}-{n}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let sock = dir.join("sock");
     let _ = std::fs::remove_file(&sock);
@@ -106,8 +113,8 @@ fn pane_and_config_dir_go_under_arugulas_names() {
 /// The CLI under Claude Code says an agent runs it.
 #[test]
 fn an_agent_says_so() {
-    let head = first_request("agent", &["attention", "--json"], &[("CLAUDECODE", "1")], None, "[]");
+    let head = first_request(&["attention", "--json"], &[("CLAUDECODE", "1")], None, "[]");
     assert!(head.contains("x-arugula-agent: 1\r\n"), "{head}");
-    let head = first_request("owner", &["attention", "--json"], &[], None, "[]");
+    let head = first_request(&["attention", "--json"], &[], None, "[]");
     assert!(!head.contains("agent"), "{head}");
 }

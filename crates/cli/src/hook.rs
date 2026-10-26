@@ -22,11 +22,15 @@
 //! (#124).
 //!
 //! On `SessionStart` (startup, resume, `/clear` and compaction alike),
-//! `arugula hook` adds context instead: where the daemon has `docs` on, it
-//! prints `flags::DOCS_STEERING` as `additionalContext`, so Claude Code
-//! writes a report as a Doc, not an Artifact (#1486). It asks the daemon
-//! for at most [`FLAGS_WAIT`], because Claude Code waits for SessionStart
-//! hooks before a headless session's first turn.
+//! `arugula hook` adds context instead: where the daemon answers, it prints
+//! `flags::ISSUES_STEERING` as `additionalContext`, so Claude Code files a
+//! new issue in Arugula, not on GitHub, and where it has `docs` on,
+//! `flags::DOCS_STEERING` before it, so a report is a Doc, not an Artifact
+//! (#1486). It asks the daemon for at most [`FLAGS_WAIT`], because Claude
+//! Code waits for SessionStart hooks before a headless session's first
+//! turn. A `PreToolUse` of Bash that runs `gh issue create` gets the issues
+//! sentence again as its context: it doesn't stop the command, which may
+//! be what the user asked for.
 //!
 //! Outside an Arugula pane all of them do nothing.
 
@@ -39,7 +43,7 @@ use serde_json::Value;
 
 use arugula_proto::{
     api::{Empty, InboxAnswer, PermitAnswer},
-    flags::{self, DOCS_STEERING},
+    flags::{self, DOCS_STEERING, ISSUES_STEERING},
     op::ops::{FlagsList, PaneInbox, PanePermit},
 };
 
@@ -49,8 +53,8 @@ use crate::http::{Target, call, request, request_op, send_op};
 /// permission to the terminal.
 const GIVE_UP: Duration = Duration::from_secs(60);
 
-/// The longest `SessionStart` waits for the daemon to say whether `docs` is
-/// on. A session must never wait on Arugula.
+/// The longest `SessionStart` waits for the daemon's flags. A session must
+/// never wait on Arugula.
 const FLAGS_WAIT: Duration = Duration::from_secs(2);
 
 /// The pane and the hook's input, unless this is outside a pane, or the
@@ -68,8 +72,9 @@ fn stdin_hook(command: &str) -> Option<(u32, Value)> {
 }
 
 /// `arugula hook`: always exits 0; prints a decision only for a
-/// permission someone answered on a card, and the Doc context on
-/// `SessionStart` where `docs` is on.
+/// permission someone answered on a card, the issues (and, where `docs` is
+/// on, Doc) context on `SessionStart`, and the issues context before a
+/// `gh issue create`.
 pub fn run(sock: Target) -> i32 {
     let Some((pane, hook)) = stdin_hook("arugula hook") else { return 0 };
     if hook["hook_event_name"] == "SessionStart" {
@@ -81,6 +86,11 @@ pub fn run(sock: Target) -> i32 {
         return 0;
     }
     if hook["hook_event_name"] != "PermissionRequest" {
+        if let Some(out) = pre_tool_use(&hook) {
+            let mut stdout = std::io::stdout().lock();
+            let _ = writeln!(stdout, "{out}");
+            let _ = stdout.flush();
+        }
         let _ = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
         return 0;
     }
@@ -112,30 +122,52 @@ pub fn run(sock: Target) -> i32 {
     }
 }
 
-/// What `SessionStart` prints, if the daemon says within `wait` that `docs`
-/// is on: Claude Code's `additionalContext`. Nothing when it is off, when
-/// the daemon doesn't answer in time, or when it answers something else.
+/// What `SessionStart` prints, if the daemon answers within `wait`: Claude
+/// Code's `additionalContext`, the issues sentence, with the Doc one first
+/// where `docs` is on. Nothing when the daemon doesn't answer in time, or
+/// answers something else.
 fn session_start(sock: &Target, wait: Duration) -> Option<Value> {
-    docs_on(sock, wait).then(|| {
-        serde_json::json!({
-            "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": DOCS_STEERING }
-        })
-    })
+    let context = match docs_on(sock, wait)? {
+        true => format!("{DOCS_STEERING} {ISSUES_STEERING}"),
+        false => ISSUES_STEERING.to_owned(),
+    };
+    Some(serde_json::json!({
+        "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": context }
+    }))
 }
 
 /// Whether the daemon has `docs` on, asked on a thread of its own so that a
 /// daemon that accepts and never answers still costs only `wait` (the thread
-/// ends with the process).
-fn docs_on(sock: &Target, wait: Duration) -> bool {
+/// ends with the process). `None`: it didn't answer.
+fn docs_on(sock: &Target, wait: Duration) -> Option<bool> {
     let (tx, rx) = std::sync::mpsc::channel();
     let sock = sock.clone();
     std::thread::spawn(move || {
         let _ = tx.send(call::<FlagsList>(&sock, &(), &Empty {}));
     });
     match rx.recv_timeout(wait) {
-        Ok(Ok(all)) => all.iter().any(|f| f.name == flags::DOCS && f.on),
-        _ => false,
+        Ok(Ok(all)) => Some(all.iter().any(|f| f.name == flags::DOCS && f.on)),
+        _ => None,
     }
+}
+
+/// What a `PreToolUse` prints: the issues sentence, as context, for a Bash
+/// command that runs `gh issue create`. It never decides.
+fn pre_tool_use(hook: &Value) -> Option<Value> {
+    if hook["hook_event_name"] != "PreToolUse" || hook["tool_name"] != "Bash" {
+        return None;
+    }
+    files_a_github_issue(hook["tool_input"]["command"].as_str()?).then(|| {
+        serde_json::json!({
+            "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": ISSUES_STEERING }
+        })
+    })
+}
+
+/// Whether a shell command runs `gh issue create` (or its alias `new`).
+fn files_a_github_issue(command: &str) -> bool {
+    let words: Vec<&str> = command.split(|c: char| c.is_whitespace() || ";&|()".contains(c)).collect();
+    words.windows(3).any(|w| w[0] == "gh" && w[1] == "issue" && matches!(w[2], "create" | "new"))
 }
 
 /// `arugula inbox`: exits 2 with a follow-up (Claude Code's
@@ -191,7 +223,41 @@ fn driven(attended: Option<&str>, entrypoint: Option<&str>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::driven;
+    use serde_json::json;
+
+    use super::{driven, files_a_github_issue, pre_tool_use};
+
+    #[test]
+    fn gh_issue_create_is_seen_wherever_it_is_in_the_command() {
+        for c in [
+            "gh issue create --title x --body-file b.md",
+            "cd repo && gh issue create -t x",
+            "gh issue new",
+            "(gh issue create)",
+        ] {
+            assert!(files_a_github_issue(c), "{c}");
+        }
+        for c in ["gh issue view 12", "gh issue list", "gh pr create", "echo gh issue", "gh issues create"] {
+            assert!(!files_a_github_issue(c), "{c}");
+        }
+    }
+
+    #[test]
+    fn only_bash_filing_a_github_issue_gets_the_issues_context() {
+        let bash =
+            |c: &str| json!({ "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": { "command": c } });
+        let out = pre_tool_use(&bash("gh issue create -t x")).expect("context");
+        assert_eq!(out["hookSpecificOutput"]["additionalContext"], arugula_proto::flags::ISSUES_STEERING);
+        assert_eq!(out["hookSpecificOutput"]["hookEventName"], "PreToolUse");
+        assert!(out["hookSpecificOutput"].get("permissionDecision").is_none(), "it never decides");
+        assert!(pre_tool_use(&bash("gh issue view 3")).is_none());
+        let mut post = bash("gh issue create");
+        post["hook_event_name"] = json!("PostToolUse");
+        assert!(pre_tool_use(&post).is_none());
+        let mut other = bash("gh issue create");
+        other["tool_name"] = json!("Write");
+        assert!(pre_tool_use(&other).is_none());
+    }
 
     #[test]
     fn only_a_session_someone_drives_waits_for_follow_ups() {

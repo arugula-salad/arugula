@@ -1,6 +1,7 @@
-//! #1486: `arugula hook` on `SessionStart` adds the Docs context where the
-//! daemon has `docs` on, in a pane, and nothing otherwise; and never keeps a
-//! session waiting for a daemon that doesn't answer. Against a fake daemon
+//! #1486: `arugula hook` on `SessionStart` adds the issues context in a
+//! pane whose daemon answers, with the Docs context first where it has
+//! `docs` on, and nothing otherwise; and never keeps a session waiting for
+//! a daemon that doesn't answer. Against a fake daemon
 //! on a Unix socket that plays `flags.list`.
 
 #![cfg(unix)]
@@ -14,7 +15,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use arugula_proto::flags::DOCS_STEERING;
+use arugula_proto::flags::{DOCS_STEERING, ISSUES_STEERING};
 use serde_json::{Value, json};
 
 /// How the fake daemon treats a request.
@@ -102,16 +103,24 @@ fn session_start_with_docs_on_adds_the_context_for_every_source() {
         let said: Value = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{source}: {e}: {out:?}"));
         assert_eq!(
             said,
-            json!({ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": DOCS_STEERING } }),
+            json!({ "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": format!("{DOCS_STEERING} {ISSUES_STEERING}"),
+            } }),
             "{source}"
         );
     }
 }
 
 #[test]
-fn session_start_prints_nothing_with_docs_off() {
+fn session_start_with_docs_off_adds_only_the_issues_context() {
     let (out, _, code) = hook("off", Daemon::Docs(false), Some("3"), start("startup"));
-    assert_eq!((out.as_str(), code), ("", 0));
+    assert_eq!(code, 0);
+    let said: Value = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{e}: {out:?}"));
+    assert_eq!(
+        said,
+        json!({ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": ISSUES_STEERING } })
+    );
 }
 
 #[test]
