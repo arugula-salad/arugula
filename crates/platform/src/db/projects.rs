@@ -228,6 +228,8 @@ impl Db {
         // An agent token's reach over the team's projects goes with its
         // owner's place in the team (M230).
         super::agent_tokens::revoke_departed(&tx, &team.id, now)?;
+        // So does a thread's agent session with its asker's (M256).
+        super::session_threads::stop_departed_in(&tx, &team.id, now)?;
         tx.commit()?;
         Ok(())
     }
