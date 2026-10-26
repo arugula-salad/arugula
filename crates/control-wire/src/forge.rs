@@ -267,10 +267,11 @@ pub struct ForgeSend {
     pub account: String,
     /// `OWNER/NAME` on github.com.
     pub repo: String,
-    /// The PR or issue; `None` for a new issue.
+    /// The PR or issue; `None` for a new issue or PR.
     #[serde(default)]
     pub number: Option<u64>,
-    /// `comment`, `review` or `issue`.
+    /// `comment`, `review`, `issue` or `pr` (an agent session's PR, M259:
+    /// its draft's id is `pdr_…`).
     pub kind: String,
     /// A review's: `COMMENT`, `APPROVE` or `REQUEST_CHANGES`.
     #[serde(default)]
@@ -279,6 +280,14 @@ pub struct ForgeSend {
     pub title: Option<String>,
     #[serde(default)]
     pub body: String,
+    /// A PR's: the branch it's from, and the one it goes into.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    /// A PR's: opened as a draft on GitHub.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub draft_pr: bool,
 }
 
 /// How a machine (or control, for it) answered an op.

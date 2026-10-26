@@ -88,7 +88,7 @@ impl UserToken {
         Self(secret)
     }
 
-    fn secret(&self) -> &str {
+    pub(crate) fn secret(&self) -> &str {
         &self.0
     }
 }
@@ -107,13 +107,16 @@ pub struct Outcome {
     pub sent: Option<wire::DraftSent>,
     #[serde(default)]
     pub refused: Option<String>,
+    /// A session's PR (M259) that was opened: its URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr: Option<String>,
 }
 
 impl From<Result<wire::DraftSent, ApiError>> for Outcome {
     fn from(r: Result<wire::DraftSent, ApiError>) -> Self {
         match r {
-            Ok(s) => Outcome { sent: Some(s), refused: None },
-            Err(e) => Outcome { sent: None, refused: Some(e.1) },
+            Ok(s) => Outcome { sent: Some(s), refused: None, pr: None },
+            Err(e) => Outcome { sent: None, refused: Some(e.1), pr: None },
         }
     }
 }
@@ -234,7 +237,7 @@ fn purpose(kind: &str) -> &'static str {
 
 /// The token's GitHub user id (`GET /user`), or why not. The answer's
 /// error never carries the token.
-async fn user_of(app: &Platform, api: &str, t: &UserToken) -> Result<u64, String> {
+pub(crate) async fn user_of(app: &Platform, api: &str, t: &UserToken) -> Result<u64, String> {
     let r = github(app, reqwest::Method::GET, api, "user", t)
         .send()
         .await
@@ -247,7 +250,13 @@ async fn user_of(app: &Platform, api: &str, t: &UserToken) -> Result<u64, String
     }
 }
 
-fn github(app: &Platform, method: reqwest::Method, api: &str, path: &str, t: &UserToken) -> reqwest::RequestBuilder {
+pub(crate) fn github(
+    app: &Platform,
+    method: reqwest::Method,
+    api: &str,
+    path: &str,
+    t: &UserToken,
+) -> reqwest::RequestBuilder {
     app.http
         .request(method, format!("{api}/{path}"))
         .bearer_auth(t.secret())
@@ -357,6 +366,7 @@ fn op_of(d: &DraftRow, account: &str) -> DaemonOp {
         event: d.event.clone(),
         title: d.title.clone(),
         body: d.body.clone(),
+        ..Default::default()
     })
 }
 

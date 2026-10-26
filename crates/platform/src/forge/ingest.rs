@@ -394,6 +394,9 @@ pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Insta
                 let event_ms = rows.at.map(|at| arugula_e2e::now_ms().saturating_sub(at));
                 gh.ingest.stats.landed(came.elapsed().as_millis() as u64, event_ms);
                 super::inbox::written(p, repo, rows);
+                if !rows.items.is_empty() {
+                    crate::sessions::pr::noted(p, repo);
+                }
             }
             debug!(
                 event,

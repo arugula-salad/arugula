@@ -164,6 +164,10 @@ fn generate() -> String {
         use arugula_control_wire::sessions::*;
         c.visit::<SessionView>();
         c.visit::<SessionAct>();
+        c.visit::<SessionPr>();
+        c.visit::<SessionPrEdit>();
+        c.visit::<SessionPrSend>();
+        c.visit::<SessionPrSent>();
     }
     // Native issues (M195).
     {
