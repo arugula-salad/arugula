@@ -892,6 +892,14 @@ note = "A hosted machine's signed report of a run's state change (M212), checked
 
 [[route]]
 method = "POST"
+path = "/api/hosted/work/session"  # wire::work::WORK_SESSION_REPORT
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A hosted machine's signed report on one of its agent sessions (M257): a move, a heartbeat, an error or a turn's result, checked by the platform with the machine's key and kept with its signature; the actions it names are done (PlatformPort::hosted_session_report)."
+
+[[route]]
+method = "POST"
 path = "/api/hosted/work/secrets"  # wire::work::WORK_SECRETS
 process = "hub"
 auth = "hosted"
@@ -1939,6 +1947,30 @@ process = "platform"
 auth = "session"
 clients = ["page", "cli"]
 note = "A project's runs, newest first (by state, trigger or run spec if asked; M215's runs page): any member."
+
+[[route]]
+method = "GET"
+path = "/api/sessions/{ses}"  # wire::sessions::SESSION
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "An agent session's card and history (M257): its project's members."
+
+[[route]]
+method = "POST"
+path = "/api/sessions/{ses}/stop"  # wire::sessions::SESSION_STOP
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Stop an agent session (M257): its project's owners and editors. Control's stopped move; its box stops the agent."
+
+[[route]]
+method = "POST"
+path = "/api/sessions/{ses}/actions"  # wire::sessions::SESSION_ACTIONS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Ask an agent session's box to answer its question, approve or deny its permission, or cancel its turn (M257): its project's owners and editors; the first answer wins."
 
 [[route]]
 method = "GET"

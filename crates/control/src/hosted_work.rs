@@ -5,13 +5,14 @@
 //! says which machine asked, from the hosted certificate it checked, with
 //! the key its reports are signed with, and passes the call on
 //! (`PlatformPort::hosted_work`, `hosted_report`, `hosted_upload`,
-//! `hosted_uploaded`).
+//! `hosted_uploaded`), and their agent sessions' reports (M257,
+//! `hosted_session_report`).
 
 use std::sync::Arc;
 
 use arugula_control_wire::{
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, Work},
+    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionReport, Work},
 };
 use arugula_platform::{PlatformPort as _, work::HostedMachine};
 use axum::{
@@ -51,6 +52,16 @@ pub async fn report(
     Json(r): Json<Report>,
 ) -> Result<Json<Reported>, ApiError> {
     Ok(Json(app.platform.hosted_report(&machine(&h.0), &r).await?))
+}
+
+/// `POST /api/hosted/work/session` (M257): something it says of one of
+/// its agent sessions, signed by it.
+pub async fn session_report(
+    State(app): State<Arc<App>>,
+    h: HostedAuth,
+    Json(r): Json<SessionReport>,
+) -> Result<Json<Reported>, ApiError> {
+    Ok(Json(app.platform.hosted_session_report(&machine(&h.0), &r).await?))
 }
 
 /// `POST /api/hosted/work/upload`: a URL to put one of its run's log

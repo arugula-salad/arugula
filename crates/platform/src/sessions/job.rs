@@ -65,9 +65,10 @@ pub struct Follow {
     pub app: Arc<Platform>,
 }
 
-fn control(db: &Db, id: &str, from: State, to: State, detail: serde_json::Value, now: u64) -> Result<bool> {
+/// Control's move, told to the session's card (`session_live::record`).
+fn control(app: &Platform, id: &str, from: State, to: State, detail: serde_json::Value, now: u64) -> Result<bool> {
     let detail = detail.to_string();
-    Ok(db.move_session(id, &Move::Control { from, to, at: now, detail: &detail })?.is_ok())
+    Ok(crate::session_live::record(app, id, &Move::Control { from, to, at: now, detail: &detail })?.is_ok())
 }
 
 impl Follow {
@@ -85,7 +86,8 @@ impl Follow {
             .hosted_any(&s.project, &s.workspace)?
             .filter(|w| !matches!(w.state.as_str(), "deleting" | "deleted") && w.asked.as_deref() != Some("delete"));
         let Some(w) = w else {
-            db.stop_workspace_sessions(&s.workspace, now)?;
+            let stopped = db.stop_workspace_sessions(&s.workspace, now)?;
+            crate::session_live::told(&self.app, &stopped)?;
             info!(session = s.id, reason = WORKSPACE_GONE, "a session stopped");
             return Ok(Step::Done);
         };
@@ -93,7 +95,7 @@ impl Follow {
         let mut state = s.state;
         if state.watched() && s.heard_at.unwrap_or(s.updated_at).saturating_add(QUIET_MS) <= now {
             let heard = json!({ "heard_at": s.heard_at });
-            if control(db, &s.id, state, State::Unresponsive, heard, now)? {
+            if control(&self.app, &s.id, state, State::Unresponsive, heard, now)? {
                 info!(session = s.id, "a session's box went quiet");
                 state = State::Unresponsive;
             }
@@ -123,7 +125,7 @@ impl Follow {
                 db.checkpoint_job(job, now)?;
             } else if now.saturating_sub(cp.full_at.unwrap_or(0).max(s.created_at)) > work::TAKE_MS {
                 let why = json!({ "reason": "not_taken: its hosted workspace didn't take it in 15 minutes" });
-                if control(db, &s.id, State::Queued, State::Failed, why, now)? {
+                if control(&self.app, &s.id, State::Queued, State::Failed, why, now)? {
                     info!(session = s.id, "a session no box took failed");
                 }
                 return Ok(Step::Done);

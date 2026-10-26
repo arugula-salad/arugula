@@ -59,6 +59,9 @@ pub struct SessionCard {
     /// Who asked, and their name now ("" once they're gone).
     pub asker: String,
     pub asker_name: String,
+    /// The hosted workspace it runs on, and its name ("" once it's gone).
+    pub workspace: String,
+    pub workspace_name: String,
     pub repo: Option<String>,
     pub branch: String,
     pub created_at: u64,
