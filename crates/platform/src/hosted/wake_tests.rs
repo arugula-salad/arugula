@@ -1,6 +1,8 @@
 //! Waking on connect (M182), as the hub asks it, against the fake provider
-//! and the platform's own worker: opens at once share one resume, and a
-//! wake that fails says why. Runs on SQLite and, with
+//! and the platform's own worker: opens at once share one resume, a wake
+//! that fails says why, and a woken box is `ready` only once its daemon
+//! dials in (M258): one whose daemon never does needs a rebuild, and the
+//! project's owners and editors are told. Runs on SQLite and, with
 //! `ARUGULA_TEST_POSTGRES_URL`, Postgres.
 
 use std::{
@@ -21,6 +23,12 @@ use crate::{Platform, compute, compute::State};
 
 /// A workspace whose box enrolled and runs, and its id.
 async fn ready() -> (Arc<Fake>, Arc<Platform>, String, String) {
+    let (_hub, fake, app, project, id) = ready_with_hub().await;
+    (fake, app, project, id)
+}
+
+/// [`ready`], with the test hub.
+async fn ready_with_hub() -> (Arc<crate::chat_tests::TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
     let (hub, fake, app, base, project) = serve(EnrollBy::Sandbox).await;
     hub.delegate(&project);
     let (_, w) = make(&base, "alice", &project, "dev").await;
@@ -30,7 +38,21 @@ async fn ready() -> (Arc<Fake>, Arc<Platform>, String, String) {
     hub.enroll(&id, "m1");
     drive(&app, now + 3_000).await;
     assert_eq!(app.db.hosted_workspace(&project, &id).unwrap().unwrap().state, "ready");
-    (fake, app, project, id)
+    (hub, fake, app, project, id)
+}
+
+/// The workspace's row once the worker has made it `ready` (it is once its
+/// daemon has dialed in, a tick or so after the resume).
+async fn once_ready(app: &Platform, project: &str, id: &str) -> crate::hosted::HostedWorkspace {
+    let until = Instant::now() + Duration::from_secs(10);
+    loop {
+        let w = app.db.hosted_workspace(project, id).unwrap().unwrap();
+        if w.state == "ready" {
+            return w;
+        }
+        assert!(Instant::now() < until, "never ready: {w:?}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 fn code(a: &WakeAnswer) -> Option<WakeCode> {
@@ -62,7 +84,7 @@ async fn opens_at_once_share_one_resume() {
     println!("five opens woke the box in {} ms", started.elapsed().as_millis());
     assert_eq!(fake.resumes.load(SeqCst), 1, "one resume");
     assert_eq!(fake.boxes()[0].state, State::Running);
-    let w = app.db.hosted_workspace(&project, &id).unwrap().unwrap();
+    let w = once_ready(&app, &project, &id).await;
     assert_eq!((w.state.as_str(), w.asked.as_deref(), w.error.as_deref()), ("ready", None, None));
 
     // Opened again later: a resume of its own (a running box only has its
@@ -139,4 +161,104 @@ async fn a_box_being_made_or_deleted_isnt_woken() {
     assert_eq!(code(&wake(&app, &project, &id).await.unwrap()), Some(WakeCode::Gone));
     assert_eq!(code(&wake(&app, &project, "hw_nothing").await.unwrap()), Some(WakeCode::Gone));
     assert_eq!(fake.resumes.load(SeqCst), 0);
+}
+
+/// The pushes about `id`'s box waking without its daemon, by whom to.
+fn told(hub: &crate::chat_tests::TestHub, id: &str) -> Vec<String> {
+    let tag = serde_json::json!(format!("hosted-no-daemon-{id}"));
+    hub.pushes().into_iter().filter(|(_, m, _)| m["tag"] == tag).map(|(to, _, _)| to).collect()
+}
+
+/// Arugula #124: the box resumes, but its daemon died before the pause and never
+/// dials in. The hub hears the box runs (it waits for the dial itself), and
+/// the workspace is `waking`, never `ready`. Past the dial wait it fails as
+/// needing a rebuild, its box is paused again, the team's owner and editor
+/// (not its viewer) are pushed once, and every open from then on says the
+/// box's daemon is silent, without asking the provider again.
+#[tokio::test]
+async fn a_box_whose_daemon_never_dials_in_needs_a_rebuild() {
+    let (hub, fake, app, project, id) = ready_with_hub().await;
+    fake.pause_all();
+    hub.set_online("m1", false);
+    let t = now_ms() + 10_000;
+    assert!(super::ask(&app, &id, super::Ask::Wake).unwrap());
+    drive(&app, t).await;
+    assert_eq!(fake.resumes.load(SeqCst), 1);
+    assert_eq!(fake.boxes()[0].state, State::Running);
+    let w = app.db.hosted_workspace(&project, &id).unwrap().unwrap();
+    assert_eq!((w.state.as_str(), w.asked.as_deref(), w.error.as_deref()), ("waking", None, None));
+    assert_eq!(wake(&app, &project, &id).await.unwrap(), WakeAnswer::Awake, "the box runs");
+
+    drive(&app, t + 30_000).await;
+    drive(&app, t + 59_000).await;
+    assert_eq!(app.db.hosted_workspace(&project, &id).unwrap().unwrap().state, "waking", "within the dial wait");
+    assert!(told(&hub, &id).is_empty());
+
+    drive(&app, t + 60_000).await;
+    let w = app.db.hosted_workspace(&project, &id).unwrap().unwrap();
+    assert_eq!((w.state.as_str(), w.error.as_deref()), ("failed", Some(worker::NO_DAEMON)));
+    assert!(w.error.as_deref().unwrap().contains("Rebuild the workspace"), "it says what to do");
+    assert_eq!(fake.boxes()[0].state, State::Paused, "not left running unheld");
+    let mut to = told(&hub, &id);
+    to.sort();
+    assert_eq!(to, ["alice", "bob"], "the owner and the editor, not the viewer");
+    let m = hub
+        .pushes()
+        .into_iter()
+        .find(|(_, m, _)| m["tag"] == serde_json::json!(format!("hosted-no-daemon-{id}")))
+        .unwrap()
+        .1;
+    assert_eq!(m["hosted"], serde_json::json!({ "project": project, "workspace": id }), "a tap opens the workspace");
+
+    drive(&app, t + 600_000).await;
+    assert_eq!(told(&hub, &id).len(), 2, "told once");
+    let a = wake(&app, &project, &id).await.unwrap();
+    assert_eq!(code(&a), Some(WakeCode::Silent), "{a:?}");
+    assert_eq!(fake.resumes.load(SeqCst), 1, "not woken again");
+
+    // A rebuild makes it again, from the start.
+    assert!(super::ask(&app, &id, super::Ask::Rebuild).unwrap());
+    drive(&app, t + 601_000).await;
+    assert_eq!(app.db.hosted_workspace(&project, &id).unwrap().unwrap().state, "enrolling");
+}
+
+/// A daemon that dials in late, within the dial wait (its supervisor
+/// started it again): `ready` then, and nobody is pushed.
+#[tokio::test]
+async fn a_daemon_that_dials_in_within_the_wait_is_ready() {
+    let (hub, fake, app, project, id) = ready_with_hub().await;
+    fake.pause_all();
+    hub.set_online("m1", false);
+    let t = now_ms() + 10_000;
+    assert!(super::ask(&app, &id, super::Ask::Wake).unwrap());
+    drive(&app, t).await;
+    drive(&app, t + 20_000).await;
+    assert_eq!(app.db.hosted_workspace(&project, &id).unwrap().unwrap().state, "waking");
+    hub.set_online("m1", true);
+    drive(&app, t + 21_000).await;
+    let w = app.db.hosted_workspace(&project, &id).unwrap().unwrap();
+    assert_eq!((w.state.as_str(), w.error.as_deref()), ("ready", None));
+    drive(&app, t + 120_000).await;
+    assert_eq!(app.db.hosted_workspace(&project, &id).unwrap().unwrap().state, "ready");
+    assert!(told(&hub, &id).is_empty());
+}
+
+/// While the hub can't say who's on the relay, a woken box stays `waking`
+/// (it's neither said ready nor failed for the hub's silence), and goes
+/// `ready` once the hub says its daemon is there.
+#[tokio::test]
+async fn a_hub_that_cant_say_keeps_it_waking() {
+    let (hub, fake, app, project, id) = ready_with_hub().await;
+    fake.pause_all();
+    hub.set_online("m1", false);
+    hub.online_down(true);
+    let t = now_ms() + 10_000;
+    assert!(super::ask(&app, &id, super::Ask::Wake).unwrap());
+    drive(&app, t).await;
+    drive(&app, t + 120_000).await;
+    assert_eq!(app.db.hosted_workspace(&project, &id).unwrap().unwrap().state, "waking");
+    hub.online_down(false);
+    hub.set_online("m1", true);
+    drive(&app, t + 130_000).await;
+    assert_eq!(app.db.hosted_workspace(&project, &id).unwrap().unwrap().state, "ready");
 }
