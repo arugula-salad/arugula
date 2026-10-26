@@ -77,7 +77,6 @@
 .ws-att-facts { padding: 12px; border: 1px solid var(--line); border-radius: var(--field-radius); background: var(--bg); }
 .ws-att-facts > div { padding: 6px 0; }
 .ws-att-facts dd { line-height: 1.5; }
-.ws-att-go { margin-top: 10px; padding-top: 0; border-top: 0; }
 .ws-att-foot { padding: 14px 20px; }
 @media (max-width: 600px) {
   .add-pane { top: 0; bottom: 0; border-radius: 0; }

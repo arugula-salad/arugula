@@ -5,6 +5,7 @@
 // the pane is on, through the fleet. Either way it only needs a way to make
 // requests to that pane's daemon.
 
+import type { ComponentChildren } from "preact";
 import { OPS, opPath } from "../ops";
 import { useState } from "preact/hooks";
 import type { Answered, Ask, Suggestion } from "../../shared/ask";
@@ -71,7 +72,8 @@ export function PermissionBody({ ask }: { ask: Ask }) {
 }
 
 /** Allow, Always (one of Claude's suggestions), Deny, Deny with a message. */
-export function PermissionButtons({ ask, act }: { ask: Ask; act: (action: "allow" | "deny", extra?: Record<string, unknown>) => void }) {
+/** `more`: the place's own buttons, at the end of the row (UI audit #194). */
+export function PermissionButtons({ ask, act, more }: { ask: Ask; act: (action: "allow" | "deny", extra?: Record<string, unknown>) => void; more?: ComponentChildren }) {
   return (
     <div class="agent-perm-buttons">
       <button class="primary" onClick={() => act("allow")}>
@@ -94,6 +96,7 @@ export function PermissionButtons({ ask, act }: { ask: Ask; act: (action: "allow
       >
         Deny with a message…
       </button>
+      {more}
     </div>
   );
 }

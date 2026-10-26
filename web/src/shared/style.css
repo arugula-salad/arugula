@@ -565,6 +565,14 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   white-space: nowrap;
 }
 
+/* On a phone, at the top: the install hint lies over the bottom, and a
+   pane letterboxed to unreadable type had its way back under it (UI audit
+   #194). */
+.app.phone .sized-elsewhere {
+  top: 12px;
+  bottom: auto;
+}
+
 .sized-elsewhere button {
   padding: 4px 10px;
   border-radius: var(--btn-radius);
@@ -10546,16 +10554,17 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   margin: 0;
 }
 
+/* The set's own size here, as on a failure's row, so the card's buttons
+   and Go to pane share one row (UI audit #194). */
+.ws-att-answer :is(.agent-perm-buttons, .ask-buttons) :is(.primary, .secondary) {
+  min-height: 32px;
+  padding: 6px 14px;
+}
+
 .ws-att-acts {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.ws-att-go {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
 }
 
 .ws-att-foot {

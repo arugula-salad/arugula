@@ -343,8 +343,8 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
       Go to pane
     </button>
   );
-  // Its own buttons, or none: Go to pane goes in their row then.
-  const own = !item.viewer && !(p.stale && !item.here) && !diff && ask?.kind !== "permission" && !(ask && r?.ask?.what === "question") && !!r;
+  // Go to pane ends the item's own row of buttons, whatever kind it is,
+  // or is the row when it has none (UI audit #172, #194).
   return (
     <section class="ws-att-detail" aria-label={titleOf(item)} data-attention-detail={p.key}>
       <h3>{titleOf(item)}</h3>
@@ -363,9 +363,15 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
       </dl>
       <div class="ws-att-answer">
         {item.viewer ? (
-          <p class="ask-viewer">{VIEWER_NOTE}</p>
+          <>
+            <p class="ask-viewer">{VIEWER_NOTE}</p>
+            <div class="ws-att-acts">{go}</div>
+          </>
         ) : p.stale && !item.here ? (
-          <p class="ask-viewer">{shortHost(p.host)} isn't connected: go to the pane to answer once it is.</p>
+          <>
+            <p class="ask-viewer">{shortHost(p.host)} isn't connected: go to the pane to answer once it is.</p>
+            <div class="ws-att-acts">{go}</div>
+          </>
         ) : diff ? (
           <DiffCard
             diff={diff}
@@ -375,14 +381,15 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
               const res = await request(OPS["pane.diff"].method, opPath("pane.diff", { id: p.id }));
               return res.ok ? (await res.json<{ new: string }>()).new : null;
             }}
+            more={go}
           />
         ) : ask?.kind === "permission" ? (
           <div class="ask perm" data-ask={ask.id}>
             <PermissionBody ask={ask} />
-            <PermissionButtons ask={ask} act={(action, extra) => run(action, { ...extra, id: ask.id })} />
+            <PermissionButtons ask={ask} act={(action, extra) => run(action, { ...extra, id: ask.id })} more={go} />
           </div>
         ) : ask && r?.ask?.what === "question" ? (
-          <AskCard ask={ask} actions={{ answer: (content) => run("answer", { content, id: ask.id }), decline: () => run("deny", { id: ask.id }) }} />
+          <AskCard ask={ask} actions={{ answer: (content) => run("answer", { content, id: ask.id }), decline: () => run("deny", { id: ask.id }) }} more={go} />
         ) : r ? (
           <div class="ws-att-acts">
             {r.actions.includes("allow") && (
@@ -410,12 +417,12 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
                 Dismiss
               </button>
             )}
-            {/* Every action in one row (UI audit #172). */}
             {go}
           </div>
-        ) : null}
+        ) : (
+          <div class="ws-att-acts">{go}</div>
+        )}
       </div>
-      {!own && <div class="ws-att-go">{go}</div>}
     </section>
   );
 }

@@ -6,6 +6,7 @@
 // Answers are the form's fields either way: `question_<n>` (a label, or a
 // list of them) and `question_<n>_custom` for a question card.
 
+import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 
 export interface AskOption {
@@ -96,15 +97,17 @@ export function headline(a: Ask): string {
   return a.questions?.[0]?.question ?? a.message;
 }
 
-export function AskCard({ ask, actions }: { ask: Ask; actions: AskActions }) {
+/** `more`: buttons of the place it shows in, at the end of the card's own
+ * row (UI audit #194: the Needs you drawer's Go to pane). */
+export function AskCard({ ask, actions, more }: { ask: Ask; actions: AskActions; more?: ComponentChildren }) {
   return (
     <div class="ask" role="dialog" aria-label={headline(ask)} data-ask={ask.id}>
       {ask.kind === "questions" && ask.questions ? (
-        <QuestionCard ask={ask} questions={ask.questions} actions={actions} />
+        <QuestionCard ask={ask} questions={ask.questions} actions={actions} more={more} />
       ) : ask.kind === "url" ? (
-        <LinkCard ask={ask} actions={actions} />
+        <LinkCard ask={ask} actions={actions} more={more} />
       ) : (
-        <FormCard ask={ask} actions={actions} />
+        <FormCard ask={ask} actions={actions} more={more} />
       )}
     </div>
   );
@@ -115,11 +118,13 @@ function Buttons({
   submit,
   disabled,
   labels,
+  more,
 }: {
   actions: AskActions;
   submit?: () => void;
   disabled?: boolean;
   labels?: { submit: string; decline: string };
+  more?: ComponentChildren;
 }) {
   return (
     <div class="ask-buttons">
@@ -141,13 +146,14 @@ function Buttons({
           Stop
         </button>
       )}
+      {more}
     </div>
   );
 }
 
 // ------------------------------------------------------------ question card
 
-function QuestionCard({ ask, questions, actions }: { ask: Ask; questions: Question[]; actions: AskActions }) {
+function QuestionCard({ ask, questions, actions, more }: { ask: Ask; questions: Question[]; actions: AskActions; more?: ComponentChildren }) {
   const [picks, setPicks] = useState<string[][]>(() => questions.map(() => []));
   const [other, setOther] = useState<string[]>(() => questions.map(() => ""));
   const [preview, setPreview] = useState<{ n: number; text: string } | null>(null);
@@ -219,7 +225,7 @@ function QuestionCard({ ask, questions, actions }: { ask: Ask; questions: Questi
           />
         </fieldset>
       ))}
-      <Buttons actions={actions} submit={submit} disabled={!answered} />
+      <Buttons actions={actions} submit={submit} disabled={!answered} more={more} />
     </>
   );
 }
@@ -241,7 +247,7 @@ function choices(f: Schema | undefined): Choice[] | null {
   return null;
 }
 
-function FormCard({ ask, actions }: { ask: Ask; actions: AskActions }) {
+function FormCard({ ask, actions, more }: { ask: Ask; actions: AskActions; more?: ComponentChildren }) {
   const required = new Set(ask.schema?.required ?? []);
   // The daemon's JSON doesn't keep the server's field order (keys come
   // sorted), so what's required comes first.
@@ -361,6 +367,7 @@ function FormCard({ ask, actions }: { ask: Ask; actions: AskActions }) {
         actions={ask.source === "invite" ? { ...actions, decline: () => actions.answer({ decline: true, ...(filled(values.reason) ? { reason: values.reason } : {}) }) } : actions}
         submit={submit}
         disabled={!ready}
+        more={more}
         labels={
           ask.source === "forge"
             ? { submit: "Send", decline: "Drop" }
@@ -377,7 +384,7 @@ function FormCard({ ask, actions }: { ask: Ask; actions: AskActions }) {
 
 // ------------------------------------------------------------ sign-in link
 
-function LinkCard({ ask, actions }: { ask: Ask; actions: AskActions }) {
+function LinkCard({ ask, actions, more }: { ask: Ask; actions: AskActions; more?: ComponentChildren }) {
   return (
     <>
       <div class="ask-message">{ask.message}</div>
@@ -399,6 +406,7 @@ function LinkCard({ ask, actions }: { ask: Ask; actions: AskActions }) {
         <button class="secondary" onClick={() => actions.decline()}>
           Dismiss
         </button>
+        {more}
       </div>
     </>
   );
