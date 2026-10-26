@@ -40,6 +40,7 @@ import { useChatShown } from "./shown";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 import { ReplyTag, setThreadNav, ThreadFooter } from "./thread-ui";
 import { dmLabel } from "./members";
+import { useStickToBottom } from "./stick";
 
 // ---- machines, by control's id for them
 
@@ -311,6 +312,7 @@ export function RoomBody({
   // names, once).
   const last = msgs?.at(-1)?.seq;
   const focused = useRef<number | null>(null);
+  useStickToBottom(list, () => stuck.current && focused.current === null);
   const topBefore = useRef<{ h: number; first?: number } | null>(null);
   useLayoutEffect(() => {
     const el = list.current;

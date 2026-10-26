@@ -138,8 +138,7 @@ export function MessageFiles({ files }: { files: ChatFile[] }) {
                   loading="lazy"
                   width={f.width ?? undefined}
                   height={f.height ?? undefined}
-                  style={f.width && f.height ? { aspectRatio: `${f.width} / ${f.height}` } : undefined}
-                  onLoad={stick}
+                  style={pictureSize(f)}
                 />
               </button>
             );
@@ -170,11 +169,16 @@ export function MessageFiles({ files }: { files: ChatFile[] }) {
   );
 }
 
-/** A picture that loads near the bottom keeps the list at the bottom. */
-function stick(e: Event) {
-  const img = e.currentTarget as HTMLImageElement;
-  const list = img.closest<HTMLElement>(".thread-list");
-  if (list && list.scrollHeight - list.scrollTop - list.clientHeight < img.height + 160) list.scrollTop = list.scrollHeight;
+/** The picture's size in the room: its own, shrunk to fit 360 by 320, so
+ * the frame is the picture's (UI audit #156: CSS alone sized the frame to
+ * the picture's full width, a dark strip beside it) and is there before it
+ * loads. A narrower room shrinks it further (`max-width`). */
+const PIC_W = 360;
+const PIC_H = 320;
+function pictureSize(f: ChatFile): { width: string; aspectRatio: string } | undefined {
+  if (!f.width || !f.height) return undefined;
+  const k = Math.min(1, PIC_W / f.width, PIC_H / f.height);
+  return { width: `${Math.max(1, Math.round(f.width * k))}px`, aspectRatio: `${f.width} / ${f.height}` };
 }
 
 function FileCard({ f }: { f: ChatFile }) {

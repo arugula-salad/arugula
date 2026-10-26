@@ -46,7 +46,8 @@ export function ProjectHome({ id }: { id: string }) {
               Chat
             </a>
           </h2>
-          {chat.on === false && <p class="dim">Chat is off for you. A team owner turns it on in the team's Labs, on control's page.</p>}
+          {chat.on === false && chat.signedOut && <p class="dim">You're signed out of Arugula control: reload the page to sign in again.</p>}
+          {chat.on === false && !chat.signedOut && <p class="dim">Chat is off for you. A team owner turns it on in the team's Labs, on control's page.</p>}
           {chat.on && rooms.length === 0 && <p class="dim">No channels yet.</p>}
           <ul class="platform-list sw-rows" data-project-rooms>
             {rooms
