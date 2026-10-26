@@ -983,8 +983,10 @@ export class ControlSession {
   /** Shown once, right after the account's first device enrolls (or new
    * ones are made). */
   recoveryCodes: string[] | null = null;
-  /** While turned down: the name of the device that did it. */
+  /** While turned down: the name of the device that did it, and when
+   * (ms; 0 from a control too old to say). */
   turnedDownBy = "";
+  turnedDownAt = 0;
   /** Asks again after a turn-down. */
   private askAgain: (() => void) | null = null;
   keys!: DeviceKeys;
@@ -1209,6 +1211,7 @@ export class ControlSession {
         if (!(e instanceof HttpError && e.status === 404)) continue;
         // Turned down (#105): say so, until this browser asks again.
         this.turnedDownBy = typeof e.body.by === "string" ? e.body.by : "";
+        this.turnedDownAt = typeof e.body.at === "number" ? e.body.at : 0;
         this.set("turned-down");
         await new Promise<void>((res) => (this.askAgain = res));
         this.askAgain = null;

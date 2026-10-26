@@ -404,10 +404,13 @@ pub async fn devices(State(app): State<Arc<App>>, s: Session) -> R {
 
 pub async fn device(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>) -> Result<Response, ApiError> {
     let Some((cert, approved)) = app.db.device(&s.account, &id)? else {
-        // Turned down (#105): say by which device, for the one waiting.
+        // Turned down (#105): say by which device, and when (UI audit
+        // #197), for the one waiting.
         let by = app.db.turned_down(&s.account, &id)?;
         let body = match by {
-            Some(by) => json!({ "error": "this device's request was turned down", "turned_down": true, "by": by }),
+            Some((by, at)) => {
+                json!({ "error": "this device's request was turned down", "turned_down": true, "by": by, "at": at })
+            }
             None => json!({ "error": "no such device" }),
         };
         return Ok((StatusCode::NOT_FOUND, Json(body)).into_response());

@@ -20,6 +20,9 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
   const why = arrangeRefusal(client, tab);
   const focusWhy = layoutRefusal(client, tab) ?? (count < 2 && !focused ? "There's only one pane" : null);
   const open = useAddPane();
+  // Someone who only watches (a viewer, a read-only link's page) adds no
+  // panes: no greyed + Pane for them (UI audit #197).
+  const watching = client.role(client.sessionOfTab(tab.id) ?? null) === "viewer";
   // The daemon's no (the tab too small for a preset), until the layout
   // changes or a while passes.
   const [note, setNote] = useState<string | null>(null);
@@ -97,19 +100,21 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
         </span>
       )}
       <span class="pt-fill" />
-      <button
-        class={`pt-add${open ? " on" : ""}`}
-        data-add-pane
-        aria-expanded={open}
-        disabled={!!layoutRefusal(client, tab)}
-        title={layoutRefusal(client, tab) ?? `Add a pane beside the active one (${keyHint("pane.add")})`}
-        onClick={() => addPane.toggle()}
-      >
-        <PlusIcon size={14} />
-        Pane
-        {keyHint("pane.add") && <kbd>{keyHint("pane.add")}</kbd>}
-      </button>
-      {open && <AddPaneDrawer client={client} tab={tab} />}
+      {!watching && (
+        <button
+          class={`pt-add${open ? " on" : ""}`}
+          data-add-pane
+          aria-expanded={open}
+          disabled={!!layoutRefusal(client, tab)}
+          title={layoutRefusal(client, tab) ?? `Add a pane beside the active one (${keyHint("pane.add")})`}
+          onClick={() => addPane.toggle()}
+        >
+          <PlusIcon size={14} />
+          Pane
+          {keyHint("pane.add") && <kbd>{keyHint("pane.add")}</kbd>}
+        </button>
+      )}
+      {open && !watching && <AddPaneDrawer client={client} tab={tab} />}
     </div>
   );
 }

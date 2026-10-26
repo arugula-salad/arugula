@@ -671,6 +671,8 @@ test("with every device lost, a recovery code lets a new browser in, once", asyn
   const laptopName = await laptop.evaluate(() => window.__arugula.control!.enrollment!.cert.name);
   await laptop.locator("[data-reject]").click();
   await expect(again.locator("[data-turned-down]")).toContainText(`${laptopName} of yours turned this browser down`, { timeout: 10_000 });
+  // ...and when (UI audit #197).
+  await expect(again.locator("[data-turned-down-at]")).toHaveText("just now");
   await again.locator("[data-try-again]").click();
   await expect(again.getByText("Approve this browser")).toBeVisible();
   await expect(laptop.locator("[data-pending]")).toBeVisible({ timeout: 20_000 });

@@ -10,6 +10,10 @@ import { DropOverlay } from "./drop-overlay";
 import { len, px } from "./geometry";
 import { paneChrome, PIXELS } from "./chrome-geometry";
 import { PaneSlot } from "./pane-slot";
+import { FONT_SIZE } from "../../terminal-view";
+
+/** The smallest a viewer's pane is drawn on a phone: text at 10px. */
+const READABLE = 10 / FONT_SIZE;
 
 /** One tab's panes, drawn at the cell rectangles the daemon computed. The
  * whole grid is scaled down when another window's size owns the tab. On a
@@ -116,6 +120,28 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   // (UI audit #171); a phone, with no headers, keeps the note.
   const chipOn = elsewhere && headers ? (active ?? tab.layout.panes[0]?.[0] ?? null) : null;
   const claimHere = () => client.claim(tab.id, false, true);
+
+  // A viewer on a phone (a read-only link's page, or someone who only
+  // watches) can't size the tab to the phone, so the owner's whole tab
+  // came out a few pixels high (UI audit #197). Show the active pane on
+  // its own, as the phone shows an editor, fitted to the phone's width but
+  // no smaller than reads; wider than that, it pans.
+  const solo = phone && viewer ? (tab.layout.panes.find(([id]) => id === active) ?? tab.layout.panes[0]) : undefined;
+  if (solo) {
+    const [id, r] = solo;
+    const w = r.cols * cell.width;
+    const h = r.rows * cell.height;
+    const fit = area ? Math.min(1, Math.max(READABLE, area.w / w)) : 1;
+    return (
+      <div class="tab-area panned" ref={ref}>
+        <div class="pan" style={{ width: len(w * fit), height: len(h * fit) }}>
+          <div class="grid" style={{ width: len(w), height: len(h), transform: fit < 1 ? `scale(${fit})` : undefined }}>
+            <PaneSlot key={id} client={client} id={id} rect={{ x: 0, y: 0, cols: r.cols, rows: r.rows }} cell={cell} active phone />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div class={scale < 1 ? "tab-area scaled" : "tab-area"} ref={ref}>
