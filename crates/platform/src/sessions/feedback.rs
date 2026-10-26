@@ -28,6 +28,20 @@
 //!   a thread reply does. `queued`, `working` or `needs_input`: it's
 //!   queued for the next. `stopped` or `failed`: it's dropped, and the
 //!   thread says so once, with the mention to copy ([`ended_line`]).
+//! - **What GitHub adds as it's sent** ([`reads`], Arugula #210). An
+//!   Actions job's check run says nothing of why it failed, and the box
+//!   can't read its log, so a round reads each failed job's log with the
+//!   App's read token (`actions: read`) and sends its end in place of the
+//!   empty output. A log that can't be read leaves the link, and a
+//!   warning.
+//! - **Only required checks spend a round** (Jake's call on Arugula #210).
+//!   When the base branch (the session's PR draft's, else the repo's
+//!   default) requires checks, by its rulesets or its classic protection,
+//!   a failed check that isn't one of them is still listed, marked "not
+//!   required", but a round of only those isn't sent and spends nothing:
+//!   the thread says so, and a check that fails on that commit later
+//!   opens it again. A base that requires none, or that GitHub won't say
+//!   of, counts every failed check, as before.
 //! - **The cap:** at most [`MAX_CI_ROUNDS`] CI rounds a session. A round
 //!   past that isn't sent: the thread says so, and the card says the
 //!   session needs a person ([`needs_person`]) until someone in the
@@ -41,20 +55,23 @@
 //! whoever caused them's. They're kept only to send, fenced, and lines in
 //! the thread quote at most a check's name, cut short.
 
-use anyhow::Result;
+use std::collections::{HashMap, HashSet};
+
+use anyhow::{Context as _, Result};
 use serde_json::Value;
 use tracing::{info, warn};
 
 use crate::{
     Platform,
     db::{
+        forge::LinkedRepo,
         session_feedback::{
-            Feedback, FeedbackKind, FeedbackState, Gathered, Item, MAX_CI_ROUNDS, NewFeedback, Prompt, Settled,
+            Answer, Feedback, FeedbackKind, FeedbackState, Gathered, Item, MAX_CI_ROUNDS, NewFeedback, Prompt, Settled,
         },
         sessions::{MAX_PROMPT, Session, Source},
         triggers::RuleEvent,
     },
-    forge::ingest::ms,
+    forge::{Caller, Purpose, Repo, ingest::ms},
     triggers::events::Seen,
 };
 
@@ -69,6 +86,15 @@ pub const TAIL: usize = 3000;
 
 /// The most checks a round's prompt lists in full.
 const MOST_CHECKS: usize = 10;
+
+/// The GitHub App whose check runs are Actions jobs.
+pub const ACTIONS: &str = "github-actions";
+
+/// The most of a job's log a round keeps: its end.
+const LOG_KEEP: usize = MAX_PROMPT;
+
+/// The most of a job's log read to find its end.
+const LOG_MOST: usize = 64 << 20;
 
 /// Who a check's prompt is by.
 pub const CHECKS_AUTHOR: &str = "github:GitHub";
@@ -148,6 +174,7 @@ fn read(seen: &Seen, v: &Value, now: u64) -> Option<(Batch, Item)> {
             url: text(&run["html_url"]).or(text(&run["details_url"])),
             text: output(&run["output"]),
             at: ms(&run["completed_at"]).unwrap_or(now),
+            app: text(&run["app"]["slug"]),
         };
         return ci(text(&run["head_sha"]), item);
     }
@@ -161,6 +188,7 @@ fn read(seen: &Seen, v: &Value, now: u64) -> Option<(Batch, Item)> {
             url: text(&v["target_url"]),
             text: tail(&text(&v["description"]).unwrap_or_default(), TAIL),
             at: ms(&v["updated_at"]).unwrap_or(now),
+            app: None,
         };
         return ci(text(&v["sha"]), item);
     }
@@ -188,6 +216,7 @@ fn read(seen: &Seen, v: &Value, now: u64) -> Option<(Batch, Item)> {
             url: text(&review["html_url"]),
             text: text(&review["body"]).unwrap_or_default(),
             at: ms(&review["submitted_at"]).unwrap_or(now),
+            app: None,
         };
         return Some((b, item));
     }
@@ -213,6 +242,7 @@ fn read(seen: &Seen, v: &Value, now: u64) -> Option<(Batch, Item)> {
         url: text(&comment["html_url"]),
         text: text(&comment["body"]).unwrap_or_default(),
         at: ms(&comment["created_at"]).unwrap_or(now),
+        app: None,
     };
     Some((b, item))
 }
@@ -330,25 +360,67 @@ fn plural(n: usize, one: &str) -> String {
     format!("{n} {one}{}", if n == 1 { "" } else { "s" })
 }
 
-/// A CI round's prompt: every failed check of the commit.
-fn ci_prompt(fb: &Feedback, items: &[Item], s: &Session, round: u32) -> Prompt {
+/// What a CI round reads from GitHub as it's sent (module docs): both
+/// best-effort.
+#[derive(Debug, Default)]
+struct Reads {
+    /// The checks the base branch requires, by name; empty when it
+    /// requires none, or GitHub didn't say: then every failed check counts.
+    required: HashSet<String>,
+    /// The end of each failed Actions job's log, by item.
+    logs: HashMap<String, String>,
+}
+
+impl Reads {
+    /// Whether a failed check spends a round.
+    fn counts(&self, i: &Item) -> bool {
+        self.required.is_empty() || self.required.contains(&i.name)
+    }
+
+    /// `items` as a round lists them: those that count first, each
+    /// Actions job's text its log's end when it was read.
+    fn listed(&self, items: &[Item]) -> Vec<Item> {
+        let mut out: Vec<Item> = items
+            .iter()
+            .map(|i| match self.logs.get(&i.item) {
+                Some(log) => Item { text: log.clone(), ..i.clone() },
+                None => i.clone(),
+            })
+            .collect();
+        out.sort_by_key(|i| !self.counts(i));
+        out
+    }
+
+    /// How many of `items` don't count.
+    fn not_required(&self, items: &[Item]) -> usize {
+        items.iter().filter(|i| !self.counts(i)).count()
+    }
+}
+
+/// A CI round's prompt: every failed check of the commit (as
+/// [`Reads::listed`] orders them), those the base doesn't require marked.
+fn ci_prompt(fb: &Feedback, items: &[Item], s: &Session, round: u32, reads: &Reads) -> Prompt {
     let short: String = fb.batch.chars().take(12).collect();
+    let skip = reads.not_required(items);
+    let of_them = if skip == 0 { String::new() } else { format!(", {skip} of them not required to merge") };
     let mut out = format!(
-        "CI failed on {short}, the head of this session's branch {}: {} failed. This is CI round {round} of \
-         {MAX_CI_ROUNDS}; after that a person takes over.\n",
+        "CI failed on {short}, the head of this session's branch {}: {} failed{of_them}. This is CI round {round} \
+         of {MAX_CI_ROUNDS}; after that a person takes over.\n",
         s.branch,
         plural(items.len(), "check")
     );
     let each = (MAX_PROMPT - 2048) / items.len().clamp(1, MOST_CHECKS);
     for i in items.iter().take(MOST_CHECKS) {
-        let mut one = format!("\n## {} ({})\n", i.name, i.conclusion.as_deref().unwrap_or("failed"));
+        let mark = if reads.counts(i) { "" } else { ", not required" };
+        let mut one = format!("\n## {} ({}{mark})\n", i.name, i.conclusion.as_deref().unwrap_or("failed"));
         if let Some(u) = &i.url {
             one.push_str(u);
             one.push('\n');
         }
         if !i.text.is_empty() {
+            // The text's end, cut to what's left of the check's share.
             one.push('\n');
-            one.push_str(&i.text);
+            one.push_str(&tail(&i.text, each.saturating_sub(one.len() + 8)));
             one.push('\n');
         }
         out.push_str(&tail(&one, each));
@@ -411,6 +483,158 @@ fn review_prompt(fb: &Feedback, items: &[Item]) -> Option<Prompt> {
     })
 }
 
+/// GET `path` on GitHub's API with the App's read token for `link`: its
+/// answer, when it's a success. Following a redirect (a job's log is one,
+/// to storage elsewhere), the client drops the token, as it does for any
+/// other host.
+async fn app_get(app: &Platform, link: &LinkedRepo, path: &str) -> Result<reqwest::Response> {
+    let gh = app.github.as_ref().context("no GitHub App")?;
+    let t = gh
+        .read_token(&Caller::of(app, "platform"), link.installation_id, Repo::Id(link.repo_id), Purpose::Read)
+        .await?;
+    let r = app
+        .http
+        .get(format!("{}/{path}", gh.api.trim_end_matches('/')))
+        .bearer_auth(t.secret())
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "arugula-control")
+        .send()
+        .await?;
+    let status = r.status();
+    anyhow::ensure!(status.is_success(), "GitHub answered {status}");
+    Ok(r)
+}
+
+/// The checks `base` requires on `link`'s repo, by name: its rulesets'
+/// `required_status_checks` rules (`GET rules/branches/{base}`, which
+/// needs only `metadata: read`) and its classic protection's
+/// (`GET branches/{base}`, `contents: read`). A check is named as GitHub
+/// names it to protection: a check run's name, a status's context. Which
+/// App must post it, when a rule says, isn't asked.
+async fn required(app: &Platform, link: &LinkedRepo, base: &str) -> HashSet<String> {
+    let b = base.replace('/', "%2F");
+    let mut out = HashSet::new();
+    let mut name = |c: &Value| {
+        if let Some(c) = c.as_str().filter(|c| !c.is_empty()) {
+            out.insert(c.to_owned());
+        }
+    };
+    match app_get(app, link, &format!("repos/{}/rules/branches/{b}?per_page=100", link.full_name)).await {
+        Ok(r) => {
+            let rules: Value = r.json().await.unwrap_or_default();
+            for rule in rules.as_array().into_iter().flatten().filter(|r| r["type"] == "required_status_checks") {
+                for c in rule["parameters"]["required_status_checks"].as_array().into_iter().flatten() {
+                    name(&c["context"]);
+                }
+            }
+        }
+        Err(e) => warn!(repo = link.full_name, base, error = format!("{e:#}"), "reading a base branch's rules"),
+    }
+    match app_get(app, link, &format!("repos/{}/branches/{b}", link.full_name)).await {
+        Ok(r) => {
+            let branch: Value = r.json().await.unwrap_or_default();
+            let checks = &branch["protection"]["required_status_checks"];
+            if checks["enforcement_level"] != "off" {
+                checks["contexts"].as_array().into_iter().flatten().for_each(&mut name);
+                checks["checks"].as_array().into_iter().flatten().for_each(|c| name(&c["context"]));
+            }
+        }
+        Err(e) => warn!(repo = link.full_name, base, error = format!("{e:#}"), "reading a base branch's protection"),
+    }
+    out
+}
+
+/// An Actions log as the agent reads it: without each line's timestamp
+/// and the terminal's colours.
+fn log_text(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for line in raw.trim_start_matches('\u{feff}').lines() {
+        // `2026-10-26T12:00:00.1234567Z ` starts each line.
+        let line = match line.split_once(' ') {
+            Some((at, rest)) if at.len() >= 20 && at.ends_with('Z') && at.as_bytes()[10] == b'T' => rest,
+            _ => line,
+        };
+        let mut chars = line.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' && chars.peek() == Some(&'[') {
+                // A CSI sequence: up to its final byte.
+                chars.next();
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            } else if c == '\t' || !c.is_control() {
+                out.push(c);
+            }
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// The end of Actions job `job`'s log (`GET actions/jobs/{job}/logs`,
+/// `actions: read`), at most [`LOG_KEEP`] bytes of it.
+async fn job_log(app: &Platform, link: &LinkedRepo, job: u64) -> Result<String> {
+    let mut r = app_get(app, link, &format!("repos/{}/actions/jobs/{job}/logs", link.full_name)).await?;
+    let (mut end, mut read) = (Vec::new(), 0);
+    while let Some(c) = r.chunk().await? {
+        read += c.len();
+        end.extend_from_slice(&c);
+        if end.len() > 2 * LOG_KEEP {
+            end.drain(..end.len() - LOG_KEEP);
+        }
+        if read > LOG_MOST {
+            break;
+        }
+    }
+    let raw = String::from_utf8_lossy(&end[end.len().saturating_sub(LOG_KEEP)..]).into_owned();
+    let log = tail(log_text(&raw).trim_end(), LOG_KEEP);
+    anyhow::ensure!(!log.trim().is_empty(), "an empty log");
+    let cut = if read > LOG_MOST { ", as far as it was read" } else { "" };
+    Ok(format!("The end of its log{cut}:\n{log}"))
+}
+
+/// What a CI round of session `s`, of `items`, reads from GitHub as it's
+/// sent (module docs): nothing when the platform has no App, or the
+/// session's repo isn't linked to its project now.
+async fn reads(app: &Platform, s: &Session, items: &[Item]) -> Reads {
+    let mut out = Reads::default();
+    let Some(repo) = s.repo.as_deref().filter(|_| app.github.is_some()) else { return out };
+    let link = match app.db.linked_repo_named(repo) {
+        Ok(Some(l)) if l.project_id == s.project && l.unlinked_at.is_none() => l,
+        _ => return out,
+    };
+    let base = match app.db.pr_draft_of(&s.id) {
+        Ok(Some(d)) => d.base,
+        _ => super::pr::default_branch(app, &link).await,
+    };
+    out.required = required(app, &link, &base).await;
+    if !items.iter().any(|i| out.counts(i)) {
+        // Not sent: no log to read.
+        return out;
+    }
+    for i in out.listed(items).iter().take(MOST_CHECKS) {
+        let job = i.item.strip_prefix("check_run:").and_then(|j| j.parse::<u64>().ok());
+        let Some(job) = job.filter(|_| i.app.as_deref() == Some(ACTIONS) && i.text.is_empty()) else { continue };
+        match job_log(app, &link, job).await {
+            Ok(log) => {
+                out.logs.insert(i.item.clone(), log);
+            }
+            Err(e) => {
+                warn!(
+                    session = s.id,
+                    job,
+                    error = format!("{e:#}"),
+                    "reading a failed Actions job's log: sent its link"
+                )
+            }
+        }
+    }
+    out
+}
+
 /// How the thread names a reviewer: their name in the project when their
 /// GitHub account signs in a member of it, else their login.
 async fn reviewer(app: &Platform, s: &Session, fb: &Feedback) -> String {
@@ -436,18 +660,31 @@ async fn reviewer(app: &Platform, s: &Session, fb: &Feedback) -> String {
 pub async fn flush(app: &Platform, s: &Session, now: u64) -> Result<Option<u64>> {
     // An ended session's job looks no more: all it gathered is settled now.
     let by = if s.state.terminal() { i64::MAX as u64 } else { now };
-    for id in app.db.due_feedback(&s.id, by)? {
+    let due = app.db.due_feedback(&s.id, by)?;
+    let batches = if due.is_empty() { Vec::new() } else { app.db.session_feedback(&s.id)? };
+    for id in due {
+        let ci = batches.iter().find(|b| b.id == id).filter(|b| b.kind == FeedbackKind::Ci);
+        let reads = match ci {
+            Some(b) if !s.state.terminal() => reads(app, s, &app.db.feedback_items(&b.id)?).await,
+            _ => Reads::default(),
+        };
         let settled = app.db.settle_feedback(&id, by, now, |fb, items, s| match fb.kind {
-            FeedbackKind::Ci => Some(ci_prompt(fb, items, s, s.ci_rounds + 1)),
-            FeedbackKind::Review => review_prompt(fb, items),
+            FeedbackKind::Ci if !items.iter().any(|i| reads.counts(i)) => Answer::NotRequired,
+            FeedbackKind::Ci => Answer::Send(ci_prompt(fb, &reads.listed(items), s, s.ci_rounds + 1, &reads)),
+            FeedbackKind::Review => review_prompt(fb, items).map_or(Answer::Nothing, Answer::Send),
         })?;
         let Some((fb, items, how)) = settled else { continue };
         let checks = plural(items.len(), "check");
         let line = match (&how, fb.kind) {
-            (Settled::Sent { round, .. }, FeedbackKind::Ci) => Some(format!(
-                "CI failed: {checks}; sent to the session (round {} of {MAX_CI_ROUNDS})",
-                round.unwrap_or_default()
-            )),
+            (Settled::Sent { round, .. }, FeedbackKind::Ci) => {
+                let skip = reads.not_required(&items);
+                let skip = if skip == 0 { String::new() } else { format!(" ({skip} not required)") };
+                Some(format!(
+                    "CI failed: {checks}{skip}; sent to the session (round {} of {MAX_CI_ROUNDS})",
+                    round.unwrap_or_default()
+                ))
+            }
+            (Settled::NotRequired, _) => Some(format!("CI failed: {checks}, none required to merge; not sent")),
             (Settled::Sent { .. }, FeedbackKind::Review) => {
                 let n = comments(&items).count();
                 let what = if n == 0 { "its text".to_owned() } else { plural(n, "comment") };
@@ -483,7 +720,8 @@ pub async fn flush(app: &Platform, s: &Session, now: u64) -> Result<Option<u64>>
 /// since.
 pub fn needs_person(app: &Platform, s: &Session) -> Result<bool> {
     let fb = app.db.session_feedback(&s.id)?;
-    let Some(last) = fb.iter().rev().find(|f| f.kind == FeedbackKind::Ci && f.state != FeedbackState::Gathering) else {
+    let settled = |f: &&Feedback| f.kind == FeedbackKind::Ci && f.state != FeedbackState::Gathering && !f.not_required;
+    let Some(last) = fb.iter().rev().find(settled) else {
         return Ok(false);
     };
     if last.state != FeedbackState::Refused {

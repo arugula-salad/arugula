@@ -15,6 +15,12 @@
 //!   its [`MAX_CI_ROUNDS`]), or drops it (the session ended, or a review
 //!   said nothing). What comes for a batch after that is late, and kept
 //!   out.
+//! - **Not required** (Arugula #210, `0061_ci_rounds_required`): a CI
+//!   batch none of whose failed checks the base branch requires is dropped
+//!   `not_required`, and spends no round. Unlike the rest it isn't
+//!   settled for good: a check that fails on its commit later opens it
+//!   again, gathering, so a required check that fails after an outside one
+//!   still makes a round of both.
 //! - **GitHub's text** stays GitHub's: the prompt is
 //!   [`Source::Github`], by `github:<login>`, with its
 //!   `author_association`, so the agent gets it fenced as quoted data.
@@ -103,6 +109,9 @@ pub struct Feedback {
     pub prompt: Option<String>,
     pub created_at: u64,
     pub done_at: Option<u64>,
+    /// A CI batch dropped because none of its checks is required: it
+    /// opens again when another check fails.
+    pub not_required: bool,
 }
 
 /// One thing a batch gathered.
@@ -120,6 +129,9 @@ pub struct Item {
     /// A check's output's end, or a review's or comment's text. GitHub's.
     pub text: String,
     pub at: u64,
+    /// The GitHub App whose check run it is (`github-actions` for an
+    /// Actions job), as its webhook said.
+    pub app: Option<String>,
 }
 
 /// Everything but the text, which is never printed.
@@ -129,6 +141,7 @@ impl std::fmt::Debug for Item {
             .field("item", &self.item)
             .field("line", &self.line)
             .field("conclusion", &self.conclusion)
+            .field("app", &self.app)
             .field("text", &format_args!("<{} bytes>", self.text.len()))
             .finish_non_exhaustive()
     }
@@ -171,6 +184,20 @@ pub enum Settled {
     Ended,
     /// A review that said nothing to act on.
     Nothing,
+    /// A CI batch none of whose checks the base branch requires: not sent,
+    /// no round spent.
+    NotRequired,
+}
+
+/// What a due batch comes to, as `sessions::feedback` reads it.
+pub enum Answer {
+    /// Send it as this prompt (refused instead when it's a CI round and
+    /// the session had its rounds).
+    Send(Prompt),
+    /// Nothing in it to act on.
+    Nothing,
+    /// A CI batch with no required check in it.
+    NotRequired,
 }
 
 /// What a due batch's prompt is: its text, and who it's by
@@ -186,8 +213,8 @@ fn new_id() -> String {
 }
 
 const FB_COLS: &str = "id, session_id, kind, batch, number, login, github_id, association, review_state, state, \
-                       due_at, round, prompt_id, created_at, done_at";
-const ITEM_COLS: &str = "item, name, line, conclusion, url, text, at";
+                       due_at, round, prompt_id, created_at, done_at, not_required";
+const ITEM_COLS: &str = "item, name, line, conclusion, url, text, at, app";
 
 fn feedback_row(r: &Row) -> Result<Feedback> {
     let (kind, state): (String, String) = (r.get(2)?, r.get(9)?);
@@ -207,6 +234,7 @@ fn feedback_row(r: &Row) -> Result<Feedback> {
         prompt: r.get(12)?,
         created_at: r.get(13)?,
         done_at: r.get(14)?,
+        not_required: r.get(15)?,
     })
 }
 
@@ -219,6 +247,7 @@ fn item_row(r: &Row) -> Result<Item> {
         url: r.get(4)?,
         text: r.get(5)?,
         at: r.get(6)?,
+        app: r.get(7)?,
     })
 }
 
@@ -228,6 +257,17 @@ fn items_in(c: &impl Sql, id: &str) -> Result<Vec<Item>> {
         params![id],
         item_row,
     )
+}
+
+/// Whether batch `id` gathered `item`.
+fn has_item(c: &impl Sql, id: &str, item: &str) -> Result<bool> {
+    Ok(c.query_row(
+        "SELECT 1 FROM session_feedback_items WHERE feedback_id = ?1 AND item = ?2",
+        params![id, item],
+        |_| Ok(()),
+    )
+    .optional()?
+    .is_some())
 }
 
 /// Session `session`'s batch of `kind` and key `batch`, locked for the
@@ -312,16 +352,27 @@ impl Db {
     pub fn gather_feedback(&self, new: &NewFeedback, item: &Item, now: u64) -> Result<Gathered> {
         let mut c = self.c();
         let tx = c.immediate()?;
-        let fb = make(&tx, new, FeedbackState::Gathering, now)?;
+        let mut fb = make(&tx, new, FeedbackState::Gathering, now)?;
+        if fb.not_required && fb.state == FeedbackState::Dropped && !has_item(&tx, &fb.id, &item.item)? {
+            // A check failed after the batch was dropped as not required:
+            // it gathers again, with what it had.
+            tx.execute(
+                "UPDATE session_feedback SET state = 'gathering', not_required = FALSE, due_at = ?2, done_at = NULL
+                 WHERE id = ?1",
+                params![fb.id, new.due_at],
+            )?;
+            fb = batch_for_update(&tx, new.session, new.kind, new.batch)?.context("the batch it opened")?;
+        }
         if fb.state != FeedbackState::Gathering {
             return Ok(Gathered::Late(fb));
         }
         let added = tx.execute(
             &format!(
-                "INSERT INTO session_feedback_items (feedback_id, {ITEM_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                "INSERT INTO session_feedback_items (feedback_id, {ITEM_COLS})
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                  ON CONFLICT (feedback_id, item) DO NOTHING"
             ),
-            params![fb.id, item.item, item.name, item.line, item.conclusion, item.url, item.text, item.at],
+            params![fb.id, item.item, item.name, item.line, item.conclusion, item.url, item.text, item.at, item.app],
         )?;
         tx.commit()?;
         Ok(if added == 1 { Gathered::Added(fb) } else { Gathered::Already(fb) })
@@ -388,8 +439,8 @@ impl Db {
     }
 
     /// Settle batch `id`, if it's gathering and due by `due_by` (module
-    /// docs), at `now`, in one transaction: `prompt` says what a batch
-    /// that's sent says, or `None` when there's nothing in it to act on.
+    /// docs), at `now`, in one transaction: `answer` says what it comes to
+    /// ([`Answer`]).
     /// The batch, as it is after, and how; `None` when it wasn't there to
     /// settle.
     pub fn settle_feedback(
@@ -397,7 +448,7 @@ impl Db {
         id: &str,
         due_by: u64,
         now: u64,
-        prompt: impl FnOnce(&Feedback, &[Item], &Session) -> Option<Prompt>,
+        answer: impl FnOnce(&Feedback, &[Item], &Session) -> Answer,
     ) -> Result<Option<(Feedback, Vec<Item>, Settled)>> {
         let mut c = self.c();
         let tx = c.immediate()?;
@@ -423,16 +474,22 @@ impl Db {
         let settled = if s.state.terminal() {
             end(FeedbackState::Dropped, None, None)?;
             Settled::Ended
-        } else if fb.kind == FeedbackKind::Ci && s.ci_rounds >= MAX_CI_ROUNDS {
-            end(FeedbackState::Refused, None, None)?;
-            Settled::Refused
         } else {
-            match prompt(&fb, &items, &s) {
-                None => {
+            match answer(&fb, &items, &s) {
+                Answer::Nothing => {
                     end(FeedbackState::Dropped, None, None)?;
                     Settled::Nothing
                 }
-                Some(p) => {
+                Answer::NotRequired => {
+                    end(FeedbackState::Dropped, None, None)?;
+                    tx.execute("UPDATE session_feedback SET not_required = TRUE WHERE id = ?1", params![fb.id])?;
+                    Settled::NotRequired
+                }
+                Answer::Send(_) if fb.kind == FeedbackKind::Ci && s.ci_rounds >= MAX_CI_ROUNDS => {
+                    end(FeedbackState::Refused, None, None)?;
+                    Settled::Refused
+                }
+                Answer::Send(p) => {
                     let new = NewPrompt {
                         author: &p.author,
                         source: Source::Github,

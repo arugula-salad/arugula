@@ -205,6 +205,12 @@ async fn serve() -> (Arc<Platform>, String, String) {
 
 /// [`serve`], and its hub.
 pub(super) async fn serve_hub() -> (Arc<Platform>, String, String, Arc<TestHub>) {
+    serve_hub_on(None).await
+}
+
+/// [`serve_hub`], with the GitHub App against the (fake) GitHub at `api`
+/// when there's one.
+async fn serve_hub_on(api: Option<&str>) -> (Arc<Platform>, String, String, Arc<TestHub>) {
     let hub = Arc::new(TestHub::default());
     hub.team(
         "t",
@@ -222,6 +228,13 @@ pub(super) async fn serve_hub() -> (Arc<Platform>, String, String, Arc<TestHub>)
         accounts: vec!["alice".into(), "bob".into(), "vic".into(), "olga".into()],
         ..Default::default()
     };
+    if let Some(api) = api {
+        use crate::forge::{
+            GithubApp,
+            links_tests::{SECRET, throwaway_key},
+        };
+        p.github = Some(GithubApp::new("1".into(), "arugula-test".into(), SECRET.into(), api, throwaway_key()));
+    }
     let app = Arc::new(p);
     let project = app.db.team_project("t", "t", 0).unwrap();
     app.db
@@ -700,7 +713,8 @@ mod session_feedback {
             session_feedback::{FeedbackState, MAX_CI_ROUNDS},
             sessions::{NewPrompt, NewSession, Prompt, PromptState, Session, Source},
         },
-        sessions::feedback::{self, CHECKS_AUTHOR, CI_GATHER_MS, REVIEW_GATHER_MS, Routed},
+        forge::links_tests::{Shared, fake_github},
+        sessions::feedback::{self, ACTIONS, CHECKS_AUTHOR, CI_GATHER_MS, REVIEW_GATHER_MS, Routed},
     };
 
     /// Team t's project with `acme/app` (77) linked, its channel with
@@ -708,7 +722,28 @@ mod session_feedback {
     /// `acme/app`, in `state`; a rule on any failed check, so a check that
     /// isn't the session's starts a run.
     async fn session_in(state: &str) -> (Arc<Platform>, Arc<TestHub>, Session, crate::db::triggers::RunSpec) {
-        let (app, _base, p, hub) = serve_hub().await;
+        session_on(state, None).await
+    }
+
+    /// [`session_in`], with the App on a fake GitHub where it's installed
+    /// on `acme/app` (Arugula #210): its state, and the session.
+    async fn session_on_github(state: &str) -> (Arc<Platform>, Shared, Session) {
+        let gh: Shared = Arc::default();
+        {
+            let mut g = gh.lock().unwrap();
+            g.installed.insert("acme/app".into(), (9, 500, "acme".into()));
+            g.repos.insert("acme/app".into(), (77, true));
+        }
+        let api = fake_github(gh.clone()).await;
+        let (app, _, s, _) = session_on(state, Some(&api)).await;
+        (app, gh, s)
+    }
+
+    async fn session_on(
+        state: &str,
+        api: Option<&str>,
+    ) -> (Arc<Platform>, Arc<TestHub>, Session, crate::db::triggers::RunSpec) {
+        let (app, _base, p, hub) = serve_hub_on(api).await;
         link(&app.db, 77, "acme/app", &p);
         let room = Room {
             id: "ch_general".into(),
@@ -1031,5 +1066,146 @@ mod session_feedback {
         hook(&app, "check_suite", "s2", &suite).await;
         assert_eq!(feedback::flush(&app, &s, arugula_e2e::now_ms() + 1).await.unwrap(), None);
         assert_eq!(github_prompts(&app, &s).len(), 1);
+    }
+
+    /// An Actions job that failed, as its check run says: no output.
+    fn actions(id: u64, name: &str, sha: &str, branch: &str) -> Value {
+        let mut v = check(id, name, sha, branch);
+        v["check_run"]["app"] = json!({ "slug": ACTIONS });
+        v["check_run"]["output"] = json!({ "title": null, "summary": null, "text": null });
+        v["check_run"]["html_url"] = json!(format!("https://github.com/acme/app/actions/runs/5/job/{id}"));
+        v
+    }
+
+    /// A commit status that failed, on the session's branch.
+    fn status(id: u64, context: &str, sha: &str, branch: &str) -> Value {
+        json!({ "id": id, "sha": sha, "context": context, "state": "failure", "description": "Plan failed",
+            "target_url": "https://ci.example/plan", "repository": { "id": 77, "full_name": "acme/app" },
+            "branches": [{ "name": branch }] })
+    }
+
+    /// The prompt of round `n` (from 1).
+    fn round(app: &Platform, s: &Session, n: usize) -> String {
+        github_prompts(app, s).get(n - 1).map(|p| p.text.clone()).unwrap_or_default()
+    }
+
+    /// An Actions job's round sends the end of its log, read with the
+    /// App's token, without timestamps or colours; a job whose log can't be
+    /// read sends its link, as before.
+    #[tokio::test]
+    async fn an_actions_failure_sends_its_logs_end() {
+        let (app, gh, s) = session_on_github("done").await;
+        let noise = "2026-10-26T11:59:00.0000000Z Compiling a crate\n".repeat(3_000);
+        let log = "2026-10-26T12:00:00.1000000Z ##[group]Run cargo test\n\
+                   2026-10-26T12:00:01.2000000Z \u{1b}[31merror[E0425]\u{1b}[0m: cannot find value `x` in this scope\n\
+                   2026-10-26T12:00:01.3000000Z ##[error]Process completed with exit code 101.\n";
+        gh.lock().unwrap().logs.insert(950, format!("\u{feff}{noise}{log}"));
+        hook(&app, "check_run", "l1", &actions(950, "ci / test", "abc123", &s.branch)).await;
+        hook(&app, "check_run", "l2", &actions(951, "ci / lint", "abc123", &s.branch)).await;
+        feedback::flush(&app, &s, later()).await.unwrap();
+
+        let p = round(&app, &s, 1);
+        for said in [
+            "## ci / test (failure)",
+            "actions/runs/5/job/950",
+            "The end of its log:",
+            "error[E0425]: cannot find value `x` in this scope",
+            "Process completed with exit code 101.",
+            "## ci / lint (failure)",
+            "actions/runs/5/job/951",
+        ] {
+            assert!(p.contains(said), "{said}: {p}");
+        }
+        assert!(!p.contains("2026-10-26T12") && !p.contains('\u{1b}'), "{p}");
+        assert!(p.len() <= crate::db::sessions::MAX_PROMPT, "{}", p.len());
+        let lint = &p[p.find("## ci / lint").unwrap()..];
+        assert!(!lint.contains("The end of its log"), "no log for 951: {lint}");
+        assert_eq!(lines(&app, &s), ["CI failed: 2 checks; sent to the session (round 1 of 2)"]);
+        assert!(gh.lock().unwrap().minted.iter().all(|m| m["actions"] == "read" && m["contents"] == "read"));
+    }
+
+    /// With checks the base requires (by its rulesets or its classic
+    /// protection), a failure of one it doesn't require alone sends
+    /// nothing and spends no round, and a redelivery doesn't open it
+    /// again; a required one failing on that commit after it sends both,
+    /// the outside one marked. Failing together, both are listed and the
+    /// round counts.
+    #[tokio::test]
+    async fn only_required_checks_spend_a_round() {
+        let (app, gh, s) = session_on_github("done").await;
+        {
+            let mut g = gh.lock().unwrap();
+            let rule = json!([{ "type": "required_status_checks", "ruleset_id": 1,
+                "parameters": { "strict_required_status_checks_policy": false,
+                    "required_status_checks": [{ "context": "ci / test", "integration_id": 15368 }] } }]);
+            g.rules.insert("acme/app:main".into(), rule);
+            let classic = json!({ "enabled": true, "required_status_checks": { "enforcement_level": "non_admins",
+                "contexts": ["lint"], "checks": [{ "context": "lint", "app_id": null }] } });
+            g.protection.insert("acme/app:main".into(), classic);
+        }
+        let plan = status(300, "terragucci/plan", "aaa", &s.branch);
+        hook(&app, "status", "t1", &plan).await;
+        feedback::flush(&app, &s, later()).await.unwrap();
+        assert!(github_prompts(&app, &s).is_empty());
+        assert_eq!(app.db.session(&s.id).unwrap().unwrap().ci_rounds, 0);
+        assert_eq!(lines(&app, &s), ["CI failed: 1 check, none required to merge; not sent"]);
+        let [fb] = &app.db.session_feedback(&s.id).unwrap()[..] else { panic!() };
+        assert!(fb.not_required && fb.state == FeedbackState::Dropped, "{fb:?}");
+        assert!(!feedback::needs_person(&app, &s).unwrap());
+
+        // Delivered again: kept out.
+        hook(&app, "status", "t2", &plan).await;
+        assert_eq!(
+            feedback::route(&app, &seen("status", &plan).unwrap(), &plan, 5).unwrap(),
+            Routed::Late { session: s.id.clone() }
+        );
+        feedback::flush(&app, &s, later() + CI_GATHER_MS).await.unwrap();
+        assert_eq!(lines(&app, &s).len(), 1);
+
+        // A required check fails on that commit after: a round of both.
+        hook(&app, "check_run", "t3", &check(310, "ci / test", "aaa", &s.branch)).await;
+        feedback::flush(&app, &s, later() + 2 * CI_GATHER_MS).await.unwrap();
+        let p = round(&app, &s, 1);
+        for said in [
+            "2 checks failed, 1 of them not required to merge",
+            "## ci / test (failure)\n",
+            "## terragucci/plan (failure, not required)",
+            "ci.example/plan",
+            "round 1 of 2",
+        ] {
+            assert!(p.contains(said), "{said}: {p}");
+        }
+        assert!(p.find("## ci / test").unwrap() < p.find("## terragucci").unwrap(), "required first: {p}");
+        assert_eq!(app.db.session(&s.id).unwrap().unwrap().ci_rounds, 1);
+        assert_eq!(lines(&app, &s)[1], "CI failed: 2 checks (1 not required); sent to the session (round 1 of 2)");
+
+        // Together on the next commit, with the classic protection's.
+        hook(&app, "status", "t4", &status(301, "terragucci/plan", "bbb", &s.branch)).await;
+        hook(&app, "check_run", "t5", &check(311, "lint", "bbb", &s.branch)).await;
+        feedback::flush(&app, &s, later() + 3 * CI_GATHER_MS).await.unwrap();
+        let p = round(&app, &s, 2);
+        assert!(p.contains("## lint (failure)\n") && p.contains("## terragucci/plan (failure, not required)"), "{p}");
+        assert_eq!(app.db.session(&s.id).unwrap().unwrap().ci_rounds, 2);
+        assert_eq!(lines(&app, &s)[2], "CI failed: 2 checks (1 not required); sent to the session (round 2 of 2)");
+
+        // Past the cap, one that isn't required still isn't a refusal.
+        hook(&app, "status", "t6", &status(302, "terragucci/plan", "ccc", &s.branch)).await;
+        feedback::flush(&app, &s, later() + 4 * CI_GATHER_MS).await.unwrap();
+        assert_eq!(lines(&app, &s)[3], "CI failed: 1 check, none required to merge; not sent");
+        assert!(!feedback::needs_person(&app, &s).unwrap());
+    }
+
+    /// With the App, on a base that requires no checks, every failed check
+    /// counts, as before.
+    #[tokio::test]
+    async fn with_no_protection_every_failure_counts() {
+        let (app, _gh, s) = session_on_github("done").await;
+        hook(&app, "status", "n1", &status(400, "terragucci/plan", "ddd", &s.branch)).await;
+        feedback::flush(&app, &s, later()).await.unwrap();
+        let p = round(&app, &s, 1);
+        assert!(p.contains("## terragucci/plan (failure)\n") && p.contains("Plan failed"), "{p}");
+        assert!(!p.contains("not required"), "{p}");
+        assert_eq!(app.db.session(&s.id).unwrap().unwrap().ci_rounds, 1);
+        assert_eq!(lines(&app, &s), ["CI failed: 1 check; sent to the session (round 1 of 2)"]);
     }
 }

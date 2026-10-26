@@ -65,6 +65,13 @@ pub(crate) struct Gh {
     pub(crate) files: BTreeMap<String, String>,
     /// The permissions of each installation token minted, in order.
     pub(crate) minted: Vec<Value>,
+    /// A branch's rules, by `owner/name:branch`, as `rules/branches`
+    /// answers (none when not here), and its classic protection, as
+    /// `branches/{branch}` has it (`protection`; none when not here).
+    pub(crate) rules: BTreeMap<String, Value>,
+    pub(crate) protection: BTreeMap<String, Value>,
+    /// An Actions job's log, by its id (404 when not here).
+    pub(crate) logs: BTreeMap<u64, String>,
 }
 
 /// What the platform's real App (`arugula-io`) is granted today: it reads
@@ -292,6 +299,35 @@ async fn contents(State(h): State<Shared>, Path((o, r, path)): Path<(String, Str
     }
 }
 
+/// A branch's rules (Arugula #210): its rulesets' rules, or none.
+async fn branch_rules(State(h): State<Shared>, Path((o, r, branch)): Path<(String, String, String)>) -> Response {
+    let rules = h.lock().unwrap().rules.get(&format!("{o}/{r}:{branch}")).cloned();
+    Json(rules.unwrap_or_else(|| json!([]))).into_response()
+}
+
+/// A branch, with its classic protection when it has one.
+async fn branch(State(h): State<Shared>, Path((o, r, branch)): Path<(String, String, String)>) -> Response {
+    let protection = h.lock().unwrap().protection.get(&format!("{o}/{r}:{branch}")).cloned();
+    let protected = protection.is_some();
+    let protection = protection.unwrap_or_else(|| json!({ "enabled": false }));
+    Json(json!({ "name": branch, "protected": protected, "protection": protection })).into_response()
+}
+
+/// A job's log, as GitHub answers: a redirect to the plain text elsewhere.
+async fn job_logs(State(h): State<Shared>, Path((_, _, job)): Path<(String, String, u64)>) -> Response {
+    if !h.lock().unwrap().logs.contains_key(&job) {
+        return (StatusCode::NOT_FOUND, Json(json!({ "message": "Not Found" }))).into_response();
+    }
+    (StatusCode::FOUND, [("location", format!("/_logs/{job}"))]).into_response()
+}
+
+async fn log_blob(State(h): State<Shared>, Path(job): Path<u64>) -> Response {
+    match h.lock().unwrap().logs.get(&job) {
+        Some(log) => log.clone().into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
 pub(crate) async fn fake_github(h: Shared) -> String {
     let r = Router::new()
         .route("/user", get(user))
@@ -306,6 +342,10 @@ pub(crate) async fn fake_github(h: Shared) -> String {
         .route("/repos/{o}/{r}/collaborators/{login}/permission", get(permission))
         .route("/repos/{o}/{r}/git/ref/tags/ci/{kind}/{sha}", get(ci_ref))
         .route("/repos/{o}/{r}/compare/{*spec}", get(compare))
+        .route("/repos/{o}/{r}/rules/branches/{*branch}", get(branch_rules))
+        .route("/repos/{o}/{r}/branches/{*branch}", get(branch))
+        .route("/repos/{o}/{r}/actions/jobs/{job}/logs", get(job_logs))
+        .route("/_logs/{job}", get(log_blob))
         .with_state(h);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
