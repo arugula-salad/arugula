@@ -566,9 +566,9 @@ impl AgentsOn {
     }
 }
 
-const COLS: &str = "id, project_id, room_id, parent_seq, asker, workspace_id, machine, block, repo, branch, state, \
-                    was_state, last_seq, daemon_n, heard_at, last_tool, last_error, pr, ci_rounds, created_at, \
-                    updated_at";
+pub(super) const COLS: &str = "id, project_id, room_id, parent_seq, asker, workspace_id, machine, block, repo, \
+                               branch, state, was_state, last_seq, daemon_n, heard_at, last_tool, last_error, pr, \
+                               ci_rounds, created_at, updated_at";
 const EVENT_COLS: &str = "session_id, seq, kind, from_state, to_state, at, detail, daemon, daemon_n, sig";
 const PROMPT_COLS: &str = "id, session_id, author, source, association, text, state, created_at, sent_at, dropped_at";
 const ACTION_COLS: &str =
@@ -578,7 +578,7 @@ fn state(s: &str) -> Result<State> {
     State::parse(s).with_context(|| format!("a session in state {s:?}"))
 }
 
-fn session_row(r: &Row) -> Result<Session> {
+pub(super) fn session_row(r: &Row) -> Result<Session> {
     Ok(Session {
         id: r.get(0)?,
         project: r.get(1)?,
@@ -900,7 +900,7 @@ pub fn dispatch(c: &impl Sql, id: &str, now: u64) -> Result<bool> {
     super::jobs::enqueue(c, id, super::jobs::JobKind::Session, &serde_json::json!({ "session": id }), now, now)
 }
 
-fn queue_in(c: &impl Sql, s: &Session, p: &NewPrompt, at: u64) -> Result<Result<Prompt, Refused>> {
+pub(super) fn queue_in(c: &impl Sql, s: &Session, p: &NewPrompt, at: u64) -> Result<Result<Prompt, Refused>> {
     if s.state.terminal() {
         return Ok(Err(Refused::Moved { now: s.state }));
     }
@@ -975,7 +975,7 @@ pub fn rebuilt_in(
     Ok(Ok(session_for_update(c, id)?.context("the session it moved")?))
 }
 
-fn session_for_update(c: &impl Sql, id: &str) -> Result<Option<Session>> {
+pub(super) fn session_for_update(c: &impl Sql, id: &str) -> Result<Option<Session>> {
     c.query_row(&format!("SELECT {COLS} FROM agent_sessions WHERE id = ?1{}", c.for_update()), params![id], session_row)
         .optional()
 }
@@ -1531,8 +1531,8 @@ impl Db {
 
 /// What deleting an account takes from here, inside the platform's
 /// `account_deleted` transaction, after [`super::projects::erase_account`]:
-/// the sessions of projects that went, with their events, prompts and PR
-/// drafts, the account's own PR drafts (a sent PR stays on GitHub, and its
+/// the sessions of projects that went, with their events, prompts, PR
+/// drafts and feedback (M260), the account's own PR drafts (a sent PR stays on GitHub, and its
 /// link on its session), and on the sessions that stay, the account's name as asker and its prompts'
 /// and actions' text and name (as chat blanks its messages). Events keep the machine
 /// that signed them: a signature names its signer.
@@ -1544,6 +1544,11 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted, now: u64) -> Result<()> {
     c.execute("DELETE FROM session_events WHERE session_id NOT IN (SELECT id FROM agent_sessions)", params![])?;
     c.execute("DELETE FROM session_prompts WHERE session_id NOT IN (SELECT id FROM agent_sessions)", params![])?;
     c.execute("DELETE FROM session_actions WHERE session_id NOT IN (SELECT id FROM agent_sessions)", params![])?;
+    c.execute("DELETE FROM session_feedback WHERE session_id NOT IN (SELECT id FROM agent_sessions)", params![])?;
+    c.execute(
+        "DELETE FROM session_feedback_items WHERE feedback_id NOT IN (SELECT id FROM session_feedback)",
+        params![],
+    )?;
     c.execute(
         "DELETE FROM pr_drafts WHERE author = ?1 OR session_id NOT IN (SELECT id FROM agent_sessions)",
         params![d.account],
