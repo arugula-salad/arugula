@@ -109,5 +109,5 @@ What doesn't change: agents on people's machines read and post through
 their machine's grants ("Agents are in conversations"), an agent's
 "approve" is never an approval, and an agent's GitHub write from a person's
 machine is still a draft its person sends.
-Where: the sessions tables and their rules (`crates/platform/src/db/sessions.rs`, migration `0049_agent_sessions`), the states and the signed event (`crates/e2e/src/session.rs`), what the box pulls and reports (`crates/control-wire/src/work.rs`), sessions as objects (`crates/platform/src/chat/objects.rs`); dispatch (M256) and the card (M257) follow.
+Where: the sessions tables and their rules (`crates/platform/src/db/sessions.rs`, migration `0050_agent_sessions`), the states and the signed event (`crates/e2e/src/session.rs`), what the box pulls and reports (`crates/control-wire/src/work.rs`), sessions as objects (`crates/platform/src/chat/objects.rs`); dispatch (M256) and the card (M257) follow.
 From: thread = session (Arugula #129, native, behind #1438), M254 (Arugula #131), S42 (Arugula #130).

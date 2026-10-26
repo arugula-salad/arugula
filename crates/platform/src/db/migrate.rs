@@ -386,26 +386,26 @@ const SQLITE: &[Migration] = &[
     },
     Migration {
         version: 49,
-        name: "agent_sessions",
-        sql: include_str!("../../migrations/sqlite/0049_agent_sessions.sql"),
-        additive: true,
-    },
-    Migration {
-        version: 49,
         name: "hosted_waking",
         sql: include_str!("../../migrations/sqlite/0049_hosted_waking.sql"),
         additive: true,
     },
     Migration {
-        version: 54,
-        name: "forge_content_association",
-        sql: include_str!("../../migrations/sqlite/0054_forge_content_association.sql"),
+        version: 50,
+        name: "agent_sessions",
+        sql: include_str!("../../migrations/sqlite/0050_agent_sessions.sql"),
         additive: true,
     },
     Migration {
         version: 51,
+        name: "forge_content_association",
+        sql: include_str!("../../migrations/sqlite/0051_forge_content_association.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 52,
         name: "session_actions",
-        sql: include_str!("../../migrations/sqlite/0051_session_actions.sql"),
+        sql: include_str!("../../migrations/sqlite/0052_session_actions.sql"),
         additive: true,
     },
 ];
@@ -704,26 +704,26 @@ const POSTGRES: &[Migration] = &[
     },
     Migration {
         version: 49,
-        name: "agent_sessions",
-        sql: include_str!("../../migrations/postgres/0049_agent_sessions.sql"),
-        additive: true,
-    },
-    Migration {
-        version: 49,
         name: "hosted_waking",
         sql: include_str!("../../migrations/postgres/0049_hosted_waking.sql"),
         additive: true,
     },
     Migration {
-        version: 54,
-        name: "forge_content_association",
-        sql: include_str!("../../migrations/postgres/0054_forge_content_association.sql"),
+        version: 50,
+        name: "agent_sessions",
+        sql: include_str!("../../migrations/postgres/0050_agent_sessions.sql"),
         additive: true,
     },
     Migration {
         version: 51,
+        name: "forge_content_association",
+        sql: include_str!("../../migrations/postgres/0051_forge_content_association.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 52,
         name: "session_actions",
-        sql: include_str!("../../migrations/postgres/0051_session_actions.sql"),
+        sql: include_str!("../../migrations/postgres/0052_session_actions.sql"),
         additive: true,
     },
 ];

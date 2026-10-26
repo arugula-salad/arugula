@@ -1,4 +1,4 @@
--- 0049: agent sessions (M254, thread = session, Arugula #129). A thread's
+-- 0050: agent sessions (M254, thread = session, Arugula #129). A thread's
 -- agent session on a project's hosted workspace: the session, its
 -- append-only history, and the prompts that start its turns. Times are
 -- milliseconds since the epoch. JSON is text. `db::sessions` has the rules,
