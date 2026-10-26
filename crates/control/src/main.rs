@@ -684,6 +684,7 @@ fn routes() -> Routes {
         .route("/api/hosted/turns/{turn}/end", post(hosted::turn_end))
         .route(wire::work::WORK, get(hosted_work::work))
         .route(wire::work::WORK_REPORT, post(hosted_work::report))
+        .route(wire::work::WORK_SESSION_REPORT, post(hosted_work::session_report))
         .route(wire::work::WORK_SECRETS, post(hosted_work::secrets))
         .route(wire::work::WORK_ARTIFACT, post(hosted_work::artifact))
         .route(wire::hosted::SPEC, get(hosted::spec))

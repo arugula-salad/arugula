@@ -89,6 +89,15 @@ pub(crate) async fn post_in(base: &str, room: &str, who: &str, text: &str, paren
 }
 
 /// The platform's lines in a thread (`?thread=`) or a room's list.
+/// The session cards (M257) in `room`'s thread `thread`: each one's `via`.
+pub(crate) async fn cards(base: &str, room: &str, thread: Option<i64>) -> Vec<String> {
+    let q = thread.map(|p| format!("?thread={p}")).unwrap_or_default();
+    let (st, v) = call(base, "a", "GET", &format!("/api/chat/rooms/{room}/messages{q}"), None).await;
+    assert_eq!(st, 200, "{v}");
+    let vias = v["messages"].as_array().unwrap().iter().filter_map(|m| m["via"].as_str());
+    vias.filter(|v| v.starts_with("session:")).map(str::to_owned).collect()
+}
+
 pub(crate) async fn lines(base: &str, room: &str, thread: Option<i64>) -> Vec<String> {
     let q = thread.map(|p| format!("?thread={p}")).unwrap_or_default();
     let (st, v) = call(base, "a", "GET", &format!("/api/chat/rooms/{room}/messages{q}"), None).await;
@@ -194,10 +203,9 @@ you may push. You open no pull request: b sends the draft.
         ours_link = link(&ours.id),
     );
     assert_eq!(prompts[0].text, expected);
-    assert_eq!(
-        lines(&base, "ch_general", Some(p)).await,
-        ["@arugula is starting a session for b on dev, in o/app. Replies here go to it."]
-    );
+    // No line: the session's card (M257) says it started.
+    assert!(lines(&base, "ch_general", Some(p)).await.is_empty());
+    assert_eq!(cards(&base, "ch_general", Some(p)).await, [format!("session:{}", sessions(&app, &t)[0].id)]);
     // The box pulls it.
     let m = crate::work::HostedMachine {
         project: t.clone(),

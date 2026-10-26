@@ -52,12 +52,20 @@
 //!   may be sent again later.
 //! - **Prompts** are `queued` until a turn starts with them (`sent`), or
 //!   `dropped`: their author took them back, or the session ended first.
+//! - **Actions** (M257, [`Action`]) are what people ask of a session
+//!   that only its box can do: answer its open question, approve or deny
+//!   its open permission, cancel the turn. Each is `pending`, listed in
+//!   the box's work, until a report of the machine names it in its
+//!   detail's `actions` (then `done`, with that report's number), or the
+//!   session ends first (`dropped`). One answer to an open request at a
+//!   time: the first wins. A turn that leaves `needs_input` drops the
+//!   answers it didn't name: what they answered isn't open any more.
 //! - **The job** that follows a session is its `session` job on
 //!   `platform_jobs` ([`dispatch`]); one that ends other than `done` fails
 //!   its session (M223's rule for runs). Its handler is M256's.
 
 use anyhow::{Context as _, Result, bail};
-pub use arugula_control_wire::work::{MAX_SESSIONS_PER_BOX, SessionDetail, SessionPrompt, SessionWork};
+pub use arugula_control_wire::work::{MAX_SESSIONS_PER_BOX, SessionAction, SessionDetail, SessionPrompt, SessionWork};
 pub use arugula_e2e::session::{Kind, QUIET_MS, State};
 
 use super::{
@@ -300,6 +308,120 @@ impl Prompt {
     }
 }
 
+/// What an action asks of the box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionKind {
+    /// Answer the open question.
+    Answer,
+    /// Allow the open permission, with one of its options.
+    Approve,
+    /// Refuse the open permission.
+    Deny,
+    /// Cancel the turn under way; the session goes on.
+    Cancel,
+}
+
+impl ActionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ActionKind::Answer => "answer",
+            ActionKind::Approve => "approve",
+            ActionKind::Deny => "deny",
+            ActionKind::Cancel => "cancel",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [ActionKind::Answer, ActionKind::Approve, ActionKind::Deny, ActionKind::Cancel]
+            .into_iter()
+            .find(|k| k.as_str() == s)
+    }
+
+    /// It answers the open request (a question or a permission).
+    pub fn answers(self) -> bool {
+        self != ActionKind::Cancel
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionState {
+    Pending,
+    Done,
+    Dropped,
+}
+
+impl ActionState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ActionState::Pending => "pending",
+            ActionState::Done => "done",
+            ActionState::Dropped => "dropped",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [ActionState::Pending, ActionState::Done, ActionState::Dropped].into_iter().find(|k| k.as_str() == s)
+    }
+}
+
+/// Something a person asked of a session that only its box can do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Action {
+    pub id: String,
+    pub session: String,
+    /// The account that asked; empty once it's deleted.
+    pub by: String,
+    pub kind: ActionKind,
+    /// The open request it answers; `None`: whichever is open.
+    pub request: Option<String>,
+    /// An answer's JSON object, as text.
+    pub answer: Option<String>,
+    /// An approval's option.
+    pub option: Option<String>,
+    /// A denial's why.
+    pub reason: Option<String>,
+    pub state: ActionState,
+    pub at: u64,
+    pub done_at: Option<u64>,
+    /// The number of the machine's report that did it.
+    pub done_n: Option<u64>,
+}
+
+impl Action {
+    /// As the machine is given it.
+    pub fn wire(&self) -> SessionAction {
+        SessionAction {
+            id: self.id.clone(),
+            by: self.by.clone(),
+            kind: self.kind.as_str().into(),
+            request: self.request.clone(),
+            answer: self.answer.as_deref().and_then(|a| serde_json::from_str(a).ok()),
+            option: self.option.clone(),
+            reason: self.reason.clone(),
+            at: self.at,
+        }
+    }
+}
+
+/// An action to ask.
+#[derive(Debug, Clone, Copy)]
+pub struct NewAction<'a> {
+    pub by: &'a str,
+    pub kind: ActionKind,
+    /// The open request it answers, as the session's `needs_input` named
+    /// it; `None`: whichever is open.
+    pub request: Option<&'a str>,
+    /// `answer`'s: a JSON object.
+    pub answer: Option<&'a serde_json::Value>,
+    /// `approve`'s: one of the permission's options.
+    pub option: Option<&'a str>,
+    /// `deny`'s: why, at most [`MAX_REASON`] characters.
+    pub reason: Option<&'a str>,
+}
+
+/// The most a denial's reason holds, in characters.
+pub const MAX_REASON: usize = 1000;
+
 /// A prompt to queue.
 #[derive(Debug, Clone, Copy)]
 pub struct NewPrompt<'a> {
@@ -449,6 +571,8 @@ const COLS: &str = "id, project_id, room_id, parent_seq, asker, workspace_id, ma
                     updated_at";
 const EVENT_COLS: &str = "session_id, seq, kind, from_state, to_state, at, detail, daemon, daemon_n, sig";
 const PROMPT_COLS: &str = "id, session_id, author, source, association, text, state, created_at, sent_at, dropped_at";
+const ACTION_COLS: &str =
+    "id, session_id, by_account, kind, request, answer, option_id, reason, state, at, done_at, done_n";
 
 fn state(s: &str) -> Result<State> {
     State::parse(s).with_context(|| format!("a session in state {s:?}"))
@@ -510,6 +634,47 @@ fn prompt_row(r: &Row) -> Result<Prompt> {
         sent_at: r.get(8)?,
         dropped_at: r.get(9)?,
     })
+}
+
+fn action_row(r: &Row) -> Result<Action> {
+    let (kind, st): (String, String) = (r.get(3)?, r.get(8)?);
+    Ok(Action {
+        id: r.get(0)?,
+        session: r.get(1)?,
+        by: r.get(2)?,
+        kind: ActionKind::parse(&kind).with_context(|| format!("a session action of kind {kind:?}"))?,
+        request: r.get(4)?,
+        answer: r.get(5)?,
+        option: r.get(6)?,
+        reason: r.get(7)?,
+        state: ActionState::parse(&st).with_context(|| format!("a session action in state {st:?}"))?,
+        at: r.get(9)?,
+        done_at: r.get(10)?,
+        done_n: r.get(11)?,
+    })
+}
+
+fn pending_actions(c: &impl Sql, session: &str) -> Result<Vec<Action>> {
+    c.query_map(
+        &format!(
+            "SELECT {ACTION_COLS} FROM session_actions WHERE session_id = ?1 AND state = 'pending' ORDER BY at, id"
+        ),
+        params![session],
+        action_row,
+    )
+}
+
+/// The latest move to `needs_input`: what it asked.
+fn last_ask(c: &impl Sql, session: &str) -> Result<Option<Event>> {
+    c.query_row(
+        &format!(
+            "SELECT {EVENT_COLS} FROM session_events WHERE session_id = ?1 AND kind = 'state' AND to_state = 'needs_input'
+             ORDER BY seq DESC LIMIT 1"
+        ),
+        params![session],
+        event_row,
+    )
+    .optional()
 }
 
 fn add_event(c: &impl Sql, e: &Event) -> Result<()> {
@@ -590,6 +755,17 @@ fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport) -> Result<Result<Ve
         Err(e) => return Ok(Err(e)),
     };
     let refuse = |why| Ok(Err(Refused::Detail(why)));
+    if !d.actions.is_empty() {
+        let pending = pending_actions(c, &s.id)?;
+        for (i, a) in d.actions.iter().enumerate() {
+            if d.actions[..i].contains(a) {
+                return refuse("an action is named twice");
+            }
+            if !pending.iter().any(|p| p.id == *a) {
+                return refuse("an action it names isn't pending in this session");
+            }
+        }
+    }
     match r.kind {
         Kind::State => {
             let (from, to) = (r.from, r.to);
@@ -774,6 +950,10 @@ fn write_state(c: &impl Sql, s: &Session, to: State, was: Option<State>, event: 
             "UPDATE session_prompts SET state = 'dropped', dropped_at = ?2 WHERE session_id = ?1 AND state = 'queued'",
             params![s.id, at],
         )?;
+        c.execute(
+            "UPDATE session_actions SET state = 'dropped', done_at = ?2 WHERE session_id = ?1 AND state = 'pending'",
+            params![s.id, at],
+        )?;
     }
     Ok(())
 }
@@ -894,6 +1074,20 @@ pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(Sessi
                     params![p, *now],
                 )?;
             }
+            for a in &d.actions {
+                c.execute(
+                    "UPDATE session_actions SET state = 'done', done_at = ?2, done_n = ?3 WHERE id = ?1 AND state = 'pending'",
+                    params![a, *now, r.n],
+                )?;
+            }
+            // What the answers it didn't name answered isn't open now.
+            if r.kind == Kind::State && r.from == State::NeedsInput && !r.to.terminal() {
+                c.execute(
+                    "UPDATE session_actions SET state = 'dropped', done_at = ?2
+                     WHERE session_id = ?1 AND state = 'pending' AND kind <> 'cancel'",
+                    params![s.id, *now],
+                )?;
+            }
             written.extend(event);
             let after = session_for_update(c, id)?.context("the session it moved")?;
             Ok(Ok((after, written)))
@@ -1004,6 +1198,98 @@ impl Db {
             .optional()
     }
 
+    /// Ask the session's box to do something (M257): refused once the
+    /// session ended; an answer, approval or denial unless it waits on
+    /// one (`needs_input`), for the request that's open, nobody answered it
+    /// yet, and it fits what's open (an approval's option is one of the
+    /// permission's); a cancel unless a turn is under way, or when one is
+    /// asked already.
+    pub fn add_session_action(&self, session: &str, a: &NewAction, at: u64) -> Result<Result<Action, Refused>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let Some(s) = session_for_update(&tx, session)? else { return Ok(Err(Refused::NoSession)) };
+        let seen = s.seen_as();
+        let refuse = |why| Ok(Err(Refused::Detail(why)));
+        if s.state.terminal() {
+            return Ok(Err(Refused::Moved { now: s.state }));
+        }
+        if a.by.is_empty() {
+            bail!("an action names who asked");
+        }
+        let pending = pending_actions(&tx, &s.id)?;
+        if a.kind.answers() {
+            if seen != State::NeedsInput {
+                return Ok(Err(Refused::Moved { now: seen }));
+            }
+            let open = last_ask(&tx, &s.id)?.map(|e| detail_of(&e.detail).unwrap_or_default()).unwrap_or_default();
+            if a.request.is_some_and(|r| open.request.as_deref() != Some(r)) {
+                return refuse("that isn't the request that's open");
+            }
+            if pending.iter().any(|p| p.kind.answers()) {
+                return refuse("someone answered it already");
+            }
+            let permission = open.ask.as_deref() == Some("permission");
+            match a.kind {
+                ActionKind::Answer if permission => return refuse("a permission is approved or denied, not answered"),
+                ActionKind::Approve | ActionKind::Deny if !permission && open.ask.is_some() => {
+                    return refuse("a question is answered, not approved or denied");
+                }
+                ActionKind::Approve
+                    if a.option.is_some_and(|o| !open.options.is_empty() && !open.options.iter().any(|x| x == o)) =>
+                {
+                    return refuse("that isn't one of the permission's options");
+                }
+                _ => {}
+            }
+        } else if !matches!(seen, State::Working | State::NeedsInput) {
+            return Ok(Err(Refused::Moved { now: seen }));
+        } else if pending.iter().any(|p| p.kind == ActionKind::Cancel) {
+            return refuse("cancelling the turn is asked already");
+        }
+        let answer = match (a.kind, a.answer) {
+            (ActionKind::Answer, Some(v @ serde_json::Value::Object(_))) => {
+                let text = v.to_string();
+                if text.len() > MAX_DETAIL {
+                    return refuse("the answer is too long");
+                }
+                Some(text)
+            }
+            (ActionKind::Answer, _) => return refuse("an answer is a JSON object"),
+            (_, None) => None,
+            (_, Some(_)) => return refuse("only an answer carries one"),
+        };
+        if a.option.is_some() && (a.kind != ActionKind::Approve || !a.option.is_some_and(word)) {
+            return refuse("only an approval names an option, one word");
+        }
+        if a.reason.is_some()
+            && (a.kind != ActionKind::Deny || a.reason.is_some_and(|r| r.chars().count() > MAX_REASON))
+        {
+            return refuse("only a denial says why, at most 1000 characters");
+        }
+        if a.request.is_some_and(|r| !word(r)) {
+            return refuse("a request's id is one word");
+        }
+        let made = tx.query_row(
+            &format!(
+                "INSERT INTO session_actions (id, session_id, by_account, kind, request, answer, option_id, reason, state, at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', ?9) RETURNING {ACTION_COLS}"
+            ),
+            params![new_id("sac"), s.id, a.by, a.kind.as_str(), a.request, answer, a.option, a.reason, at],
+            action_row,
+        )?;
+        tx.commit()?;
+        Ok(Ok(made))
+    }
+
+    /// A session's actions, oldest first.
+    pub fn session_actions(&self, session: &str) -> Result<Vec<Action>> {
+        self.c().query_map(
+            &format!("SELECT {ACTION_COLS} FROM session_actions WHERE session_id = ?1 ORDER BY at, id"),
+            params![session],
+            action_row,
+        )
+    }
+
     /// Mark `unresponsive` every session whose turn is under way and whose
     /// machine the platform hasn't heard from for [`QUIET_MS`] (since it
     /// was made or moved, before it ever reported): the ids it marked.
@@ -1092,6 +1378,7 @@ impl Db {
                 state: s.seen_as().as_str().into(),
                 n: s.daemon_n,
                 prompts: prompts.iter().map(Prompt::wire).collect(),
+                actions: pending_actions(&c, &s.id)?.iter().map(Action::wire).collect(),
             });
         }
         Ok(out)
@@ -1162,7 +1449,7 @@ impl Db {
 /// `account_deleted` transaction, after [`super::projects::erase_account`]:
 /// the sessions of projects that went, with their events and prompts, and
 /// on the sessions that stay, the account's name as asker and its prompts'
-/// text and name (as chat blanks its messages). Events keep the machine
+/// and actions' text and name (as chat blanks its messages). Events keep the machine
 /// that signed them: a signature names its signer.
 ///
 /// The sessions go first: `session_events` refuses a delete while its
@@ -1171,6 +1458,15 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted, now: u64) -> Result<()> {
     c.execute("DELETE FROM agent_sessions WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("DELETE FROM session_events WHERE session_id NOT IN (SELECT id FROM agent_sessions)", params![])?;
     c.execute("DELETE FROM session_prompts WHERE session_id NOT IN (SELECT id FROM agent_sessions)", params![])?;
+    c.execute("DELETE FROM session_actions WHERE session_id NOT IN (SELECT id FROM agent_sessions)", params![])?;
+    c.execute(
+        "UPDATE session_actions SET by_account = '', answer = CASE WHEN answer IS NULL THEN NULL ELSE '{}' END,
+             reason = NULL,
+             state = CASE WHEN state = 'pending' THEN 'dropped' ELSE state END,
+             done_at = CASE WHEN state = 'pending' THEN ?2 ELSE done_at END
+         WHERE by_account = ?1",
+        params![d.account, now],
+    )?;
     c.execute("UPDATE agent_sessions SET asker = '' WHERE asker = ?1", params![d.account])?;
     c.execute(
         "UPDATE session_prompts SET author = '', text = '',

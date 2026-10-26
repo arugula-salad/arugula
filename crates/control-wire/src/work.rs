@@ -58,6 +58,16 @@
 //!     Work`): `branch` (the session's, `arugula/<8 hex>-<slug>`: the only ref
 //!     it may push), `head`, `pushed`, `commits`, `diffstat` and
 //!     `uncommitted`.
+//! - **Actions** come as [`SessionAction`]s in [`SessionWork::actions`]:
+//!   what people asked of the session that only the box can do (`answer`
+//!   its open question, `approve` or `deny` its open permission, `cancel`
+//!   the turn), oldest first, on every pull until a report names them in
+//!   its detail's `actions`. Each is done once. On `-> needs_input` the
+//!   box says what's open: `request` (its id), `ask` (`permission` or
+//!   `question`), `options` (a permission's option ids) and `question`
+//!   (the words shown). Stopping the session isn't an action: control
+//!   moves it to `stopped`, it leaves the list (or the box's next report
+//!   is refused with `now: stopped`), and the box stops the agent.
 //! - **Prompts** come as [`SessionPrompt`]s; a turn gives the agent each
 //!   one's [`SessionPrompt::for_agent`]: a member's text plain, GitHub's
 //!   fenced as quoted data with its `author_association`. A person's
@@ -271,6 +281,40 @@ pub struct SessionWork {
     /// Its queued prompts, oldest first: what the next turn starts with.
     #[serde(default)]
     pub prompts: Vec<SessionPrompt>,
+    /// What people asked of the session that the box hasn't done yet,
+    /// oldest first: listed on every pull until a report names them done
+    /// ([`SessionDetail::actions`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<SessionAction>,
+}
+
+/// Something a person asked of a session that only its box can do: answer
+/// its open question, approve or deny its open permission, or cancel the
+/// turn under way (the session goes on). Stopping the session isn't one:
+/// control moves it to `stopped`, and it leaves the work list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionAction {
+    /// `sac_` and 32 hex characters: the box does each once.
+    pub id: String,
+    /// The account that asked.
+    pub by: String,
+    /// `answer`, `approve`, `deny` or `cancel`.
+    pub kind: String,
+    /// The open request it answers ([`SessionDetail::request`]); `None`:
+    /// whichever is open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
+    /// `answer`'s: the card's answer, `{"question_0": "Blue"}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer: Option<serde_json::Value>,
+    /// `approve`'s: the permission's option id (`allow-once` when `None`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub option: Option<String>,
+    /// `deny`'s: why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// When it was asked (ms).
+    pub at: u64,
 }
 
 /// A prompt queued in a session's thread.
@@ -380,6 +424,21 @@ pub struct SessionDetail {
     /// A turn's: how many paths it left uncommitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uncommitted: Option<u32>,
+    /// The actions ([`SessionAction`]) this report carries out: `answer`,
+    /// `approve` and `deny` on the `needs_input` to `working` report;
+    /// `cancel` on the turn's `working` to `done`, or a heartbeat when no
+    /// turn was under way.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<String>,
+    /// To `needs_input`: the open request's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
+    /// To `needs_input`: `permission` or `question`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask: Option<String>,
+    /// To `needs_input` for a permission: its option ids.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
 }
 
 /// One state change, signed by the machine that made it.
@@ -451,6 +510,12 @@ mod tests {
         let d = SessionDetail { tool: Some("Bash".into()), ..SessionDetail::default() };
         assert_eq!(serde_json::to_string(&d).unwrap(), r#"{"tool":"Bash"}"#);
         assert_eq!(serde_json::to_string(&SessionDetail::default()).unwrap(), "{}");
+        assert!(w.sessions[0].actions.is_empty(), "a platform without actions");
+        let a: SessionAction =
+            serde_json::from_str(r#"{"id":"sac_1","by":"a","kind":"answer","answer":{"question_0":"Blue"},"at":1}"#)
+                .unwrap();
+        assert_eq!((a.request.as_deref(), a.option.as_deref()), (None, None));
+        assert!(!serde_json::to_string(&a).unwrap().contains("option"));
     }
 
     /// Members' text goes in plain; GitHub's fenced as quoted data, in a

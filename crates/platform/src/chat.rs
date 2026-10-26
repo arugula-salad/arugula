@@ -116,6 +116,7 @@ pub(crate) mod pins;
 pub mod previews;
 pub(crate) mod reactions;
 pub(crate) mod saved;
+pub mod session_card;
 pub(crate) mod sessions;
 pub(crate) mod sidebar;
 pub(crate) mod threads;
@@ -1319,7 +1320,8 @@ impl Live {
             | ChatLive::Reply { room, .. }
             | ChatLive::ThreadRead { room, .. }
             | ChatLive::Read { room, .. }
-            | ChatLive::Object { room, .. } => self.rooms.contains(room),
+            | ChatLive::Object { room, .. }
+            | ChatLive::Session { room, .. } => self.rooms.contains(room),
             // Sidebar and Saved are told to their account only (`out.to`).
             ChatLive::Hello { .. }
             | ChatLive::Sidebar {}
