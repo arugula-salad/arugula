@@ -8,13 +8,14 @@
 // has joined a control that keeps Docs) is `doc_shares`' answer, asked when
 // the block's state arrives and kept here for the menu to read.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { docHooks, type DocState } from "../blocks/doc";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import type { MenuItem } from "../../shared/ui/menu";
+import { useModal } from "../../shared/ui/modal";
 
 /** What `doc_shares` said for a Doc that isn't shared. */
 interface Can {
@@ -86,6 +87,10 @@ export function DocShareLayer() {
       listeners.delete(fn);
     };
   }, []);
+  // UI audit #150: the link's and the update's dialog take the focus and
+  // close on Escape (Unshare's ConfirmRemove does its own).
+  const ref = useRef<HTMLDivElement>(null);
+  useModal(ref, () => show(null), !!shown && shown.kind !== "unshare");
   const o = shown;
   if (!o) return null;
   const close = () => show(null);
@@ -107,7 +112,7 @@ export function DocShareLayer() {
   if (o.kind === "update") {
     return (
       <div class="prompt-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-        <div class="prompt control-prompt" role="alertdialog" aria-modal="true" aria-label="Update shared copy" data-doc-update-dialog onKeyDown={(e) => e.key === "Escape" && close()}>
+        <div class="prompt control-prompt" role="alertdialog" aria-modal="true" aria-label="Update shared copy" data-doc-update-dialog ref={ref}>
           <h2>Update shared copy?</h2>
           <p>{UPDATE_NOTE}</p>
           <div class="prompt-buttons">
@@ -130,8 +135,8 @@ export function DocShareLayer() {
     );
   }
   return (
-    <div class="prompt-backdrop" role="dialog" aria-label={o.title} onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="prompt control-prompt" data-doc-link-dialog onKeyDown={(e) => e.key === "Escape" && close()}>
+    <div class="prompt-backdrop" role="dialog" aria-modal="true" aria-label={o.title} onPointerDown={(e) => e.target === e.currentTarget && close()}>
+      <div ref={ref} class="prompt control-prompt" data-doc-link-dialog>
         <h2>{o.title}</h2>
         <p class="hint">Anyone with this link can open the Doc, with no account. It shows the Doc as it is now.</p>
         <CopyText text={o.url} share data-doc-link-url />

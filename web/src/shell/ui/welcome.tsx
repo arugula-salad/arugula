@@ -20,7 +20,8 @@
 
 import { opPath } from "../ops";
 import qrcode from "qrcode-generator";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { useModal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { CopyText } from "../../shared/ui/copy";
 import { notifyBlocker, pushNow, serveCommand, subscribePush } from "./notify";
@@ -202,6 +203,9 @@ function stepFor(section?: Section): number {
 }
 
 function GettingStarted({ client, section, close }: { client: Client | null; section?: Section; close: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // UI audit #150: takes the focus, keeps it, and Escape closes it.
+  useModal(ref, close);
   const [step, setStep] = useState(stepFor(section));
   const [host, setHost] = useState<HostSays | null>(null);
   const [setup, setSetup] = useState<Setup | null>(null);
@@ -273,13 +277,13 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
   const name = host?.name ?? "this machine";
 
   return (
-    <div class="prompt-backdrop start-backdrop" role="dialog" aria-label="Getting started" onPointerDown={(e) => e.target === e.currentTarget && close()}>
+    <div class="prompt-backdrop start-backdrop" role="dialog" aria-modal="true" aria-label="Getting started" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <div
+        ref={ref}
         class="start"
         data-getting-started
         data-step={id}
         onKeyDown={(e) => {
-          if (e.key === "Escape") close();
           if ((e.target as HTMLElement).closest("input, textarea")) return;
           if (e.key === "ArrowRight") go(step + 1);
           if (e.key === "ArrowLeft") go(step - 1);

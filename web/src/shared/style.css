@@ -2669,10 +2669,18 @@ html[data-native-tabs][data-desktop="macos"] .bar {
    under a long deploy plan can be reached. */
 .control-prompt {
   position: relative;
-  max-height: calc(100vh - 15vh - 24px);
-  max-height: calc(100dvh - 15vh - 24px);
+  /* Less its own padding (16px top and bottom), else it ran 8px past the
+     window's bottom (UI audit #150). */
+  max-height: calc(100vh - 15vh - 24px - 32px);
+  max-height: calc(100dvh - 15vh - 24px - 32px);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* A dialog holds the focus itself until Tab moves it to a control
+   (UI audit #150): no ring round the whole of it. */
+.prompt:focus {
+  outline: none;
 }
 
 .modal-close {

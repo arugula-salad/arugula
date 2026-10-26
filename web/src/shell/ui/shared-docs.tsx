@@ -142,7 +142,7 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
       {link && <CopyText text={link} share data-doc-link-url />}
       <div class="prompt-buttons">
         <button type="button" onClick={close}>
-          Close
+          Done
         </button>
       </div>
       {removing && (
