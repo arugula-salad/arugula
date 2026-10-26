@@ -344,17 +344,17 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     let listed = d.put("/api/flags/workspaces", serde_json::json!({ "on": true }));
     assert_eq!(
         (listed["name"].clone(), listed["title"].clone(), listed["on"].clone(), listed["built"].clone()),
-        ("workspaces".into(), "Chant workspaces".into(), true.into(), true.into())
+        ("chant-workspaces".into(), "Chant workspaces".into(), true.into(), true.into())
     );
     let f = features();
     assert_eq!(f["labs"], true, "{f}");
-    assert_eq!(f["flags"], serde_json::json!(["workspaces"]));
+    assert_eq!(f["flags"], serde_json::json!(["chant-workspaces"]));
     let all = d.get("/api/flags");
     assert_eq!(all.as_array().map(Vec::len), Some(arugula_proto::flags::FLAGS.len()), "{all}");
     for row in all.as_array().unwrap() {
         assert_eq!(
             (row["on"].clone(), row["default"].clone()),
-            ((row["name"] == "workspaces").into(), false.into()),
+            ((row["name"] == "chant-workspaces").into(), false.into()),
             "{row}"
         );
         assert!(row["about"].as_str().is_some_and(|a| !a.is_empty()), "{all}");

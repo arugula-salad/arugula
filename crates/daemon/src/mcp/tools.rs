@@ -4742,7 +4742,7 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 32 - NO_FORGE);
+        assert_eq!(all.len(), 33 - NO_FORGE);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -4888,9 +4888,9 @@ mod tests {
             assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
         }
         assert_eq!(every.len(), 34);
-        assert_eq!(defs(fl(false)).len(), 32 - NO_FORGE);
+        assert_eq!(defs(fl(false)).len(), 33 - NO_FORGE);
         assert_eq!(defs(fl(true)).len(), 34 - NO_FORGE);
-        assert_eq!(every.len(), defs(fl(false)).len() + 2 + NO_FORGE, "and delegate and doc");
+        assert_eq!(every.len(), defs(fl(false)).len() + 1 + NO_FORGE, "and delegate");
     }
 
     /// A grouped call says what's wrong with it: no kind, a kind it doesn't

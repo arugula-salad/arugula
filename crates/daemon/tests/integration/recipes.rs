@@ -137,7 +137,7 @@ fn recipes_and_cards_need_the_agents_flag() {
     let d = daemon(&s, false);
     let config = json!({ "agent": "claude", "recipe": "fixer", "cwd": s.proj, "prompt": "hello" });
     let id = d.open_with(json!({ "type": "agent", "config": config }));
-    d.wait_for("it says why", || d.state(id)["error"].as_str().is_some_and(|e| e.contains("agents on")));
+    d.wait_for("it says why", || d.state(id)["error"].as_str().is_some_and(|e| e.contains("agent-delegation on")));
     assert!(d.state(id)["session_id"].is_null(), "no session opened");
     for path in ["/api/a2a/agents", "/api/a2a/offers", "/api/a2a/agents/fixer/card"] {
         assert_eq!(d.raw("GET", path, None).0, 404, "{path}");

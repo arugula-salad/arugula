@@ -167,7 +167,8 @@ fn managoat_is_gone_and_an_old_flag_changes_nothing() {
     // What the file said is kept, for an older daemon reading it.
     set(&d.state, "forges", true);
     let file: Value = serde_json::from_str(&std::fs::read_to_string(d.state.join("flags.json")).unwrap()).unwrap();
-    assert_eq!(file["flags"], json!({ "fountain": true, "forges": true }));
+    // An old name is written as its new one (aru-117).
+    assert_eq!(file["flags"], json!({ "fountain": true, "additional-forges": true }));
 
     let arugulad = |args: &[&str]| {
         arugula_testkit::command(Path::new(env!("CARGO_BIN_EXE_arugulad")))
