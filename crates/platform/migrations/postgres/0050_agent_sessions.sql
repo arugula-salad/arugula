@@ -15,7 +15,7 @@
 -- report it takes: the only one whose reports move the session. `block` is
 -- the agent block on the box, as the machine said. `repo` is the linked
 -- repo (`owner/name`) it works in, and `branch` the one ref it may push
--- (`arugula/<id>-<slug>`). `pr` is the draft PR's link once the asker sent
+-- (`arugula/<8 hex of id>-<slug>`). `pr` is the draft PR's link once the asker sent
 -- it, and `ci_rounds` how many times CI's failure went back to it.
 -- `state` moves only with an event in `session_events` (`last_seq` is the
 -- latest one's); `daemon_n` is the number of the machine's latest report,

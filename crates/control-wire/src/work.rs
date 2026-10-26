@@ -55,7 +55,7 @@
 //!   - `heartbeat`: `tool`, the tool running now, if any.
 //!   - `error`: `error`, what went wrong.
 //!   - `turn`: what the daemon's turn work found (`arugula_proto::api::
-//!     Work`): `branch` (the session's, `arugula/<id>-<slug>`: the only ref
+//!     Work`): `branch` (the session's, `arugula/<8 hex>-<slug>`: the only ref
 //!     it may push), `head`, `pushed`, `commits`, `diffstat` and
 //!     `uncommitted`.
 //! - **Actions** come as [`SessionAction`]s in [`SessionWork::actions`]:
@@ -270,7 +270,7 @@ pub struct SessionWork {
     /// The linked repo it works in (`owner/name`), if any.
     #[serde(default)]
     pub repo: Option<String>,
-    /// The one ref it may push: `arugula/<session>-<slug>`.
+    /// The one ref it may push: `arugula/<8 hex of the id>-<slug>`.
     pub branch: String,
     /// Its state as the machine sees it: `queued`, `working`,
     /// `needs_input` or `done` (an `unresponsive` one is listed in the
@@ -505,7 +505,7 @@ mod tests {
     fn sessions_on_the_wire() {
         assert_eq!(WorkQuery::path(&[TAKES_RUN, TAKES_SESSION]), "/api/hosted/work?takes=run,session");
         assert!(!serde_json::to_string(&Work::default()).unwrap().contains("sessions"));
-        let w: Work = serde_json::from_str(r#"{"sessions":[{"session":"ses_1","project":"prj_1","workspace":"hw_1","asker":"a","branch":"arugula/ses_1","state":"queued","n":0}]}"#).unwrap();
+        let w: Work = serde_json::from_str(r#"{"sessions":[{"session":"ses_1","project":"prj_1","workspace":"hw_1","asker":"a","branch":"arugula/1","state":"queued","n":0}]}"#).unwrap();
         assert_eq!((w.sessions[0].repo.as_deref(), w.sessions[0].prompts.len()), (None, 0));
         let d = SessionDetail { tool: Some("Bash".into()), ..SessionDetail::default() };
         assert_eq!(serde_json::to_string(&d).unwrap(), r#"{"tool":"Bash"}"#);
