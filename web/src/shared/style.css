@@ -388,6 +388,24 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   transform-origin: center;
 }
 
+/* A viewer's pane on a phone (UI audit #197): fitted to the width, or at a
+   size to read and panned; centred while it fits. */
+.tab-area.panned {
+  align-items: flex-start;
+  justify-content: flex-start;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.tab-area.panned .pan {
+  flex: none;
+  margin: auto;
+}
+
+.tab-area.panned .grid {
+  transform-origin: top left;
+}
+
 .pane {
   position: absolute;
   background: var(--bg);
