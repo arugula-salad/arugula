@@ -832,6 +832,12 @@ mod tests {
             ci_rounds: 0,
             created_at: 0,
             updated_at: 0,
+            role: crate::db::sessions::Role::Thread,
+            parent_session: None,
+            harness: "claude".into(),
+            picked: None,
+            picked_by: None,
+            picked_at: None,
         }
     }
 
