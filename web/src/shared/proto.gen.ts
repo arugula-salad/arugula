@@ -3109,6 +3109,12 @@ ports: Array<SessionPort>,
 pr: string | null, };
 
 /**
+ * A turn's finish step (M261): the command, whether it passed, and when
+ * it failed, the last of its output. A failed one isn't pushed.
+ */
+export type SessionFinish = { ok: boolean, command: string, output_tail: string, };
+
+/**
  * One entry of a session's history, in words.
  */
 export type SessionLine = { seq: number, 
@@ -3166,7 +3172,12 @@ commits: Array<string>,
 /**
  * `git diff --stat`, shortened.
  */
-diffstat: string | null, uncommitted: number | null, };
+diffstat: string | null, uncommitted: number | null, 
+/**
+ * What the workspace's finish step did after it (M261), when it has
+ * one.
+ */
+finish: SessionFinish | null, };
 
 /**
  * [`SESSION`]'s answer.

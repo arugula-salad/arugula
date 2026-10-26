@@ -106,6 +106,19 @@ pub struct SessionTurn {
     /// `git diff --stat`, shortened.
     pub diffstat: Option<String>,
     pub uncommitted: Option<u32>,
+    /// What the workspace's finish step did after it (M261), when it has
+    /// one.
+    pub finish: Option<SessionFinish>,
+}
+
+/// A turn's finish step (M261): the command, whether it passed, and when
+/// it failed, the last of its output. A failed one isn't pushed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionFinish {
+    pub ok: bool,
+    pub command: String,
+    pub output_tail: String,
 }
 
 /// What a session waits on a person for.

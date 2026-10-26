@@ -706,3 +706,35 @@ async fn transcripts_are_archived_under_the_project() {
     assert_eq!(ws[0]["machine"], "hosted-machine-1");
     assert_eq!(call(&base, "olga", "GET", "/api/workspaces", None).await.1["workspaces"], json!([]));
 }
+
+/// M261: a spec's finish step is left out of what it's stored and hashed
+/// as when it's empty, so no box built before it shows "rebuild needed";
+/// and changing it needs no rebuild either, since the box is sent it with
+/// each pull of its sessions' work.
+#[test]
+fn the_finish_step_leaves_the_specs_hash_alone() {
+    // A spec as it was stored before the finish step, field for field.
+    let before = r#"{"repos":["https://github.com/acme/app"],"packages":[],"setup":"make","env":[]}"#;
+    let spec: super::Spec = serde_json::from_str(before).unwrap();
+    assert_eq!(serde_json::to_string(&spec).unwrap(), before, "stored as before");
+    // What `hash` was before the finish step: that JSON, hashed.
+    let old = {
+        use sha2::Digest as _;
+        hex::encode(sha2::Sha256::digest(before.as_bytes()))
+    };
+    assert_eq!(spec.hash(), old, "an existing spec's hash is unchanged");
+    assert_eq!(spec.finish_step(), None);
+    let with = super::Spec { finish: "just check".into(), finish_timeout_s: 600, ..spec.clone() };
+    assert_eq!(with.hash(), old, "the finish step isn't what the box is built from");
+    assert_eq!(
+        with.finish_step(),
+        Some(arugula_control_wire::work::FinishStep { command: "just check".into(), timeout_s: 600 })
+    );
+    assert!(with.check().is_ok());
+    let blank = super::Spec { finish: "  ".into(), ..spec.clone() };
+    assert_eq!(blank.finish_step(), None, "blank is none");
+    let long = super::Spec { finish_timeout_s: 3 * 3600, ..with.clone() };
+    assert!(long.check().is_err());
+    let big = super::Spec { finish: "x".repeat(5000), ..spec };
+    assert!(big.check().is_err());
+}
