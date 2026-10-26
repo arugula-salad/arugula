@@ -674,3 +674,71 @@ async fn search_finds_mirrored_text_for_readers_only() {
     assert_eq!(mirror(&w, "alice", "acme/app", false).await.0, 200);
     assert!(search("alice", "SECRET").await.is_empty());
 }
+
+/// GitHub's `author_association` (M256) is kept with each mirrored text,
+/// from the poller's reads and from webhooks alike, and a body's edit
+/// that doesn't say it keeps the one there. Anything that isn't one of
+/// GitHub's words isn't kept.
+#[tokio::test]
+async fn the_author_association_comes_with_the_text() {
+    let w = world().await;
+    let (s, v) = mirror(&w, "alice", "acme/app", true).await;
+    assert_eq!(s, 200, "{v}");
+    let t = now_ms();
+    {
+        let mut g = w.gh.lock().unwrap();
+        let mut p = pr(5, "a body", t);
+        p["author_association"] = "MEMBER".into();
+        g.prs.insert((APP, 5), p);
+        let mut c = comment(900, "a comment", t);
+        c["author_association"] = "CONTRIBUTOR".into();
+        g.comments.insert((APP, 5), vec![c]);
+        g.reviews.insert(
+            (APP, 5),
+            vec![json!({ "id": 901, "state": "COMMENTED", "body": "a review", "author_association": "OWNER",
+                "user": { "login": "bob-gh", "id": 1002 }, "submitted_at": iso(t) })],
+        );
+        g.threads.insert(
+            (APP, 5),
+            vec![json!({ "id": 902, "body": "a line", "path": "src/main.rs", "line": 3,
+                "author_association": "not one of GitHub's", "user": { "login": "bob-gh", "id": 1002 },
+                "created_at": iso(t), "updated_at": iso(t) })],
+        );
+    }
+    poll(&w.app, now_ms()).await;
+    let kept = |app: &Platform| -> Vec<(String, u64, Option<String>)> {
+        app.db
+            .c()
+            .query_map(
+                "SELECT kind, github_id, author_association FROM forge_content WHERE repo_id = ?1 ORDER BY github_id",
+                params![APP],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap()
+    };
+    let s = |x: &str| Some(x.to_owned());
+    assert_eq!(
+        kept(&w.app),
+        [
+            ("comment".into(), 900, s("CONTRIBUTOR")),
+            ("review".into(), 901, s("OWNER")),
+            ("review_comment".into(), 902, None),
+            ("body".into(), 5005, s("MEMBER")),
+        ]
+    );
+
+    // Webhooks: a first-time contributor's comment, and an edit of the body
+    // whose payload has no association.
+    let r = repository(APP);
+    let mut c = comment(910, "hello", t + 1000);
+    c["author_association"] = "FIRST_TIME_CONTRIBUTOR".into();
+    let new =
+        json!({ "action": "created", "repository": r, "issue": { "number": 5, "pull_request": {} }, "comment": c });
+    assert_eq!(hook(&w.base, "issue_comment", "a1", &new).await, 202);
+    let edited =
+        json!({ "action": "edited", "repository": r, "sender": {}, "pull_request": pr(5, "edited", t + 2000) });
+    assert_eq!(hook(&w.base, "pull_request", "a2", &edited).await, 202);
+    let all = kept(&w.app);
+    assert!(all.contains(&("comment".into(), 910, s("FIRST_TIME_CONTRIBUTOR"))), "{all:?}");
+    assert!(all.contains(&("body".into(), 5005, s("MEMBER"))), "kept through the edit: {all:?}");
+}
