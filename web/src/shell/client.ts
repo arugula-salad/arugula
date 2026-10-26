@@ -8,6 +8,7 @@
 
 import { cleanTitle } from "../shared/titles";
 import { OPS, opPath } from "./ops";
+import { pickFollowed, WATCH_MS } from "./follow";
 import {
   decodeFrame,
   encodeFrame,
@@ -612,11 +613,36 @@ export class Client {
 
   follow(client: ClientId | null) {
     this.following = client;
+    this.watching = null;
+    this.applyFollow();
+    this.emit();
+  }
+
+  /** A follow invite opened (#1473): follow `who`'s window as soon as
+   * presence has one, on `pane`'s session if they have more than one, for
+   * `WATCH_MS` or until this client acts. */
+  watching: { who: string; session?: SessionId; until: number } | null = null;
+
+  watch(who: string, pane: PaneId) {
+    const until = Date.now() + WATCH_MS;
+    const w = (this.watching = { who, session: this.sessionOfTab(this.tabOfPane(pane)?.id ?? -1), until });
+    setTimeout(() => {
+      if (this.watching === w) this.watching = null;
+    }, WATCH_MS);
     this.applyFollow();
     this.emit();
   }
 
   private applyFollow() {
+    const w = this.watching;
+    if (w && Date.now() >= w.until) this.watching = null;
+    else if (w) {
+      const c = pickFollowed(this.state?.presence ?? [], w.who, w.session, (t) => this.sessionOfTab(t), this.clientId);
+      if (c !== undefined) {
+        this.following = c;
+        this.watching = null;
+      }
+    }
     if (this.following === null) return;
     const p = this.state?.presence?.find((x) => x.client === this.following);
     if (!p) {

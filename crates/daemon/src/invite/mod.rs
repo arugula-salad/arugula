@@ -254,7 +254,12 @@ pub async fn run(app: &App, b: InviteRequest, drafted: Option<&Drafted>) -> Resu
     let note: String = b.note.as_deref().unwrap_or("").trim().chars().take(300).collect();
     let title = format!("{owner} brought you into {session_name}");
     let body = if note.is_empty() { "Open it to join in.".to_owned() } else { note.clone() };
-    let extra = json!({ "tag": format!("invite-{id}"), "invite": id, "session": b.session });
+    let mut extra = json!({ "tag": format!("invite-{id}"), "invite": id, "session": b.session });
+    // Their window follows ours (#1473): the owner's clients show in
+    // presence as `owner`, and the guest picks one when it opens the invite.
+    if b.follow {
+        extra["follow"] = json!(Principal::Owner.id());
+    }
     // Whoever of theirs is here now hears at once.
     let told = if note.is_empty() { title.clone() } else { format!("{title}: {note}") };
     app.mux.send(Cmd::Api(Api::Tell(person.id.clone(), told)));

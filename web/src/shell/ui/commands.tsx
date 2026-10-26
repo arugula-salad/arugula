@@ -145,6 +145,11 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
             },
           } as MenuItem,
         ]),
+    // The owner's: the share form for this pane's session, opening here,
+    // with their window following ours (#1473).
+    ...(client.state?.roles || client.sessionOfPane(id) === null
+      ? []
+      : [{ label: "Share this pane…", run: () => shareSession(client.sessionOfPane(id)!, { pane: id }) } as MenuItem]),
     ...driveItems(client, id),
     "separator",
     // M61: the people's conversation about this pane.
