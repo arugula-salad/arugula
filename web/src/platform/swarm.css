@@ -85,13 +85,10 @@
    the mono one as "Arugula Mono" so terminals keep theirs. Motion is the swarm's: a card comes in once, and
    glows while it's hovered or focused. */
 
-/* On the whole page: a phone's chat is drawn over the window, not in
-   .platform, and the dialogs and menus open beside the page, not in it. */
-#root {
-  --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
-  --f-ui: "Instrument Sans", system-ui, sans-serif;
-  --f-mono: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
-}
+/* The stacks (--f-display, --f-ui, --f-mono) are shared/style.css's
+   :root's, so the whole page has them: a phone's chat is drawn over the
+   window, not in .platform, and the dialogs and menus open beside the
+   page, not in it. */
 
 /* Every page is in the swarm's face (UI audit #157), its loading and
    missing notes too, chat's sidebar and rooms, and the dialogs and menus
@@ -387,7 +384,7 @@
 /* A warning on a card (UI audit #165): "Wants a rebuild". */
 .platform .sw-chip {
   align-self: flex-start;
-  padding: 1px 7px;
+  padding: 1px var(--space-2);
   border: 1px solid var(--warn);
   border-radius: var(--chip-radius);
   background: color-mix(in srgb, var(--warn) 12%, transparent);
@@ -404,7 +401,7 @@
 
 .platform .sw-n {
   margin-left: auto;
-  padding: 3px 7px;
+  padding: 3px var(--space-2);
   border-radius: var(--chip-radius);
   background: var(--c);
   color: var(--on-color);

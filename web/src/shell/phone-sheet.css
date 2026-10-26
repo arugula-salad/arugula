@@ -4,8 +4,6 @@
    headings, mono labels, a segmented control (.swarm-seg). */
 
 .sheet {
-  --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
-  --f-mono: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
   position: absolute;
   top: var(--bar-h);
   left: 0;

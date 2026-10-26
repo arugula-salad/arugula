@@ -45,7 +45,7 @@
 .platform .settings-more > summary {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
   font: 500 11px/1.6 var(--f-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -79,6 +79,23 @@
 .platform .settings-more p {
   max-width: 70ch;
   margin: 6px 0 0;
+}
+
+/* A finger, not a pointer (UI audit #198): More, a row's link and a
+   card's actions are as tall as a button (shared/buttons.css), and a
+   secret's box as tall as its field's. */
+@media (pointer: coarse) {
+  .platform .settings-more > summary,
+  .platform .settings-rows :is(a, .link),
+  .platform .settings-card-act :is(a, .link) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+  }
+
+  .platform .env-secret input {
+    height: 40px;
+  }
 }
 
 /* Appearance & account: what to open, and what it is. */
@@ -195,7 +212,7 @@
   width: 32px;
   height: 18px;
   margin: 0;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: radial-gradient(circle closest-side, var(--knob) 0 calc(100% - 1px), transparent 100%) 0% 50% / 16px 16px no-repeat,
     var(--raised);
@@ -326,7 +343,7 @@ html[data-corners="square"] .platform input.sw-switch {
 
 .platform .agent-matrix th,
 .platform .agent-matrix td {
-  padding: 7px 6px;
+  padding: var(--space-2) 6px;
 }
 
 /* A matrix's and a settings table's column heads, mono capitals; one with a
@@ -430,8 +447,8 @@ html[data-corners="square"] .platform input.sw-switch {
   flex: none;
   display: inline-block;
   margin-left: 8px;
-  padding: 1px 7px;
-  border: 1px solid var(--raised-hover);
+  padding: 1px var(--space-2);
+  border: 1px solid var(--line-strong);
   border-radius: var(--chip-radius);
   font: 500 11px/1.4 var(--f-mono);
   color: var(--dim);
@@ -454,7 +471,7 @@ html[data-corners="square"] .platform input.sw-switch {
 
 .platform .settings-table th,
 .platform .settings-table td {
-  padding: 7px 8px;
+  padding: var(--space-2) 8px;
   vertical-align: middle;
 }
 
@@ -645,7 +662,7 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .settings-chip {
   display: inline-flex;
   align-items: stretch;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--chip-radius);
   overflow: hidden;
   font: 500 11px/1.5 var(--f-mono);
@@ -699,7 +716,7 @@ html[data-corners="square"] .platform input.sw-switch {
 }
 
 .platform .deploy-source-kind {
-  margin-right: 5px;
+  margin-right: var(--space-1);
   font: 500 10px/1.3 var(--f-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -709,7 +726,7 @@ html[data-corners="square"] .platform input.sw-switch {
 /* A rollback: a tag, as a repo's private is, not a button. */
 .platform .deploy-table .deploy-roll-back {
   padding: 0 6px;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--chip-radius);
   background: none;
   box-shadow: none;
@@ -809,7 +826,7 @@ html[data-corners="square"] .platform input.sw-switch {
   .platform .settings-index a {
     display: block;
     margin-left: -1px;
-    padding: 5px 0 5px 12px;
+    padding: var(--space-1) 0 var(--space-1) 12px;
     border-left: 2px solid transparent;
     font: 500 11px/1.3 var(--f-mono);
     letter-spacing: 0.03em;
