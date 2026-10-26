@@ -40,6 +40,12 @@ struct Fake {
     snapshots: BTreeMap<String, String>,
     snapped: u32,
     no_snapshots: bool,
+    /// What each box was made from. As E2B (seen live): a snapshot isn't
+    /// deleted (400) while a box made from it exists, a paused one too, nor
+    /// for `linger` more tries after its last box is deleted.
+    from: BTreeMap<String, String>,
+    linger: u32,
+    lingering: BTreeMap<String, u32>,
 }
 
 type S = Arc<Mutex<Fake>>;
@@ -84,6 +90,7 @@ async fn create(AxState(s): AxState<S>, m: Method, uri: Uri, h: HeaderMap, Json(
     }
     f.made += 1;
     let id = format!("sbx{}", f.made);
+    f.from.insert(id.clone(), from.to_owned());
     f.boxes.insert(id.clone(), ("running".into(), body["metadata"].clone()));
     f.rules.insert(id.clone(), body["network"]["rules"].clone());
     let made = json!({
@@ -139,7 +146,13 @@ async fn one(AxState(s): AxState<S>, m: Method, uri: Uri, Path(id): Path<String>
     let mut f = s.lock().unwrap();
     if m == Method::DELETE {
         return match f.boxes.remove(&id) {
-            Some(_) => StatusCode::NO_CONTENT.into_response(),
+            Some(_) => {
+                if let Some(snap) = f.from.get(&id).filter(|t| f.snapshots.contains_key(*t)).cloned() {
+                    let linger = f.linger;
+                    f.lingering.insert(snap, linger);
+                }
+                StatusCode::NO_CONTENT.into_response()
+            }
             None => error(404, None),
         };
     }
@@ -275,10 +288,18 @@ async fn template(AxState(s): AxState<S>, m: Method, uri: Uri, Path(id): Path<St
     if f.no_snapshots {
         return StatusCode::NOT_FOUND.into_response();
     }
-    match f.snapshots.remove(&id) {
-        Some(_) => StatusCode::NO_CONTENT.into_response(),
-        None => error(404, None),
+    if !f.snapshots.contains_key(&id) {
+        return error(404, None);
     }
+    if f.boxes.keys().any(|b| f.from.get(b) == Some(&id)) {
+        return error(400, None);
+    }
+    if let Some(n) = f.lingering.get_mut(&id).filter(|n| **n > 0) {
+        *n -= 1;
+        return error(400, None);
+    }
+    f.snapshots.remove(&id);
+    StatusCode::NO_CONTENT.into_response()
 }
 
 async fn fake() -> (E2b, S, String) {
@@ -582,6 +603,13 @@ async fn snapshots_are_made_used_listed_and_deleted() {
     assert_eq!(of, ["snap1:default", "snap2:default"]);
     assert!(calls(&s).pop().unwrap().1.contains(&format!("sandboxID={id}")));
     assert!(e2b.list_snapshots(Some(&made.id)).await.unwrap().is_empty());
+    // As E2B: not while a box made from it exists, paused or not, nor
+    // just after it's deleted.
+    s.lock().unwrap().linger = 1;
+    e2b.pause(&made.id).await.unwrap();
+    assert_eq!(e2b.delete_snapshot(&snap).await, Err(Error::Refused { status: 400, code: None }));
+    e2b.delete(&made.id).await.unwrap();
+    assert_eq!(e2b.delete_snapshot(&snap).await, Err(Error::Refused { status: 400, code: None }));
     e2b.delete_snapshot(&snap).await.unwrap();
     assert_eq!(calls(&s).pop().unwrap().1, "/templates/snap1:default");
     e2b.delete_snapshot(&snap).await.unwrap();
@@ -810,7 +838,15 @@ mod lifecycle {
         drive(&app, now + day + 4_000).await;
         assert_eq!(boxes(&s).last().unwrap(), &("snap3:default".to_owned(), ws.clone()));
         set_up(&app, &hub, &project, &ws, "m5", FROM_SNAPSHOT, now + day + 7_000).await;
+        // E2B holds snap2 a while after its box went: a deferred delete,
+        // asked at each look, never the build's error.
+        s.lock().unwrap().lingering.insert("snap2:default".into(), 1);
         look(&app, &ws, now + day + 7_000).await;
+        assert_eq!(snapshots(&s), ["snap2:default", "snap3:default"], "still held");
+        let w = show(&base, &project, &ws).await;
+        assert_eq!(snap(&w)["status"], "ready");
+        assert!(snap(&w).get("error").is_none(), "{w}");
+        look(&app, &ws, now + day + 8_000).await;
         assert_eq!(snapshots(&s), ["snap3:default"], "deleted once its box went");
 
         // A failure keeps the current one, and says why.
@@ -842,12 +878,24 @@ mod lifecycle {
         assert!(snap(&w)["error"].as_str().unwrap().contains("still on the snapshot's box"), "{w}");
         assert_eq!(snapshots(&s), ["snap3:default"]);
 
-        // Delete: its builder and every snapshot go with it.
+        // Delete: its builder and boxes go, then every snapshot, once E2B
+        // lets go of the one its box was made from: until then it stays
+        // `deleting`, and asks again.
         let b6 = look(&app, &ws, now + 4 * day).await.unwrap();
+        s.lock().unwrap().linger = 2;
         assert_eq!(call(&base, "alice", "DELETE", &path, None).await.0, 200);
         drive(&app, now + 4 * day + 1_000).await;
-        drive(&app, now + 4 * day + 2_000).await;
+        assert_eq!(snapshots(&s), ["snap3:default"], "held just after its box went");
+        assert_eq!(live(&s), 0, "its boxes went first");
+        let state = |app: &Platform| -> String {
+            app.db.hosted_any(&project, &ws).unwrap().map(|w| w.state).unwrap_or_default()
+        };
+        assert_eq!(state(&app), "deleting");
+        drive(&app, now + 4 * day + 20_000).await;
+        assert_eq!(state(&app), "deleting");
+        drive(&app, now + 4 * day + 40_000).await;
         assert!(snapshots(&s).is_empty(), "{:?}", snapshots(&s));
+        assert_eq!(state(&app), "deleted");
         assert_eq!(live(&s), 0, "every box went");
         assert!(app.db.snapshot_builder(&ws).unwrap().is_none());
         assert!(hub.gone().contains(&b6));

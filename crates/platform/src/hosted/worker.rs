@@ -48,6 +48,9 @@ use crate::{
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// How soon a step that failed for now is tried again.
 pub(super) const RETRY_MS: u64 = 5_000;
+/// How soon a deleted workspace asks again to delete a snapshot the
+/// provider still holds for the boxes just deleted (M263).
+const SNAPSHOT_RETRY_MS: u64 = 15_000;
 /// How often an enrolling box is looked at.
 const ENROLLING_MS: u64 = 2_000;
 /// How often a running box's state is read (to see it pause itself), and
@@ -141,8 +144,12 @@ pub(super) type Step = (Option<Ask>, u64);
 async fn step(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step> {
     let asked = job.w.asked.clone();
     if asked.as_deref() == Some("delete") {
-        super::snapshot::forget(app, sub, job).await?;
         delete(app, sub, job).await?;
+        // Its snapshots after its boxes: E2B holds one while a box made
+        // from it exists, and for a while after (M263).
+        if !super::snapshot::forget(app, sub, job).await? {
+            return Ok((None, now + SNAPSHOT_RETRY_MS));
+        }
         job.w.state = "deleted".into();
         job.deleted_at = Some(now);
         return Ok((Some(Ask::Delete), now));

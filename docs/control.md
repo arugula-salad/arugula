@@ -153,7 +153,10 @@ any sandbox id but the builder's as its own box: it makes its own key and
 enrolls as a new machine. A build runs again a day after the last
 (`ARUGULA_HOSTED_SNAPSHOT_HOURS`, `0` for none) and at once when the spec
 changes; a failed one says why on the workspace and keeps the current
-snapshot. loam's E2B API has no snapshots, so there every box runs its
+snapshot. E2B won't delete a snapshot while a box made from it exists
+(paused included) or for a while after, so an old one is deleted later:
+each look at the workspace asks again until it goes, and a deleted
+workspace stays `deleting` until its snapshots are gone. loam's E2B API has no snapshots, so there every box runs its
 setup (`crates/platform/src/hosted/snapshot.rs`).
 
 ```

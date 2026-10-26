@@ -330,13 +330,15 @@ async fn resume_latency() {
 
 /// M263's snapshots, live: a running box snapshotted filesystem-only (and
 /// full, to see the team has both), its snapshot listed, a box made from
-/// it, and what deleting a snapshot does to a paused box made from it (the
-/// platform keeps a workspace's earlier snapshot while its box is made from
-/// it, in case that box needs it to wake: this says whether it does). A
-/// box from a deleted snapshot is refused, which the platform's fallback to
-/// the template counts on. Every box and snapshot it makes is deleted at
-/// the end whatever happened, and listed to show none is left. loam's E2B
-/// API has no snapshots: there it checks only that it says so.
+/// it. E2B refuses to delete a snapshot while a box made from it exists, a
+/// paused one included (400), and for a while after the last is deleted
+/// (the first run, 2026-10-26): checked, then the box is deleted and the
+/// delete asked again with backoff until it goes (the platform's deferred
+/// delete does the same). A box from a deleted snapshot is refused, which
+/// the platform's fallback to the template counts on. Every box and then
+/// every snapshot it makes is deleted at the end whatever happened, the
+/// snapshots with the same backoff, and listed to show none is left.
+/// loam's E2B API has no snapshots: there it checks only that it says so.
 ///
 /// ```sh
 /// ARUGULA_TEST_E2B_URL=https://api.e2b.dev ARUGULA_TEST_E2B_KEY=... \
@@ -361,8 +363,9 @@ async fn live_snapshots() {
     let snaps = std::sync::Mutex::new(Vec::<String>::new());
     let body = AssertUnwindSafe(snapshot_suite(&e2b, &template, &tag, &mut run, &boxes, &snaps)).catch_unwind().await;
 
-    // Clean up whatever happened: every snapshot of every box made, every
-    // snapshot made, then every box, and list both again.
+    // Clean up whatever happened: find every snapshot of every box made,
+    // delete every box (E2B holds a snapshot while a box made from it
+    // exists), then the snapshots, with backoff, and list both again.
     let made = boxes.lock().unwrap().clone();
     let mut left_snaps = snaps.lock().unwrap().clone();
     for b in &made {
@@ -372,9 +375,6 @@ async fn live_snapshots() {
     }
     left_snaps.sort();
     left_snaps.dedup();
-    for s in &left_snaps {
-        println!("cleanup delete snapshot {s}: {:?}", e2b.delete_snapshot(s).await);
-    }
     let mut left = made.clone();
     if let Ok(found) = e2b.list(&tag).await {
         left.extend(found.into_iter().map(|b| b.id));
@@ -383,6 +383,10 @@ async fn live_snapshots() {
     left.dedup();
     for id in &left {
         println!("cleanup delete {id}: {:?}", e2b.delete(id).await);
+    }
+    for s in &left_snaps {
+        let (gone, tries, took) = delete_until_gone(&e2b, s).await;
+        println!("cleanup delete snapshot {s}: {gone:?} after {tries} tries, {} ms", took.as_millis());
     }
     let after = e2b.list(&tag).await;
     println!("cleanup list: {after:?}");
@@ -407,6 +411,23 @@ async fn live_snapshots() {
         std::panic::resume_unwind(panic);
     }
     assert!(failed.is_empty(), "failed: {failed:#?}");
+}
+
+/// Delete snapshot `id`, asking again with backoff for up to about two
+/// minutes while E2B refuses: the last answer, the tries, the time taken.
+async fn delete_until_gone(e2b: &E2b, id: &str) -> (Result<()>, u32, Duration) {
+    let at = Instant::now();
+    let mut wait = Duration::from_secs(1);
+    let mut tries = 0;
+    loop {
+        tries += 1;
+        let r = e2b.delete_snapshot(id).await;
+        if r.is_ok() || at.elapsed() > Duration::from_secs(120) {
+            return (r, tries, at.elapsed());
+        }
+        tokio::time::sleep(wait).await;
+        wait = (wait * 2).min(Duration::from_secs(15));
+    }
 }
 
 async fn snapshot_suite(
@@ -458,19 +479,26 @@ async fn snapshot_suite(
     let snapped_child = e2b.list_snapshots(Some(&child.id)).await;
     run.check("the child has no snapshots of its own", snapped_child.as_ref().is_ok_and(Vec::is_empty), &snapped_child);
 
-    // A paused box from a snapshot, its snapshot deleted: does it wake?
+    // A snapshot isn't deleted while a box made from it exists, paused
+    // included: the platform's deferred delete counts on the refusal.
     let paused = e2b.pause(&child.id).await;
     run.check("pause the child", paused == Ok(Paused::Paused), &paused);
-    let gone = run.time("delete the snapshot", e2b.delete_snapshot(&fs)).await;
-    run.check("delete the snapshot", gone.is_ok(), &gone);
+    let held = e2b.delete_snapshot(&fs).await;
+    run.check(
+        "delete the snapshot while a paused box from it exists: refused",
+        matches!(held, Err(Error::Refused { .. })),
+        &held,
+    );
+    let woke = e2b.resume(&child.id, Duration::from_secs(120)).await;
+    run.check("the child still wakes", woke == Ok(Resumed::Woke), &woke);
+    let deleted = e2b.delete(&child.id).await;
+    run.check("delete the child", deleted.is_ok(), &deleted);
+    let (gone, tries, took) = delete_until_gone(e2b, &fs).await;
+    println!("the snapshot went {} ms after its last box, on try {tries}: {gone:?}", took.as_millis());
+    run.check("delete the snapshot once its box is gone (with backoff)", gone.is_ok(), (&gone, tries, took));
     if gone.is_ok() {
         snaps.lock().unwrap().retain(|s| *s != fs);
     }
-    let woke = run.time("resume the child, its snapshot gone", e2b.resume(&child.id, Duration::from_secs(120))).await;
-    println!(
-        "ANSWER: a paused box whose snapshot was deleted {}: {woke:?}",
-        if woke == Ok(Resumed::Woke) { "wakes" } else { "doesn't wake" }
-    );
     let again = e2b.delete_snapshot(&fs).await;
     run.check("delete the snapshot again: fine", again.is_ok(), &again);
     let refused = e2b.create(&create(fs.clone(), "hw_late")).await;

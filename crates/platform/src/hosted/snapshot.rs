@@ -40,10 +40,16 @@
 //! spec it has now on this release's template. One the provider no longer
 //! has is forgotten, and the box is made from the template.
 //!
-//! **Keeping one.** A new snapshot retires the one before, which is deleted
-//! once the workspace's box isn't made from it. Deleting the workspace
-//! deletes its builder and every snapshot. A provider without snapshots
-//! (loam's E2B API) builds none, and every box runs its setup as before.
+//! **Keeping one.** A new snapshot retires the one before. A retired one is
+//! a deferred delete: E2B refuses to delete a snapshot (400) while any box
+//! made from it exists, a paused one included, and for a while after the
+//! last is deleted (seen live, 2026-10-26). So it isn't asked while the
+//! workspace's box is made from it, and after that each look at the
+//! workspace asks again until it goes; a refusal is "still in use", never
+//! a build's error. Deleting the workspace deletes its builder and boxes,
+//! then its snapshots, and stays `deleting`, asking again, until every one
+//! is gone. A provider without snapshots (loam's E2B API) builds none, and
+//! every box runs its setup as before.
 
 use std::time::Duration;
 
@@ -138,7 +144,9 @@ pub async fn tend(app: &Platform, sub: &dyn Substrate, job: &HostedJob, now: u64
     }
     let id = &job.w.id;
     let s = app.db.hosted_snapshots(id)?;
-    retire(app, sub, id, &s).await;
+    if !s.retired.is_empty() {
+        retire(app, sub, id, &s).await;
+    }
     if s.status.as_deref() == Some("building") {
         match app.db.snapshot_builder(id)? {
             None => app.db.snapshot_failed(id, BUILDER_GONE)?,
@@ -178,9 +186,12 @@ pub async fn tend(app: &Platform, sub: &dyn Substrate, job: &HostedJob, now: u64
     Ok(())
 }
 
-/// Delete `parent`'s earlier snapshots, but the one its box is made from.
-/// One that won't go is tried again next time.
-async fn retire(app: &Platform, sub: &dyn Substrate, parent: &str, s: &Snapshots) {
+/// Ask once to delete each of `parent`'s retired snapshots, but the one its
+/// box is made from: whether every one asked went. One E2B still holds for
+/// its boxes (a 400), or that wasn't answered, stays retired and is asked
+/// again at the next look.
+async fn retire(app: &Platform, sub: &dyn Substrate, parent: &str, s: &Snapshots) -> bool {
+    let mut all = true;
     for old in s.retired.iter().filter(|old| s.box_snapshot.as_ref() != Some(*old)) {
         match sub.delete_snapshot(old).await {
             Ok(()) | Err(compute::Error::Unsupported) => {
@@ -189,28 +200,33 @@ async fn retire(app: &Platform, sub: &dyn Substrate, parent: &str, s: &Snapshots
                 }
                 info!(workspace = parent, "deleted a hosted workspace's earlier snapshot");
             }
-            Err(e) => warn!(workspace = parent, error = %e, "an earlier snapshot will be deleted later"),
+            Err(compute::Error::Refused { status: 400 | 409, .. }) => {
+                all = false;
+                info!(workspace = parent, "an earlier snapshot is still in use at the provider: asked again later");
+            }
+            Err(e) => {
+                all = false;
+                warn!(workspace = parent, error = %e, "an earlier snapshot will be deleted later");
+            }
         }
     }
+    all
 }
 
-/// A workspace that's being deleted: its builder goes, and every snapshot
-/// it has. A provider that doesn't answer has it tried again.
-pub async fn forget(app: &Platform, sub: &dyn Substrate, job: &HostedJob) -> Result<()> {
+/// A workspace that's being deleted, its boxes deleted already: its builder
+/// goes, and every snapshot it has is retired and asked to go. Whether all
+/// went; while one is still held for the boxes just deleted, the worker
+/// asks again.
+pub async fn forget(app: &Platform, sub: &dyn Substrate, job: &HostedJob) -> Result<bool> {
     if job.w.purpose != PURPOSE_WORKSPACE {
-        return Ok(());
+        return Ok(true);
     }
     if let Some(b) = app.db.snapshot_builder(&job.w.id)? {
         super::ask(app, &b.id, super::Ask::Delete)?;
     }
+    app.db.snapshots_retire_all(&job.w.id)?;
     let s = app.db.hosted_snapshots(&job.w.id)?;
-    for id in s.id.iter().chain(&s.retired) {
-        match sub.delete_snapshot(id).await {
-            Ok(()) | Err(compute::Error::Unsupported) => {}
-            Err(e) => return Err(e.into()),
-        }
-    }
-    app.db.snapshots_forgotten(&job.w.id)
+    Ok(retire(app, sub, &job.w.id, &s).await)
 }
 
 /// A builder's step, once its box is enrolled (module docs): wait for its
@@ -329,8 +345,11 @@ async fn built(
         info!(workspace = parent, builder = %job.w.id, "a hosted workspace's snapshot was made");
         let s = app.db.hosted_snapshots(parent)?;
         retire(app, sub, parent, &s).await;
-    } else if let Err(e) = sub.delete_snapshot(id).await {
-        warn!(workspace = parent, error = %e, "a gone workspace's new snapshot wasn't deleted");
+    } else if !app.db.snapshot_retire(parent, id)? {
+        // The workspace is gone for good: asked once, and logged if not.
+        if let Err(e) = sub.delete_snapshot(id).await {
+            warn!(workspace = parent, error = %e, "a gone workspace's new snapshot wasn't deleted");
+        }
     }
     finish(app, sub, job, now).await
 }

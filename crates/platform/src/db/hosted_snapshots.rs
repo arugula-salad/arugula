@@ -189,15 +189,47 @@ impl Db {
         tx.commit()
     }
 
-    /// Every snapshot of `parent`'s was deleted (the workspace is going).
-    pub fn snapshots_forgotten(&self, parent: &str) -> Result<()> {
-        self.c().execute(
+    /// The workspace is going: its current snapshot is retired with the
+    /// earlier ones, and its box (deleted) is made from none.
+    pub fn snapshots_retire_all(&self, parent: &str) -> Result<()> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let Some(s) = read(&tx, parent)? else { return Ok(()) };
+        let mut retired = s.retired;
+        if let Some(id) = s.id.filter(|id| !retired.contains(id)) {
+            retired.push(id);
+        }
+        tx.execute(
             "UPDATE hosted_workspaces SET snapshot_id = NULL, snapshot_hash = NULL, snapshot_template = NULL,
-                 snapshot_built_at = NULL, snapshot_retired = '[]', box_snapshot = NULL
+                 snapshot_built_at = NULL, snapshot_retired = ?2, box_snapshot = NULL
              WHERE id = ?1",
-            params![parent],
+            params![parent, serde_json::to_string(&retired)?],
         )?;
-        Ok(())
+        tx.commit()
+    }
+
+    /// Retire snapshot `id` of `parent`'s, a workspace being deleted (a
+    /// build that ended after it was asked): whether there's a row to keep
+    /// it on until it's deleted.
+    pub fn snapshot_retire(&self, parent: &str, id: &str) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let live: Option<u64> = tx
+            .query_row("SELECT 1 FROM hosted_workspaces WHERE id = ?1 AND deleted_at IS NULL", params![parent], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        let Some(s) = live.and(read(&tx, parent)?) else { return Ok(false) };
+        let mut retired = s.retired;
+        if !retired.iter().any(|r| r == id) {
+            retired.push(id.to_owned());
+        }
+        tx.execute(
+            "UPDATE hosted_workspaces SET snapshot_retired = ?2 WHERE id = ?1",
+            params![parent, serde_json::to_string(&retired)?],
+        )?;
+        tx.commit()?;
+        Ok(true)
     }
 
     /// The snapshot workspace `id`'s box is made from now, or none (the
