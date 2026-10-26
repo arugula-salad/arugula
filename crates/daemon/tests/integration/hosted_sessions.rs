@@ -13,7 +13,10 @@
 //!   people give come back to the agent;
 //! - a daemon restart, between turns or mid-turn, neither loses nor doubles
 //!   a prompt, and the agent's conversation goes on;
-//! - with three sessions on the box a fourth waits, until one is stopped.
+//! - with three sessions on the box a fourth waits, until one is stopped;
+//! - a turn that commits pushes the session's branch, and only it, with a
+//!   token control mints for that push and the box revokes after (M259); a
+//!   turn with nothing new pushes nothing.
 
 use std::{
     collections::BTreeMap,
@@ -68,6 +71,9 @@ struct Fake {
     pulls: Arc<Mutex<u32>>,
     /// Every turn the box asked M185's gate for, as it asked.
     asked: Arc<Mutex<Vec<Value>>>,
+    /// Every push token the box asked for (M259), and those it revoked.
+    pushes: Arc<Mutex<Vec<Value>>>,
+    revoked: Arc<Mutex<Vec<String>>>,
 }
 
 impl Fake {
@@ -97,6 +103,8 @@ impl Fake {
             refused: Default::default(),
             pulls: Default::default(),
             asked: Default::default(),
+            pushes: Default::default(),
+            revoked: Default::default(),
         }
     }
 
@@ -264,6 +272,21 @@ async fn turn(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
     Json(json!({ "turn": "trn_1", "pays": "project", "auth": "key" }))
 }
 
+/// The push token for a session's branch, as the platform mints it (M259).
+async fn push_token(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
+    f.pushes.lock().unwrap().push(b);
+    let revoke = format!("{}/installation/token", f.url.lock().unwrap());
+    Json(json!({ "kind": "given", "token": PUSH_TOKEN, "expires_at": "2099-01-01T00:00:00Z", "revoke": revoke }))
+}
+
+async fn revoke(Axum(f): Axum<Fake>, h: axum::http::HeaderMap) -> StatusCode {
+    let bearer = h.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+    f.revoked.lock().unwrap().push(bearer);
+    StatusCode::NO_CONTENT
+}
+
+const PUSH_TOKEN: &str = "ghs_m259_push_token_for_the_test";
+
 async fn turn_end() -> Json<Value> {
     Json(json!({ "ended": true }))
 }
@@ -277,6 +300,8 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/api/relay/dial", get(dial))
             .route("/api/hosted/work", get(work))
             .route("/api/hosted/work/session", post(report))
+            .route("/api/hosted/work/session/push", post(push_token))
+            .route("/installation/token", axum::routing::delete(revoke))
             .route("/api/hosted/turns", post(turn))
             .route("/api/hosted/turns/{turn}/end", post(turn_end))
             .with_state(f.clone());
@@ -392,6 +417,12 @@ fn a_hosted_machine_runs_sessions() {
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);
     git(&repo, &["remote", "add", "origin", "https://github.com/acme/app.git"]);
+    // GitHub, for the push: a bare repo with the workspace's main.
+    let github = marks.join("github");
+    let remote = github.join("acme/app.git");
+    std::fs::create_dir_all(&remote).unwrap();
+    git(&remote, &["init", "-q", "--bare", "-b", "main"]);
+    git(&repo, &["push", "-q", remote.to_str().unwrap(), "main"]);
     let state = marks.join("state");
     std::fs::create_dir_all(&state).unwrap();
     std::fs::write(
@@ -434,6 +465,7 @@ fn a_hosted_machine_runs_sessions() {
         .env("ARUGULA_HOSTED_SUDO", &sudo)
         .env("ARUGULA_HOSTED_SESSION_AGENT", &agent)
         .env("ARUGULA_SESSION_HEARTBEAT_MS", "400")
+        .env("ARUGULA_GITHUB_GIT", format!("file://{}", github.display()))
         .env("RUST_LOG", "info")
         .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
         .wait_secs(30)
@@ -455,7 +487,8 @@ fn a_hosted_machine_runs_sessions() {
     let branch = format!("arugula/{}-fix-readme", &a[4..12]);
     let (_, turn) = of.iter().find(|(r, _)| r.kind == "turn").unwrap();
     assert_eq!(turn.branch.as_deref(), Some(branch.as_str()), "{turn:?}");
-    assert_eq!(turn.pushed, Some(false), "M259 pushes");
+    assert_eq!(turn.pushed, Some(false), "nothing of its own to push");
+    assert!(f.pushes.lock().unwrap().is_empty(), "so it asked for no token");
     let gated = f.asked.lock().unwrap().clone();
     assert_eq!(gated, [json!({ "agent": "claude", "session": a })], "its turns are its asker's");
     let checkout = homes.join("ses1").join("work").join(&a);
@@ -511,6 +544,16 @@ fn a_hosted_machine_runs_sessions() {
     assert!(turn.commits.iter().any(|c| c.ends_with(" add NOTES.md")), "{turn:?}");
     assert_eq!(turn.uncommitted, Some(1), "README.md, edited, not committed");
     assert_eq!(git(&checkout, &["log", "-1", "--format=%s"]), "add NOTES.md");
+    // That turn pushed its branch, and only it, with a token for that push,
+    // revoked after.
+    assert_eq!(turn.pushed, Some(true), "{turn:?}");
+    assert_eq!(*f.pushes.lock().unwrap(), [json!({ "session": a, "branch": branch })]);
+    assert_eq!(*f.revoked.lock().unwrap(), [format!("Bearer {PUSH_TOKEN}")]);
+    let head = git(&checkout, &["rev-parse", "HEAD"]);
+    assert_eq!(
+        git(&remote, &["for-each-ref", "--format=%(refname) %(objectname)"]),
+        format!("refs/heads/{branch} {head}\nrefs/heads/main {}", git(&repo, &["rev-parse", "main"]))
+    );
     let slow = lines.iter().position(|l| l == "user: slow").unwrap();
     assert_eq!(lines[slow - 1], "note: A follow-up from acct1", "{lines:#?}");
     assert!(f.of(&a).iter().any(|(_, d)| d.actions == [action(1, "", "").id]), "the cancel is named once it's done");
@@ -593,4 +636,19 @@ fn a_hosted_machine_runs_sessions() {
     assert!(homes.join("ses2").join("work").join(&e).join(".git").exists(), "in the slot b had");
     let (status, _) = d.raw("GET", &format!("/api/blocks/{b_block}"), None);
     assert_eq!(status, 404, "b's agent block closed when it was stopped");
+
+    // No turn after the one that committed pushed again (nothing new), and
+    // the token is in no file on the box.
+    assert_eq!(f.pushes.lock().unwrap().len(), 1);
+    let mut todo = vec![state.clone(), homes.clone()];
+    while let Some(dir) = todo.pop() {
+        for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() && !p.is_symlink() {
+                todo.push(p);
+            } else if let Ok(b) = std::fs::read(&p) {
+                assert!(!b.windows(PUSH_TOKEN.len()).any(|w| w == PUSH_TOKEN.as_bytes()), "the token is in {p:?}");
+            }
+        }
+    }
 }

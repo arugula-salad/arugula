@@ -37,8 +37,13 @@
 //!   `needs_input` with what it asks, back, to `done`), a heartbeat every
 //!   [`HEARTBEAT`] while a turn is under way with the tool running now, the
 //!   agent's errors, and each turn's result (`turnwork`'s: branch, commits,
-//!   diffstat; `pushed` stays false until M259 pushes). Each is kept in the
-//!   ledger before it's sent, and sent in order until control takes it.
+//!   diffstat, and `pushed`). Each is kept in the ledger before it's sent,
+//!   and sent in order until control takes it.
+//! - **Pushed** ([`push::push_turn`], M259): a turn that left commits of
+//!   its own pushes the session's branch, and only it, from a bundle its
+//!   user writes, through a repo of the daemon's own, with a token control
+//!   mints for that one push. A push that fails is the session's error,
+//!   and the turn says it didn't push.
 //! - **People's answers** ([`SessionAction`]: a question's answer, a
 //!   permission's approval or denial, cancelling the turn) are done once
 //!   each, as the person who asked, and named in the next report.
@@ -261,6 +266,9 @@ pub struct Session {
     pub last_at: u64,
     #[serde(default)]
     pub events: Vec<Kept>,
+    /// The commit its last push put on GitHub (M259).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pushed_head: Option<String>,
 }
 
 impl Session {
@@ -529,6 +537,7 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         error: None,
         last_at: 0,
         events: vec![],
+        pushed_head: None,
     };
     let fail = |mut l: Session, why: String| {
         info!(session = l.session, why, "hosted: a session can't start here");
@@ -885,17 +894,37 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 let result = b.call("turn_result", json!({})).await.ok().filter(|v| !v.is_null());
                 let r: Option<arugula_proto::api::TurnResult> = result.and_then(|v| serde_json::from_value(v).ok());
                 let branch = l.branch.clone();
+                // M261's finish step runs here, before the push.
+                let pushed = push::push_turn(app, &l).await;
                 let (k, m) = (keys.clone(), me.clone());
                 say(Box::new(move |now| {
                     if now.now() == State::NeedsInput {
                         now.push(&k, &m, Kind::State, State::Working, SessionDetail::default());
                     }
+                    let on_github = match pushed {
+                        Ok(head) => {
+                            if head.is_some() {
+                                now.pushed_head = head.clone();
+                            }
+                            head.is_some()
+                        }
+                        Err(why) => {
+                            let error = Some(format!("couldn't push {}: {why}", now.branch));
+                            now.push(
+                                &k,
+                                &m,
+                                Kind::Error,
+                                State::Working,
+                                SessionDetail { error, ..Default::default() },
+                            );
+                            false
+                        }
+                    };
                     let w = r.and_then(|r| r.work);
                     let d = SessionDetail {
                         branch: Some(w.as_ref().map_or(branch, |w| w.branch.clone())),
                         head: w.as_ref().map(|w| w.head.clone()).filter(|h| !h.is_empty()),
-                        // M259 pushes, and says so.
-                        pushed: Some(false),
+                        pushed: Some(on_github),
                         commits: w.as_ref().and_then(|w| w.commits.clone()).unwrap_or_default(),
                         diffstat: w.as_ref().and_then(|w| w.diffstat.clone()),
                         uncommitted: w.as_ref().map(|w| w.uncommitted_total),
@@ -1086,6 +1115,7 @@ async fn fail(app: &Arc<App>, id: &str, why: &str) {
 
 async fn stop_agent(app: &App, l: &Session) {
     BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&l.session);
+    push::clean(app.control.state_dir(), l).await;
     if let Some(block) = l.block {
         if let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten() {
             let _ = b.call("cancel", json!({})).await;
@@ -1146,6 +1176,9 @@ async fn send_all(app: &Arc<App>) {
         send(app, &l.session).await;
     }
 }
+
+#[path = "work_sessions_push.rs"]
+pub mod push;
 
 #[cfg(test)]
 #[path = "work_sessions_tests.rs"]
