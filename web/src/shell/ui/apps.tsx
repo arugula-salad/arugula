@@ -57,7 +57,7 @@ export async function pickApp(client: Client, where: AppsWhere) {
   if (!typed) return;
   const had = open.get(originOf(typed) ?? "");
   if (had) {
-    client.focusPane(had.id);
+    client.setActive(had.id);
     return;
   }
   await openApp(client, typed, where);
