@@ -30,7 +30,7 @@ export function StatusFooter({ client }: { client: Client }) {
   const shown = client.tabView();
   const needs = attentionItems(client);
   const { state } = connection(client);
-  const host = directory.current || "This machine";
+  const host = directory.current || client.hostName || "This machine";
   // M111: the attention drawer, at this machine's first; seeing it never
   // answers it.
   const next = () => openAttention((needs.find((i) => !(i.here && i.p.id === active)) ?? needs[0]).p.key);

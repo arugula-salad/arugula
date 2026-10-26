@@ -133,6 +133,17 @@ a.secondary.danger:hover {
   cursor: default;
 }
 
+/* A primary that can't be pressed yet is grey, not a faded accent that
+   still reads as the thing to do (UI audit #179). Its fill is the
+   variable, so every finish draws it grey. */
+.primary:disabled {
+  --btn-fill: color-mix(in srgb, var(--fg) 9%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 16%, transparent);
+  color: var(--dim);
+  text-shadow: none;
+  opacity: 1;
+}
+
 .primary:focus-visible,
 .secondary:focus-visible,
 .link:focus-visible {

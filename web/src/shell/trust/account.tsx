@@ -41,7 +41,13 @@ const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { year: "
  * browser ("Safari on iPhone"). Sign-ins from before control kept the
  * browser have none. */
 export function describeAgent(ua: string): string {
-  return ua ? agentName(ua) : "An earlier sign-in";
+  if (!ua) return "An earlier sign-in";
+  const name = agentName(ua);
+  // UI audit #179: which program, by its own word ("curl", "node"): the
+  // CLI signs its calls with its device key and keeps no sign-in, so a
+  // sign-in from a program is a script's.
+  const program = name === "A program" ? /\b(node|undici|curl|reqwest)\b/i.exec(ua)?.[1] : null;
+  return program ? `A program (${program.toLowerCase()})` : name;
 }
 
 /** A sign-in's name: its device's, once its page said which it is, so
