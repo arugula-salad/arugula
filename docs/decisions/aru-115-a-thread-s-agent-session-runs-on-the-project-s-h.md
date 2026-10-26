@@ -59,6 +59,8 @@ constrains:
   - "path:crates/daemon/src/work_sessions_push.rs"
   - "path:crates/platform/src/sessions/push.rs"
   - "path:crates/platform/src/sessions/pr.rs"
+  - "path:crates/platform/src/sessions/tries.rs"
+  - "path:crates/platform/src/sessions/review.rs"
 ---
 
 # A thread's agent session runs on the project's hosted box
@@ -76,6 +78,15 @@ agents draft while people send".
   are never woken by other people's mentions: on them, mentions are still
   read, not pushed. `@arugula` comes first; `@<recipe>` (a project recipe's
   agent) comes later.
+- **Try 3 and `@codex review`** (M264). From a session's card, an owner or
+  editor can run it two more ways at once: two siblings of it re-run its
+  first prompt on the same box, each in a slot of its own, on Claude Code
+  or Codex, and they pick one to keep; the others stop. `@codex` is
+  reserved as `@arugula` is, with the same rule for who may ask: `@codex
+  review` in a session's thread starts a read-only session given its pushed
+  diff and the thread as data, which pushes nothing and posts its review
+  in the thread. Both are sessions on the project's hosted box, as the
+  asker, like any other.
 - **One card in the timeline.** The session's status card is the one card
   kind a chat timeline shows; everything else in it stays a message.
 - **It runs as the asker, on the project's key.** The session is the
