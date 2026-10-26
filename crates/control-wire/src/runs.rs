@@ -96,7 +96,9 @@ pub struct RunListQuery {
     /// Only runs in this state (`pending`, `running`, `succeeded`, ...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
-    /// Only runs started this way: `manual`, `schedule` or `event` (M215).
+    /// Only runs started this way: `manual`, `schedule` or `event` (M215),
+    /// or `deploy`: a deploy's run, which is `manual` underneath (UI audit
+    /// #164); `manual` then leaves deploys' runs out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trigger: Option<String>,
     /// Only runs of this run spec, by its id (M215).

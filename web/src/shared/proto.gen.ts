@@ -1947,7 +1947,12 @@ native_issues: number,
  * It has issues in both places: native ones and a linked repo. The
  * page says so.
  */
-both: boolean, };
+both: boolean, 
+/**
+ * Every label on its native issues, open or closed, sorted: what the
+ * label menus offer (UI audit #163).
+ */
+labels: Array<string>, };
 
 /**
  * `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
@@ -2242,7 +2247,16 @@ agent: ChatAgent | null, labels: Array<string>,
 /**
  * Accounts.
  */
-assignees: Array<string>, github: IssueGithub | null, created_at: number, updated_at: number, closed_at: number | null, };
+assignees: Array<string>, github: IssueGithub | null, created_at: number, updated_at: number, closed_at: number | null, 
+/**
+ * Who closed a closed one (an agent's owner's account), as its latest
+ * `closed` event says: a list's row names them (UI audit #163).
+ */
+closed_by?: string, 
+/**
+ * The agent that closed it for its owner.
+ */
+closed_by_agent?: ChatAgent, };
 
 /**
  * A new issue, before and after it reached the forge.

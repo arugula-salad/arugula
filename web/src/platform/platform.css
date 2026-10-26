@@ -675,6 +675,53 @@ html[data-corners="square"] .platform-section {
   overflow-wrap: anywhere;
 }
 
+/* What a spec runs, on its own line under its name (UI audit #164): a
+   command, or its instruction's Markdown clamped to a line until Show. */
+.run-spec-list .run-spec-op {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-spec-instruction {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.run-spec-md {
+  min-width: 0;
+  flex: 0 1 auto;
+  color: var(--subtle);
+}
+
+.run-spec-instruction > .link {
+  flex: none;
+}
+
+.run-spec-instruction:not(.open) .run-spec-md {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.run-spec-instruction:not(.open) .run-spec-md :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote) {
+  display: inline;
+  margin: 0;
+  font-size: inherit;
+}
+
+/* Why a run ended without succeeding, under its state (UI audit #164). */
+.run-why {
+  color: var(--danger);
+}
+
 .run-spec-op,
 .run-command-line,
 .run-hash {

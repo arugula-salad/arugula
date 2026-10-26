@@ -14,6 +14,21 @@ export function whoLabel(account: string, agent: ChatAgent | null, nameOf: NameO
   return agent ? `${name}'s agent on ${agent.machine_name || "a machine that left"}` : name;
 }
 
+/** Who, short, for a list's row (UI audit #163): a person by name, an
+ * agent as `agent · <machine>`. */
+export function whoShort(account: string, agent: ChatAgent | null, nameOf: NameOf): string {
+  if (agent) return `agent · ${agent.machine_name || "a machine that left"}`;
+  return account ? nameOf(account) || "someone who left" : "a deleted account";
+}
+
+/** A list row's line after its number: `opened 3 days ago by kim`, or a
+ * closed one's `closed as completed by kim 2 days ago` (UI audit #163). */
+export function rowLine(i: Pick<NativeIssue, "state" | "close_reason" | "author" | "agent" | "created_at" | "closed_at" | "closed_by" | "closed_by_agent">, nameOf: NameOf, now = Date.now()): string {
+  if (i.state !== "closed" || !i.closed_at) return `opened ${ago(i.created_at, now)} by ${whoShort(i.author, i.agent, nameOf)}`;
+  const by = i.closed_by !== undefined ? ` by ${whoShort(i.closed_by, i.closed_by_agent ?? null, nameOf)}` : "";
+  return `closed as ${reasonLabel(i.close_reason)}${by} ${ago(i.closed_at, now)}`;
+}
+
 const REASONS: Record<string, string> = {
   completed: "completed",
   not_planned: "not planned",

@@ -41,6 +41,9 @@ export interface IssueApi {
   known(id: string): NativeIssue | undefined;
   /** Every issue read, for the labels a project's issues have. */
   all(): NativeIssue[];
+  /** Every label on the project's issues, where the reader has them
+   * (UI audit #163): the menu offers those besides what `all` has. */
+  labels?(project: string): Promise<string[]>;
 }
 
 /** The platform's routes as the reader, unless the page says otherwise. */
@@ -90,6 +93,28 @@ const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
   openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
 };
+
+/** The label picker, under the button that opens it: the project's labels
+ * (`known`) each checked when it's on, and New label…. An issue's page and
+ * New issue both pick with it (UI audit #163). */
+export function pickLabels(e: MouseEvent, known: Iterable<string>, on: string[], set: (label: string, on: boolean) => void) {
+  const all = [...new Set([...known, ...on])].sort();
+  menuAt(e, [
+    { header: "Labels" },
+    ...all.map((l) => {
+      const has = on.includes(l);
+      return { label: l, checked: has, run: () => set(l, !has) };
+    }),
+    ...(all.length ? ["separator" as const] : []),
+    {
+      label: "New label…",
+      run: async () => {
+        const v = (await askText("Add a label", "", "one or a few words"))?.trim();
+        if (v) set(v, true);
+      },
+    },
+  ]);
+}
 
 /** Whether a read failed because the platform couldn't be reached (or
  * didn't answer), not because it refused. */
@@ -341,26 +366,19 @@ function IssueEventRow({ e, line, nameOf }: { e: IssueEvent; line: string; nameO
 type Change = (x: Partial<IssuePatch>) => Promise<boolean>;
 
 function Labels({ api, issue, change, writer }: { api: IssueApi; issue: NativeIssue; change: Change; writer: boolean }) {
+  // The project's labels, open issues' and closed ones' (UI audit #163),
+  // where the reader has them; and those this page has seen.
+  const [project, setProject] = useState<string[]>([]);
+  useEffect(() => {
+    if (!writer || !api.labels) return;
+    let live = true;
+    api.labels(issue.project).then((l) => live && setProject(l), () => {});
+    return () => void (live = false);
+  }, [api, issue.project, writer]);
   const pick = (e: MouseEvent) => {
-    // The labels this page has seen in the project, and the issue's own.
-    const seen = new Set(issue.labels);
+    const seen = new Set(project);
     for (const i of api.all()) if (i.project === issue.project) for (const l of i.labels) seen.add(l);
-    const items: MenuItem[] = [
-      { header: "Labels" },
-      ...[...seen].sort().map((l) => {
-        const on = issue.labels.includes(l);
-        return { label: l, checked: on, run: () => void change({ labels: on ? { remove: [l] } : { add: [l] } }) };
-      }),
-      "separator",
-      {
-        label: "New label…",
-        run: async () => {
-          const v = (await askText("Add a label", "", "one or a few words"))?.trim();
-          if (v) void change({ labels: { add: [v] } });
-        },
-      },
-    ];
-    menuAt(e, items);
+    pickLabels(e, seen, issue.labels, (l, on) => void change({ labels: on ? { add: [l] } : { remove: [l] } }));
   };
   return (
     <section class="issue-side-part" data-issue-labels>

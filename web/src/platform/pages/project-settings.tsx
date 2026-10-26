@@ -4,7 +4,8 @@
 // sends the person to GitHub to install it, and GitHub sends them back to
 // `/installed`, which comes here with the repo filled in. Each linked repo
 // has a switch for content mirroring (M166), with what turning it on means.
-// Then its environments, their secrets and "Deploy…" (M252), its
+// Then where its new issues go (M195, moved here by UI audit #163), its
+// environments, their secrets and "Deploy…" (M252), its
 // standing grant for runs (M211), for its owners the agent tokens over it
 // and its own secrets (M230), what its Claude calls cost (M231), and the
 // apps products keep in it (M236), and for a team's owners its chat's
@@ -23,6 +24,7 @@ import { names } from "../links";
 import { follow, go, pathOf, REPO } from "../router";
 import { session } from "../session";
 import { Missing } from "./project";
+import { IssueHomeSetting } from "./issues";
 import { RunGrant } from "../settings/runs";
 import { Environments } from "../settings/environments";
 import { ProjectAgents } from "../settings/project-agents";
@@ -218,6 +220,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
               </ConfirmRemove>
             )}
           </Section>
+          <IssueHomeSetting key={linked} p={p} />
           <Environments p={p} />
           <RunGrant project={p.id} />
           <ProjectAgents p={p} />

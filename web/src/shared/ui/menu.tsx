@@ -1,6 +1,7 @@
 // Right-click menus: one open at a time, closed by Escape, a click
 // elsewhere, or choosing an item.
 
+import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useModal } from "./modal";
 
@@ -25,8 +26,9 @@ export type MenuItem =
       current?: boolean;
     }
   /** `name`: the header holds a name (a channel's, a login), shown as
-   * written rather than in capitals (UI audit #169). */
-  | { header: string; name?: boolean }
+   * written rather than in capitals (UI audit #169). `note`: a line under
+   * it saying what the items do (UI audit #163). */
+  | { header: string; name?: boolean; note?: string }
   | "separator";
 
 interface OpenMenu {
@@ -195,9 +197,10 @@ export function MenuLayer() {
         item === "separator" ? (
           <div key={i} class="menu-sep" />
         ) : "header" in item ? (
-          <div key={i} class={item.name ? "menu-header named" : "menu-header"}>
-            {item.header}
-          </div>
+          <Fragment key={i}>
+            <div class={item.name ? "menu-header named" : "menu-header"}>{item.header}</div>
+            {item.note && <div class="menu-note">{item.note}</div>}
+          </Fragment>
         ) : (
           <button
             key={i}

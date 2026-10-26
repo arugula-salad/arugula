@@ -2,9 +2,10 @@
 // native issues (M194, through M195's routes), open or closed, by label,
 // assignee or words, and a new one. Owners and editors open issues;
 // viewers read them and comment. Where the project's new issues go (its
-// issue home, M195) is set at the foot of the list, and a project with
-// issues both here and on a linked repo says so. Issues come with chat's
-// Labs flag, as their threads do: while it's off there are none.
+// issue home, M195) is set in the project's settings (UI audit #163), and
+// a project with issues both here and on a linked repo says so. Issues
+// come with chat's Labs flag, as their threads do: while it's off there
+// are none.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { IssueHome, NativeIssue } from "../../shared/proto";
@@ -14,9 +15,10 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
-import { issues, type IssueFilter } from "../../shared/issues/store";
-import { ago, githubNewIssue, labelsOf, stateLabel, whoLabel } from "../../shared/issues/text";
-import { LabelChip } from "../../shared/issues/view";
+import { Section } from "../settings/section";
+import { IssueError, issues, type IssueFilter } from "../../shared/issues/store";
+import { githubNewIssue, rowLine, stateLabel } from "../../shared/issues/text";
+import { LabelChip, pickLabels } from "../../shared/issues/view";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
@@ -44,15 +46,33 @@ export function mayWrite(p: PlatformProject): boolean {
   return !p.team || p.team.role !== "viewer";
 }
 
-/** The project, once chat says issues are on; else what to show. */
+/** The project, unless chat says issues are off; else what to show.
+ * Before chat has said, the page goes on (UI audit #163: a cold load
+ * waited seconds on chat's rooms): the issue routes say `chat_off` too. */
 export function useIssuesOn(id: string): { p: PlatformProject } | { show: preact.JSX.Element } {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => chat.subscribe(fn));
   const p = session.project(id);
   if (!p) return { show: <Missing what="That project isn't one of yours (or it's gone)." /> };
-  if (chat.on === null) return { show: <p class="platform-section dim">Loading…</p> };
-  if (!chat.on) return { show: <IssuesOff /> };
+  if (chat.on === false) return { show: <IssuesOff /> };
   return { p };
+}
+
+/** Rows' shapes while a list loads (UI audit #163, #164): the page's
+ * frame paints at once, and its rows when they come. */
+export function ListLoading({ rows = 3 }: { rows?: number }) {
+  return (
+    <ul class="issues-list sw-cards issues-loading" aria-busy="true" aria-label="Loading" data-list-loading>
+      {Array.from({ length: rows }, (_, i) => (
+        <li key={i} class="issue-row sw-card" aria-hidden="true">
+          <div class="issue-row-main">
+            <span class="loading-bar" style={{ width: `${[46, 62, 38][i % 3]}%` }} />
+            <span class="loading-bar short" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export function IssuesOff() {
@@ -65,13 +85,18 @@ export function IssuesOff() {
 }
 
 /** What the list holds, as the runs' list counts its runs: the issues
- * shown (a page of them), and of them those assigned to the reader. */
-function IssueStats({ list, me }: { list: NativeIssue[]; me?: string }) {
+ * read (a page of them, `+` when there are more) by their state (UI
+ * audit #164), and of them those assigned to the reader. */
+function IssueStats({ list, more, closed, me }: { list: NativeIssue[]; more: boolean; closed: boolean; me?: string }) {
   const mine = me ? list.filter((i) => i.assignees.includes(me)).length : 0;
   return (
     <div class="sw-stats" data-issues-stats>
       <span>
-        <b>{list.length}</b> shown
+        <b>
+          {list.length}
+          {more ? "+" : ""}
+        </b>{" "}
+        {closed ? "closed" : "open"}
       </span>
       {mine > 0 && (
         <span class="needs">
@@ -97,7 +122,8 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
   const [list, setList] = useState<NativeIssue[] | null>(null);
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [home, setHome] = useHome(p.id);
+  const [off, setOff] = useState(false);
+  const [home] = useHome(p.id);
   const [typed, setTyped] = useState(filter.q ?? "");
   const nameOf = nameIn(p);
   const key = JSON.stringify([p.id, filter.state, filter.label, filter.assignee, filter.q]);
@@ -106,7 +132,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
     setError(null);
     issues.list(p.id, filter).then(
       (r) => live && (setList(r.issues), setMore(r.more)),
-      (e: Error) => live && setError(e.message),
+      (e: Error) => live && (e instanceof IssueError && e.reason === "chat_off" ? setOff(true) : setError(e.message)),
     );
     return () => void (live = false);
   }, [key]);
@@ -137,7 +163,9 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
     }
   };
 
-  const seen = [...new Set([...(list ?? []).flatMap((i) => i.labels), ...(filter.label ? [filter.label] : [])])].sort();
+  // The project's labels, closed issues' and those further down too (UI
+  // audit #163), and what the rows read so far have.
+  const seen = [...new Set([...(home?.labels ?? []), ...(list ?? []).flatMap((i) => i.labels), ...(filter.label ? [filter.label] : [])])].sort();
   const labelMenu = (e: MouseEvent) =>
     menuAt(e, [
       { header: "Label" },
@@ -152,12 +180,13 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
     ]);
   const exportMenu = (e: MouseEvent) =>
     menuAt(e, [
-      { header: "Every issue, its timeline and comments" },
+      { header: "Export", note: "Every issue, open and closed, with its timeline and comments." },
       { label: "Export as JSON", run: () => location.assign(issues.exportUrl(p.id, "json")) },
       { label: "Export as Markdown", run: () => location.assign(issues.exportUrl(p.id, "md")) },
     ]);
   const narrowed = !!(filter.q || filter.label || filter.assignee);
   const onGithub = home?.home === "github" && home.repos.length > 0;
+  if (off) return <IssuesOff />;
 
   return (
     <section class="platform-section sw-page issues-page" data-issues={p.id}>
@@ -165,20 +194,15 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
         title="Issues"
         actions={
           <>
-            <button class="issues-export" title="Download every issue" data-issues-export onClick={exportMenu}>
+            <button class="secondary issues-export" title="Download every issue" data-issues-export onClick={exportMenu}>
               Export <span class="caret">▾</span>
             </button>
             {mayWrite(p) && <NewIssueButton p={p} home={home} />}
           </>
         }
-        stats={!!list?.length && <IssueStats list={list} me={session.me?.account} />}
+        stats={!!list?.length && <IssueStats list={list} more={more} closed={filter.state === "closed"} me={session.me?.account} />}
       />
-      {home?.both && (
-        <p class="issues-note" role="note" data-issues-both>
-          This project has issues in two places: {home.native_issues} here, and more on {home.repos.join(", ")} on GitHub.{" "}
-          {home.home === "github" ? "New ones go to GitHub." : "New ones are kept here."}
-        </p>
-      )}
+      {home?.both && home.home === "github" && <IssuesBoth home={home} />}
       <div class="issues-tools">
         <div class="issues-states" role="group" aria-label="Open or closed">
           <button aria-pressed={filter.state !== "closed"} data-issues-open onClick={() => to({ ...filter, state: undefined })}>
@@ -202,7 +226,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
         )}
       </div>
       {error && <p class="control-error" role="alert">{error}</p>}
-      {list === null && !error && <p class="dim">Loading…</p>}
+      {list === null && !error && <ListLoading />}
       {list?.length === 0 && (
         <p class="dim issues-none" data-issues-none>
           {narrowed
@@ -226,8 +250,52 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
           More issues
         </button>
       )}
-      {mayWrite(p) && home && <IssueHomeSetting p={p} home={home} set={setHome} />}
+      {home && <IssueHomeLine p={p} home={home} />}
     </section>
+  );
+}
+
+/** A project with issues here and on its linked repos, whose new ones go
+ * to GitHub (UI audit #163): how many are here, and the repos (behind a
+ * disclosure when there are several). */
+function IssuesBoth({ home }: { home: IssueHome }) {
+  const n = home.native_issues;
+  const here = `${n} ${n === 1 ? "issue" : "issues"} here, open or closed`;
+  if (home.repos.length === 1) {
+    return (
+      <p class="issues-note" role="note" data-issues-both>
+        This project's issues are in two places: {here}, and those on <b>{home.repos[0]}</b> on GitHub, where new ones go.
+      </p>
+    );
+  }
+  return (
+    <details class="issues-note" data-issues-both>
+      <summary>
+        This project's issues are in two places: {here}, and those on its {home.repos.length} linked GitHub repos, where new ones go.
+      </summary>
+      <ul class="issues-note-repos">
+        {home.repos.map((r) => (
+          <li key={r}>{r}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** Where the project's new issues go, in a line at the list's foot, and
+ * the way to its setting (UI audit #163: a project setting, not the
+ * list's). */
+function IssueHomeLine({ p, home }: { p: PlatformProject; home: IssueHome }) {
+  const settings = `${pathOf({ page: "project-settings", project: p.id }, names)}#issues`;
+  return (
+    <p class="issues-home-line dim" data-issue-home={home.home}>
+      {home.home === "github" ? "New issues go to GitHub." : "New issues are kept here."}{" "}
+      {mayWrite(p) && home.repos.length > 0 && (
+        <a href={settings} data-issue-home-settings onClick={(e) => follow(e, settings)}>
+          Change it in the project's settings
+        </a>
+      )}
+    </p>
   );
 }
 
@@ -291,7 +359,7 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
           <LabelChip key={l} label={l} onClick={() => label(l)} />
         ))}
         <span class="issue-row-meta dim">
-          <StateChip tone={issueTone(i.state)}>{stateLabel(i)}</StateChip> · #{i.number} {i.state === "closed" && i.closed_at ? `closed ${ago(i.closed_at)}` : `opened ${ago(i.created_at)} by ${whoLabel(i.author, i.agent, nameOf)}`}
+          <StateChip tone={issueTone(i.state)}>{stateLabel(i)}</StateChip> · #{i.number} {rowLine(i, nameOf)}
         </span>
       </div>
       {i.assignees.length > 0 && (
@@ -305,10 +373,19 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
   );
 }
 
-/** Where the project's new issues go (M195): kept here, or on its linked
- * repo on GitHub. Owners and editors choose; it starts on GitHub while the
- * project has a linked repo. */
-function IssueHomeSetting({ p, home, set }: { p: PlatformProject; home: IssueHome; set: (h: IssueHome) => void }) {
+/** Where the project's new issues go (M195), in its settings (UI audit
+ * #163): kept here, or on its linked repos on GitHub. Owners and editors
+ * choose; it starts on GitHub while the project has a linked repo. Nothing
+ * while issues are off for the reader. */
+export function IssueHomeSetting({ p }: { p: PlatformProject }) {
+  const [home, set] = useHome(p.id);
+  // The issues list's link comes to `#issues`: there, once it's drawn.
+  const shown = !!home;
+  useEffect(() => {
+    if (shown && location.hash === "#issues") document.getElementById("issues-h")?.scrollIntoView({ block: "start" });
+  }, [shown]);
+  if (!home) return null;
+  const writer = mayWrite(p);
   const choose = async (h: string | null) => {
     try {
       set(await issues.setHome(p.id, h));
@@ -316,26 +393,29 @@ function IssueHomeSetting({ p, home, set }: { p: PlatformProject; home: IssueHom
       toast(`Couldn't change it: ${(e as Error).message}`);
     }
   };
+  const n = home.repos.length;
   return (
-    <div class="issues-home" data-issue-home={home.home}>
-      <h2>Where new issues go</h2>
-      {home.repos.length === 0 ? (
+    <Section id="issues" title="Where new issues go" lede="New issue opens them here, on Arugula, or on the project's linked repo on GitHub." hooks={{ "data-issue-home": home.home }}>
+      {n === 0 ? (
         <p class="dim">Kept here: this project has no linked GitHub repo, so its issues are its own.</p>
       ) : (
         <>
           <label class="control-confirm">
-            <input type="radio" name="issue-home" checked={home.home === "native"} data-issue-home-native onChange={() => void choose("native")} /> Here, on Arugula
+            <input type="radio" name="issue-home" checked={home.home === "native"} disabled={!writer} data-issue-home-native onChange={() => void choose("native")} /> Here, on Arugula
           </label>
           <label class="control-confirm">
-            <input type="radio" name="issue-home" checked={home.home === "github"} data-issue-home-github onChange={() => void choose("github")} /> On GitHub ({home.repos.join(", ")})
+            <input type="radio" name="issue-home" checked={home.home === "github"} disabled={!writer} data-issue-home-github onChange={() => void choose("github")} /> On GitHub,
+            on {n === 1 ? home.repos[0] : `its ${n} linked repos`}
           </label>
           <p class="dim">
             {home.chosen ? (
               <>
                 Chosen for this project.{" "}
-                <button class="link" data-issue-home-reset onClick={() => void choose(null)}>
-                  Back to the default
-                </button>
+                {writer && (
+                  <button class="link" data-issue-home-reset onClick={() => void choose(null)}>
+                    Back to the default
+                  </button>
+                )}
               </>
             ) : (
               "The default for a project with a linked repo."
@@ -343,7 +423,7 @@ function IssueHomeSetting({ p, home, set }: { p: PlatformProject; home: IssueHom
           </p>
         </>
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -358,7 +438,7 @@ export function NewIssuePage({ project }: { project: string }) {
 function NewIssue({ p }: { p: PlatformProject }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [labels, setLabels] = useState("");
+  const [labels, setLabels] = useState<string[]>([]);
   const [assignees, setAssignees] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -391,7 +471,13 @@ function NewIssue({ p }: { p: PlatformProject }) {
             </li>
           ))}
         </ul>
-        <p class="dim">An owner or editor can keep them here instead, under "Where new issues go" on the issues list.</p>
+        <p class="dim">
+          An owner or editor can keep them here instead, under{" "}
+          <a href={`${pathOf({ page: "project-settings", project: p.id }, names)}#issues`} onClick={(e) => follow(e, `${pathOf({ page: "project-settings", project: p.id }, names)}#issues`)}>
+            Where new issues go
+          </a>{" "}
+          in the project's settings.
+        </p>
       </section>
     );
   }
@@ -402,7 +488,7 @@ function NewIssue({ p }: { p: PlatformProject }) {
     setBusy(true);
     setError(null);
     try {
-      const i = await issues.create(p.id, { title: title.trim(), body, labels: labelsOf(labels), assignees });
+      const i = await issues.create(p.id, { title: title.trim(), body, labels, assignees });
       go(pathOf({ page: "issue", project: p.id, issue: i.id }, names), true);
     } catch (err) {
       setError((err as Error).message);
@@ -421,15 +507,26 @@ function NewIssue({ p }: { p: PlatformProject }) {
           Description
           <textarea rows={8} value={body} placeholder="What's it about?" data-issue-body-input onInput={(e) => setBody(e.currentTarget.value)} />
         </label>
-        <label>
-          <span>
-            Labels <span class="dim">(comma-separated)</span>
-          </span>
-          <input value={labels} placeholder="bug, web" data-issue-labels-input onInput={(e) => setLabels(e.currentTarget.value)} />
-        </label>
+        {/* The issue page's label picker (UI audit #163). */}
+        <div class="issue-form-part" data-issue-labels-input>
+          <span class="issue-form-label">Labels</span>
+          <div class="ws-tags">
+            {labels.map((l) => (
+              <LabelChip key={l} label={l} />
+            ))}
+            <button
+              type="button"
+              class="secondary small"
+              data-issue-labels-pick
+              onClick={(e) => pickLabels(e, home.labels ?? [], labels, (l, on) => setLabels(on ? [...labels, l] : labels.filter((x) => x !== l)))}
+            >
+              {labels.length ? "Edit" : "Add labels"}
+            </button>
+          </div>
+        </div>
         {people.length > 0 && (
           <fieldset class="issue-assignees">
-            <legend>Assignees</legend>
+            <legend class="issue-form-label">Assignees</legend>
             {people.map((m) => (
               <label key={m.account} class="control-confirm">
                 <input
@@ -449,9 +546,9 @@ function NewIssue({ p }: { p: PlatformProject }) {
           </p>
         )}
         <div class="prompt-buttons">
-          <a href={list} class="issue-cancel" onClick={(e) => follow(e, list)}>
+          <button type="button" class="secondary" data-issue-cancel onClick={() => go(list)}>
             Cancel
-          </a>
+          </button>
           <button class="primary" disabled={busy || !title.trim()} data-issue-create>
             {busy ? "Opening…" : "Open issue"}
           </button>
