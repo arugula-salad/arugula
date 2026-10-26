@@ -143,6 +143,21 @@ pub fn token_label(name: &str) -> String {
     format!("{name} (MCP)")
 }
 
+/// Who an agent is beside its owner's name, as the platform page says it
+/// (web/src/shared/agent-label.ts): "<owner>'s agent on <machine>", or an
+/// agent grant token's (M230), whose name isn't a machine's: "<owner>'s
+/// agent token “<name>”" (UI audit #192). `name`: the machine's name, or
+/// the token's (bare or as [`token_label`] names it).
+pub fn agent_label(owner: &str, id: &str, name: &str) -> String {
+    if subject_kind(id) == "agent" {
+        let label = token_label("");
+        let name = name.strip_suffix(label.as_str()).unwrap_or(name);
+        format!("{owner}'s agent token \u{201c}{name}\u{201d}")
+    } else {
+        format!("{owner}'s agent on {name}")
+    }
+}
+
 /// The machines these ids name, as [`Cache::daemons`] has them, and the
 /// agent grant tokens among them (M230, `agt_…`) as if they were machines
 /// of their owners named [`token_label`]: for the label on what an agent

@@ -19,6 +19,12 @@ test("who did it: a person, someone gone, or their agent", () => {
   assert.equal(whoLabel("a1", { machine: "d1", machine_name: "geek" }, nameOf), "Jake's agent on geek");
 });
 
+test("an agent token's agent reads as a token, never a machine (UI audit #192)", () => {
+  const token = { machine: "agt_0123", machine_name: "redone: claude code (MCP)" };
+  assert.equal(whoLabel("a1", token, nameOf), "Jake's agent token “redone: claude code”");
+  assert.equal(whoShort("a1", token, nameOf), "agent token · redone: claude code");
+});
+
 test("a list's row: who opened it, or who closed it and why (UI audit #163)", () => {
   const geek = { machine: "d1", machine_name: "geek" };
   assert.equal(whoShort("a1", geek, nameOf), "agent · geek");

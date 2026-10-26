@@ -26,7 +26,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip, type Tone } from "../../shared/ui/state-chip";
 import { DraftList, useMyDrafts } from "../drafts";
-import { noteInbox } from "../inbox-count";
+import { isSeen, noteInbox } from "../inbox-count";
 import { WaitingDeploys, useWaitingDeploys } from "./deploy";
 import { names, roomPath } from "../links";
 import { follow, pathOf } from "../router";
@@ -133,7 +133,7 @@ export function InboxPage() {
   const drafts = mine.drafts ?? [];
   const empty =
     entries !== null && mine.drafts !== null && deploys !== null && shown.length === 0 && threads.length === 0 && drafts.length === 0 && deploys.length === 0;
-  const unseen = shown.filter((e) => !e.seen_at).length + threads.length;
+  const unseen = shown.filter((e) => !isSeen(e)).length + threads.length;
   return (
     <section class="platform-section sw-page platform-inbox" data-platform-inbox>
       <PageHeader
@@ -179,15 +179,17 @@ export function InboxPage() {
               {group.map((e) => {
                 const key = `${e.item} ${e.reason}`;
                 const link = linkOf(e);
+                const seen = isSeen(e);
                 const open = (ev: MouseEvent) => {
-                  if (!e.seen_at) void mark(e, { seen: true });
+                  if (!seen) void mark(e, { seen: true });
                   if (link.here) follow(ev, link.href);
                 };
                 const away = link.here ? {} : { target: "_blank", rel: "noopener noreferrer" };
                 return (
                   // A card in the swarm's language (../swarm.css): its bar is
-                  // why it wants the reader, full while it's unseen.
-                  <li key={key} class={`sw-card ${toneClass(reasonTone(e.reason))} ${e.seen_at ? "seen" : "unseen"}`} data-inbox-entry={e.item} data-inbox-reason={e.reason}>
+                  // why it wants the reader, full while it's unseen (a done
+                  // one never is: UI audit #192).
+                  <li key={key} class={`sw-card ${toneClass(reasonTone(e.reason))} ${seen ? "seen" : "unseen"}`} data-inbox-entry={e.item} data-inbox-reason={e.reason}>
                     <a class="platform-inbox-item" href={link.href} {...away} onClick={open}>
                       <span class="platform-inbox-ref">{e.kind === "run" ? `${e.repo} ·` : `${e.repo}#${e.number}`}</span>{" "}
                       <span class="platform-inbox-title">{e.title}</span>
@@ -198,7 +200,7 @@ export function InboxPage() {
                       {e.author ? ` · ${e.kind === "run" ? "started by" : "by"} ${e.author}` : ""}
                     </div>
                     <div class="platform-inbox-actions">
-                      {!e.seen_at && (
+                      {!seen && (
                         <button class="secondary small" data-inbox-seen={e.item} disabled={busy === key} onClick={() => void mark(e, { seen: true })}>
                           Seen
                         </button>
