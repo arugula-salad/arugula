@@ -486,3 +486,43 @@ async fn a_rebuilt_boxs_sessions_start_again_from_the_thread() {
     crate::hosted::sessions_on_box_changed(&app, "hw_dev", &new.id()).await.unwrap();
     assert_eq!(app.db.session(&s.id).unwrap().unwrap().state, State::Working);
 }
+
+/// A done session with no prompt for a day ends (M261): `stopped`, saying
+/// it was idle, so its slot on the box frees and the box stops following
+/// it. One with a prompt since isn't idle.
+#[tokio::test]
+async fn an_idle_done_session_ends_after_a_day() {
+    let (_hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
+    let follow = crate::sessions::job::Follow { app: app.clone() };
+    post_in(&base, "ch_general", "b", "@arugula one", None).await;
+    let s = sessions(&app, &t).into_iter().find(|s| s.state == State::Queued).unwrap();
+    take(&app, &keys, &s.id);
+    box_says(&app, &keys, &s.id, 2, State::Working, State::Done, "{}");
+    let done = app.db.session(&s.id).unwrap().unwrap();
+    assert_eq!(done.state, State::Done);
+    let day = crate::sessions::job::IDLE_END_MS;
+    let step = async |now: u64| {
+        let mut job = app.db.claim_job(&[JobKind::Session], now).unwrap().expect("its job");
+        let next = follow.step(&app.db, &mut job, &Clock::new(move || now)).await.unwrap();
+        match next {
+            Step::Again(at) => app.db.release_job(&job, at, now).unwrap(),
+            _ => app.db.finish_job(&job, JobEnd::Done, None, now).unwrap(),
+        }
+        next
+    };
+    let almost = done.updated_at + day - 1;
+    let next = step(almost).await;
+    assert_eq!(next, Step::Again(almost + 1), "it looks again when the day is up");
+    assert_eq!(app.db.session(&s.id).unwrap().unwrap().state, State::Done);
+    assert_eq!(step(done.updated_at + day).await, Step::Done);
+    let s = app.db.session(&s.id).unwrap().unwrap();
+    assert_eq!(s.state, State::Stopped, "{s:?}");
+    let last = app.db.session_events(&s.id).unwrap().pop().unwrap();
+    let reason = serde_json::from_str::<Value>(&last.detail).unwrap()["reason"].as_str().unwrap().to_owned();
+    assert_eq!(reason, "idle: ended after a day idle; @arugula again to start a new one");
+    assert!(app.db.session_work("hw_dev").unwrap().is_empty(), "its box stops following it, and the slot frees");
+    assert_eq!(
+        crate::sessions::job::idle_reason(2 * 3_600_000),
+        "idle: ended after 2 hours idle; @arugula again to start a new one"
+    );
+}
