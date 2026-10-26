@@ -182,9 +182,19 @@ function TabItem({
   // Closing and renaming are an editor's (a viewer's would be refused).
   const edits = client.role(client.sessionOfTab(tab.id) ?? null) !== "viewer";
   const ref = useRef<HTMLDivElement>(null);
-  // The shown tab stays in sight when there are more than fit.
+  // The shown tab stays in sight when there are more than fit: tabs are as
+  // wide as their names (UI audit #171), and names arrive after a tab does,
+  // so it's put back in sight whenever a tab in the strip changes size.
   useLayoutEffect(() => {
-    if (selected) ref.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    const el = ref.current;
+    if (!selected || !el) return;
+    const show = () => el.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    show();
+    const strip = el.parentElement;
+    if (!strip || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(show);
+    for (const t of strip.children) ro.observe(t);
+    return () => ro.disconnect();
   }, [selected]);
   if (renaming) {
     return (
