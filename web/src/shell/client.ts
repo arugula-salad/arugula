@@ -425,8 +425,9 @@ export class Client {
 
   /** Set by the UI: make this client's size the tab's size. `typed`: for
    * typing, which the daemon holds off while the size's owner is still
-   * typing (#333). */
-  claim: (tab: TabId, typed?: boolean) => void = () => {};
+   * typing (#333). `asked`: the person pressed "Use this window's size",
+   * the only claim that takes the size from another person (#1502). */
+  claim: (tab: TabId, typed?: boolean, asked?: boolean) => void = () => {};
 
   private link: Link | undefined;
   private retry = 0;
@@ -1121,8 +1122,8 @@ export class Client {
     return id;
   }
 
-  view(tab: TabId, cols: number, rows: number, zoom: PaneId | null, claim: boolean, typed = false) {
-    this.send({ type: "view", tab, cols, rows, zoom, claim, typed });
+  view(tab: TabId, cols: number, rows: number, zoom: PaneId | null, claim: boolean, typed = false, asked = false) {
+    this.send({ type: "view", tab, cols, rows, zoom, claim, typed, ...(asked ? { asked } : {}) });
   }
 
   input(pane: PaneId, data: Uint8Array) {

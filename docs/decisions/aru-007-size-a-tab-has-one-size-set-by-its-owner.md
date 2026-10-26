@@ -33,6 +33,7 @@ constrains:
   - "path:crates/core/src/mux.rs"
   - "path:crates/proto/src/lib.rs"
   - "path:crates/mux/src/mux/clients.rs"
+  - "path:web/src/shell/ui/panes/tab-area.tsx"
 ---
 
 # Size: a tab has one size, set by its owner
@@ -57,5 +58,22 @@ suffer whenever the phone is open. The hold is #333: two editors typing in
 turn, or one person with two windows, resized the PTY at every handover, and
 each resize is a SIGWINCH and a redraw. tmux's "smallest client wins" as a
 pairing mode isn't done; add it per session if pairing asks for it.
+
+Between people (#1502): switching to a tab or typing in it takes the size only
+from a tab nobody owns or from a window of the same person (the same
+principal), where the 3 s hold still applies. Taking it from another person's
+window needs the "Use this window's size" button, which sends `asked: true`;
+nothing else does, so an older client's button won't take another person's
+size, and that is accepted. Typing still reaches the owner's size, letterboxed
+or scaled; only the claim is refused. Why: pairing, where the size jumped at
+every switch or pause, and someone else's typing must never change your view.
+The daemon decides, because a client that guards itself guards nothing: an
+older or hostile client still claims on every keystroke. An ssh guest never
+asks, so they never take another person's size. Core stays person-agnostic;
+the daemon maps a client to its person. Jake and Aaron agreed it in
+#screen-size. Where: `crates/mux/src/mux/clients.rs` (`between_people`, used
+by `ClientMsg::View` and `guest_view`), `crates/proto/src/lib.rs`
+(`ClientMsg::View`'s `asked`), and the button in
+`web/src/shell/ui/panes/tab-area.tsx`.
 Where: `crates/core/src/mux.rs` (`Mux::view`, `SizeHold`), `crates/proto/src/lib.rs` (`ClientMsg::View`), `crates/mux/src/mux/clients.rs`.
 From: [Size arbitration](docs/plan-archive.md#size-arbitration), [M1](docs/plan-archive.md#m1-multiplexer), [M5](docs/plan-archive.md#m5-tmux-control-mode--cc-front-end), #333.

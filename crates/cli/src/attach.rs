@@ -48,8 +48,15 @@ pub fn run(target: &Target, pane: u32) -> anyhow::Result<i32> {
         }
     };
     let mut size = term_size();
-    let view =
-        |s: (u16, u16)| ClientMsg::View { tab, cols: s.0, rows: s.1, zoom: Some(pane), claim: true, typed: false };
+    let view = |s: (u16, u16)| ClientMsg::View {
+        tab,
+        cols: s.0,
+        rows: s.1,
+        zoom: Some(pane),
+        claim: true,
+        typed: false,
+        asked: false,
+    };
     send(&mut ws, &view(size))?;
     send(
         &mut ws,
