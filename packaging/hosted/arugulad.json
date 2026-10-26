@@ -1,5 +1,5 @@
 {
   "name": "arugulad",
-  "cmd": ["/usr/local/bin/arugulad", "--hosted"],
+  "cmd": ["/usr/local/bin/arugula-hosted-start"],
   "user": "user"
 }

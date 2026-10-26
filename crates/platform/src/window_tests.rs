@@ -49,11 +49,26 @@ fn the_tables_are_the_platforms_own() {
     let t = tables();
     assert!(t.contains(&"chat_messages".to_owned()) && t.contains(&"hub_feed".to_owned()), "{t:?}");
     assert!(t.iter().all(|n| n != "platform_migrations" && !n.starts_with("chat_fts") && !n.starts_with("sqlite_")));
-    assert!(
-        t.iter().position(|n| n == "hosted_workspaces") < t.iter().position(|n| n == "hosted_workspace_secrets"),
-        "parents first"
-    );
+    // Parents first: every table a declared foreign key names comes before
+    // the table that names it. Only declared keys bind the copy's order: a
+    // table a migration made again (0049 made hosted_workspaces again for
+    // its CHECK) moves to the end, after tables that name its ids without a
+    // key, such as hosted_workspace_secrets.
     let db = crate::db::Db::memory();
+    let at = |n: &str| t.iter().position(|x| x == n);
+    for child in &t {
+        let parents: Vec<String> = db
+            .sqlite()
+            .prepare(&format!("SELECT \"table\" FROM pragma_foreign_key_list('{child}')"))
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for parent in parents {
+            assert!(at(&parent) < at(child), "{parent} before {child}");
+        }
+    }
     let auto: i64 = db
         .sqlite()
         .query_row("SELECT count(*) FROM sqlite_master WHERE sql LIKE '%AUTOINCREMENT%'", [], |r| r.get(0))
