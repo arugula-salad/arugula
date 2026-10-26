@@ -887,7 +887,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
     // (M185): whose key pays, or why it can't run.
     let checked = match checked {
         Ok((op, src, as_, login)) if op.instruction.is_some() => match crate::agent::hosted::gate() {
-            Some(g) => match g.start("claude").await {
+            Some(g) => match g.start("claude", None).await {
                 Ok(given) => {
                     l.turn = Some(given.turn);
                     let env = crate::agent::hosted::env_here(crate::agent::defs::Kind::Claude, given.auth);

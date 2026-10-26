@@ -186,12 +186,14 @@ impl Db {
     /// Start a turn on `workspace`'s box, unless it runs on the platform's
     /// key and its account is at a cap. Checked and kept in one
     /// transaction, so two boxes starting at once can't both pass the last
-    /// slot. A day is a UTC day.
+    /// slot. A day is a UTC day. `asker` is the account a session's turn
+    /// is for (aru-115): a turn on the project's key is kept as theirs.
     pub fn start_hosted_turn(
         &self,
         workspace: &str,
         provider: &str,
         pays: &Pays,
+        asker: Option<&str>,
         caps: &Caps,
         now: u64,
     ) -> Result<Started> {
@@ -239,7 +241,7 @@ impl Db {
         let paid = if account.is_some() { "platform" } else { "project" };
         tx.execute(
             "INSERT INTO hosted_turns (id, workspace_id, provider, pays, account, started_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, workspace, provider, paid, account, now],
+            params![id, workspace, provider, paid, account.or(asker), now],
         )?;
         tx.commit()?;
         Ok(Started::Turn(id))
@@ -662,29 +664,29 @@ mod tests {
     fn platform_turns_are_capped_per_account() {
         let db = Db::test();
         let day = 100 * DAY_MS;
-        let t1 = turn(db.start_hosted_turn("hw_1", "anthropic", &platform("a"), &CAPS, day + 1_000).unwrap());
-        turn(db.start_hosted_turn("hw_2", "anthropic", &platform("a"), &CAPS, day + 2_000).unwrap());
+        let t1 = turn(db.start_hosted_turn("hw_1", "anthropic", &platform("a"), None, &CAPS, day + 1_000).unwrap());
+        turn(db.start_hosted_turn("hw_2", "anthropic", &platform("a"), None, &CAPS, day + 2_000).unwrap());
         assert_eq!(
-            db.start_hosted_turn("hw_1", "anthropic", &platform("a"), &CAPS, day + 3_000).unwrap(),
+            db.start_hosted_turn("hw_1", "anthropic", &platform("a"), None, &CAPS, day + 3_000).unwrap(),
             Started::Capped(Cap::Concurrent)
         );
-        turn(db.start_hosted_turn("hw_1", "anthropic", &platform("b"), &CAPS, day + 3_000).unwrap());
-        turn(db.start_hosted_turn("hw_1", "anthropic", &Pays::Project, &CAPS, day + 3_000).unwrap());
+        turn(db.start_hosted_turn("hw_1", "anthropic", &platform("b"), None, &CAPS, day + 3_000).unwrap());
+        turn(db.start_hosted_turn("hw_1", "anthropic", &Pays::Project, None, &CAPS, day + 3_000).unwrap());
         assert!(!db.end_hosted_turn("hw_2", &t1, day + 4_000).unwrap(), "only its own box ends a turn");
         assert!(db.end_hosted_turn("hw_1", &t1, day + 4_000).unwrap());
         assert!(!db.end_hosted_turn("hw_1", &t1, day + 5_000).unwrap(), "once");
-        let t3 = turn(db.start_hosted_turn("hw_1", "openai", &platform("a"), &CAPS, day + 5_000).unwrap());
+        let t3 = turn(db.start_hosted_turn("hw_1", "openai", &platform("a"), None, &CAPS, day + 5_000).unwrap());
         db.end_hosted_turn("hw_1", &t3, day + 6_000).unwrap();
         assert_eq!(
-            db.start_hosted_turn("hw_1", "anthropic", &platform("a"), &CAPS, day + 7_000).unwrap(),
+            db.start_hosted_turn("hw_1", "anthropic", &platform("a"), None, &CAPS, day + 7_000).unwrap(),
             Started::Capped(Cap::Daily)
         );
         // A new UTC day; the one turn left open from yesterday went stale.
         let next = day + DAY_MS + STALE_MS;
-        let long = turn(db.start_hosted_turn("hw_1", "anthropic", &platform("a"), &CAPS, next).unwrap());
+        let long = turn(db.start_hosted_turn("hw_1", "anthropic", &platform("a"), None, &CAPS, next).unwrap());
         db.end_hosted_turn("hw_1", &long, next + 10 * 60_000).unwrap();
         assert_eq!(
-            db.start_hosted_turn("hw_1", "anthropic", &platform("a"), &CAPS, next + 11 * 60_000).unwrap(),
+            db.start_hosted_turn("hw_1", "anthropic", &platform("a"), None, &CAPS, next + 11 * 60_000).unwrap(),
             Started::Capped(Cap::Minutes)
         );
     }
@@ -723,7 +725,7 @@ mod tests {
         assert_eq!(db.hosted_box_of("hw_1").unwrap().unwrap().rules, "d1");
         assert_eq!(db.running_boxes(&p).unwrap().len(), 1);
 
-        let open = turn(db.start_hosted_turn("hw_1", "anthropic", &platform("alice"), &CAPS, 10).unwrap());
+        let open = turn(db.start_hosted_turn("hw_1", "anthropic", &platform("alice"), None, &CAPS, 10).unwrap());
         db.c().execute("UPDATE hosted_workspaces SET state = 'paused'", params![]).unwrap();
         db.tidy_hosted_turns(20).unwrap();
         assert!(!db.end_hosted_turn("hw_1", &open, 30).unwrap(), "a paused box's turns ended");
@@ -731,7 +733,7 @@ mod tests {
         let n: u64 = db.c().query_row("SELECT count(*) FROM hosted_turns", params![], |r| r.get(0)).unwrap();
         assert_eq!(n, 0, "kept 30 days");
 
-        turn(db.start_hosted_turn("hw_1", "anthropic", &platform("alice"), &CAPS, KEEP_MS + 20).unwrap());
+        turn(db.start_hosted_turn("hw_1", "anthropic", &platform("alice"), None, &CAPS, KEEP_MS + 20).unwrap());
         let d = Deleted { account: "alice".into(), machines: vec![], disbanded: vec![] };
         let mut c = db.c();
         let tx = c.transaction().unwrap();

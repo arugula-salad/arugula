@@ -100,6 +100,19 @@ static FOLLOWING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 static BUSY: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 /// One writer at a time for the ledgers.
 static LEDGER: Mutex<()> = Mutex::new(());
+/// Each session block's session, as this daemon opened or found it: what
+/// its agent's turns are asked of the platform as ([`session_of`]).
+static BLOCK_SESSIONS: Mutex<BTreeMap<u32, String>> = Mutex::new(BTreeMap::new());
+
+/// The session agent block `block` runs, if it's a session's: the daemon
+/// says so, never the block's own config.
+pub fn session_of(block: u32) -> Option<String> {
+    BLOCK_SESSIONS.lock().unwrap_or_else(|e| e.into_inner()).get(&block).cloned()
+}
+
+fn block_is(block: u32, session: &str) {
+    BLOCK_SESSIONS.lock().unwrap_or_else(|e| e.into_inner()).insert(block, session.to_owned());
+}
 
 fn heartbeat_every() -> Duration {
     std::env::var("ARUGULA_SESSION_HEARTBEAT_MS")
@@ -438,6 +451,13 @@ pub async fn pulled(app: &Arc<App>, sessions: Vec<SessionWork>) {
 /// unsent.
 pub async fn resume(app: &Arc<App>) {
     let dir = app.control.state_dir().to_owned();
+    // Its blocks' turns are their sessions' from the start, before a
+    // restored block sends what it had queued.
+    for l in live(&dir) {
+        if let Some(b) = l.block {
+            block_is(b, &l.session);
+        }
+    }
     let real = slots().is_some_and(|s| s.real);
     for l in live(&dir) {
         info!(session = l.session, "hosted: following a session from before the restart");
@@ -556,6 +576,7 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         Err(why) => return fail(l, format!("its agent block: {why}")),
     };
     l.block = Some(block);
+    block_is(block, &l.session);
     let notes = l.notes.clone();
     if update(&dir, &l.session, |now| {
         now.block = Some(block);

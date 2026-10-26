@@ -75,16 +75,20 @@ pub struct Given {
 /// The platform, as a hosted box's agent turns ask it.
 pub trait Gate: Send + Sync {
     /// May a turn of `agent` (`claude`, `codex`) start: its turn, or what
-    /// to tell the person.
-    fn start(&self, agent: &'static str) -> BoxFuture<'_, Result<Given, String>>;
+    /// to tell the person. `session` is the thread session (M254) whose
+    /// agent it is, if it's one's: its turns are its asker's (aru-115).
+    fn start(&self, agent: &'static str, session: Option<String>) -> BoxFuture<'_, Result<Given, String>>;
     /// The turn ended.
     fn end(&self, turn: String) -> BoxFuture<'_, ()>;
 }
 
 impl Gate for crate::control::Control {
-    fn start(&self, agent: &'static str) -> BoxFuture<'_, Result<Given, String>> {
+    fn start(&self, agent: &'static str, session: Option<String>) -> BoxFuture<'_, Result<Given, String>> {
         Box::pin(async move {
-            let body = serde_json::json!({ "agent": agent });
+            let mut body = serde_json::json!({ "agent": agent });
+            if let Some(s) = session {
+                body["session"] = s.into();
+            }
             let path = arugula_control_wire::hosted::HOSTED_TURNS;
             match self.cloud_now(reqwest::Method::POST, path, Some(&body)).await {
                 Ok(v) => {

@@ -67,7 +67,12 @@ async fn ready(hub: &TestHub, app: &Platform, base: &str, project: &str, who: &s
 /// of `agent`, as the hub hands it on: the status and body the hub
 /// answers with.
 async fn turn(app: &Platform, w: &str, machine: &str, agent: &str) -> (u16, Value) {
-    match app.hosted_turn(w, machine, agent).await.unwrap() {
+    turn_for(app, w, machine, agent, None).await
+}
+
+/// [`turn`], for thread session `session`'s agent.
+async fn turn_for(app: &Platform, w: &str, machine: &str, agent: &str, session: Option<&str>) -> (u16, Value) {
+    match app.hosted_turn(w, machine, agent, session).await.unwrap() {
         TurnAnswer::Given { turn, pays, auth } => (200, json!({ "turn": turn, "pays": pays, "auth": auth })),
         TurnAnswer::Refused { status, reason, error } => (status, json!({ "reason": reason, "error": error })),
     }
@@ -279,4 +284,64 @@ async fn a_gone_projects_key_is_dropped() {
     drop(c);
     super::inference::sweep(&app).await.unwrap();
     assert_eq!(app.db.drop_orphan_inference_keys().unwrap(), 0, "dropped already");
+}
+
+/// A thread session's turn is its asker's (aru-115): on the platform's key
+/// it counts against the asker's caps, not the workspace maker's, and on
+/// the project's key it's kept as theirs. A session that isn't on the
+/// box's workspace, or has ended, gets no turn.
+#[tokio::test]
+async fn a_sessions_turn_is_its_askers() {
+    use crate::db::{
+        sessions::{NewPrompt, NewSession, Source},
+        sql::{Sql as _, params},
+    };
+    let (hub, _fake, app, base, project) = serve(&["anthropic"], CAPS).await;
+    let w = &ready(&hub, &app, &base, &project, "bob", "box-b").await;
+    let other = &ready(&hub, &app, &base, &project, "bob", "box-c").await;
+    let session = |workspace: &str, parent_seq: u64| {
+        let new = NewSession {
+            project: &project,
+            room: "ch_general",
+            parent_seq,
+            asker: "alice",
+            workspace,
+            repo: None,
+            slug: "",
+            prompt: NewPrompt { author: "alice", source: Source::Member, association: None, text: "fix it" },
+        };
+        app.db.create_session(&new, now_ms()).unwrap().unwrap().0.id
+    };
+    let ses = session(w, 1);
+    let account = |turn: &Value| -> Option<String> {
+        app.db
+            .c()
+            .query_row("SELECT account FROM hosted_turns WHERE id = ?1", params![turn["turn"].as_str().unwrap()], |r| {
+                r.get(0)
+            })
+            .unwrap()
+    };
+
+    let (status, t) = turn_for(&app, w, "box-b", "claude", Some(&ses)).await;
+    assert_eq!((status, t["pays"].as_str()), (200, Some("platform")), "{t}");
+    assert_eq!(account(&t).as_deref(), Some("alice"), "the asker's caps");
+    // The maker's own turn isn't at a cap: alice's counted against her.
+    let (status, mine) = turn(&app, w, "box-b", "claude").await;
+    assert_eq!(status, 200, "{mine}");
+    assert_eq!(account(&mine).as_deref(), Some("bob"));
+    let (status, cap) = turn_for(&app, w, "box-b", "claude", Some(&ses)).await;
+    assert_eq!((status, cap["reason"].as_str()), (429, Some("cap")), "alice's one at once: {cap}");
+    end(&app, w, "box-b", &t).await;
+
+    assert_eq!(turn_for(&app, w, "box-b", "claude", Some("ses_nope")).await.0, 404);
+    let theirs = session(other, 2);
+    assert_eq!(turn_for(&app, w, "box-b", "claude", Some(&theirs)).await.0, 404, "another workspace's session");
+
+    // On the project's key: no caps, kept as the asker's.
+    assert_eq!(key(&base, "alice", &project, "anthropic", Some(SK)).await.0, 200);
+    let (status, t) = turn_for(&app, w, "box-b", "claude", Some(&ses)).await;
+    assert_eq!((status, t["pays"].as_str()), (200, Some("project")), "{t}");
+    assert_eq!(account(&t).as_deref(), Some("alice"));
+    let (_, plain) = turn(&app, w, "box-b", "claude").await;
+    assert_eq!(account(&plain), None, "a turn that isn't a session's is no one's on the project's key");
 }
