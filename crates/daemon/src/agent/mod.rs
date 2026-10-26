@@ -167,6 +167,11 @@ pub struct Config {
     /// removes it only if nothing would be lost.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<crate::worktree::Owned>,
+    /// A hosted session's agent (M255): it runs as this session user, never
+    /// as the daemon's, and so does the daemon's git in its directory. It
+    /// gets no Arugula MCP server: the daemon's port is closed to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_as: Option<hosted::AsUser>,
 }
 
 /// Where an opened conversation came from (M33). Until it's continued the
@@ -264,15 +269,24 @@ pub struct TurnStat {
     cost_base: Option<f64>,
 }
 
-/// A prompt waiting for the agent: its text, and images (M71) by name in
-/// the block's folder.
+/// A prompt waiting for the agent: its text, images (M71) by name in the
+/// block's folder, and whose it is when that isn't the block's owner
+/// (M29): the transcript says so when it's sent, not when it's queued, so
+/// a follow-up queued mid-turn is credited to its own author (M255).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Queued {
     pub text: String,
     pub images: Vec<String>,
+    pub by: Option<String>,
 }
 
 impl Queued {
+    /// Whether `sent` (a `session/prompt` as the log has it, which names
+    /// nobody) is this prompt.
+    fn is(&self, sent: &Queued) -> bool {
+        self.text == sent.text && self.images == sent.images
+    }
+
     /// What the block shows of it while it waits.
     fn label(&self) -> String {
         match self.images.len() {
@@ -632,7 +646,21 @@ impl Inner {
     /// while the agent is down survives a daemon restart; sending it takes
     /// it off (see `session/prompt` in `on_out`).
     fn enqueue(&mut self, q: &Queued, front: bool) {
-        self.note(json!({ "e": "queue", "text": q.text, "images": q.images, "front": front }));
+        let mut e = json!({ "e": "queue", "text": q.text, "images": q.images, "front": front });
+        if let Some(by) = &q.by {
+            e["by"] = json!(by);
+        }
+        self.note(e);
+    }
+
+    /// Send `q` as a turn's prompt, `blocks` its content. Whose it is goes
+    /// in the transcript first (M29), now that it's this turn's (M255).
+    fn send_prompt(&mut self, q: &Queued, blocks: Vec<Value>) {
+        if let Some(by) = &q.by {
+            self.note(json!({ "e": "from", "by": by }));
+        }
+        let session = self.session();
+        self.request("session/prompt", json!({ "sessionId": session, "prompt": blocks }));
     }
 
     /// The MCP servers a session gets: the block's own, and Arugula's
@@ -652,7 +680,7 @@ impl Inner {
                 w.servers().iter().filter(|s| !list.iter().any(|o| o["name"] == s["name"])).cloned().collect();
             list.extend(extra);
         }
-        let Some(link) = &ctx.mcp else { return list };
+        let Some(link) = ctx.mcp.as_ref().filter(|_| self.cfg.run_as.is_none()) else { return list };
         if list.iter().any(|s| s["name"] == crate::mcp::SERVER_NAME) {
             return list;
         }
@@ -726,8 +754,11 @@ impl Inner {
     fn on_note(&mut self, e: &Value, at: u64) {
         match e["e"].as_str().unwrap_or("") {
             "queue" => {
-                let q =
-                    Queued { text: e["text"].as_str().unwrap_or_default().to_owned(), images: strings(&e["images"]) };
+                let q = Queued {
+                    text: e["text"].as_str().unwrap_or_default().to_owned(),
+                    images: strings(&e["images"]),
+                    by: e["by"].as_str().map(str::to_owned),
+                };
                 match e["front"].as_bool() {
                     Some(true) => self.queue.push_front(q),
                     _ => self.queue.push_back(q),
@@ -896,11 +927,11 @@ impl Inner {
                             .filter_map(|c| c["text"].as_str())
                             .collect::<Vec<_>>()
                             .join("\n");
-                        let sent = Queued { text, images: blocks.iter().filter_map(image).collect() };
-                        if self.queue.front() == Some(&sent) {
+                        let sent = Queued { text, images: blocks.iter().filter_map(image).collect(), by: None };
+                        if self.queue.front().is_some_and(|q| q.is(&sent)) {
                             self.queue.pop_front();
                         }
-                        let Queued { text, images } = sent;
+                        let Queued { text, images, .. } = sent;
                         self.t.user(&text, images, at);
                         self.prompt_id = Some(id);
                         self.result_in = false;
@@ -1015,7 +1046,8 @@ impl Inner {
                         self.carry_run = self.turns.pop().and_then(|t| t.run);
                         if let Some(Entry::User { text, images, .. }) = self.t.entries.last().cloned() {
                             self.t.entries.pop();
-                            fx.push(Effect::Retry(Queued { text, images }));
+                            // Whose it is was said as it went the first time.
+                            fx.push(Effect::Retry(Queued { text, images, by: None }));
                         }
                     }
                     (Purpose::Prompt, result) => {
@@ -1547,7 +1579,7 @@ impl Agent {
             return;
         }
         if let Some(p) = inner.cfg.prompt.take() {
-            inner.enqueue(&Queued { text: p, images: vec![] }, false);
+            inner.enqueue(&Queued { text: p, images: vec![], by: None }, false);
         }
         if inner.cfg.import.is_some() {
             if let Some(t) = inner.cfg.import.as_ref().and_then(|i| i.title.clone()) {
@@ -1764,6 +1796,7 @@ impl Agent {
                 }
                 let marker = self.ctx.dir.join(TOKEN_IN_ENV);
                 if by_reference(&inner.cfg.def, &self.ctx)
+                    && inner.cfg.run_as.is_none()
                     && let Some(link) = &self.ctx.mcp
                 {
                     let token = link.tokens.block_token(self.ctx.id);
@@ -1787,10 +1820,29 @@ impl Agent {
                 if says_login(&inner.cfg.def) {
                     inner.note(json!({ "e": "login", "login": local_login(&env, &remove) }));
                 }
+                // M255: a hosted session's agent, as its session user, with
+                // an empty environment but for the adapter's own and the
+                // placeholder (nothing secret: it's on sudo's command line).
+                let argv = match &inner.cfg.run_as {
+                    // Only ever a hosted box's session users, whoever asked
+                    // for the block.
+                    Some(u) if !crate::work::sessions::is_slot(u) => {
+                        return self.failed(inner, format!("{} isn't one of this box's session users", u.user));
+                    }
+                    Some(u) => {
+                        let mut theirs = launch.env.clone();
+                        if hosted::gate().is_some() {
+                            let auth = inner.hosted_auth.unwrap_or_else(hosted::claude_auth);
+                            theirs.extend(hosted::env_here(inner.cfg.def.agent, auth));
+                        }
+                        u.wrap(&theirs, &hosted::AsUser::reachable(&launch.argv))
+                    }
+                    None => launch.argv.clone(),
+                };
                 let spawn = link::LocalSpawn {
                     id: self.ctx.id,
                     dir: &self.ctx.dir,
-                    argv: &launch.argv,
+                    argv: &argv,
                     cwd: &cwd,
                     env: &env,
                     remove: &remove,
@@ -2677,7 +2729,6 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
         }
         return;
     }
-    let session = g.session();
     let mut prompt = vec![];
     if !q.text.is_empty() {
         prompt.push(json!({ "type": "text", "text": q.text }));
@@ -2708,7 +2759,7 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
         prompt.push(chant::turn_block(c, &run));
         g.next_run = g.carry_run.is_none().then_some(run);
     }
-    g.request("session/prompt", json!({ "sessionId": session, "prompt": prompt }));
+    g.send_prompt(&q, prompt);
     start_run(ctx, g, &q.text);
 }
 
@@ -2940,10 +2991,15 @@ impl Agent {
             (message, g.turns.last().map(|t| t.started_ms), work_dir(&self.ctx, &g))
         };
         let block = self.ctx.block.clone();
+        let run_as = self.inner.lock().unwrap().cfg.run_as.clone();
         Box::pin(async move {
             let Some(message) = message else { return Ok(Value::Null) };
-            // Git trouble is no work to report, not an error.
-            let runner = crate::review::Runner::user(&block).await;
+            // Git trouble is no work to report, not an error. A hosted
+            // session's checkout is its session user's (M255).
+            let runner = match run_as {
+                Some(u) => Ok(crate::review::Runner::As(u)),
+                None => crate::review::Runner::user(&block).await,
+            };
             let r = match runner {
                 Ok(runner) => turnwork::result(&runner, &cwd, started_ms, message).await,
                 Err(_) => arugula_proto::api::TurnResult { message, work: None },
@@ -2960,13 +3016,11 @@ impl Agent {
         if text.is_empty() && files.is_empty() {
             return Err("send needs {\"text\": …}".into());
         }
-        let mut q = Queued { text: text.to_owned(), images: vec![] };
+        // A follow-up from someone (M29): the transcript says whose as it's
+        // sent (`send_prompt`).
+        let mut q = Queued { text: text.to_owned(), images: vec![], by: by.map(str::to_owned) };
         attach(&self.ctx, &mut q, &files)?;
         let mut g = self.inner.lock().unwrap();
-        if let Some(by) = by {
-            // A follow-up from someone (M29): the transcript says whose.
-            g.note(json!({ "e": "from", "by": by }));
-        }
         if matches!(g.status, Status::Exited | Status::Stopped) {
             self.continue_import(&mut g)?;
         }

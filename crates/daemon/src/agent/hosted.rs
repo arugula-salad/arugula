@@ -182,6 +182,120 @@ pub fn env_here(kind: Kind, auth: Auth) -> Vec<(String, String)> {
     env(kind, auth, std::path::Path::new(PROXY_CA).exists())
 }
 
+/// Give up the daemon's protection from the OOM killer in what `c` starts:
+/// a hosted box's supervisor gives the daemon an `oom_score_adj` of -1000
+/// (M258), which everything it starts inherits; a session's git (and what
+/// a planted config runs) is as killable as any. Only a negative score is
+/// raised to 0, which needs no privilege. The same as M258's
+/// `arugula_mux::shim::unprotect_oom`, which the shim calls for agents and
+/// panes: at integration this calls that.
+pub fn unprotect_oom(c: &mut tokio::process::Command) {
+    #[cfg(target_os = "linux")]
+    // SAFETY: open, read, write and close on a fixed path and our own
+    // buffer, all async-signal-safe, between fork and exec.
+    unsafe {
+        c.pre_exec(|| {
+            use nix::libc;
+            let path = c"/proc/self/oom_score_adj";
+            let mut b = [0u8; 8];
+            let fd = libc::open(path.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC);
+            if fd < 0 {
+                return Ok(());
+            }
+            let n = libc::read(fd, b.as_mut_ptr().cast(), b.len());
+            libc::close(fd);
+            if n > 0 && b[0] == b'-' {
+                let fd = libc::open(path.as_ptr(), libc::O_WRONLY | libc::O_CLOEXEC);
+                if fd >= 0 {
+                    libc::write(fd, b"0".as_ptr().cast(), 1);
+                    libc::close(fd);
+                }
+            }
+            Ok(())
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = c;
+}
+
+/// The `PATH` a session user's processes get.
+pub const SESSION_PATH: &str = "/usr/local/bin:/usr/bin:/bin";
+
+/// One of a hosted box's session users (M255, S42 q1): a hosted session's
+/// agent runs as it, and so does all of the daemon's git in the session's
+/// checkout, never as the daemon's user or root (an agent's planted
+/// `core.fsmonitor` would run as them). The template makes them (`ses1` to
+/// `ses3`): no sudo, not in `user`'s group, homes 0700.
+///
+/// Through `sudo -n -u USER -- env -i …`: an empty environment but for
+/// what's named, and nothing secret on that command line, which sudo logs
+/// and other users can read in `/proc`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AsUser {
+    pub user: String,
+    pub home: String,
+}
+
+impl AsUser {
+    /// `sudo`, or what a test stands in for it (`ARUGULA_HOSTED_SUDO`):
+    /// the integration tests can't make Unix users.
+    pub fn sudo() -> String {
+        std::env::var("ARUGULA_HOSTED_SUDO").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "sudo".into())
+    }
+
+    /// Whether `user` can go on sudo's command line as a user's name.
+    pub fn plain(user: &str) -> bool {
+        !user.is_empty()
+            && !user.starts_with('-')
+            && user.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+    }
+
+    /// The command line that runs `argv` as this user, with `env` (nothing
+    /// secret: [`env`]'s placeholder and the proxy's CA are fine) and the
+    /// user's own `HOME`, `USER`, `LOGNAME` and [`SESSION_PATH`].
+    pub fn wrap(&self, env: &[(String, String)], argv: &[String]) -> Vec<String> {
+        let mut out = vec![Self::sudo(), "-n".into(), "-u".into(), self.user.clone(), "--".into(), "env".into()];
+        out.push("-i".into());
+        out.push(format!("HOME={}", self.home));
+        out.push(format!("USER={}", self.user));
+        out.push(format!("LOGNAME={}", self.user));
+        out.push(format!("PATH={SESSION_PATH}"));
+        out.push("LANG=C.UTF-8".into());
+        for (k, v) in
+            env.iter().filter(|(k, _)| !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+        {
+            out.push(format!("{k}={v}"));
+        }
+        out.extend(argv.iter().cloned());
+        out
+    }
+
+    /// `argv` as this user ([`AsUser::wrap`]), without the daemon's
+    /// protection from the OOM killer ([`unprotect_oom`]).
+    pub fn command(&self, env: &[(String, String)], argv: &[String]) -> tokio::process::Command {
+        let argv = self.wrap(env, argv);
+        let mut c = tokio::process::Command::new(&argv[0]);
+        c.args(&argv[1..]).current_dir("/");
+        unprotect_oom(&mut c);
+        c
+    }
+
+    /// The agent's own program as a session user can reach it: a path
+    /// through a link (the adapters' place under the daemon's home, which
+    /// is `/opt/arugula/agents` in the template) resolved, since the
+    /// daemon's home is closed to session users.
+    pub fn reachable(argv: &[String]) -> Vec<String> {
+        let mut out = argv.to_vec();
+        if let Some(first) = out.first_mut()
+            && first.starts_with('/')
+            && let Ok(real) = std::fs::canonicalize(&*first)
+        {
+            *first = real.display().to_string();
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,6 +332,24 @@ mod tests {
         for key in [None, Some("key"), Some("other")] {
             assert_eq!(Auth::parse(key), Auth::Key, "{key:?}");
         }
+    }
+
+    /// M255: a session's agent runs as its user with an empty environment
+    /// but for what's named: the placeholder, never a key.
+    #[test]
+    fn a_session_user_runs_with_only_what_is_named() {
+        let u = AsUser { user: "ses1".into(), home: "/home/ses1".into() };
+        let env = [("ANTHROPIC_API_KEY".to_owned(), PLACEHOLDER.to_owned()), ("BAD KEY".to_owned(), "x".to_owned())];
+        let argv = u.wrap(&env, &["/opt/arugula/agents/claude/acp".into()]);
+        assert_eq!(
+            argv[1..].join(" "),
+            "-n -u ses1 -- env -i HOME=/home/ses1 USER=ses1 LOGNAME=ses1 PATH=/usr/local/bin:/usr/bin:/bin \
+             LANG=C.UTF-8 ANTHROPIC_API_KEY=arugula-brokered /opt/arugula/agents/claude/acp"
+        );
+        for bad in ["", "-u", "ses 1", "ses1;id", "../x"] {
+            assert!(!AsUser::plain(bad), "{bad}");
+        }
+        assert!(AsUser::plain("ses1"));
     }
 
     #[test]

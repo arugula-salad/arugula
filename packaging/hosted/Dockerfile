@@ -90,6 +90,28 @@ RUN id -u user >/dev/null 2>&1 || { userdel -r ubuntu 2>/dev/null; useradd -m -u
 RUN { id -u runner >/dev/null 2>&1 || useradd -m -s /bin/bash runner; } && usermod -aG user runner && chmod 0750 /home/user \
  && echo 'Defaults>runner env_reset, use_pty' > /etc/sudoers.d/runner && chmod 0440 /etc/sudoers.d/runner
 
+# --- M255 (thread = session): session users. ---------------------------
+# A hosted session's agent runs as one of ses1..ses3, one per session the
+# box runs at once (the daemon's cap), each kept by its session for life:
+# `sudo -n -u sesN -- env -i …` from arugulad, for the agent and for all of
+# the daemon's git in the session's checkout (a clone in ~sesN/work).
+# - no sudo of its own, and env_reset;
+# - not in `user`'s group, unlike `runner`: /home/user (0750), setup's
+#   files there and the daemon's state are closed to it;
+# - its home 0700, closed to the other sessions;
+# - kept off loopback (the daemon's and the provider's ports) with runner,
+#   by arugulad's nftables table, before the first session runs.
+# The adapters live in /opt/arugula/agents, which they can read (owned by
+# `user`, who updates them), linked from where the daemon looks first: a
+# session's agent is started by the link's target. Other blocks go above or
+# below this one, not in it.
+RUN for n in 1 2 3; do { id -u "ses$n" >/dev/null 2>&1 || useradd -m -s /bin/bash "ses$n"; } \
+      && chmod 0700 "/home/ses$n"; done \
+ && printf 'Defaults>ses1 env_reset\nDefaults>ses2 env_reset\nDefaults>ses3 env_reset\n' > /etc/sudoers.d/sessions \
+ && chmod 0440 /etc/sudoers.d/sessions \
+ && install -d -o user -g user -m 0755 /opt/arugula /opt/arugula/agents
+# --- end M255 -----------------------------------------------------------
+
 COPY arugulad /usr/local/bin/arugulad
 COPY arugula /usr/local/bin/arugula
 COPY ready /usr/local/bin/arugula-hosted-ready
@@ -118,6 +140,8 @@ RUN chmod 0755 /usr/local/bin/arugula-hosted-start && chmod 0644 /etc/systemd/sy
 # The adapters where the daemon looks first (agent/adapters.rs).
 USER user
 WORKDIR /home/user
-RUN npm install --no-fund --no-audit --prefix /home/user/.local/share/arugula/agents/claude "$CLAUDE_ACP" \
- && npm install --no-fund --no-audit --omit=optional --prefix /home/user/.local/share/arugula/agents/codex "$CODEX_ACP" \
- && npm cache clean --force
+RUN npm install --no-fund --no-audit --prefix /opt/arugula/agents/claude "$CLAUDE_ACP" \
+ && npm install --no-fund --no-audit --omit=optional --prefix /opt/arugula/agents/codex "$CODEX_ACP" \
+ && npm cache clean --force \
+ && mkdir -p /home/user/.local/share/arugula \
+ && ln -s /opt/arugula/agents /home/user/.local/share/arugula/agents

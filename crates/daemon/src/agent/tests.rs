@@ -242,7 +242,7 @@ fn a_prompt_queued_while_the_agent_is_down_survives_a_restart() {
     ] {
         inner.rebuild_line(&l);
     }
-    assert_eq!(inner.queue, [Queued { text: "whats this project?".into(), images: vec![] }]);
+    assert_eq!(inner.queue, [Queued { text: "whats this project?".into(), images: vec![], by: None }]);
     // Sending it takes it off, here as when it's rebuilt.
     inner.rebuild_line(&frame(
         "out",
@@ -427,4 +427,61 @@ fn an_agent_woken_by_a_background_task_works_until_its_cycle_closes() {
     g.agent_info = json!({ "name": "fake-acp" });
     g.on_in(&chunk, 2400);
     assert_eq!(g.attention().0, Attention::Done);
+}
+
+/// M255: a follow-up is credited as it's sent, not as it's queued. Two
+/// queued behind a turn are each named just before their own prompt (not
+/// both at once, ahead of the turn they waited behind), and whose each is
+/// survives a restart, in its queue note.
+#[test]
+fn a_queued_prompt_is_credited_to_its_author_as_it_is_sent() {
+    let mut g = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        g.rebuild_line(l);
+    }
+    let q = |text: &str, by: &str| Queued { text: text.into(), images: vec![], by: Some(by.into()) };
+    g.enqueue(&q("first", "Ada"), false);
+    g.enqueue(&q("second", "Bo"), false);
+    let said = |g: &Inner| -> Vec<String> {
+        g.t.entries
+            .iter()
+            .filter_map(|e| match e {
+                Entry::Note { text, .. } if text.starts_with("A follow-up") => Some(text.clone()),
+                Entry::User { text, .. } => Some(format!("> {text}")),
+                _ => None,
+            })
+            .collect()
+    };
+    assert!(said(&g).is_empty(), "nothing is said while they wait: {:?}", said(&g));
+
+    // A restart: the queue comes back from the log with whose each is.
+    let mut again = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        again.rebuild_line(l);
+    }
+    for (text, by) in [("first", "Ada"), ("second", "Bo")] {
+        again.rebuild_line(&frame(
+            "note",
+            json!({ "e": "queue", "text": text, "images": [], "front": false, "by": by }),
+        ));
+    }
+    assert_eq!(again.queue, g.queue);
+    // An old queue note names nobody.
+    again.rebuild_line(&frame("note", json!({ "e": "queue", "text": "third", "front": false })));
+    assert_eq!(again.queue.back().map(|q| q.by.clone()), Some(None));
+
+    for _ in 0..2 {
+        let next = g.queue.front().cloned().unwrap();
+        let blocks = vec![json!({ "type": "text", "text": next.text })];
+        g.send_prompt(&next, blocks);
+    }
+    assert!(g.queue.is_empty(), "each sent prompt is taken off the queue");
+    assert_eq!(said(&g), ["A follow-up from Ada", "> first", "A follow-up from Bo", "> second"]);
+
+    // The owner's own prompt names nobody.
+    let mine = Queued { text: "mine".into(), images: vec![], by: None };
+    g.enqueue(&mine, false);
+    g.send_prompt(&mine, vec![json!({ "type": "text", "text": "mine" })]);
+    assert_eq!(said(&g).last().map(String::as_str), Some("> mine"));
+    assert_eq!(said(&g).len(), 5);
 }
