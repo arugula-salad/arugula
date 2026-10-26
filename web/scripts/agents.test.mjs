@@ -99,6 +99,12 @@ test("the runs and commands switches read only their own grants, and the convers
   assert.deepEqual(RUN_POWERS, ["runs.read", "runs.start"]);
 });
 
+test("boards grants (given by `arugula grants add`) are not the conversations switch's, so turning it off leaves them", () => {
+  const g = (id, power) => ({ id, subject: { kind: "daemon", id: "d1", name: "geek" }, power, scope: { kind: "project", id: "prj_1" }, live: true });
+  const grants = [g("g1", "threads.read"), g("g2", "boards.read"), g("g3", "boards.write")];
+  assert.deepEqual(liveOver(grants, "d1", { kind: "project", id: "prj_1", name: "" }).map((x) => x.id), ["g1"]);
+});
+
 test("a project's matrix on /settings: a row per machine, a switch per column, partial grants said", () => {
   const g = (id, machine, power, kind = "project", scope = "prj_1", live = true) => ({
     id,
