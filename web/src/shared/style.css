@@ -3378,6 +3378,14 @@ button.att {
   font-size: 11px;
 }
 
+/* A finger on Copy (UI audit #199): the small size of the button set
+   (buttons.css, #186), inline in a line of text too. */
+@media (pointer: coarse) {
+  .copy-button {
+    min-height: 34px;
+  }
+}
+
 /* ---- other people (M13) */
 
 .avatar {
@@ -8440,8 +8448,9 @@ input.chat-search {
     flex: 1 1 100%;
   }
 
+  /* Less the back button and the gap: a finger's 40px (UI audit #199). */
   .chat-head .chat-back + .chat-title {
-    flex-basis: calc(100% - 48px);
+    flex-basis: calc(100% - 56px);
   }
 
   .chat-head .chat-title + * {
@@ -8458,7 +8467,7 @@ input.chat-search {
 }
 
 .chat.phone .chat-head .chat-title {
-  flex: 1 1 calc(100% - 48px);
+  flex: 1 1 calc(100% - 56px);
 }
 
 .chat.phone .chat-head > :not(.chat-back):not(.chat-title):first-of-type,
@@ -8495,6 +8504,20 @@ input.chat-search {
   font-size: 22px;
   line-height: 1;
   color: var(--dim);
+}
+
+/* A finger on chat's icons (UI audit #199): the room's header, the
+   thread's close and the composer's tools were 22-32px, under any tap
+   target; on a touch screen they're the button set's 40px (#186). */
+@media (pointer: coarse) {
+  .chat-back,
+  .chat-info,
+  .thread-close,
+  .compose-tool,
+  .compose-send {
+    min-width: 40px;
+    min-height: 40px;
+  }
 }
 
 /* ---- S33: a hand's requests from agents */
@@ -11561,6 +11584,14 @@ html[data-workspace="new"] .thread-panel {
   }
 }
 
+/* A one-line block is as tall as its Copy, now a finger's (UI audit #199). */
+@media (pointer: coarse) {
+  .md-code pre {
+    box-sizing: border-box;
+    min-height: 42px;
+  }
+}
+
 .md pre .hl-k {
   color: var(--accent);
 }
@@ -12273,6 +12304,13 @@ html[data-workspace="new"] .thread-panel {
   width: auto;
   min-width: 30px;
   padding: 0 7px;
+}
+
+/* A finger's, as the header's other icons (UI audit #199). */
+@media (pointer: coarse) {
+  .chat-pop-wrap .chat-info {
+    min-width: 40px;
+  }
 }
 
 .chat-pop {
