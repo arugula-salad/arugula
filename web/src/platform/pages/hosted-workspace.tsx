@@ -82,8 +82,10 @@ const said = (w: HostedWorkspace) => (w.asked === "wake" ? STATES.waking : (STAT
 /** A machine's id, short: the card has no room for all of it. */
 const shortMachine = (m: string) => (m.length > 8 ? `${m.slice(0, 8)}…` : m);
 
-/** States nothing changes on its own: the page stops looking again. */
-const SETTLED = new Set(["ready", "paused", "failed"]);
+/** States nothing changes on its own: the page stops looking again. Not
+ * paused: opening the page wakes it, and the first answer can come back
+ * before the wake is asked, so it keeps looking until it's up. */
+const SETTLED = new Set(["ready", "failed"]);
 
 const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KiB` : `${(n / 1024 / 1024).toFixed(1)} MiB`);
 
