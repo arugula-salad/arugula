@@ -526,7 +526,8 @@ async fn a_reply_mid_turn_is_a_queued_prompt() {
 
 /// Several repos on the box: a line asks which, and the asker's reply
 /// naming one starts the session there; anyone else's, or one naming
-/// none, is chat. Several boxes and none chosen: asked first, the same
+/// none, is chat. The session's first prompt leaves out the question and
+/// its answer. Several boxes and none chosen: asked first, the same
 /// way. No box: a line says to set one up.
 #[tokio::test]
 async fn arugula_asks_which_box_and_repo() {
@@ -545,6 +546,14 @@ async fn arugula_asks_which_box_and_repo() {
     // The session's card (M257) says it started.
     let said = crate::sessions_hydrate_tests::cards(&base, "ch_general", Some(p)).await;
     assert_eq!(said, [format!("session:{}", s.id)]);
+    // The question and the answer were for the platform: the first prompt
+    // leaves them out, and keeps the rest (a's "web" is someone else's).
+    let first = app.db.session_prompts(&s.id).unwrap().remove(0).text;
+    assert!(
+        first.contains("b (editor): @arugula fix the canary\na (owner): web\nb (editor): hmm, not sure\n\nRules:"),
+        "{first}"
+    );
+    assert!(!first.contains("web, please") && !first.contains("Which repo"), "{first}");
 
     // A second box, none chosen: which box first, then which repo.
     add_box(&app, &t, "hw_stage", "staging", &["https://github.com/o/app"], None);
@@ -555,6 +564,9 @@ async fn arugula_asks_which_box_and_repo() {
     post_in(&base, "ch_general", "b", "staging", Some(q)).await;
     let s = sessions(&app, &t).into_iter().find(|s| s.parent_seq == q as u64).expect("started on staging");
     assert_eq!((s.workspace.as_str(), s.repo.as_deref()), ("hw_stage", Some("o/app")));
+    let first = app.db.session_prompts(&s.id).unwrap().remove(0).text;
+    assert!(first.contains("b (editor): @arugula deploy it\n\nRules:"), "{first}");
+    assert!(!first.contains("Which cloud workspace"), "{first}");
 
     // No box at all.
     crate::db::sql::Sql::execute(&app.db.c(), "UPDATE hosted_workspaces SET deleted_at = 1", crate::db::sql::params![])

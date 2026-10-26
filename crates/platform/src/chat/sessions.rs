@@ -26,7 +26,8 @@
 //!   unambiguous) picks it. Nothing is stored for it: the thread is read
 //!   again from the ask on, so a reply that names none, or several, or
 //!   anyone else's reply, is ordinary chat. A box's answer may name the
-//!   repo too.
+//!   repo too. The questions and the answers are for the platform: the
+//!   session's first prompt leaves them out ([`answers`]).
 //! - **Starting:** the session and its job in one transaction
 //!   (`db::sessions::create_session_in`, `db::sessions::dispatch`), bound
 //!   to the room and the thread, its branch's slug from the ask's words
@@ -82,6 +83,11 @@ pub const MENTION: &str = "arugula";
 /// Where `@arugula` works, said where it doesn't.
 pub const NOT_HERE: &str =
     "@arugula works in a project's channels, and in the threads on its issues and pull requests.";
+/// The platform's which-box question starts so.
+pub const WHICH_BOX: &str = "Which cloud workspace should @arugula run on?";
+/// The platform's which-repo question starts so.
+pub const WHICH_REPO: &str = "Which repo should @arugula work in on ";
+
 /// Said when the project has no hosted workspace.
 pub const NO_BOX: &str =
     "@arugula runs on this project's cloud workspace, and it has none: set one up first, then ask again.";
@@ -287,8 +293,8 @@ async fn start(app: &Platform, room: &Room, thread: u64, project: &str, asker: &
                 room,
                 thread,
                 &format!(
-                    "Which cloud workspace should @arugula run on? Reply with its name: {}. (An owner or editor can \
-                     choose one for the project in its settings: agents run on.)",
+                    "{WHICH_BOX} Reply with its name: {}. (An owner or editor can choose one for the project in its \
+                     settings: agents run on.)",
                     list(&names)
                 ),
             )?;
@@ -312,12 +318,7 @@ async fn with_box(
 ) -> Result<()> {
     let all = repos(w);
     if all.len() > 1 {
-        say(
-            app,
-            room,
-            thread,
-            &format!("Which repo should @arugula work in on {}? Reply with one: {}.", w.name, list(&all)),
-        )?;
+        say(app, room, thread, &format!("{WHICH_REPO}{}? Reply with one: {}.", w.name, list(&all)))?;
         return Ok(());
     }
     launch(app, room, thread, project, asker, w, all.first().map(String::as_str)).await
@@ -342,8 +343,56 @@ async fn waiting_ask(app: &Platform, room: &Room, thread: u64, before: i64) -> R
     };
     let ask = ms[i].clone();
     let after: Vec<Message> =
-        ms[i + 1..].iter().filter(|m| m.author == ask.author && m.deleted.is_none()).cloned().collect();
+        ms[i + 1..].iter().filter(|m| m.author == ask.author && m.deleted.is_none() && own(m)).cloned().collect();
     Ok(Some((ask, after)))
+}
+
+/// Whether `m` is its author's own words: not their agent's, nor a
+/// product's for them (a session's answer is its asker's, `via` it).
+fn own(m: &Message) -> bool {
+    m.agent.is_none() && m.via.is_none()
+}
+
+/// Of a thread's messages `ms`, oldest first, the numbers of `asker`'s
+/// replies that answered the platform's which-box or which-repo question
+/// (as [`answer`] reads them: after the question, before the session's
+/// card, naming exactly one of the project's boxes or their repos). The
+/// first prompt leaves them out ([`hydrate::first_prompt`]): they were
+/// for the platform, not the agent.
+pub(crate) fn answers(app: &Platform, project: &str, asker: &str, ms: &[Message]) -> Result<Vec<i64>> {
+    let ws: Vec<HostedWorkspace> = app
+        .db
+        .hosted_workspaces(project)?
+        .into_iter()
+        .filter(|w| !matches!(w.state.as_str(), "deleting" | "deleted"))
+        .collect();
+    let boxes: Vec<(String, Vec<String>)> = ws.iter().map(|w| (w.id.clone(), vec![w.name.clone()])).collect();
+    let mut all: Vec<String> = Vec::new();
+    for r in ws.iter().flat_map(repos) {
+        if !all.contains(&r) {
+            all.push(r);
+        }
+    }
+    let in_repos = repo_options(&all);
+    let (mut asked, mut out) = (false, Vec::new());
+    for m in ms.iter().filter(|m| m.deleted.is_none()) {
+        if m.author.is_empty() {
+            let line = m.via.as_deref() == Some(SYSTEM_VIA);
+            if line && (m.text.starts_with(WHICH_BOX) || m.text.starts_with(WHICH_REPO)) {
+                asked = true;
+            } else if m.via.as_deref().and_then(arugula_control_wire::sessions::card_of).is_some() {
+                // The session started: replies from here on are prompts.
+                asked = false;
+            }
+        } else if asked
+            && m.author == asker
+            && own(m)
+            && (named(&m.text, &boxes).is_some() || named(&m.text, &in_repos).is_some())
+        {
+            out.push(m.seq);
+        }
+    }
+    Ok(out)
 }
 
 /// A reply in a thread with no session going: the answer to its asker's
