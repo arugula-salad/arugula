@@ -47,7 +47,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents", "docs"] as const;
+const FLAGS = ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents", "docs", "boards"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -85,6 +85,8 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
       // M76 is the daemon's and the CLI's; the page's catalog is M77's.
       agents: c.flag("agents"),
       docs: c.flag("docs"),
+      // Boards are control's (aru-116): the page only knows the flag.
+      boards: c.flag("boards"),
     };
   });
   if (page_says.chat) out.push("chat");
@@ -93,6 +95,7 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
   if (page_says.forges) out.push("forges");
   if (page_says.agents) out.push("agents");
   if (page_says.docs) out.push("docs");
+  if (page_says.boards) out.push("boards");
   return FLAGS.filter((f) => out.includes(f));
 }
 
