@@ -31,7 +31,8 @@ use std::sync::Arc;
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::sessions::{
-    SessionAct, SessionAnswered, SessionCard, SessionLine, SessionOpen, SessionPort, SessionTurn, SessionView,
+    SessionAct, SessionAnswered, SessionCard, SessionFinish, SessionLine, SessionOpen, SessionPort, SessionTurn,
+    SessionView,
 };
 use arugula_control_wire::work::{Reported, SessionReport};
 use arugula_e2e::{now_ms, team::TeamRole};
@@ -201,18 +202,23 @@ fn line(e: &Event, name: &dyn Fn(&str) -> String) -> String {
         (Kind::Turn, ..) => {
             let n = d.commits.len();
             let commits = format!("{n} commit{}", if n == 1 { "" } else { "s" });
+            let finish = match &d.finish {
+                Some(f) if f.ok => format!(" (finish passed: {})", f.command),
+                Some(f) => format!(" (finish failed: {})", f.command),
+                None => String::new(),
+            };
             if d.pushed == Some(true) {
-                format!("Turn pushed {}: {commits}", d.branch.unwrap_or_default())
+                format!("Turn pushed {}: {commits}{finish}", d.branch.unwrap_or_default())
             } else {
-                format!("Turn left {commits}, not pushed")
+                format!("Turn left {commits}, not pushed{finish}")
             }
         }
         (Kind::Heartbeat, ..) => "Heard from its box".into(),
     }
 }
 
-/// Session `s`'s card and history, for a reader who `may` act on it.
-pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<SessionView, ApiError> {
+/// Session `s`'s card and history, for `reader`, who `may` act on it.
+pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -> Result<SessionView, ApiError> {
     let events = app.db.session_events(&s.id)?;
     let actions = app.db.session_actions(&s.id)?;
     let pending: Vec<_> = actions.iter().filter(|a| a.state == crate::db::sessions::ActionState::Pending).collect();
@@ -227,6 +233,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<Sessi
     let accounts = app.cache.accounts(&*app.hub, &who).await?;
     let name = |a: &str| accounts.get(a).map(|x| x.name.clone()).unwrap_or_default();
     let last_state = |to: State| events.iter().rev().find(|e| e.kind == Kind::State && e.to == to);
+    let pushed = events.iter().any(|e| e.kind == Kind::Turn && detail(e).pushed == Some(true));
     let turn = events.iter().rev().find(|e| e.kind == Kind::Turn).map(|e| {
         let d = detail(e);
         SessionTurn {
@@ -236,6 +243,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<Sessi
             commits: d.commits,
             diffstat: d.diffstat,
             uncommitted: d.uncommitted,
+            finish: d.finish.map(|f| SessionFinish { ok: f.ok, command: f.command, output_tail: f.output_tail }),
         }
     });
     let open = (s.seen_as() == State::NeedsInput).then(|| last_state(State::NeedsInput)).flatten().map(|e| {
@@ -284,6 +292,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<Sessi
         block: s.block.clone(),
         ports,
         pr: s.pr.clone(),
+        pushed,
     };
     let lines = events
         .iter()
@@ -297,7 +306,8 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<Sessi
             text: line(e, &name),
         })
         .collect();
-    Ok(SessionView { card, may, now: now_ms(), events: lines })
+    let asked = !s.asker.is_empty() && s.asker == reader;
+    Ok(SessionView { card, may, asked, now: now_ms(), events: lines })
 }
 
 /// `GET /api/sessions/{ses}`.
@@ -307,7 +317,7 @@ pub async fn show(
     Path(id): Path<String>,
 ) -> Result<Json<SessionView>, ApiError> {
     let (s, may) = readable(&app, &account, &id, false).await?;
-    Ok(Json(view(&app, &s, may).await?))
+    Ok(Json(view(&app, &s, may, &account).await?))
 }
 
 fn refused(r: &Refused) -> ApiError {
@@ -333,7 +343,7 @@ pub async fn stop(
         }
         let m = Move::Control { from: s.state, to: State::Stopped, at: now_ms(), detail: &detail };
         match record(&app, &id, &m)? {
-            Ok((after, _)) => return Ok(Json(view(&app, &after, true).await?)),
+            Ok((after, _)) => return Ok(Json(view(&app, &after, true, &account).await?)),
             Err(Refused::Moved { .. }) => s = app.db.session(&id)?.ok_or_else(no_session)?,
             Err(r) => return Err(refused(&r)),
         }
@@ -376,7 +386,7 @@ pub async fn act(
         Ok(_) => {
             let after = app.db.session(&id)?.ok_or_else(no_session)?;
             app.chat.session(&app.db, &after);
-            Ok(Json(view(&app, &after, true).await?))
+            Ok(Json(view(&app, &after, true, &account).await?))
         }
         Err(Refused::Detail(why)) if why.starts_with("only") || why.starts_with("an answer") => {
             Err(err(StatusCode::BAD_REQUEST, why))

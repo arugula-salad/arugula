@@ -8,11 +8,19 @@
 //
 // It says the session's state (queued, working, needs input, done,
 // failed, stopped responding, stopped), its repo and branch, how long it's
-// run, the tool it's on or the error it hit, and what its last turn left.
+// run, the tool it's on or the error it hit, and what its last turn left,
+// with what the workspace's finish step made of it (M261): "finish: ✓ just
+// check", or "finish failed:" and the last lines of its output.
 // A box that hasn't been heard from for 60 s is "stopped responding" here
 // at once, against the platform's clock, before the platform marks it so.
 // What it asks is a question card (`../ask`), answered by any owner or
 // editor of its project; the platform passes the answer to the box.
+//
+// Its PR (M259): once a turn pushed its branch, its asker opens a draft of
+// the PR here, prefilled from the repo's PR template and what the turns
+// left, edits it and sends it as themselves ("agents draft, people
+// send"): GitHub's authorization in this browser, else one of their own
+// machines. Nobody else sends it. Once sent, the PR button is the PR.
 
 import "./session-card.css";
 import { useEffect, useState } from "preact/hooks";
@@ -20,7 +28,7 @@ import { AskCard, type Ask } from "../ask";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 import { usePlatformApi } from "../platform-api";
-import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionView } from "../proto";
+import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionPr, SessionPrSent, SessionView } from "../proto";
 
 /** How long a turn may go without its box saying anything (`QUIET_MS`). */
 export const QUIET_MS = 60_000;
@@ -81,6 +89,16 @@ export function elapsed(ms: number): string {
   if (m < 60) return `${m}m ${String(s % 60).padStart(2, "0")}s`;
   const h = Math.floor(m / 60);
   return `${h}h ${String(m % 60).padStart(2, "0")}m`;
+}
+
+/** The last `n` lines of a finish step's output. */
+export function lastLines(text: string, n = 6): string {
+  return text.trimEnd().split("\n").slice(-n).join("\n");
+}
+
+/** What an idle session's stop says (M261, the platform's `idle: …`). */
+export function idleOf(c: SessionCard): string | null {
+  return c.state === "stopped" && c.reason?.startsWith("idle: ") ? c.reason.slice("idle: ".length) : null;
 }
 
 /** A permission's option id in words: `allow-once` is "Allow once". */
@@ -168,6 +186,117 @@ function useNow(skew: number, on: boolean): number {
   return Date.now() + skew;
 }
 
+/** Its PR, as its asker drafts and sends it: the title and body (from
+ * the repo's template and the turns), the base, and whether it opens as a
+ * draft on GitHub. */
+export function PrEditor({ ses, onClose }: { ses: string; onClose: () => void }) {
+  const [pr, setPr] = useState<SessionPr | null>(null);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [base, setBase] = useState("");
+  const [draft, setDraft] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const take = (p: SessionPr) => {
+    setPr(p);
+    setTitle(p.title);
+    setBody(p.body);
+    setBase(p.base);
+    setDraft(p.draft);
+  };
+  useEffect(() => {
+    let live = true;
+    call<SessionPr>("GET", `/api/sessions/${enc(ses)}/pr`).then(
+      (p) => live && take(p),
+      (e: Error) => live && setSaid(e.message),
+    );
+    return () => void (live = false);
+  }, [ses]);
+  if (!pr) {
+    return (
+      <div class="session-pr" data-session-pr-editor="loading">
+        <p class={said ? "session-card-line bad" : "session-card-line dim"}>{said ?? "Reading its PR…"}</p>
+        {said && (
+          <div class="session-card-buttons">
+            <button type="button" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+  const edit = { title, body, base: base.trim() || undefined, draft };
+  const send = async () => {
+    setBusy(true);
+    setSaid(null);
+    try {
+      const back = location.pathname + location.search;
+      const v = await call<SessionPrSent>("POST", `/api/sessions/${enc(ses)}/pr/send`, { edit, via: "browser", back });
+      if (v.authorize) {
+        location.assign(v.authorize);
+        return;
+      }
+      take(v.pr);
+      if (v.pr.state === "sent") onClose();
+    } catch (e) {
+      setSaid((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = async () => {
+    setBusy(true);
+    setSaid(null);
+    try {
+      take(await call<SessionPr>("PUT", `/api/sessions/${enc(ses)}/pr`, edit));
+      setSaid("Kept: it waits here until you send it.");
+    } catch (e) {
+      setSaid((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      class="session-pr"
+      data-session-pr-editor={pr.state}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void send();
+      }}
+    >
+      <div class="session-pr-where">
+        {pr.repo}: <code>{pr.head}</code> into{" "}
+        <input class="session-pr-base" aria-label="Base branch" value={base} onInput={(e) => setBase(e.currentTarget.value)} data-session-pr-base />
+      </div>
+      <input class="session-pr-title" aria-label="Title" value={title} maxLength={256} required onInput={(e) => setTitle(e.currentTarget.value)} data-session-pr-title />
+      <textarea class="session-pr-body" aria-label="Description" rows={10} value={body} onInput={(e) => setBody(e.currentTarget.value)} data-session-pr-body />
+      <label class="session-pr-draft">
+        <input type="checkbox" checked={draft} onChange={(e) => setDraft(e.currentTarget.checked)} data-session-pr-draft /> Open it as a draft on GitHub
+      </label>
+      {pr.template && <p class="dim session-pr-note">Its description starts from the repo's {pr.template}.</p>}
+      {(said ?? pr.error) && (
+        <p class={said?.startsWith("Kept") ? "session-card-line dim" : "session-card-line bad"} role="alert" data-session-pr-said>
+          {said ?? pr.error}
+        </p>
+      )}
+      <div class="session-card-buttons">
+        <button type="submit" disabled={busy || !title.trim()} title="It goes out on GitHub as you" data-session-pr-send>
+          Send as you
+        </button>
+        <button type="button" disabled={busy} onClick={() => void save()} data-session-pr-save>
+          Keep
+        </button>
+        <span class="session-card-fill" />
+        <button type="button" onClick={onClose} data-session-pr-close>
+          Close
+        </button>
+      </div>
+    </form>
+  );
+}
+
 /** The card in a room's timeline or a thread, in place of its message. */
 export function SessionCardMessage({ m }: { room: ChatRoom; m: ChatMessage }) {
   const ses = sessionOf(m)!;
@@ -187,6 +316,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   const { view, error, skew, set } = useSession(ses);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
+  const [drafting, setDrafting] = useState(false);
   const c = view?.card;
   const going = !!c && (c.state === "queued" || c.state === "working" || c.state === "needs_input" || c.state === "unresponsive");
   const now = useNow(skew, going);
@@ -217,6 +347,11 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   const open = (hash: string, inPage: () => void) => (api.controlHref ? window.open(api.controlHref(hash), "_blank", "noopener") : inPage());
   const block = c.block && /^\d+$/.test(c.block) ? c.block : null;
   const asking = askOf(c);
+  const idle = idleOf(c);
+  // The last turn's finish step failed (M261): it wasn't pushed. While the
+  // session still works, the agent has its one turn to fix it.
+  const failed = c.turn?.finish?.ok === false;
+  const fixing = failed && (c.state === "working" || c.state === "needs_input");
   const port = c.ports[0];
   const page = api.sessionHref?.(c.project, c.session);
   return (
@@ -266,6 +401,11 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           {c.reason.replace(/^[a-z_]+: /, "")}
         </p>
       )}
+      {idle && (
+        <p class="session-card-line dim" data-session-idle>
+          {idle[0].toUpperCase() + idle.slice(1)}.
+        </p>
+      )}
       {c.turn && (
         <div class="session-card-turn" data-session-turn>
           <span class={c.turn.pushed ? "ok" : "dim"}>{c.turn.pushed ? "Pushed" : "Not pushed"}</span>
@@ -275,6 +415,20 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             {c.turn.uncommitted ? ` · ${c.turn.uncommitted} uncommitted` : ""}
           </span>
           {c.turn.diffstat && <pre data-session-diffstat>{c.turn.diffstat}</pre>}
+          {c.turn.finish &&
+            (c.turn.finish.ok ? (
+              <p class="session-card-finish" data-session-finish="ok">
+                finish: <span class="ok">✓</span> <code>{c.turn.finish.command}</code>
+              </p>
+            ) : (
+              <div class="session-card-finish" data-session-finish="failed">
+                <p class="bad">
+                  finish failed: <code>{c.turn.finish.command}</code>
+                  {fixing && <span class="dim"> · the agent is fixing it</span>}
+                </p>
+                {c.turn.finish.output_tail && <pre data-session-finish-output>{lastLines(c.turn.finish.output_tail)}</pre>}
+              </div>
+            ))}
         </div>
       )}
       {asking &&
@@ -301,6 +455,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           {said}
         </p>
       )}
+      {drafting && !c.pr && <PrEditor ses={c.session} onClose={() => setDrafting(false)} />}
       <div class="session-card-buttons">
         {c.machine && block && (
           <button type="button" title="Its agent block, live on its box" data-session-open onClick={() => open(`pane=${c.machine}.${block}`, () => api.goToPane(c.machine!, block, null))}>
@@ -321,8 +476,25 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           <a class="button" href={c.pr} target="_blank" rel="noopener" data-session-pr>
             PR ↗
           </a>
+        ) : c.pushed && view.asked ? (
+          <button
+            type="button"
+            aria-pressed={drafting}
+            title={failed ? "Draft its PR, then send it as you: it has what was pushed, not the last turn, whose finish step failed" : "Draft its PR, then send it as you"}
+            data-session-pr
+            onClick={() => setDrafting((d) => !d)}
+          >
+            PR…
+          </button>
         ) : (
-          <button type="button" disabled title="PR after the turn pushes" data-session-pr>
+          <button
+            type="button"
+            disabled
+            title={
+              c.pushed ? `${c.asker_name || "Its asker"} sends its PR: it goes out as them` : failed ? "PR after its finish step passes and a turn pushes its branch" : "PR after a turn pushes its branch"
+            }
+            data-session-pr
+          >
             PR
           </button>
         )}

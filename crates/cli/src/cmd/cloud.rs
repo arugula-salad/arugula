@@ -64,7 +64,8 @@ pub enum CloudCmd {
     /// Change what a cloud workspace is built from.
     ///
     /// Each flag given replaces that part of its spec; the rest stays. Its
-    /// box isn't touched: it shows "rebuild needed" until it's rebuilt.
+    /// box isn't touched: it shows "rebuild needed" until it's rebuilt,
+    /// except for the finish step, which its next turn runs.
     Edit {
         workspace: String,
         /// An HTTPS clone URL. Repeatable; replaces the repos.
@@ -87,6 +88,15 @@ pub enum CloudCmd {
         /// replaces the names.
         #[arg(long = "env")]
         env: Vec<String>,
+        /// A command (`just check`) agent sessions run after each turn,
+        /// before the push.
+        ///
+        /// "" for none. It needs no rebuild.
+        #[arg(long)]
+        finish: Option<String>,
+        /// How long the finish step may run, in seconds (default: 15 min).
+        #[arg(long, value_name = "SECONDS")]
+        finish_timeout: Option<u64>,
         #[arg(long)]
         project: Option<String>,
     },
@@ -281,7 +291,18 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
             show(&w);
             return Ok(failed(&w));
         }
-        CloudCmd::Edit { workspace, repos, no_repos, packages, no_packages, setup, env, project } => {
+        CloudCmd::Edit {
+            workspace,
+            repos,
+            no_repos,
+            packages,
+            no_packages,
+            setup,
+            env,
+            finish,
+            finish_timeout,
+            project,
+        } => {
             let (project, w) = find(&e, project.as_deref(), &workspace)?;
             let mut spec = w["spec"].clone();
             if no_repos || !repos.is_empty() {
@@ -295,6 +316,12 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
             }
             if !env.is_empty() {
                 spec["env"] = json!(env);
+            }
+            if let Some(f) = finish {
+                spec["finish"] = json!(f.trim());
+            }
+            if let Some(t) = finish_timeout {
+                spec["finish_timeout_s"] = json!(t);
             }
             show(&e.api("PUT", &format!("{}/spec", path(&project, &w)), Some(&spec))?);
         }
@@ -669,6 +696,7 @@ mod tests {
             &["arugula", "cloud", "rebuild", "dev", "--force"],
             &["arugula", "cloud", "edit", "dev", "--repo", "https://github.com/acme/app", "--setup", "setup.sh"],
             &["arugula", "cloud", "edit", "dev", "--no-packages", "--env", "NPM_TOKEN"],
+            &["arugula", "cloud", "edit", "dev", "--finish", "just check", "--finish-timeout", "1200"],
             &["arugula", "cloud", "secret", "set", "dev", "GIT_TOKEN"],
             &["arugula", "cloud", "secret", "ls", "dev"],
             &["arugula", "cloud", "secret", "rm", "dev", "GIT_TOKEN", "--project", "Acme"],

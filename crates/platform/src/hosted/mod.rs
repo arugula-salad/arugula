@@ -322,12 +322,29 @@ pub struct Spec {
     /// The names of env vars it takes from its secrets.
     #[serde(default)]
     pub env: Vec<String>,
+    /// The finish step (M261): a command (`just check`) a session's box
+    /// runs after each turn and before it pushes. When it fails the agent
+    /// gets one turn to fix it; when it fails again, nothing is pushed.
+    /// Left out when empty, so a spec without one hashes as before.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub finish: String,
+    /// How long the finish step may run, in seconds
+    /// (`arugula_control_wire::work::FINISH_TIMEOUT_S` when 0).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub finish_timeout_s: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 const MAX_REPOS: usize = 10;
 const MAX_PACKAGES: usize = 50;
 const MAX_SETUP: usize = 64 * 1024;
 const MAX_ENV: usize = 32;
+const MAX_FINISH: usize = 4 * 1024;
+/// The longest a finish step may be given: two hours.
+const MAX_FINISH_TIMEOUT_S: u64 = 2 * 60 * 60;
 
 impl Spec {
     /// Why it can't be kept, if it can't.
@@ -359,12 +376,35 @@ impl Spec {
         if let Some(n) = self.env.iter().find(|n| !crate::secrets::valid_name(n)) {
             return Err(format!("{n:?} isn't an env name a workspace may take"));
         }
+        if self.finish.len() > MAX_FINISH {
+            return Err(format!("the finish step is over {} KiB", MAX_FINISH / 1024));
+        }
+        if self.finish.contains('\0') {
+            return Err("the finish step has a NUL in it".into());
+        }
+        if self.finish_timeout_s > MAX_FINISH_TIMEOUT_S {
+            return Err(format!("the finish step may run at most {} hours", MAX_FINISH_TIMEOUT_S / 3600));
+        }
         Ok(())
     }
 
-    /// Its SHA-256, hex: what "rebuild needed" compares.
+    /// Its SHA-256, hex: what "rebuild needed" compares. Only what the
+    /// box is built from: the finish step goes to the box with each pull
+    /// of its sessions' work (`Db::session_work`), so changing it needs no
+    /// rebuild.
     pub fn hash(&self) -> String {
-        hex::encode(Sha256::digest(serde_json::to_vec(self).unwrap_or_default()))
+        let built = Spec { finish: String::new(), finish_timeout_s: 0, ..self.clone() };
+        hex::encode(Sha256::digest(serde_json::to_vec(&built).unwrap_or_default()))
+    }
+
+    /// Its finish step, as a session's box is sent it: `None` when it has
+    /// none.
+    pub fn finish_step(&self) -> Option<arugula_control_wire::work::FinishStep> {
+        let command = self.finish.trim();
+        (!command.is_empty()).then(|| arugula_control_wire::work::FinishStep {
+            command: command.to_owned(),
+            timeout_s: self.finish_timeout_s,
+        })
     }
 }
 

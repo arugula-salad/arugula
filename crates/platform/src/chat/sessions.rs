@@ -103,7 +103,7 @@ fn thread_of(room: &Room, seq: i64, parent: Option<i64>) -> u64 {
 
 /// Whether `@arugula` works in this room: a channel, or the thread on a
 /// native issue or a mirrored item.
-fn works_in(room: &Room) -> bool {
+pub(super) fn works_in(room: &Room) -> bool {
     match room.kind.as_str() {
         "channel" => true,
         "object" => room.target.as_deref().is_some_and(|t| t.starts_with("iss_") || t.starts_with("fi_")),

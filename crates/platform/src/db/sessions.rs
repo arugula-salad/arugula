@@ -1426,6 +1426,12 @@ impl Db {
             params![workspace],
             session_row,
         )?;
+        // The workspace's finish step (M261), sent with each session.
+        let finish = c
+            .query_row("SELECT spec FROM hosted_workspaces WHERE id = ?1", params![workspace], |r| r.get::<String>(0))
+            .optional()?
+            .and_then(|spec| serde_json::from_str::<crate::hosted::Spec>(&spec).ok())
+            .and_then(|spec| spec.finish_step());
         // Every live session but a queued one holds a slot, a done one too.
         let busy = live.iter().filter(|s| s.state != State::Queued);
         let mut room = MAX_SESSIONS_PER_BOX.saturating_sub(busy.count());
@@ -1456,6 +1462,7 @@ impl Db {
                 n: s.daemon_n,
                 prompts: prompts.iter().map(Prompt::wire).collect(),
                 actions: pending_actions(&c, &s.id)?.iter().map(Action::wire).collect(),
+                finish: finish.clone(),
             });
         }
         Ok(out)
@@ -1524,8 +1531,9 @@ impl Db {
 
 /// What deleting an account takes from here, inside the platform's
 /// `account_deleted` transaction, after [`super::projects::erase_account`]:
-/// the sessions of projects that went, with their events and prompts, and
-/// on the sessions that stay, the account's name as asker and its prompts'
+/// the sessions of projects that went, with their events, prompts and PR
+/// drafts, the account's own PR drafts (a sent PR stays on GitHub, and its
+/// link on its session), and on the sessions that stay, the account's name as asker and its prompts'
 /// and actions' text and name (as chat blanks its messages). Events keep the machine
 /// that signed them: a signature names its signer.
 ///
@@ -1536,6 +1544,10 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted, now: u64) -> Result<()> {
     c.execute("DELETE FROM session_events WHERE session_id NOT IN (SELECT id FROM agent_sessions)", params![])?;
     c.execute("DELETE FROM session_prompts WHERE session_id NOT IN (SELECT id FROM agent_sessions)", params![])?;
     c.execute("DELETE FROM session_actions WHERE session_id NOT IN (SELECT id FROM agent_sessions)", params![])?;
+    c.execute(
+        "DELETE FROM pr_drafts WHERE author = ?1 OR session_id NOT IN (SELECT id FROM agent_sessions)",
+        params![d.account],
+    )?;
     c.execute(
         "UPDATE session_actions SET by_account = '', answer = CASE WHEN answer IS NULL THEN NULL ELSE '{}' END,
              reason = NULL,

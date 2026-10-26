@@ -771,6 +771,10 @@ pub struct InvitePersonArgs {
     /// Why you want them there, at most 500 characters: the user reads it on
     /// the card, the person in their notification.
     pub note: String,
+    /// Their window follows yours: to watch. Opening the invite puts them
+    /// on the tab you are on (default: no).
+    #[serde(default)]
+    pub follow: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -3899,7 +3903,7 @@ impl Call<'_> {
         };
         let args = json!({ "who": a.who.trim(), "person": person.id, "name": person.name, "role": role,
             "note": note, "session": at.session, "session_name": at.session_name, "pane": pane, "from": from,
-            "started": started });
+            "started": started, "follow": a.follow });
         let out = block.1.call_by("draft", args, Some(&self.by())).await?;
         let draft = out["draft"].as_str().unwrap_or("?").to_owned();
         done(

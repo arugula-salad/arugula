@@ -953,6 +953,11 @@ pub struct InviteRequest {
     /// whose fingerprint the owner checked with them.
     #[serde(default)]
     pub root: Option<String>,
+    /// Their window follows the inviter's: to watch (#1473). Opening the
+    /// invite starts following whichever of the owner's windows is there.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
+    pub follow: bool,
 }
 
 /// How an invite's push went: `sent` once a subscription took it,
@@ -1838,7 +1843,11 @@ mod wire {
             assert_eq!(delivery.as_str(), old_delivery);
         }
         let req: InviteRequest = serde_json::from_value(json!({ "session": 1, "who": "sam" })).unwrap();
-        assert_eq!((req.role, req.history), (None, false));
+        assert_eq!((req.role, req.history, req.follow), (None, false, false));
+        // A follow invite keeps `follow`; an older body has none (#1473).
+        let req: InviteRequest = serde_json::from_value(json!({ "session": 1, "who": "sam", "follow": true })).unwrap();
+        assert!(req.follow);
+        assert_eq!(serde_json::to_value(&req).unwrap()["follow"], json!(true));
     }
 
     /// `run`, `open_block`, `open_conversation` and `close`.

@@ -1,7 +1,7 @@
 // A channel's topic and pinned messages (#119), the parts that show and
 // change them: the header's topic line (and its About card), the 📌 count
-// that opens the pins, and the dim centered line a topic change or a pin
-// leaves in the room. Plain parts are in ./pins.
+// that opens the pins, and the dim centered line a topic change, a pin
+// or a session's PR (M259) leaves in the room. Plain parts are in ./pins.
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -209,8 +209,27 @@ export function PinsButton({ room, toast }: { room: ChatRoom; toast: (s: string)
 
 /** What happened in the room, in place of a message: centered, dim. */
 export function SystemLine({ room, m }: { room: ChatRoom; m: ChatMessage }) {
-  const nav = usePlatformApi().nav;
+  const api = usePlatformApi();
+  const nav = api.nav;
   if (m.deleted !== null) return null;
+  // A session's PR (M259): its thread says which session it came from.
+  if (m.system?.kind === "session_pr" && m.text.startsWith("ses_")) {
+    const short = m.text.slice(4, 12);
+    const href = room.project ? api.sessionHref?.(room.project, m.text) : undefined;
+    return (
+      <div class="msg-system" data-msg={m.seq} data-system="session_pr">
+        <b>{authorLabel(m)}</b> opened this PR from agent session{" "}
+        {href ? (
+          <a href={href} data-system-session={m.text}>
+            {short}
+          </a>
+        ) : (
+          <code>{short}</code>
+        )}
+        <time title={new Date(m.at).toLocaleString()}>{new Date(m.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time>
+      </div>
+    );
+  }
   const { before, target, after } = systemText(m);
   return (
     <div class="msg-system" data-msg={m.seq} data-system={m.system?.kind}>

@@ -2458,6 +2458,11 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "follow": {
+            "default": false,
+            "description": "Their window follows yours: to watch. Opening the invite puts them\non the tab you are on (default: no).",
+            "type": "boolean"
+          },
           "note": {
             "description": "Why you want them there, at most 500 characters: the user reads it on\nthe card, the person in their notification.",
             "type": "string"
@@ -6340,6 +6345,11 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "follow": {
+            "default": false,
+            "description": "Their window follows yours: to watch. Opening the invite puts them\non the tab you are on (default: no).",
+            "type": "boolean"
+          },
           "note": {
             "description": "Why you want them there, at most 500 characters: the user reads it on\nthe card, the person in their notification.",
             "type": "string"
@@ -9935,6 +9945,11 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "follow": {
+            "default": false,
+            "description": "Their window follows yours: to watch. Opening the invite puts them\non the tab you are on (default: no).",
+            "type": "boolean"
+          },
           "note": {
             "description": "Why you want them there, at most 500 characters: the user reads it on\nthe card, the person in their notification.",
             "type": "string"
@@ -13817,6 +13832,11 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "follow": {
+            "default": false,
+            "description": "Their window follows yours: to watch. Opening the invite puts them\non the tab you are on (default: no).",
+            "type": "boolean"
+          },
           "note": {
             "description": "Why you want them there, at most 500 characters: the user reads it on\nthe card, the person in their notification.",
             "type": "string"

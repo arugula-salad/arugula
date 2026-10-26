@@ -18,6 +18,8 @@ export function systemText(m: ChatMessage): { before: string; target: number | n
       return { before: "pinned", target: s.target, after: "" };
     case "unpin":
       return { before: "unpinned", target: s.target, after: "" };
+    case "session_pr":
+      return { before: "opened this PR from an agent session", ...none };
     default:
       return { before: s?.kind ?? "", ...none };
   }
