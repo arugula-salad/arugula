@@ -4618,7 +4618,10 @@ button.diff-why-run {
   gap: 14px;
 }
 
-.ws h4 {
+/* The blocks' own (the app's root is a .ws too); not the agents block's
+   nor the Agents page's: their headings hold paths, which keep their case
+   (UI audit #155). */
+.review.ws:not(.agents) h4 {
   margin: 0 0 6px;
   font-size: 11px;
   font-weight: 600;
