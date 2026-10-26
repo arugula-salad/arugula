@@ -302,16 +302,16 @@ pub struct SessionAction {
     pub kind: String,
     /// The open request it answers ([`SessionDetail::request`]); `None`:
     /// whichever is open.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<String>,
     /// `answer`'s: the card's answer, `{"question_0": "Blue"}`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answer: Option<serde_json::Value>,
     /// `approve`'s: the permission's option id (`allow-once` when `None`).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub option: Option<String>,
     /// `deny`'s: why.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     /// When it was asked (ms).
     pub at: u64,
@@ -510,6 +510,12 @@ mod tests {
         let d = SessionDetail { tool: Some("Bash".into()), ..SessionDetail::default() };
         assert_eq!(serde_json::to_string(&d).unwrap(), r#"{"tool":"Bash"}"#);
         assert_eq!(serde_json::to_string(&SessionDetail::default()).unwrap(), "{}");
+        assert!(w.sessions[0].actions.is_empty(), "a platform without actions");
+        let a: SessionAction =
+            serde_json::from_str(r#"{"id":"sac_1","by":"a","kind":"answer","answer":{"question_0":"Blue"},"at":1}"#)
+                .unwrap();
+        assert_eq!((a.request.as_deref(), a.option.as_deref()), (None, None));
+        assert!(!serde_json::to_string(&a).unwrap().contains("option"));
     }
 
     /// Members' text goes in plain; GitHub's fenced as quoted data, in a
