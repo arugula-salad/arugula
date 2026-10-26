@@ -666,7 +666,7 @@ html[data-corners="square"] .platform input.sw-switch {
   color: var(--dim);
 }
 
-/* Its deploys: state (in its tone, after a dot), short commit, roll back,
+/* Its deploys: its state's chip, short commit, rollback,
    when. The whole row opens the deploy. */
 .platform .deploy-table {
   font-size: 12px;
@@ -685,7 +685,7 @@ html[data-corners="square"] .platform input.sw-switch {
   width: 12em;
 }
 
-/* The commit as wide as it is; roll back, after it, takes the rest. */
+/* The commit as wide as it is; rollback, after it, takes the rest. */
 .platform .deploy-table td:nth-child(2) {
   width: 1%;
 }
@@ -695,22 +695,6 @@ html[data-corners="square"] .platform input.sw-switch {
   padding-right: 0;
   text-align: right;
   font-variant-numeric: tabular-nums;
-}
-
-.platform .deploy-table .deploy-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font: 600 12px/1.3 var(--f-ui);
-  color: var(--ct);
-}
-
-.platform .deploy-table .deploy-state::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--c);
 }
 
 .platform .deploy-table a {

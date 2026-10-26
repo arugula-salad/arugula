@@ -13,6 +13,7 @@ import { MsgAvatar } from "../../shared/chat/avatar";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
+import { StateChip } from "../../shared/ui/state-chip";
 import { issues, type IssueFilter } from "../../shared/issues/store";
 import { ago, githubNewIssue, labelsOf, stateLabel, whoLabel } from "../../shared/issues/text";
 import { LabelChip } from "../../shared/issues/view";
@@ -288,7 +289,7 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
           <LabelChip key={l} label={l} onClick={() => label(l)} />
         ))}
         <span class="issue-row-meta dim">
-          {stateLabel(i)} · #{i.number} {i.state === "closed" && i.closed_at ? `closed ${ago(i.closed_at)}` : `opened ${ago(i.created_at)} by ${whoLabel(i.author, i.agent, nameOf)}`}
+          <StateChip tone={issueTone(i.state)}>{stateLabel(i)}</StateChip> · #{i.number} {i.state === "closed" && i.closed_at ? `closed ${ago(i.closed_at)}` : `opened ${ago(i.created_at)} by ${whoLabel(i.author, i.agent, nameOf)}`}
         </span>
       </div>
       {i.assignees.length > 0 && (

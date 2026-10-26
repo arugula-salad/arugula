@@ -40,9 +40,10 @@
                                          danger)
                       stats              shown (a page of them); assigned to
                                          the reader
-   A page's header    tag                its state, in the tone its card's bar
+   A page's header    chip               its state, in the tone its card's bar
                                          takes: a run, an issue, a deploy, a
-                                         workspace
+                                         workspace (shared/ui/state-chip.tsx,
+                                         as in the lists' lines and the inbox)
    Environments       bar                its latest deploy's state: planned,
    (project settings)                    waiting, approved warn; being applied
                                          accent; applied ok; failed danger;
@@ -223,8 +224,7 @@
 
 /* A card's tone, below the card's own rule so a tone class wins. */
 .platform .sw-card,
-.platform .sw-row,
-.platform .page-state {
+.platform .sw-row {
   --c: var(--muted);
   --ct: var(--subtle);
 }
@@ -262,18 +262,6 @@
 .platform .sw-muted {
   --c: var(--muted);
   --ct: var(--subtle);
-}
-
-/* A page's state, beside its title (a run's, an issue's, a deploy's, a
-   workspace's): the tone its card's bar takes in a list, as a tag. */
-.platform .page-head .page-state {
-  padding: 2px 8px;
-  border: 1px solid var(--c);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--c) 12%, transparent);
-  color: var(--ct);
-  font: 600 12px/1.3 var(--f-mono);
-  white-space: nowrap;
 }
 
 .platform .sw-cards .sw-card {

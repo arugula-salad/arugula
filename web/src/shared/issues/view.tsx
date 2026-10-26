@@ -22,6 +22,8 @@ import { RoomBody, type Between } from "../chat/room";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
 import { PageHeader, type BackLink } from "../ui/page-header";
+import { Chip, StateChip } from "../ui/state-chip";
+import { issueTone } from "../tones";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { IssueError, issues } from "./store";
@@ -65,26 +67,22 @@ function Gone({ what }: { what: string }) {
   );
 }
 
-/** A label, as a chip. */
+/** A label, as a chip: the one chip (UI audit #183), muted. */
 export function LabelChip({ label, onClick }: { label: string; onClick?: (e: MouseEvent) => void }) {
-  return onClick ? (
-    <button type="button" class="ws-tag issue-label" data-issue-label={label} onClick={onClick}>
+  return (
+    <Chip class="issue-label" data-issue-label={label} onClick={onClick}>
       {label}
-    </button>
-  ) : (
-    <span class="ws-tag issue-label" data-issue-label={label}>
-      {label}
-    </span>
+    </Chip>
   );
 }
 
 export function StateTag({ i }: { i: Pick<NativeIssue, "state" | "close_reason"> }) {
   return (
-    // Closed is done, not failed (UI audit #157): neutral, where a forge's
-    // closed PR is red. On the platform page it's the head's state tag.
-    <span class={`ws-tag forge-state issue-state page-state ${i.state === "closed" ? "closed sw-muted" : "open sw-ok"}`} data-issue-state={i.state}>
+    // Closed is done, not failed (UI audit #157): muted, where a forge's
+    // closed PR is red. A state's chip, as a run's and a deploy's are (#183).
+    <StateChip tone={issueTone(i.state)} class="issue-state" data-issue-state={i.state}>
       {stateLabel(i)}
-    </span>
+    </StateChip>
   );
 }
 
@@ -248,9 +246,9 @@ export function IssueView({
               {issue.state === "closed" && issue.closed_at ? ` · closed ${ago(issue.closed_at)}` : ""}
             </span>
             {issue.agent && (
-              <span class="msg-badge agent-badge" title={`Opened by an agent on ${issue.agent.machine_name || "a machine"}, through its owner's grant`}>
-                agent
-              </span>
+              <Chip tone="teal" title={`Opened by an agent on ${issue.agent.machine_name || "a machine"}, through its owner's grant`} data-issue-agent>
+                Agent
+              </Chip>
             )}
           </div>
         }

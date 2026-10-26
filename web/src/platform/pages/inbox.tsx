@@ -23,14 +23,15 @@ import { issues } from "../../shared/issues/store";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
+import { StateChip, type Tone } from "../../shared/ui/state-chip";
 import { DraftList, useMyDrafts } from "../drafts";
 import { WaitingDeploys, useWaitingDeploys } from "./deploy";
 import { names, roomPath } from "../links";
 import { follow, pathOf } from "../router";
 import { runs } from "../runs";
-import { runTitle } from "../runs-text";
+import { STATES as RUN_STATES, runTitle } from "../runs-text";
 import { session } from "../session";
-import { reasonTone, roomTone, toneClass } from "../swarm";
+import { issueTone, reasonTone, roomTone, runTone, toneClass } from "../swarm";
 import { toast } from "../toast";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -56,7 +57,7 @@ const GROUPS: [string, string[], string][] = [
   ["mentioned", ["mentioned", "thread_mention"], "Mentions"],
   ["assigned", ["assigned"], "Assigned to you"],
   ["threads", [], "New in threads"],
-  ["done", ["done"], "Merged, closed or ready"],
+  ["done", ["done"], "Ready, merged or closed"],
 ];
 
 /** Where an entry opens: a native issue on its page, a thread's mention in
@@ -68,7 +69,31 @@ function linkOf(e: InboxEntry): { href: string; here: boolean } {
   return { href: e.url, here: false };
 }
 
-const STATE: Record<string, string> = { open: "open", closed: "closed", merged: "merged" };
+const STATE: Record<string, string> = { open: "Open", closed: "Closed", merged: "Merged" };
+
+/** An entry's state as its chip, in the words and tone its own page gives
+ * it (UI audit #183): a run's as the run's page says it, a native issue's
+ * as its page does; a PR or issue on GitHub open, merged or closed, and
+ * an open PR that's "done" is ready (UI audit #167). */
+function EntryState({ e }: { e: InboxEntry }) {
+  let word: string;
+  let tone: Tone;
+  if (e.kind === "run") {
+    word = RUN_STATES[e.state] ?? e.state;
+    tone = runTone(e.state);
+  } else if (e.reason === "done" && e.state === "open") {
+    word = "Ready";
+    tone = "ok";
+  } else {
+    word = STATE[e.state] ?? e.state;
+    tone = e.state === "merged" ? "accent" : issueTone(e.state);
+  }
+  return (
+    <StateChip tone={tone} data-inbox-state={e.state}>
+      {word}
+    </StateChip>
+  );
+}
 
 export function InboxPage() {
   const [entries, setEntries] = useState<InboxEntry[] | null>(null);
@@ -160,11 +185,11 @@ export function InboxPage() {
                   // why it wants the reader, full while it's unseen.
                   <li key={key} class={`sw-card ${toneClass(reasonTone(e.reason))} ${e.seen_at ? "seen" : "unseen"}`} data-inbox-entry={e.item} data-inbox-reason={e.reason}>
                     <a class="platform-inbox-item" href={link.href} {...away} onClick={open}>
-                      <span class="platform-inbox-ref">{e.kind === "run" ? `${e.repo}:` : `${e.repo}#${e.number}`}</span>{" "}
+                      <span class="platform-inbox-ref">{e.kind === "run" ? `${e.repo} ·` : `${e.repo}#${e.number}`}</span>{" "}
                       <span class="platform-inbox-title">{e.title}</span>
                     </a>
                     <div class="dim platform-inbox-meta">
-                      {e.kind === "pr" ? "PR" : e.kind === "run" ? "Run" : "Issue"} · {STATE[e.state] ?? e.state}
+                      {e.kind === "pr" ? "PR" : e.kind === "run" ? "Run" : "Issue"} · <EntryState e={e} />
                       {e.reason === "thread_mention" ? " · in its thread" : ""}
                       {e.author ? ` · ${e.kind === "run" ? "started by" : "by"} ${e.author}` : ""}
                     </div>
@@ -244,7 +269,9 @@ function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] })
           const project = session.project(r.project)?.name ?? "";
           const issue = t.startsWith("iss_") ? issues.known(t) : undefined;
           const run = t.startsWith("run_") ? runs.known(t) : undefined;
-          const ref = issue ? `${project}#${issue.number}` : run ? `${project}:` : project ? `${project} ·` : "";
+          // One separator (UI audit #167): an issue by its number, anything
+          // else "Project · its title".
+          const ref = issue ? `${project}#${issue.number}` : project ? `${project} ·` : "";
           const title = issue?.title ?? (run ? runTitle(run.op, null, run.deploy) : r.name);
           const n = counted(r);
           return (
