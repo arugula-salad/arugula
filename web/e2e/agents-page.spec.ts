@@ -5,7 +5,7 @@
 // Team tab lists it), run here (an agent block wearing it), and deleted.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
@@ -24,7 +24,8 @@ test.afterAll(closeContexts);
 test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "arugula-e2e-agents-page-"));
   writeFileSync(join(state, "flags.json"), JSON.stringify({ flags: { agents: true } }));
-  project = mkdtempSync(join(tmpdir(), "arugula-e2e-agents-proj-"));
+  // The daemon names a project by its real path; on macOS tmpdir() is a link.
+  project = realpathSync(mkdtempSync(join(tmpdir(), "arugula-e2e-agents-proj-")));
   daemon = spawn(
     "../target/debug/arugulad",
     [
