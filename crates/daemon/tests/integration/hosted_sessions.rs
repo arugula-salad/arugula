@@ -109,7 +109,7 @@ impl Fake {
             workspace: WORKSPACE.into(),
             asker: prompt.author.clone(),
             repo: Some("acme/app".into()),
-            branch: format!("arugula/{id}-{slug}"),
+            branch: format!("arugula/{}-{slug}", &id[4..12]),
             state: "queued".into(),
             n: 0,
             prompts: vec![prompt],
@@ -448,7 +448,7 @@ fn a_hosted_machine_runs_sessions() {
     );
     let of = f.of(&a);
     assert_eq!(of.iter().map(|(r, _)| r.n).collect::<Vec<_>>(), (1..=of.len() as u64).collect::<Vec<_>>());
-    let branch = format!("arugula/{a}-fix-readme");
+    let branch = format!("arugula/{}-fix-readme", &a[4..12]);
     let (_, turn) = of.iter().find(|(r, _)| r.kind == "turn").unwrap();
     assert_eq!(turn.branch.as_deref(), Some(branch.as_str()), "{turn:?}");
     assert_eq!(turn.pushed, Some(false), "M259 pushes");
