@@ -334,7 +334,9 @@ function Unvouched({ s }: { s: ControlSession }) {
       <p class="fingerprint" data-unvouched-account={v.root}>
         {fingerprint(v.root)}
       </p>
-      <div class="prompt-buttons">
+      {/* The screen's row, not a dialog's (UI audit #199): there the
+          primary's margin stretched "It isn't" 12px taller. */}
+      <div class="control-actions">
         <button class="secondary" data-enroll-again onClick={() => void s.enrollAgain()}>
           It isn't: forget this browser
         </button>

@@ -201,6 +201,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {state && <NewMachineNote />}
       {state && <AgentsNudge client={client} />}
       {main}
+      {/* In the column, above the key bar (UI audit #199). */}
+      {phone && state && <InstallHint />}
       {/* Only where this person's typing reaches the pane: not a viewer's,
           nor a read-only link's (UI audit #149). */}
       {phone && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && client.mayType(client.active()!) && <KeyBar client={client} />}
@@ -218,7 +220,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />
-      {phone && state && <InstallHint />}
       <DragGhost />
       {/* An ask to drive shows over the share dialog (#551). */}
       <ShareDialog client={client} />
