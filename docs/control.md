@@ -77,8 +77,9 @@ in a project. It enrolls into the project under the project's delegation
 (M178) and shows in its machines. A project's members list and open its
 workspaces; its owners and editors make, rebuild and delete them, and
 making a box also needs the account on `ARUGULA_HOSTED_ACCOUNTS`. The
-platform's worker makes each box from the current release's template
-(`ARUGULA_HOSTED_TEMPLATE` until M177's lookup), records its one-time
+platform's worker makes each box from the current release's template of
+the workspace's size (below; `ARUGULA_HOSTED_TEMPLATE` names another, for
+loam and testnet), records its one-time
 enrollment with the hub by sandbox id (or puts a ticket in its env, with
 `ARUGULA_HOSTED_ENROLL=ticket`, for boxes that boot fresh), and deletes a box
 that doesn't enroll in time. A create whose answer was lost is found by the
@@ -169,6 +170,7 @@ arugula cloud ls                          # every project's; --project <id or na
 arugula cloud open dev --wait             # wakes a paused box, says its machine and its setup
 arugula cloud edit dev --setup setup.sh   # rebuild needed
 arugula cloud edit dev --finish "just check"   # no rebuild: the next turn runs it
+arugula cloud edit dev --size large       # rebuild needed: 8 vCPU, 8 GiB
 echo "$TOKEN" | arugula cloud secret set dev GIT_TOKEN
 arugula cloud rebuild dev --download dev.tgz   # a new box from the spec
 arugula cloud delete dev
@@ -200,6 +202,30 @@ newest pushed commit, else the ask's first line). Its body puts the
 commits, the last turn's diffstat and the finish step's result under the
 template's `## Summary` (or its first section), and its footer links the
 session and its thread.
+
+**Sizes** (M266, Arugula #201). A workspace is `small` (2 vCPU, 2 GiB, the
+default) or `large` (8 vCPU, 8 GiB, enough for a Rust build): the spec's
+`size`, `--size` on `cloud create` and `cloud edit`, `size` on MCP's
+`cloud create`, and a field in the project's settings, which its owners and
+editors change. E2B fixes a box's vCPUs and memory when its template is
+built, so each size is a template of its own, `arugula-workspace` and
+`arugula-workspace-large`, each tagged with the release
+(`crates/platform/src/compute/template.rs`). Changing the size shows
+"rebuild needed" until the box is rebuilt from the other one; a small spec
+leaves `size` out, so it hashes as one from before sizes. Large is the most
+E2B's Hobby plan builds ("Max vCPUs per build: 8 on Hobby", and 8 GiB of
+memory, [E2B's docs](https://docs.e2b.dev/sandbox-template/customize-cpu-ram)).
+A box costs only while it runs, at M188's prices ($0.000014 a vCPU-second,
+$0.0000045 a GiB-second, `hosted::usage::PRICES`):
+
+| Size | Box | Per running hour |
+|---|---|---|
+| small | 2 vCPU, 2 GiB | $0.1332 |
+| large | 8 vCPU, 8 GiB | $0.5328 |
+
+A paused box costs nothing, and `arugula-platform usage` reports each
+box's hours by its size, as E2B reports it. Sessions run on the
+workspace's box, so they get its size.
 
 **Runs and their triggers (M214, platform step 7).** A run executes on one
 of a project's hosted workspaces. It starts by hand, on a schedule, or on a
