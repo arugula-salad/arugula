@@ -995,9 +995,11 @@ test("private channels, the browser, leaving, and a group DM of three (#117, #11
   await platform(carol, `/chat/${plans}`);
   await expect(carol.locator("[data-room-missing]")).toBeVisible({ timeout: 15_000 });
 
-  // Leaving #general takes it from her list, and it stays in the browser.
+  // Leaving #general (from the room's menu, UI audit #169) takes it from
+  // her list, and it stays in the browser.
   await platform(carol, `/chat/${general}`);
-  await hers.locator("[data-room-leave]").click();
+  await hers.locator("[data-room-move]").click();
+  await carol.getByRole("menuitem", { name: "Leave #general" }).click();
   await platform(carol, "/chat");
   await expect(hers.locator(`[data-chat-room="${general}"]`)).toHaveCount(0, { timeout: 15_000 });
   await hers.locator(`[data-room-browse="${team}/channels"]`).click();

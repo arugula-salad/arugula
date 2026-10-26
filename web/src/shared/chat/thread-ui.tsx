@@ -1,7 +1,7 @@
 // Reply threads on a message (#106), the parts a room's messages carry: the
-// footer under a message that has replies ("3 replies · last 5m ago", with
-// the repliers' pictures), the tag on a reply sent to the channel, and the
-// "Reply in thread" hook of the message tools (./msg-actions). The panel
+// footer under a message that has replies ("3 replies · last reply 5m
+// ago", with the repliers' pictures), the tag on a reply sent to the
+// channel, and the "Reply in thread" hook of the message tools (./msg-actions). The panel
 // that reads a thread is ./thread-panel, the Threads view ./threads-view.
 
 import "./threads.css";

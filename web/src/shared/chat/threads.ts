@@ -25,9 +25,10 @@ export function repliesOf(n: number): string {
   return `${n} ${n === 1 ? "reply" : "replies"}`;
 }
 
-/** The footer under a parent: "3 replies · last 5m ago". */
+/** The footer under a parent: "3 replies · last reply 5m ago" (UI audit
+ * #169: "last 5m ago" said nothing of what). */
 export function footer(t: ChatThread, now: number): string {
-  return `${repliesOf(t.replies)} · last ${ago(t.last, now)}`;
+  return `${repliesOf(t.replies)} · last reply ${ago(t.last, now)}`;
 }
 
 /** The thread a message belongs to: its own number if it starts one, else

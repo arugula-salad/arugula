@@ -12,8 +12,8 @@ import { toast } from "./toast";
 import { barProject } from "./where";
 
 const chatIn = (view?: "activity" | "saved" | "search" | "threads", q?: string): Route | null => {
-  // The project the bar is in (a DM's team's too, UI audit #159), else
-  // the first team's: chat is a team's.
+  // The project the bar is in (each has its own rooms, UI audit #169),
+  // else the first team's.
   const project = barProject(current()) ?? session.projects.find((p) => p.team)?.id ?? session.personal()?.id;
   return project ? { page: "chat", project, view, q } : null;
 };

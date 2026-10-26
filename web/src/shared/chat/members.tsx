@@ -8,6 +8,7 @@ import type { ChatChannel, ChatPerson, ChatRoom } from "../proto";
 import type { ChatStore } from "../chat-store";
 import { usePlatformApi, type PlatformApi, type PlatformTeam } from "../platform-api";
 import { ConfirmRemove } from "../ui/confirm";
+import type { MenuItem } from "../ui/menu";
 import { MsgAvatar } from "./avatar";
 import "./members.css";
 
@@ -224,7 +225,7 @@ function NewDm({ d, close }: { d: Extract<Dialog, { kind: "dm" }>; close: () => 
           <li key={p.account} data-dm-person={p.account}>
             <label class="members-radio">
               <input type="checkbox" checked={picked.includes(p.account)} disabled={full && !picked.includes(p.account)} onChange={() => toggle(p.account)} />
-              <MsgAvatar who={p.account} name={p.name} />
+              <MsgAvatar who={p.account} name={p.name} account={p.account} dot />
               <span>{p.name}</span>
             </label>
           </li>
@@ -253,24 +254,36 @@ export function dmLabel(r: ChatRoom): string {
   return names.length ? names.join(", ") : r.with?.name || "someone who left";
 }
 
+/** What leaving a channel or a DM is called, or null for a room you
+ * can't leave. */
+function leaveLabel(room: ChatRoom): string | null {
+  if (room.kind === "channel") return `Leave #${room.name}`;
+  return room.kind === "dm" ? "Leave this conversation" : null;
+}
+
 /** Leave a channel or a DM; the room goes from my list. */
+function leave(store: ChatStore, room: ChatRoom, api: PlatformApi) {
+  void store
+    .leave(room.id)
+    .then(() => api.nav.openChat())
+    .catch((e: Error) => api.toast(e.message));
+}
+
+/** Leaving, as an item of the room's menu (UI audit #169: ⎋ in the header
+ * read as refresh, between the bell and Details). */
+export function leaveItem(store: ChatStore, room: ChatRoom, api: PlatformApi): MenuItem | null {
+  const label = leaveLabel(room);
+  return label ? { label, danger: true, run: () => leave(store, room, api) } : null;
+}
+
+/** Leaving, in words, at the foot of the room's Details. */
 export function LeaveButton({ store, room }: { store: ChatStore; room: ChatRoom }) {
   const api = usePlatformApi();
-  if (room.kind !== "channel" && room.kind !== "dm") return null;
+  const label = leaveLabel(room);
+  if (!label) return null;
   return (
-    <button
-      class="chat-info"
-      title={room.kind === "channel" ? "Leave this channel" : "Leave this conversation"}
-      aria-label={room.kind === "channel" ? `Leave #${room.name}` : "Leave this conversation"}
-      data-room-leave
-      onClick={() => {
-        void store
-          .leave(room.id)
-          .then(() => api.nav.openChat())
-          .catch((e: Error) => api.toast(e.message));
-      }}
-    >
-      ⎋
+    <button class="secondary danger small members-leave" data-room-leave onClick={() => leave(store, room, api)}>
+      {label}
     </button>
   );
 }
@@ -292,7 +305,8 @@ export function MemberTools({ store, room, people }: { store: ChatStore; room: C
       <ul class="chat-people">
         {people.map((p) => (
           <li key={p.account} data-room-person={p.account}>
-            <MsgAvatar who={p.account} name={p.name} />
+            {/* Their picture and presence, as the header's strip has them (UI audit #169). */}
+            <MsgAvatar who={p.account} name={p.name} account={p.account} dot />
             <span>{p.name}</span>
             {manage && p.account !== store.me && (
               <button class="secondary danger small members-remove" aria-label={`Remove ${p.name}`} data-member-remove={p.account} onClick={() => setRemoving(p)}>
@@ -312,7 +326,7 @@ export function MemberTools({ store, room, people }: { store: ChatStore; room: C
               {others.length === 0 && <li class="chat-none">Everyone in the team is in.</li>}
               {others.map((p) => (
                 <li key={p.account}>
-                  <MsgAvatar who={p.account} name={p.name} />
+                  <MsgAvatar who={p.account} name={p.name} account={p.account} dot />
                   <span>{p.name}</span>
                   <button class="secondary small" data-member-invite={p.account} onClick={() => void store.addMembers(room.id, [p.account]).catch(fail)}>
                     Add

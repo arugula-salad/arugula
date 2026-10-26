@@ -126,6 +126,30 @@ html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
   margin-top: 8px;
 }
 
+/* Chat in the page's frame (UI audit #169): the bar, then the rooms in a
+   panel inset as a page's section is, not drawn over the window as the
+   shell's chat is. A phone's chat keeps the whole screen. */
+.platform-chat > .chat:not(.phone) {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  flex: 1;
+  min-height: 0;
+  background: none;
+}
+
+.platform-chat > .chat:not(.phone) > .chat-body {
+  margin: 8px;
+  border: 1px solid var(--chrome-line);
+  border-radius: 5px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+html[data-corners="square"] .platform-chat > .chat > .chat-body {
+  border-radius: 0;
+}
+
 /* A page that's one panel fills the frame, as a lone pane does. */
 .platform-main > .platform-section:only-child {
   min-height: 100%;

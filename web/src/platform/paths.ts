@@ -10,8 +10,10 @@
 //   /p/:project/chat               its chat
 //   /p/:project/chat/:room         a room in it (`?msg=N`: at that message)
 //   /p/:project/chat/activity      Activity
-//   /p/:project/chat/saved         Saved for later
+//   /p/:project/chat/saved         Saved
 //   /p/:project/chat/search?q=…    search
+//   /p/:project/dm/:room           a direct message, in its team's project
+//                                  (UI audit #169)
 //   /p/:project/issues             its issues (M201): `?state=closed`,
 //                                  `?q=…`, `?label=…`, `?assignee=…` narrow it
 //   /p/:project/issues/new         a new issue
@@ -22,7 +24,6 @@
 //                                  thread)
 //   /p/:project/sessions/:ses      an agent session (M257): its card and
 //                                  history
-//   /dm/:room                      a direct message
 //   /p/:project/workspaces         its hosted workspaces
 //   /p/:project/workspaces/:id     a hosted workspace (`hw_…`)
 //   /p/:project/settings           its settings: linked repos (`?link=OWNER/REPO`
@@ -43,6 +44,7 @@
 //
 //   /chat, /chat/:room             chat (the first team's), a room in it
 //   /chat/activity, /chat/saved, /chat/search?q=…
+//   /dm/:room                      a direct message (its team's project)
 //   /issues/:issue                 an issue (`?msg=N`: at that comment)
 //   /runs/:run                     a run (a push for one that failed)
 //
@@ -58,7 +60,7 @@ export type Route =
   | { page: "run"; project: string; run: string; msg?: number }
   | { page: "session"; project: string; session: string }
   | { page: "chat"; project: string; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string }
-  | { page: "dm"; room: string; msg?: number; thread?: number }
+  | { page: "dm"; project: string; room: string; msg?: number; thread?: number }
   | { page: "workspaces"; project: string }
   | { page: "workspace"; project: string; workspace: string }
   | { page: "project-settings"; project: string; link?: string }
@@ -148,8 +150,9 @@ export function parse(path: string, search = ""): Route {
   }
   if (parts[0] === "deploys" && parts.length === 2 && /^dep_[0-9a-f]{32}$/.test(parts[1])) return { page: "deploy", deploy: parts[1] };
   if (parts[0] === "dm" && parts.length === 2) {
+    // An id-only DM (UI audit #169): its team's project says where.
     const room = idOf(parts[1]);
-    return room ? { page: "dm", room, ...msg, ...thread } : missing;
+    return room ? { page: "find", what: "chat", room, ...msg, ...thread } : missing;
   }
   if (parts[0] !== "p" || parts.length < 2) return missing;
   const project = idOf(parts[1]);
@@ -170,6 +173,10 @@ export function parse(path: string, search = ""): Route {
     if (parts.length === 4 && parts[3] === "search") return { page: "chat", project, view: "search", q: q.get("q") ?? "" };
     const room = parts.length === 4 ? idOf(parts[3]) : null;
     return room ? { page: "chat", project, room, ...msg, ...thread } : missing;
+  }
+  if (parts[2] === "dm" && parts.length === 4) {
+    const room = idOf(parts[3]);
+    return room ? { page: "dm", project, room, ...msg, ...thread } : missing;
   }
   if (parts[2] === "issues") return issueRoute(project, parts.slice(3), q, msg) ?? missing;
   if (parts[2] === "runs" && parts.length === 3) {
@@ -262,7 +269,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "issue":
       return `/p/${s(r.project)}/issues/${s(r.issue)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
     case "dm":
-      return `/dm/${s(r.room)}${at(r)}`;
+      return `/p/${s(r.project)}/dm/${s(r.room)}${at(r)}`;
     case "workspaces":
       return `/p/${s(r.project)}/workspaces`;
     case "workspace":

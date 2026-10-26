@@ -56,7 +56,8 @@ html[data-finish="aqua"] .chat {
 /* A page's section is the platform's pane area (style.css's .tab-area
    under each finish). Fixed to the window, its stripes line up with the
    frame's, so a section with no fill of its own shows no seam. */
-html[data-finish="aqua"] .platform-section {
+html[data-finish="aqua"] .platform-section,
+html[data-finish="aqua"] .platform-chat > .chat > .chat-body {
   background: repeating-linear-gradient(
     var(--bg) 0 2px,
     color-mix(in srgb, var(--bg) 90%, var(--fg)) 2px 4px
@@ -96,7 +97,8 @@ html[data-finish="brushed"] .chat {
   background: var(--grain), linear-gradient(#fff1, #0001), var(--bg);
 }
 
-html[data-finish="brushed"] .platform-section {
+html[data-finish="brushed"] .platform-section,
+html[data-finish="brushed"] .platform-chat > .chat > .chat-body {
   background: var(--grain) fixed, linear-gradient(#fff1, #0001) fixed, var(--bg);
 }
 
@@ -149,7 +151,8 @@ html[data-finish="glass"] .chat {
    backdrop-filter: it would trap a dialog drawn inside the section (the
    plan's Modal is position: fixed), and the glow under it is smooth, so
    a blur wouldn't show. */
-html[data-finish="glass"] .platform-section {
+html[data-finish="glass"] .platform-section,
+html[data-finish="glass"] .platform-chat > .chat > .chat-body {
   background: color-mix(in srgb, var(--bg) 45%, transparent);
   box-shadow: inset 0 1px 0 #fff2;
 }

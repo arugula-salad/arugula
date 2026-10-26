@@ -27,11 +27,12 @@ import { AboutButton, editDescription, editTopic, PinsButton, TopicLine } from "
 import { ThreadPanel } from "./thread-panel";
 import { ThreadsView } from "./threads-view";
 import { badge } from "./threads";
-import { browseChannels, ChatDialogs, LeaveButton, MemberTools, newChannelDialog, newDmDialog } from "./members";
+import { browseChannels, ChatDialogs, LeaveButton, leaveItem, MemberTools, newChannelDialog, newDmDialog } from "./members";
 import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
 import { AgentsChip } from "./agents-chip";
 import { newSection, openGroupMenu, openRoomMenu, RoomStar, toggleGroup } from "./sections";
-import { ordered, place, placed, present, sortOf, STARRED } from "./sidebar";
+import { inScope, ordered, place, placed, present, sortOf, STARRED, type ChatScope } from "./sidebar";
+import { BookmarkIcon, SearchIcon } from "./icons";
 import type { ChatSort } from "../proto";
 import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
@@ -93,17 +94,21 @@ const byNewest = (a: ChatRoom, b: ChatRoom) => b.last - a.last || a.name.localeC
 
 /** The sidebar's groups (#120): Starred (while it has rooms, or a room is
  * being dragged), the person's own sections, then the built-in ones, minus
- * the rooms they placed. */
-function groupsOf(store: ChatStore, api: PlatformApi, dragging: boolean): Group[] {
+ * the rooms they placed. With a `scope`, only its rooms (UI audit #169): a
+ * section of other projects' rooms only isn't shown. */
+function groupsOf(store: ChatStore, api: PlatformApi, dragging: boolean, scope?: ChatScope): Group[] {
   const sb = store.sidebar;
   const out: Group[] = [];
   const label = (r: ChatRoom) => roomLabel(r, api);
-  const starred = present(sb.starred, store.rooms);
+  const all = store.rooms.filter((r) => inScope(r, scope));
+  const starred = present(sb.starred, all);
   if (starred.length || dragging) {
     out.push({ key: STARRED, title: "★ Starred", rooms: ordered(starred, sortOf(sb, STARRED), label), none: "Drag a room here, or star it.", drop: STARRED, sort: "name" });
   }
   for (const x of sb.sections) {
-    out.push({ key: x.id, title: x.name, rooms: ordered(present(x.rooms, store.rooms), sortOf(sb, x.id), label), none: "Drag rooms here, or move one with ⇆.", drop: x.id, custom: true, sort: "name" });
+    const rooms = present(x.rooms, all);
+    if (scope && !rooms.length && present(x.rooms, store.rooms).length) continue;
+    out.push({ key: x.id, title: x.name, rooms: ordered(rooms, sortOf(sb, x.id), label), none: "Drag rooms here, or move one from its ⋯ menu.", drop: x.id, custom: true, sort: "name" });
   }
   const taken = placed(sb);
   const free = (r: ChatRoom) => !taken.has(r.id);
@@ -113,13 +118,15 @@ function groupsOf(store: ChatStore, api: PlatformApi, dragging: boolean): Group[
   const known = new Set(ts.map((t) => t.team));
   // Rooms of a team this page hasn't loaded (yet): still listed.
   for (const r of store.rooms) if (r.team && !known.has(r.team)) known.add(r.team);
+  // A project's page: its team's, or none for the reader's own.
+  if (scope) for (const team of known) if (team !== scope.team) known.delete(team);
   const many = known.size > 1;
   for (const team of known) {
     const t = ts.find((x) => x.team === team);
     const name = t?.roster.name ?? teamName(api, team);
     const mayMake = t?.role === "owner" || t?.role === "editor";
-    const channels = store.rooms.filter((r) => r.kind === "channel" && r.team === team);
-    const dms = store.rooms.filter((r) => r.kind === "dm" && r.team === team);
+    const channels = all.filter((r) => r.kind === "channel" && r.team === team);
+    const dms = all.filter((r) => r.kind === "dm" && r.team === team);
     out.push({
       key: `${team}/channels`,
       title: many ? `${name} · Channels` : "Channels",
@@ -139,7 +146,7 @@ function groupsOf(store: ChatStore, api: PlatformApi, dragging: boolean): Group[
       sort: "recent",
     });
   }
-  const threads = store.rooms.filter((r) => r.kind === "pane" || r.kind === "session");
+  const threads = all.filter((r) => r.kind === "pane" || r.kind === "session");
   const machines = new Map<string, ChatRoom[]>();
   for (const r of threads) {
     const m = r.machine ?? "";
@@ -150,19 +157,19 @@ function groupsOf(store: ChatStore, api: PlatformApi, dragging: boolean): Group[
     const shown = sorted(`machine/${m}`, rooms, "recent");
     if (shown.length) out.push({ key: `machine/${m}`, title: `${name}${machineUp(api, m) ? "" : " (asleep)"}`, rooms: shown, drop: null, sort: "recent" });
   }
-  const archives = sorted("archives", store.rooms.filter((r) => r.kind === "archive"), "recent");
+  const archives = sorted("archives", all.filter((r) => r.kind === "archive"), "recent");
   if (archives.length) out.push({ key: "archives", title: "Archives", rooms: archives, drop: null, sort: "recent" });
   return out;
 }
 
 /** The room shown: the route's, else (on a computer) the newest unread,
  * else the newest. */
-function pickRoom(store: ChatStore, route: ChatRoute, phone: boolean): ChatRoom | null {
+function pickRoom(store: ChatStore, route: ChatRoute, phone: boolean, scope?: ChatScope): ChatRoom | null {
   if (route.room) return store.room(route.room) ?? null;
   if (phone || route.view) return null;
   // Object threads (M196) aren't listed here: one opens from its object,
   // and its unread counts there (./unread).
-  const live = store.rooms.filter((r) => r.kind !== "archive" && listedInChat(r));
+  const live = store.rooms.filter((r) => r.kind !== "archive" && listedInChat(r) && inScope(r, scope));
   return live.filter((r) => r.unread).sort(byNewest)[0] ?? live.filter((r) => r.last).sort(byNewest)[0] ?? live[0] ?? null;
 }
 
@@ -179,7 +186,9 @@ export interface ChatFit {
   scoped?: boolean;
 }
 
-export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store: ChatStore; fit?: ChatFit }) {
+/** `scope`: the one project's rooms a page lists (UI audit #169); none
+ * for every room. */
+export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute; store: ChatStore; fit?: ChatFit; scope?: ChatScope }) {
   const phone = usePhone() || !!fit.narrow;
   // The keys (and the switcher they open) are this view's while focus is in
   // it: a page with two chat blocks has two views.
@@ -194,8 +203,10 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
   // The room being dragged to a section (#120), on a computer.
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
-  const picked = pickRoom(store, route, phone);
-  const groups = groupsOf(store, api, dragging !== null);
+  const picked = pickRoom(store, route, phone, scope);
+  const groups = groupsOf(store, api, dragging !== null, scope);
+  // Mark all as read is this page's rooms'.
+  const readAll = () => void store.readAll((r) => inScope(r, scope));
   const collapsed = new Set(store.sidebar.collapsed);
   // A room the route names that isn't (yet) in the list: loaded once, in
   // case it came since (a push for a room just made).
@@ -210,7 +221,7 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
   useEffect(() => () => document.documentElement.style.removeProperty("--chat-side"), []);
 
   const order = groups.flatMap((g) => (collapsed.has(g.key) ? [] : g.rooms));
-  useRoomKeys(fit.pinned ? [] : order, picked?.id ?? null, () => void store.readAll(), nav, () => setSwitching(true), fit.scoped && !fit.pinned ? root : null);
+  useRoomKeys(fit.pinned ? [] : order, picked?.id ?? null, readAll, nav, () => setSwitching(true), fit.scoped && !fit.pinned ? root : null);
   const savedTodo = store.savedTodo();
   const mentions = store.rooms.reduce((n, r) => n + (r.mentions ? 1 : 0), 0);
 
@@ -244,7 +255,7 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
           setDragging(null);
           setOver(null);
         }}
-        onContextMenu={(e) => openRoomMenu(e, store, r, api.toast)}
+        onContextMenu={(e) => openRoomMenu(e, store, r, api.toast, [leaveItem(store, r, api)].filter((x) => x !== null))}
         onClick={() => nav.openRoom(r.id)}
       >
         {r.kind === "dm" && r.with && r.others.length < 2 ? (
@@ -274,7 +285,10 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
           {mentions > 0 && <span class="chat-count mention">{mentions}</span>}
         </button>
         <button class={`chat-row chat-saved${route.view === "saved" ? " selected" : ""}`} data-chat-saved onClick={() => nav.openChatView("saved")}>
-          <span class="chat-sigil">★</span>
+          {/* A bookmark: ★ is Starred's (UI audit #169). */}
+          <span class="chat-sigil">
+            <BookmarkIcon size={12} />
+          </span>
           <span class="chat-label">Saved</span>
           {savedTodo > 0 && <span class="chat-count">{savedTodo}</span>}
         </button>
@@ -290,7 +304,9 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
       </div>
       {groups.length === 0 && (
         <p class="chat-none" data-chat-no-team>
-          Chat is a team's: its channels and messages. Make a team or join one (your account's menu, Teams), and a pane's thread shows here too.
+          {scope && scope.team === null
+            ? "Your machines' threads show here: a pane's or a session's. A team's channels and messages are in the team's project."
+            : "Chat is a team's: its channels and messages. Make a team or join one (your account's menu, Teams), and a pane's thread shows here too."}
         </p>
       )}
       {groups.map((g) => {
@@ -319,7 +335,7 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
               </button>
               {g.browse && (
                 <button class="chat-new" title="Browse channels" aria-label="Browse channels" data-room-browse={g.key} onClick={g.browse}>
-                  ⌕
+                  <SearchIcon size={13} />
                 </button>
               )}
               <button
@@ -363,15 +379,13 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
   ) : picked ? (
     <RoomView key={picked.id} store={store} room={picked} phone={phone} focus={route.msg} thread={route.thread} />
   ) : missing ? (
-    <div class="chat-thread chat-empty" data-room-missing>
-      That room isn't one you can read (or it's gone).
-    </div>
+    <RoomMissing />
   ) : null;
 
   const workspaceMenu = (e: MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
-      { label: "Mark all as read", run: () => void store.readAll() },
+      { label: "Mark all as read", run: readAll },
       { label: "New section…", run: () => void newSection(store, api.toast) },
       "separator",
       { label: "Show every room", checked: !unreadOnly, run: () => ((unreadOnly = false), remember("chat.unreadOnly", false), redraw()) },
@@ -389,9 +403,7 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
             <RoomView key={picked.id} store={store} room={picked} phone={phone} focus={route.msg} pinned thread={route.thread} />
           </div>
         ) : (
-          <div class="chat-thread chat-empty" data-room-missing>
-            That room isn't one you can read (or it's gone).
-          </div>
+          <RoomMissing pinned />
         )}
       </div>
     );
@@ -400,17 +412,16 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
   if (phone) {
     return (
       <div class="chat phone" ref={root} data-chat data-chat-control>
+        <MaintenanceNote />
         {view ?? (
           <>
             <header class="chat-head">
-              <strong>Chat</strong>
+              {/* Whose rooms: a phone has no bar to say (UI audit #169). */}
+              <strong>{scope?.name ?? "Chat"}</strong>
               <button class="chat-search-open" title="Search chat" aria-label="Search chat" data-chat-search-open onClick={() => nav.openChatView("search")}>
-                <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-                  <circle cx="7" cy="7" r="4.5" />
-                  <path d="M10.5 10.5 14 14" />
-                </svg>
+                <SearchIcon size={17} />
               </button>
-              <button class="chat-search-open" title="Sections, unread only" aria-label="Chat options" data-chat-options onClick={workspaceMenu}>
+              <button class="chat-search-open" title="Mark all as read, sections, unread only" aria-label="Chat options" data-chat-options onClick={workspaceMenu}>
                 ⋯
               </button>
               <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
@@ -441,7 +452,10 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
     addEventListener("pointerup", up);
   };
 
+  // The sidebar's head: whose rooms these are, and a ⋯ for the view's menu
+  // (UI audit #169: a "Team ▾" here read as the bar's project switcher).
   const ts = teams(api);
+  const head = scope?.name ?? (ts.length === 1 ? ts[0].roster.name : "Chat");
   return (
     <div class="chat" ref={root} data-chat data-chat-control>
       <Bar>
@@ -451,16 +465,42 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
       <RoomSwitcher rooms={order} open={switching} close={() => setSwitching(false)} />
       <div class="chat-body">
         <aside class="chat-side">
-          <header class="chat-side-head">
-            <button class="chat-workspace" data-chat-workspace onClick={workspaceMenu} onContextMenu={workspaceMenu}>
-              {ts.length === 1 ? ts[0].roster.name : "Chat"} <span class="caret">▾</span>
+          <header class="chat-side-head" onContextMenu={workspaceMenu}>
+            <strong class="chat-side-name" title={head}>
+              {head}
+            </strong>
+            <button class="chat-new chat-workspace" title="Mark all as read, sections, unread only" aria-label="Chat options" aria-haspopup="menu" data-chat-workspace onClick={workspaceMenu}>
+              ⋯
             </button>
           </header>
           {list}
           <div class="chat-resize" role="separator" aria-orientation="vertical" title="Drag to resize" onPointerDown={resize} />
         </aside>
-        {view ?? <div class="chat-thread chat-empty">No rooms yet. Make a channel, or write to someone in your team.</div>}
+        {view ?? (
+          <div class="chat-thread chat-empty">
+            {scope && scope.team === null ? "No threads yet. A pane's or a session's thread shows here once someone writes on it." : "No rooms yet. Make a channel, or write to someone in your team."}
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+/** A room the address names that the reader can't read (UI audit #169),
+ * with the way back to the rooms; a block pinned to it has no list to go
+ * back to. */
+function RoomMissing({ pinned }: { pinned?: boolean }) {
+  const { nav } = usePlatformApi();
+  return (
+    <div class="chat-thread chat-empty" data-room-missing>
+      <p>That room isn't one you can read (or it's gone).</p>
+      {!pinned && (
+        <p>
+          <button class="link" data-room-missing-back onClick={() => nav.openChat()}>
+            Back to your rooms
+          </button>
+        </p>
+      )}
     </div>
   );
 }
@@ -514,6 +554,8 @@ function RoomView({
     setDetails(detailsOpen);
   };
   const reachable = (room.kind === "pane" || room.kind === "session") && !!room.machine && !!api.machine(room.machine);
+  // Leaving is the room menu's, and Details' (UI audit #169).
+  const leave = leaveItem(store, room, api);
   const go = () => {
     if (!room.machine || room.target === null) return;
     if (room.kind === "pane") return api.goToPane(room.machine, room.target, null);
@@ -546,7 +588,9 @@ function RoomView({
             <TopicLine room={room} fallback={topicOf(room, api)} toast={toast} />
           </div>
           <PinsButton room={room} toast={toast} />
-          <AboutButton room={room} toast={toast} />
+          {/* On a computer the room's About is in Details (UI audit #169):
+              one ⓘ, not two. A phone has no Details. */}
+          {phone && <AboutButton room={room} toast={toast} />}
           {!phone && people.length > 0 && (
             <button class="chat-members" title={people.map((p) => p.name).join(", ")} onClick={() => !details && toggleDetails()}>
               {people.slice(0, 3).map((p) => (
@@ -561,7 +605,7 @@ function RoomView({
             </button>
           )}
           <AgentsChip room={room.id} />
-          <RoomStar store={store} room={room} toast={toast} />
+          <RoomStar store={store} room={room} toast={toast} more={leave ? [leave] : []} />
           <button
             class={room.level === "all" ? "chat-info" : "chat-info on"}
             title={bellFor(room).title}
@@ -573,7 +617,6 @@ function RoomView({
           >
             {bellFor(room).glyph}
           </button>
-          <LeaveButton store={store} room={room} />
           {!phone && (
             <button class={details ? "chat-info on" : "chat-info"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>
               ⓘ
@@ -648,6 +691,7 @@ function RoomDetails({ store, room, close }: { store: ChatStore; room: ChatRoom;
             <button onClick={() => store.archive(room.id, !room.archived).catch((e: Error) => toast(e.message))}>{room.archived ? "Unarchive" : "Archive"}</button>
           </div>
         )}
+        <LeaveButton store={store} room={room} />
       </div>
     </aside>
   );

@@ -19,8 +19,8 @@ test("a parent says how many replies and how long ago", () => {
   assert.equal(ago(at - 5 * 60_000, at), "5m ago");
   assert.equal(ago(at - 3 * 3600_000, at), "3h ago");
   assert.equal(ago(at - 2 * 86400_000, at), "2d ago");
-  assert.equal(footer(thread(), at), "3 replies · last 5m ago");
-  assert.equal(footer(thread({ replies: 1, last: at - 1000 }), at), "1 reply · last just now");
+  assert.equal(footer(thread(), at), "3 replies · last reply 5m ago");
+  assert.equal(footer(thread({ replies: 1, last: at - 1000 }), at), "1 reply · last reply just now");
 });
 
 test("a message is in the thread it starts or the one it replies in", () => {
@@ -80,7 +80,7 @@ test("a reply's link names its thread, and the Threads view has a path", () => {
   assert.equal(pathOf({ page: "chat", project: "prj_8f2ec0ffee00112233445566778899aa", room: "ch_00112233", thread: 5 }), "/p/prj_8f2ec0ffee00112233445566778899aa/chat/ch_00112233?thread=5");
   assert.equal(pathOf({ page: "chat", project: "prj_8f2ec0ffee00112233445566778899aa", view: "threads" }), "/p/prj_8f2ec0ffee00112233445566778899aa/chat/threads");
   assert.deepEqual(parse("/p/prj_8f2ec0ffee00112233445566778899aa/chat/threads"), { page: "chat", project: "prj_8f2ec0ffee00112233445566778899aa", view: "threads" });
-  assert.equal(pathOf({ page: "dm", room: "dm_00112233", msg: 2, thread: 1 }), "/dm/dm_00112233?msg=2&thread=1");
+  assert.equal(pathOf({ page: "dm", project: "prj_8f2ec0ffee00112233445566778899aa", room: "dm_00112233", msg: 2, thread: 1 }), "/p/prj_8f2ec0ffee00112233445566778899aa/dm/dm_00112233?msg=2&thread=1");
   assert.deepEqual(parse("/chat/threads"), { page: "find", what: "chat", view: "threads" });
   // Not a thread: left out.
   assert.deepEqual(parse("/p/prj_8f2ec0ffee00112233445566778899aa/chat/ch_00112233", "?thread=x"), { page: "chat", project: "prj_8f2ec0ffee00112233445566778899aa", room: "ch_00112233" });

@@ -22,12 +22,15 @@ import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import type { ChatRoute } from "./route";
 import { RoomsView, useChat, type ChatFit } from "./rooms";
+import type { ChatScope } from "./sidebar";
 
-export function ChatApp({ route, fit }: { route: ChatRoute; fit?: ChatFit }) {
+/** `scope`: a page of one project's rooms (the platform page's, UI audit
+ * #169); none for every room. */
+export function ChatApp({ route, fit, scope }: { route: ChatRoute; fit?: ChatFit; scope?: ChatScope }) {
   const { Bar } = usePlatformApi();
   const store = useChat();
   useSubscribe((fn) => maintenance.subscribe(fn));
-  if (store) return <RoomsView route={route} store={store} fit={fit} />;
+  if (store) return <RoomsView route={route} store={store} fit={fit} scope={scope} />;
   // Not known yet is not off (UI audit #143): "off" only once control said
   // so, and a session control no longer knows says that instead.
   let note;

@@ -85,8 +85,8 @@
    the mono one as "Arugula Mono" so terminals keep theirs. Motion is the swarm's: a card comes in once, and
    glows while it's hovered or focused. */
 
-/* On the whole page: chat's route draws no .platform round it, and the
-   dialogs and menus open beside the page, not in it. */
+/* On the whole page: a phone's chat is drawn over the window, not in
+   .platform, and the dialogs and menus open beside the page, not in it. */
 #root {
   --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
   --f-ui: "Instrument Sans", system-ui, sans-serif;
