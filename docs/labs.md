@@ -22,12 +22,12 @@ Each feature has a flag, off on a new install:
 | Flag | Turns on |
 | --- | --- |
 | `chat` | The chat page (chat itself is control's), and bringing old threads into control |
-| `vms` | VM tabs and panes, machines and the sandboxes page |
+| `sandbox-providers` | VM tabs and panes, machines and the sandboxes page, from your own sandbox provider (cloud workspaces are the platform's, and need no flag) |
 | `studio` | Studio app blocks |
-| `workspaces` | Chant workspace blocks |
+| `chant-workspaces` | Chant workspace blocks: a workspace's members, relationships and gates |
 | `guest-ssh` | *Invite over ssh…* for a guest with only OpenSSH |
-| `forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on) |
-| `agents` | Offering Claude Code subagents from this machine as A2A agents, and the team's agent catalog (#403) |
+| `additional-forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on), until they fit platform projects and workflows |
+| `agent-delegation` | Agent recipes, offering them from this machine as A2A agents, the team's agent catalog and tasks between machines (#403); set only on the machine |
 | `docs` | Doc blocks: a report, plan or write-up an agent builds beside its pane, section by section (#962), kept in a library you can list and reopen (#1492) |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
@@ -43,18 +43,26 @@ one isn't made.
 | Flag | What is refused without it |
 | --- | --- |
 | `chat` | Nothing on the machine: it shows the Chat page, and, joined to control, brings old threads into it (see [Threads and chat](#threads-and-chat)) |
-| `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
+| `sandbox-providers` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
-| `workspaces` | chant workspace blocks |
+| `chant-workspaces` | chant workspace blocks |
 | `guest-ssh` | `/api/guests` (list, invite, revoke) |
-| `forges` | Forgejo and GitLab blocks and webhooks |
-| `agents` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
+| `additional-forges` | Forgejo and GitLab blocks and webhooks |
+| `agent-delegation` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
 | `docs` | new Doc blocks, the `doc` tool by name, and the Doc library's `/api/docs…` (list, open, delete) |
 
 ```
-arugulad flags                # the flags, and which are on
-arugulad flags chat on        # and `off`
+arugulad flags                            # the flags, and which are on
+arugulad flags sandbox-providers on       # and `off`, or `unset`
 ```
+
+Four flags were renamed on 2026-10-26 (DECISIONS.md "Four Labs flags
+stay, renamed; the rest graduate or retire"): `vms` is
+`sandbox-providers`, `workspaces` is `chant-workspaces`, `forges` is
+`additional-forges` and `agents` is `agent-delegation`. The old names
+still work, forever, wherever a name comes in: in `flags.json`, in what
+control pushes, in `PUT /api/flags/NAME` and in `arugulad flags NAME on`
+(`flags::ALIASES`). Only the new names are listed.
 
 Or, as the machine's owner, in the web client: *Developer settings…* in the
 session menu (and the command palette, and the phone's sheet) has a switch
@@ -631,7 +639,7 @@ available for a workspace on a VM; the block says so.
 ## Agent recipes
 
 The first part of the AGENTS track (#403): agents one person offers to other
-people's agents. With `agents` on (M76, #398):
+people's agents. With `agent-delegation` on (M76, #398):
 
 - **A recipe is a Claude Code subagent file**, as it is:
   `.claude/agents/NAME.md` in a project, or `~/.claude/agents/NAME.md`. Its

@@ -155,15 +155,21 @@ removed").
 ## Labs
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
-`chat`, `vms`, `studio`, `workspaces`, `guest-ssh`,
-`forges`, `agents`, `docs`. A feature that leaves takes its row out
-of `FLAGS` and puts its name in `flags::RETIRED`, so an old file naming it
-is ignored: `fountain` (daemon-side Managoat, removed: DECISIONS.md
-"Daemon-side Managoat is removed"), `huddles` (DECISIONS.md "Huddles are
-removed") and `swarm-themes` (the swarm's views, graduated: every swarm
-offers them under Theme). They're named flags in `flags.json` in the state
+`sandbox-providers`, `chant-workspaces`, `additional-forges`,
+`agent-delegation` (DECISIONS.md "Four Labs flags stay, renamed; the rest
+graduate or retire"). Their old names, `vms`, `workspaces`, `forges` and
+`agents`, are aliases forever (`flags::ALIASES`, mirrored for control as
+`wire::FLAG_ALIASES`): every name that comes in goes through
+`flags::canonical`/`lookup`, and only new names are listed. A feature that
+leaves takes its row out of `FLAGS` and puts its name in `flags::RETIRED`,
+so an old file naming it is ignored: `fountain` (daemon-side Managoat,
+removed: DECISIONS.md "Daemon-side Managoat is removed"), `huddles`
+(DECISIONS.md "Huddles are removed"), and, graduated or retired in the same
+rethink, `chat`, `docs`, `guest-ssh` (now a sharing setting), `swarm-themes`
+(the swarm's views, under Theme) and `studio` (its connector). They're named
+flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
-read on every call, never cached), set by `arugulad flags chat on` or the
+read on every call, never cached), set by `arugulad flags chant-workspaces on` or the
 owner's *Developer settings…* in the web client (`flags.list` and `flag.set`
 operations). Control can push flags too, per account and per team
 (`flags.control.json` beside it); the machine's own `flags.json` wins, then
