@@ -129,6 +129,11 @@ async fn the_platform_host_serves_the_platform_page() {
     let a = c.get(APP, Method::GET, "/assets/gone.js").await;
     assert_eq!(a.status, 404);
     assert!(a.is_the_platforms());
+    // A path no route of the page's starts with: the page (it says Not
+    // found), as a 404 (UI audit #193).
+    let a = c.get(APP, Method::GET, "/agents").await;
+    assert_eq!(a.status, 404);
+    assert!(a.body.contains("<title>platform</title>") && a.is_the_platforms(), "{}", a.body);
     for host in ["APP.test", "app.test.", "app.test:8443"] {
         let a = c.get(host, Method::GET, "/p/x").await;
         assert!(a.status == 200 && a.body.contains("platform"), "{host}");

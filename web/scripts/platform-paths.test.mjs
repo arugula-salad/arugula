@@ -3,7 +3,7 @@
 // else is nothing's address. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { idOf, parse, pathOf, slugOf, withSlug } from "../src/platform/paths.ts";
+import { TOP, idOf, parse, pathOf, slugOf, withSlug } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
 const names = (id) => ({ [P]: "Arugula Team", ch_0123456789abcdef: "general" })[id];
@@ -69,6 +69,30 @@ test("links carry the current slug, and read back as the same route", () => {
     const [p, q] = path.split("?");
     assert.deepEqual(parse(p, q ? `?${q}` : ""), r, path);
   }
+});
+
+test("every route starts with a segment in TOP, the server's 404 list (UI audit #193)", () => {
+  const routes = [
+    { page: "project", project: P },
+    { page: "chat", project: P },
+    { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" },
+    { page: "issues", project: P },
+    { page: "runs", project: P },
+    { page: "installed" },
+    { page: "inbox" },
+    { page: "settings" },
+    { page: "deploy", deploy: `dep_${"0a".repeat(16)}` },
+    { page: "find", what: "chat" },
+    { page: "find", what: "chat", room: "dm_00aa11bb22cc33dd" },
+    { page: "find", what: "issue", issue: "iss_0123456789abcdef" },
+    { page: "find", what: "run", run: "run_0123456789abcdef" },
+  ];
+  for (const r of routes) {
+    const first = pathOf(r).split(/[/?]/)[1];
+    assert.ok(TOP.includes(first), `${pathOf(r)}: ${first} isn't in TOP`);
+    assert.notEqual(parse(pathOf(r).split("?")[0]).page, "missing", pathOf(r));
+  }
+  for (const first of TOP) assert.ok(/^[a-z]+$/.test(first), first);
 });
 
 test("slugs", () => {
