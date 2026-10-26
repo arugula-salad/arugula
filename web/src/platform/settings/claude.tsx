@@ -3,11 +3,14 @@
 // its own key this month, by whom. A client names the account in its calls,
 // and spends the account's own key when it names it as the one who pays (a
 // sponsor, a visitor), only once the account lets it here; each switch is
-// off until then.
+// off until then. Each client by its product's name (Studio, UI audit
+// #168), and the line under the heading says what the section holds.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { session } from "../session";
+import { useProductNames } from "./linked";
+import { monthName } from "./spend";
 import { Section } from "./section";
 
 interface Client {
@@ -44,11 +47,14 @@ export function ClaudeSettings({ me }: { me?: string }) {
   const [paid, setPaid] = useState<Paid | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const product = useProductNames();
   useEffect(() => {
     call<Client[]>("GET", "/api/inference/clients").then(setClients, () => setClients([]));
     call<Paid>("GET", "/api/inference/spend/paid").then(setPaid, () => setPaid(null));
   }, []);
   if (!clients?.length && !paid?.lines.length) return null;
+  const apps = !!clients?.length;
+  const spent = !!paid?.lines.length;
   const flip = async (c: Client) => {
     setBusy(true);
     setErr("");
@@ -65,7 +71,13 @@ export function ClaudeSettings({ me }: { me?: string }) {
       <Section
         id="claude"
         title="Claude"
-        lede="Apps that use Claude through Arugula for you, and what your own key spent. None can until you let it."
+        lede={
+          apps && spent
+            ? "Apps that use Claude through Arugula for you, and what your own key spent. None can until you let it."
+            : apps
+              ? "Apps that use Claude through Arugula for you. None can until you let it."
+              : "What your own key spent on Claude through Arugula."
+        }
         more={
           clients && clients.length > 0 ? (
             <p>
@@ -90,7 +102,7 @@ export function ClaudeSettings({ me }: { me?: string }) {
                     onChange={() => void flip(c)}
                   />
                   <span>
-                    Let <b>{c.client}</b> use Claude for me
+                    Let <b>{product(c.client)}</b> use Claude for me
                     {c.names_payers ? <span class="dim"> (it can spend my own key for people it names)</span> : null}
                   </span>
                 </label>
@@ -102,14 +114,14 @@ export function ClaudeSettings({ me }: { me?: string }) {
           <>
             <div class="sw-stats" data-claude-paid>
               <span>
-                <b>{dollars(paid.usd)}</b> spent on your own key in {paid.month} (UTC), at Anthropic's list prices
+                <b>{dollars(paid.usd)}</b> spent on your own key in {monthName(paid.month)} (UTC), at Anthropic's list prices
               </span>
             </div>
             <ul class="platform-list settings-spend">
               {paid.lines.map((l) => (
                 <li key={`${l.project}-${l.account}-${l.client}`}>
                   {l.account === me ? "You" : l.account ? accountName(l.account) : "a deleted account"}
-                  {l.client ? <span class="dim"> · through {l.client}</span> : null} · <span class="sw-mono">{dollars(l.usd)}</span>
+                  {l.client ? <span class="dim"> · through {product(l.client)}</span> : null} · <span class="sw-mono">{dollars(l.usd)}</span>
                   <span class="dim">
                     {" "}
                     · {l.calls} {l.calls === 1 ? "call" : "calls"} in {projectName(l.project)}

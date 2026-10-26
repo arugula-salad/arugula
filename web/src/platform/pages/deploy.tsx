@@ -267,6 +267,8 @@ export function DeployRow({ d }: { d: DeploySummary }) {
         <DeployState state={d.state} />
       </td>
       <td>
+        {/* An image's digest says so; a commit is the default (UI audit #166). */}
+        {d.source.kind !== "commit" && <span class="deploy-source-kind">{d.source.kind === "artifact" ? "digest" : d.source.kind}</span>}
         <a href={path} onClick={(e) => follow(e, path)} title={`${d.source.kind} ${d.source.ref} from ${d.source.where}, planned by ${planner(d)}`}>
           <code>{shortRef(d.source.ref)}</code>
         </a>

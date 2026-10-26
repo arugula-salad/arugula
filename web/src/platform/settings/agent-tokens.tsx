@@ -1,4 +1,4 @@
-// Agents with no machine (M230): bearer agent grant tokens for an agent
+// Your agent tokens (M230), agents with no machine: bearer agent grant tokens for an agent
 // that runs somewhere without `arugulad` (a hosted service's), reaching
 // the platform's MCP endpoint. Each has powers over projects you read,
 // never approves anything, and its agent's writes are labelled
@@ -60,14 +60,28 @@ export function ago(ms: number): string {
   return `${Math.round(s / 86400)}d ago`;
 }
 
-// "issues.write, deploys.plan on Acme; runs.read on Web".
+// Each power in a few plain words, as the grants' switches say them (UI
+// audit #168): a card says these, the form the powers' own names.
+const POWER_WORDS: Record<string, string> = {
+  "threads.read": "read threads",
+  "threads.post": "post in threads",
+  "issues.write": "write issues",
+  "runs.read": "read runs",
+  "runs.start": "start run specs",
+  "runs.command": "run commands",
+  "deploys.plan": "plan deploys",
+  "secrets.write": "set secrets",
+};
+
+// "Write issues, plan deploys on Acme; read runs on Web".
 export function reachOf(t: AgentToken): string {
   const by = new Map<string, string[]>();
   for (const g of t.grants) {
     const p = g.project.name ?? g.project.id;
-    by.set(p, [...(by.get(p) ?? []), g.power]);
+    by.set(p, [...(by.get(p) ?? []), POWER_WORDS[g.power] ?? g.power]);
   }
-  return [...by].map(([p, ps]) => `${ps.join(", ")} on ${p}`).join("; ");
+  const line = [...by].map(([p, ps]) => `${ps.join(", ")} on ${p}`).join("; ");
+  return line.charAt(0).toUpperCase() + line.slice(1);
 }
 
 function Calls({ id }: { id: string }) {
@@ -144,7 +158,8 @@ export function AgentTokens() {
   return (
     <Section
       id="tokens"
-      title="Agents with no machine"
+      title="Your agent tokens"
+      count={tokens.length}
       lede="Tokens for agents that run somewhere without Arugula, reaching your projects through the platform's MCP endpoint."
       more={
         <p>
@@ -185,7 +200,7 @@ export function AgentTokens() {
           </div>
         </div>
       )}
-      {tokens.length === 0 && !making && <p class="dim">No agent tokens yet.</p>}
+      {tokens.length === 0 && !making && <p class="dim">None yet.</p>}
       {tokens.length > 0 && (
         <ul class="platform-list sw-cards settings-cards agent-tokens">
           {/* The bar: live, or revoked. */}
@@ -206,7 +221,7 @@ export function AgentTokens() {
                   )}
                 </span>
               </div>
-              <span class="sw-mono agent-token-reach">{reachOf(t)}</span>
+              <span class="agent-token-reach">{reachOf(t)}</span>
               <span class="dim">
                 {t.live ? (t.last_used_at ? `Used ${ago(t.last_used_at)}` : "Never used") : `Revoked ${ago(t.revoked_at ?? 0)}`}
               </span>

@@ -154,7 +154,7 @@ export function NewDeployPage({ project, env }: { project: string; env?: string 
             <input
               required
               list="deploy-repos"
-              placeholder="OWNER/NAME"
+              placeholder="Owner/name"
               value={repo}
               data-deploy-repo
               onInput={(e) => {

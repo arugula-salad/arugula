@@ -2,7 +2,8 @@
 // the level a channel or DM gets when you haven't set one for it, a pause
 // (a snooze now, or quiet hours by weekday in your time zone), and whether
 // the pause covers every push or only chat's. A room's own level is its
-// bell's (shared/chat/bell). The platform's (`/api/notify/prefs`).
+// bell's (shared/chat/bell). The platform's (`/api/notify/prefs`). Quiet
+// hours are a section of their own, in the index (UI audit #168).
 
 import { useEffect, useState } from "preact/hooks";
 import type { NotifyLevel, QuietHours } from "../../shared/proto.gen";
@@ -70,113 +71,123 @@ export function NotificationSettings() {
   );
   const snoozed = !!p.snooze_until;
   return (
-    <Section
-      id="notifications"
-      title="Chat notifications"
-      lede="How much of chat pushes you, and when to leave you alone."
-      hooks={{ "data-notify-settings": "" }}
-      more={
-        <p>
-          Each room's bell overrides the defaults here, except that a thread you follow goes by its own line: its replies push you unless you chose "Mentions only" (a mention in it still does) or silenced the room. "Mentions only" still pushes a DM. Pausing holds back pushes only: unread counts and the
-          moon others see on your avatar carry on. Quiet hours follow the time zone chosen here, not the device's, so travelling doesn't move
-          them.
-        </p>
-      }
-    >
-      <ul class="platform-list settings-rows">
-        {level("channels", "Channels")}
-        {level("dms", "Direct messages")}
-        {level("threads", "Threads you follow")}
-        <li>
-          <strong>{p.paused ? (snoozed && p.snooze_until ? `Paused ${untilText(p.snooze_until)}` : "Paused by your quiet hours") : "Not paused"}</strong>{" "}
-          {snoozePresets().map((s) => (
-            <button key={s.label} class="secondary small" data-notify-snooze={s.label} onClick={() => void run({ snooze_until: s.until })}>
-              {s.label}
-            </button>
-          ))}
-          {snoozed && (
-            <button class="secondary small" data-notify-resume onClick={() => void run({ snooze_until: 0 })}>
-              Resume now
-            </button>
-          )}
-        </li>
-        <li>
-          <label class="settings-switch">
-            <input
-              type="checkbox"
-              role="switch"
-              class="sw-switch"
-              checked={p.all_notices}
-              data-notify-all
-              onChange={(e) => void run({ all_notices: e.currentTarget.checked })}
-            />
-            <span>Pausing covers every notice, not just chat's</span>
-          </label>
-          <span class="dim">Inbox items and deploy approvals wait too. Alerts about your account never do.</span>
-        </li>
-      </ul>
-      <h3>Quiet hours</h3>
-      <ul class="platform-list settings-rows notify-schedule" data-notify-schedule>
-        <li>
-          <label class="settings-field">
-            Time zone
-            <input class="field" list="notify-zones" value={zone} data-notify-tz onInput={(e) => setTz(e.currentTarget.value)} />
-          </label>
-          <datalist id="notify-zones">
-            {zones().map((z) => (
-              <option key={z} value={z} />
+    <>
+      <Section
+        id="notifications"
+        title="Chat notifications"
+        lede="How much of chat pushes you, and when to leave you alone."
+        hooks={{ "data-notify-settings": "" }}
+        more={
+          <p>
+            Each room's bell overrides the defaults here, except that a thread you follow goes by its own line: its replies push you unless you chose "Mentions only" (a mention in it still does) or silenced the room. "Mentions only" still pushes a DM. Pausing holds back pushes only: unread counts and the
+            moon others see on your avatar carry on.
+          </p>
+        }
+      >
+        <ul class="platform-list settings-rows">
+          {level("channels", "Channels")}
+          {level("dms", "Direct messages")}
+          {level("threads", "Threads you follow")}
+          <li data-notify-pause>
+            <strong>{p.paused ? (snoozed && p.snooze_until ? `Paused ${untilText(p.snooze_until)}` : "Paused by your quiet hours") : "Not paused"}</strong>
+            {/* What the buttons do, before them (UI audit #168). */}
+            <span class="dim">{snoozed ? "Pause instead for" : "Pause for"}</span>
+            {snoozePresets().map((s) => (
+              <button key={s.label} class="secondary small" data-notify-snooze={s.label} onClick={() => void run({ snooze_until: s.until })}>
+                {s.label}
+              </button>
             ))}
-          </datalist>
-          {zone !== deviceZone() && (
-            <button class="link small" onClick={() => setTz(deviceZone())}>
-              Use this device's ({deviceZone()})
-            </button>
-          )}
-        </li>
-        {DAYS.map((d, i) => (
-          <li key={d} data-notify-day={d}>
-            <label class="settings-switch notify-day">
+            {snoozed && (
+              <button class="secondary small" data-notify-resume onClick={() => void run({ snooze_until: 0 })}>
+                Resume now
+              </button>
+            )}
+          </li>
+          <li>
+            <label class="settings-switch">
               <input
                 type="checkbox"
                 role="switch"
                 class="sw-switch"
-                checked={mine[i].on}
-                onChange={(e) => setRows(mine.map((r, j) => (j === i ? { ...r, on: e.currentTarget.checked } : r)))}
+                checked={p.all_notices}
+                data-notify-all
+                onChange={(e) => void run({ all_notices: e.currentTarget.checked })}
               />
-              <span>{d}</span>
+              <span>Pausing covers every notice, not just chat's</span>
             </label>
-            <input
-              type="time"
-              class="field small"
-              value={mine[i].from}
-              disabled={!mine[i].on}
-              aria-label={`${d} from`}
-              onInput={(e) => setRows(mine.map((r, j) => (j === i ? { ...r, from: e.currentTarget.value } : r)))}
-            />
-            <span class="dim">to</span>
-            <input
-              type="time"
-              class="field small"
-              value={mine[i].to}
-              disabled={!mine[i].on}
-              aria-label={`${d} to`}
-              onInput={(e) => setRows(mine.map((r, j) => (j === i ? { ...r, to: e.currentTarget.value } : r)))}
-            />
-            {mine[i].on && minutes(mine[i].to) <= minutes(mine[i].from) && <span class="dim">into the next morning</span>}
+            <span class="dim">Inbox items and deploy approvals wait too. Alerts about your account never do.</span>
           </li>
-        ))}
-        <li>
-          <button
-            class="primary"
-            data-notify-save
-            disabled={rows === null && tz === null}
-            onClick={() => void run({ tz: zone, quiet: windowsOf(mine) }).then(() => (setRows(null), setTz(null)))}
-          >
-            Save quiet hours
-          </button>
-          {err && <span class="error">{err}</span>}
-        </li>
-      </ul>
-    </Section>
+        </ul>
+      </Section>
+      <Section
+        id="quiet-hours"
+        title="Quiet hours"
+        lede="Days and hours chat leaves you alone, in the time zone here. Tick a day to set its hours."
+        more={<p>They follow the time zone chosen here, not the device's, so travelling doesn't move them.</p>}
+        hooks={{ "data-notify-quiet": "" }}
+      >
+        <ul class="platform-list settings-rows notify-schedule" data-notify-schedule>
+          <li>
+            <label class="settings-field">
+              Time zone
+              <input class="field" list="notify-zones" value={zone} data-notify-tz onInput={(e) => setTz(e.currentTarget.value)} />
+            </label>
+            <datalist id="notify-zones">
+              {zones().map((z) => (
+                <option key={z} value={z} />
+              ))}
+            </datalist>
+            {zone !== deviceZone() && (
+              <button class="link small" onClick={() => setTz(deviceZone())}>
+                Use this device's ({deviceZone()})
+              </button>
+            )}
+          </li>
+          {DAYS.map((d, i) => (
+            <li key={d} data-notify-day={d}>
+              <label class="settings-switch notify-day">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="sw-switch"
+                  checked={mine[i].on}
+                  onChange={(e) => setRows(mine.map((r, j) => (j === i ? { ...r, on: e.currentTarget.checked } : r)))}
+                />
+                <span>{d}</span>
+              </label>
+              <input
+                type="time"
+                class="field small"
+                value={mine[i].from}
+                disabled={!mine[i].on}
+                aria-label={`${d} from`}
+                onInput={(e) => setRows(mine.map((r, j) => (j === i ? { ...r, from: e.currentTarget.value } : r)))}
+              />
+              <span class="dim">to</span>
+              <input
+                type="time"
+                class="field small"
+                value={mine[i].to}
+                disabled={!mine[i].on}
+                aria-label={`${d} to`}
+                onInput={(e) => setRows(mine.map((r, j) => (j === i ? { ...r, to: e.currentTarget.value } : r)))}
+              />
+              {mine[i].on && minutes(mine[i].to) <= minutes(mine[i].from) && <span class="dim">into the next morning</span>}
+            </li>
+          ))}
+          <li>
+            <button
+              class="primary"
+              data-notify-save
+              disabled={rows === null && tz === null}
+              onClick={() => void run({ tz: zone, quiet: windowsOf(mine) }).then(() => (setRows(null), setTz(null)))}
+            >
+              Save quiet hours
+            </button>
+            {err && <span class="error">{err}</span>}
+          </li>
+        </ul>
+      </Section>
+    </>
   );
 }

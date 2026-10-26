@@ -129,8 +129,9 @@ export function AgentGrants() {
   const turnCell = (machine: string, s: AgentScope, column: Column, on: boolean) =>
     void (column === "deploys" ? turnDeploys(machine, s, on) : turn(machine, s, on, column === "threads" ? undefined : column));
 
-  // A scope's card: its name, how many machines reach it, and the matrix.
-  // The bar says whether any machine's agents reach it at all.
+  // A scope's card: its name, how many machines reach it (0/5 too, UI
+  // audit #168), and the matrix. The bar says whether any machine's agents
+  // reach it at all.
   const card = (s: AgentScope, title: string, sub: string, columns: Column[], heads: Head[], data: object) => {
     const rows = matrixOf(grants, machines, s, columns);
     const n = reaching(rows);
@@ -138,11 +139,9 @@ export function AgentGrants() {
       <div key={s.id ?? "dms"} class={`sw-card agent-card ${toneClass(n ? "accent" : "muted")}`} {...data}>
         <div class="sw-head">
           <b class="sw-name">{title}</b>
-          {n > 0 && (
-            <span class="sw-n" title={`Agents on ${n} of ${machines.length} ${machines.length === 1 ? "machine" : "machines"} reach it`}>
-              {n}/{machines.length}
-            </span>
-          )}
+          <span class="sw-n" title={`Agents on ${n} of ${machines.length} ${machines.length === 1 ? "machine" : "machines"} reach it`}>
+            {n}/{machines.length}
+          </span>
         </div>
         <span class="dim agent-card-sub">{sub}</span>
         <table class={`agent-matrix${columns.length > 1 ? " agent-matrix-wide" : ""}`}>

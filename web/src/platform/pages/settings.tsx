@@ -51,7 +51,12 @@ export function SettingsPage() {
         <SectionIndex body={body} />
         <div class="settings-body" ref={body}>
           <PageHeader title="Settings" />
-          <Section id="account" title="Appearance & account" lede="How this device looks, your plan, and where the rest of your account is.">
+          {/* The line says what's here: the plan only with billing on (UI audit #168). */}
+          <Section
+            id="account"
+            title="Appearance & account"
+            lede={billing?.billing ? "How this device looks, your plan, and where the rest of your account is." : "How this device looks, and where the rest of your account is."}
+          >
             <ul class="platform-list settings-rows">
               <li>
                 <button class="link" data-open-appearance onClick={openAppearance}>

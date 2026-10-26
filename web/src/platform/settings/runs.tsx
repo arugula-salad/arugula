@@ -5,7 +5,8 @@
 // page is on app.arugula.io, not on the keys' origin"), so they're on
 // control's page (here or on the phone), and this links there. The grant
 // in place is a card: its bar ok, or warn when workspaces enrolled since
-// refuse it or it expires soon.
+// refuse it or it expires soon. Shown on every project, with nothing in
+// place too (UI audit #166: a project's settings show every section).
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
@@ -45,7 +46,7 @@ export function RunGrant({ project }: { project: string }) {
       .catch((e: Error) => setErr(e.message));
   }, [project]);
   if (err) return <p class="control-error">{err}</p>;
-  if (!v || (!v.grant && !v.workspaces && !v.past.length)) return null;
+  if (!v) return null;
   const g = v.grant?.grant;
   const sign = (
     <a href={controlOrigin()} data-run-grant-sign>

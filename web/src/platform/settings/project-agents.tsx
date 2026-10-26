@@ -1,6 +1,6 @@
-// A project's agents with no machine and its own secrets (M230), for its
-// owners: every agent token over the project, whoever minted it, with a
-// revoke that takes its reach here back; and the secrets set by name, by
+// A project's agent tokens (agents with no machine) and its own secrets
+// (M230), for its owners: every agent token over the project, whoever
+// minted it, with a revoke that takes its reach here back; and the secrets set by name, by
 // agents (`set_secret`) or by an owner here (M236), each with who last set
 // it and when, never a value. Beside each secret, which registered clients
 // (studio, M236) may read it for their apps in the project, and how often
@@ -12,6 +12,8 @@ import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import type { PlatformProject } from "../session";
+import { names } from "../links";
+import { follow, pathOf } from "../router";
 import { toneClass } from "../swarm";
 import { ago, reachOf, type AgentToken } from "./agent-tokens";
 import { roleIn } from "./environments";
@@ -124,22 +126,28 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
     }
     await load();
   };
+  // Where an owner makes their own tokens: the account's settings, at
+  // that section (UI audit #166).
+  const own = `${pathOf({ page: "settings" }, names)}#tokens`;
   return (
     <>
       <Section
         id="agents"
-        title="Agents with no machine"
+        title="Agent tokens"
         count={tokens?.length}
         hooks={{ "data-project-agents": "" }}
-        lede="Every agent token over this project, whoever made it."
+        lede="Every agent token over this project, whoever made it: agents with no machine."
         more={
           <p>
-            Revoke here takes a token's reach over this project back at once; its owner keeps it for the rest. Owners make them on their own
-            Settings.
+            Revoke takes a token's reach over this project back at once; its owner keeps it for the rest. Owners make them in{" "}
+            <a href={own} onClick={(e) => follow(e, own)} data-project-agents-own>
+              their own settings
+            </a>
+            .
           </p>
         }
       >
-        {tokens?.length === 0 && <p class="dim">None.</p>}
+        {tokens?.length === 0 && <p class="dim">None yet.</p>}
         {tokens?.length ? (
           <ul class="platform-list sw-cards settings-cards agent-tokens">
             {/* The bar: live, or revoked. */}
@@ -154,11 +162,11 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
                   </span>
                   <span class="settings-card-act">
                     <button class="secondary danger small" data-project-agent-revoke={t.id} onClick={() => setRevoking(t)}>
-                      Revoke here
+                      Revoke
                     </button>
                   </span>
                 </div>
-                <span class="sw-mono agent-token-reach">{reachOf(t)}</span>
+                <span class="agent-token-reach">{reachOf(t)}</span>
                 <span class="dim">{t.last_used_at ? `Used ${ago(t.last_used_at)}` : "Never used"}</span>
               </li>
             ))}
@@ -199,7 +207,7 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
           </>
         }
       >
-        {secrets?.secrets.length === 0 && <p class="dim">None.</p>}
+        {secrets?.secrets.length === 0 && <p class="dim">None yet.</p>}
         <ul class="platform-list settings-rows secret-rows" data-project-secrets>
           {secrets?.secrets.map((s) => (
             <li key={s.name} data-project-secret={s.name}>
@@ -259,7 +267,7 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
           <input
             required
             aria-label="Secret name"
-            placeholder="NAME"
+            placeholder="Name"
             spellcheck={false}
             value={name}
             data-project-secret-name
