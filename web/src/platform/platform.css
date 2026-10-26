@@ -187,8 +187,26 @@ html[data-corners="square"] .platform-section {
   gap: 24px;
 }
 
+/* A project of one: no members beside its lists (UI audit #162). */
+.platform-columns.solo {
+  grid-template-columns: 1fr;
+}
+
 .platform-members .chat-people span.dim {
   margin-left: auto;
+}
+
+/* A member's picture as the bar's account button has it: round (UI audit
+   #162). */
+.platform-members .msg-avatar {
+  --msg-gutter: 24px;
+  border-radius: 50%;
+  font-size: 10px;
+}
+
+/* Commands and ids in the page's mono, not the browser's (UI audit #162). */
+.platform code {
+  font-family: var(--f-mono);
 }
 
 
@@ -734,10 +752,44 @@ html[data-corners="square"] .platform-section {
   }
 }
 
-/* A hosted workspace (M184): its label, and its closed agents' transcripts. */
+/* A cloud workspace (M184): its ids, its label, the command that rebuilds
+   it, and its closed agents' transcripts. */
+.hosted-ids {
+  margin: 0 0 4px;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.hosted-ids code {
+  color: var(--fg);
+}
+
 .hosted-label {
+  margin: 0;
   color: var(--dim);
   font-size: 13px;
+}
+
+/* "Hosted · operator can read" as a chip, dim, before what it means (UI
+   audit #184). */
+.hosted-chip {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--divider);
+  border-radius: var(--chip-radius);
+  color: var(--dim);
+  font: 600 11px/1.4 var(--f-mono);
+  white-space: nowrap;
+}
+
+.hosted-rebuild > p,
+.hosted-none > p {
+  margin: 0;
+}
+
+.platform .copy-text > .control-cmd {
+  font-family: var(--f-mono);
 }
 
 .hosted-transcripts {
@@ -749,17 +801,27 @@ html[data-corners="square"] .platform-section {
   margin: 6px 0;
 }
 
+/* A transcript's own headings are its text's, not the page's sections. */
+.platform .sw-page .hosted-transcript :is(h1, h2, h3, h4) {
+  margin: 14px 0 6px;
+  font: 600 15px/1.3 var(--f-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.platform .sw-page .hosted-transcript .md > :first-child {
+  margin-top: 0;
+}
+
 .hosted-transcript {
   max-height: 60vh;
   overflow: auto;
   margin: 6px 0 12px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--card-radius);
   background: var(--surface);
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 /* A project's environments and "Deploy…" (M252): the forms that make an

@@ -99,12 +99,50 @@ export function MsgAvatar({
   );
 }
 
+/** Whose picture last loaded on the account button, in this browser: shown
+ * while chat is still starting, so the button doesn't go from the picture
+ * to its letter and back from one load to the next (UI audit #162). */
+const SEEN = "arugula.account-picture";
+
+function seen(): string | null {
+  try {
+    return localStorage.getItem(SEEN);
+  } catch {
+    return null;
+  }
+}
+
 /** The signed-in person's own picture on the account button, over its
- * letter: only while chat is on (control serves pictures to chat's people),
- * and not when it has none. */
+ * letter: while chat is on (control serves pictures to chat's people), or
+ * while it's starting where it loaded before, and not when it has none. */
 export function AccountPicture() {
   useSubscribe((fn) => chat.subscribe(fn));
   const [failed, setFailed] = useState(false);
-  if (chat.on !== true || !chat.me || failed || none.has(chat.me)) return null;
-  return <img class="account-picture" src={avatarUrl(chat.me)} alt="" decoding="async" referrerpolicy="no-referrer" onError={() => setFailed(true)} />;
+  const who = chat.on === true ? chat.me : chat.on === null ? seen() : null;
+  if (!who || failed || none.has(who)) return null;
+  return (
+    <img
+      class="account-picture"
+      src={avatarUrl(who)}
+      alt=""
+      decoding="async"
+      referrerpolicy="no-referrer"
+      onLoad={() => {
+        try {
+          localStorage.setItem(SEEN, who);
+        } catch {
+          // A private window keeps nothing: the letter shows until chat starts.
+        }
+      }}
+      onError={() => {
+        none.add(who);
+        try {
+          if (seen() === who) localStorage.removeItem(SEEN);
+        } catch {
+          // As above.
+        }
+        setFailed(true);
+      }}
+    />
+  );
 }
