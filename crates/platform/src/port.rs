@@ -110,15 +110,17 @@ pub trait PlatformPort: Send + Sync {
 
     /// A hosted box asks to start an agent turn of `agent` (M185), signed
     /// as its hosted machine, whose certificate names its workspace: whose
-    /// inference key pays, or why it can't run. A platform from before
+    /// inference key pays, or why it can't run. `session` is the thread
+    /// session (M254) the turn is for, if it's one's. A platform from before
     /// M185 doesn't have it.
     fn hosted_turn<'a>(
         &'a self,
         workspace: &'a str,
         machine: &'a str,
         agent: &'a str,
+        session: Option<&'a str>,
     ) -> BoxFuture<'a, anyhow::Result<TurnAnswer>> {
-        let _ = (workspace, machine, agent);
+        let _ = (workspace, machine, agent, session);
         Box::pin(async { anyhow::bail!("this platform doesn't run hosted agents") })
     }
 
@@ -430,8 +432,9 @@ impl PlatformPort for Platform {
         workspace: &'a str,
         machine: &'a str,
         agent: &'a str,
+        session: Option<&'a str>,
     ) -> BoxFuture<'a, anyhow::Result<TurnAnswer>> {
-        Box::pin(crate::hosted::inference::turn(self, workspace, machine, agent))
+        Box::pin(crate::hosted::inference::turn(self, workspace, machine, agent, session))
     }
 
     fn hosted_turn_end<'a>(

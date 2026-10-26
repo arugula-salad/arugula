@@ -31,7 +31,8 @@ pub const ENROLL: &str = "/api/hosted/enroll";
 /// answered [`Enrollment`].
 pub const HOSTED_TRUST: &str = "/api/hosted/trust";
 /// An agent turn on a hosted box (M185): `POST` `{"agent": "claude" |
-/// "codex"}`, signed as the machine, answered `{"turn", "pays"}` (whose
+/// "codex"}` (and `"session": "ses_…"` for a thread session's turn, M254:
+/// its asker's), signed as the machine, answered `{"turn", "pays"}` (whose
 /// inference key: `project` or `platform`), or refused with a `reason`
 /// (`no_key`, `cap`) and a sentence for the person. Its end is
 /// `POST {HOSTED_TURNS}/{turn}/end`.

@@ -2723,8 +2723,11 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
             && let Some(tx) = g.to_self.clone()
         {
             g.gating = true;
+            // A thread session's block (the daemon's own word, not the
+            // block's config): its turns are its asker's (aru-115).
+            let session = crate::work::sessions::session_of(ctx.id);
             ctx.rt.spawn(async move {
-                let _ = tx.send(Msg::Gated(gate.start(agent).await));
+                let _ = tx.send(Msg::Gated(gate.start(agent, session).await));
             });
         }
         return;

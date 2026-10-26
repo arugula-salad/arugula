@@ -370,12 +370,28 @@ fn capped(app: &Platform, account: &str, cap: Cap, b: &HostedBox, p: Provider) -
 /// first, whatever the answer. With no key for `agent`'s provider the
 /// answer is `no_key`, whether or not the rules could be set; with one,
 /// rules that couldn't be set are a 503.
-pub async fn turn(app: &Platform, workspace: &str, machine: &str, agent: &str) -> anyhow::Result<TurnAnswer> {
+pub async fn turn(
+    app: &Platform,
+    workspace: &str,
+    machine: &str,
+    agent: &str,
+    session: Option<&str>,
+) -> anyhow::Result<TurnAnswer> {
     let Some(p) = Provider::of_agent(agent) else {
         return Ok(TurnAnswer::refused(StatusCode::BAD_REQUEST, None, "agent: claude or codex"));
     };
     let Some(b) = the_box(app, workspace, machine)? else {
         return Ok(TurnAnswer::refused(StatusCode::NOT_FOUND, None, "this machine isn't a live hosted workspace"));
+    };
+    // A thread session's turn is its asker's (aru-115): on the project's
+    // key it's kept as theirs; on the platform's it counts against their
+    // caps, not the workspace's maker's.
+    let asker = match session {
+        None => None,
+        Some(id) => match app.db.session(id)? {
+            Some(s) if s.workspace == b.workspace && !s.state.terminal() => Some(s.asker),
+            _ => return Ok(TurnAnswer::refused(StatusCode::NOT_FOUND, None, "no such session on this workspace")),
+        },
     };
     let Plan { payers, auth, rules } = plan(app, &b.project, b.created_by.as_deref())?;
     let synced = sync_rules(app, &b, &rules).await?;
@@ -387,7 +403,12 @@ pub async fn turn(app: &Platform, workspace: &str, machine: &str, agent: &str) -
         let why = "couldn't set up this workspace's key: try again in a moment";
         return Ok(TurnAnswer::refused(StatusCode::SERVICE_UNAVAILABLE, None, why));
     }
-    Ok(match app.db.start_hosted_turn(&b.workspace, p.as_str(), pays, &app.hosted.inference.caps, now_ms())? {
+    let pays = &match (pays, &asker) {
+        (Pays::Platform { .. }, Some(a)) => Pays::Platform { account: a.clone() },
+        _ => pays.clone(),
+    };
+    let caps = &app.hosted.inference.caps;
+    Ok(match app.db.start_hosted_turn(&b.workspace, p.as_str(), pays, asker.as_deref(), caps, now_ms())? {
         Started::Turn(turn) => {
             let pays = match pays {
                 Pays::Project => "project",
