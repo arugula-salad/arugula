@@ -315,8 +315,8 @@ Run each `arugula ...` command on its own, not in a pipeline or an `&&` chain, s
 
 /// The server's instructions: without the `docs` flag, they leave out the
 /// Doc sentence (`flags::DOCS_STEERING`, which `arugula hook` also gives on
-/// `SessionStart`, #1486). Chat isn't an agent's (#1095): nothing of it is
-/// here.
+/// `SessionStart`, #1486). The issues sentence (`flags::ISSUES_STEERING`)
+/// is always there. Chat isn't an agent's (#1095): nothing of it is here.
 pub(crate) fn instructions(on: On) -> String {
     let at = INSTRUCTIONS_BASE.find("Claude Code hooks put").expect("the instructions name the hooks");
     let mut out = INSTRUCTIONS_BASE[..at].to_owned();
@@ -324,6 +324,8 @@ pub(crate) fn instructions(on: On) -> String {
         out.push_str(flags::DOCS_STEERING);
         out.push(' ');
     }
+    out.push_str(flags::ISSUES_STEERING);
+    out.push(' ');
     out.push_str(&INSTRUCTIONS_BASE[at..]);
     out
 }

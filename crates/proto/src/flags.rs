@@ -101,6 +101,13 @@ pub const DOCS: &str = "docs";
 /// competitor. The plugin's skill says the same in its voice.
 pub const DOCS_STEERING: &str = "In Arugula, a report, plan or write-up longer than a screen goes in a Doc (the arugula `doc` tool), not an Artifact or another tool's page: the user watches it fill in beside your pane. When they want to show it to someone, ask with `doc share`: the user decides, and you get the link back.";
 
+/// What every agent is told about filing issues, in one wording: the MCP
+/// server's instructions carry it, `arugula hook` adds it on `SessionStart`
+/// and says it again before a `gh issue create`. Native issues (M200) have
+/// no flag, so neither does this. The plugin's skill says the same in its
+/// voice.
+pub const ISSUES_STEERING: &str = "In Arugula, a new issue (a bug, a follow-up, a ticket for later) goes in Arugula's own issues with issue_write (kind create), not `gh issue create` or a GitHub draft, unless the user asks for GitHub; forge_read (kind native_issues) lists them.";
+
 /// One flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Flag {
