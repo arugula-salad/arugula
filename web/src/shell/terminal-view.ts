@@ -6,7 +6,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
-import { onAppearance, terminalTheme } from "../shared/appearance";
+import { legible, onAppearance, palette, terminalTheme } from "../shared/appearance";
 import type { Chip } from "./upload";
 
 export const FONT_FAMILY = '"JetBrains Mono", "Fira Code", ui-monospace, Menlo, monospace';
@@ -165,7 +165,10 @@ export class TerminalView {
     this.term.open(this.host);
     this.mirrorTextarea();
     this.touchScroll();
-    this.offAppearance = onAppearance(() => this.applyTheme());
+    this.offAppearance = onAppearance(() => {
+      this.applyTheme();
+      for (const m of this.marks) this.decorate(m);
+    });
   }
 
   /** A phone keyboard (Gboard) edits xterm.js's hidden textarea anywhere,
@@ -447,18 +450,32 @@ export class TerminalView {
   }
 
   private addMark(mark: CommandMark) {
+    if (!this.decorate(mark)) return;
+    mark.start.onDispose(() => {
+      const i = this.marks.indexOf(mark);
+      if (i >= 0) this.marks.splice(i, 1);
+    });
+    this.marks.push(mark);
+  }
+
+  /** A mark's stripe, and its tick on the scrollbar's ruler in the
+   * palette's ok or danger (UI audit #152: Mocha's before). The ruler's
+   * color is fixed when it's made, so a new palette makes them again. */
+  private decorate(mark: CommandMark): boolean {
+    mark.deco?.dispose();
     const rows = Math.max(1, mark.end.line - mark.start.line);
     const failed = mark.exit !== null && mark.exit !== 0;
+    const u = legible(palette());
     const deco = this.term.registerDecoration({
       marker: mark.start,
       x: 0,
       width: 1,
       height: rows,
       layer: "top",
-      overviewRulerOptions: { color: failed ? "#f38ba8" : "#a6e3a1", position: "left" },
+      overviewRulerOptions: { color: failed ? u.danger : u.ok, position: "left" },
     });
-    if (!deco) return;
     mark.deco = deco;
+    if (!deco) return false;
     deco.onRender((el) => {
       el.classList.add("cmd-mark", failed ? "fail" : "ok");
       // A thin stripe at the left edge rather than covering the first cell.
@@ -471,11 +488,7 @@ export class TerminalView {
         this.markMenu?.(mark, e);
       };
     });
-    mark.start.onDispose(() => {
-      const i = this.marks.indexOf(mark);
-      if (i >= 0) this.marks.splice(i, 1);
-    });
-    this.marks.push(mark);
+    return true;
   }
 
   selectOutput(mark: CommandMark) {
