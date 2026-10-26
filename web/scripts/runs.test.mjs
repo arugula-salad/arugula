@@ -4,14 +4,14 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { argvOf, commandLine, httpsOnly, decodeOp, eventDetail, keepLatest, paneLink, runTitle, runsQuery, startedBy, stripAnsi, took } from "../src/platform/runs-text.ts";
+import { argvOf, commandLine, httpsOnly, decodeOp, eventDetail, keepLatest, paneLink, runTitle, runsQuery, startedBy, stripAnsi, took, withoutExitNote, workspaceLabel } from "../src/platform/runs-text.ts";
 
 const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
 const op = (lines) => `arugula op v1\ndaemon d1\n${lines.join("\n")}\n`;
 
 test("a command's operation reads back as its arguments", () => {
   const o = decodeOp(op(["kind run", "session -", "pane - -", `cwd ${b64("/srv/app")}`, `argv ${b64("make")}`, `argv ${b64("test it")}`]));
-  assert.deepEqual(o, { daemon: "d1", kind: "run", argv: ["make", "test it"], instruction: null, agent: null, directory: "/srv/app" });
+  assert.deepEqual(o, { daemon: "d1", kind: "run", argv: ["make", "test it"], instruction: null, agent: null, directory: "/srv/app", deploy: null });
   assert.equal(commandLine(o.argv), "make 'test it'");
   assert.equal(commandLine(["echo", "it's", ""]), `echo 'it'\\''s' ''`);
 });
@@ -21,6 +21,29 @@ test("an instruction's operation reads back as its text and agent", () => {
   assert.equal(o.instruction, "Fix the flaky test\nthen push");
   assert.equal(o.agent, "claude");
   assert.equal(runTitle(op(["kind agent", "session -", "pane - -", "cwd -", `text ${b64("Fix it\nnow")}`, "agent -"])), "Fix it");
+});
+
+test("a deploy's operation reads as its deploy, by its environment and commit (UI audit #145)", () => {
+  const bytes = op(["kind deploy", "session -", "pane - -", "cwd -", "deploy dep_1", "driver chant-fly", "apply ab12"]);
+  const o = decodeOp(bytes);
+  assert.deepEqual(o.deploy, { deploy: "dep_1", driver: "chant-fly", apply: "ab12" });
+  assert.equal(runTitle(bytes), "Deploy dep_1");
+  const deploy = { id: "dep_1", environment: "production", source_kind: "commit", reference: "1a2b3c4d5e6f7a8b" };
+  assert.equal(runTitle(bytes, null, deploy), "Deploy production · 1a2b3c4");
+  assert.equal(runTitle(bytes, null, { ...deploy, source_kind: "artifact", reference: "sha256:00112233445566778899" }), "Deploy production · 001122334455");
+  assert.equal(runTitle(bytes, "nightly", deploy), "nightly", "a spec's name first");
+  // A deploy's apply has no command beside it.
+  assert.equal(decodeOp(op(["kind deploy", "session -", "pane - -", "cwd -", `argv ${b64("ls")}`, "deploy dep_1", "driver x", "apply y"])), null);
+  assert.equal(workspaceLabel({ workspace: "hw_1", workspace_name: "dep_1", deploy }), "its deploy's box");
+  assert.equal(workspaceLabel({ workspace: "hw_1", workspace_name: "ci" }), "ci");
+  assert.equal(workspaceLabel({ workspace: "hw_1" }), "hw_1");
+  assert.equal(workspaceLabel({ workspace: null }), null);
+});
+
+test("a kept log ends without the pane's exit note (UI audit #146)", () => {
+  assert.equal(withoutExitNote("boom\nerror: it broke\n\n[exited with code 0 · press Enter for a shell]\n"), "boom\nerror: it broke\n");
+  assert.equal(withoutExitNote("x\n[process ended by signal 9 · press Enter for a shell]"), "x\n");
+  assert.equal(withoutExitNote("[exited with code 1 · press Enter for a shell] then more\n"), "[exited with code 1 · press Enter for a shell] then more\n", "only at its end");
 });
 
 test("anything else isn't an operation", () => {

@@ -16,7 +16,7 @@
 // (M196's object room on the run's id). While it goes, the view waits on
 // the platform for its next event (`since` and `wait`).
 
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { RoomBody } from "../../shared/chat/room";
 import type { ChatRoom } from "../../shared/proto";
@@ -33,7 +33,7 @@ import { mayWrite, nameIn } from "./issues";
 import { Missing } from "./project";
 import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type RunLogPage, type RunSpec, type RunView } from "../runs";
 import { runTone, toneClass, type Tone } from "../swarm";
-import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, startedBy, stripAnsi, tone, took } from "../runs-text";
+import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, deployTitle, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, startedBy, stripAnsi, tone, took, withoutExitNote, workspaceLabel } from "../runs-text";
 import { ThreadUnread } from "../thread-unread";
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
@@ -209,14 +209,15 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
         {list?.map((r) => {
           const path = pathOf({ page: "run", project: p.id, run: r.id }, names);
           const end = r.ended_at ?? (ended(r.state) ? null : Date.now());
-          const ws = r.workspace ? (workspaces.find((w) => w.id === r.workspace)?.name ?? r.workspace) : null;
+          // By name, not its `hw_…` id (UI audit #145).
+          const ws = r.workspace ? (workspaces.find((w) => w.id === r.workspace)?.name ?? workspaceLabel(r)) : null;
           return (
             // A card in the swarm's language (../swarm.css): its bar is the
             // run's state, which the meta line says in words.
             <li class={`issue-row run-row sw-card ${toneClass(runTone(r.state))}`} key={r.id} data-run-row={r.id} data-run-state={r.state}>
               <div class="issue-row-main">
                 <a href={path} class="issue-row-title run-title" onClick={(e) => follow(e, path)}>
-                  {runTitle(r.op, specName(r.source.spec))}
+                  {runTitle(r.op, specName(r.source.spec), r.deploy)}
                 </a>
                 <ThreadUnread target={r.id} />
                 <span class="issue-row-meta dim">
@@ -552,7 +553,7 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
       </p>
       <header class="issues-head run-head">
         <StateDot state={run.state} />
-        <h1 data-run-title>{runTitle(run.op, spec?.name)}</h1>
+        <h1 data-run-title>{runTitle(run.op, spec?.name, run.deploy)}</h1>
         <span class={`run-state ${tone(run.state)}`} data-run-state-label>
           {STATES[run.state] ?? run.state}
           {run.exit_code !== null && run.exit_code !== undefined ? ` · exit ${run.exit_code}` : ""}
@@ -574,9 +575,18 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
           , {ago(run.created_at)}
           {run.started_at ? ` · ran ${took(run.started_at, run.ended_at ?? Date.now())}` : ""}
         </dd>
-        <dt>{op?.instruction !== null && op?.instruction !== undefined ? "Instruction" : "Command"}</dt>
+        <dt>{op?.deploy ? "Deploy" : op?.instruction !== null && op?.instruction !== undefined ? "Instruction" : "Command"}</dt>
         <dd>
-          {op ? (
+          {op?.deploy ? (
+            // A deploy's apply (M219): its deploy's page says what and
+            // where (UI audit #145).
+            <>
+              <a href={`/deploys/${op.deploy.deploy}`} onClick={(e) => follow(e, `/deploys/${op.deploy!.deploy}`)} data-run-deploy={op.deploy.deploy}>
+                {run.deploy ? deployTitle(run.deploy) : `Deploy ${op.deploy.deploy}`}
+              </a>
+              <span class="dim"> · driver {op.deploy.driver}</span>
+            </>
+          ) : op ? (
             <code class="run-command-line" data-run-command>
               {op.instruction ?? commandLine(op.argv)}
             </code>
@@ -612,7 +622,14 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
         ) : null}
         <dt>Where</dt>
         <dd>
-          Hosted workspace <code>{run.workspace ?? "—"}</code>, machine <code>{run.daemon.slice(0, 12)}</code>
+          {run.workspace ? (
+            <>
+              {run.deploy ? "Its deploy's own box" : `Hosted workspace${run.workspace_name ? ` ${run.workspace_name}` : ""}`} <code>{run.workspace}</code>
+            </>
+          ) : (
+            "No hosted workspace"
+          )}
+          , machine <code>{run.daemon.slice(0, 12)}</code>
           {run.grant ? <span class="dim"> · under the project's standing grant</span> : <span class="dim"> · no standing grant: it waits for an approval</span>}
         </dd>
       </dl>
@@ -721,8 +738,24 @@ function RunLog({ run }: { run: RunView }) {
       toast((e as Error).message);
     }
   };
-  const text = useMemo(() => stripAnsi((pages ?? []).map((p) => p.text).join("")), [pages]);
+  // The pane's own "press Enter for a shell" note goes (UI audit #146).
+  const text = useMemo(() => {
+    const t = stripAnsi((pages ?? []).map((p) => p.text).join(""));
+    return going ? t : withoutExitNote(t);
+  }, [pages, going]);
   const kept = !!pages?.some((p) => p.kept);
+  // A failed run's log opens at its end, where it says why (UI audit
+  // #146); one that goes stays there while it's followed at its end.
+  const box = useRef<HTMLPreElement>(null);
+  const opened = useRef(false);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || !text) return;
+    if (!opened.current) {
+      opened.current = true;
+      if (state === "failed") el.scrollTop = el.scrollHeight;
+    }
+  }, [text, state]);
   return (
     <div class="run-log" data-run-log={pages ? (kept ? "kept" : "none") : ""}>
       <h2>Log</h2>
@@ -736,7 +769,7 @@ function RunLog({ run }: { run: RunView }) {
               Earlier
             </button>
           )}
-          <pre class="run-log-text" data-run-log-text>
+          <pre class="run-log-text" data-run-log-text ref={box}>
             {text || (going ? "(nothing yet)" : "(empty)")}
           </pre>
           <p class="dim run-log-foot">{going ? "It follows the log while the run goes." : last?.end ? "The end of its log. Kept 30 days." : "Kept 30 days."}</p>
@@ -821,7 +854,7 @@ function RunThread({ run, msg }: { run: RunView; msg?: number }) {
       ) : (
         <div class="issue-thread chat-thread" data-run-thread={room?.id}>
           {room ? (
-            <RoomBody room={room} phone={phone} focus={msg} name={`run ${short(run.id)}`} empty="Nothing said about this run yet. Everyone in the project reads it; write @name to notify someone." />
+            <RoomBody room={room} phone={phone} focus={msg} embedded name={`run ${short(run.id)}`} empty="Nothing said about this run yet. Everyone in the project reads it; write @name to notify someone." />
           ) : (
             <p class="thread-note">{error ? `The thread didn't load: ${error}` : "Loading the thread…"}</p>
           )}
