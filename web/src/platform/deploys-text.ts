@@ -156,4 +156,4 @@ export const lastMoved = (d: Pick<DeploySummary, "finished_at" | "decided_at" | 
 
 /** A commit's or an artifact's reference, short (../shared/deploys, which
  * control's deploy prompt shares). */
-export { shortRef } from "../shared/deploys";
+export { shortRef } from "../shared/deploys.ts";

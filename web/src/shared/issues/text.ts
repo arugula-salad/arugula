@@ -4,7 +4,7 @@
 // and its tests (scripts/issues.test.mjs).
 
 import type { ChatAgent, IssueEvent, NativeIssue } from "../proto";
-import { ago as timeAgo } from "../time";
+import { ago as timeAgo } from "../time.ts";
 
 /** An account's name now, or null for someone the page doesn't know. */
 export type NameOf = (account: string) => string | null | undefined;

@@ -5,7 +5,7 @@
 // (scripts/chat-threads.test.mjs).
 
 import type { ChatMessage, ChatThread } from "../proto";
-import { ago as timeAgo } from "../time";
+import { ago as timeAgo } from "../time.ts";
 
 /** "just now", "5m ago", "3h ago", "2d ago", then the day: how long ago
  * `at` was, as the parent's footer says its newest reply. The shared words

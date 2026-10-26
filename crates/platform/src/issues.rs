@@ -504,11 +504,23 @@ pub async fn export(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire
         threads.push(comments);
     }
     let names = machine_names(app, agents.iter()).await?;
+    // Who closed each, as a read of it says (UI audit #163): their agents
+    // are among the events' already.
+    let closed: Vec<&str> =
+        all.iter().filter(|e| e.issue.state.reason().is_some()).map(|e| e.issue.id.as_str()).collect();
+    let closers = app.db.closers(&closed)?;
     let issues = all
         .iter()
         .zip(threads)
         .map(|(e, comments)| wire::ExportedIssue {
-            issue: issue_wire(&e.issue, &names),
+            issue: {
+                let mut w = issue_wire(&e.issue, &names);
+                if let Some((by, by_agent)) = closers.get(&e.issue.id) {
+                    w.closed_by = Some(by.clone());
+                    w.closed_by_agent = agent(&names, by_agent);
+                }
+                w
+            },
             events: e.events.iter().map(|ev| event_wire(ev, &names)).collect(),
             comments: comments
                 .into_iter()
