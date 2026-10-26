@@ -170,6 +170,12 @@ fn generate() -> String {
         c.visit::<SessionPrEdit>();
         c.visit::<SessionPrSend>();
         c.visit::<SessionPrSent>();
+        // Try 3 (M264).
+        c.visit::<SessionTryAsk>();
+        c.visit::<SessionPick>();
+        // Its project's numbers, and Agent on this (M265).
+        c.visit::<SessionStats>();
+        c.visit::<IssueAgent>();
     }
     // Native issues (M195).
     {

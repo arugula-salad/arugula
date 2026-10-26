@@ -27,6 +27,18 @@
 //!   as its author's (the block's transcript says whose). The first also
 //!   carries the repo's `CLAUDE.md` and `AGENTS.md` as text: Claude Code's
 //!   `settingSources: ["project"]` would load the repo's hooks too.
+//! - **Its block is followed, not only what it hands in** ([`step`]). A
+//!   turn started in the block itself (someone typed there from the card's
+//!   Open, or the agent woke itself) is reported as a turn's start
+//!   (`in_block`, with who typed it when the block says), and goes to the
+//!   same end as the box's own: the finish step, the push, the turn's
+//!   report. A question it asks goes out as `needs_input`; one answered in
+//!   the block moves it back with no action named. The thread's prompts
+//!   wait for it.
+//! - **Nothing asks permission** ([`agent_config`]): Claude Code runs in
+//!   `bypassPermissions` and Codex in `full-access`, and the block allows
+//!   what still asks. Questions (AskUserQuestion, Codex's elicitations)
+//!   aren't permissions, and still go to the card.
 //! - **At most once.** Before a prompt goes to the block, the ledger
 //!   (`<state>/work/sessions/ID.json`, fsynced) says it's handed; after a
 //!   restart between the two, the block's own log (its queue and turns)
@@ -52,6 +64,13 @@
 //!   user writes, through a repo of the daemon's own, with a token control
 //!   mints for that one push. A push that fails is the session's error,
 //!   and the turn says it didn't push.
+//! - **Its harness** (M264): Claude Code, or Codex when control asks for
+//!   it and the box has it ([`has_harness`]); else Claude Code, and the
+//!   first report says which ran (`harness`). A Try 3's three sessions are
+//!   three sessions here, each in its slot.
+//! - **A review** (M264, `@codex review`) is read-only: no finish step and
+//!   no push, and its turn's report carries the agent's reply, which
+//!   control posts in its thread.
 //! - **A slot is left clean** ([`clean_slot`]): when a session ends (or
 //!   fails), what its pushes left, its checkout and its user's `~/.claude`
 //!   go, so the next session in that slot starts with nothing of it.
@@ -73,8 +92,8 @@ use std::{
 };
 
 use arugula_control_wire::work::{
-    FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, Reported, SessionAction, SessionDetail,
-    SessionPrompt, SessionReport, SessionWork, WORK_SESSION_REPORT,
+    FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, REPLY_MAX, Reported, SessionAction,
+    SessionDetail, SessionPrompt, SessionReport, SessionWork, WORK_SESSION_REPORT,
 };
 use arugula_e2e::{
     now_ms,
@@ -293,6 +312,18 @@ pub struct Session {
     /// The commit its last push put on GitHub (M259).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pushed_head: Option<String>,
+    /// The block's turns when the box last followed one to its end: one
+    /// past that with none under way here was started in the block itself
+    /// ([`step`]). `None` in a ledger from before it was kept, until the
+    /// next look.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turns_seen: Option<u64>,
+    /// The agent it runs (M264): `codex`, or Claude Code when `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+    /// A review (M264): no finish step, no push, and its reply reported.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub review: bool,
 }
 
 impl Session {
@@ -510,6 +541,34 @@ fn me(app: &App) -> Option<(Arc<arugula_e2e::DeviceKeys>, String, String, String
     super::me(app)
 }
 
+/// Whether this box runs agent `h` for sessions (M264): Claude Code
+/// always; another when `ARUGULA_HOSTED_SESSION_HARNESSES` (a comma list)
+/// names it, or, without that, Codex when its adapter and `codex` are
+/// installed for the daemon's user.
+pub fn has_harness(h: &str) -> bool {
+    if h == "claude" {
+        return true;
+    }
+    if let Ok(list) = std::env::var("ARUGULA_HOSTED_SESSION_HARNESSES") {
+        return list.split(',').any(|x| x.trim() == h);
+    }
+    if h != "codex" {
+        return false;
+    }
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return false };
+    let Some(a) = crate::agent::adapters::of(crate::agent::defs::Kind::Codex) else { return false };
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    crate::agent::adapters::status(a, &home, &[]).ok()
+        && (home.join(".local/bin/codex").is_file()
+            || std::env::split_paths(&path).filter(|d| !d.as_os_str().is_empty()).any(|d| d.join("codex").is_file()))
+}
+
+/// The agent session `w` runs on here: the one asked for when the box
+/// has it, else Claude Code (`None`).
+fn harness_for(w: &SessionWork) -> Option<String> {
+    w.harness.clone().filter(|h| h != "claude" && has_harness(h))
+}
+
 /// A free slot: a session user no session this box runs holds.
 fn free_slot(dir: &Path) -> Option<(AsUser, bool)> {
     let slots = slots()?;
@@ -562,7 +621,13 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         last_at: 0,
         events: vec![],
         pushed_head: None,
+        turns_seen: Some(0),
+        harness: harness_for(w),
+        review: w.review,
     };
+    if let Some(h) = w.harness.as_deref().filter(|h| *h != "claude" && l.harness.is_none()) {
+        info!(session = l.session, harness = h, "hosted: this box hasn't that agent; the session runs on Claude Code");
+    }
     let fail = |mut l: Session, why: String| {
         info!(session = l.session, why, "hosted: a session can't start here");
         l.push(
@@ -752,20 +817,38 @@ fn notes(repo: &Path) -> Option<String> {
     })
 }
 
-/// The agent a session's block runs: Claude Code, unless a test names a
-/// command (`ARUGULA_HOSTED_SESSION_AGENT`), which still runs as kind
-/// `claude`, under M185's gate.
+/// The agent a session's block runs: Claude Code in `bypassPermissions`,
+/// or Codex, when it runs on it (M264), in `full-access`, unless a test
+/// names a command (`ARUGULA_HOSTED_SESSION_AGENT`), which still runs as
+/// that kind, under M185's gate.
 fn agent_config(l: &Session) -> Value {
+    let agent = l.harness.as_deref().unwrap_or("claude");
     let mut c = json!({
-        "agent": "claude",
+        "agent": agent,
         "cwd": l.checkout,
         "title": format!("session {}", l.session),
         "run_as": l.user,
+        // Nothing asks before it runs (aru-115: the box, as its own user
+        // behind the firewall, is the blast radius); a question still
+        // does (an elicitation), and goes to the card. What still asks in
+        // this mode the block allows itself (`agent`'s permissions). Each
+        // agent has its own word for the mode: codex-acp's is
+        // `full-access`, which a review runs in too, since what keeps a
+        // review read-only is that its box pushes nothing for it.
+        "permission_mode": mode_of(agent),
     });
     if let Some(cmd) = std::env::var("ARUGULA_HOSTED_SESSION_AGENT").ok().filter(|c| !c.trim().is_empty()) {
         c["command"] = json!(crate::agent::defs::split_command(&cmd));
     }
     c
+}
+
+/// The permission mode in which agent `agent` asks nothing (aru-115).
+fn mode_of(agent: &str) -> &'static str {
+    match agent {
+        "codex" => "full-access",
+        _ => "bypassPermissions",
+    }
 }
 
 async fn open_block(app: &App, l: &Session) -> Result<u32, String> {
@@ -818,6 +901,17 @@ struct Seen {
     open: Option<(&'static str, String, String, Vec<String>)>,
     tool: Option<String>,
     error: Option<String>,
+    /// Whose each turn's prompt was, oldest first, of the last few
+    /// (`None`: the block's owner's, or the agent's own).
+    by: Vec<Option<String>>,
+}
+
+impl Seen {
+    /// Whose the block's turn number `n` (from 0) was, if it says.
+    fn by_at(&self, n: u64) -> Option<String> {
+        let from = self.turns.saturating_sub(self.by.len() as u64);
+        n.checked_sub(from).and_then(|i| self.by.get(i as usize).cloned().flatten())
+    }
 }
 
 fn seen(s: &Value) -> Seen {
@@ -843,6 +937,11 @@ fn seen(s: &Value) -> Seen {
         open: perm.or_else(ask),
         tool: s["current_tool"]["title"].as_str().map(str::to_owned),
         error: s["error"].as_str().map(str::to_owned),
+        // `recent_turns` is newest first.
+        by: s["recent_turns"]
+            .as_array()
+            .map(|t| t.iter().rev().map(|t| t["by"].as_str().map(str::to_owned)).collect())
+            .unwrap_or_default(),
     }
 }
 
@@ -927,8 +1026,9 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                     say(Box::new(move |now| now.push(&k, &m, Kind::State, State::Working, SessionDetail::default())));
                 }
                 // The finish step, before the push: a stop meanwhile ends
-                // it here.
-                let finished = finish_turn(app, &l, work.as_ref().and_then(|w| w.finish.as_ref()), &keys, &me).await;
+                // it here. A review runs none (M264).
+                let step = work.as_ref().and_then(|w| w.finish.as_ref()).filter(|_| !l.review);
+                let finished = finish_turn(app, &l, step, &keys, &me).await;
                 let Ok(Some(l)) = read(&dir, id) else { return false };
                 if l.ended.is_some() {
                     return false;
@@ -944,16 +1044,23 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 // The push, only when the finish step passed (or there's
                 // none) and no fix is owed: the commit now on GitHub, nothing
                 // to push, or why it didn't.
-                let may_push = fix.is_none() && finished.may_push();
+                // A review pushes nothing (M264): its reply is what it made.
+                let may_push = fix.is_none() && finished.may_push() && !l.review;
                 info!(session = id, may_push, fix = fix.is_some(), "hosted: a session's turn ended");
                 let pushed = if may_push { push::push_turn(app, &l).await } else { Ok(None) };
                 // Stopped while it pushed: what the push left goes too.
                 if may_push && push::clean_if_ended(&dir, &l).await {
                     return false;
                 }
+                let reply = r.as_ref().filter(|_| l.review).map(|r| {
+                    let mut m = r.message.trim().to_owned();
+                    cut(&mut m, REPLY_MAX);
+                    m
+                });
                 let branch = l.branch.clone();
                 let (k, m, base, again) = (keys.clone(), me.clone(), s.turns, fix.clone());
                 say(Box::new(move |now| {
+                    now.turns_seen = Some(base);
                     let pushed = match pushed {
                         Ok(Some(head)) => {
                             now.pushed_head = Some(head);
@@ -981,6 +1088,7 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                         diffstat: w.as_ref().and_then(|w| w.diffstat.clone()),
                         uncommitted: w.as_ref().map(|w| w.uncommitted_total),
                         finish: finished.result(),
+                        reply,
                         ..Default::default()
                     };
                     now.push(&k, &m, Kind::Turn, State::Working, d);
@@ -1037,7 +1145,33 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
         None => {
             BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
             let next = work.as_ref().and_then(|w| w.prompts.iter().find(|p| !l.handed.contains(&p.id)).cloned());
-            if let Some(p) = next {
+            let Some(seen_turns) = l.turns_seen else {
+                // A ledger from before it was kept: from now on.
+                let turns = s.turns;
+                say(Box::new(move |now| now.turns_seen = Some(turns)));
+                return true;
+            };
+            if l.now() == State::Done && (s.turns > seen_turns || s.queued > 0) {
+                // A turn started in the block itself (someone typed there,
+                // or the agent woke itself): followed like the box's own,
+                // to the same end (finish step, push, turn report). The
+                // thread's prompts wait for it.
+                let by = s.by_at(seen_turns);
+                let (k, m) = (keys.clone(), me.clone());
+                info!(session = id, "hosted: a turn started in the session's block");
+                say(Box::new(move |now| {
+                    now.turn = Some(Turn {
+                        prompts: vec![],
+                        base: seen_turns,
+                        sent: true,
+                        at: now_ms(),
+                        fix: None,
+                        cancelled: false,
+                    });
+                    let d = SessionDetail { in_block: true, by, ..Default::default() };
+                    now.push(&k, &m, Kind::State, State::Working, d);
+                }));
+            } else if let Some(p) = next {
                 hand(app, &b, id, p, &keys, &me, s.turns).await;
             } else if !l.unnamed.is_empty() {
                 // An action with no turn to do it to (a cancel too late):
@@ -1092,7 +1226,7 @@ async fn give(
     if let Some(n) = &l.notes {
         text.push_str(n);
     }
-    match b.call_by("send", json!({ "text": text }), Some(&p.author)).await {
+    match b.call_by("send", json!({ "text": text }), Some(p.who())).await {
         Ok(_) => {
             update(dir, id, |now| started(now, keys, me));
         }
@@ -1131,6 +1265,8 @@ fn started(now: &mut Session, keys: &arugula_e2e::DeviceKeys, me: &str) {
         let d = SessionDetail {
             prompts,
             block: first.then(|| now.block.map(|b| b.to_string())).flatten(),
+            // The agent it runs on (M264), said once.
+            harness: first.then(|| now.harness.clone().unwrap_or_else(|| "claude".into())),
             ..Default::default()
         };
         now.push(keys, me, Kind::State, State::Working, d);

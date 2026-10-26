@@ -63,6 +63,15 @@
 //! - **The job** that follows a session is its `session` job on
 //!   `platform_jobs` ([`dispatch`]); one that ends other than `done` fails
 //!   its session (M223's rule for runs). Its handler is M256's.
+//! - **Siblings and reviews** (M264, [`Role`]): a Try 3 makes two
+//!   sessions under one ([`start_tries_in`]), on its thread, box and repo,
+//!   each re-running its first prompt, on the harness asked for. A thread
+//!   still has one session of its own going at a time; its siblings and
+//!   reviews run beside it, each in a slot of the box's. A pick
+//!   ([`pick_in`]) keeps one of the three and stops the others; a picked
+//!   sibling is the thread's session from then on ([`Db::session_on_thread`]).
+//!   A review (`@codex review`) is a session under the one it reviews,
+//!   read-only, that ends once its review is posted.
 
 use anyhow::{Context as _, Result, bail};
 pub use arugula_control_wire::work::{MAX_SESSIONS_PER_BOX, SessionAction, SessionDetail, SessionPrompt, SessionWork};
@@ -110,6 +119,31 @@ pub fn slug(text: &str) -> String {
     out
 }
 
+/// A slug for a session on native issue `number` (M265), as `arugula issue
+/// open` names an issue's branch: `i<number>-` and the title's first
+/// words (at most five, about 28 characters), else `i<number>`. At most
+/// [`MAX_SLUG`] bytes.
+pub fn issue_slug(number: u64, title: &str) -> String {
+    let title = title.to_lowercase().replace(['\'', '’'], "");
+    let mut words: Vec<String> = Vec::new();
+    for w in title.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()) {
+        let len: usize = words.iter().map(|w| w.len() + 1).sum();
+        if words.len() >= 5 || (len + w.len() > 28 && !words.is_empty()) {
+            break;
+        }
+        words.push(w.chars().take(28).collect());
+    }
+    let mut out = format!("i{number}");
+    for w in words {
+        if out.len() + 1 + w.len() > MAX_SLUG {
+            break;
+        }
+        out.push('-');
+        out.push_str(&w);
+    }
+    out
+}
+
 /// How many hex characters of a session's id its branch takes.
 pub const BRANCH_HEX: usize = 8;
 
@@ -136,6 +170,43 @@ fn is_slug(s: &str) -> bool {
 fn word(s: &str) -> bool {
     !s.is_empty() && s.len() <= 128 && s.bytes().all(|b| b.is_ascii_graphic())
 }
+
+/// What a session is to its thread (M264).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    /// The thread's own: `@arugula` made it.
+    Thread,
+    /// A Try 3's sibling of its `parent_session`.
+    Try,
+    /// `@codex review` of its `parent_session`: read-only.
+    Review,
+}
+
+impl Role {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::Thread => "thread",
+            Role::Try => "try",
+            Role::Review => "review",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [Role::Thread, Role::Try, Role::Review].into_iter().find(|r| r.as_str() == s)
+    }
+}
+
+/// Whether `h` is an agent a session runs on (`claude`, `codex`).
+pub fn is_harness(h: &str) -> bool {
+    arugula_control_wire::work::HARNESSES.contains(&h)
+}
+
+/// Why a stopped try wasn't kept, first the code (the card knows it).
+pub const NOT_PICKED: &str = "not_picked: another try was kept";
+
+/// How many sessions a Try 3 runs: the one it's asked of and two
+/// siblings.
+pub const TRIES: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Session {
@@ -176,6 +247,18 @@ pub struct Session {
     pub ci_rounds: u32,
     pub created_at: u64,
     pub updated_at: u64,
+    /// What it is to its thread (M264), and the session it's a sibling or
+    /// a review of.
+    pub role: Role,
+    pub parent_session: Option<String>,
+    /// The agent asked for: `claude` or `codex`.
+    pub harness: String,
+    /// On a Try 3's parent: the session kept, who picked it, and when.
+    pub picked: Option<String>,
+    pub picked_by: Option<String>,
+    pub picked_at: Option<u64>,
+    /// When the mirror saw its PR merged (M265): its thread is done.
+    pub merged_at: Option<u64>,
 }
 
 impl Session {
@@ -300,6 +383,8 @@ impl Prompt {
         SessionPrompt {
             id: self.id.clone(),
             author: self.author.clone(),
+            // Filled by the pull (`work::work`): the hub knows names.
+            author_name: String::new(),
             source: self.source.as_str().into(),
             association: self.association.clone(),
             text: self.text.clone(),
@@ -568,7 +653,8 @@ impl AgentsOn {
 
 pub(super) const COLS: &str = "id, project_id, room_id, parent_seq, asker, workspace_id, machine, block, repo, \
                                branch, state, was_state, last_seq, daemon_n, heard_at, last_tool, last_error, pr, \
-                               ci_rounds, created_at, updated_at";
+                               ci_rounds, created_at, updated_at, role, parent_session, harness, picked, \
+                               picked_by, picked_at, merged_at";
 const EVENT_COLS: &str = "session_id, seq, kind, from_state, to_state, at, detail, daemon, daemon_n, sig";
 const PROMPT_COLS: &str = "id, session_id, author, source, association, text, state, created_at, sent_at, dropped_at";
 const ACTION_COLS: &str =
@@ -601,6 +687,16 @@ pub(super) fn session_row(r: &Row) -> Result<Session> {
         ci_rounds: r.get(18)?,
         created_at: r.get(19)?,
         updated_at: r.get(20)?,
+        role: {
+            let role: String = r.get(21)?;
+            Role::parse(&role).with_context(|| format!("a session of role {role:?}"))?
+        },
+        parent_session: r.get(22)?,
+        harness: r.get(23)?,
+        picked: r.get(24)?,
+        picked_by: r.get(25)?,
+        picked_at: r.get(26)?,
+        merged_at: r.get(27)?,
     })
 }
 
@@ -775,14 +871,25 @@ fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport) -> Result<Result<Ve
             if !from.daemon_may(to) {
                 return Ok(Err(Refused::Reporter));
             }
+            // A turn someone started in the session's block itself (its
+            // Open button) names no prompts: a done session's next only.
+            if d.in_block && (from != State::Done || to != State::Working || !d.prompts.is_empty()) {
+                return refuse("only a done session's next turn starts in its block, naming no prompts");
+            }
             match to {
                 State::Working => {
                     let starts = matches!(from, State::Queued | State::Done);
-                    if starts && d.prompts.is_empty() {
+                    if starts && d.prompts.is_empty() && !d.in_block {
                         return refuse("a turn starts with the queued prompts it names");
+                    }
+                    if d.by.as_deref().is_some_and(|b| b.chars().count() > 200) {
+                        return refuse("who started a turn is at most 200 characters");
                     }
                     if from == State::Queued && !d.block.as_deref().is_some_and(word) {
                         return refuse("taking a session names its agent block");
+                    }
+                    if d.harness.as_deref().is_some_and(|h| from != State::Queued || !is_harness(h)) {
+                        return refuse("taking a session names the agent it runs: claude or codex");
                     }
                     if let Err(e) = queued_among(c, &s.id, &d.prompts)? {
                         return Ok(Err(e));
@@ -812,6 +919,12 @@ fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport) -> Result<Result<Ve
             if d.pushed.is_none() {
                 return refuse("a turn says whether it pushed (pushed)");
             }
+            if s.role == Role::Review && d.pushed == Some(true) {
+                return refuse("a review pushes nothing");
+            }
+            if d.reply.is_some() && s.role != Role::Review {
+                return refuse("only a review's turn carries a reply");
+            }
             Ok(Ok(vec![]))
         }
     }
@@ -832,6 +945,25 @@ fn own_machine(c: &impl Sql, s: &Session) -> Result<Option<String>> {
 
 /// [`Db::create_session`] in the caller's transaction.
 pub fn create_session_in(c: &impl Sql, new: &NewSession, at: u64) -> Result<Option<(Session, Prompt)>> {
+    make_in(c, new, Role::Thread, None, "claude", at)
+}
+
+/// Make a session of `role` under `parent` (none for a thread's own), on
+/// `harness`: [`create_session_in`]'s rules.
+fn make_in(
+    c: &impl Sql,
+    new: &NewSession,
+    role: Role,
+    parent: Option<&str>,
+    harness: &str,
+    at: u64,
+) -> Result<Option<(Session, Prompt)>> {
+    if !is_harness(harness) {
+        bail!("a session runs on claude or codex");
+    }
+    if (role == Role::Thread) != parent.is_none() {
+        bail!("a sibling or a review has a parent session, and a thread's own has none");
+    }
     if !is_slug(new.slug) {
         bail!("a session's slug is lowercase letters, digits and single dashes, at most {MAX_SLUG}");
     }
@@ -859,13 +991,26 @@ pub fn create_session_in(c: &impl Sql, new: &NewSession, at: u64) -> Result<Opti
         .query_row(
             &format!(
                 "INSERT INTO agent_sessions (id, project_id, room_id, parent_seq, asker, workspace_id, repo, branch,
-                     state, last_seq, created_at, updated_at)
-                 SELECT ?1, p.id, ?2, ?3, ?4, w.id, ?5, ?6, 'queued', 1, ?7, ?7
+                     state, last_seq, created_at, updated_at, role, parent_session, harness)
+                 SELECT ?1, p.id, ?2, ?3, ?4, w.id, ?5, ?6, 'queued', 1, ?7, ?7, ?10, ?11, ?12
                  FROM projects p JOIN hosted_workspaces w ON w.project_id = p.id
                  WHERE p.id = ?8 AND w.id = ?9 AND w.deleted_at IS NULL AND w.purpose = 'workspace'
                  RETURNING {COLS}"
             ),
-            params![id, new.room, new.parent_seq, new.asker, new.repo, branch, at, new.project, new.workspace],
+            params![
+                id,
+                new.room,
+                new.parent_seq,
+                new.asker,
+                new.repo,
+                branch,
+                at,
+                new.project,
+                new.workspace,
+                role.as_str(),
+                parent,
+                harness
+            ],
             session_row,
         )
         .optional()
@@ -891,6 +1036,160 @@ pub fn create_session_in(c: &impl Sql, new: &NewSession, at: u64) -> Result<Opti
         Err(e) => bail!("{e}"),
     };
     Ok(Some((session, prompt)))
+}
+
+/// The slug of session `s`'s branch (`arugula/<8 hex>-<slug>`).
+pub fn slug_of(s: &Session) -> &str {
+    let short = s.id.strip_prefix("ses_").unwrap_or(&s.id);
+    let short = &short[..short.len().min(BRANCH_HEX)];
+    s.branch.strip_prefix("arugula/").and_then(|b| b.strip_prefix(short)).map_or("", |r| r.trim_start_matches('-'))
+}
+
+/// A session's first prompt: what its siblings re-run.
+fn first_prompt_of(c: &impl Sql, session: &str) -> Result<Option<Prompt>> {
+    c.query_row(
+        &format!("SELECT {PROMPT_COLS} FROM session_prompts WHERE session_id = ?1 ORDER BY created_at, id LIMIT 1"),
+        params![session],
+        prompt_row,
+    )
+    .optional()
+}
+
+fn siblings_in(c: &impl Sql, parent: &str) -> Result<Vec<Session>> {
+    c.query_map(
+        &format!(
+            "SELECT {COLS} FROM agent_sessions WHERE parent_session = ?1 AND role = 'try' ORDER BY created_at, id"
+        ),
+        params![parent],
+        session_row,
+    )
+}
+
+/// Try 3 (M264) of session `parent`, in the caller's transaction: two
+/// siblings, one on each of `harnesses`, each re-running its first prompt
+/// on its thread, workspace and repo, as its asker (so their turns are
+/// the asker's), queued with their jobs. Refused unless it's a thread's
+/// own session that hasn't ended and has no tries yet.
+pub fn start_tries_in(
+    c: &impl Sql,
+    parent: &str,
+    harnesses: &[&str],
+    at: u64,
+) -> Result<Result<Vec<Session>, Refused>> {
+    let Some(p) = session_for_update(c, parent)? else { return Ok(Err(Refused::NoSession)) };
+    if harnesses.len() != TRIES - 1 || !harnesses.iter().all(|h| is_harness(h)) {
+        return Ok(Err(Refused::Detail("a Try 3 runs two more: claude or codex, each")));
+    }
+    if p.role != Role::Thread {
+        return Ok(Err(Refused::Detail("only a thread's own session is tried three ways")));
+    }
+    if p.state.terminal() {
+        return Ok(Err(Refused::Moved { now: p.state }));
+    }
+    if !siblings_in(c, &p.id)?.is_empty() {
+        return Ok(Err(Refused::Detail("it's being tried three ways already")));
+    }
+    let Some(first) = first_prompt_of(c, &p.id)?.filter(|f| !f.author.is_empty() && !f.text.trim().is_empty()) else {
+        return Ok(Err(Refused::Prompt("its first prompt is gone")));
+    };
+    let mut out = Vec::new();
+    for (i, h) in harnesses.iter().enumerate() {
+        let new = NewSession {
+            project: &p.project,
+            room: &p.room,
+            parent_seq: p.parent_seq,
+            asker: &p.asker,
+            workspace: &p.workspace,
+            repo: p.repo.as_deref(),
+            slug: slug_of(&p),
+            prompt: NewPrompt {
+                author: &first.author,
+                source: first.source,
+                association: first.association.as_deref(),
+                text: &first.text,
+            },
+        };
+        // A millisecond apart, so they're listed in the order asked.
+        let Some((sib, _)) = make_in(c, &new, Role::Try, Some(&p.id), h, at + i as u64)? else {
+            return Ok(Err(Refused::Detail("its workspace is gone")));
+        };
+        dispatch(c, &sib.id, at)?;
+        out.push(sib);
+    }
+    Ok(Ok(out))
+}
+
+/// Keep `picked` of session `parent`'s Try 3 (M264), in the caller's
+/// transaction: `parent` says so, and the others that haven't ended stop
+/// ([`NOT_PICKED`]), as control. The parent after, and the ones it
+/// stopped. Refused unless `parent` has tries, none is picked yet, and
+/// `picked` is one of them that hasn't ended.
+pub fn pick_in(
+    c: &impl Sql,
+    parent: &str,
+    picked: &str,
+    by: &str,
+    at: u64,
+) -> Result<Result<(Session, Vec<String>), Refused>> {
+    let Some(p) = session_for_update(c, parent)? else { return Ok(Err(Refused::NoSession)) };
+    let siblings = siblings_in(c, &p.id)?;
+    if siblings.is_empty() {
+        return Ok(Err(Refused::Detail("it isn't being tried three ways")));
+    }
+    if p.picked.is_some() {
+        return Ok(Err(Refused::Detail("one of its tries is kept already")));
+    }
+    let mut all = vec![p.clone()];
+    all.extend(siblings);
+    let Some(keep) = all.iter().find(|s| s.id == picked) else {
+        return Ok(Err(Refused::Detail("that isn't one of its tries")));
+    };
+    if keep.state.terminal() {
+        return Ok(Err(Refused::Moved { now: keep.state }));
+    }
+    c.execute(
+        "UPDATE agent_sessions SET picked = ?2, picked_by = ?3, picked_at = ?4, updated_at = ?4 WHERE id = ?1",
+        params![p.id, picked, by, at],
+    )?;
+    let detail = serde_json::json!({ "reason": NOT_PICKED, "picked": picked }).to_string();
+    let mut stopped = Vec::new();
+    for s in all.iter().filter(|s| s.id != picked && !s.state.terminal()) {
+        let m = Move::Control { from: s.state, to: State::Stopped, at, detail: &detail };
+        match move_session_in(c, &s.id, &m)? {
+            Ok(_) => stopped.push(s.id.clone()),
+            Err(e) => return Ok(Err(e)),
+        }
+    }
+    let after = session_for_update(c, &p.id)?.context("the session it picked in")?;
+    Ok(Ok((after, stopped)))
+}
+
+/// A review (M264, `@codex review`) of session `of`, asked by `asker`, on
+/// `harness`, with `prompt` (the diff and the thread, fenced): a session
+/// under it, on its thread, workspace and repo, queued with its job.
+pub fn create_review_in(
+    c: &impl Sql,
+    of: &Session,
+    asker: &str,
+    harness: &str,
+    prompt: &str,
+    at: u64,
+) -> Result<Option<(Session, Prompt)>> {
+    let new = NewSession {
+        project: &of.project,
+        room: &of.room,
+        parent_seq: of.parent_seq,
+        asker,
+        workspace: &of.workspace,
+        repo: of.repo.as_deref(),
+        slug: "review",
+        prompt: NewPrompt { author: asker, source: Source::Member, association: None, text: prompt },
+    };
+    let made = make_in(c, &new, Role::Review, Some(&of.id), harness, at)?;
+    if let Some((s, _)) = &made {
+        dispatch(c, &s.id, at)?;
+    }
+    Ok(made)
 }
 
 /// Follow session `id` with its `session` job on `platform_jobs`, queued in
@@ -1162,18 +1461,56 @@ impl Db {
             .optional()
     }
 
-    /// The session going on a thread (one that hasn't ended), if any.
+    /// The session going on a thread (one that hasn't ended), if any: the
+    /// thread's own, or once a Try 3's sibling is picked, that one (M264).
+    /// Its other tries and its reviews aren't the thread's.
     pub fn session_on_thread(&self, room: &str, parent_seq: u64) -> Result<Option<Session>> {
         self.c()
             .query_row(
                 &format!(
-                    "SELECT {COLS} FROM agent_sessions
-                     WHERE room_id = ?1 AND parent_seq = ?2 AND state NOT IN ('failed', 'stopped')"
+                    "SELECT {COLS} FROM agent_sessions s
+                     WHERE room_id = ?1 AND parent_seq = ?2 AND state NOT IN ('failed', 'stopped')
+                       AND (parent_session IS NULL OR (role = 'try' AND EXISTS (
+                           SELECT 1 FROM agent_sessions p WHERE p.id = s.parent_session AND p.picked = s.id)))
+                     ORDER BY (parent_session IS NULL) DESC, created_at LIMIT 1"
                 ),
                 params![room, parent_seq],
                 session_row,
             )
             .optional()
+    }
+
+    /// Session `parent`'s Try 3 siblings (M264), oldest first.
+    pub fn session_siblings(&self, parent: &str) -> Result<Vec<Session>> {
+        siblings_in(&self.c(), parent)
+    }
+
+    /// [`start_tries_in`] in a transaction of its own.
+    pub fn start_tries(&self, parent: &str, harnesses: &[&str], at: u64) -> Result<Result<Vec<Session>, Refused>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let made = start_tries_in(&tx, parent, harnesses, at)?;
+        if made.is_ok() {
+            tx.commit()?;
+        }
+        Ok(made)
+    }
+
+    /// [`pick_in`] in a transaction of its own.
+    pub fn pick_try(
+        &self,
+        parent: &str,
+        picked: &str,
+        by: &str,
+        at: u64,
+    ) -> Result<Result<(Session, Vec<String>), Refused>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let done = pick_in(&tx, parent, picked, by, at)?;
+        if done.is_ok() {
+            tx.commit()?;
+        }
+        Ok(done)
     }
 
     /// A project's latest sessions, newest first.
@@ -1462,7 +1799,10 @@ impl Db {
                 n: s.daemon_n,
                 prompts: prompts.iter().map(Prompt::wire).collect(),
                 actions: pending_actions(&c, &s.id)?.iter().map(Action::wire).collect(),
-                finish: finish.clone(),
+                // A review runs no finish step (M264).
+                finish: finish.clone().filter(|_| s.role != Role::Review),
+                harness: Some(s.harness.clone()),
+                review: s.role == Role::Review,
             });
         }
         Ok(out)
@@ -1562,6 +1902,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted, now: u64) -> Result<()> {
         params![d.account, now],
     )?;
     c.execute("UPDATE agent_sessions SET asker = '' WHERE asker = ?1", params![d.account])?;
+    c.execute("UPDATE agent_sessions SET picked_by = '' WHERE picked_by = ?1", params![d.account])?;
     c.execute(
         "UPDATE session_prompts SET author = '', text = '',
              state = CASE WHEN state = 'queued' THEN 'dropped' ELSE state END,

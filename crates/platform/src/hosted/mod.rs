@@ -10,8 +10,8 @@
 //!   and editors (not a team's viewers) create, rebuild and delete them
 //!   ([`routes`]). Making one also needs the account on
 //!   `ARUGULA_HOSTED_ACCOUNTS`.
-//! - **A box** is made from the current release's template ([`template`])
-//!   with the metadata `arugula_workspace`, `arugula_project`,
+//! - **A box** is made from the current release's template of the
+//!   workspace's size ([`template`], [`Size`], M266) with the metadata `arugula_workspace`, `arugula_project`,
 //!   `arugula_release` and `arugula_template`. It pauses (memory and disk
 //!   kept) when its timeout passes, and only a wake resumes it. A create is
 //!   never sent twice: after a lost answer the box is found by its metadata.
@@ -89,7 +89,7 @@ pub mod wake;
 mod wake_tests;
 pub mod worker;
 
-pub use crate::db::hosted::HostedWorkspace;
+pub use crate::{compute::template::Size, db::hosted::HostedWorkspace};
 
 /// Hosted workspaces' flags and their env vars.
 #[derive(clap::Args, Debug, Clone, Default)]
@@ -100,6 +100,11 @@ pub struct Args {
     /// templates are named by their operator.
     #[arg(long, env = "ARUGULA_HOSTED_TEMPLATE")]
     pub hosted_template: Option<String>,
+    /// The template large workspaces' boxes are made from, in place of this
+    /// release's `arugula-workspace-large:vX.Y.Z` (M266). Unset where
+    /// ARUGULA_HOSTED_TEMPLATE is set: large ones are made from that one too.
+    #[arg(long, env = "ARUGULA_HOSTED_TEMPLATE_LARGE")]
+    pub hosted_template_large: Option<String>,
     /// How a new box enrolls: `sandbox` (by its sandbox id, for a box made
     /// from a running snapshot) or `ticket` (a one-time ticket in its env,
     /// for loam and testnet, whose boxes boot fresh).
@@ -209,6 +214,7 @@ impl Args {
         Ok(Config {
             inference,
             template: self.hosted_template.filter(|t| !t.trim().is_empty()),
+            template_large: self.hosted_template_large.filter(|t| !t.trim().is_empty()),
             enroll: if self.hosted_enroll == "ticket" { EnrollBy::Ticket } else { EnrollBy::Sandbox },
             accounts: self.hosted_accounts.into_iter().map(|a| a.trim().to_owned()).filter(|a| !a.is_empty()).collect(),
             cipher: cloud.master_key()?.map(std::sync::Arc::new),
@@ -243,7 +249,10 @@ pub enum EnrollBy {
 /// What hosted workspaces run with, beside [`Platform::compute`].
 #[derive(Clone, Default)]
 pub struct Config {
+    /// [`Args::hosted_template`] and [`Args::hosted_template_large`], when
+    /// set ([`template`] says which a box is made from).
     pub template: Option<String>,
+    pub template_large: Option<String>,
     pub enroll: EnrollBy,
     pub accounts: Vec<String>,
     /// Seals [`crate::db::hosted`]'s secrets, when there's a key.
@@ -271,6 +280,7 @@ impl std::fmt::Debug for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Config")
             .field("template", &self.template)
+            .field("template_large", &self.template_large)
             .field("enroll", &self.enroll)
             .field("accounts", &self.accounts)
             .field("idle_timeout", &self.idle_timeout)
@@ -323,11 +333,16 @@ impl Config {
     }
 }
 
-/// The template a new box is made from: the current release's
+/// The template a new box of `size` is made from: the current release's
 /// ([`crate::compute::template::current`]), unless `ARUGULA_HOSTED_TEMPLATE`
-/// names another.
-pub fn template(app: &Platform) -> Option<String> {
-    Some(app.hosted.template.clone().unwrap_or_else(crate::compute::template::current))
+/// names another (for every size, unless `ARUGULA_HOSTED_TEMPLATE_LARGE`
+/// names large's).
+pub fn template(app: &Platform, size: Size) -> Option<String> {
+    let named = match size {
+        Size::Small => app.hosted.template.clone(),
+        Size::Large => app.hosted.template_large.clone().or_else(|| app.hosted.template.clone()),
+    };
+    Some(named.unwrap_or_else(|| crate::compute::template::current(size)))
 }
 
 /// What the box carries for [`crate::compute::Substrate::list`].
@@ -372,6 +387,11 @@ pub struct Spec {
     /// (`arugula_control_wire::work::FINISH_TIMEOUT_S` when 0).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub finish_timeout_s: u64,
+    /// Its box's size (M266): which template it's made from. Left out when
+    /// small, so a spec from before sizes hashes as before; changing it
+    /// needs a rebuild.
+    #[serde(default, skip_serializing_if = "Size::is_small")]
+    pub size: Size,
 }
 
 fn is_zero(n: &u64) -> bool {
@@ -513,6 +533,11 @@ pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machin
         }
         let text = match s.state {
             State::Queued => String::new(),
+            // A review (M264) starts again from its own prompt: the diff
+            // and the thread as they were asked about.
+            _ if s.role == crate::db::sessions::Role::Review => {
+                app.db.session_prompts(&s.id)?.into_iter().next().map(|p| p.text).unwrap_or_default()
+            }
             _ => match crate::sessions::hydrate::after_rebuild(app, &s).await {
                 Ok(t) => t,
                 Err(e) => {

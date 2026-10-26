@@ -183,7 +183,27 @@ async fn ci_ref(State(h): State<Shared>, Path((_, _, kind, sha)): Path<(String, 
 
 /// `compare/{sha}...main`, as GitHub answered for real commits: `ahead`
 /// with `behind_by` 0 for one on main, `diverged` for a branch's.
-async fn compare(State(h): State<Shared>, Path((_, _, spec)): Path<(String, String, String)>) -> Response {
+async fn compare(
+    State(h): State<Shared>,
+    Path((o, r, spec)): Path<(String, String, String)>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    // A diff (M264's review): the file kept as `owner/name:compare:<spec>`.
+    if headers.get("accept").and_then(|v| v.to_str().ok()) == Some("application/vnd.github.diff") {
+        return match h.lock().unwrap().files.get(&format!("{o}/{r}:compare:{spec}")) {
+            Some(diff) => diff.clone().into_response(),
+            None => StatusCode::NOT_FOUND.into_response(),
+        };
+    }
+    // A session's branch (M259): its commits, oldest first, as GitHub
+    // lists them.
+    if spec.contains("...arugula/") {
+        return Json(json!({ "status": "ahead", "ahead_by": 2, "commits": [
+            { "sha": "a1a1a1a1a1", "commit": { "message": "Add farewell(name)\n\nNext to greet." } },
+            { "sha": "b2b2b2b2b2", "commit": { "message": "Add a test for farewell" } },
+        ] }))
+        .into_response();
+    }
     let sha = spec.split("...").next().unwrap_or_default();
     if h.lock().unwrap().on_main.contains(sha) {
         Json(json!({ "ahead_by": 3, "behind_by": 0, "status": "ahead" })).into_response()
@@ -269,7 +289,7 @@ pub(crate) async fn fake_github(h: Shared) -> String {
         .route("/repos/{o}/{r}", get(repo))
         .route("/repos/{o}/{r}/collaborators/{login}/permission", get(permission))
         .route("/repos/{o}/{r}/git/ref/tags/ci/{kind}/{sha}", get(ci_ref))
-        .route("/repos/{o}/{r}/compare/{spec}", get(compare))
+        .route("/repos/{o}/{r}/compare/{*spec}", get(compare))
         .with_state(h);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());

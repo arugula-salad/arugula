@@ -7,6 +7,7 @@
 // store has them.
 
 import type {
+  IssueAgent,
   IssueEvent,
   IssueEvents,
   IssueHome,
@@ -99,6 +100,9 @@ export const issues = {
   setHome: (project: string, home: string | null) => call<IssueHome>("PUT", `/api/projects/${enc(project)}/issue-home`, { home }),
   /** The issue's thread (made the first time someone opens it). */
   thread: (id: string) => chat.openObject(id),
+  /** Agent on this (M265): `@arugula` in the issue's thread, as the
+   * reader. */
+  agent: (id: string) => call<IssueAgent>("POST", `/api/issues/${enc(id)}/agent`),
   /** Where the project's export downloads from. */
   exportUrl: (project: string, format: "json" | "md") => `/api/projects/${enc(project)}/issues/export?format=${format}`,
 };

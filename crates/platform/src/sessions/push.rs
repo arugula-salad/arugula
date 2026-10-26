@@ -11,7 +11,8 @@
 //!   its first report bound it to, and it hasn't ended;
 //! - the ref is the session's own branch, exactly (`arugula/<8 hex>-<slug>`):
 //!   never `main`, never another session's;
-//! - its repo is linked to the session's project.
+//! - its repo is linked to the session's project;
+//! - it isn't a review (M264), which pushes nothing.
 //!
 //! The token covers that repo alone, with `contents: write` and nothing
 //! else: without `workflows`, GitHub refuses a push that changes
@@ -47,6 +48,9 @@ pub async fn token(app: &Platform, m: &HostedMachine, a: &PushAsk) -> anyhow::Re
     }
     if matches!(s.state, State::Failed | State::Stopped) {
         return Ok(refused(m, a, &format!("the session is {}", s.state.as_str())));
+    }
+    if s.role == crate::db::sessions::Role::Review {
+        return Ok(refused(m, a, "a review pushes nothing"));
     }
     if a.branch != s.branch {
         return Ok(refused(m, a, "a session pushes its own branch and nothing else"));

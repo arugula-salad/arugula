@@ -3,12 +3,12 @@
 # zip of arugulad and arugula for Windows (install.ps1's), attach them
 # to the tag's release with SHA256SUMS, publish it as latest, bump the
 # Homebrew formula, send the editor extension to the marketplaces, build
-# the hosted workspace's E2B template (M177), and deploy the hosted
-# control from the x86_64 static build (M133): its platform first (M140),
-# then its hub, only when something the hub is built from changed since
-# the release it runs (the control job). No desktop app: it has its own
-# release, app-v* tags (app-release.yml, #393), and the daemon updates
-# itself (#391).
+# the hosted workspace's E2B templates (M177, one per size: M266), and
+# deploy the hosted control from the x86_64 static build (M133): its
+# platform first (M140), then its hub, only when something the hub is
+# built from changed since the release it runs (the control job). No
+# desktop app: it has its own release, app-v* tags (app-release.yml,
+# #393), and the daemon updates itself (#391).
 name: release
 on:
   push:
@@ -245,16 +245,25 @@ jobs:
       - run: scripts/ci-platform-deploy deploy "$GITHUB_REF_NAME" "$RUNNER_TEMP/control"
 
   # A hosted workspace's box (M177 #1238): packaging/hosted around the
-  # tag's static arugulad and arugula, built on E2B as the template
-  # arugula-workspace, tagged with the tag, and snapshotted with `arugulad
-  # --hosted` running. The platform makes boxes from its own version's tag
+  # tag's static arugulad and arugula, built on E2B as a template per
+  # workspace size (M266), each tagged with the tag and snapshotted with
+  # `arugulad --hosted` running: arugula-workspace (small, 2 vCPU, 2 GiB)
+  # and arugula-workspace-large (8 vCPU, 8 GiB). One job per size, so a
+  # failed one is re-run alone. The platform makes a workspace's box from
+  # its size's template at its own version's tag
   # (crates/platform/src/compute/template.rs), so the tag is the record.
   # E2B_API_KEY is a key for E2B's project; without it the job fails. It
-  # holds back nothing else: until it's done, the platform's creates for
-  # this version are refused. Never on a PR: tags only, like this file.
+  # holds back nothing else: until it's done, the platform's creates of
+  # that size for this version are refused. Never on a PR: tags only, like
+  # this file.
   template:
     needs: linux
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        size: [small, large]
+    name: template (${{ matrix.size }})
     permissions:
       contents: read
     steps:
@@ -269,6 +278,7 @@ jobs:
           node-version: 22.23.3
       - run: scripts/ci-hosted-template publish "$GITHUB_REF_NAME" "$RUNNER_TEMP/control"
         env:
+          ARUGULA_TEMPLATE_SIZES: ${{ matrix.size }}
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
 
   # The editor extension as arugula.arugula-editor (#529), once the

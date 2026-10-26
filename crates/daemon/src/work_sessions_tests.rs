@@ -54,6 +54,9 @@ fn each_report_is_the_sessions_next_signed() {
         last_at: 0,
         events: vec![],
         pushed_head: None,
+        turns_seen: Some(0),
+        harness: None,
+        review: false,
     };
     l.push(
         &keys,
@@ -291,6 +294,9 @@ async fn a_push_back_after_an_end_cleans_again() {
         last_at: 0,
         events: vec![],
         pushed_head: None,
+        turns_seen: None,
+        harness: None,
+        review: false,
     };
     assert!(claim(&dir, &l));
     let place = dir.join(super::super::DIR).join(DIR).join(format!("{}.push", l.session));

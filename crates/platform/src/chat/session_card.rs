@@ -2,7 +2,8 @@
 //! Arugula #129): the one card kind a chat timeline shows (aru-115).
 //!
 //! - **One message per session** ([`post_card`]), posted when the session
-//!   is made: no author, `via` `session:<ses>`
+//!   is made (a Try 3's sibling's when it's picked, M264; a review's only
+//!   in the thread): no author, `via` `session:<ses>`
 //!   ([`arugula_control_wire::sessions::card_via`]), a reply in the
 //!   session's thread that's also sent to the room, so the card is in the
 //!   timeline and in the thread. A room whose messages take no threads (an
@@ -31,7 +32,7 @@ use crate::{
         Db, Taken,
         chat::{NewMessage, Room},
         pr_drafts::PrDraft,
-        sessions::Session,
+        sessions::{Role, Session},
     },
 };
 
@@ -51,6 +52,8 @@ pub fn post_card(app: &Platform, s: &Session) -> anyhow::Result<i64> {
     let short: String = s.id.trim_start_matches("ses_").chars().take(8).collect();
     let text = format!("Agent session {short} on {}", s.branch);
     let via = card_via(&s.id);
+    // A review's card (M264) is the thread's business: not in the timeline.
+    let also = parent.is_some() && s.role != Role::Review;
     let seq = app.db.add_chat_message(
         &room.id,
         &NewMessage {
@@ -64,13 +67,15 @@ pub fn post_card(app: &Platform, s: &Session) -> anyhow::Result<i64> {
             agent: None,
             via: Some(&via),
             parent,
-            also: parent.is_some(),
+            also,
         },
     )?;
     if let Some(parent) = parent {
         app.chat.publish(&app.db, ChatLive::Reply { room: room.id.clone(), parent, seq }, None);
     }
-    app.chat.publish(&app.db, ChatLive::Message { room: room.id, seq }, None);
+    if also || parent.is_none() {
+        app.chat.publish(&app.db, ChatLive::Message { room: room.id, seq }, None);
+    }
     Ok(seq)
 }
 
@@ -119,8 +124,12 @@ pub fn note_pr(app: &Platform, d: &PrDraft) -> anyhow::Result<Option<(String, i6
 
 impl Hub {
     /// Session `s` changed: pages showing its card read it again, on every
-    /// machine (through `chat_events`).
+    /// machine (through `chat_events`). A Try 3's sibling's parent card
+    /// shows it in its compare view (M264), so it's told too.
     pub fn session(&self, db: &Db, s: &Session) {
         self.publish(db, ChatLive::Session { room: s.room.clone(), ses: s.id.clone() }, None);
+        if let (Role::Try, Some(parent)) = (s.role, &s.parent_session) {
+            self.publish(db, ChatLive::Session { room: s.room.clone(), ses: parent.clone() }, None);
+        }
     }
 }

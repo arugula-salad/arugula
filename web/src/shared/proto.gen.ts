@@ -1871,6 +1871,13 @@ drive: boolean | null, };
 export type Issue = { item: Item, events: Array<Event>, linked: Array<Linked>, };
 
 /**
+ * [`ISSUE_AGENT`]'s answer: the issue's thread and the message that asked,
+ * and the session it started, if it did (else the thread says why, or
+ * asks which box or repo).
+ */
+export type IssueAgent = { room: string, seq: number, session: string | null, };
+
+/**
  * A comment on an issue: a message in its thread.
  */
 export type IssueComment = { 
@@ -3178,6 +3185,11 @@ ports: Array<SessionPort>,
  */
 pr: string | null, 
 /**
+ * When its PR merged (M265): the thread is done, and the session ends
+ * once a turn under way does. Its card says "merged ✓".
+ */
+merged_at: number | null, 
+/**
  * A turn pushed its branch: its asker may draft its PR.
  */
 pushed: boolean, 
@@ -3189,7 +3201,28 @@ ci_rounds: number, ci_max: number,
  * CI failed again after its last round, and nobody in its thread has
  * prompted it since: it needs a person.
  */
-needs_person: boolean, };
+needs_person: boolean, 
+/**
+ * What it is (M264): `thread` (the thread's own, `@arugula`), `try` (a
+ * Try 3's sibling of `parent_session`) or `review` (`@codex review`
+ * of `parent_session`).
+ */
+role: string, parent_session: string | null, 
+/**
+ * The agent asked for (`claude`, `codex`), and the one its box ran
+ * it on, once it took it (`claude` when the other isn't there).
+ */
+harness: string, ran: string | null, 
+/**
+ * A Try 3's sessions, on its parent's card: the parent first, then its
+ * siblings, oldest first. Empty for every other session.
+ */
+tries: Array<SessionTry>, 
+/**
+ * The one of [`SessionCard::tries`] kept, once one is picked; on a
+ * sibling, its parent's pick.
+ */
+picked: string | null, };
 
 /**
  * A turn's finish step (M261): the command, whether it passed, and when
@@ -3234,6 +3267,11 @@ question: string | null,
  * A permission's option ids.
  */
 options: Array<string>, at: number, };
+
+/**
+ * [`SESSION_PICK`]'s body: the session kept, one of the Try 3's.
+ */
+export type SessionPick = { session: string, };
 
 /**
  * One of a workspace's dev servers.
@@ -3312,6 +3350,43 @@ via: string | null,
  * The machine that sent it.
  */
 machine: string | null, };
+
+/**
+ * [`PROJECT_SESSION_STATS`]'s answer: of the project's sessions asked for
+ * in the last [`STATS_DAYS`] days, how many led to a PR (sent by its
+ * asker, or opened from its branch by hand) and how many merged, and the
+ * median time from the `@` to the PR.
+ */
+export type SessionStats = { days: number, sessions: number, prs_opened: number, prs_merged: number, 
+/**
+ * `None` until one led to a PR.
+ */
+median_to_pr_ms: number | null, };
+
+/**
+ * One of a Try 3's sessions, as its parent's compare view shows it.
+ */
+export type SessionTry = { session: string, state: string, branch: string, harness: string, ran: string | null, 
+/**
+ * What its latest turn left: its diffstat and how its finish step went.
+ */
+turn: SessionTurn | null, pushed: boolean, 
+/**
+ * Why it failed or stopped.
+ */
+reason: string | null, updated_at: number, 
+/**
+ * Queued with no slot on its box for it yet (the box holds three
+ * sessions, done ones too).
+ */
+no_slot: boolean, };
+
+/**
+ * [`SESSION_TRY`]'s body: the harnesses of the two siblings, `claude`
+ * or `codex` each (`["claude", "codex"]` when it's left out; a box
+ * without Codex runs Claude Code in its place).
+ */
+export type SessionTryAsk = { harnesses?: Array<string>, };
 
 /**
  * What a session's turn left, as its box reported it.

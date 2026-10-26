@@ -15,6 +15,7 @@ Prompts:
                  (git repo) and leaves it uncommitted, commits a new file B,
                  and says "done" (AR-1, #1475)
   slow           streams for ~10s unless cancelled
+  slowly…        slow, with anything after it (a session's notes)
   remember WORD  remembers WORD; "recall" says it (across processes)
   crash          exits with code 3 mid-turn
   env NAME       says NAME from its environment ("ENV NAME=value", or
@@ -50,7 +51,10 @@ Prompts:
                  (a cancel answers it at once)
   model          says the model set_config_option chose
   mode           says the permission mode session/set_mode chose (it knows
-                 claude-agent-acp's: default, acceptEdits, plan, auto)
+                 claude-agent-acp's: default, acceptEdits, plan, auto, and
+                 bypassPermissions, which it offers a user that isn't root;
+                 and codex-acp's: read-only, auto and full-access; its
+                 tool calls still ask, as a bypass-immune one would)
   look           says what came with the prompt (M71): its images' types,
                  and any other text blocks (an image's path, to an agent
                  that takes no images); the prompt's blocks are in
@@ -199,6 +203,8 @@ LAYOUT = {"question": "Which layout?", "header": "Layout", "multiSelect": False,
      "preview": "+------+--------------+\n| Nav  | Content Area |\n|      | goes here    |\n+------+--------------+"},
     {"label": "Top bar", "description": "Navigation across the top",
      "preview": "+---------------------+\n| Nav                 |\n+---------------------+\n| Content Area        |"}]}
+# claude-agent-acp's permission modes, then codex-acp's.
+MODES = ("default", "acceptEdits", "plan", "auto", "bypassPermissions", "read-only", "full-access")
 QUESTIONS = {"ask": [COLOUR, FRUIT, PET], "ask one": [COLOUR], "ask two": [FRUIT, PET], "ask preview": [LAYOUT]}
 
 
@@ -416,7 +422,7 @@ def prompt(mid, p):
             f.write(body + "\n")
         msg(f"Wrote {name}.")
     elif text.startswith("work "):
-        a, b = text.split(" ")[1:3]
+        a, b = text.split("\n")[0].split(" ")[1:3]
         cwd = s.get("cwd") or "."
         update(sid, s, {"sessionUpdate": "agent_thought_chunk", "messageId": f"t{n}",
                         "content": {"type": "text", "text": "pondering the edit"}})
@@ -475,7 +481,7 @@ def prompt(mid, p):
                         "kind": "read", "status": "pending"})
         update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "failed"})
         msg("Couldn't read it.")
-    elif text == "slow":
+    elif text == "slow" or text.startswith("slowly"):
         for i in range(50):
             if sid in cancelled:
                 cancelled.discard(sid)
@@ -697,7 +703,7 @@ def handle(m):
         send({"id": mid, "result": {"configOptions": CONFIG_OPTIONS}})
     elif method == "session/set_mode":
         s = load(p.get("sessionId", ""))
-        if s is None or p.get("modeId") not in ("default", "acceptEdits", "plan", "auto"):
+        if s is None or p.get("modeId") not in MODES:
             send({"id": mid, "error": {"code": -32602, "message": "Invalid Mode"}})
             return
         s["mode"] = p["modeId"]
