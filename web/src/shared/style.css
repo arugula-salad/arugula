@@ -4601,7 +4601,7 @@ button.diff-why-run {
 
 .dl .ln {
   flex: none;
-  width: 3.5em;
+  width: 4.75em;
   padding-right: 6px;
   text-align: right;
   color: var(--dim);
@@ -4746,7 +4746,7 @@ button.diff-why-run {
 
 .conv-when {
   flex: none;
-  width: 3.5em;
+  width: 4.75em;
   text-align: right;
   font-size: 11px;
   color: var(--dim);

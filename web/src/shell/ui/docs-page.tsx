@@ -11,6 +11,7 @@ import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
 import type { DocRow } from "../../shared/proto";
 import { ConfirmRemove } from "../../shared/ui/confirm";
+import { Time } from "../../shared/ui/time";
 import { AppBar } from "./app-bar";
 import { directory } from "../hosts";
 import { docsRoute, openDoc } from "./docs-route";
@@ -27,16 +28,6 @@ export function DocsPage({ client }: { client: Client }) {
   }, []);
   if (!docsRoute() || !client.flag("docs") || client.state?.roles) return null;
   return <Page client={client} />;
-}
-
-/** "3h ago": when a Doc was last updated. */
-function ago(ms: number): string {
-  const s = Math.max(0, (Date.now() - ms) / 1000);
-  if (s < 90) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  if (s < 86400 * 30) return `${Math.round(s / 86400)}d ago`;
-  return `on ${new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`;
 }
 
 /** Who made it: an agent (`mcp:NAME`), a person's driver, a Doc from
@@ -129,7 +120,7 @@ function Page({ client }: { client: Client }) {
                   )}
                 </div>
                 <p class="dim">
-                  updated {ago(r.updated)} · {madeBy(r.by)}
+                  updated <Time at={r.updated} on /> · {madeBy(r.by)}
                 </p>
               </div>
               <div class="agents-buttons">

@@ -69,7 +69,9 @@ test.describe("on a computer", () => {
     await expect(r.locator(".att")).toBeVisible();
     for (const width of [200, 248, 380]) {
       await page.locator(".ws-sidebar").evaluate((el, w) => { el.style.width = `${w}px`; }, width);
-      for (const time of ["now", "59m ago", "123d ago"]) {
+      // The shared time words (UI audit #182): the shortest, a long one,
+      // and a day with its year.
+      for (const time of ["just now", "59m ago", "Dec 31, 2025"]) {
         await r.locator(".ws-session-ago").evaluate((el, t) => { el.textContent = t; }, time);
         const boxes = await Promise.all([".ws-session-ago", ".att", ".ws-session-more"].map((s) => r.locator(s).boundingBox()));
         const [ago, badge, more] = boxes.map((b) => b!);

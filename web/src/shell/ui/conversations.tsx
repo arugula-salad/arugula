@@ -18,6 +18,7 @@ import { directory } from "../hosts";
 import type { OpenConversationRequest, OpenConversationResponse, PaneId } from "../../shared/proto";
 import { getFleet } from "./hosts";
 import { countView } from "../../shared/telemetry";
+import { Time } from "../../shared/ui/time";
 
 export interface Conversation {
   id: string;
@@ -78,15 +79,6 @@ export function ConversationsLayer() {
       }}
     />
   );
-}
-
-function ago(ms: number): string {
-  const s = Math.max(0, (Date.now() - ms) / 1000);
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  if (s < 86400 * 30) return `${Math.floor(s / 86400)}d`;
-  return new Date(ms).toLocaleDateString();
 }
 
 /** `~/dev/x` for `/home/me/dev/x` (the daemon's home, guessed from paths). */
@@ -379,7 +371,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
                 <span class="picker-label conv-title">{c.title}</span>
                 {c.live && <span class="conv-live" title={c.live.place}>● {c.live.pane !== undefined ? `%${c.live.pane}` : "open"}</span>}
                 {c.block !== null && <span class="host-tag">%{c.block}</span>}
-                <span class="conv-when">{ago(c.updated_ms)}</span>
+                <Time class="conv-when" at={Math.min(c.updated_ms, Date.now())} />
               </li>
             );
           })}

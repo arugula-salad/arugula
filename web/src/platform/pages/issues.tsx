@@ -18,6 +18,7 @@ import { StateChip } from "../../shared/ui/state-chip";
 import { Section } from "../settings/section";
 import { IssueError, issues, type IssueFilter } from "../../shared/issues/store";
 import { githubNewIssue, rowLine, stateLabel } from "../../shared/issues/text";
+import { when } from "../../shared/time";
 import { LabelChip, pickLabels } from "../../shared/issues/view";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
@@ -360,7 +361,9 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
         ))}
         <span class="issue-row-meta dim">
           {/* The row's line says why it closed, so its chip needn't (UI audit #163). */}
-          <StateChip tone={issueTone(i.state)}>{i.state === "closed" ? "Closed" : stateLabel(i)}</StateChip> · #{i.number} {rowLine(i, nameOf)}
+          <StateChip tone={issueTone(i.state)}>{i.state === "closed" ? "Closed" : stateLabel(i)}</StateChip> · #{i.number}{" "}
+          {/* The full time on hover (UI audit #182). */}
+          <span title={when(i.state === "closed" && i.closed_at ? i.closed_at : i.created_at)}>{rowLine(i, nameOf)}</span>
         </span>
       </div>
       {i.assignees.length > 0 && (

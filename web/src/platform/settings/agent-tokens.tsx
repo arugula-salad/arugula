@@ -12,6 +12,7 @@ import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { Time } from "../../shared/ui/time";
 import { session } from "../session";
 import { toneClass } from "../swarm";
 import { Section } from "./section";
@@ -52,14 +53,6 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
   return v as T;
 }
 
-export function ago(ms: number): string {
-  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
-}
-
 // Each power in a few plain words, as the grants' switches say them (UI
 // audit #168): a card says these, the form the powers' own names.
 const POWER_WORDS: Record<string, string> = {
@@ -98,7 +91,7 @@ function Calls({ id }: { id: string }) {
     <ul class="agent-token-calls" data-agent-token-calls={id}>
       {calls.map((c) => (
         <li key={c.id}>
-          <span class="dim">{ago(c.at)}</span> <code>{c.tool}</code> <span class={`agent-call-${c.outcome}`}>{c.outcome}</span> {c.detail}
+          <Time class="dim" at={c.at} /> <code>{c.tool}</code> <span class={`agent-call-${c.outcome}`}>{c.outcome}</span> {c.detail}
         </li>
       ))}
     </ul>
@@ -223,7 +216,19 @@ export function AgentTokens() {
               </div>
               <span class="agent-token-reach">{reachOf(t)}</span>
               <span class="dim">
-                {t.live ? (t.last_used_at ? `Used ${ago(t.last_used_at)}` : "Never used") : `Revoked ${ago(t.revoked_at ?? 0)}`}
+                {t.live ? (
+                  t.last_used_at ? (
+                    <>
+                      Used <Time at={t.last_used_at} />
+                    </>
+                  ) : (
+                    "Never used"
+                  )
+                ) : (
+                  <>
+                    Revoked <Time at={t.revoked_at ?? 0} />
+                  </>
+                )}
               </span>
               {open === t.id && <Calls id={t.id} />}
             </li>

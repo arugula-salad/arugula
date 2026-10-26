@@ -6,6 +6,8 @@
 import { useEffect, useState } from "preact/hooks";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { qr, qrPath } from "../../shared/ui/qr";
+import { ago } from "../../shared/time";
+import { Time } from "../../shared/ui/time";
 import type { ControlSession } from "../control";
 import { MovingNote } from "../ui/moving-note";
 
@@ -56,10 +58,8 @@ export function QrCode({ text, label }: { text: string; label: string }) {
   );
 }
 
-export const since = (ms: number) => {
-  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
-};
+/** "2d ago", or "on Oct 16" (../../shared/time.ts), in a sentence. */
+export const since = (ms: number) => ago(Math.min(ms, Date.now()), Date.now(), "on");
 
 export type Panel = "devices" | "add" | "add-device" | "teams" | "account" | "shared-docs";
 
@@ -81,7 +81,7 @@ export function dropHash() {
   history.replaceState(null, "", location.pathname + location.search);
 }
 
-/** When a device was added, to the minute: with the last use beside it,
- * what tells apart two devices of the same name (#759). */
-export const addedAt = (ms: number) =>
-  new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", ...(new Date(ms).getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }), hour: "numeric", minute: "2-digit" });
+/** When a device was added: with the last use beside it, what tells
+ * apart two devices of the same name (#759); the minute is in its title
+ * (UI audit #182). */
+export const AddedAt = ({ at }: { at: number }) => <Time at={Math.min(at, Date.now())} on data-added={at} />;

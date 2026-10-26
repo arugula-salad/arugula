@@ -10,6 +10,7 @@ import { usePlatformApi, type ChatNav } from "../platform-api";
 import { MsgAvatar } from "./avatar";
 import { messageHooks } from "./msg-actions";
 import { ago, footer, rootOf } from "./threads";
+import { when } from "../time";
 
 // The hook can't ask for the page's nav: the room it's shown in registers
 // it (`RoomBody`), and the hook opens the thread there.
@@ -42,7 +43,7 @@ export function ThreadFooter({ room, m }: { room: ChatRoom; m: ChatMessage }) {
       type="button"
       class={`thread-footer${unread ? " unread" : ""}`}
       data-thread-footer={m.seq}
-      title={`Open the thread. The newest reply was ${new Date(t.last).toLocaleString()}`}
+      title={`Open the thread. The newest reply was ${when(t.last)}`}
       onClick={() => nav.openRoom(room.id, undefined, m.seq)}
     >
       <span class="thread-footer-faces">

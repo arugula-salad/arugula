@@ -8,6 +8,7 @@ import { UsageReports } from "../../shared/ui/account-telemetry";
 import { agentName, api, shownName, type ControlSession } from "../control";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "../../shared/ui/confirm";
+import { Time } from "../../shared/ui/time";
 import { NameLine, RecoveryLeft } from "./recovery";
 
 export interface SessionRow {
@@ -35,7 +36,6 @@ interface DeletePreview {
   stays_in: string[];
 }
 
-const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
 /** What a sign-in or passkey came from, in the words Devices uses for a
  * browser ("Safari on iPhone"). Sign-ins from before control kept the
@@ -108,7 +108,9 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
               {sessionName(s, x)}
               {x.current ? " (this browser)" : ""}
             </span>
-            <span class="dim">since {day(x.created)}</span>
+            <span class="dim">
+              signed in <Time at={x.created} on />
+            </span>
             {x.current ? (
               <span />
             ) : (
@@ -149,8 +151,14 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
               <li key={k.id} data-passkey={k.id}>
                 <span data-passkey-name>{passkeyName(k, i)}</span>
                 <span class="dim">
-                  added {day(k.created)}
-                  {k.used ? `, last used ${day(k.used)}` : ""}
+                  added <Time at={k.created} on />
+                  {k.used ? (
+                    <>
+                      , last used <Time at={k.used} on />
+                    </>
+                  ) : (
+                    ""
+                  )}
                 </span>
                 <button
                   class="secondary danger small"

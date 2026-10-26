@@ -14,6 +14,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { ConfirmRemove } from "../../shared/ui/confirm";
+import { Time } from "../../shared/ui/time";
 import { toneClass } from "../swarm";
 import { Section } from "./section";
 
@@ -120,7 +121,12 @@ export function LinkedProducts() {
                 </div>
                 <span class="dim">
                   {l.user ? (knownAs(l.name) ? <>Linked as {knownAs(l.name)}</> : "Linked") : "Signs you in, no account linked there"}
-                  {since ? <> · since {new Date(since).toLocaleDateString()}</> : null}
+                  {since ? (
+                    <>
+                      {" "}
+                      · added <Time at={since} on />
+                    </>
+                  ) : null}
                 </span>
                 {l.projects !== undefined && (
                   <label class="settings-switch">

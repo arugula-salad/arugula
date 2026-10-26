@@ -11,11 +11,12 @@
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { ConfirmRemove } from "../../shared/ui/confirm";
+import { Time } from "../../shared/ui/time";
 import type { PlatformProject } from "../session";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { toneClass } from "../swarm";
-import { ago, reachOf, type AgentToken } from "./agent-tokens";
+import { reachOf, type AgentToken } from "./agent-tokens";
 import { roleIn } from "./environments";
 import { Section } from "./section";
 
@@ -167,7 +168,15 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
                   </span>
                 </div>
                 <span class="agent-token-reach">{reachOf(t)}</span>
-                <span class="dim">{t.last_used_at ? `Used ${ago(t.last_used_at)}` : "Never used"}</span>
+                <span class="dim">
+                  {t.last_used_at ? (
+                    <>
+                      Used <Time at={t.last_used_at} />
+                    </>
+                  ) : (
+                    "Never used"
+                  )}
+                </span>
               </li>
             ))}
           </ul>
@@ -214,7 +223,7 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
               <div class="secret-head">
                 <code class="secret-name">{s.name}</code>
                 <span class="dim">
-                  set {ago(s.updated_at)}
+                  set <Time at={s.updated_at} />
                   {s.updated_by ? (
                     <>
                       {" "}
@@ -253,7 +262,14 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
                     ) : (
                       <span class="dim">
                         {" "}
-                        · {g.reads ? `read ${g.reads} ${g.reads === 1 ? "time" : "times"}, last ${ago(g.last_read_at ?? g.granted_at)}` : "not read yet"}
+                        ·{" "}
+                        {g.reads ? (
+                          <>
+                            read {g.reads} {g.reads === 1 ? "time" : "times"}, last <Time at={g.last_read_at ?? g.granted_at} />
+                          </>
+                        ) : (
+                          "not read yet"
+                        )}
                         {g.changed_since_grant ? ` · changed since by ${s.updated_by?.name ?? s.updated_by?.account ?? g.value_set_by ?? "someone"}` : ""}
                       </span>
                     )}

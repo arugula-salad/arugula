@@ -8,7 +8,7 @@ import { useEffect, useState } from "preact/hooks";
 import { CopyText } from "../../shared/ui/copy";
 import { cameToRecover, DEVICE_HASH, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, signInNext, wholeJoinInHash, type ControlSession } from "../control";
 import { fingerprint } from "../e2e/cert.ts";
-import { addedAt, Center, QrCode, useControl, WaitingLine } from "./common";
+import { AddedAt, Center, QrCode, useControl, WaitingLine } from "./common";
 import { Mark } from "../ui/shell/icons";
 import { DeviceDetails } from "./devices";
 import { RecoveryForm } from "./recovery";
@@ -73,7 +73,14 @@ export function ControlGate({ s }: { s: ControlSession }) {
         <h1>This browser lost its device key</h1>
         <p data-lost-key>
           It can't read back the key it was approved with (<b>{s.enrollment?.cert.name ?? "this browser"}</b>
-          {s.enrollment ? `, added ${addedAt(s.enrollment.cert.created)}` : ""}), so it can't approve machines or reach them. Some versions of Safari lose keys this way.
+          {s.enrollment ? (
+            <>
+              , added <AddedAt at={s.enrollment.cert.created} />
+            </>
+          ) : (
+            ""
+          )}
+          ), so it can't approve machines or reach them. Some versions of Safari lose keys this way.
         </p>
         {s.enrollment ? <DeviceDetails s={s} c={s.enrollment.cert} /> : null}
         <p>
@@ -94,7 +101,14 @@ export function ControlGate({ s }: { s: ControlSession }) {
         <h1>This browser isn't trusted any more</h1>
         <p data-untrusted={s.untrustedWhy}>
           Your account {s.untrustedWhy === "removed" ? "removed this browser" : "no longer trusts this browser"} (<b>{s.enrollment?.cert.name ?? "this browser"}</b>
-          {s.enrollment ? `, added ${addedAt(s.enrollment.cert.created)}` : ""}), so it can't approve machines or devices, or reach your machines.
+          {s.enrollment ? (
+            <>
+              , added <AddedAt at={s.enrollment.cert.created} />
+            </>
+          ) : (
+            ""
+          )}
+          ), so it can't approve machines or devices, or reach your machines.
         </p>
         {s.enrollment ? <DeviceDetails s={s} c={s.enrollment.cert} /> : null}
         <p>

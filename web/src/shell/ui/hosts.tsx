@@ -8,6 +8,7 @@ import { directory } from "../hosts";
 import { blockRoutesLabel } from "../blocks/block-route";
 import type { Fleet } from "../fleet";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { ago } from "../../shared/time";
 import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
 import { SWARM_ABOUT, openSwarm } from "../swarm/route";
 import { controlMenuItems, controlState, subscribeControlState } from "./control-state";
@@ -20,9 +21,7 @@ function seen(name: string): string {
   if (h.transport === "provider") return `${h.status ?? "?"} · ${h.provider?.provider ?? "sandbox"}`;
   if (h.transport === "control" && h.status === "online") return "online";
   if (h.last_seen_ms === null) return "not seen yet";
-  const s = Math.max(0, Math.round((Date.now() - h.last_seen_ms) / 1000));
-  const ago = s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 86400 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`;
-  return `seen ${ago} ago`;
+  return `seen ${seenAgo(h.last_seen_ms)}`;
 }
 
 let fleet: Fleet | null = null;
@@ -36,10 +35,8 @@ export function getFleet(): Fleet | null {
   return fleet;
 }
 
-function ago(ms: number): string {
-  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 86400 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`;
-}
+/** "16h ago", "on Oct 20": the shared words (UI audit #182). */
+const seenAgo = (ms: number) => ago(Math.min(ms, Date.now()), Date.now(), "on");
 
 /** How a machine is, in the same words wherever it's shown: the host
  * menu, Devices and machines, Teams, the phone's sheet. Control's word
@@ -48,7 +45,7 @@ function ago(ms: number): string {
 export function machineState(name: string): string {
   const d = directory.find(name);
   if (d?.transport === "provider") return `${d.status ?? "?"} · ${d.provider?.provider ?? "sandbox"}`;
-  if (d?.transport === "control" && d.status === "offline") return d.last_seen_ms ? `offline, seen ${ago(d.last_seen_ms)} ago` : "offline";
+  if (d?.transport === "control" && d.status === "offline") return d.last_seen_ms ? `offline, seen ${seenAgo(d.last_seen_ms)}` : "offline";
   const h = fleet?.host(name);
   switch (h?.state) {
     case "connected":
@@ -56,7 +53,7 @@ export function machineState(name: string): string {
     case "connecting":
       return "connecting";
     case "stale":
-      return `reconnecting, seen ${h.lastSeen ? ago(h.lastSeen) : "?"} ago`;
+      return `reconnecting, ${h.lastSeen ? `seen ${seenAgo(h.lastSeen)}` : "not seen yet"}`;
     case "offline":
       return "offline";
     case "asleep":
@@ -292,8 +289,8 @@ function dotOf(state: string): "on" | "off" | "mid" {
 /** The short tag that matters: "offline 8h", "asleep"; nothing when online. */
 function tagOf(state: string): string {
   if (dotOf(state) === "on") return "";
-  const m = /^(?:offline|reconnecting), seen (\S+) ago$/.exec(state);
-  if (m) return `${state.startsWith("offline") ? "offline" : "reconnecting"} ${m[1]}`;
+  const m = /^(offline|reconnecting), seen (?:on )?(.+?)(?: ago)?$/.exec(state);
+  if (m) return `${m[1]} ${m[2]}`;
   return state.split(/[,·]/)[0].trim();
 }
 

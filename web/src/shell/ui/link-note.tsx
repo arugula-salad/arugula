@@ -3,6 +3,7 @@
 // the link carries when it was made since (else it says only read-only).
 
 import { useEffect, useState } from "preact/hooks";
+import { Time } from "../../shared/ui/time";
 
 /** Undefined: not a link's page. Null: one that doesn't say when it ends. */
 let link: { ends: number | null } | undefined;
@@ -10,13 +11,6 @@ let link: { ends: number | null } | undefined;
 export function setReadOnlyLink(ends: number | null) {
   link = { ends: ends && Number.isFinite(ends) ? ends : null };
 }
-
-/** "10:52 PM", or with the day when it isn't today. */
-const at = (ms: number) => {
-  const d = new Date(ms);
-  const today = d.toDateString() === new Date().toDateString();
-  return d.toLocaleString(undefined, { ...(today ? {} : { month: "short", day: "numeric" }), hour: "numeric", minute: "2-digit" });
-};
 
 export function LinkNote() {
   const ends = link?.ends ?? null;
@@ -29,7 +23,15 @@ export function LinkNote() {
   if (!link) return null;
   return (
     <div class="ws-stale maintenance-note" role="status" data-read-only-link={ends ?? ""}>
-      Read-only link{ends !== null ? ` · ${over ? "ended" : "ends"} ${at(ends)}` : ""}
+      Read-only link
+      {ends !== null ? (
+        <>
+          {" "}
+          · {over ? "ended" : "ends"} <Time at={ends} />
+        </>
+      ) : (
+        ""
+      )}
     </div>
   );
 }

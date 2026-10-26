@@ -16,6 +16,7 @@ import type { Client } from "../../client";
 import type { PaneId, SessionId } from "../../../shared/proto";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { openMenu } from "../../../shared/ui/menu";
+import { Time } from "../../../shared/ui/time";
 import { closePlace, currentPlace } from "../places";
 import { MoreIcon } from "./icons";
 
@@ -343,14 +344,6 @@ const KIND: Record<Kind, string> = {
   system: "system",
 };
 
-const clock = (ms: number) =>
-  new Date(ms).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-
 /** A pane by what it runs, not its id (UI audit #171): the id is in the
  * row's tooltip. */
 function paneName(client: Client, pane: PaneId): string {
@@ -569,7 +562,8 @@ function Row({ client, it, onClick }: { client: Client; it: Item; onClick: () =>
       title={here ? "Show its pane" : it.pane === null ? undefined : "Its pane is closed"}
       onClick={onClick}
     >
-      <time class="ws-activity-time">{clock(it.at)}</time>
+      {/* How long ago, the full time on hover: the list spans days (UI audit #182). */}
+      <Time class="ws-activity-time" at={it.at} />
       <span class={`ws-activity-kind ${it.kind}`}>{KIND[it.kind]}</span>
       <span class="ws-activity-text">{it.text || "(no text)"}</span>
       <span class={`ws-activity-status ${status?.cls ?? ""}`}>{status?.text}</span>

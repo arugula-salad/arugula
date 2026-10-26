@@ -4,6 +4,7 @@
 // and its tests (scripts/issues.test.mjs).
 
 import type { ChatAgent, IssueEvent, NativeIssue } from "../proto";
+import { ago as timeAgo } from "../time";
 
 /** An account's name now, or null for someone the page doesn't know. */
 export type NameOf = (account: string) => string | null | undefined;
@@ -83,17 +84,9 @@ export function eventLine(e: IssueEvent, nameOf: NameOf): string | null {
   }
 }
 
-/** "just now", "5 minutes ago", "3 days ago", else the date. */
-export function ago(at: number, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - at) / 1000));
-  const n = (v: number, unit: string) => `${v} ${unit}${v === 1 ? "" : "s"} ago`;
-  if (s < 45) return "just now";
-  if (s < 3600) return n(Math.max(1, Math.round(s / 60)), "minute");
-  if (s < 86_400) return n(Math.round(s / 3600), "hour");
-  if (s < 30 * 86_400) return n(Math.round(s / 86_400), "day");
-  const d = new Date(at);
-  return `on ${d.toLocaleDateString([], { month: "short", day: "numeric", ...(d.getFullYear() === new Date(now).getFullYear() ? {} : { year: "numeric" }) })}`;
-}
+/** "just now", "5 minutes ago", "3 days ago", else "on Oct 23": the
+ * shared words (../time.ts, UI audit #182), spelled out for a sentence. */
+export const ago = (at: number, now = Date.now()): string => timeAgo(at, now, "long");
 
 /** Labels typed in a box: comma-separated, trimmed, once each. */
 export function labelsOf(text: string): string[] {

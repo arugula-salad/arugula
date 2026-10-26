@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
+import { Time } from "../../shared/ui/time";
 import { controlOrigin } from "../session";
 import { toneClass } from "../swarm";
 import { Section } from "./section";
@@ -30,8 +31,6 @@ interface View {
   workspaces: number;
   offer: boolean;
 }
-
-const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
 export function RunGrant({ project }: { project: string }) {
   const [v, setV] = useState<View | null>(null);
@@ -76,9 +75,17 @@ export function RunGrant({ project }: { project: string }) {
           <li class={`sw-card ${toneClass(v.stale || v.renew ? "warn" : "ok")}`}>
             <div class="sw-head">
               <b class="sw-name">Standing grant</b>
-              <span class="settings-tag">{g.expires ? `until ${day(g.expires)}` : "until it's revoked"}</span>
+              <span class="settings-tag">
+                {g.expires ? (
+                  <>
+                    expires <Time at={g.expires} />
+                  </>
+                ) : (
+                  "until it's revoked"
+                )}
+              </span>
             </div>
-            <span class="dim">A project owner's device signed it on {day(g.made)}.</span>
+            <span class="dim">A project owner's device signed it <Time at={g.made} on />.</span>
             {v.stale ? (
               <span class="settings-warn">It's for an earlier delegation, so workspaces enrolled since refuse it: sign it again.</span>
             ) : v.renew ? (
@@ -99,8 +106,19 @@ export function RunGrant({ project }: { project: string }) {
         <ul class="platform-list dim settings-past" data-run-grants-past>
           {v.past.map((p) => (
             <li key={p.grant.id}>
-              Allowed {day(p.grant.made)},{" "}
-              {p.revoked_at ? `revoked ${day(p.revoked_at)}${p.revoke?.running === "stop" ? ", and the runs going stopped" : ""}` : p.superseded_at ? `replaced ${day(p.superseded_at)}` : "expired"}
+              Allowed <Time at={p.grant.made} on />,{" "}
+              {p.revoked_at ? (
+                <>
+                  revoked <Time at={p.revoked_at} on />
+                  {p.revoke?.running === "stop" ? ", and the runs going stopped" : ""}
+                </>
+              ) : p.superseded_at ? (
+                <>
+                  replaced <Time at={p.superseded_at} on />
+                </>
+              ) : (
+                "expired"
+              )}
             </li>
           ))}
         </ul>

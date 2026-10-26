@@ -5,20 +5,12 @@
 // (scripts/chat-threads.test.mjs).
 
 import type { ChatMessage, ChatThread } from "../proto";
+import { ago as timeAgo } from "../time";
 
-/** "just now", "5m ago", "3h ago", "2d ago", then the date: how long ago
- * `at` was, as the parent's footer says its newest reply. */
-export function ago(at: number, now: number): string {
-  const s = Math.max(0, Math.round((now - at) / 1000));
-  if (s < 45) return "just now";
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.round(h / 24);
-  if (d < 30) return `${d}d ago`;
-  return new Date(at).toLocaleDateString([], { month: "short", day: "numeric", year: new Date(at).getFullYear() === new Date(now).getFullYear() ? undefined : "numeric" });
-}
+/** "just now", "5m ago", "3h ago", "2d ago", then the day: how long ago
+ * `at` was, as the parent's footer says its newest reply. The shared words
+ * (../time.ts, UI audit #182). */
+export const ago = (at: number, now: number): string => timeAgo(Math.min(at, now), now);
 
 /** "1 reply", "12 replies". */
 export function repliesOf(n: number): string {

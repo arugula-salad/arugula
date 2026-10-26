@@ -200,7 +200,7 @@
 
 .ws-activity-time {
   font: 11px ui-monospace, Menlo, monospace;
-  min-width: 7ch;
+  min-width: 8ch;
 }
 
 .ws-activity-kind {
