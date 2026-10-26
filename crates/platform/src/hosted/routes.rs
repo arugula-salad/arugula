@@ -178,6 +178,8 @@ pub async fn delete(
     let project = changer(&app, &account, &project, false).await?;
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
     super::ask(&app, &w.id, Ask::Delete)?;
+    // Its thread sessions end now (M256), not when their jobs next look.
+    app.db.stop_workspace_sessions(&w.id, now_ms())?;
     info!(%account, %project, workspace = %w.id, "asked to delete a hosted workspace");
     app.analytics.capture(&account, "hosted workspace deleted", json!({}));
     Ok(Json(found(app.db.hosted_workspace(&project, &w.id)?)?))

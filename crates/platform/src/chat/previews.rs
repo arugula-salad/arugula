@@ -493,6 +493,27 @@ async fn object_cards(
         .collect())
 }
 
+/// The object cards for `urls` as `account` sees them, in order, each
+/// once: our own objects and linked GitHub items only. A link that names
+/// nothing of ours, or something they can't see, has none. A thread
+/// session's first prompt (M256) reads its thread's links so.
+pub(crate) async fn object_cards_for(
+    app: &Platform,
+    account: &str,
+    urls: &[Url],
+) -> anyhow::Result<Vec<(String, Preview)>> {
+    let links: Vec<(String, Link)> =
+        urls.iter().map(|u| (u.to_string(), classify(app, u))).filter(|(_, l)| *l != Link::Web).collect();
+    let mut cards = object_cards(app, account, &links).await?;
+    let mut out = Vec::new();
+    for (url, _) in &links {
+        if let Some(card) = cards.remove(url) {
+            out.push((url.clone(), card));
+        }
+    }
+    Ok(out)
+}
+
 /// A web link's card: from the cache, or by fetching. `None` when there's
 /// nothing to show.
 async fn web_card(app: &Platform, url: &Url, fetch: bool) -> Option<Preview> {

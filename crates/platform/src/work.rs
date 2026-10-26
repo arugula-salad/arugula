@@ -36,7 +36,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use arugula_control_wire::work::{Report, Reported, TAKES_DEPLOY, TAKES_RUN, Work, WorkItem};
+use arugula_control_wire::work::{Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, Work, WorkItem};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -213,11 +213,14 @@ impl Handler for Dispatch {
 }
 
 /// `GET /api/hosted/work` for `m`: the runs ready for it, with what it
-/// needs to check each before it starts. `takes` is what it said it takes:
-/// only runs, so far.
+/// needs to check each before it starts, and its thread sessions. `takes`
+/// is what it said it takes.
 pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result<Work> {
+    // Thread sessions (M256) go to a machine that says it takes them: every
+    // one on its workspace that hasn't ended (`Db::session_work`).
+    let sessions = if takes.iter().any(|t| t == TAKES_SESSION) { app.db.session_work(&m.workspace)? } else { vec![] };
     if !takes.iter().any(|t| t == TAKES_RUN) {
-        return Ok(Work::default());
+        return Ok(Work { sessions, ..Work::default() });
     }
     let mut items = Vec::new();
     let ready = app.db.ready_runs(&m.project, &m.workspace, &m.machine, PULL_LIMIT)?;
@@ -257,7 +260,7 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
             deploy,
         });
     }
-    Ok(Work { items, revokes, sessions: vec![] })
+    Ok(Work { items, revokes, sessions })
 }
 
 fn refused(why: impl Into<String>) -> Reported {
@@ -323,7 +326,8 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &Report) -> Result<Rep
 }
 
 /// The job worker with every kind's handler this platform has: runs'
-/// dispatch (M212), schedules' ticks (M214) and deploys' applies (M219). Other kinds join it here
+/// dispatch (M212), schedules' ticks (M214), deploys' applies (M219) and
+/// thread sessions' follow (M256). Other kinds join it here
 /// as they land: one worker claims every kind.
 pub fn start(app: &Arc<Platform>) {
     let ticks = crate::triggers::schedule::Ticks { gate: Arc::new(crate::triggers::Members(app.clone())) };
@@ -331,7 +335,11 @@ pub fn start(app: &Arc<Platform>) {
     crate::deploys::apply::start_reaper(app.clone());
     crate::jobs::start(
         app.clone(),
-        crate::jobs::Worker::new().with(Dispatch { app: app.clone() }).with(ticks).with(deploys),
+        crate::jobs::Worker::new()
+            .with(Dispatch { app: app.clone() })
+            .with(ticks)
+            .with(deploys)
+            .with(crate::sessions::job::Follow { app: app.clone() }),
     );
 }
 
