@@ -547,6 +547,14 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   white-space: nowrap;
 }
 
+/* On a phone, at the top: the install hint lies over the bottom, and a
+   pane letterboxed to unreadable type had its way back under it (UI audit
+   #194). */
+.app.phone .sized-elsewhere {
+  top: 12px;
+  bottom: auto;
+}
+
 .sized-elsewhere button {
   padding: 4px 10px;
   border-radius: var(--btn-radius);
