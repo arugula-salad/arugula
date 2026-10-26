@@ -262,7 +262,9 @@ async fn a_push_from_a_bundle_moves_one_ref() {
 
 /// A stop while a push ran cleaned the slot under it, and the push made
 /// its place again: once the push is back, an ended session's place goes,
-/// and a session that goes on keeps its.
+/// and a session that goes on keeps its. Unix's: cleaning runs `rm` as
+/// the session's user (`sudo`).
+#[cfg(unix)]
 #[tokio::test]
 async fn a_push_back_after_an_end_cleans_again() {
     let dir = crate::hosted::scratch("session-push-end");
