@@ -136,10 +136,10 @@ test("turning chat on in the dialog turns on chat, and nothing else, without a r
   await dialog(page).getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog(page)).toBeHidden();
   expect(await shown(page, pane)).toEqual(["chat"]);
-  // The swarm keeps its one view.
+  // The swarm's views are no flag's: all four, whatever is on.
   await page.goto("/#swarm");
   await expect(page.locator(".swarm")).toBeVisible();
-  await expect(page.locator("[data-theme-pick]")).toHaveCount(0);
+  await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 });
 
 test("once asked for, the account menu offers them; off takes chat away again", async ({ page }) => {
