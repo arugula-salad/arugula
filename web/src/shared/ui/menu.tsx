@@ -36,11 +36,28 @@ const changed = () => listeners.forEach((fn) => fn());
  * over the tab view's), else each would close the other's on a click. */
 const layers: object[] = [];
 
-export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[]) {
+/** The button the open menu came from, when it says so: its
+ * `aria-expanded` (UI audit #185). */
+let from: Element | null = null;
+
+export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[], button?: Element) {
   e.preventDefault();
   if (!current) opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   current = { x: e.clientX, y: e.clientY, items };
+  from = button ?? null;
   changed();
+}
+
+/** Whether the open menu came from `button`, kept current: for a menu
+ * button's `aria-expanded`. */
+export function useMenuFrom(button: { current: Element | null }): boolean {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((t) => t + 1);
+    listeners.add(fn);
+    return () => void listeners.delete(fn);
+  }, []);
+  return !!current && !!from && from === button.current;
 }
 
 /** Close it, and put the focus back where it was when it opened. */
@@ -57,6 +74,7 @@ export const escapeTaken = (e: Event) => tookEscape.has(e);
 export function closeMenu() {
   if (current) {
     current = null;
+    from = null;
     changed();
   }
   opener = null;

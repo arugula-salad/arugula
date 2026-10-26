@@ -66,6 +66,9 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
             class="pt-preset"
             data-preset={preset}
             disabled={!!why}
+            // Its name at any width (the label hides when narrow); why
+            // it's off is the title's (UI audit #185).
+            aria-label={label}
             title={why ?? hint(preset)}
             onClick={() => {
               setNote(null);

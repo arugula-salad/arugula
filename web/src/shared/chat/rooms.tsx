@@ -225,9 +225,12 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
 
   const row = (r: ChatRoom) => {
     const n = counted(r);
+    // A link to the room (UI audit #185), so a middle click and "Copy
+    // link" work; a plain click stays on the page.
     return (
-      <button
+      <a
         key={r.id}
+        href={nav.roomHref(r.id)}
         class={`chat-row${r.id === picked?.id ? " selected" : ""}${bold(r) ? " unread" : ""}${r.last ? "" : " quiet"}${r.archived || r.level === "nothing" ? " muted" : ""}${dragging === r.id ? " dragging" : ""}`}
         data-chat-room={r.id}
         data-room-kind={r.kind}
@@ -245,7 +248,11 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
           setOver(null);
         }}
         onContextMenu={(e) => openRoomMenu(e, store, r, api.toast)}
-        onClick={() => nav.openRoom(r.id)}
+        onClick={(e) => {
+          if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+          e.preventDefault();
+          nav.openRoom(r.id);
+        }}
       >
         {r.kind === "dm" && r.with && r.others.length < 2 ? (
           <span class="chat-sigil chat-dm-pic">
@@ -261,7 +268,7 @@ export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store:
           </span>
         )}
         {n > 0 && <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.mentions ? `@${n}` : n}</span>}
-      </button>
+      </a>
     );
   };
 

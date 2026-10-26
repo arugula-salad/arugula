@@ -7,7 +7,8 @@
 
 import type { ComponentChildren } from "preact";
 import { useSubscribe } from "../shared/ui/hooks";
-import { openMenu, type MenuItem } from "../shared/ui/menu";
+import { useRef } from "preact/hooks";
+import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { openAppearance } from "../shared/ui/appearance";
 import { WindowButtons } from "../shared/ui/window-buttons";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
@@ -86,7 +87,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       { header: "Projects" },
       ...session.projects.map((x) => ({ label: x.name, checked: x.id === project, run: () => go(pathOf({ page: "project", project: x.id }, names)) })),
     ];
-    openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
+    openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as Element);
   };
   const me = session.me;
   const account = (e: MouseEvent) => {
@@ -104,8 +105,15 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       // This page only: the hub's session, on control's page, stays.
       { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },
     ];
-    openMenu({ clientX: at.right, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
+    openMenu({ clientX: at.right, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as Element);
   };
+  // Both are menu buttons (UI audit #185): they say so, and whether theirs is open.
+  const switcher = useRef<HTMLButtonElement>(null);
+  const accountButton = useRef<HTMLButtonElement>(null);
+  const switcherOpen = useMenuFrom(switcher);
+  const accountOpen = useMenuFrom(accountButton);
+  // An id that's none of the reader's says so, not a name.
+  const projectName = project ? (p?.name ?? (session.state === "ready" ? "Unknown project" : "…")) : "All projects";
   return (
     <header class="ws-head platform-bar" data-tauri-drag-region data-platform-bar>
       {/* As the shell's "Arugula / Control": which page this is, and the
@@ -121,9 +129,17 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       >
         Arugula <span aria-hidden="true">/</span> <strong>Projects</strong>
       </a>
-      <button class="scope-label platform-project" data-project-switcher title="Your projects" onClick={pick}>
-        {/* An id that's none of the reader's says so, not a name. */}
-        {project ? (p?.name ?? (session.state === "ready" ? "Unknown project" : "…")) : "All projects"} <span class="caret">▾</span>
+      <button
+        ref={switcher}
+        class="scope-label platform-project"
+        data-project-switcher
+        title="Your projects"
+        aria-label={`Project: ${projectName}`}
+        aria-haspopup="menu"
+        aria-expanded={switcherOpen}
+        onClick={pick}
+      >
+        {projectName} <span class="caret" aria-hidden="true">▾</span>
       </button>
       <nav class="places" aria-label="Places">
         {project && (
@@ -162,7 +178,16 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         Machines ↗
       </a>
       {me && (
-        <button class="account-button platform-me" title={me.login ? `Signed in as ${me.login}` : "Signed in"} aria-label={`Account: ${me.login || me.name}`} data-signed-in-as onClick={account}>
+        <button
+          ref={accountButton}
+          class="account-button platform-me"
+          title={me.login ? `Signed in as ${me.login}` : "Signed in"}
+          aria-label={`Account: ${me.login || me.name}`}
+          aria-haspopup="menu"
+          aria-expanded={accountOpen}
+          data-signed-in-as
+          onClick={account}
+        >
           <span class="account-avatar" aria-hidden="true">
             {(me.login || me.name || "?").slice(0, 1).toUpperCase()}
             <AccountPicture />

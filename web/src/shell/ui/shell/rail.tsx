@@ -161,7 +161,7 @@ function RailButton({
     <button
       class={`ws-rail-button${here ? (toggle ? " on" : " here") : ""}`}
       aria-label={aria ?? label}
-      aria-pressed={toggle ? undefined : here}
+      aria-current={!toggle && here ? "page" : undefined}
       aria-expanded={toggle ? here : undefined}
       aria-controls={toggle ? "ws-session-sidebar" : undefined}
       title={tip}

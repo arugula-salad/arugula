@@ -106,14 +106,14 @@ test.describe("on a computer", () => {
 
     await rail.locator("[data-open-swarm]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("#swarm");
-    await expect(rail.locator("[data-open-swarm]")).toHaveAttribute("aria-pressed", "true");
+    await expect(rail.locator("[data-open-swarm]")).toHaveAttribute("aria-current", "page");
     await expect(rail.locator("[data-open-swarm]")).toHaveAttribute("aria-label", /all machines/);
     // The swarm's bar leaves the places to the rail.
     await expect(page.locator(".app-bar .places")).toHaveCount(0);
 
     await rail.locator("[data-open-panes]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
-    await expect(rail.locator("[data-open-panes]")).toHaveAttribute("aria-pressed", "true");
+    await expect(rail.locator("[data-open-panes]")).toHaveAttribute("aria-current", "page");
     expect((await tab(page)).id).toBe(t);
     expect(await active(page)).toBe(pane);
 

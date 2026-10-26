@@ -784,6 +784,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   cursor: pointer;
 }
 
+/* A failure with a menu is a button (UI audit #185): only its mark. */
+button.att {
+  padding: 0;
+  line-height: 1;
+}
+
 /* A card: one session, or what needs you. */
 .sheet-card {
   border-radius: var(--card-radius);
@@ -7787,12 +7793,15 @@ input.chat-search {
   display: flex;
   align-items: center;
   gap: 6px;
+  box-sizing: border-box;
   width: calc(100% - 12px);
   margin: 0 6px;
   padding: 4px 10px;
   border-radius: 6px;
   text-align: left;
   color: var(--fg);
+  /* A room's row is a link (UI audit #185), drawn as the others. */
+  text-decoration: none;
 }
 
 .chat.phone .chat-row {
