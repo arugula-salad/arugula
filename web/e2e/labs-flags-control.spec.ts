@@ -165,7 +165,7 @@ test("the machine overrides control, and Use control's takes its word back", asy
   expect(JSON.parse(readFileSync(join(state, "flags.json"), "utf8"))).toEqual({ flags: { "additional-forges": false } });
   await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("additional-forges"))).toBe(false);
 
-  await row(page, "additional-forges").getByRole("button", { name: "Use control's for Forgejo and GitLab" }).click();
+  await row(page, "additional-forges").getByRole("button", { name: "Use control's for GitLab and Forgejo" }).click();
   await expect(row(page, "additional-forges").locator("input")).toBeChecked();
   await expect(row(page, "additional-forges").locator("[data-flag-source]")).toHaveText("Set for your team on control");
   await expect(row(page, "additional-forges").getByRole("button")).toHaveCount(0);
