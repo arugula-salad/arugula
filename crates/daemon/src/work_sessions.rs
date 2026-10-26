@@ -39,6 +39,17 @@
 //!   agent's errors, and each turn's result (`turnwork`'s: branch, commits,
 //!   diffstat; `pushed` stays false until M259 pushes). Each is kept in the
 //!   ledger before it's sent, and sent in order until control takes it.
+//! - **The finish step** ([`finish_turn`], M261): when the workspace's spec
+//!   has one (`just check`), it runs after each turn, before the push, as
+//!   the session's user in its checkout, with that user's environment
+//!   only, for at most its timeout. Its result goes on the turn's report.
+//!   When it fails, the agent gets one more turn, within the same
+//!   `working`, with its output as a prompt from the finish step; the
+//!   push waits for that turn's end, when it runs again. Failing twice, the
+//!   session is done, unpushed, and its card says why.
+//! - **A slot is left clean** ([`clean_slot`]): when a session ends (or
+//!   fails), its checkout and its user's `~/.claude` go, so the next
+//!   session in that slot starts with nothing of it.
 //! - **People's answers** ([`SessionAction`]: a question's answer, a
 //!   permission's approval or denial, cancelling the turn) are done once
 //!   each, as the person who asked, and named in the next report.
@@ -57,8 +68,8 @@ use std::{
 };
 
 use arugula_control_wire::work::{
-    MAX_SESSIONS_PER_BOX, Reported, SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork,
-    WORK_SESSION_REPORT,
+    FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, Reported, SessionAction, SessionDetail,
+    SessionPrompt, SessionReport, SessionWork, WORK_SESSION_REPORT,
 };
 use arugula_e2e::{
     now_ms,
@@ -91,6 +102,11 @@ const NOTES_MAX: usize = 32 * 1024;
 const TEXT_MAX: usize = 4 * 1024;
 /// What a session whose block went away fails with.
 pub const BLOCK_GONE: &str = "its agent block is gone";
+/// The most of a finish step's output a turn's report carries, and its fix
+/// prompt: the last of it.
+const FINISH_OUTPUT_MAX: usize = 4 * 1024;
+/// Who a finish step's fix prompt is from, in the block's transcript.
+pub const FINISH_STEP: &str = "the finish step";
 
 /// The latest pull's sessions, by id: `None` before the first.
 static LATEST: Mutex<Option<BTreeMap<String, SessionWork>>> = Mutex::new(None);
@@ -214,6 +230,14 @@ pub struct Turn {
     /// and the block).
     pub sent: bool,
     pub at: u64,
+    /// The finish step's fix (M261): this turn is the agent's one try at
+    /// what the finish step said, and this is its prompt. Its end runs the
+    /// finish step for the last time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fix: Option<String>,
+    /// Someone cancelled it: a failed finish step gets no fix after it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cancelled: bool,
 }
 
 /// A session this box took, in `<state>/work/sessions/ID.json`.
@@ -841,6 +865,11 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
             let _ = update(&dir, id, |now| {
                 now.acted.push(a.id.clone());
                 now.unnamed.push(a.id.clone());
+                if a.kind == "cancel"
+                    && let Some(t) = now.turn.as_mut()
+                {
+                    t.cancelled = true;
+                }
             });
         }
     }
@@ -856,6 +885,8 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
             if s.turns > t.base || s.queued > 0 {
                 let (k, m) = (keys.clone(), me.clone());
                 say(Box::new(move |now| started(now, &k, &m)));
+            } else if let Some(text) = t.fix.clone() {
+                give_fix(app, &b, id, text, &keys, &me).await;
             } else if let Some(p) = work.as_ref().and_then(|w| w.prompts.iter().find(|p| t.prompts.contains(&p.id))) {
                 give(app, &b, id, p.clone(), &keys, &me).await;
             } else {
@@ -882,30 +913,69 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
             if idle && (s.turns > t.base || s.error.is_some() || s.status == "exited" || s.status == "stopped") {
                 // The turn ended (or never began: the gate said no, or the
                 // agent went away).
+                if l.now() == State::NeedsInput {
+                    let (k, m) = (keys.clone(), me.clone());
+                    say(Box::new(move |now| now.push(&k, &m, Kind::State, State::Working, SessionDetail::default())));
+                }
+                // The finish step, before the push: a stop meanwhile ends
+                // it here.
+                let finished = finish_turn(app, &l, work.as_ref().and_then(|w| w.finish.as_ref()), &keys, &me).await;
+                let Ok(Some(l)) = read(&dir, id) else { return false };
+                if l.ended.is_some() {
+                    return false;
+                }
+                // One fix, after a turn that ran and wasn't cancelled.
+                let went = s.turns > t.base && s.error.is_none() && s.status != "exited" && s.status != "stopped";
+                let fix = match &finished {
+                    Finished::Failed(r) if t.fix.is_none() && !t.cancelled && went => Some(fix_prompt(r)),
+                    _ => None,
+                };
                 let result = b.call("turn_result", json!({})).await.ok().filter(|v| !v.is_null());
                 let r: Option<arugula_proto::api::TurnResult> = result.and_then(|v| serde_json::from_value(v).ok());
+                // M259 pushes here, only when `may_push`, and says so in
+                // `pushed`.
+                let may_push = fix.is_none() && finished.may_push();
+                info!(session = id, may_push, fix = fix.is_some(), "hosted: a session's turn ended");
+                let pushed = false;
                 let branch = l.branch.clone();
-                let (k, m) = (keys.clone(), me.clone());
+                let (k, m, base, again) = (keys.clone(), me.clone(), s.turns, fix.clone());
                 say(Box::new(move |now| {
-                    if now.now() == State::NeedsInput {
-                        now.push(&k, &m, Kind::State, State::Working, SessionDetail::default());
-                    }
                     let w = r.and_then(|r| r.work);
                     let d = SessionDetail {
                         branch: Some(w.as_ref().map_or(branch, |w| w.branch.clone())),
                         head: w.as_ref().map(|w| w.head.clone()).filter(|h| !h.is_empty()),
-                        // M259 pushes, and says so.
-                        pushed: Some(false),
+                        pushed: Some(pushed),
                         commits: w.as_ref().and_then(|w| w.commits.clone()).unwrap_or_default(),
                         diffstat: w.as_ref().and_then(|w| w.diffstat.clone()),
                         uncommitted: w.as_ref().map(|w| w.uncommitted_total),
+                        finish: finished.result(),
                         ..Default::default()
                     };
                     now.push(&k, &m, Kind::Turn, State::Working, d);
-                    now.push(&k, &m, Kind::State, State::Done, SessionDetail::default());
-                    now.turn = None;
+                    match again {
+                        // The fix is the next turn, in the same `working`.
+                        Some(text) => {
+                            now.turn = Some(Turn {
+                                prompts: vec![],
+                                base,
+                                sent: false,
+                                at: now_ms(),
+                                fix: Some(text),
+                                cancelled: false,
+                            })
+                        }
+                        None => {
+                            now.push(&k, &m, Kind::State, State::Done, SessionDetail::default());
+                            now.turn = None;
+                        }
+                    }
                 }));
-                BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+                match fix {
+                    Some(text) => give_fix(app, &b, id, text, &keys, &me).await,
+                    None => {
+                        BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+                    }
+                }
             } else if let Some((ask, request, question, options)) = s.open.clone().filter(|_| l.now() == State::Working)
             {
                 let (k, m) = (keys.clone(), me.clone());
@@ -967,7 +1037,7 @@ async fn hand(
     let pid = p.id.clone();
     let Some(_) = update(dir, id, |now| {
         now.handed.push(pid.clone());
-        now.turn = Some(Turn { prompts: vec![pid], base, sent: false, at: now_ms() });
+        now.turn = Some(Turn { prompts: vec![pid], base, sent: false, at: now_ms(), fix: None, cancelled: false });
     }) else {
         return;
     };
@@ -1035,6 +1105,199 @@ fn started(now: &mut Session, keys: &arugula_e2e::DeviceKeys, me: &str) {
     }
 }
 
+/// What a turn's finish step did (M261).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Finished {
+    /// The workspace has no finish step.
+    None,
+    Passed(FinishResult),
+    Failed(FinishResult),
+}
+
+impl Finished {
+    /// Whether the turn may be pushed: no finish step, or it passed.
+    pub fn may_push(&self) -> bool {
+        !matches!(self, Finished::Failed(_))
+    }
+
+    /// What the turn's report says of it.
+    pub fn result(&self) -> Option<FinishResult> {
+        match self {
+            Finished::None => None,
+            Finished::Passed(r) | Finished::Failed(r) => Some(r.clone()),
+        }
+    }
+}
+
+/// Run the workspace's finish step (`step`, from the latest pull) for
+/// session `l`'s turn that just ended, before the push: as the session's
+/// user, in its checkout, with that user's environment only and nothing
+/// secret on its command line, for at most its timeout (15 minutes unless
+/// the spec says), the last 4 KiB of its output kept. While it runs the
+/// session says it's alive, with the finish step as its tool.
+pub async fn finish_turn(
+    app: &Arc<App>,
+    l: &Session,
+    step: Option<&FinishStep>,
+    keys: &Arc<arugula_e2e::DeviceKeys>,
+    me: &str,
+) -> Finished {
+    let Some(step) = step.filter(|s| !s.command.trim().is_empty()) else { return Finished::None };
+    let dir = app.control.state_dir().to_owned();
+    info!(session = l.session, "hosted: running the finish step");
+    let run = run_finish(&l.user, &l.checkout, step);
+    tokio::pin!(run);
+    let mut beat = tokio::time::interval(heartbeat_every());
+    beat.tick().await;
+    let (ok, output_tail) = loop {
+        tokio::select! {
+            r = &mut run => break r,
+            _ = beat.tick() => {
+                let tool = Some(format!("finish: {}", step.command));
+                update(&dir, &l.session, |now| {
+                    if now.ended.is_none() {
+                        let to = now.now();
+                        now.push(keys, me, Kind::Heartbeat, to, SessionDetail { tool, ..Default::default() });
+                    }
+                });
+                send(app, &l.session).await;
+            }
+        }
+    };
+    info!(session = l.session, ok, "hosted: the finish step ended");
+    let r =
+        FinishResult { ok, command: step.command.clone(), output_tail: if ok { String::new() } else { output_tail } };
+    if ok { Finished::Passed(r) } else { Finished::Failed(r) }
+}
+
+/// `step` as user `u` in `checkout`: whether it exited 0 in time, and the
+/// last of what it printed. `timeout` (coreutils) kills it and what it
+/// started when its time is up; the daemon gives up a little after.
+async fn run_finish(u: &AsUser, checkout: &str, step: &FinishStep) -> (bool, String) {
+    use tokio::io::AsyncReadExt as _;
+    let secs = if step.timeout_s == 0 { FINISH_TIMEOUT_S } else { step.timeout_s };
+    // The checkout and the command are arguments, never in the script.
+    let script = "cd -- \"$1\" || exit 125\nexec 2>&1\nexec sh -c \"$2\"";
+    let argv: Vec<String> =
+        ["timeout", "-k", "10", &secs.to_string(), "sh", "-c", script, "sh", checkout, &step.command]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+    let run = async {
+        let mut child = u
+            .command(&[], &argv)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| format!("can't run the finish step as {}: {e}", u.user))?;
+        let (mut out, mut err) = (child.stdout.take(), child.stderr.take());
+        let mut tail = Vec::new();
+        let mut buf = vec![0u8; 16 * 1024];
+        while let Some(o) = out.as_mut() {
+            match o.read(&mut buf).await {
+                Ok(0) | Err(_) => out = None,
+                Ok(n) => {
+                    tail.extend_from_slice(&buf[..n]);
+                    if tail.len() > 2 * FINISH_OUTPUT_MAX {
+                        tail.drain(..tail.len() - FINISH_OUTPUT_MAX);
+                    }
+                }
+            }
+        }
+        // What sudo or `timeout` said, if anything: after the command's.
+        let mut said = Vec::new();
+        if let Some(e) = err.as_mut() {
+            let _ = e.take(FINISH_OUTPUT_MAX as u64).read_to_end(&mut said).await;
+        }
+        tail.extend_from_slice(&said);
+        let status = child.wait().await.map_err(|e| format!("the finish step: {e}"))?;
+        Ok::<_, String>((status.code(), tail))
+    };
+    let (code, tail) = match tokio::time::timeout(Duration::from_secs(secs + 30), run).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => return (false, e),
+        Err(_) => (Some(124), vec![]),
+    };
+    let mut text = last(&String::from_utf8_lossy(&tail), FINISH_OUTPUT_MAX).trim_end().to_owned();
+    match code {
+        Some(0) => {}
+        Some(124) | Some(137) => text.push_str(&format!("\n(the finish step ran out of time after {secs} s)")),
+        Some(125) => text.push_str("\n(the session's checkout isn't there)"),
+        Some(c) => text.push_str(&format!("\n(exit {c})")),
+        None => text.push_str("\n(killed)"),
+    }
+    (code == Some(0), last(text.trim_start(), FINISH_OUTPUT_MAX))
+}
+
+/// The last `max` bytes of `s`, on a character's edge.
+fn last(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        return s.to_owned();
+    }
+    let mut at = s.len() - max;
+    while !s.is_char_boundary(at) {
+        at += 1;
+    }
+    s[at..].to_owned()
+}
+
+/// The prompt that gives the agent its one try at a failed finish step:
+/// what it ran and the last of its output, fenced so the output can't
+/// close it.
+pub fn fix_prompt(r: &FinishResult) -> String {
+    let mut longest = 0;
+    let mut run = 0;
+    for c in r.output_tail.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    let fence = "`".repeat((longest + 1).max(3));
+    format!(
+        "The finish step failed after your turn. It ran `{}` in your checkout, and the last of its output \
+         was:\n{fence}text\n{}\n{fence}\nFix what it reports, and commit. When this turn ends the finish step \
+         runs once more; the branch is pushed only if it passes.",
+        r.command,
+        r.output_tail.trim_end()
+    )
+}
+
+/// Give the block the finish step's fix prompt, as from the finish step:
+/// the fix turn under way. One the agent doesn't take ends the turn,
+/// unpushed.
+async fn give_fix(
+    app: &App,
+    b: &Arc<dyn crate::block::Block>,
+    id: &str,
+    text: String,
+    keys: &Arc<arugula_e2e::DeviceKeys>,
+    me: &str,
+) {
+    let dir = app.control.state_dir();
+    match b.call_by("send", json!({ "text": text }), Some(FINISH_STEP)).await {
+        Ok(_) => {
+            update(dir, id, |now| started(now, keys, me));
+        }
+        Err(e) => {
+            warn!(session = id, error = e, "hosted: a session's agent didn't take the finish step's fix");
+            let why = format!("couldn't give the agent the finish step's fix: {e}");
+            update(dir, id, |now| {
+                now.push(
+                    keys,
+                    me,
+                    Kind::Error,
+                    State::Working,
+                    SessionDetail { error: Some(why), ..Default::default() },
+                );
+                now.push(keys, me, Kind::State, State::Done, SessionDetail::default());
+                now.turn = None;
+            });
+            BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+        }
+    }
+}
+
 /// Do action `a` to the block, as the person who asked.
 async fn act(b: &Arc<dyn crate::block::Block>, a: &SessionAction) {
     let id = a.request.clone().map_or(Value::Null, Value::String);
@@ -1061,6 +1324,7 @@ async fn end(app: &Arc<App>, id: &str, why: &str) {
     let Some((l, _)) = update(&dir, id, |now| now.ended = Some(why.to_owned())) else { return };
     info!(session = id, why, "hosted: a session ended; stopping its agent");
     stop_agent(app, &l).await;
+    clean_slot(&l).await;
 }
 
 /// Session `id` fails here, saying `why`, and its agent is stopped.
@@ -1081,6 +1345,7 @@ async fn fail(app: &Arc<App>, id: &str, why: &str) {
     };
     warn!(session = id, why, "hosted: a session failed");
     stop_agent(app, &l).await;
+    clean_slot(&l).await;
     send(app, id).await;
 }
 
@@ -1094,6 +1359,20 @@ async fn stop_agent(app: &App, l: &Session) {
     }
     if slots().is_some_and(|s| s.real) {
         super::kill_user(&l.user.user).await;
+    }
+}
+
+/// Leave an ended session's slot clean for the next session in it: its
+/// checkout and its user's `~/.claude` (its agent's conversations) go.
+/// Removed as the session's user, who owns them: never as root, through
+/// paths the agent could have made links of.
+pub async fn clean_slot(l: &Session) {
+    let claude = Path::new(&l.user.home).join(".claude").display().to_string();
+    match as_user(&l.user, &["rm", "-rf", "--", &l.checkout, &claude]).await {
+        Ok(_) => info!(session = l.session, user = l.user.user, "hosted: cleaned an ended session's slot"),
+        Err(e) => {
+            warn!(session = l.session, user = l.user.user, error = e, "hosted: can't clean an ended session's slot")
+        }
     }
 }
 
