@@ -383,6 +383,21 @@ async fn a_sessions_pr_is_drafted_by_its_asker() {
     let ses = pushed_session(&app, &gh, &team).await;
     let branch = app.db.session(&ses).unwrap().unwrap().branch;
     let path = format!("/api/sessions/{ses}/pr");
+    // A later turn whose finish step failed (M261) wasn't pushed: its
+    // commit isn't on GitHub, so the PR leaves it out.
+    {
+        let c = app.db.c();
+        let detail = json!({ "branch": "x", "head": "def5678", "pushed": false, "commits": ["def5678 Break the build"],
+                             "diffstat": " BROKEN.md | 1 +\n 1 file changed, 1 insertion(+)",
+                             "finish": { "ok": false, "command": "just check", "output_tail": "error" } });
+        c.execute(
+            "INSERT INTO session_events (session_id, seq, kind, from_state, to_state, at, detail)
+             SELECT id, last_seq + 1, 'turn', 'working', 'working', 6, ?2 FROM agent_sessions WHERE id = ?1",
+            params![ses, detail.to_string()],
+        )
+        .unwrap();
+        c.execute("UPDATE agent_sessions SET last_seq = last_seq + 1 WHERE id = ?1", params![ses]).unwrap();
+    }
 
     let (s, v) = call(&base, "alice", "GET", &path, None).await;
     assert_eq!(s, 200, "{v}");
@@ -394,6 +409,7 @@ async fn a_sessions_pr_is_drafted_by_its_asker() {
     let body = v["body"].as_str().unwrap();
     assert!(body.starts_with("## What\n\n## Why\n\n---\n\nOpened from Arugula agent session"), "{body}");
     assert!(body.contains("- abc1234 Add notes") && body.contains("NOTES.md | 1 +"), "{body}");
+    assert!(!body.contains("def5678") && !body.contains("BROKEN.md"), "only what's on GitHub: {body}");
 
     // bob edits the project but didn't ask: he's told; carol (no GitHub
     // sign-in, so no read of the private repo) and eve (not in the
