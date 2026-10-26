@@ -1824,6 +1824,11 @@ impl Agent {
                 // an empty environment but for the adapter's own and the
                 // placeholder (nothing secret: it's on sudo's command line).
                 let argv = match &inner.cfg.run_as {
+                    // Only ever a hosted box's session users, whoever asked
+                    // for the block.
+                    Some(u) if !crate::work::sessions::is_slot(u) => {
+                        return self.failed(inner, format!("{} isn't one of this box's session users", u.user));
+                    }
                     Some(u) => {
                         let mut theirs = launch.env.clone();
                         if hosted::gate().is_some() {

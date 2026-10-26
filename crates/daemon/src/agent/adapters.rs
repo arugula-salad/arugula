@@ -311,8 +311,11 @@ mod tests {
                 "packaging/hosted/Dockerfile: ARG {arg}={pin}"
             );
         }
-        assert!(image.contains("--prefix /home/user/.local/share/arugula/agents/claude"));
-        assert!(image.contains("--omit=optional --prefix /home/user/.local/share/arugula/agents/codex"));
+        // M255: in /opt/arugula/agents, which session users can read,
+        // linked from where the daemon looks first.
+        assert!(image.contains("--prefix /opt/arugula/agents/claude"));
+        assert!(image.contains("--omit=optional --prefix /opt/arugula/agents/codex"));
+        assert!(image.contains("ln -s /opt/arugula/agents /home/user/.local/share/arugula/agents"));
         assert_eq!(major("v22.23.2"), Some(22));
         assert_eq!(major("v8.1.0"), Some(8));
     }

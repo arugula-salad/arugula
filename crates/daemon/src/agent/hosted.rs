@@ -182,6 +182,42 @@ pub fn env_here(kind: Kind, auth: Auth) -> Vec<(String, String)> {
     env(kind, auth, std::path::Path::new(PROXY_CA).exists())
 }
 
+/// Give up the daemon's protection from the OOM killer in what `c` starts:
+/// a hosted box's supervisor gives the daemon an `oom_score_adj` of -1000
+/// (M258), which everything it starts inherits; a session's git (and what
+/// a planted config runs) is as killable as any. Only a negative score is
+/// raised to 0, which needs no privilege. The same as M258's
+/// `arugula_mux::shim::unprotect_oom`, which the shim calls for agents and
+/// panes: at integration this calls that.
+pub fn unprotect_oom(c: &mut tokio::process::Command) {
+    #[cfg(target_os = "linux")]
+    // SAFETY: open, read, write and close on a fixed path and our own
+    // buffer, all async-signal-safe, between fork and exec.
+    unsafe {
+        c.pre_exec(|| {
+            use nix::libc;
+            let path = c"/proc/self/oom_score_adj";
+            let mut b = [0u8; 8];
+            let fd = libc::open(path.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC);
+            if fd < 0 {
+                return Ok(());
+            }
+            let n = libc::read(fd, b.as_mut_ptr().cast(), b.len());
+            libc::close(fd);
+            if n > 0 && b[0] == b'-' {
+                let fd = libc::open(path.as_ptr(), libc::O_WRONLY | libc::O_CLOEXEC);
+                if fd >= 0 {
+                    libc::write(fd, b"0".as_ptr().cast(), 1);
+                    libc::close(fd);
+                }
+            }
+            Ok(())
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = c;
+}
+
 /// The `PATH` a session user's processes get.
 pub const SESSION_PATH: &str = "/usr/local/bin:/usr/bin:/bin";
 
@@ -232,6 +268,16 @@ impl AsUser {
         }
         out.extend(argv.iter().cloned());
         out
+    }
+
+    /// `argv` as this user ([`AsUser::wrap`]), without the daemon's
+    /// protection from the OOM killer ([`unprotect_oom`]).
+    pub fn command(&self, env: &[(String, String)], argv: &[String]) -> tokio::process::Command {
+        let argv = self.wrap(env, argv);
+        let mut c = tokio::process::Command::new(&argv[0]);
+        c.args(&argv[1..]).current_dir("/");
+        unprotect_oom(&mut c);
+        c
     }
 
     /// The agent's own program as a session user can reach it: a path
