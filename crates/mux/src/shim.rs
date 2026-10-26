@@ -86,6 +86,48 @@ extern "C" fn on_alarm(_: libc::c_int) {
     KILLED.store(true, Ordering::SeqCst);
 }
 
+/// Give up the daemon's protection from the OOM killer, if it has any: a
+/// hosted box's supervisor gives the daemon an `oom_score_adj` of -1000
+/// (M258, Arugula #124), and every process it starts inherits that. A pane's or an
+/// agent's program is as killable as any, so a build that runs the box out
+/// of memory is killed before the daemon. Only a negative score is raised
+/// to 0 (raising one needs no privilege); any other is left as it was.
+///
+/// Async-signal-safe (`open`, `read`, `write`, `close` on a fixed path), so
+/// it can run between a fork and an exec, as `pre_exec` does.
+#[cfg(target_os = "linux")]
+pub fn unprotect_oom() {
+    const PATH: &std::ffi::CStr = c"/proc/self/oom_score_adj";
+    let mut b = [0u8; 8];
+    // SAFETY: plain syscalls on a fixed path and our own buffer.
+    unsafe {
+        let fd = libc::open(PATH.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC);
+        if fd < 0 {
+            return;
+        }
+        let n = libc::read(fd, b.as_mut_ptr().cast(), b.len());
+        libc::close(fd);
+        if n <= 0 || !protected(&b[..n as usize]) {
+            return;
+        }
+        let fd = libc::open(PATH.as_ptr(), libc::O_WRONLY | libc::O_CLOEXEC);
+        if fd >= 0 {
+            libc::write(fd, b"0".as_ptr().cast(), 1);
+            libc::close(fd);
+        }
+    }
+}
+
+/// Elsewhere there's no OOM score to give up.
+#[cfg(not(target_os = "linux"))]
+pub fn unprotect_oom() {}
+
+/// Whether an `oom_score_adj` as read ("-1000\n") is a protection.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn protected(score: &[u8]) -> bool {
+    score.first() == Some(&b'-')
+}
+
 #[cfg(unix)]
 pub fn run(args: &[String]) -> ! {
     let (record, hold, argv) = match parse(args) {
@@ -126,6 +168,9 @@ pub fn run(args: &[String]) -> ! {
             let _ = setsid();
             // SAFETY: TIOCSCTTY on our stdin, the PTY slave.
             unsafe { libc::ioctl(0, libc::TIOCSCTTY as _, 0) };
+            // The program doesn't keep the daemon's OOM protection (the
+            // shim, tiny, does).
+            unprotect_oom();
             let err = execvp(&cargs[0], &cargs).unwrap_err();
             // SAFETY: one byte from our own buffer.
             unsafe { libc::write(ready_w.as_raw_fd(), b"x".as_ptr().cast(), 1) };
@@ -320,6 +365,26 @@ pub fn alive(record: &Record) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_negative_oom_score_is_given_up() {
+        assert!(protected(b"-1000\n"));
+        assert!(protected(b"-1\n"));
+        assert!(!protected(b"0\n"));
+        assert!(!protected(b"100\n"));
+        assert!(!protected(b""));
+    }
+
+    /// The test's own score isn't negative: nothing changes.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_score_that_isnt_a_protection_is_left_alone() {
+        let before = std::fs::read_to_string("/proc/self/oom_score_adj").unwrap();
+        if !protected(before.as_bytes()) {
+            unprotect_oom();
+            assert_eq!(std::fs::read_to_string("/proc/self/oom_score_adj").unwrap(), before);
+        }
+    }
 
     #[test]
     fn parses_args_and_records() {
