@@ -500,6 +500,11 @@ fn main() -> anyhow::Result<()> {
     if argv.get(1).map(String::as_str) == Some("_reseed") {
         hosted::reseed::cli(argv.get(2).map_or("", String::as_str));
     }
+    // A snapshot builder's wipe (M263), as root, what to look for on its
+    // stdin: nothing else of the daemon runs.
+    if argv.get(1).map(String::as_str) == Some("_seal") {
+        hosted::snapshot::cli();
+    }
     // The apps-platform driver's apply (M222), as a deploy's run user:
     // nothing else of the daemon runs.
     if argv.get(1).map(String::as_str) == Some("_apps-platform") {
@@ -746,6 +751,10 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     args.listen = listener.local_addr()?;
     if args.hosted {
         hosted::headless(&mut args);
+        // A box from a workspace's snapshot (M263): nothing of the
+        // builder's daemon is kept, before anything here reads its state.
+        let state_dir = args.state_dir.clone().unwrap_or_else(default_state_dir);
+        hosted::snapshot::first_boot(&state_dir, &hosted::resume::sandbox_id_file(), &hosted::snapshot::dir());
     }
     let mut public_hosts = args.public_hosts.clone();
     let mut owner = args.owner.clone();

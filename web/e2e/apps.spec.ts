@@ -298,7 +298,7 @@ test("a box that takes the connection and never answers says so, then comes in",
   const el = paneEl(page, b);
 
   // Not a blank white frame: a card that says why.
-  await expect(el.getByText("Opening Pinboard…")).toBeVisible();
+  await expect(el.getByText("Loading Pinboard…")).toBeVisible();
   const stuck = el.locator("[data-app-stuck]");
   await expect(stuck).toContainText("Pinboard isn't answering", { timeout: 25_000 });
   await expect(el.locator("iframe")).toBeHidden();

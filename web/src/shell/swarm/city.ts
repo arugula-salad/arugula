@@ -27,7 +27,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { WorkKind } from "../../shared/proto";
-import type { FieldHooks, FieldPane, SwarmScene } from "./field";
+import { C, readColors, type FieldHooks, type FieldPane, type SwarmScene } from "./field";
 import { KINDS } from "./model";
 
 type Shape = "box" | "hex" | "pent" | "drum" | "slab";
@@ -41,7 +41,6 @@ const LONG: Partial<Record<WorkKind, number>> = { server: 1.5, logs: 0.9, app: 1
 const STEP = 1.2;
 const STREET = 4.4;
 const ALLEY = 0.75;
-const VOID = 0x06080d;
 const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Height for a command that has run `sec` seconds: a 10 s test and a 40
@@ -144,7 +143,7 @@ const towerVert = /* glsl */ `
 // aB: running, last failed, unused, scroll (accumulated, so text freezes
 // where it stopped).
 const towerFrag = /* glsl */ `
-  uniform vec3 uFog; uniform float uFogNear; uniform float uFogFar;
+  uniform vec3 uFog; uniform float uFogNear; uniform float uFogFar; uniform vec3 uFail; uniform vec3 uBody;
   varying vec3 vP; varying vec3 vN; varying vec3 vC; varying vec4 vA; varying vec4 vB; varying vec3 vL; varying float vTop;
   float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
   void main(){
@@ -152,7 +151,7 @@ const towerFrag = /* glsl */ `
     float running = vB.x, failed = vB.y, scroll = vB.w;
     vec3 n = normalize(vN);
     float shade = .55 + .45*max(dot(n, normalize(vec3(.4,.9,.3))),0.);
-    vec3 base = vec3(.08,.09,.115)*shade;
+    vec3 base = uBody*shade;
     vec3 kc = stale > .5 ? vec3(.25) : vC;
     vec3 col = base;
     if (running > .5 && n.y > .5) {
@@ -162,7 +161,7 @@ const towerFrag = /* glsl */ `
     } else if (n.y > .5) {
       float r = max(abs(vL.x),abs(vL.z));
       col = base*1.2 + kc*.12*smoothstep(.36,.5,r);
-      if (failed > .5) col = mix(col, vec3(1.,.33,.41), .85);
+      if (failed > .5) col = mix(col, uFail, .85);
     } else {
       float u = (vP.x + vP.z)*7.;
       float v = vP.y*9. + scroll;
@@ -177,6 +176,19 @@ const towerFrag = /* glsl */ `
     if (stale > .5) col *= .45;
     gl_FragColor = vec4(mix(col, uFog, smoothstep(uFogNear, uFogFar, length(vP - cameraPosition))), 1.);
   }`;
+
+/** A swarm colour as the shaders take it: its sRGB numbers as they are
+ * (they paint without a colour-space pass), `t` of the way from `a` to
+ * `b`. The colours are C, read from the page (UI audit #198). */
+function raw(a: string, b = a, t = 0): THREE.Color {
+  return new THREE.Color().setStyle(a, THREE.LinearSRGBColorSpace).lerp(new THREE.Color().setStyle(b, THREE.LinearSRGBColorSpace), t);
+}
+
+/** The same, as a canvas fill. */
+function mix(a: string, b: string, t: number): string {
+  const c = raw(a, b, t);
+  return `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`;
+}
 
 const MONO = `"Arugula Mono", "JetBrains Mono", ui-monospace, monospace`;
 const DISPLAY = `"Big Shoulders Display", "Arial Narrow", sans-serif`;
@@ -231,7 +243,9 @@ export class City implements SwarmScene {
   private controls: OrbitControls;
   private uni = {
     uTime: { value: 0 },
-    uFog: { value: new THREE.Color(VOID) },
+    uFog: { value: new THREE.Color() },
+    uFail: { value: new THREE.Color() },
+    uBody: { value: new THREE.Color() },
     uFogNear: { value: 45 },
     uFogFar: { value: 200 },
   };
@@ -266,9 +280,14 @@ export class City implements SwarmScene {
     private cv: HTMLCanvasElement,
     private hooks: FieldHooks,
   ) {
+    readColors(cv);
+    this.uni.uFog.value.set(C.void);
+    this.uni.uFail.value = raw(C.fail);
+    // A building's walls: the void lifted most of the way to a line.
+    this.uni.uBody.value = raw(C.void, C.line, 0.6);
     this.renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
-    this.renderer.setClearColor(VOID, 1);
+    this.renderer.setClearColor(C.void, 1);
     this.controls = new OrbitControls(this.camera, cv);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
@@ -283,12 +302,13 @@ export class City implements SwarmScene {
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(2000, 2000),
       new THREE.ShaderMaterial({
-        uniforms: this.uni,
+        // The ground is the void barely lifted; its grid, nearly a line.
+        uniforms: { ...this.uni, uGround: { value: raw(C.void, C.line, 0.13) }, uGrid: { value: raw(C.void, C.line, 0.75) } },
         vertexShader: `varying vec3 vP; void main(){ vec4 w = modelMatrix*vec4(position,1.); vP=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }`,
-        fragmentShader: `uniform vec3 uFog; uniform float uFogNear; uniform float uFogFar; varying vec3 vP;
+        fragmentShader: `uniform vec3 uFog; uniform float uFogNear; uniform float uFogFar; uniform vec3 uGround; uniform vec3 uGrid; varying vec3 vP;
           float line(float v, float w){ float f = abs(fract(v)-.5); return smoothstep(.5-w,.5,f); }
           void main(){
-            vec3 c = vec3(.035,.045,.065) + vec3(.045,.06,.085)*max(line(vP.x/2.,.02), line(vP.z/2.,.02));
+            vec3 c = mix(uGround, uGrid, max(line(vP.x/2.,.02), line(vP.z/2.,.02)));
             gl_FragColor = vec4(mix(c, uFog, smoothstep(uFogNear, uFogFar*.95, length(vP - cameraPosition))), 1.);
           }`,
       }),
@@ -301,7 +321,7 @@ export class City implements SwarmScene {
     this.beamGeo = new THREE.CylinderGeometry(0.06, 0.06, 1, 6, 1, true).translate(0, 0.5, 0);
     this.haloGeo = new THREE.CylinderGeometry(0.3, 0.3, 1, 12, 1, true).translate(0, 0.5, 0);
     this.coneGeo = new THREE.ConeGeometry(1, 1, 24, 1, true).translate(0, -0.5, 0);
-    this.coneMat = additive(`varying vec3 vPos; void main(){ float y = -vPos.y; gl_FragColor = vec4(vec3(.75,.85,1.)*.17*(1.-y*.7),1.); }`, {}, THREE.DoubleSide);
+    this.coneMat = additive(`uniform vec3 uC; varying vec3 vPos; void main(){ float y = -vPos.y; gl_FragColor = vec4(uC*.17*(1.-y*.7),1.); }`, { uC: { value: raw(C.ink) } }, THREE.DoubleSide);
 
     this.listen();
     // Block names are drawn into textures: draw them again in the swarm's
@@ -473,7 +493,7 @@ export class City implements SwarmScene {
   }
 
   private needOf(b: Block) {
-    return b.bs.filter((x) => x.att).length;
+    return b.bs.filter((x) => x.att?.need).length;
   }
   private failedIn(b: Block) {
     return b.bs.some((x) => x.att && x.lastExit != null && x.lastExit !== 0 && x.started == null);
@@ -493,7 +513,7 @@ export class City implements SwarmScene {
       const need = this.needOf(b);
       const cx = b.x + b.w / 2;
       const cz = b.z + b.d / 2;
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(b.w, 0.12, b.d), new THREE.MeshBasicMaterial({ color: 0x0b0f17 }));
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(b.w, 0.12, b.d), new THREE.MeshBasicMaterial({ color: mix(C.void, C.line, 0.28) }));
       plate.position.set(cx, 0.06, cz);
       plate.userData.block = b.name;
       this.blockLayer.add(plate);
@@ -508,7 +528,7 @@ export class City implements SwarmScene {
           new THREE.PlaneGeometry(len, H),
           additive(
             `uniform vec3 uC; uniform float uA; varying vec2 vUv; void main(){ float y = vUv.y; float a = uA*(1.-y)*(1.-y) + uA*1.4*smoothstep(.9,1.,y); gl_FragColor = vec4(uC*a, 1.); }`,
-            { uC: { value: new THREE.Color(hot ? 0xff3050 : 0x5f7898) }, uA: { value: hot ? 0.5 : 0.2 } },
+            { uC: { value: new THREE.Color(hot ? C.fail : C.mute) }, uA: { value: hot ? 0.5 : 0.2 } },
             THREE.DoubleSide,
           ),
         );
@@ -519,10 +539,11 @@ export class City implements SwarmScene {
       const running = b.bs.filter((x) => x.started != null && LONG[x.kind] === undefined).length;
       const meta = `${b.bs.length} pane${b.bs.length === 1 ? "" : "s"} · ${running} running`;
       const lines: [string, string, string, number, number][] = [
-        [b.name.toUpperCase(), `800 112px ${DISPLAY}`, "#e6ebf4", 8, 112],
-        [meta, `500 34px ${MONO}`, "#7c8698", 8, 170],
+        // As named: a path, repo or host keeps its case (UI audit #172).
+        [b.name, `800 112px ${DISPLAY}`, C.ink, 8, 112],
+        [meta, `500 34px ${MONO}`, C.mute, 8, 170],
       ];
-      if (need) lines.push([`· ${need} need you`, `500 34px ${MONO}`, "#ff5468", 8 + meta.length * 20.6 + 20, 170]);
+      if (need) lines.push([`· ${need} need you`, `500 34px ${MONO}`, C.fail, 8 + meta.length * 20.6 + 20, 170]);
       const lw = Math.min(Math.max(b.w, 6), 9);
       const lh = lw / (1024 / 200);
       const label = new THREE.Mesh(new THREE.PlaneGeometry(lw, lh), new THREE.MeshBasicMaterial({ map: textTexture(lines, 1024, 200), transparent: true, depthWrite: false }));
@@ -535,7 +556,7 @@ export class City implements SwarmScene {
         const stale = b.bs.every((x) => (x.sub ?? x.where) !== s.name || x.stale);
         const sl = new THREE.Mesh(
           new THREE.PlaneGeometry(sw, sw / 8),
-          new THREE.MeshBasicMaterial({ map: textTexture([[s.name, `500 40px ${MONO}`, stale ? "#55606f" : "#8a95a8", 4, 44]], 512, 64), transparent: true, depthWrite: false }),
+          new THREE.MeshBasicMaterial({ map: textTexture([[s.name, `500 40px ${MONO}`, stale ? mix(C.mute, C.void, 0.3) : mix(C.mute, C.ink, 0.13), 4, 44]], 512, 64), transparent: true, depthWrite: false }),
         );
         sl.rotation.x = -Math.PI / 2;
         sl.position.set(b.x + 0.5 + sw / 2, 0.125, b.z + s.z + ALLEY / 2 + 0.12);
@@ -596,9 +617,9 @@ export class City implements SwarmScene {
         ring.rotation.x = Math.PI / 2;
         const cone = new THREE.Mesh(this.coneGeo, this.coneMat);
         const tags = {
-          watching: textTexture([[`${name} · watching`, `600 30px ${MONO}`, "#e6ebf4", 14, 43]], 384, 64),
-          driving: textTexture([[`${name} · driving`, `600 30px ${MONO}`, "#e6ebf4", 14, 43]], 384, 64),
-          typing: textTexture([[`${name} · typing`, `600 30px ${MONO}`, "#e6ebf4", 14, 43]], 384, 64),
+          watching: textTexture([[`${name} · watching`, `600 30px ${MONO}`, C.ink, 14, 43]], 384, 64),
+          driving: textTexture([[`${name} · driving`, `600 30px ${MONO}`, C.ink, 14, 43]], 384, 64),
+          typing: textTexture([[`${name} · typing`, `600 30px ${MONO}`, C.ink, 14, 43]], 384, 64),
         };
         const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: tags.watching, depthTest: false, transparent: true }));
         tag.scale.set(4, 0.67, 1);

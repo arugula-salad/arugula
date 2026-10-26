@@ -13,6 +13,8 @@ import "./swarm.css";
 // /settings: its sections, the agents' matrices and the switches.
 import "./settings.css";
 import "./finish.css";
+// The one button set (UI audit #158), last: what it draws, it draws everywhere.
+import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";
 import { setupDesktop } from "../shared/desktop";
 import { PlatformApiContext } from "../shared/platform-api";

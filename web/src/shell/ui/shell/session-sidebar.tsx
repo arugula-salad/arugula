@@ -9,7 +9,8 @@ import { paneIds, type Client } from "../../client";
 import { directory } from "../../hosts";
 import type { Attention, PaneInfo, Session, SessionId, TabId } from "../../../shared/proto";
 import { AttentionBadge } from "../attention";
-import { sessionItems } from "../commands";
+import { needsYou, NEEDS_YOU } from "../../../shared/needs-you";
+import { sessionItems, sessionMenuHint } from "../commands";
 import { openFresh } from "../open-fresh";
 import { closePlace, currentPlace, openOverview } from "../places";
 import { openAttention } from "./attention-drawer";
@@ -18,12 +19,16 @@ import { BranchIcon, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from 
 import { setSidebarOpen, setSidebarWidth, takeSearchFocus, useSidebar } from "./prefs";
 import { offlineWhy } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
+import type { MenuItem } from "../../../shared/ui/menu";
+import { Time } from "../../../shared/ui/time";
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // ---- what a session row says, from real state only
 
 type Group = "needs" | "working" | "idle";
 const GROUPS: { id: Group; label: string }[] = [
-  { id: "needs", label: "Needs you" },
+  { id: "needs", label: NEEDS_YOU },
   { id: "working", label: "Working" },
   { id: "idle", label: "Idle" },
 ];
@@ -54,7 +59,10 @@ export function summarize(client: Client, session: Session): SessionSummary {
     return i ? [i] : [];
   });
   const pick = (s: Attention) => infos.find((i) => i.attention === s);
-  const top = pick("needs_input") ?? pick("working") ?? pick("done");
+  // What needs you, as the bell counts it: an ask first, then a failure
+  // (a PR's failed checks are `done`, but need you: UI audit #154).
+  const needs = infos.filter(needsYou);
+  const top = needs.find((i) => i.attention === "needs_input") ?? needs[0] ?? pick("working") ?? pick("done");
   const attention = top?.attention ?? "idle";
   const repos = [...new Set(infos.flatMap((i) => (i.project ? [i.project.name] : [])))];
   const branches = [...new Set(infos.flatMap((i) => (i.branch ? [i.branch] : [])))];
@@ -69,19 +77,10 @@ export function summarize(client: Client, session: Session): SessionSummary {
     attention,
     pane: top?.id,
     reason: top?.reason,
-    group: attention === "needs_input" ? "needs" : attention === "working" ? "working" : "idle",
+    group: needs.length ? "needs" : attention === "working" ? "working" : "idle",
     context,
     last: Math.max(0, ...infos.map((i) => i.activity?.last_ms ?? 0)),
   };
-}
-
-function ago(ms: number): string | null {
-  if (!ms) return null;
-  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
 }
 
 // ---- the session's last tab, so going back to it lands where you were
@@ -253,7 +252,15 @@ export function SessionSidebar({
             {q ? (
               <>
                 <p>No session on {host} matches “{query.trim()}”.</p>
-                <button onClick={() => setQuery("")}>Clear the search</button>
+                <button
+                  onClick={() => {
+                    setQuery("");
+                    // Back to the search, not to the page (UI audit #171).
+                    search.current?.focus();
+                  }}
+                >
+                  Clear the search
+                </button>
               </>
             ) : (
               <p>{owner ? `No sessions on ${host}.` : `Nothing on ${host} is shared with you.`}</p>
@@ -285,14 +292,14 @@ function SessionRow({
   choose: (id: SessionId) => void;
 }) {
   const s = row.session;
+  const items = () => sessionItems(client, s.id, () => setRenaming({ kind: "session", id: s.id }));
   const menu = (e: MouseEvent) => {
     e.stopPropagation();
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    openFresh(client, { clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, () =>
-      sessionItems(client, s.id, () => setRenaming({ kind: "session", id: s.id })),
-    );
+    const el = e.currentTarget as HTMLElement;
+    const r = el.getBoundingClientRect();
+    openFresh(client, { clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items, { from: e.type === "click" ? el : null });
   };
-  const when = ago(row.last);
+  const when = row.last || null;
   const unread = sessionUnread(client, s.id);
   return (
     <div
@@ -330,7 +337,9 @@ function SessionRow({
           {(row.context || when) && (
             <span class="ws-session-sub">
               {row.context ? (
-                <span class="ws-session-context">
+                // "Multiple repos" is words, not a repo · branch: not set in
+                // mono (UI audit #171).
+                <span class={row.context.startsWith("Multiple") ? "ws-session-context words" : "ws-session-context"}>
                   {row.context.startsWith("Multiple") ? null : <BranchIcon size={11} />}
                   <span class="ws-ellipsis" title={row.context}>
                     {row.context}
@@ -339,14 +348,14 @@ function SessionRow({
               ) : (
                 <span />
               )}
-              {when && <span class="ws-session-ago">{when}</span>}
+              {when && <Time class="ws-session-ago" at={Math.min(when, Date.now())} title="Last active" />}
             </span>
           )}
         </button>
       )}
       <span class="ws-session-actions">
         <AttentionBadge state={row.attention} reason={row.reason} pane={row.pane} client={client} />
-        <button class="ws-icon-button ws-session-more" aria-label={`Actions for ${s.name}`} title="Rename, share, notifications, close" onClick={menu}>
+        <button class="ws-icon-button ws-session-more" aria-label={`Actions for ${s.name}`} title={cap(sessionMenuHint(items()))} onClick={menu}>
           <MoreIcon />
         </button>
       </span>
@@ -408,15 +417,21 @@ export function SessionButton({
       setSidebarOpen(true);
       setRenaming({ kind: "session", id: session.id });
     };
-    openFresh(client, { clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, () => [
-      ...state.sessions.map((s) => ({
-        label: `${s.id === session.id ? "✓ " : "    "}${s.name}`,
-        run: () => showSession(client, s.id),
-      })),
-      "separator",
-      ...sessionItems(client, session.id, rename, { bar: true }),
-    ]);
+    // The sessions to switch to, as radio items (the shown one checked),
+    // then the same menu as the sidebar row's (UI audit #171).
+    openFresh(
+      client,
+      { clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() },
+      () => [
+        { header: "Switch to" },
+        ...state.sessions.map((s): MenuItem => ({ label: s.name, checked: s.id === session.id, run: () => showSession(client, s.id) })),
+        "separator",
+        ...sessionItems(client, session.id, rename),
+      ],
+      { from: e.type === "click" ? (e.currentTarget as HTMLElement) : null },
+    );
   };
+  const hint = sessionMenuHint(sessionItems(client, session.id, () => {}));
   const unread = sessionUnread(client, session.id);
   return (
     <span class="ws-crumb-group">
@@ -431,7 +446,7 @@ export function SessionButton({
         <span class="ws-crumb-name">{session.name}</span>
         {unread.unread ? <span class={unread.mention ? "session-unread mention" : "session-unread"} title="New in the session thread" /> : null}
       </button>
-      <button class="ws-crumb-caret" aria-label={`Session menu: ${session.name}`} title="Switch sessions, rename, share, close" data-crumb-menu onClick={sessionMenu}>
+      <button class="ws-crumb-caret" aria-label={`Session menu: ${session.name}`} title={hint ? `Switch sessions, ${hint}` : "Switch sessions"} data-crumb-menu onClick={sessionMenu}>
         <span class="caret" aria-hidden="true">▾</span>
       </button>
     </span>

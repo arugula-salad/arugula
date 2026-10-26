@@ -110,7 +110,8 @@ export const runs = {
   },
   /** A run already read. */
   known: (id: string) => known.get(id),
-  list: (project: string, f: RunFilter) => call<RunList>("GET", `/api/projects/${enc(project)}/runs?${runsQuery(f)}`),
+  /** The newest that match, at most `limit` (50 when left out). */
+  list: (project: string, f: RunFilter, limit?: number) => call<RunList>("GET", `/api/projects/${enc(project)}/runs?${runsQuery(f, limit)}`),
   /** One run with its timeline: at once, or (`since`) once it has an
    * event after that one or has ended, waiting up to 15 s. */
   get: (id: string, since?: number) => call<RunView>("GET", `/api/runs/${enc(id)}${since === undefined ? "" : `?since=${since}&wait=15`}`).then(keep),

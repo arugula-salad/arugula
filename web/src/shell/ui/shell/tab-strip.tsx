@@ -1,10 +1,12 @@
 // The session's tabs, over the panes: each tab, and + (with ▾ for other
 // kinds of tab). Many tabs scroll
 // sideways (the wheel too), the shown one is kept in sight, and + and ▾
-// stay at the end (M113).
+// stay at the end (M113). Each tab is as wide as its name (within a
+// minimum and a maximum), and when they don't all fit a menu after them
+// lists every one (UI audit #171).
 
 import { Fragment } from "preact";
-import { useLayoutEffect, useRef } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../../client";
 import { directory } from "../../hosts";
 import type { Session, TabView } from "../../../shared/proto";
@@ -21,6 +23,7 @@ import { ariaKeys, keyHint } from "../keys";
 import { newTabRefusal } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
 import { HOSTED_LABEL } from "../../../shared/hosted";
+import { openMenu, type MenuItem } from "../../../shared/ui/menu";
 
 /** The tab bar of a session. */
 export function TabStrip({
@@ -41,6 +44,7 @@ export function TabStrip({
   const refusal = newTabRefusal(client, session.id);
   // Which ends have tabs scrolled past them, for the fades (style.css).
   const strip = useRef<HTMLDivElement>(null);
+  const [over, setOver] = useState(false);
   const edges = () => {
     const el = strip.current;
     if (!el) return;
@@ -48,8 +52,27 @@ export function TabStrip({
     const start = more && el.scrollLeft > 1;
     const end = more && el.scrollLeft < el.scrollWidth - el.clientWidth - 1;
     el.dataset.overflow = start && end ? "both" : start ? "start" : end ? "end" : "";
+    setOver(more);
   };
   useLayoutEffect(edges);
+  // A window made narrower can hide tabs without a render.
+  useLayoutEffect(() => {
+    const el = strip.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(edges);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  /** Every tab, the shown one checked: those scrolled out of sight too. */
+  const allTabs = (e: MouseEvent) => {
+    const el = e.currentTarget as HTMLElement;
+    const r = el.getBoundingClientRect();
+    const items = session.tabs.flatMap((id): MenuItem[] => {
+      const t = client.tabView(id);
+      return t ? [{ label: tabLabel(client, t), checked: id === client.tab, run: () => client.selectTab(id) }] : [];
+    });
+    openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, [{ header: `${items.length} tabs` }, ...items], { from: el });
+  };
   return (
     <div class="tabstrip">
       <div
@@ -86,6 +109,12 @@ export function TabStrip({
         })}
         {marker === session.tabs.length && <div class="drop-marker" />}
       </div>
+      {over && (
+        <button class="tabs-all" title="Every tab in this session" aria-label={`All ${session.tabs.length} tabs`} aria-haspopup="menu" aria-expanded="false" data-tabs-all onClick={allTabs}>
+          {session.tabs.length}
+          <span class="caret" aria-hidden="true">▾</span>
+        </button>
+      )}
       {/* Outside the tabs that scroll, so they're always in reach. */}
       <button
         class="new-tab"
@@ -105,11 +134,13 @@ export function TabStrip({
         title={refusal ?? "More kinds of tab: a directory, a PR, a VM…"}
         aria-label="More kinds of tab"
         aria-haspopup="menu"
+        aria-expanded="false"
         disabled={!!refusal}
         data-new-tab-more
         onClick={(e) => {
-          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          openFresh(client, { clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, () => newTabItems(client, session.id));
+          const el = e.currentTarget as HTMLElement;
+          const r = el.getBoundingClientRect();
+          openFresh(client, { clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, () => newTabItems(client, session.id), { from: el });
         }}
       >
         ▾
@@ -151,9 +182,19 @@ function TabItem({
   // Closing and renaming are an editor's (a viewer's would be refused).
   const edits = client.role(client.sessionOfTab(tab.id) ?? null) !== "viewer";
   const ref = useRef<HTMLDivElement>(null);
-  // The shown tab stays in sight when there are more than fit.
+  // The shown tab stays in sight when there are more than fit: tabs are as
+  // wide as their names (UI audit #171), and names arrive after a tab does,
+  // so it's put back in sight whenever a tab in the strip changes size.
   useLayoutEffect(() => {
-    if (selected) ref.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    const el = ref.current;
+    if (!selected || !el) return;
+    const show = () => el.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    show();
+    const strip = el.parentElement;
+    if (!strip || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(show);
+    for (const t of strip.children) ro.observe(t);
+    return () => ro.disconnect();
   }, [selected]);
   if (renaming) {
     return (
@@ -220,8 +261,8 @@ function TabItem({
           </span>
         )
       )}
-      <RemoteTag client={client} tab={tab} />
       <span class="tab-label">{label}</span>
+      <RemoteTag client={client} tab={tab} />
       <TabPeople client={client} tab={tab.id} />
       <AttentionBadge {...tabAttention(client, tab)} client={client} />
       <ChatTabBadge client={client} panes={paneIds(tab)} />
@@ -243,11 +284,14 @@ function TabItem({
   );
 }
 
-/** The other hosts a tab's panes run on (#17). */
+/** The other hosts a tab's panes run on (#17): remote panes' only (a PR's
+ * `host` is its forge's, not where anything runs). After the title, and
+ * only while it fits beside it (UI audit #177). */
 function RemoteTag({ client, tab }: { client: Client; tab: TabView }) {
   const hosts = [
     ...new Set(
       paneIds(tab)
+        .filter((p) => client.info(p)?.type === "remote")
         .map((p) => client.blocks.get(p)?.state as { host?: string } | null | undefined)
         .flatMap((s) => (s?.host ? [s.host] : [])),
     ),

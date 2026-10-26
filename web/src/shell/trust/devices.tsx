@@ -8,13 +8,14 @@ import { useEffect, useState } from "preact/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import { Modal } from "../../shared/ui/modal";
+import { Time } from "../../shared/ui/time";
 import { api, shownName, type ControlSession } from "../control";
-import { fingerprint, type Cert } from "../e2e/cert.ts";
+import { fingerprint, fromApp, type Cert } from "../e2e/cert.ts";
 import { verifyCode, verifyWords } from "../e2e/words.ts";
 import { directory } from "../hosts";
 import { machinePlace, machineState, placeMeans } from "../ui/hosts";
 import type { SessionRow } from "./account";
-import { addedAt, openPanel, QrCode, since } from "./common";
+import { AddedAt, openPanel, QrCode, since } from "./common";
 import { HostedMachines } from "./hosted";
 import { RunGrants } from "./run-grants";
 
@@ -52,7 +53,7 @@ export function AddDevice({ s, close }: { s: ControlSession; close: () => void }
         <li>Approve it here: this browser asks. Scan the code it shows, or type it.</li>
       </ol>
       <div class="prompt-buttons">
-        <button onClick={close}>Done</button>
+        <button class="secondary" onClick={close}>Done</button>
       </div>
     </Modal>
   );
@@ -65,7 +66,7 @@ export function PasskeyNudge({ s }: { s: ControlSession }) {
   return (
     <p class="dim" data-passkey-nudge>
       Add a passkey so this account isn't tied to GitHub.{" "}
-      <button class="control-linkish" data-add-passkey onClick={() => s.addPasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
+      <button class="link" data-add-passkey onClick={() => s.addPasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
         Add a passkey
       </button>
       {err ? <span class="control-error"> {err}</span> : null}
@@ -87,7 +88,7 @@ function MoveMachine({ s, c, team, online }: { s: ControlSession; c: Cert; team:
       <label class="dim control-move-label">
         Team{" "}
         <select
-          class="control-select"
+          class="field"
           data-move-to
           value={to === undefined ? (team ?? "") : (to ?? "")}
           onChange={(e) => {
@@ -134,7 +135,7 @@ function MoveMachine({ s, c, team, online }: { s: ControlSession; c: Cert; team:
           >
             Move
           </button>{" "}
-          <button data-move-cancel onClick={() => setTo(undefined)}>
+          <button class="secondary" data-move-cancel onClick={() => setTo(undefined)}>
             Cancel
           </button>
         </p>
@@ -155,11 +156,11 @@ function SignedIn({ sessions, end }: { sessions: SessionRow[] | null; end: (id: 
   return (
     <span class="dim" data-signed-in="yes">
       {" "}
-      · signed in since {new Date(first).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+      · signed in <Time at={Math.min(first, Date.now())} on />
       {here ? null : (
         <>
           {" · "}
-          <button class="control-linkish" data-sign-out-device onClick={() => sessions.forEach((x) => end(x.id))}>
+          <button class="secondary danger small" data-sign-out-device onClick={() => sessions.forEach((x) => end(x.id))}>
             Sign out
           </button>
         </>
@@ -169,9 +170,10 @@ function SignedIn({ sessions, end }: { sessions: SessionRow[] | null; end: (id: 
 }
 
 /** A device's kind, in a row's words. Machines are under their own
- * heading, so they don't say it. */
-const kindText = (k: Cert["kind"]) =>
-  k === "cli" ? "command line" : k === "recovery" ? "recovery code" : k === "daemon" ? "machine" : k === "app" ? "desktop app" : "browser or app";
+ * heading, so they don't say it. The app's window from before it had a
+ * kind of its own is the app too (UI audit #174: it said "browser or app"). */
+const kindText = (c: Cert) =>
+  c.kind === "cli" ? "command line" : c.kind === "recovery" ? "recovery code" : c.kind === "daemon" ? "machine" : fromApp(c) ? "desktop app" : "browser or phone";
 
 /** What labels a device in a row, a dialog or a banner (#759): its kind
  * and when it was added. Its fingerprint labels it too, but nobody
@@ -179,7 +181,7 @@ const kindText = (k: Cert["kind"]) =>
 function DeviceLabel({ s, c, kind = true }: { s: ControlSession; c: Cert; kind?: boolean }) {
   return (
     <span class="dim control-device-label">
-      {kind ? `${kindText(c.kind)} · ` : ""}added <span data-added={c.created}>{addedAt(c.created)}</span> <DeviceDetails s={s} c={c} />
+      {kind ? `${kindText(c)} · ` : ""}added <AddedAt at={c.created} /> <DeviceDetails s={s} c={c} />
     </span>
   );
 }
@@ -223,7 +225,7 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
     .filter((c) => c.kind !== "daemon")
     .sort((a, b) => +(b.device === s.keys.id) - +(a.device === s.keys.id) || (s.used.get(b.device) ?? 0) - (s.used.get(a.device) ?? 0));
   const remove = (c: Cert) => (
-    <button class="control-revoke quiet-danger" data-remove={c.device} onClick={() => setRemoving(c)}>
+    <button class="secondary danger small" data-remove={c.device} onClick={() => setRemoving(c)}>
       Remove
     </button>
   );
@@ -315,7 +317,7 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
           );
         })}
       </ul>
-      <button data-add-machine onClick={openPanel("add")}>
+      <button class="secondary" data-add-machine onClick={openPanel("add")}>
         Add a machine…
       </button>
       <HostedMachines s={s} />
@@ -327,21 +329,21 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
           {clearing ? (
             <>
               Remove {unused.length} unused {unused.length === 1 ? "device" : "devices"}? Their keys stop reaching your machines.{" "}
-              <button class="control-revoke danger" data-remove-unused onClick={() => void removeUnused()}>
+              <button class="primary danger small" data-remove-unused onClick={() => void removeUnused()}>
                 Remove {unused.length}
               </button>{" "}
-              <button class="control-linkish" onClick={() => setClearing(false)}>
+              <button class="link" onClick={() => setClearing(false)}>
                 Cancel
               </button>
             </>
           ) : (
             <>
               {unused.length} more {unused.length === 1 ? "looks" : "look"} unused: signed out, and not used in 30 days.{" "}
-              <button class="control-linkish" data-show-unused aria-expanded={showUnused} onClick={() => setShowUnused(!showUnused)}>
+              <button class="link" data-show-unused aria-expanded={showUnused} onClick={() => setShowUnused(!showUnused)}>
                 {showUnused ? "Hide them" : "Show them"}
               </button>
               {" · "}
-              <button class="control-linkish" data-clear-unused onClick={() => setClearing(true)}>
+              <button class="link" data-clear-unused onClick={() => setClearing(true)}>
                 Remove them…
               </button>
             </>
@@ -361,23 +363,32 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
                 {c.device === s.keys.id ? <b data-this-browser> (this browser)</b> : ""}
                 <span class="dim" data-used={at ?? ""}>
                   {" · "}
-                  {c.device === s.keys.id ? "using it now" : at ? `used ${since(at)}` : "last use unknown"}
+                  {c.device === s.keys.id ? (
+                    "using it now"
+                  ) : at ? (
+                    <>
+                      used <Time at={Math.min(at, Date.now())} on />
+                    </>
+                  ) : (
+                    "last use unknown"
+                  )}
                 </span>
                 {old ? <span class="control-badge unused-badge">unused</span> : null}
                 <SignedIn sessions={sessions?.filter((x) => x.device === c.device) ?? null} end={endSession} />
-                <DeviceLabel s={s} c={c} />
+                {/* Under "Browsers and phones", a browser's kind says nothing. */}
+                <DeviceLabel s={s} c={c} kind={c.kind !== "browser" || fromApp(c)} />
               </span>
               {c.device !== s.keys.id ? remove(c) : <span />}
             </li>
           );
         })}
       </ul>
-      <button data-add-device onClick={openPanel("add-device")}>
+      <button class="secondary" data-add-device onClick={openPanel("add-device")}>
         Add a phone or browser…
       </button>
       <p class="dim">
         Recovery codes, your name and passkeys are in{" "}
-        <button class="control-linkish" data-to-account onClick={openPanel("account")}>
+        <button class="link" data-to-account onClick={openPanel("account")}>
           Sign-in and account…
         </button>
       </p>
@@ -405,9 +416,10 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
           </div>
         </ConfirmRemove>
       ) : null}
+      {/* Sign out is the account menu's: here it read as a second Done
+          (UI audit #174). */}
       <div class="prompt-buttons">
-        <button onClick={() => s.signOut(false)}>Sign out</button>
-        <button onClick={close}>Done</button>
+        <button class="secondary" onClick={close}>Done</button>
       </div>
     </Modal>
   );

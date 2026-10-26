@@ -1,11 +1,12 @@
 // Follow mode's code view (M28, S17: CodeMirror 6, read-only, loaded only
 // when someone follows). It shows the file an editor has open, applies its
 // edits as they come, and draws its cursor and selection, the file's
-// diagnostics and the debugger's line, in the terminal's colours. M11's file
-// block draws in it too (a marked line), and its diff block highlights its
-// hunks with the same languages and colours.
+// diagnostics and the debugger's line, in the page's palette (UI audit
+// #152: it was Mocha's on every palette). M11's file block draws in it too
+// (a marked line), and its diff block highlights its hunks with the same
+// languages and colours (style.css's hl-*, from the same tokens).
 
-import { EditorSelection, EditorState, StateEffect, StateField, type Extension, type Range } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, StateEffect, StateField, type Extension, type Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, drawSelection, highlightActiveLine, lineNumbers } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { highlightCode, tagHighlighter, tags as t } from "@lezer/highlight";
@@ -13,7 +14,7 @@ import { type LanguageSupport } from "@codemirror/language";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
-import { theme } from "../../shared/theme";
+import { legible, onAppearance, palette, type Palette } from "../../shared/appearance";
 
 /** A position the editor sent: line from 1, column from 0. */
 export type Pos = [number, number];
@@ -56,35 +57,52 @@ const markLine = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-const look = EditorView.theme(
-  {
-    "&": { color: theme.foreground!, backgroundColor: theme.background!, height: "100%", fontSize: "13px" },
-    ".cm-scroller": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", lineHeight: "1.5" },
-    ".cm-gutters": { backgroundColor: theme.background!, color: theme.brightBlack!, border: "none" },
-    ".cm-activeLine": { backgroundColor: "#31324480" },
-    ".cm-activeLineGutter": { backgroundColor: "#31324480", color: theme.foreground! },
-    ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: theme.selectionBackground! },
-    ".cm-cursor": { borderLeftColor: theme.cursor!, borderLeftWidth: "2px" },
-    ".cm-diag-error": { textDecoration: `underline wavy ${theme.red}`, textUnderlineOffset: "3px" },
-    ".cm-diag-warning": { textDecoration: `underline wavy ${theme.yellow}`, textUnderlineOffset: "3px" },
-    ".cm-diag-info, .cm-diag-hint": { textDecoration: `underline dotted ${theme.blue}`, textUnderlineOffset: "3px" },
-    ".cm-debug-line": { backgroundColor: "#f9e2af30", boxShadow: `inset 3px 0 0 ${theme.yellow}` },
-    ".cm-mark-line": { backgroundColor: "#cba6f728", boxShadow: `inset 3px 0 0 ${theme.magenta}` },
-  },
-  { dark: true },
-);
+/** `#rrggbb` at an alpha (`"80"`); `#rrggbbaa` as it is. */
+const alpha = (hex: string, a: string) => (hex.length === 7 ? hex + a : hex);
 
-const colours = HighlightStyle.define([
-  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword], color: theme.magenta },
-  { tag: [t.string, t.special(t.string), t.regexp], color: theme.green },
-  { tag: [t.number, t.bool, t.null, t.atom], color: "#fab387" },
-  { tag: [t.comment, t.lineComment, t.blockComment], color: theme.brightBlack, fontStyle: "italic" },
-  { tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName], color: theme.blue },
-  { tag: [t.typeName, t.className, t.namespace], color: theme.yellow },
-  { tag: [t.definition(t.variableName), t.propertyName], color: theme.foreground },
-  { tag: [t.operator, t.punctuation, t.bracket], color: "#9399b2" },
-  { tag: [t.meta, t.attributeName], color: theme.cyan },
-]);
+/** The view's colours from a palette, as editor-theme.ts makes the editor
+ * block's: the same tokens, legible on its background. One per palette, so
+ * every view (and every file opened) shares its style rules. */
+const painted = new Map<string, Extension>();
+function paint(p: Palette): Extension {
+  let done = painted.get(p.id);
+  if (!done) painted.set(p.id, (done = paintNew(p)));
+  return done;
+}
+
+function paintNew(p: Palette): Extension {
+  const u = legible(p);
+  const sel = p.term.selectionBackground ?? alpha(u.muted, "80");
+  const look = EditorView.theme(
+    {
+      "&": { color: u.fg, backgroundColor: u.bg, height: "100%", fontSize: "13px" },
+      ".cm-scroller": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", lineHeight: "1.5" },
+      ".cm-gutters": { backgroundColor: u.bg, color: u.dim, border: "none" },
+      ".cm-activeLine": { backgroundColor: alpha(u.raised, "80") },
+      ".cm-activeLineGutter": { backgroundColor: alpha(u.raised, "80"), color: u.fg },
+      ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: sel },
+      ".cm-cursor": { borderLeftColor: p.term.cursor ?? u.accent, borderLeftWidth: "2px" },
+      ".cm-diag-error": { textDecoration: `underline wavy ${u.danger}`, textUnderlineOffset: "3px" },
+      ".cm-diag-warning": { textDecoration: `underline wavy ${u.warn}`, textUnderlineOffset: "3px" },
+      ".cm-diag-info, .cm-diag-hint": { textDecoration: `underline dotted ${u.info}`, textUnderlineOffset: "3px" },
+      ".cm-debug-line": { backgroundColor: alpha(u.warn, "30"), boxShadow: `inset 3px 0 0 ${u.warn}` },
+      ".cm-mark-line": { backgroundColor: alpha(u.accent, "28"), boxShadow: `inset 3px 0 0 ${u.accent}` },
+    },
+    { dark: !p.light },
+  );
+  const colours = HighlightStyle.define([
+    { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword], color: u.accent },
+    { tag: [t.string, t.special(t.string), t.regexp], color: u.ok },
+    { tag: [t.number, t.bool, t.null, t.atom], color: u.peach },
+    { tag: [t.comment, t.lineComment, t.blockComment], color: u.dim, fontStyle: "italic" },
+    { tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName], color: u.info },
+    { tag: [t.typeName, t.className, t.namespace], color: u.warn },
+    { tag: [t.definition(t.variableName), t.propertyName], color: u.fg },
+    { tag: [t.operator, t.punctuation, t.bracket], color: u.subtle },
+    { tag: [t.meta, t.attributeName], color: u.teal },
+  ]);
+  return [look, syntaxHighlighting(colours)];
+}
 
 function support(file: string, lang?: string): LanguageSupport | null {
   const ext = (file.split(".").pop() ?? "").toLowerCase();
@@ -140,10 +158,14 @@ export class CodeView {
 
   /** How its label describes it ("following", "read-only"). */
   private what: string;
+  /** The palette's colours, swapped when someone picks another. */
+  private colours = new Compartment();
+  private offAppearance: () => void;
 
   constructor(parent: HTMLElement, what = "following") {
     this.what = what;
     this.view = new EditorView({ parent, state: this.state("", "") });
+    this.offAppearance = onAppearance(() => this.view.dispatch({ effects: this.colours.reconfigure(paint(palette())) }));
   }
 
   private state(doc: string, file: string, lang?: string): EditorState {
@@ -153,12 +175,11 @@ export class CodeView {
         lineNumbers(),
         highlightActiveLine(),
         drawSelection({ cursorBlinkRate: 0 }),
-        syntaxHighlighting(colours),
+        this.colours.of(paint(palette())),
         language(file, lang),
         marks,
         debugLine,
         markLine,
-        look,
         EditorState.readOnly.of(true),
         EditorView.editable.of(false),
         // The page's selection, for "mention these lines", is a reader's own.
@@ -264,6 +285,7 @@ export class CodeView {
   }
 
   destroy() {
+    this.offAppearance();
     this.view.destroy();
   }
 }

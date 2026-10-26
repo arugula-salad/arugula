@@ -47,8 +47,9 @@ export function roomMenuItems(store: ChatStore, r: ChatRoom, toast: Toast): Menu
   return items;
 }
 
-export function openRoomMenu(e: At, store: ChatStore, r: ChatRoom, toast: Toast) {
-  openMenu(e, roomMenuItems(store, r, toast));
+/** `more`: what follows the room's places (leaving it, UI audit #169). */
+export function openRoomMenu(e: At, store: ChatStore, r: ChatRoom, toast: Toast, more: MenuItem[] = []) {
+  openMenu(e, [...roomMenuItems(store, r, toast), ...(more.length ? ["separator" as const, ...more] : [])]);
 }
 
 /** A group's menu: how it sorts, and for a section of your own, rename
@@ -84,8 +85,8 @@ export function toggleGroup(store: ChatStore, key: string, toast: Toast) {
 }
 
 /** The room header's star, and a button for the room's menu (where the
- * phone moves a room: it has no drag). */
-export function RoomStar({ store, room, toast }: { store: ChatStore; room: ChatRoom; toast: Toast }) {
+ * phone moves a room: it has no drag), with `more` at its foot. */
+export function RoomStar({ store, room, toast, more = [] }: { store: ChatStore; room: ChatRoom; toast: Toast; more?: MenuItem[] }) {
   const on = placeOf(store.sidebar, room.id) === STARRED;
   return (
     <>
@@ -99,17 +100,20 @@ export function RoomStar({ store, room, toast }: { store: ChatStore; room: ChatR
       >
         {on ? "★" : "☆"}
       </button>
+      {/* The room's menu: its place in the sidebar, and leaving it (UI
+          audit #169), so a misclick near the bell can't leave. */}
       <button
         class="chat-info"
-        title="Move to a section of your sidebar"
-        aria-label="Move this room to a section"
+        title={more.length ? "Move to a section of your sidebar, or leave" : "Move to a section of your sidebar"}
+        aria-label="Room options"
+        aria-haspopup="menu"
         data-room-move
         onClick={(e) => {
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          openRoomMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, store, room, toast);
+          openRoomMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, store, room, toast, more);
         }}
       >
-        ⇆
+        ⋯
       </button>
     </>
   );

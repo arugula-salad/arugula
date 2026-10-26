@@ -5,7 +5,7 @@
 
 import { tabLabel, type Client } from "../../client";
 import { directory } from "../../hosts";
-import { AccountButton, CommandsButton } from "../app-bar";
+import { AccountButton, CommandsButton, ProjectsLink } from "../app-bar";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { getFleet, HostButton, hostMenuShown, machineState } from "../hosts";
 import { PeopleBar, shareSession } from "../people";
@@ -26,7 +26,7 @@ export type Connection = "direct" | "relayed" | "reconnecting" | "offline" | "wa
 export function connection(client: Client): { state: Connection; why: string } {
   if (client.connected) {
     return client.path === "relayed"
-      ? { state: "relayed", why: "Through Arugula control's relay (end to end encrypted)" }
+      ? { state: "relayed", why: "Through Arugula control's relay (end-to-end encrypted)" }
       : { state: "direct", why: "Straight to the machine" };
   }
   const name = directory.current;
@@ -76,11 +76,15 @@ export function ContextHeader({
   return (
     <header class="ws-head" data-tauri-drag-region>
       {sidebar.open && !sidebar.narrow && (
-        <button class="ws-wordmark" style={{ width: `${sidebar.width}px` }}
+        // A link, as the platform page's wordmark is (UI audit #170).
+        <a class="ws-wordmark" style={{ width: `${sidebar.width}px` }} href="#overview"
           aria-label="Arugula Control: session overview" title="This machine’s session overview"
-          onClick={() => openOverview()}>
+          onClick={(e) => {
+            e.preventDefault();
+            openOverview();
+          }}>
           Arugula <span aria-hidden="true">/</span> <strong>Control</strong>
-        </button>
+        </a>
       )}
       <nav class="ws-crumbs" aria-label="Where you are" data-tauri-drag-region>
         {/* The machine's name even where there's no menu of others (a
@@ -89,7 +93,7 @@ export function ContextHeader({
           <HostButton path={false} />
         ) : (
           <span class="ws-host-name" title="This machine">
-            {directory.current || "This machine"}
+            {directory.current || client.hostName || "This machine"}
           </span>
         )}
         <ConnectionChip client={client} />
@@ -128,6 +132,7 @@ export function ContextHeader({
         </button>
       )}
       <PeopleBar client={client} />
+      <ProjectsLink />
       <AccountButton client={client} />
       <WindowButtons />
     </header>

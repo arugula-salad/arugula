@@ -8,7 +8,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../../client";
 import { directory } from "../../hosts";
-import { onSwarmRoute, openSwarm } from "../../swarm/route";
+import { SWARM_ABOUT, onSwarmRoute, openSwarm } from "../../swarm/route";
 import { openAgentsPage } from "../agents-route";
 import { openDocsPage } from "../docs-route";
 import { settingsItems } from "../commands";
@@ -51,7 +51,7 @@ export function Rail({ client }: { client: Client }) {
   const settings = (e: MouseEvent) => {
     countView("settings");
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    openMenu({ clientX: r.right + 4, clientY: r.top, preventDefault: () => e.preventDefault() }, settingsItems(client));
+    openMenu({ clientX: r.right + 4, clientY: r.top, preventDefault: () => e.preventDefault() }, settingsItems(client, { machine: true }), e.currentTarget as HTMLElement);
   };
   return (
     <nav class="ws-rail" aria-label="Places">
@@ -86,8 +86,8 @@ export function Rail({ client }: { client: Client }) {
       </RailButton>
       <RailButton
         label="Swarm"
-        aria="Swarm: every pane on all machines"
-        tip="Swarm: every pane on all machines. Panes brings you back here."
+        aria={`Swarm: ${SWARM_ABOUT}`}
+        tip={`Swarm: ${SWARM_ABOUT}. Panes brings you back here.`}
         here={at === "swarm"}
         hook="data-open-swarm"
         onClick={() => at !== "swarm" && openSwarm()}
@@ -161,7 +161,7 @@ function RailButton({
     <button
       class={`ws-rail-button${here ? (toggle ? " on" : " here") : ""}`}
       aria-label={aria ?? label}
-      aria-pressed={toggle ? undefined : here}
+      aria-current={!toggle && here ? "page" : undefined}
       aria-expanded={toggle ? here : undefined}
       aria-controls={toggle ? "ws-session-sidebar" : undefined}
       title={tip}

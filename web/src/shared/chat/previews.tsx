@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../maintenance";
+import { Time } from "../ui/time";
 
 export type Tone = "open" | "done" | "bad" | "wait" | "off";
 
@@ -80,15 +81,6 @@ export function mayLink(text: string): boolean {
 
 // ---- the cards
 
-function ago(at: number): string {
-  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
-  if (s < 30 * 86_400) return `${Math.floor(s / 86_400)}d ago`;
-  return new Date(at).toLocaleDateString();
-}
-
 /** The cards under one message. `mine`: its author, who may remove them. */
 export function MessagePreviews({ room, seq, text, mine }: { room: string; seq: number; text: string; mine: boolean }) {
   const [cards, setCards] = useState<Preview[]>([]);
@@ -144,7 +136,7 @@ function ObjectCard({ c }: { c: Extract<Preview, { kind: "object" }> }) {
       <span class="link-card-title">{c.title}</span>
       <span class="link-card-meta">
         {c.who ? `${c.who} · ` : ""}
-        {ago(c.at)}
+        <Time at={Math.min(c.at, Date.now())} />
       </span>
     </a>
   );

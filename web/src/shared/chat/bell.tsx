@@ -20,7 +20,8 @@ export function openBell(
 ) {
   const fail = (err: Error) => toast(err.message);
   const p = notifyPrefs();
-  const items: MenuItem[] = [{ header: room.kind === "channel" ? `Notify me about #${room.name}` : "Notify me about this room" }];
+  // The channel's name as it's written, not in capitals (UI audit #169).
+  const items: MenuItem[] = [room.kind === "channel" ? { header: `Notify me about #${room.name}`, name: true } : { header: "Notify me about this room" }];
   for (const l of LEVELS) {
     items.push({ label: l.label, hint: l.hint, checked: room.level === l.level, run: () => void setLevel(l.level).catch(fail) });
   }

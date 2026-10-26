@@ -12,13 +12,13 @@
 .ws-rail {
   padding-top: 0;
   gap: 6px;
-  border-right-color: var(--chrome-line);
+  border-right-color: var(--line-strong);
 }
 
 .ws-brand {
   height: var(--head-h);
   margin-bottom: 2px;
-  border-bottom: 1px solid var(--chrome-line);
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .ws-rail-button {
@@ -29,7 +29,7 @@
   margin-inline: 4px;
   padding: 6px 0;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--btn-radius);
 }
 
 .ws-rail-button.here::before {
@@ -38,12 +38,12 @@
 
 .ws-rail-button.on {
   background: var(--surface);
-  border-color: var(--chrome-line);
+  border-color: var(--line-strong);
   color: var(--fg);
 }
 
 .ws-sidebar {
-  border-right-color: var(--chrome-line);
+  border-right-color: var(--line-strong);
 }
 
 .ws-sidebar-head {
@@ -59,8 +59,8 @@
 
 .ws-search {
   margin: 0 12px 8px;
-  border-color: var(--chrome-line);
-  border-radius: 5px;
+  border-color: var(--line-strong);
+  border-radius: var(--field-radius);
 }
 
 .ws-session-list {
@@ -68,18 +68,18 @@
 }
 
 .ws-group {
-  margin: 16px 7px 6px;
+  margin: var(--space-4) var(--space-2) 6px;
   font-size: 12px;
   font-weight: 500;
 }
 
 .ws-group:not(:first-child) {
-  border-top: 1px solid var(--chrome-line);
+  border-top: 1px solid var(--line-strong);
   padding-top: 14px;
 }
 
 .ws-session {
-  border-radius: 5px;
+  border-radius: var(--field-radius);
   margin-bottom: 3px;
 }
 
@@ -89,8 +89,8 @@
 }
 
 .ws-session-main {
-  gap: 7px;
-  padding: 10px 6px 10px 9px;
+  gap: var(--space-2);
+  padding: 10px 6px 10px var(--space-2);
 }
 
 .ws-session-name {
@@ -130,12 +130,12 @@
 }
 
 .ws-tabs {
-  border-bottom-color: var(--chrome-line);
+  border-bottom-color: var(--line-strong);
   padding-inline: 8px;
 }
 
 .ws-tabs .tab {
-  border-radius: 5px 5px 0 0;
+  border-radius: var(--field-radius) var(--field-radius) 0 0;
   color: var(--subtle);
 }
 
@@ -147,14 +147,14 @@
 }
 
 .pane-toolbar {
-  border-bottom-color: var(--chrome-line);
+  border-bottom-color: var(--line-strong);
   gap: 8px;
 }
 
 .pt-presets {
   gap: 0;
-  border: 1px solid var(--chrome-line);
-  border-radius: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
   overflow: hidden;
 }
 
@@ -164,13 +164,13 @@
 }
 
 .pt-presets > button + button {
-  border-left: 1px solid var(--chrome-line);
+  border-left: 1px solid var(--line-strong);
 }
 
 .pane-toolbar > .pt-focus,
 .pane-toolbar > .pt-add {
   border: 1px solid var(--chrome-selected-line);
-  border-radius: 5px;
+  border-radius: var(--btn-radius);
   color: var(--accent);
 }
 
@@ -184,8 +184,8 @@
 
 .ws-activity {
   margin: 0 8px 6px;
-  border: 1px solid var(--chrome-line);
-  border-radius: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
   overflow: visible;
 }
 
@@ -195,12 +195,12 @@
 
 .ws-activity-row {
   min-height: 25px;
-  border-bottom: 1px solid color-mix(in srgb, var(--chrome-line) 45%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line-strong) 45%, transparent);
 }
 
 .ws-activity-time {
   font: 11px ui-monospace, Menlo, monospace;
-  min-width: 7ch;
+  min-width: 8ch;
 }
 
 .ws-activity-kind {
@@ -215,7 +215,7 @@
 .ws-foot {
   gap: 16px;
   font-size: 11px;
-  border-top-color: var(--chrome-line);
+  border-top-color: var(--line-strong);
 }
 
 .ws-foot-hints {
@@ -244,8 +244,8 @@
 }
 .ws-session-main {
   display: grid;
-  gap: 7px;
-  padding: 11px 6px 11px 10px;
+  gap: var(--space-2);
+  padding: var(--space-3) 6px var(--space-3) 10px;
 }
 .ws-session-line {
   display: grid;
@@ -258,9 +258,9 @@
   box-shadow: inset 2px 0 var(--accent);
 }
 
-.ws-group:not(:first-child) { border-top-color: var(--chrome-line); }
+.ws-group:not(:first-child) { border-top-color: var(--line-strong); }
 .ws-tabs .tab {
-  border-color: var(--chrome-line);
+  border-color: var(--line-strong);
   background: var(--chrome-panel);
   padding-inline: 12px;
   font-weight: 400;
@@ -274,10 +274,10 @@
 .pt-fill { flex: none; width: 4px; }
 .pt-note { position: absolute; right: 10px; top: 100%; z-index: 10; background: var(--surface); }
 .ws-activity { background: var(--chrome-panel); }
-.ws-foot kbd { border-color: var(--chrome-line); }
+.ws-foot kbd { border-color: var(--line-strong); }
 @media (max-width: 1100px) {
   .ws-foot-hints { gap: 6px !important; }
-  .pane-toolbar .pt-presets > button { padding-inline: 5px; }
+  .pane-toolbar .pt-presets > button { padding-inline: var(--space-1); }
 }
 
 /* AppKit's overlay buttons occupy a ~78px-wide, 28px-high strip: they
@@ -297,7 +297,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .app.ws::before {
   inset: 0 0 auto;
   height: 28px;
   background: var(--surface);
-  border-bottom: 1px solid var(--chrome-line);
+  border-bottom: 1px solid var(--line-strong);
   box-sizing: border-box;
   app-region: drag;
   -webkit-app-region: drag;
@@ -307,7 +307,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .app.ws::before {
 .ws-rail-utility {
   padding-bottom: 8px;
   margin-bottom: 2px;
-  border-bottom: 1px solid var(--chrome-line);
+  border-bottom: 1px solid var(--line-strong);
 }
 .ws-rail-utility .ws-rail-button.on {
   background: none;

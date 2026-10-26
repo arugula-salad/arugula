@@ -11,11 +11,17 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
+import { deployEventState, deployStateText, plannerText } from "../../shared/deploys";
+import { CopyButton } from "../../shared/ui/copy";
+import { PageHeader } from "../../shared/ui/page-header";
+import { StateChip } from "../../shared/ui/state-chip";
+import { Time } from "../../shared/ui/time";
 import { controlOrigin } from "../session";
-import { follow } from "../router";
+import { names } from "../links";
+import { follow, pathOf } from "../router";
 import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
-import { ago } from "../settings/agent-tokens";
 import { deployTone, toneClass } from "../swarm";
+import { where } from "../where";
 
 export interface Deploy {
   id: string;
@@ -26,7 +32,7 @@ export interface Deploy {
   /** The plan's text (M220): what an owner reads before they approve.
    * Null when the platform can't make it again. */
   plan_text: string | null;
-  /** A roll back's deploy and what it goes back to, or null. */
+  /** A rollback's deploy and what it goes back to, or null. */
   roll_back: { deploy: string } | null;
   state: string;
   planned_by: string;
@@ -46,7 +52,11 @@ export interface Deploy {
     expires: number;
     passkey: { id: string } | null;
   }[];
-  events: { seq: number; kind: string; actor: string; by: string; at: number; hash: string }[];
+  /** The run that applied it, once it started. */
+  run?: string | null;
+  /** `detail` is what the event said (a failure's reason, its run); `run`
+   * the run it's by, if one. */
+  events: { seq: number; kind: string; actor: string; by: string; at: number; hash: string; detail?: Record<string, unknown>; run?: string | null }[];
   log: { verified?: number; broken_at?: number };
 }
 
@@ -57,72 +67,75 @@ async function get<T>(path: string): Promise<T> {
   return v;
 }
 
-export const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+/** Who planned it: a person, "<owner>'s agent on <machine>", or an agent
+ * token's (../../shared/deploys). */
+export const planner = (d: Pick<Deploy, "planned_by_name" | "agent">) => plannerText(d.planned_by_name || "a deleted account", d.agent);
 
-/** Who planned it: a person, or "<owner>'s agent on <machine>". */
-export const planner = (d: Pick<Deploy, "planned_by_name" | "agent">) => {
-  const who = d.planned_by_name || "a deleted account";
-  return d.agent ? `${who}'s agent on ${d.agent.machine_name || d.agent.machine}` : who;
-};
+/** A deploy's state, as people read it: control's prompt says it in the
+ * same words (UI audit #183). */
+export const stateText = deployStateText;
 
-const STATE: Record<string, string> = {
-  planned: "Planned",
-  pending: "Waiting for approval",
-  approved: "Approved",
-  denied: "Denied",
-  canceled: "Canceled",
-  expired: "Expired",
-  running: "Being applied",
-  succeeded: "Applied",
-  failed: "Failed",
-  stale: "Stale",
-};
-
-/** A deploy's state, as people read it. */
-export const stateText = (state: string) => STATE[state] ?? state;
+/** A deploy's state as its chip, wherever it shows (UI audit #183). */
+export const DeployState = ({ state }: { state: string }) => (
+  <StateChip tone={deployTone(state)} class="deploy-state" data-deploy-state-chip={state}>
+    {stateText(state)}
+  </StateChip>
+);
 
 /** Where Approve and Deny go: the deploy on control's page. */
 export const approveHref = (id: string) => `${controlOrigin()}/#deploy=${id}`;
 
 /** One deploy's card. `link`: its heading opens the deploy's own page.
- * The plan's text is open on the deploy's own page, or with `planOpen`. */
-export function DeployCard({ d, link, planOpen }: { d: Deploy; link?: boolean; planOpen?: boolean }) {
+ * The plan's text is open on the deploy's own page, or with `planOpen`.
+ * On the deploy's own page its heading and state are the page's
+ * (`headless`); elsewhere it's a card in the swarm's language, its bar
+ * its state's tone (UI audit #167). */
+export function DeployCard({ d, link, planOpen, headless }: { d: Deploy; link?: boolean; planOpen?: boolean; headless?: boolean }) {
   const path = `/deploys/${d.id}`;
+  const project = pathOf({ page: "project", project: d.project.id }, names);
   return (
-    <article class="deploy-card" data-deploy-card={d.id} data-deploy-state={d.state}>
-      <header class="deploy-card-head">
-        <h2>
-          {link ? (
-            <a href={path} onClick={(e) => follow(e, path)}>
-              Deploy to {d.environment.name}
-            </a>
-          ) : (
-            <>Deploy to {d.environment.name}</>
-          )}
-        </h2>
-        <span class={`deploy-state deploy-state-${d.state}`}>{stateText(d.state)}</span>
-      </header>
+    <article class={headless ? "deploy-card" : `deploy-card sw-card ${toneClass(deployTone(d.state))}`} data-deploy-card={d.id} data-deploy-state={d.state}>
+      {!headless && (
+        <header class="deploy-card-head">
+          <h2>
+            {link ? (
+              <a href={path} onClick={(e) => follow(e, path)}>
+                Deploy to {d.environment.name}
+              </a>
+            ) : (
+              <>Deploy to {d.environment.name}</>
+            )}
+          </h2>
+          <DeployState state={d.state} />
+        </header>
+      )}
       <dl class="deploy-facts">
         <dt>Project</dt>
-        <dd>{d.project.name}</dd>
+        <dd>
+          <a href={project} onClick={(e) => follow(e, project)} data-deploy-project>
+            {d.project.name}
+          </a>
+        </dd>
         <dt>Source</dt>
         <dd>
           {d.source.kind} <code title={d.source.ref}>{shortRef(d.source.ref)}</code> from <code>{d.source.where}</code>
         </dd>
         <dt>Plan</dt>
         <dd>
-          <code class="deploy-digest" data-deploy-plan>
-            {d.plan}
-          </code>
+          {/* Its first 12 hex, the whole digest to copy (UI audit #167). */}
+          <code class="deploy-digest" title={d.plan} data-deploy-plan={d.plan}>
+            {shortRef(d.plan)}
+          </code>{" "}
+          <CopyButton text={d.plan} />
         </dd>
         <dt>Planned</dt>
         <dd>
-          by {planner(d)}, {when(d.created_at)}
+          by {planner(d)}, <Time at={d.created_at} />
         </dd>
       </dl>
       {d.plan_text ? (
         <details class="deploy-op" open={planOpen ?? !link} data-deploy-plan-text>
-          <summary>{d.roll_back ? "The plan: a roll back" : "The plan"}</summary>
+          <summary>{d.roll_back ? "The plan: a rollback" : "The plan"}</summary>
           <pre>{d.plan_text}</pre>
         </details>
       ) : null}
@@ -136,18 +149,28 @@ export function DeployCard({ d, link, planOpen }: { d: Deploy; link?: boolean; p
       {d.stale ? <p class="deploy-note">Another deploy was applied to {d.environment.name} after this was planned, so it can't be approved. Plan it again.</p> : null}
       {d.may_approve ? (
         <div class="deploy-actions">
-          <a class="button" href={approveHref(d.id)} data-deploy-deny>
+          <a class="secondary" href={approveHref(d.id)} data-deploy-deny>
             Deny
           </a>
-          <a class="button primary" href={approveHref(d.id)} data-deploy-approve>
+          <a class="primary" href={approveHref(d.id)} data-deploy-approve>
             Approve
           </a>
-          <p class="dim deploy-why">Opens on control's page, where your device keys are. You confirm with a passkey there.</p>
+          <p class="dim deploy-why">Opens on Control, where your device keys are. You confirm with a passkey there.</p>
         </div>
       ) : null}
     </article>
   );
 }
+
+/** Why a deploy that won't be applied ended: its last event's reason. */
+export function endedWhy(d: Pick<Deploy, "state" | "events">): string | null {
+  if (!["failed", "canceled", "expired", "denied"].includes(d.state)) return null;
+  const last = d.events.at(-1);
+  return typeof last?.detail?.reason === "string" ? last.detail.reason : null;
+}
+
+/** A run's page, from a deploy's (UI audit #146). */
+const runPath = (d: Pick<Deploy, "project">, run: string) => pathOf({ page: "run", project: d.project.id, run }, names);
 
 /** `/deploys/:id`: the deploy, its approvals and its log. */
 export function DeployPage({ id }: { id: string }) {
@@ -156,11 +179,35 @@ export function DeployPage({ id }: { id: string }) {
   useEffect(() => {
     get<Deploy>(`/api/deploys/${id}`).then(setD, (e: Error) => setError(e.message));
   }, [id]);
+  // The bar is in its project once that's known (UI audit #159).
+  useEffect(() => void (d && where.deployIn(d.id, d.project.id)), [d]);
   if (error) return <section class="platform-section"><p class="control-error">{error}</p></section>;
   if (!d) return <p class="platform-section dim">Loading…</p>;
+  const settings = pathOf({ page: "project-settings", project: d.project.id }, names);
   return (
-    <section class="platform-section deploy-page" data-deploy-page={d.id}>
-      <DeployCard d={d} />
+    <section class="platform-section sw-page deploy-page" data-deploy-page={d.id}>
+      <PageHeader
+        title={`Deploy to ${d.environment.name}`}
+        named
+        back={{ href: settings, label: "Project settings", onClick: (e) => follow(e, settings) }}
+        state={<DeployState state={d.state} />}
+      />
+      <DeployCard d={d} headless />
+      {endedWhy(d) || (d.state === "failed" && d.run) ? (
+        // Why it failed, and the run that has its log (UI audit #146).
+        <p class="deploy-note" data-deploy-why>
+          {stateText(d.state)}
+          {endedWhy(d) ? `: ${endedWhy(d)}` : ""}
+          {d.run ? (
+            <>
+              {" · "}
+              <a href={runPath(d, d.run)} onClick={(e) => follow(e, runPath(d, d.run!))} data-deploy-run>
+                its run's log
+              </a>
+            </>
+          ) : null}
+        </p>
+      ) : null}
       {d.approvals.length > 0 ? (
         <>
           <h2>Approvals</h2>
@@ -168,8 +215,12 @@ export function DeployPage({ id }: { id: string }) {
             {d.approvals.map((a) => (
               <li key={a.id} data-deploy-approval={a.decision}>
                 {a.decision === "once" ? "Approved" : "Denied"} by {a.name || "a deleted account"} on {a.device_name}
-                {a.passkey ? ", with a passkey" : ""}, {when(a.at)}
-                {a.decision === "once" ? <span class="dim">: good until {when(a.expires)}</span> : null}
+                {a.passkey ? ", with a passkey" : ""}, <Time at={a.at} />
+                {/* Only while it can still be applied (UI audit #167). */}
+                {a.decision === "once" && d.state === "approved" ? <span class="dim">
+                    {" "}
+                    · expires <Time at={a.expires} />
+                  </span> : null}
               </li>
             ))}
           </ul>
@@ -184,8 +235,19 @@ export function DeployPage({ id }: { id: string }) {
       <ol class="platform-list deploy-events">
         {d.events.map((e) => (
           <li key={e.seq}>
-            <span class="dim">#{e.seq}</span> {e.kind} <span class="dim">
-              by {e.by}, {when(e.at)}
+            {/* In the header's words (UI audit #183). */}
+            <span class="dim">#{e.seq}</span> <span data-deploy-event={e.kind}>{stateText(deployEventState(e.kind))}</span>
+            {typeof e.detail?.reason === "string" ? `: ${e.detail.reason}` : ""}{" "}
+            <span class="dim">
+              by{" "}
+              {e.run ? (
+                <a href={runPath(d, e.run)} onClick={(ev) => follow(ev, runPath(d, e.run!))}>
+                  run <code>{e.run}</code>
+                </a>
+              ) : (
+                e.by
+              )}
+              , <Time at={e.at} />
             </span>
           </li>
         ))}
@@ -194,20 +256,20 @@ export function DeployPage({ id }: { id: string }) {
   );
 }
 
-/** One deploy in a history: its state, what it deployed, a roll back's
- * mark and when it last moved, opening its own page. */
-/** A deploy in an environment's history: a table row, its state in its
- * tone (../swarm), its short ref opening its page (the whole row does),
- * whether it's a roll back, and when it last moved. */
+/** A deploy in an environment's history: a table row, its state's chip,
+ * its short ref opening its page (the whole row does), whether it's a
+ * rollback, and when it last moved. */
 export function DeployRow({ d }: { d: DeploySummary }) {
   const path = `/deploys/${d.id}`;
   const at = lastMoved(d);
   return (
     <tr class={`deploy-row ${toneClass(deployTone(d.state))}`} data-deploy-row={d.id} data-deploy-state={d.state}>
       <td>
-        <span class={`deploy-state deploy-state-${d.state}`}>{stateText(d.state)}</span>
+        <DeployState state={d.state} />
       </td>
       <td>
+        {/* An image's digest says so; a commit is the default (UI audit #166). */}
+        {d.source.kind !== "commit" && <span class="deploy-source-kind">{d.source.kind === "artifact" ? "digest" : d.source.kind}</span>}
         <a href={path} onClick={(e) => follow(e, path)} title={`${d.source.kind} ${d.source.ref} from ${d.source.where}, planned by ${planner(d)}`}>
           <code>{shortRef(d.source.ref)}</code>
         </a>
@@ -215,12 +277,12 @@ export function DeployRow({ d }: { d: DeploySummary }) {
       <td>
         {d.roll_back ? (
           <span class="deploy-roll-back" data-deploy-roll-back>
-            roll back
+            rollback
           </span>
         ) : null}
       </td>
-      <td class="dim" title={when(at)}>
-        {ago(at)}
+      <td class="dim">
+        <Time at={at} />
       </td>
     </tr>
   );
@@ -246,7 +308,7 @@ export function WaitingDeploys({ list }: { list: Deploy[] | null }) {
       <h2>
         Deploys waiting for you <span class="dim">{list.length}</span>
       </h2>
-      <div class="deploy-cards">
+      <div class="deploy-cards sw-cards">
         {list.map((d) => (
           <DeployCard key={d.id} d={d} link />
         ))}

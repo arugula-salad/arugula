@@ -25,8 +25,8 @@ html[data-scheme="light"] {
   padding: 4px 8px;
   color: var(--fg);
   background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
   font: inherit;
 }
 
@@ -56,19 +56,12 @@ html[data-finish="aqua"] .chat {
 /* A page's section is the platform's pane area (style.css's .tab-area
    under each finish). Fixed to the window, its stripes line up with the
    frame's, so a section with no fill of its own shows no seam. */
-html[data-finish="aqua"] .platform-section {
+html[data-finish="aqua"] .platform-section,
+html[data-finish="aqua"] .platform-chat > .chat > .chat-body {
   background: repeating-linear-gradient(
     var(--bg) 0 2px,
     color-mix(in srgb, var(--bg) 90%, var(--fg)) 2px 4px
   ) fixed;
-}
-
-/* A hosted workspace's head is its bar. */
-html[data-finish="aqua"] .platform-ws-head {
-  background:
-    linear-gradient(#fff5, #fff1 50%, #0000 51%, #0001),
-    var(--surface);
-  box-shadow: inset 0 -1px 0 #0003;
 }
 
 html[data-finish="aqua"] .chat-row.selected {
@@ -104,17 +97,13 @@ html[data-finish="brushed"] .chat {
   background: var(--grain), linear-gradient(#fff1, #0001), var(--bg);
 }
 
-html[data-finish="brushed"] .platform-section {
+html[data-finish="brushed"] .platform-section,
+html[data-finish="brushed"] .platform-chat > .chat > .chat-body {
   background: var(--grain) fixed, linear-gradient(#fff1, #0001) fixed, var(--bg);
 }
 
-html[data-finish="brushed"] .platform-ws-head,
 html[data-finish="brushed"] .chat-side {
   background: var(--grain), linear-gradient(#fff2, #0001), var(--surface);
-}
-
-html[data-finish="brushed"] .platform-ws-head {
-  box-shadow: inset 0 1px 0 #fff3, inset 0 -1px 0 #0004;
 }
 
 html[data-finish="brushed"] .chat-row.selected,
@@ -137,15 +126,6 @@ html[data-finish="brushed"] .chat-switcher,
 html[data-finish="brushed"] .platform-toast {
   background: var(--grain), linear-gradient(#fff2, #fff0 40px, #0001), var(--raised);
   box-shadow: inset 0 1px 0 #fff3, 0 12px 36px #0008, 0 0 0 1px #0003;
-}
-
-/* Every button bevelled, as style.css does the dialogs': the deploy
-   links that are buttons, too. */
-html[data-finish="brushed"] .platform .button:not(.primary),
-html[data-finish="brushed"] .deploy-roll-back {
-  background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--raised);
-  border-color: color-mix(in srgb, var(--raised) 60%, #000);
-  box-shadow: inset 0 1px 0 #fff6, 0 1px 1px #0004;
 }
 
 /* A row's divider is a groove: its line, and a light edge under it. */
@@ -171,12 +151,12 @@ html[data-finish="glass"] .chat {
    backdrop-filter: it would trap a dialog drawn inside the section (the
    plan's Modal is position: fixed), and the glow under it is smooth, so
    a blur wouldn't show. */
-html[data-finish="glass"] .platform-section {
+html[data-finish="glass"] .platform-section,
+html[data-finish="glass"] .platform-chat > .chat > .chat-body {
   background: color-mix(in srgb, var(--bg) 45%, transparent);
   box-shadow: inset 0 1px 0 #fff2;
 }
 
-html[data-finish="glass"] .platform-ws-head,
 html[data-finish="glass"] .chat-side {
   background: color-mix(in srgb, var(--surface) 65%, transparent);
   backdrop-filter: blur(12px);

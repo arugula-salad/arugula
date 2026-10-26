@@ -16,10 +16,10 @@ import type { PaneId } from "../../shared/proto";
 import { fuzzy } from "../../shared/fuzzy";
 import { countView } from "../../shared/telemetry";
 import { useWorkspaceDir } from "../blocks";
-import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
+import { SWARM_ABOUT, closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { closeOverview, hasChat, openChat, openChatView, openOverview, overviewRoute } from "./places";
 import { showSession } from "./shell/session-sidebar";
-import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon } from "./shell/icons";
+import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon, DocsIcon, AgentsIcon } from "./shell/icons";
 import { paneName } from "./shell/overview";
 import { openAttention } from "./shell/attention-drawer";
 import { focusSessionSearch } from "./shell/prefs";
@@ -30,11 +30,20 @@ import type { DocRow } from "../../shared/proto";
 import { askText, closeMenu, type MenuItem } from "../../shared/ui/menu";
 import { ariaKeys, keyHint } from "./keys";
 import { newTabItems, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
+import { currentAccount } from "./app-bar";
+import { needsYou } from "../../shared/needs-you";
 
 export interface Command {
   /** Stable enough to remember as a recent pick. */
   key: string;
+  /** The menu it's from (Pane, Tab, Places…), which its key starts with. */
   group: string;
+  /** What it acts on or goes to, shown beside it: a plural noun (UI audit
+   * #176). The group's, by KINDS, when not set. */
+  kind?: string;
+  /** It goes to a place itself (the swarm, chat, a page): the palette
+   * leaves the place it's over alone. */
+  place?: boolean;
   label: string;
   run: () => unknown;
   shortcut?: string;
@@ -45,6 +54,8 @@ export interface Command {
   detail?: string;
   /** More words that find it, after its label (a jump's session and tab). */
   also?: string;
+  /** The action it is, from its menu item: the same in two menus. */
+  id?: string;
 }
 
 let open: { client: Client; phone: boolean } | null = null;
@@ -133,6 +144,11 @@ function fromMenu(group: string, items: MenuItem[], about?: string): Command[] {
   return out;
 }
 
+/** What each menu's commands are shown as: one pattern, plural nouns (UI
+ * audit #176: PLACES, DOCS, PANE, GO TO). */
+const KINDS: Record<string, string> = { Pane: "Panes", Tab: "Tabs", New: "Tabs", Session: "Sessions", Settings: "Settings", Account: "Account", Docs: "Docs", Places: "Places" };
+export const kindOf = (c: Command) => c.kind ?? KINDS[c.group] ?? c.group;
+
 /** Every command for what's shown now. */
 export function commands(client: Client, phone: boolean, workspace: string | null, docs: DocRow[] = []): Command[] {
   const state = client.state;
@@ -142,8 +158,11 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   const tab = client.tabView();
   const session = client.session;
 
-  // Which pane each acts on, beside it: "Pane" alone says nothing.
-  if (pane !== undefined) out.push(...fromMenu("Pane", paneItems(client, pane, phone, workspace), client.title(pane) || client.info(pane)?.command || `pane %${pane}`));
+  // Which pane each acts on, beside it: "Pane" alone says nothing. Over a
+  // place (the swarm, a page) that pane is hidden: say it's back on Panes
+  // (UI audit #176).
+  const under = here() === "panes" ? "" : " (on Panes)";
+  if (pane !== undefined) out.push(...fromMenu("Pane", paneItems(client, pane, phone, workspace), `${client.title(pane) || client.info(pane)?.command || `pane %${pane}`}${under}`));
   if (tab) {
     const rename = async () => {
       const name = await askText("Rename tab", tab.name ?? tabLabel(client, tab));
@@ -161,9 +180,14 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     out.push(...fromMenu("Session", sessionItems(client, session, () => void rename())));
   }
 
-  // The account menu's settings: this machine's, this device's, help.
-  // Without the menu's headers: each would name every item after it.
-  out.push(...fromMenu("Settings", settingsItems(client).filter((i) => typeof i === "object" && "label" in i && i.label !== "Command palette…")));
+  // The account menu's settings: this machine's (always: UI audit #176,
+  // "permission" and "developer" found nothing), this device's, help; and
+  // the account's own (Teams, Devices…). Without the menus' headers: each
+  // would name every item after it.
+  const labelled = (items: MenuItem[]) => items.filter((i) => typeof i === "object" && "label" in i && i.label !== "Command palette…");
+  out.push(...fromMenu("Settings", labelled(settingsItems(client, { machine: true }))));
+  const account = currentAccount();
+  if (account) out.push(...fromMenu("Account", labelled([...account.items(), { label: "Sign out", danger: true, run: () => account.signOut() }])));
 
   // Jumps: this machine's sessions, tabs, panes and workspaces by name
   // (M111: every pane, in any session).
@@ -172,7 +196,7 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     requestAnimationFrame(() => client.viewOf(p)?.focus());
   };
   for (const s of state.sessions) {
-    if (s.id !== session) out.push({ key: `Go/session ${s.id}`, group: "Go to", label: `Session ${s.name}`, run: () => showSession(client, s.id) });
+    if (s.id !== session) out.push({ key: `Go/session ${s.id}`, group: "Go to", kind: "Sessions", label: `Go to session ${s.name}`, run: () => showSession(client, s.id) });
     for (const tid of s.tabs) {
       const t = client.tabView(tid);
       if (!t) continue;
@@ -181,7 +205,8 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
       out.push({
         key: `Go/tab ${tid}`,
         group: "Go to",
-        label: `Tab ${label}`,
+        kind: "Tabs",
+        label: `Go to tab ${label}`,
         detail: s.name,
         also: s.name,
         run: () => {
@@ -193,13 +218,14 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
         if (!info) continue;
         if (info.type === "workspace") {
           const name = client.title(p).replace(/ \(chant\)$/, "");
-          out.push({ key: `Go/pane ${p}`, group: "Go to", label: `Workspace ${name}`, detail: `${s.name} › ${label}`, run: () => toPane(p) });
+          out.push({ key: `Go/pane ${p}`, group: "Go to", kind: "Panes", label: `Go to workspace ${name}`, detail: `${s.name} › ${label}`, run: () => toPane(p) });
         } else {
           const cwd = client.cwd(p)?.replace(/^\/(?:home|Users)\/[^/]+/, "~") ?? null;
           out.push({
             key: `Go/pane ${p}`,
             group: "Go to",
-            label: `Pane ${paneName(client, info)}`,
+            kind: "Panes",
+            label: `Go to pane ${paneName(client, info)}`,
             detail: [`${s.name} › ${label}`, cwd, info.branch].filter(Boolean).join(" · "),
             // Found by its session and tab too, and its directory's name.
             also: [s.name, label, cwd?.split("/").pop(), info.branch].filter(Boolean).join(" "),
@@ -225,14 +251,16 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   }
 
   // The swarm, and the next pane that wants you after the active one.
-  const wanting = state.panes.filter((p) => p.attention === "needs_input").map((p) => p.id);
+  const wanting = state.panes.filter(needsYou).map((p) => p.id);
   const next: PaneId | undefined = wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
-  out.push({ key: "Swarm/open", group: "Swarm", label: "Open the swarm", run: openSwarm });
-  if (hasChat()) out.push({ key: "Chat/open", group: "Chat", label: "Open chat: every thread", run: () => openChat() });
+  // "Go to Swarm" and "Go to Chat" are the places' (UI audit #176: each
+  // was here twice).
   out.push({
     key: "Swarm/next",
     group: "Swarm",
-    label: "Next pane that needs you",
+    kind: "Panes",
+    place: true,
+    label: "Go to the next pane that needs you",
     disabled: next === undefined,
     detail: next === undefined ? "nothing needs you" : client.title(next) || `pane %${next}`,
     run: () => next !== undefined && client.setActive(next),
@@ -241,11 +269,20 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   out.push({
     key: "Swarm/next-in-swarm",
     group: "Swarm",
+    kind: "Panes",
+    place: true,
     label: "Show the next pane that needs you in the swarm",
     disabled: next === undefined,
     run: () => next !== undefined && (location.hash = `swarm=${next}`),
   });
-  return out;
+  // A command two menus share once, by the action their items name (UI
+  // audit #195: the pane's and the tab's Go to directory…, both the
+  // active pane's; New tab, New VM tab), else by its menu and label.
+  const seen = new Set<string>();
+  return out.filter((c) => {
+    const k = c.id ? `id/${c.id}` : c.key;
+    return !seen.has(k) && !!seen.add(k);
+  });
 }
 
 /** Where the palette was opened: the panes, or a place over them. */
@@ -264,13 +301,13 @@ function places(client: Client, phone: boolean): Command[] {
     closeOverview();
   };
   const out: Command[] = [];
-  const go = (key: string, label: string, run: () => void) => out.push({ key: `Places/${key}`, group: "Places", label, run });
+  const go = (key: string, label: string, run: () => void, detail?: string) => out.push({ key: `Places/${key}`, group: "Places", place: true, label, detail, run });
   if (at !== "panes") go("panes", "Go to Panes", toPanes);
   // M111, on a computer: this machine's sessions at a glance, and what
   // waits on you on every machine.
   if (!phone) {
     if (!overviewRoute()) go("overview", "Go to the session overview", () => openOverview());
-    go("attention", "Needs you: what waits on you, on every machine", () => openAttention());
+    go("attention", "Go to Needs you", () => openAttention(), "what waits on you, on every machine");
     // M113: a way out of a terminal (which keeps Tab) to the chrome, from
     // the keyboard; Tab and the arrows go on from there.
     if (at === "panes" && !overviewRoute()) {
@@ -286,18 +323,18 @@ function places(client: Client, phone: boolean): Command[] {
       focus("focus-header", "Move the keyboard to the header", ".ws-head button");
     }
   }
-  if (at !== "swarm") go("swarm", "Go to Swarm", openSwarm);
+  if (at !== "swarm") go("swarm", "Go to Swarm", openSwarm, SWARM_ABOUT);
   // Chat is on the platform page (M153).
   if (hasChat()) {
-    go("chat", "Go to Chat", () => openChat());
-    go("activity", "Chat: Activity, what needs you", () => openChatView("activity"));
-    go("threads", "Chat: Threads you follow", () => openChatView("threads"));
+    go("chat", "Go to Chat", () => openChat(), "every thread");
+    go("activity", "Go to Chat: Activity", () => openChatView("activity"), "what needs you");
+    go("threads", "Go to Chat: Threads you follow", () => openChatView("threads"));
   }
   if (client.flag("agents") && !client.state?.roles) {
-    go("recipes", "Agents: Recipes", () => openAgentsPage("recipes"));
-    go("team", "Agents: Team", () => openAgentsPage("team"));
+    go("recipes", "Go to Agents: Recipes", () => openAgentsPage("recipes"));
+    go("team", "Go to Agents: Team", () => openAgentsPage("team"));
   }
-  if (client.flag("docs") && !client.state?.roles) go("docs", "Docs", openDocsPage);
+  if (client.flag("docs") && !client.state?.roles) go("docs", "Go to Docs", openDocsPage);
   return out;
 }
 
@@ -330,6 +367,20 @@ function rank(list: Command[], query: string, recent: string[]): Command[] {
 }
 
 // ---------------------------------------------------------------- view
+
+/** A command's icon: its kind's, and a place's own (UI audit #176: Docs
+ * rows had the panes'). */
+function iconOf(c: Command) {
+  const k = kindOf(c);
+  const to = c.group === "Places" ? c.key.slice("Places/".length) : "";
+  if (k === "Settings" || k === "Account") return <SettingsIcon />;
+  if (k === "Docs" || to === "docs") return <DocsIcon />;
+  if (to === "swarm") return <SwarmIcon />;
+  if (to === "chat" || to === "activity" || to === "threads") return <ChatIcon />;
+  if (to === "recipes" || to === "team") return <AgentsIcon />;
+  if (k === "Sessions" || k === "Places") return <SessionsIcon />;
+  return <PanesIcon />;
+}
 
 function Palette({ client, phone, close }: { client: Client; phone: boolean; close: (restore?: boolean) => void }) {
   const [query, setQuery] = useState("");
@@ -379,11 +430,10 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
     if (!c || c.disabled) return;
     remember(c.key);
     close(false);
-    // The panes are under the swarm and agents: show them, unless it's the
-    // swarm's, chat's (on the platform page), or a place's (it goes there
-    // itself).
-    if (c.group !== "Swarm" && c.group !== "Places" && swarmRoute()) closeSwarm();
-    if (c.group !== "Swarm" && c.group !== "Chat" && c.group !== "Places") {
+    // The panes are under the swarm and agents: show them, unless it's a
+    // place's (it goes there itself).
+    if (!c.place) {
+      if (swarmRoute()) closeSwarm();
       if (agentsRoute()) closeAgentsPage();
       if (docsRoute()) closeDocsPage();
     }
@@ -411,18 +461,18 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
   };
 
   return (
-    <div
-      class="prompt-backdrop picker-backdrop"
-      role="dialog"
-      aria-label="Command palette"
-      onPointerDown={(e) => e.target === e.currentTarget && close(false)}
-    >
-      <div class={phone ? "picker palette phone" : "picker palette"} onKeyDown={onKey}>
+    <div class="prompt-backdrop picker-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close(false)}>
+      {/* The dialog is the box itself, its input a combobox over the
+          list (UI audit #176). */}
+      <div class={phone ? "picker palette phone" : "picker palette"} role="dialog" aria-modal="true" aria-label="Command palette" onKeyDown={onKey}>
         <div class="palette-search"><SearchIcon size={20} /><input
           ref={input}
           class="picker-filter"
           placeholder="Type a command, a tab or a pane"
+          role="combobox"
           aria-label="Command"
+          aria-expanded="true"
+          aria-autocomplete="list"
           aria-controls="palette-results"
           aria-activedescendant={rows[sel] ? `palette-result-${sel}` : undefined}
           aria-keyshortcuts={ariaKeys(keyHint("palette"))}
@@ -451,14 +501,16 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
               onPointerMove={() => i !== sel && setSel(i)}
               onClick={() => run(c)}
             >
-              <span class="palette-command-icon" aria-hidden="true">{c.group === "Settings" ? <SettingsIcon /> : c.group === "Chat" ? <ChatIcon /> : c.group === "Swarm" ? <SwarmIcon /> : c.group === "Go to" || c.group === "Places" ? <SessionsIcon /> : <PanesIcon />}</span>
+              <span class="palette-command-icon" aria-hidden="true">{iconOf(c)}</span>
               <span class="palette-command-text">
               <span class="picker-label">
-                {c.checked !== undefined && <span class="menu-check">{c.checked ? "●" : ""}</span>}
                 {c.label}
+                {/* A switch that's on: a badge after it, not a dot glued
+                    to its first word (UI audit #176). */}
+                {c.checked && <span class="palette-badge">on</span>}
               </span>
               {c.detail && <span class="palette-detail">{c.detail}</span>}
-              <span class="palette-group">{c.group}</span></span>
+              <span class="palette-group">{kindOf(c)}</span></span>
               {recent.includes(c.key) && !query && <span class="palette-recent">recent</span>}
               {c.shortcut && <kbd class="menu-key">{c.shortcut}</kbd>}
             </li>

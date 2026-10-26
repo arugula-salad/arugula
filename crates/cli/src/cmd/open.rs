@@ -31,6 +31,9 @@ pub struct Args {
 pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     let Args { target, split, machine, session, project } = args;
+    if super::issue_native::malformed_issue_id(&target) {
+        anyhow::bail!("not an issue id: {target} (an issue's id is iss_ and 32 hex characters)");
+    }
     let issue = super::issue_native::is_open_target(&target);
     let config = match target.strip_prefix(':') {
         _ if issue => super::issue_native::open_config(&target, project.as_deref())?,

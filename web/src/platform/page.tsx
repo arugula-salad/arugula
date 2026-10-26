@@ -1,13 +1,15 @@
 // The platform page (M150), at each route: the bar, then the page. Chat
-// draws its own (the rooms view puts its search in the bar). Before anyone
+// draws its own (the rooms view puts its search in the bar), in the same
+// frame (./pages/chat, UI audit #169). Before anyone
 // is signed in here it says where to sign in.
 
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
 import { useSubscribe } from "../shared/ui/hooks";
 import { MaintenanceNote } from "../shared/ui/maintenance-note";
+import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
-import { names, resolve } from "./links";
+import { names, resolve, roomElsewhere } from "./links";
 import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
@@ -27,6 +29,9 @@ import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace"
 import { RunPage, RunsPage } from "./pages/runs";
 import { SessionPage } from "./pages/session";
 import { runs } from "./runs";
+import { runTitle } from "./runs-text";
+import { titleOf } from "./titles";
+import { barProject, where } from "./where";
 
 export function PlatformPage() {
   useSubscribe((fn) => session.subscribe(fn));
@@ -34,12 +39,13 @@ export function PlatformPage() {
   useEffect(() => void session.load(), []);
   useSlug(r);
   const lost = useFind(r);
+  useTitle(r);
   const s = session.state;
   if (s === null) return <Shell><p class="platform-section dim">Loading…</p></Shell>;
   if (s === "signed-out") return <SignIn />;
   if (typeof s === "object") return <Shell><p class="platform-section control-error">{s.error}</p></Shell>;
-  if (r.page === "chat") return <><ChatPage route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q }} /><Toast /></>;
-  if (r.page === "dm") return <><ChatPage route={{ room: r.room, msg: r.msg, thread: r.thread }} /><Toast /></>;
+  if (r.page === "chat") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q }}><Toast /></ChatPage>;
+  if (r.page === "dm") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread }}><Toast /></ChatPage>;
   return <Shell>{body(r, lost)}</Shell>;
 }
 
@@ -104,13 +110,13 @@ function SignIn() {
   return (
     <div class="platform" data-platform data-platform-signed-out>
       <main class="platform-main">
-        <section class="platform-section">
-          <h1>Arugula</h1>
+        <section class="platform-section sw-page">
+          <PageHeader title="Arugula" />
           <p>
             <button class="primary" data-sign-in onClick={() => void signIn(controlOrigin())}>
               Sign in
             </button>{" "}
-            <span class="dim">on control's page, where your passkeys are; it brings you back here.</span>
+            <span class="dim">on Control, where your passkeys are; it brings you back here.</span>
           </p>
         </section>
       </main>
@@ -152,10 +158,34 @@ function useFind(r: Route): string | null {
   return lost;
 }
 
+/** The tab's title for the route (UI audit #159), as names arrive. */
+function useTitle(r: Route) {
+  useSubscribe((fn) => where.subscribe(fn));
+  const title = titleOf(r, {
+    project: (id) => session.project(id)?.name,
+    issue: (id) => issues.known(id),
+    run: (id) => {
+      const x = runs.known(id);
+      return x ? runTitle(x.op) : null;
+    },
+    room: (id) => {
+      const x = chat.room(id);
+      if (!x) return null;
+      if (x.kind === "channel") return `#${x.name}`;
+      // A DM by its people, unless it was renamed.
+      if (x.kind === "dm") return x.name || x.others.map((o) => o.name).join(", ") || x.with?.name;
+      return x.name;
+    },
+    shown: barProject(r),
+  });
+  useEffect(() => void (document.title = title), [title]);
+}
+
 /** Put the address's slugs right once the names are known: only the ids
- * are read, so an old slug lands, and the bar shows the current one. */
+ * are read, so an old slug lands, and the bar shows the current one. A
+ * room of another project's goes to its own (UI audit #169). */
 function useSlug(r: Route) {
-  const want = r.page === "missing" || r.page === "find" ? null : pathOf(r, names);
+  const want = r.page === "missing" || r.page === "find" ? null : (roomElsewhere(r) ?? pathOf(r, names));
   useEffect(() => {
     if (want && want !== location.pathname + location.search && session.state === "ready") go(want, true);
   }, [want, session.state]);

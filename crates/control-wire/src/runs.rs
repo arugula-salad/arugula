@@ -96,7 +96,9 @@ pub struct RunListQuery {
     /// Only runs in this state (`pending`, `running`, `succeeded`, ...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
-    /// Only runs started this way: `manual`, `schedule` or `event` (M215).
+    /// Only runs started this way: `manual`, `schedule` or `event` (M215),
+    /// or `deploy`: a deploy's run, which is `manual` underneath (UI audit
+    /// #164); `manual` then leaves deploys' runs out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trigger: Option<String>,
     /// Only runs of this run spec, by its id (M215).
@@ -206,11 +208,48 @@ pub struct RunView {
     /// live view, which the project's people watch end to end.
     #[serde(default)]
     pub pane: Option<u64>,
+    /// Its hosted workspace's name, deleted or not (UI audit #145): pages
+    /// show it, with the `hw_…` id beside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub workspace_name: Option<String>,
+    /// The deploy a deploy's run applies (M219), as pages name it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub deploy: Option<RunDeployView>,
     /// Its timeline, oldest first (left out of a list).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<RunEventView>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<RunArtifactView>,
+}
+
+/// The deploy a deploy's run applies (M219, UI audit #145): which, to
+/// which environment, of what.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct RunDeployView {
+    /// `dep_…`.
+    pub id: String,
+    /// Its environment's name.
+    pub environment: String,
+    /// `commit` or `artifact`.
+    pub source_kind: String,
+    /// The commit's sha or the artifact's digest.
+    pub reference: String,
+}
+
+impl RunDeployView {
+    /// What the run does, in a line: `Deploy production · 1a2b3c4`.
+    pub fn title(&self) -> String {
+        let r = &self.reference;
+        let short = match r.split_once(':') {
+            // A digest (`sha256:…`): its first 12 hex.
+            Some((_, hex)) => hex.chars().take(12).collect::<String>(),
+            None => r.chars().take(7).collect(),
+        };
+        format!("Deploy {} · {short}", self.environment)
+    }
 }
 
 /// One change of a run's state.
@@ -281,4 +320,21 @@ pub struct RunReachProject {
     pub name: String,
     /// `runs.read`, `runs.start`, `runs.command`.
     pub powers: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_deploys_run_is_titled_by_its_environment_and_source() {
+        let d = |kind: &str, reference: &str| RunDeployView {
+            id: "dep_1".into(),
+            environment: "production".into(),
+            source_kind: kind.into(),
+            reference: reference.into(),
+        };
+        assert_eq!(d("commit", "1a2b3c4d5e6f").title(), "Deploy production · 1a2b3c4");
+        assert_eq!(d("artifact", "sha256:00112233445566778899").title(), "Deploy production · 001122334455");
+    }
 }

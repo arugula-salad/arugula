@@ -1,11 +1,13 @@
-// Hosted machines (M178): what the shell and the platform page call one,
-// wherever they show it ("Control enrolls hosted machines under a project
+// Hosted machines (M178), the cloud workspaces' boxes: what the shell and
+// the platform page call one, wherever they show it ("Control enrolls hosted machines under a project
 // delegation"). Here, not in the key code, so the platform page (which
 // never loads that) says the same words. `arugula_e2e::hosted::LABEL` is
 // the Rust side's.
 
-/** True of any VM: whoever runs it can read its memory. */
-export const HOSTED_LABEL = "Hosted: the operator can read";
+/** True of any VM: whoever runs it can read its memory. A chip's words,
+ * with HOSTED_MEANS as a sentence beside it where there's room (UI audit
+ * #184: "Hosted: the operator can read: it runs…" read as two colons). */
+export const HOSTED_LABEL = "Hosted · operator can read";
 
 /** What the label means, where there's room to say. */
 export const HOSTED_MEANS =

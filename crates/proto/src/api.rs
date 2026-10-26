@@ -865,7 +865,7 @@ pub enum WorktreeFate {
 }
 
 /// One Doc in the library (#1493): `GET /api/docs`. `open` is the block
-/// that shows it now, `shared` its link's dates (never the link).
+/// that shows it now, `shared` its link's dates and id (never its key).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
@@ -884,11 +884,15 @@ pub struct DocRow {
 }
 
 /// When a Doc was shared with a link, and last updated.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DocShared {
     pub made: u64,
     pub updated: u64,
+    /// The link's id, as control's list of shared Docs names it (never the
+    /// key): that list titles its rows from it (UI audit #174).
+    #[serde(default)]
+    pub link: String,
 }
 
 /// `POST /api/docs/open` (#1493): a Doc from the library in a block. Exactly
@@ -949,6 +953,11 @@ pub struct InviteRequest {
     /// whose fingerprint the owner checked with them.
     #[serde(default)]
     pub root: Option<String>,
+    /// Their window follows the inviter's: to watch (#1473). Opening the
+    /// invite starts following whichever of the owner's windows is there.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
+    pub follow: bool,
 }
 
 /// How an invite's push went: `sent` once a subscription took it,
@@ -1834,7 +1843,11 @@ mod wire {
             assert_eq!(delivery.as_str(), old_delivery);
         }
         let req: InviteRequest = serde_json::from_value(json!({ "session": 1, "who": "sam" })).unwrap();
-        assert_eq!((req.role, req.history), (None, false));
+        assert_eq!((req.role, req.history, req.follow), (None, false, false));
+        // A follow invite keeps `follow`; an older body has none (#1473).
+        let req: InviteRequest = serde_json::from_value(json!({ "session": 1, "who": "sam", "follow": true })).unwrap();
+        assert!(req.follow);
+        assert_eq!(serde_json::to_value(&req).unwrap()["follow"], json!(true));
     }
 
     /// `run`, `open_block`, `open_conversation` and `close`.

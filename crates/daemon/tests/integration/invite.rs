@@ -96,6 +96,26 @@ fn a_re_invite_pushes_that_guest_alone() {
     );
 }
 
+/// A follow invite's push says whose window to follow (#1473): the owner's
+/// clients show in presence as `owner`. A plain one says nothing.
+#[test]
+fn a_follow_invite_names_whom_to_follow() {
+    let d = tailnet_daemon(&[]);
+    let (_, session) = first(&d);
+    share(&d, session, FRIEND, "viewer");
+    let friend = Phone::subscribe_as(&d, Some(FRIEND));
+    for follow in [true, false] {
+        let (msg, (status, r)) = std::thread::scope(|s| {
+            let phone = s.spawn(|| friend.next());
+            let r = invite(&d, json!({ "session": session, "who": FRIEND, "follow": follow }));
+            (phone.join().unwrap(), r)
+        });
+        assert_eq!(status, 200, "{r}");
+        assert_eq!(msg["session"], session, "{msg}");
+        assert_eq!(msg.get("follow").cloned(), follow.then(|| json!("owner")), "{msg}");
+    }
+}
+
 #[test]
 fn a_fresh_guest_is_granted_and_unreachable() {
     let d = tailnet_daemon(&[]);

@@ -28,7 +28,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "command": {
@@ -292,7 +292,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "enter": {
@@ -445,7 +445,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "last_command": {
@@ -630,7 +630,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -1071,7 +1071,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "pane": {
@@ -1312,7 +1312,7 @@
             "description": "port, file, pr, issue, conversation, chat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "dir": {
@@ -1533,7 +1533,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "command": {
@@ -1664,7 +1664,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "pane": {
@@ -1759,7 +1759,7 @@
             ]
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "id": {
@@ -2458,6 +2458,11 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "follow": {
+            "default": false,
+            "description": "Their window follows yours: to watch. Opening the invite puts them\non the tab you are on (default: no).",
+            "type": "boolean"
+          },
           "note": {
             "description": "Why you want them there, at most 500 characters: the user reads it on\nthe card, the person in their notification.",
             "type": "string"
@@ -2624,7 +2629,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "max_chars": {
@@ -2882,7 +2887,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on control's page.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace in a project: a machine with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?, size?}: A new Cloud workspace in a project: a machine of a size (small, or large for big builds) with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -2896,6 +2901,14 @@
               "url"
             ],
             "type": "object"
+          },
+          "CloudSize": {
+            "description": "A Cloud workspace's size (the platform's, M266).",
+            "enum": [
+              "small",
+              "large"
+            ],
+            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3006,7 +3019,7 @@
           },
           "secrets": {
             "default": [],
-            "description": "create: The names of the secrets its box takes as env vars (set on\ncontrol's page).",
+            "description": "create: The names of the secrets its box takes as env vars (set on\nControl).",
             "items": {
               "type": "string"
             },
@@ -3019,6 +3032,17 @@
               "string",
               "null"
             ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CloudSize"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: Its machine's size: small (2 vCPU, 2 GiB, the default) or large (8\nvCPU, 8 GiB, for big builds such as Rust's)."
           },
           "tab": {
             "description": "prompt, answer: The tab: an agent block on its machine, by pane number. interrupt, close_tab: The tab: an agent block on its machine, by pane number (list kind\ncloud_tabs).",
@@ -3392,13 +3416,13 @@
         "readOnlyHint": false,
         "title": "Start a run"
       },
-      "description": "Start a run on one of a project's hosted boxes in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
+      "description": "Start a run on one of a project's cloud workspaces in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "box": {
             "default": null,
-            "description": "Which of the project's hosted boxes: its name or id (hw_…). Needed\nwhen it has more than one.",
+            "description": "Which of the project's cloud workspaces: its name or id (hw_…). Needed\nwhen it has more than one.",
             "type": [
               "string",
               "null"
@@ -3623,7 +3647,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "command": {
@@ -3913,7 +3937,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "enter": {
@@ -4066,7 +4090,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "last_command": {
@@ -4335,7 +4359,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -4782,7 +4806,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "pane": {
@@ -5039,7 +5063,7 @@
             "description": "port, file, pr, issue, conversation, chat, app, workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "dir": {
@@ -5402,7 +5426,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "command": {
@@ -5546,7 +5570,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "pane": {
@@ -5641,7 +5665,7 @@
             ]
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "id": {
@@ -6340,6 +6364,11 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "follow": {
+            "default": false,
+            "description": "Their window follows yours: to watch. Opening the invite puts them\non the tab you are on (default: no).",
+            "type": "boolean"
+          },
           "note": {
             "description": "Why you want them there, at most 500 characters: the user reads it on\nthe card, the person in their notification.",
             "type": "string"
@@ -6506,7 +6535,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "max_chars": {
@@ -6764,7 +6793,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on control's page.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace in a project: a machine with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?, size?}: A new Cloud workspace in a project: a machine of a size (small, or large for big builds) with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -6778,6 +6807,14 @@
               "url"
             ],
             "type": "object"
+          },
+          "CloudSize": {
+            "description": "A Cloud workspace's size (the platform's, M266).",
+            "enum": [
+              "small",
+              "large"
+            ],
+            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6888,7 +6925,7 @@
           },
           "secrets": {
             "default": [],
-            "description": "create: The names of the secrets its box takes as env vars (set on\ncontrol's page).",
+            "description": "create: The names of the secrets its box takes as env vars (set on\nControl).",
             "items": {
               "type": "string"
             },
@@ -6901,6 +6938,17 @@
               "string",
               "null"
             ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CloudSize"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: Its machine's size: small (2 vCPU, 2 GiB, the default) or large (8\nvCPU, 8 GiB, for big builds such as Rust's)."
           },
           "tab": {
             "description": "prompt, answer: The tab: an agent block on its machine, by pane number. interrupt, close_tab: The tab: an agent block on its machine, by pane number (list kind\ncloud_tabs).",
@@ -7274,13 +7322,13 @@
         "readOnlyHint": false,
         "title": "Start a run"
       },
-      "description": "Start a run on one of a project's hosted boxes in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
+      "description": "Start a run on one of a project's cloud workspaces in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "box": {
             "default": null,
-            "description": "Which of the project's hosted boxes: its name or id (hw_…). Needed\nwhen it has more than one.",
+            "description": "Which of the project's cloud workspaces: its name or id (hw_…). Needed\nwhen it has more than one.",
             "type": [
               "string",
               "null"
@@ -7505,7 +7553,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "command": {
@@ -7769,7 +7817,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "enter": {
@@ -7922,7 +7970,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "last_command": {
@@ -8107,7 +8155,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -8548,7 +8596,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "pane": {
@@ -8789,7 +8837,7 @@
             "description": "port, file, pr, issue, conversation, chat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "dir": {
@@ -9010,7 +9058,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "command": {
@@ -9141,7 +9189,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "pane": {
@@ -9236,7 +9284,7 @@
             ]
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "id": {
@@ -9935,6 +9983,11 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "follow": {
+            "default": false,
+            "description": "Their window follows yours: to watch. Opening the invite puts them\non the tab you are on (default: no).",
+            "type": "boolean"
+          },
           "note": {
             "description": "Why you want them there, at most 500 characters: the user reads it on\nthe card, the person in their notification.",
             "type": "string"
@@ -10101,7 +10154,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "max_chars": {
@@ -10359,7 +10412,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on control's page.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace in a project: a machine with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?, size?}: A new Cloud workspace in a project: a machine of a size (small, or large for big builds) with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -10373,6 +10426,14 @@
               "url"
             ],
             "type": "object"
+          },
+          "CloudSize": {
+            "description": "A Cloud workspace's size (the platform's, M266).",
+            "enum": [
+              "small",
+              "large"
+            ],
+            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -10483,7 +10544,7 @@
           },
           "secrets": {
             "default": [],
-            "description": "create: The names of the secrets its box takes as env vars (set on\ncontrol's page).",
+            "description": "create: The names of the secrets its box takes as env vars (set on\nControl).",
             "items": {
               "type": "string"
             },
@@ -10496,6 +10557,17 @@
               "string",
               "null"
             ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CloudSize"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: Its machine's size: small (2 vCPU, 2 GiB, the default) or large (8\nvCPU, 8 GiB, for big builds such as Rust's)."
           },
           "tab": {
             "description": "prompt, answer: The tab: an agent block on its machine, by pane number. interrupt, close_tab: The tab: an agent block on its machine, by pane number (list kind\ncloud_tabs).",
@@ -10869,13 +10941,13 @@
         "readOnlyHint": false,
         "title": "Start a run"
       },
-      "description": "Start a run on one of a project's hosted boxes in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
+      "description": "Start a run on one of a project's cloud workspaces in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "box": {
             "default": null,
-            "description": "Which of the project's hosted boxes: its name or id (hw_…). Needed\nwhen it has more than one.",
+            "description": "Which of the project's cloud workspaces: its name or id (hw_…). Needed\nwhen it has more than one.",
             "type": [
               "string",
               "null"
@@ -11100,7 +11172,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "command": {
@@ -11390,7 +11462,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "enter": {
@@ -11543,7 +11615,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "last_command": {
@@ -11812,7 +11884,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -12259,7 +12331,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "pane": {
@@ -12516,7 +12588,7 @@
             "description": "port, file, pr, issue, conversation, chat, app, workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "dir": {
@@ -12879,7 +12951,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "command": {
@@ -13023,7 +13095,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "pane": {
@@ -13118,7 +13190,7 @@
             ]
           },
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "id": {
@@ -13817,6 +13889,11 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "follow": {
+            "default": false,
+            "description": "Their window follows yours: to watch. Opening the invite puts them\non the tab you are on (default: no).",
+            "type": "boolean"
+          },
           "note": {
             "description": "Why you want them there, at most 500 characters: the user reads it on\nthe card, the person in their notification.",
             "type": "string"
@@ -13983,7 +14060,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "max_chars": {
@@ -14241,7 +14318,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on control's page.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace in a project: a machine with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.\n- create {name, project, apt?, npm?, repositories?, secrets?, setup_script?, size?}: A new Cloud workspace in a project: a machine of a size (small, or large for big builds) with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.\n- open_tab {cloud_workspace, prompt, agent?, cwd?, model?}: A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, tab, action?, content?, option?, request?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its agent block ends. The other tabs and the machine carry on.\n- rebuild {cloud_workspace}: Make a Cloud workspace's machine again from its spec as saved: its disk starts over.",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -14255,6 +14332,14 @@
               "url"
             ],
             "type": "object"
+          },
+          "CloudSize": {
+            "description": "A Cloud workspace's size (the platform's, M266).",
+            "enum": [
+              "small",
+              "large"
+            ],
+            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -14365,7 +14450,7 @@
           },
           "secrets": {
             "default": [],
-            "description": "create: The names of the secrets its box takes as env vars (set on\ncontrol's page).",
+            "description": "create: The names of the secrets its box takes as env vars (set on\nControl).",
             "items": {
               "type": "string"
             },
@@ -14378,6 +14463,17 @@
               "string",
               "null"
             ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CloudSize"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: Its machine's size: small (2 vCPU, 2 GiB, the default) or large (8\nvCPU, 8 GiB, for big builds such as Rust's)."
           },
           "tab": {
             "description": "prompt, answer: The tab: an agent block on its machine, by pane number. interrupt, close_tab: The tab: an agent block on its machine, by pane number (list kind\ncloud_tabs).",
@@ -14751,13 +14847,13 @@
         "readOnlyHint": false,
         "title": "Start a run"
       },
-      "description": "Start a run on one of a project's hosted boxes in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
+      "description": "Start a run on one of a project's cloud workspaces in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "box": {
             "default": null,
-            "description": "Which of the project's hosted boxes: its name or id (hw_…). Needed\nwhen it has more than one.",
+            "description": "Which of the project's cloud workspaces: its name or id (hw_…). Needed\nwhen it has more than one.",
             "type": [
               "string",
               "null"
@@ -14982,7 +15078,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "last_command": {
@@ -15167,7 +15263,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -16199,7 +16295,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "max_chars": {
@@ -16589,7 +16685,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "last_command": {
@@ -16774,7 +16870,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -17812,7 +17908,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "max_chars": {

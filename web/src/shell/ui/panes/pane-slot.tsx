@@ -127,7 +127,9 @@ export function PaneSlot({
     else openFresh(client, e, items);
   };
 
-  const waiting = client.info(id)?.running === false;
+  // A terminal's shell waiting for Enter; a stopped agent block isn't
+  // running either, but has its own Resume (UI audit #154).
+  const waiting = client.info(id)?.running === false && (info?.type ?? "terminal") === "terminal";
   return (
     <div
       ref={ref}

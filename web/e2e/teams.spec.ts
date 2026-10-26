@@ -511,6 +511,8 @@ test("a read-only link works logged out, and dies at expiry", async ({ browser }
   await expect.poll(() => stranger.evaluate(() => window.__arugula?.client.connected), { timeout: 20_000 }).toBe(true);
   expect(await stranger.evaluate(() => window.__arugula.control)).toBeNull();
   await ready(stranger, pane);
+  // It says what it is, and when it ends (UI audit #149).
+  await expect(stranger.locator("[data-read-only-link]")).toContainText(/^Read-only link · end/);
   await alice.evaluate((p) => window.__arugula.client.paneOp(p, { op: "take_control" }), pane);
   await run(alice, pane, "echo live-$((6*7))", "live-42");
   await expect.poll(() => text(stranger, pane)).toContain("live-42");
@@ -607,11 +609,10 @@ test("Cancel turns a join down; Just me keeps a machine apart from the team's", 
   await alice.locator(".host-button").click();
   await expect(alice.locator(".menu-header", { hasText: "Team Acme" })).toBeVisible();
   await expect(alice.locator(".menu-header", { hasText: "Yours" })).toBeVisible();
-  // #778: each says its place, and the shown one what that means.
-  await expect(alice.getByRole("menuitem", { name: /minebox\b.* · Just me$/ })).toBeVisible();
-  await expect(alice.getByRole("menuitem", { name: /buildbox\b.* · In Acme$/ })).toBeVisible();
-  const shown = await alice.evaluate(() => window.__arugula.hosts.current);
-  await expect(alice.getByRole("menuitem", { name: shown === "minebox" ? /^Just me: only your devices/ : /^In Acme: everyone in Acme sees its panes/ })).toBeVisible();
+  // #778: each says its place and what that means, in its tooltip (UI
+  // audit #175: its group's header says the place).
+  await expect(alice.getByRole("menuitem", { name: /^minebox\b/ })).toHaveAttribute("title", /^Just me: only your devices/);
+  await expect(alice.getByRole("menuitem", { name: /^buildbox\b/ })).toHaveAttribute("title", /^In Acme: everyone in Acme sees its panes/);
   await alice.keyboard.press("Escape");
 });
 

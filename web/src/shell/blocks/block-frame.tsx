@@ -9,12 +9,15 @@
 //
 // A block opened through control shows which way it went, in the host
 // menu's words: "direct" or "relayed" (the frame says which way its
-// channel actually connected), or "own site" once it fell back.
+// channel actually connected), or "own site" once it fell back: a pill in
+// its bar (RoutePill), not over the page (UI audit #177).
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
-import { routeTitle, setBlockRoute, type BlockRoute } from "./block-route";
+import { useSubscribe } from "../../shared/ui/hooks";
+import { blockRoute, onBlockRoutes, routeTitle, setBlockRoute, type BlockRoute } from "./block-route";
+import { BlockEmpty, BlockError } from "./block-states";
 import { blockOrigin, blockSrc, credsFor, frameAllow, frameBlock, type Routing } from "./through-control";
 
 export interface FrameProps {
@@ -70,22 +73,11 @@ export function BlockFrame(p: FrameProps) {
   // Only a block opened through control says which way: one on the
   // daemon's own page is always on its own site.
   const route: BlockRoute | null = via ? (went?.route ?? null) : failed !== null && own ? "own site" : null;
-  useEffect(() => {
-    setBlockRoute(p.id, route);
-    return () => setBlockRoute(p.id, null);
-  }, [p.id, route]);
   const title = route && [routeTitle(route), went?.why && `Not direct: ${went.why}`, wsWent && `Its WebSockets: ${wsWent.route}${wsWent.why ? ` (${wsWent.why})` : ""}`].filter(Boolean).join("\n");
-  const pill = route && (
-    <span
-      class={`block-route host-path ${route === "relayed" ? "relayed" : ""}`}
-      data-block-route={route}
-      data-block-route-why={went?.why}
-      data-block-ws-route={wsWent?.route}
-      title={title || undefined}
-    >
-      {route}
-    </span>
-  );
+  useEffect(() => {
+    setBlockRoute(p.id, route && { route, title: title || "", why: went?.why, ws: wsWent?.route });
+    return () => setBlockRoute(p.id, null);
+  }, [p.id, route, title]);
   const frame = (src: string) => (
     <iframe
       ref={ref}
@@ -99,13 +91,7 @@ export function BlockFrame(p: FrameProps) {
       data-block-origin={via ?? undefined}
     />
   );
-  if (via)
-    return (
-      <>
-        {frame(blockSrc(p.src, via))}
-        {pill}
-      </>
-    );
+  if (via) return frame(blockSrc(p.src, via));
   if (own)
     return (
       <>
@@ -115,23 +101,29 @@ export function BlockFrame(p: FrameProps) {
           </div>
         )}
         {frame(own)}
-        {pill}
       </>
     );
+  return failed !== null ? (
+    <BlockError data-block-nowhere title="This browser can't show this block through Arugula control" detail={failed}>
+      <p class="block-error-detail">This machine has no block site of its own to fall back to. Try Chrome, or another browser.</p>
+    </BlockError>
+  ) : (
+    <BlockEmpty data-block-nowhere>
+      <p>This block shows in Control</p>
+      <p>This machine has no block site of its own (--block-listen), so its ports and editors open from control.</p>
+    </BlockEmpty>
+  );
+}
+
+/** Which way block `id` went, in its bar: "direct", "relayed" or "own
+ * site"; nothing when it isn't shown through control. */
+export function RoutePill({ id }: { id: PaneId }) {
+  useSubscribe(onBlockRoutes);
+  const r = blockRoute(id);
+  if (!r) return null;
   return (
-    <div class="browser-card error" data-block-nowhere>
-      {failed !== null ? (
-        <>
-          <p>This browser can't show this block through Arugula control</p>
-          <p class="dim">{failed}</p>
-          <p class="dim">This machine has no block site of its own to fall back to. Try Chrome, or another browser.</p>
-        </>
-      ) : (
-        <>
-          <p>This block shows in Arugula control's page</p>
-          <p class="dim">This machine has no block site of its own (--block-listen), so its ports and editors open from control.</p>
-        </>
-      )}
-    </div>
+    <span class={`block-route host-path ${r.route === "relayed" ? "relayed" : ""}`} data-block-route={r.route} data-block-route-why={r.why} data-block-ws-route={r.ws} title={r.title || undefined}>
+      {r.route}
+    </span>
   );
 }

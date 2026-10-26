@@ -5,8 +5,9 @@
 // one column, in time order: the room's own view (../chat/room), with the
 // events between its messages. Agents' posts and events say whose agents
 // they are (M197), and the room says when an agent grant reaches it.
-// Owners and editors edit, close, reopen, label and assign; everyone in the
-// project comments.
+// Owners and editors edit, close, reopen, label and assign, and start an
+// agent session on it (Agent on this, M265: `@arugula` in its thread, as
+// them); everyone in the project comments.
 //
 // The view reads and changes the issue through `IssueApiContext`: the
 // platform's routes as the reader by default, or what the page says it.
@@ -15,17 +16,22 @@
 
 import { createContext, type ComponentChildren, type ComponentType } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
-import type { ChatRoom, IssueEvent, IssuePatch, IssuePatched, NativeIssue } from "../proto";
+import type { ChatRoom, IssueAgent, IssueEvent, IssuePatch, IssuePatched, NativeIssue } from "../proto";
+import { agentWhere } from "../agent-label";
 import { chat } from "../chat-store";
 import { MsgAvatar } from "../chat/avatar";
 import { RoomBody, type Between } from "../chat/room";
+import { Time } from "../ui/time";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
+import { PageHeader, type BackLink } from "../ui/page-header";
+import { Chip, StateChip } from "../ui/state-chip";
+import { issueTone } from "../tones";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { IssueError, issues } from "./store";
 import "./issues.css";
-import { ago, eventLine, stateLabel, whoLabel, type NameOf } from "./text";
+import { eventLine, stateLabel, whoLabel, type NameOf } from "./text";
 
 /** What an issue's view reads and changes it through. */
 export interface IssueApi {
@@ -38,6 +44,12 @@ export interface IssueApi {
   known(id: string): NativeIssue | undefined;
   /** Every issue read, for the labels a project's issues have. */
   all(): NativeIssue[];
+  /** Every label on the project's issues, where the reader has them
+   * (UI audit #163): the menu offers those besides what `all` has. */
+  labels?(project: string): Promise<string[]>;
+  /** Agent on this (M265): `@arugula` in its thread as the reader. Absent
+   * where the view can't write. */
+  agent?(id: string): Promise<IssueAgent>;
 }
 
 /** The platform's routes as the reader, unless the page says otherwise. */
@@ -64,24 +76,22 @@ function Gone({ what }: { what: string }) {
   );
 }
 
-/** A label, as a chip. */
+/** A label, as a chip: the one chip (UI audit #183), muted. */
 export function LabelChip({ label, onClick }: { label: string; onClick?: (e: MouseEvent) => void }) {
-  return onClick ? (
-    <button type="button" class="ws-tag issue-label" data-issue-label={label} onClick={onClick}>
+  return (
+    <Chip class="issue-label" data-issue-label={label} onClick={onClick}>
       {label}
-    </button>
-  ) : (
-    <span class="ws-tag issue-label" data-issue-label={label}>
-      {label}
-    </span>
+    </Chip>
   );
 }
 
 export function StateTag({ i }: { i: Pick<NativeIssue, "state" | "close_reason"> }) {
   return (
-    <span class={`ws-tag forge-state ${i.state === "closed" ? "closed" : "open"}`} data-issue-state={i.state}>
+    // Closed is done, not failed (UI audit #157): muted, where a forge's
+    // closed PR is red. A state's chip, as a run's and a deploy's are (#183).
+    <StateChip tone={issueTone(i.state)} class="issue-state" data-issue-state={i.state}>
       {stateLabel(i)}
-    </span>
+    </StateChip>
   );
 }
 
@@ -89,6 +99,28 @@ const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
   openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
 };
+
+/** The label picker, under the button that opens it: the project's labels
+ * (`known`) each checked when it's on, and New label…. An issue's page and
+ * New issue both pick with it (UI audit #163). */
+export function pickLabels(e: MouseEvent, known: Iterable<string>, on: string[], set: (label: string, on: boolean) => void) {
+  const all = [...new Set([...known, ...on])].sort();
+  menuAt(e, [
+    { header: "Labels" },
+    ...all.map((l) => {
+      const has = on.includes(l);
+      return { label: l, checked: has, run: () => set(l, !has) };
+    }),
+    ...(all.length ? ["separator" as const] : []),
+    {
+      label: "New label…",
+      run: async () => {
+        const v = (await askText("Add a label", "", "one or a few words"))?.trim();
+        if (v) set(v, true);
+      },
+    },
+  ]);
+}
 
 /** Whether a read failed because the platform couldn't be reached (or
  * didn't answer), not because it refused. */
@@ -109,7 +141,7 @@ export function IssueView({
   /** A comment to land on. */
   msg?: number;
   /** Over the title: the way back to a list. */
-  back?: ComponentChildren;
+  back?: BackLink;
   /** Under the thread: where it's read from. */
   foot?: ComponentChildren;
   /** Read it again when this changes (a block's word that it changed). */
@@ -202,60 +234,76 @@ export function IssueView({
 
   return (
     <section class={`${cls} issue-page`} data-issue={issue.id} data-issue-number={issue.number} data-stale={stale ? "" : undefined}>
-      {back && <p class="issue-back">{back}</p>}
-      <header class="issue-head">
-        {editing === "title" ? (
+      <PageHeader
+        title={
+          editing === "title" ? null : (
+            <>
+              <span data-issue-title>{issue.title}</span> <span class="dim">#{issue.number}</span>
+            </>
+          )
+        }
+        named
+        back={back}
+        class="issue-head"
+        actions={
+          <span class="issue-actions">
+            {writer && api.agent && issue.state === "open" && <AgentOnThis id={id} agent={api.agent} />}
+            {writer && editing !== "title" && (
+              <button class="secondary small" data-issue-edit-title onClick={() => setEditing("title")}>
+                Edit title
+              </button>
+            )}
+            {writer &&
+              (issue.state === "closed" ? (
+                <button class="secondary small" data-issue-reopen onClick={() => void change({ state: "open" })}>
+                  Reopen
+                </button>
+              ) : (
+                <span class="issue-split">
+                  <button class="secondary small" data-issue-close onClick={() => void change({ state: "closed", reason: "completed" })}>
+                    Close issue
+                  </button>
+                  <button class="secondary small" title="Close it for another reason" aria-label="Close it for another reason" data-issue-close-as onClick={closeMenu}>
+                    ▾
+                  </button>
+                </span>
+              ))}
+          </span>
+        }
+        sub={
+          <div class="issue-meta">
+            <StateTag i={issue} />
+            <span>
+              <b class="issue-who">{whoLabel(issue.author, issue.agent, nameOf)}</b> opened this <Time at={issue.created_at} long />
+              {issue.state === "closed" && issue.closed_at ? (
+                <>
+                  {" "}
+                  · closed <Time at={issue.closed_at} long />
+                </>
+              ) : null}
+            </span>
+            {issue.agent && (
+              <Chip tone="teal" title={`Opened by an agent ${agentWhere(issue.agent, "a machine")}, through its owner's grant`} data-issue-agent>
+                Agent
+              </Chip>
+            )}
+          </div>
+        }
+      >
+        {editing === "title" && (
           <TitleEdit
             title={issue.title}
             done={async (t) => {
               if (t === null || t === issue.title || (await change({ title: t }))) setEditing(null);
             }}
           />
-        ) : (
-          <h1>
-            <span data-issue-title>{issue.title}</span> <span class="dim">#{issue.number}</span>
-          </h1>
         )}
-        <div class="issue-meta">
-          <StateTag i={issue} />
-          <span class="dim">
-            <b class="issue-who">{whoLabel(issue.author, issue.agent, nameOf)}</b> opened this {ago(issue.created_at)}
-            {issue.state === "closed" && issue.closed_at ? ` · closed ${ago(issue.closed_at)}` : ""}
-          </span>
-          {issue.agent && (
-            <span class="msg-badge agent-badge" title={`Opened by an agent on ${issue.agent.machine_name || "a machine"}, through its owner's grant`}>
-              agent
-            </span>
-          )}
-          <span class="issue-actions">
-            {writer && editing !== "title" && (
-              <button class="issue-action" data-issue-edit-title onClick={() => setEditing("title")}>
-                Edit title
-              </button>
-            )}
-            {writer &&
-              (issue.state === "closed" ? (
-                <button class="issue-action" data-issue-reopen onClick={() => void change({ state: "open" })}>
-                  Reopen
-                </button>
-              ) : (
-                <span class="issue-split">
-                  <button class="issue-action" data-issue-close onClick={() => void change({ state: "closed", reason: "completed" })}>
-                    Close issue
-                  </button>
-                  <button class="issue-action" title="Close it for another reason" aria-label="Close it for another reason" data-issue-close-as onClick={closeMenu}>
-                    ▾
-                  </button>
-                </span>
-              ))}
-          </span>
-        </div>
-        {stale && (
-          <p class="issue-stale" role="status" data-issue-stale>
-            Can't reach Arugula control now: this is what it said {read ? ago(read) : "last"}.
-          </p>
-        )}
-      </header>
+      </PageHeader>
+      {stale && (
+        <p class="issue-stale" role="status" data-issue-stale>
+          Can't reach Arugula control now: this is what it said {read ? <Time at={read} long /> : "last"}.
+        </p>
+      )}
       <div class="issue-cols">
         <aside class="issue-side" aria-label="Labels and assignees">
           <Labels api={api} issue={issue} change={change} writer={writer} />
@@ -269,9 +317,9 @@ export function IssueView({
             <div class="issue-post-body">
               <div class="thread-head">
                 <span class="thread-name">{whoLabel(issue.author, issue.agent, nameOf)}</span>
-                <time title={new Date(issue.created_at).toLocaleString()}>{ago(issue.created_at)}</time>
+                <Time at={issue.created_at} long />
                 {writer && editing !== "body" && (
-                  <button class="issue-action small" data-issue-edit-body onClick={() => setEditing("body")}>
+                  <button class="secondary small issue-edit" data-issue-edit-body onClick={() => setEditing("body")}>
                     Edit
                   </button>
                 )}
@@ -294,7 +342,7 @@ export function IssueView({
           </article>
           <div class="issue-thread chat-thread" data-issue-thread={room?.id}>
             {room ? (
-              <RoomBody room={room} phone={phone} focus={msg} name={`#${issue.number}`} between={between} empty="No comments yet. Everyone in the project reads them; write @name to notify someone." />
+              <RoomBody room={room} phone={phone} focus={msg} embedded name={`#${issue.number}`} between={between} empty="No comments yet. Everyone in the project reads them; write @name to notify someone." />
             ) : (
               <>
                 {between.map((b) => (
@@ -311,6 +359,36 @@ export function IssueView({
   );
 }
 
+/** Agent on this: an `@arugula` in the issue's thread, as the reader. The
+ * thread then has the session's card, or the line saying why there's none
+ * (or asking which box or repo). */
+function AgentOnThis({ id, agent }: { id: string; agent: (id: string) => Promise<IssueAgent> }) {
+  const { toast } = usePlatformApi();
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      const r = await agent(id);
+      toast(r.session ? "An agent session started: its card is in the comments." : "@arugula answered in the comments.");
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      class="secondary small"
+      disabled={busy}
+      title="Start an agent session on this issue, on the project's hosted workspace: as if you wrote @arugula in its comments"
+      data-issue-agent
+      onClick={() => void go()}
+    >
+      Agent on this
+    </button>
+  );
+}
+
 function IssueEventRow({ e, line, nameOf }: { e: IssueEvent; line: string; nameOf: NameOf }) {
   return (
     <div class={`issue-event ${e.kind}`} data-issue-event={e.kind} data-agent={e.agent?.machine}>
@@ -319,9 +397,7 @@ function IssueEventRow({ e, line, nameOf }: { e: IssueEvent; line: string; nameO
       </span>
       <span>
         <b>{whoLabel(e.actor, e.agent, nameOf)}</b> {line}{" "}
-        <time class="dim" title={new Date(e.at).toLocaleString()}>
-          {ago(e.at)}
-        </time>
+        <Time class="dim" at={e.at} long />
       </span>
     </div>
   );
@@ -330,33 +406,26 @@ function IssueEventRow({ e, line, nameOf }: { e: IssueEvent; line: string; nameO
 type Change = (x: Partial<IssuePatch>) => Promise<boolean>;
 
 function Labels({ api, issue, change, writer }: { api: IssueApi; issue: NativeIssue; change: Change; writer: boolean }) {
+  // The project's labels, open issues' and closed ones' (UI audit #163),
+  // where the reader has them; and those this page has seen.
+  const [project, setProject] = useState<string[]>([]);
+  useEffect(() => {
+    if (!writer || !api.labels) return;
+    let live = true;
+    api.labels(issue.project).then((l) => live && setProject(l), () => {});
+    return () => void (live = false);
+  }, [api, issue.project, writer]);
   const pick = (e: MouseEvent) => {
-    // The labels this page has seen in the project, and the issue's own.
-    const seen = new Set(issue.labels);
+    const seen = new Set(project);
     for (const i of api.all()) if (i.project === issue.project) for (const l of i.labels) seen.add(l);
-    const items: MenuItem[] = [
-      { header: "Labels" },
-      ...[...seen].sort().map((l) => {
-        const on = issue.labels.includes(l);
-        return { label: l, checked: on, run: () => void change({ labels: on ? { remove: [l] } : { add: [l] } }) };
-      }),
-      "separator",
-      {
-        label: "New label…",
-        run: async () => {
-          const v = (await askText("Add a label", "", "one or a few words"))?.trim();
-          if (v) void change({ labels: { add: [v] } });
-        },
-      },
-    ];
-    menuAt(e, items);
+    pickLabels(e, seen, issue.labels, (l, on) => void change({ labels: on ? { add: [l] } : { remove: [l] } }));
   };
   return (
     <section class="issue-side-part" data-issue-labels>
       <h3>
         Labels
         {writer && (
-          <button class="issue-action small" title="Add or take off labels" data-issue-labels-edit onClick={pick}>
+          <button class="secondary small issue-edit" title="Add or take off labels" data-issue-labels-edit onClick={pick}>
             Edit
           </button>
         )}
@@ -400,7 +469,7 @@ function Assignees({
       <h3>
         Assignees
         {writer && (
-          <button class="issue-action small" title="Assign people in the project" data-issue-assignees-edit onClick={pick}>
+          <button class="secondary small issue-edit" title="Assign people in the project" data-issue-assignees-edit onClick={pick}>
             Edit
           </button>
         )}
@@ -454,7 +523,7 @@ function BodyEdit({ body, done }: { body: string; done: (b: string | null) => vo
     >
       <textarea rows={8} value={b} autoFocus aria-label="Description" data-issue-body-edit onInput={(e) => setB(e.currentTarget.value)} onKeyDown={(e) => e.key === "Escape" && done(null)} />
       <div class="prompt-buttons">
-        <button type="button" onClick={() => done(null)}>
+        <button class="secondary" type="button" onClick={() => done(null)}>
           Cancel
         </button>
         <button class="primary">Save</button>

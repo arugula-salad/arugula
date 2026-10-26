@@ -8,10 +8,13 @@
 // that's also a client of the platform (studio, M236) gets a switch of its
 // own beside it: whether it may see your projects and your role in each,
 // and keep its apps in the ones you edit. Off until you turn it on;
-// unlinking ends it.
+// unlinking ends it. A product's name here (Studio) is what other
+// sections call it too, not its client id (`studio`, UI audit #168).
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
+import { ConfirmRemove } from "../../shared/ui/confirm";
+import { Time } from "../../shared/ui/time";
 import { toneClass } from "../swarm";
 import { Section } from "./section";
 
@@ -33,10 +36,29 @@ async function call<T>(path: string, method = "GET"): Promise<T> {
   return v as T;
 }
 
+/** The products' names by client id, as the account's links know them:
+ * a client id the account has no link to stays as it is. */
+export function useProductNames(): (client: string) => string {
+  const [links, setLinks] = useState<ProductLink[]>([]);
+  useEffect(() => {
+    call<{ links: ProductLink[] }>("/api/linked-products").then(
+      (v) => setLinks(v.links),
+      () => setLinks([]),
+    );
+  }, []);
+  return (client) => links.find((l) => l.client === client)?.product ?? client;
+}
+
+/** The name a product knows you by, unless it's a stand-in a product
+ * keeps for someone it has no name for ("Arugula user"). */
+const knownAs = (name?: string) => (name && !/^arugula user$/i.test(name.trim()) ? name : null);
+
 export function LinkedProducts() {
   const [links, setLinks] = useState<ProductLink[] | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
+  // Unlink asks first (UI audit #158).
+  const [unlinking, setUnlinking] = useState<ProductLink | null>(null);
   const load = () =>
     call<{ links: ProductLink[] }>("/api/linked-products").then(
       (v) => setLinks(v.links),
@@ -70,6 +92,7 @@ export function LinkedProducts() {
     <Section
       id="linked"
       title="Linked products"
+      count={links.length}
       lede="Products you let sign you in with Arugula. Linking alone grants them nothing here."
       more={
         <p>
@@ -92,18 +115,18 @@ export function LinkedProducts() {
               <li key={l.client} class={`sw-card ${toneClass(l.user ? "accent" : "muted")}`} data-linked-product={l.client}>
                 <div class="sw-head">
                   <b class="sw-name">{l.product}</b>
-                  <button
-                    class="control-linkish settings-card-act"
-                    data-unlink={l.client}
-                    disabled={busy === l.client}
-                    onClick={() => void unlink(l)}
-                  >
+                  <button class="secondary danger small settings-card-act" data-unlink={l.client} disabled={busy === l.client} onClick={() => setUnlinking(l)}>
                     Unlink
                   </button>
                 </div>
                 <span class="dim">
-                  {l.user ? (l.name ? <>Linked as {l.name}</> : "Linked") : "Signs you in, no account linked there"}
-                  {since ? <> · since {new Date(since).toLocaleDateString()}</> : null}
+                  {l.user ? (knownAs(l.name) ? <>Linked as {knownAs(l.name)}</> : "Linked") : "Signs you in, no account linked there"}
+                  {since ? (
+                    <>
+                      {" "}
+                      · added <Time at={since} on />
+                    </>
+                  ) : null}
                 </span>
                 {l.projects !== undefined && (
                   <label class="settings-switch">
@@ -125,6 +148,20 @@ export function LinkedProducts() {
         </ul>
       )}
       {err ? <p class="control-error">{err}</p> : null}
+      {unlinking && (
+        <ConfirmRemove
+          title={`Unlink ${unlinking.product}?`}
+          label="Unlink"
+          cancel={() => setUnlinking(null)}
+          go={() => {
+            const l = unlinking;
+            setUnlinking(null);
+            void unlink(l);
+          }}
+        >
+          <p>It stops signing you in with Arugula, and your account there is no longer linked to this one. Signing in to it through Arugula again links it again.</p>
+        </ConfirmRemove>
+      )}
     </Section>
   );
 }

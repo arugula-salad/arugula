@@ -9,17 +9,38 @@ import type { Route } from "../block/channel.ts";
 
 export type BlockRoute = Route | "own site";
 
-const routes = new Map<PaneId, BlockRoute>();
+/** A block's route, with what its pill says on hover and the frame's
+ * words for a check (#849): why it isn't direct, and how its pages'
+ * WebSockets went. */
+export interface RouteInfo {
+  route: BlockRoute;
+  title: string;
+  why?: string;
+  ws?: string;
+}
+
+const routes = new Map<PaneId, RouteInfo>();
+const listeners = new Set<() => void>();
 
 /** Set (or, with null, forget) block `id`'s route. */
-export function setBlockRoute(id: PaneId, r: BlockRoute | null) {
+export function setBlockRoute(id: PaneId, r: RouteInfo | null) {
   if (r === null) routes.delete(id);
   else routes.set(id, r);
+  listeners.forEach((fn) => fn());
+}
+
+/** Block `id`'s route, for its bar's pill (UI audit #177: in the bar, not
+ * over the page's corner). */
+export const blockRoute = (id: PaneId): RouteInfo | null => routes.get(id) ?? null;
+
+export function onBlockRoutes(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
 }
 
 /** The host menu's line for the blocks shown here: "Blocks: relayed", or
  * "Blocks: 1 direct, 2 relayed"; null when none is shown through control. */
-export function blockRoutesLabel(all: Iterable<BlockRoute> = routes.values()): string | null {
+export function blockRoutesLabel(all: Iterable<BlockRoute> = [...routes.values()].map((r) => r.route)): string | null {
   const n = new Map<BlockRoute, number>();
   for (const r of all) n.set(r, (n.get(r) ?? 0) + 1);
   if (!n.size) return null;
@@ -36,7 +57,7 @@ export function blockRoutesLabel(all: Iterable<BlockRoute> = routes.values()): s
 
 /** The block's own pill's tooltip. */
 export function routeTitle(r: BlockRoute): string {
-  if (r === "relayed") return "Through Arugula control's relay (end to end encrypted)";
-  if (r === "direct") return "Straight to the machine (end to end encrypted)";
+  if (r === "relayed") return "Through Arugula control's relay (end-to-end encrypted)";
+  if (r === "direct") return "Straight to the machine (end-to-end encrypted)";
   return "Via the machine's own block site: this browser couldn't open it through Arugula control";
 }

@@ -48,13 +48,50 @@ pub struct HostedWorkspace {
     pub created_by: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
-    /// `workspace` (people's), or `deploy`: a box made for one deploy's run
-    /// and deleted after it (M219), which people never list or open.
+    /// `workspace` (people's), `deploy`: a box made for one deploy's run
+    /// and deleted after it (M219), or `snapshot`: a box made to build a
+    /// workspace's snapshot (M263). People never list or open either.
     pub purpose: String,
+    /// A snapshot's builder's workspace (M263).
+    #[serde(skip)]
+    pub parent: Option<String>,
+    /// Its snapshot (M263): what its new boxes start from, or why the
+    /// latest build failed. `None` before one is first built.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<Snapshot>,
 }
 
 /// A deploy box's purpose (M219).
 pub const DEPLOY: &str = "deploy";
+/// A snapshot's builder's purpose (M263).
+pub const SNAPSHOT: &str = "snapshot";
+
+/// A workspace's snapshot as people see it (M263): the latest build's
+/// status (`building`, `ready` or `failed`), when the current one was made
+/// (`None`: there's none), and the latest build's error. Never its id.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Snapshot {
+    pub status: String,
+    pub built_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// A workspace's snapshots as the worker keeps them (M263; the migration
+/// says what each is).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Snapshots {
+    pub id: Option<String>,
+    pub hash: Option<String>,
+    pub template: Option<String>,
+    pub built_at: Option<u64>,
+    pub status: Option<String>,
+    pub error: Option<String>,
+    pub try_hash: Option<String>,
+    pub try_at: Option<u64>,
+    pub retired: Vec<String>,
+    pub box_snapshot: Option<String>,
+}
 
 /// How a workspace's box's setup goes (M183): `setting_up` (on `step`),
 /// `ready`, or `failed` (at `step`, for `reason`, a fixed code). Never the
@@ -70,11 +107,12 @@ pub struct Setup {
     pub at: u64,
 }
 
-const COLUMNS: &str = "id, project_id, name, spec, provider, template, state, asked, machine, error, \
+pub(super) const COLUMNS: &str = "id, project_id, name, spec, provider, template, state, asked, machine, error, \
      spec_hash, built_hash, created_by, created_at, updated_at, \
-     setup_status, setup_step, setup_reason, setup_pane, setup_at, purpose";
+     setup_status, setup_step, setup_reason, setup_pane, setup_at, purpose, \
+     parent_id, snapshot_status, snapshot_built_at, snapshot_error";
 
-fn row(r: &Row) -> Result<HostedWorkspace> {
+pub(super) fn row(r: &Row) -> Result<HostedWorkspace> {
     let spec: String = r.get(3)?;
     let built: Option<String> = r.get(11)?;
     Ok(HostedWorkspace {
@@ -103,6 +141,11 @@ fn row(r: &Row) -> Result<HostedWorkspace> {
             None => None,
         },
         purpose: r.get(20)?,
+        parent: r.get(21)?,
+        snapshot: match r.get::<Option<String>>(22)? {
+            Some(status) => Some(Snapshot { status, built_at: r.get(23)?, error: r.get(24)? }),
+            None => None,
+        },
     })
 }
 
@@ -359,11 +402,11 @@ impl Db {
                         w: row(r)?,
                         spec_hash: r.get(10)?,
                         built_hash: r.get(11)?,
-                        sandbox: r.get(21)?,
-                        stage: r.get(22)?,
-                        stage_at: r.get(23)?,
-                        enroll_until: r.get(24)?,
-                        deleted_at: r.get(25)?,
+                        sandbox: r.get(25)?,
+                        stage: r.get(26)?,
+                        stage_at: r.get(27)?,
+                        enroll_until: r.get(28)?,
+                        deleted_at: r.get(29)?,
                         lease: String::new(),
                         seen: Default::default(),
                         usage: None,

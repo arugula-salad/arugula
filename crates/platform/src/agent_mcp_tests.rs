@@ -239,10 +239,14 @@ async fn an_agent_with_only_a_token_files_runs_plans_and_never_approves() {
     assert!(
         hub.pushes().iter().any(|(to, m, _)| to == "a"
             && m["deploy"] == json!(dep_id)
-            && m["body"].as_str().unwrap().contains("a's agent token \u{2018}redone\u{2019}")),
+            && m["body"].as_str().unwrap().contains("a's agent token \u{201c}redone\u{201d}")),
         "{:?}",
         hub.pushes()
     );
+    // Its log says so too, never "on redone (MCP)" (UI audit #192).
+    let (st, seen) = call(&base, "a", "GET", &format!("/api/deploys/{dep_id}"), None).await;
+    let by = seen["events"][0]["by"].as_str().unwrap_or_default().to_owned();
+    assert!(st == 200 && by.ends_with("'s agent token \u{201c}redone\u{201d}"), "{seen}");
 
     // Never an approval: no tool, whatever it's called...
     for name in ["approve_deploy", "deny_deploy", "approve", "sign_grant"] {

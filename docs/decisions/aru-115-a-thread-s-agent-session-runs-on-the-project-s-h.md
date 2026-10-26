@@ -56,6 +56,11 @@ constrains:
   - "path:crates/e2e/src/session.rs"
   - "path:crates/control-wire/src/work.rs"
   - "path:crates/platform/src/chat/objects.rs"
+  - "path:crates/daemon/src/work_sessions_push.rs"
+  - "path:crates/platform/src/sessions/push.rs"
+  - "path:crates/platform/src/sessions/pr.rs"
+  - "path:crates/platform/src/sessions/tries.rs"
+  - "path:crates/platform/src/sessions/review.rs"
 ---
 
 # A thread's agent session runs on the project's hosted box
@@ -73,6 +78,15 @@ agents draft while people send".
   are never woken by other people's mentions: on them, mentions are still
   read, not pushed. `@arugula` comes first; `@<recipe>` (a project recipe's
   agent) comes later.
+- **Try 3 and `@codex review`** (M264). From a session's card, an owner or
+  editor can run it two more ways at once: two siblings of it re-run its
+  first prompt on the same box, each in a slot of its own, on Claude Code
+  or Codex, and they pick one to keep; the others stop. `@codex` is
+  reserved as `@arugula` is, with the same rule for who may ask: `@codex
+  review` in a session's thread starts a read-only session given its pushed
+  diff and the thread as data, which pushes nothing and posts its review
+  in the thread. Both are sessions on the project's hosted box, as the
+  asker, like any other.
 - **One card in the timeline.** The session's status card is the one card
   kind a chat timeline shows; everything else in it stays a message.
 - **It runs as the asker, on the project's key.** The session is the
@@ -98,6 +112,25 @@ agents draft while people send".
   never send, merge or approve: the PR is still a draft the **asker**
   sends, with their one-use user token ("Sending as a person uses a one-use
   user token, falling back to their machine").
+  - Tokens can't be confined to a ref, so the box confines the push (M259,
+    S42 q2): the session's user writes a bundle of its one branch, and the
+    daemon fetches it into a repo of its own and pushes one refspec from
+    there, with no hooks and none of the agent's config. `main` and other
+    sessions' branches are refused before git runs.
+  - The platform mints the token only for the session's own box, for the
+    session's branch exactly, on its linked repo, with `contents: write`
+    alone: without `workflows`, GitHub refuses a push that changes
+    `.github/workflows/`. The box revokes it once it pushed.
+  - Even so, an `arugula/*` push runs the repo's existing push workflows on
+    code the agent wrote, as a member's pushed branch would.
+  - What this doesn't stop is an agent that gets from its session user to
+    the daemon's user, which could use a token in the seconds it lives. A
+    git proxy in control that holds the token and reads the ref list would
+    close that, later.
+  - The PR's title and body come from the repo's PR template and the
+    session's turns, and its asker edits them before sending. Once sent,
+    the session links the PR, and the PR's thread says which session it
+    came from.
 - **Signed and append-only.** The box signs everything it reports of a
   session (`arugula session event v1`), numbered so a report can't be
   replayed, and the platform keeps each state change, error and turn's
@@ -109,5 +142,5 @@ What doesn't change: agents on people's machines read and post through
 their machine's grants ("Agents are in conversations"), an agent's
 "approve" is never an approval, and an agent's GitHub write from a person's
 machine is still a draft its person sends.
-Where: the sessions tables and their rules (`crates/platform/src/db/sessions.rs`, migration `0050_agent_sessions`), the states and the signed event (`crates/e2e/src/session.rs`), what the box pulls and reports (`crates/control-wire/src/work.rs`), sessions as objects (`crates/platform/src/chat/objects.rs`); dispatch (M256) and the card (M257) follow.
+Where: the sessions tables and their rules (`crates/platform/src/db/sessions.rs`, migration `0050_agent_sessions`), the states and the signed event (`crates/e2e/src/session.rs`), what the box pulls and reports (`crates/control-wire/src/work.rs`), sessions as objects (`crates/platform/src/chat/objects.rs`); dispatch (M256), the card (M257), and the push and the PR (M259: `crates/daemon/src/work_sessions_push.rs`, `crates/platform/src/sessions/push.rs` and `pr.rs`, migration `0053_pr_drafts`).
 From: thread = session (Arugula #129, native, behind #1438), M254 (Arugula #131), S42 (Arugula #130).

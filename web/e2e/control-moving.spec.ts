@@ -51,15 +51,18 @@ test("the old address says where control is now, with the same page there", asyn
 }) => {
   await page.goto(`http://localhost:${port}/#join=ABCDE-FGHIJ`);
   const bar = page.locator("[data-control-moving]");
-  await expect(bar).toContainText(`Control is moving to 127.0.0.1:${port}`);
+  await expect(bar).toContainText(`Arugula control is moving to 127.0.0.1:${port}`);
   await expect(bar.getByRole("link")).toHaveAttribute(
     "href",
     `http://127.0.0.1:${port}/#join=ABCDE-FGHIJ`,
   );
+  // UI audit #179: it can be put away, for this visit.
+  await bar.getByRole("button", { name: "Dismiss" }).click();
+  await expect(page.locator("[data-control-moving]")).toHaveCount(0);
 });
 
 test("the new address doesn't", async ({ page }) => {
   await page.goto(`http://127.0.0.1:${port}/`);
-  await expect(page.locator("body")).not.toContainText("Control is moving");
+  await expect(page.locator("body")).not.toContainText("control is moving");
   await expect(page.locator("[data-control-moving]")).toHaveCount(0);
 });

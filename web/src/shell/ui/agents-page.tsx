@@ -19,6 +19,7 @@ import { ConfirmRemove } from "../../shared/ui/confirm";
 import { agentsRoute, closeAgentsPage, openAgentsPage, type AgentsTab } from "./agents-route";
 import { AppBar } from "./app-bar";
 import { CopyText } from "../../shared/ui/copy";
+import { Time } from "../../shared/ui/time";
 
 interface Recipe {
   name: string;
@@ -75,7 +76,7 @@ export function AgentsPage({ client }: { client: Client }) {
 function Page({ client, tab }: { client: Client; tab: AgentsTab }) {
   return (
     <div class="chat agents-page" data-agents-page={tab}>
-      <AppBar client={client} at="agents" all={tab === "team"}>
+      <AppBar client={client} at="agents">
         <span class="agents-tabs" role="tablist" aria-label="Agents">
           <button role="tab" aria-selected={tab === "recipes"} class={tab === "recipes" ? "on" : ""} data-agents-tab="recipes" onClick={() => openAgentsPage("recipes")}>
             Recipes
@@ -200,7 +201,7 @@ function RecipesTab({ client }: { client: Client }) {
     const dir = await askText("A project with .claude/agents", "~/", "a folder on this machine");
     if (dir?.trim()) await act(() => json(client, "POST", "/api/a2a/recipes/projects", { dir: dir.trim() }));
   };
-  if (error) return <p class="dim offer-said" data-agents-error>{error}</p>;
+  if (error) return <p class="control-error agents-error" data-agents-error>{error}</p>;
   if (!data) return <p class="dim">Reading this machine's recipes…</p>;
   const where = [{ label: "~/.claude/agents (yours, every project)", dir: "" }, ...data.projects.map((p) => ({ label: p.dir, dir: p.dir }))];
   // Paths under the home directory read from ~ (the full ones are long).
@@ -230,14 +231,14 @@ function RecipesTab({ client }: { client: Client }) {
             <p class="dim">{r.description}</p>
           </div>
           <div class="agents-buttons">
-            <button class="pri" data-run-here={r.name} disabled={busy} title="Open an agent block wearing this recipe, in its project" onClick={() => void runHere(r, project)}>
-              Run on {directory.current || "this machine"}
+            <button class="primary small" data-run-here={r.name} disabled={busy} title="Open an agent block wearing this recipe, in its project" onClick={() => void runHere(r, project)}>
+              Run on {directory.current || "this machine"}…
             </button>
-            <button data-edit={r.name} disabled={busy} title="Change its prompt, tools and model" onClick={() => edit(r)}>
+            <button class="secondary small" data-edit={r.name} disabled={busy} title="Change its prompt, tools and model" onClick={() => edit(r)}>
               Edit
             </button>
             {r.offered_from ? (
-              <button
+              <button class="secondary small"
                 data-unoffer={r.name}
                 disabled={busy}
                 title="Take it out of your team's catalog"
@@ -249,11 +250,11 @@ function RecipesTab({ client }: { client: Client }) {
                 Stop offering
               </button>
             ) : (
-              <button data-offer={r.name} disabled={busy} title="Put it in your team's catalog, so their agents can send it tasks" onClick={() => void offer(r, project)}>
+              <button class="secondary small" data-offer={r.name} disabled={busy} title="Put it in your team's catalog, so their agents can send it tasks" onClick={() => void offer(r, project)}>
                 Offer to team
               </button>
             )}
-            <button class="danger" data-delete={r.name} disabled={busy} title="Delete its file" onClick={() => setDeleting(r)}>
+            <button class="secondary danger small" data-delete={r.name} disabled={busy} title="Delete its file" onClick={() => setDeleting(r)}>
               Delete
             </button>
           </div>
@@ -265,14 +266,14 @@ function RecipesTab({ client }: { client: Client }) {
   return (
     <div class="agents-recipes-tab">
       <p class="agents-lead">
-        A recipe is a Claude Code subagent: a name, a prompt, and the tools and model it uses. <b>Run on {directory.current || "this machine"}</b> opens an agent wearing it on this machine.{" "}
+        A recipe is a Claude Code subagent: a name, a prompt, and the tools and model it uses. <b>Run on {directory.current || "this machine"}…</b> asks what to do, then opens an agent wearing it on this machine.{" "}
         <b>Offer to team</b> lets your team's agents send it tasks; you approve each one.
       </p>
       <div class="agents-actions">
-        <button class="pri" data-new-recipe disabled={busy} onClick={() => setForm({ f: { ...EMPTY }, inline: [] })}>
-          + New recipe
+        <button class="primary small" data-new-recipe disabled={busy} onClick={() => setForm({ f: { ...EMPTY }, inline: [] })}>
+          New recipe
         </button>
-        <button data-add-project disabled={busy} title="List the recipes in a project's .claude/agents" onClick={() => void addProject()}>
+        <button class="secondary small" data-add-project disabled={busy} title="List the recipes in a project's .claude/agents" onClick={() => void addProject()}>
           Add a project…
         </button>
         {said && (
@@ -285,7 +286,7 @@ function RecipesTab({ client }: { client: Client }) {
         <div class="agents-empty" data-agents-empty>
           <b>No recipes on this machine yet.</b>
           <p>
-            Make one with <b>+ New recipe</b>, or <b>Add a project…</b> that already has recipes in its <code>.claude/agents</code> folder.
+            Make one with <b>New recipe</b>, or <b>Add a project…</b> that already has recipes in its <code>.claude/agents</code> folder.
           </p>
         </div>
       )}
@@ -320,7 +321,7 @@ function RecipesTab({ client }: { client: Client }) {
             {!data.user.recipes.length && (
               <li data-agents-scope="user">
                 Yours, in every project <span class="dim">{tilde(data.user.dir)}</span>
-                <button class="agents-inline-new" disabled={busy} onClick={() => setForm({ f: { ...EMPTY, dir: "" }, inline: [] })}>
+                <button class="secondary small agents-inline-new" disabled={busy} onClick={() => setForm({ f: { ...EMPTY, dir: "" }, inline: [] })}>
                   New recipe here
                 </button>
               </li>
@@ -328,7 +329,7 @@ function RecipesTab({ client }: { client: Client }) {
             {empty.map((p) => (
               <li key={p.dir} data-agents-scope={p.dir}>
                 {p.dir.split("/").pop()} <span class="dim">{tilde(p.dir)} · No recipes in .claude/agents</span>
-                <button class="agents-inline-new" disabled={busy} onClick={() => setForm({ f: { ...EMPTY, dir: p.dir }, inline: [] })}>
+                <button class="secondary small agents-inline-new" disabled={busy} onClick={() => setForm({ f: { ...EMPTY, dir: p.dir }, inline: [] })}>
                   New recipe here
                 </button>
                 {p.added && removeProject(p.dir)}
@@ -428,23 +429,15 @@ function RecipeForm({
         <textarea name="prompt" value={f.prompt} rows={10} onInput={set("prompt")} placeholder="You are … When asked to …" />
       </label>
       <div class="ws-actions">
-        <button class="pri" type="submit" data-save-recipe disabled={busy || !f.name.trim() || !f.description.trim()}>
+        <button class="primary small" type="submit" data-save-recipe disabled={busy || !f.name.trim() || !f.description.trim()}>
           Save
         </button>
-        <button type="button" onClick={cancel}>
+        <button class="secondary small" type="button" onClick={cancel}>
           Cancel
         </button>
       </div>
     </form>
   );
-}
-
-function ago(ms: number | null): string {
-  if (!ms) return "";
-  const s = Math.max(0, (Date.now() - ms) / 1000);
-  if (s < 90) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  return `${Math.round(s / 3600)}h ago`;
 }
 
 function TeamTab({ client }: { client: Client }) {
@@ -495,18 +488,22 @@ function TeamTab({ client }: { client: Client }) {
     await client.request("POST", `/api/a2a/tasks/${encodeURIComponent(id)}/consent`, { answer: a }).catch(() => null);
     await load();
   };
-  if (error) return <p class="dim offer-said">{error}</p>;
+  if (error) return <p class="control-error agents-error" data-agents-error>{error}</p>;
   if (!shelves) return <p class="dim">Asking every machine for its agents…</p>;
-  const offered = shelves.filter((s) => s.agents.length);
-  const quiet = shelves.filter((s) => !s.agents.length);
+  // This machine, then your own, then your teammates', each by name
+  // whatever its case (UI audit #173: WIN-… sorted before arugula-…).
+  const rank = (s: Shelf) => (s.here ? 0 : s.owner ? 2 : 1);
+  const sorted = [...shelves].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  const offered = sorted.filter((s) => s.agents.length);
+  const quiet = sorted.filter((s) => !s.agents.length);
   return (
     <div class="agents-team-tab">
       <p class="agents-lead">
-        The agents your team offers, on every machine. Your agents send them tasks with the <code>delegate</code> tool. When someone else's agent asks one of
+        The agents your team offers, on every machine, not just {directory.current || "this one"}. Your agents send them tasks with the <code>delegate</code> tool. When someone else's agent asks one of
         yours, the task waits here until you allow it.
       </p>
       <div class="agents-actions">
-        <button data-team-refresh disabled={busy} onClick={() => void load(true)}>
+        <button class="secondary small" data-team-refresh disabled={busy} onClick={() => void load(true)}>
           {busy ? "Refreshing…" : "Refresh"}
         </button>
       </div>
@@ -524,13 +521,13 @@ function TeamTab({ client }: { client: Client }) {
                   <p>{t.history?.[0]?.parts?.[0]?.text}</p>
                 </div>
                 <div class="agents-buttons">
-                  <button class="pri" disabled={busy} onClick={() => void answer(t.id, "once")}>
+                  <button class="primary small" disabled={busy} onClick={() => void answer(t.id, "once")}>
                     Allow once
                   </button>
-                  <button disabled={busy} title="Allow this person's tasks for this agent for an hour" onClick={() => void answer(t.id, "hour")}>
+                  <button class="secondary small" disabled={busy} title="Allow this person's tasks for this agent for an hour" onClick={() => void answer(t.id, "hour")}>
                     Allow for an hour
                   </button>
-                  <button class="danger" disabled={busy} onClick={() => void answer(t.id, "deny")}>
+                  <button class="secondary danger small" disabled={busy} onClick={() => void answer(t.id, "deny")}>
                     Deny
                   </button>
                 </div>
@@ -558,12 +555,18 @@ function TeamTab({ client }: { client: Client }) {
             <span class="dim">
               {s.here ? " · this machine" : ""}
               {s.owner ? ` · ${s.owner}'s` : ""}
-              {!s.online ? ` · offline, as seen ${ago(s.fetched_ms)}` : ""}
+              {!s.online ? (
+                <>
+                  {" "}
+                  · offline{s.fetched_ms ? <>, as seen <Time at={s.fetched_ms} /></> : ""}
+                </>
+              ) : (
+                ""
+              )}
             </span>
           </h4>
           {s.note && s.online && <p class="dim offer-said">{s.note}</p>}
-          {/* Rows, not cards: what you do with one is its Run and its Copy. */}
-          <ul class="agents-cards agents-rows">
+          <ul class="agents-cards">
             {s.agents.map((a) => (
               <li key={a.name} class="agents-card" data-agent={a.name}>
                 <div class="agents-card-text">
@@ -577,8 +580,8 @@ function TeamTab({ client }: { client: Client }) {
                 </div>
                 {!s.owner && s.online && (
                   <div class="agents-buttons">
-                    <button class="pri" data-run={a.name} disabled={busy} title={`Run it in its project on ${s.name}, and go to it`} onClick={() => void run(s, a.name)}>
-                      Run on {s.name}
+                    <button class="primary small" data-run={a.name} disabled={busy} title={`Run it in its project on ${s.name}, and go to it`} onClick={() => void run(s, a.name)}>
+                      Run on {s.name}…
                     </button>
                   </div>
                 )}
@@ -596,11 +599,12 @@ function TeamTab({ client }: { client: Client }) {
             {quiet.map((q) => (
               <li key={q.machine} data-quiet={q.name} title={q.note ?? undefined}>
                 {q.name}
+                {/* The row's gap is its space: no second one before the "·". */}
                 <span class="dim">
-                  {q.here ? " · this machine" : ""}
-                  {q.owner ? ` · ${q.owner}'s` : ""}
-                  {" · "}
-                  {q.online ? "offers no agents" : q.note?.startsWith("offline") ? "offline" : "didn't answer"}
+                  {[q.here ? "this machine" : "", q.owner ? `${q.owner}'s` : "", q.online ? "offers no agents" : q.note?.startsWith("offline") ? "offline" : "didn't answer"]
+                    .filter(Boolean)
+                    .map((x) => `· ${x}`)
+                    .join(" ")}
                 </span>
               </li>
             ))}
@@ -617,12 +621,12 @@ function TeamTab({ client }: { client: Client }) {
                   <div class="agents-card-head">
                     <b>{g.name}</b>
                     <span class="dim">
-                      may use {g.agent} until {new Date(g.until_ms).toLocaleTimeString()}
+                      may use {g.agent} · ends <Time at={g.until_ms} title="Until" />
                     </span>
                   </div>
                 </div>
                 <div class="agents-buttons">
-                  <button class="danger" disabled={busy} onClick={() => void client.request("POST", "/api/a2a/grants", { account: g.account, agent: g.agent }).then(() => load())}>
+                  <button class="secondary danger small" disabled={busy} onClick={() => void client.request("POST", "/api/a2a/grants", { account: g.account, agent: g.agent }).then(() => load())}>
                     Revoke
                   </button>
                 </div>

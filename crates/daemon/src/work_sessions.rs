@@ -27,6 +27,18 @@
 //!   as its author's (the block's transcript says whose). The first also
 //!   carries the repo's `CLAUDE.md` and `AGENTS.md` as text: Claude Code's
 //!   `settingSources: ["project"]` would load the repo's hooks too.
+//! - **Its block is followed, not only what it hands in** ([`step`]). A
+//!   turn started in the block itself (someone typed there from the card's
+//!   Open, or the agent woke itself) is reported as a turn's start
+//!   (`in_block`, with who typed it when the block says), and goes to the
+//!   same end as the box's own: the finish step, the push, the turn's
+//!   report. A question it asks goes out as `needs_input`; one answered in
+//!   the block moves it back with no action named. The thread's prompts
+//!   wait for it.
+//! - **Nothing asks permission** ([`agent_config`]): Claude Code runs in
+//!   `bypassPermissions` and Codex in `full-access`, and the block allows
+//!   what still asks. Questions (AskUserQuestion, Codex's elicitations)
+//!   aren't permissions, and still go to the card.
 //! - **At most once.** Before a prompt goes to the block, the ledger
 //!   (`<state>/work/sessions/ID.json`, fsynced) says it's handed; after a
 //!   restart between the two, the block's own log (its queue and turns)
@@ -37,8 +49,31 @@
 //!   `needs_input` with what it asks, back, to `done`), a heartbeat every
 //!   [`HEARTBEAT`] while a turn is under way with the tool running now, the
 //!   agent's errors, and each turn's result (`turnwork`'s: branch, commits,
-//!   diffstat; `pushed` stays false until M259 pushes). Each is kept in the
-//!   ledger before it's sent, and sent in order until control takes it.
+//!   diffstat, and `pushed`). Each is kept in the ledger before it's sent,
+//!   and sent in order until control takes it.
+//! - **The finish step** ([`finish_turn`], M261): when the workspace's spec
+//!   has one (`just check`), it runs after each turn, before the push, as
+//!   the session's user in its checkout, with that user's environment
+//!   only, for at most its timeout. Its result goes on the turn's report.
+//!   When it fails, the agent gets one more turn, within the same
+//!   `working`, with its output as a prompt from the finish step; the
+//!   push waits for that turn's end, when it runs again. Failing twice, the
+//!   session is done, unpushed, and its card says why.
+//! - **Pushed** ([`push::push_turn`], M259): a turn that left commits of
+//!   its own pushes the session's branch, and only it, from a bundle its
+//!   user writes, through a repo of the daemon's own, with a token control
+//!   mints for that one push. A push that fails is the session's error,
+//!   and the turn says it didn't push.
+//! - **Its harness** (M264): Claude Code, or Codex when control asks for
+//!   it and the box has it ([`has_harness`]); else Claude Code, and the
+//!   first report says which ran (`harness`). A Try 3's three sessions are
+//!   three sessions here, each in its slot.
+//! - **A review** (M264, `@codex review`) is read-only: no finish step and
+//!   no push, and its turn's report carries the agent's reply, which
+//!   control posts in its thread.
+//! - **A slot is left clean** ([`clean_slot`]): when a session ends (or
+//!   fails), what its pushes left, its checkout and its user's `~/.claude`
+//!   go, so the next session in that slot starts with nothing of it.
 //! - **People's answers** ([`SessionAction`]: a question's answer, a
 //!   permission's approval or denial, cancelling the turn) are done once
 //!   each, as the person who asked, and named in the next report.
@@ -57,8 +92,8 @@ use std::{
 };
 
 use arugula_control_wire::work::{
-    MAX_SESSIONS_PER_BOX, Reported, SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork,
-    WORK_SESSION_REPORT,
+    FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, REPLY_MAX, Reported, SessionAction,
+    SessionDetail, SessionPrompt, SessionReport, SessionWork, WORK_SESSION_REPORT,
 };
 use arugula_e2e::{
     now_ms,
@@ -91,6 +126,11 @@ const NOTES_MAX: usize = 32 * 1024;
 const TEXT_MAX: usize = 4 * 1024;
 /// What a session whose block went away fails with.
 pub const BLOCK_GONE: &str = "its agent block is gone";
+/// The most of a finish step's output a turn's report carries, and its fix
+/// prompt: the last of it.
+const FINISH_OUTPUT_MAX: usize = 4 * 1024;
+/// Who a finish step's fix prompt is from, in the block's transcript.
+pub const FINISH_STEP: &str = "the finish step";
 
 /// The latest pull's sessions, by id: `None` before the first.
 static LATEST: Mutex<Option<BTreeMap<String, SessionWork>>> = Mutex::new(None);
@@ -214,6 +254,14 @@ pub struct Turn {
     /// and the block).
     pub sent: bool,
     pub at: u64,
+    /// The finish step's fix (M261): this turn is the agent's one try at
+    /// what the finish step said, and this is its prompt. Its end runs the
+    /// finish step for the last time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fix: Option<String>,
+    /// Someone cancelled it: a failed finish step gets no fix after it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cancelled: bool,
 }
 
 /// A session this box took, in `<state>/work/sessions/ID.json`.
@@ -261,6 +309,21 @@ pub struct Session {
     pub last_at: u64,
     #[serde(default)]
     pub events: Vec<Kept>,
+    /// The commit its last push put on GitHub (M259).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pushed_head: Option<String>,
+    /// The block's turns when the box last followed one to its end: one
+    /// past that with none under way here was started in the block itself
+    /// ([`step`]). `None` in a ledger from before it was kept, until the
+    /// next look.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turns_seen: Option<u64>,
+    /// The agent it runs (M264): `codex`, or Claude Code when `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+    /// A review (M264): no finish step, no push, and its reply reported.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub review: bool,
 }
 
 impl Session {
@@ -478,6 +541,34 @@ fn me(app: &App) -> Option<(Arc<arugula_e2e::DeviceKeys>, String, String, String
     super::me(app)
 }
 
+/// Whether this box runs agent `h` for sessions (M264): Claude Code
+/// always; another when `ARUGULA_HOSTED_SESSION_HARNESSES` (a comma list)
+/// names it, or, without that, Codex when its adapter and `codex` are
+/// installed for the daemon's user.
+pub fn has_harness(h: &str) -> bool {
+    if h == "claude" {
+        return true;
+    }
+    if let Ok(list) = std::env::var("ARUGULA_HOSTED_SESSION_HARNESSES") {
+        return list.split(',').any(|x| x.trim() == h);
+    }
+    if h != "codex" {
+        return false;
+    }
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return false };
+    let Some(a) = crate::agent::adapters::of(crate::agent::defs::Kind::Codex) else { return false };
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    crate::agent::adapters::status(a, &home, &[]).ok()
+        && (home.join(".local/bin/codex").is_file()
+            || std::env::split_paths(&path).filter(|d| !d.as_os_str().is_empty()).any(|d| d.join("codex").is_file()))
+}
+
+/// The agent session `w` runs on here: the one asked for when the box
+/// has it, else Claude Code (`None`).
+fn harness_for(w: &SessionWork) -> Option<String> {
+    w.harness.clone().filter(|h| h != "claude" && has_harness(h))
+}
+
 /// A free slot: a session user no session this box runs holds.
 fn free_slot(dir: &Path) -> Option<(AsUser, bool)> {
     let slots = slots()?;
@@ -529,7 +620,14 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         error: None,
         last_at: 0,
         events: vec![],
+        pushed_head: None,
+        turns_seen: Some(0),
+        harness: harness_for(w),
+        review: w.review,
     };
+    if let Some(h) = w.harness.as_deref().filter(|h| *h != "claude" && l.harness.is_none()) {
+        info!(session = l.session, harness = h, "hosted: this box hasn't that agent; the session runs on Claude Code");
+    }
     let fail = |mut l: Session, why: String| {
         info!(session = l.session, why, "hosted: a session can't start here");
         l.push(
@@ -719,20 +817,38 @@ fn notes(repo: &Path) -> Option<String> {
     })
 }
 
-/// The agent a session's block runs: Claude Code, unless a test names a
-/// command (`ARUGULA_HOSTED_SESSION_AGENT`), which still runs as kind
-/// `claude`, under M185's gate.
+/// The agent a session's block runs: Claude Code in `bypassPermissions`,
+/// or Codex, when it runs on it (M264), in `full-access`, unless a test
+/// names a command (`ARUGULA_HOSTED_SESSION_AGENT`), which still runs as
+/// that kind, under M185's gate.
 fn agent_config(l: &Session) -> Value {
+    let agent = l.harness.as_deref().unwrap_or("claude");
     let mut c = json!({
-        "agent": "claude",
+        "agent": agent,
         "cwd": l.checkout,
         "title": format!("session {}", l.session),
         "run_as": l.user,
+        // Nothing asks before it runs (aru-115: the box, as its own user
+        // behind the firewall, is the blast radius); a question still
+        // does (an elicitation), and goes to the card. What still asks in
+        // this mode the block allows itself (`agent`'s permissions). Each
+        // agent has its own word for the mode: codex-acp's is
+        // `full-access`, which a review runs in too, since what keeps a
+        // review read-only is that its box pushes nothing for it.
+        "permission_mode": mode_of(agent),
     });
     if let Some(cmd) = std::env::var("ARUGULA_HOSTED_SESSION_AGENT").ok().filter(|c| !c.trim().is_empty()) {
         c["command"] = json!(crate::agent::defs::split_command(&cmd));
     }
     c
+}
+
+/// The permission mode in which agent `agent` asks nothing (aru-115).
+fn mode_of(agent: &str) -> &'static str {
+    match agent {
+        "codex" => "full-access",
+        _ => "bypassPermissions",
+    }
 }
 
 async fn open_block(app: &App, l: &Session) -> Result<u32, String> {
@@ -785,6 +901,17 @@ struct Seen {
     open: Option<(&'static str, String, String, Vec<String>)>,
     tool: Option<String>,
     error: Option<String>,
+    /// Whose each turn's prompt was, oldest first, of the last few
+    /// (`None`: the block's owner's, or the agent's own).
+    by: Vec<Option<String>>,
+}
+
+impl Seen {
+    /// Whose the block's turn number `n` (from 0) was, if it says.
+    fn by_at(&self, n: u64) -> Option<String> {
+        let from = self.turns.saturating_sub(self.by.len() as u64);
+        n.checked_sub(from).and_then(|i| self.by.get(i as usize).cloned().flatten())
+    }
 }
 
 fn seen(s: &Value) -> Seen {
@@ -810,6 +937,11 @@ fn seen(s: &Value) -> Seen {
         open: perm.or_else(ask),
         tool: s["current_tool"]["title"].as_str().map(str::to_owned),
         error: s["error"].as_str().map(str::to_owned),
+        // `recent_turns` is newest first.
+        by: s["recent_turns"]
+            .as_array()
+            .map(|t| t.iter().rev().map(|t| t["by"].as_str().map(str::to_owned)).collect())
+            .unwrap_or_default(),
     }
 }
 
@@ -841,6 +973,11 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
             let _ = update(&dir, id, |now| {
                 now.acted.push(a.id.clone());
                 now.unnamed.push(a.id.clone());
+                if a.kind == "cancel"
+                    && let Some(t) = now.turn.as_mut()
+                {
+                    t.cancelled = true;
+                }
             });
         }
     }
@@ -856,6 +993,8 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
             if s.turns > t.base || s.queued > 0 {
                 let (k, m) = (keys.clone(), me.clone());
                 say(Box::new(move |now| started(now, &k, &m)));
+            } else if let Some(text) = t.fix.clone() {
+                give_fix(app, &b, id, text, &keys, &me).await;
             } else if let Some(p) = work.as_ref().and_then(|w| w.prompts.iter().find(|p| t.prompts.contains(&p.id))) {
                 give(app, &b, id, p.clone(), &keys, &me).await;
             } else {
@@ -882,30 +1021,101 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
             if idle && (s.turns > t.base || s.error.is_some() || s.status == "exited" || s.status == "stopped") {
                 // The turn ended (or never began: the gate said no, or the
                 // agent went away).
+                if l.now() == State::NeedsInput {
+                    let (k, m) = (keys.clone(), me.clone());
+                    say(Box::new(move |now| now.push(&k, &m, Kind::State, State::Working, SessionDetail::default())));
+                }
+                // The finish step, before the push: a stop meanwhile ends
+                // it here. A review runs none (M264).
+                let step = work.as_ref().and_then(|w| w.finish.as_ref()).filter(|_| !l.review);
+                let finished = finish_turn(app, &l, step, &keys, &me).await;
+                let Ok(Some(l)) = read(&dir, id) else { return false };
+                if l.ended.is_some() {
+                    return false;
+                }
+                // One fix, after a turn that ran and wasn't cancelled.
+                let went = s.turns > t.base && s.error.is_none() && s.status != "exited" && s.status != "stopped";
+                let fix = match &finished {
+                    Finished::Failed(r) if t.fix.is_none() && !t.cancelled && went => Some(fix_prompt(r)),
+                    _ => None,
+                };
                 let result = b.call("turn_result", json!({})).await.ok().filter(|v| !v.is_null());
                 let r: Option<arugula_proto::api::TurnResult> = result.and_then(|v| serde_json::from_value(v).ok());
+                // The push, only when the finish step passed (or there's
+                // none) and no fix is owed: the commit now on GitHub, nothing
+                // to push, or why it didn't.
+                // A review pushes nothing (M264): its reply is what it made.
+                let may_push = fix.is_none() && finished.may_push() && !l.review;
+                info!(session = id, may_push, fix = fix.is_some(), "hosted: a session's turn ended");
+                let pushed = if may_push { push::push_turn(app, &l).await } else { Ok(None) };
+                // Stopped while it pushed: what the push left goes too.
+                if may_push && push::clean_if_ended(&dir, &l).await {
+                    return false;
+                }
+                let reply = r.as_ref().filter(|_| l.review).map(|r| {
+                    let mut m = r.message.trim().to_owned();
+                    cut(&mut m, REPLY_MAX);
+                    m
+                });
                 let branch = l.branch.clone();
-                let (k, m) = (keys.clone(), me.clone());
+                let (k, m, base, again) = (keys.clone(), me.clone(), s.turns, fix.clone());
                 say(Box::new(move |now| {
-                    if now.now() == State::NeedsInput {
-                        now.push(&k, &m, Kind::State, State::Working, SessionDetail::default());
-                    }
+                    now.turns_seen = Some(base);
+                    let pushed = match pushed {
+                        Ok(Some(head)) => {
+                            now.pushed_head = Some(head);
+                            true
+                        }
+                        Ok(None) => false,
+                        Err(why) => {
+                            let error = Some(format!("couldn't push {}: {why}", now.branch));
+                            now.push(
+                                &k,
+                                &m,
+                                Kind::Error,
+                                State::Working,
+                                SessionDetail { error, ..Default::default() },
+                            );
+                            false
+                        }
+                    };
                     let w = r.and_then(|r| r.work);
                     let d = SessionDetail {
                         branch: Some(w.as_ref().map_or(branch, |w| w.branch.clone())),
                         head: w.as_ref().map(|w| w.head.clone()).filter(|h| !h.is_empty()),
-                        // M259 pushes, and says so.
-                        pushed: Some(false),
+                        pushed: Some(pushed),
                         commits: w.as_ref().and_then(|w| w.commits.clone()).unwrap_or_default(),
                         diffstat: w.as_ref().and_then(|w| w.diffstat.clone()),
                         uncommitted: w.as_ref().map(|w| w.uncommitted_total),
+                        finish: finished.result(),
+                        reply,
                         ..Default::default()
                     };
                     now.push(&k, &m, Kind::Turn, State::Working, d);
-                    now.push(&k, &m, Kind::State, State::Done, SessionDetail::default());
-                    now.turn = None;
+                    match again {
+                        // The fix is the next turn, in the same `working`.
+                        Some(text) => {
+                            now.turn = Some(Turn {
+                                prompts: vec![],
+                                base,
+                                sent: false,
+                                at: now_ms(),
+                                fix: Some(text),
+                                cancelled: false,
+                            })
+                        }
+                        None => {
+                            now.push(&k, &m, Kind::State, State::Done, SessionDetail::default());
+                            now.turn = None;
+                        }
+                    }
                 }));
-                BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+                match fix {
+                    Some(text) => give_fix(app, &b, id, text, &keys, &me).await,
+                    None => {
+                        BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+                    }
+                }
             } else if let Some((ask, request, question, options)) = s.open.clone().filter(|_| l.now() == State::Working)
             {
                 let (k, m) = (keys.clone(), me.clone());
@@ -935,7 +1145,33 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
         None => {
             BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
             let next = work.as_ref().and_then(|w| w.prompts.iter().find(|p| !l.handed.contains(&p.id)).cloned());
-            if let Some(p) = next {
+            let Some(seen_turns) = l.turns_seen else {
+                // A ledger from before it was kept: from now on.
+                let turns = s.turns;
+                say(Box::new(move |now| now.turns_seen = Some(turns)));
+                return true;
+            };
+            if l.now() == State::Done && (s.turns > seen_turns || s.queued > 0) {
+                // A turn started in the block itself (someone typed there,
+                // or the agent woke itself): followed like the box's own,
+                // to the same end (finish step, push, turn report). The
+                // thread's prompts wait for it.
+                let by = s.by_at(seen_turns);
+                let (k, m) = (keys.clone(), me.clone());
+                info!(session = id, "hosted: a turn started in the session's block");
+                say(Box::new(move |now| {
+                    now.turn = Some(Turn {
+                        prompts: vec![],
+                        base: seen_turns,
+                        sent: true,
+                        at: now_ms(),
+                        fix: None,
+                        cancelled: false,
+                    });
+                    let d = SessionDetail { in_block: true, by, ..Default::default() };
+                    now.push(&k, &m, Kind::State, State::Working, d);
+                }));
+            } else if let Some(p) = next {
                 hand(app, &b, id, p, &keys, &me, s.turns).await;
             } else if !l.unnamed.is_empty() {
                 // An action with no turn to do it to (a cancel too late):
@@ -967,7 +1203,7 @@ async fn hand(
     let pid = p.id.clone();
     let Some(_) = update(dir, id, |now| {
         now.handed.push(pid.clone());
-        now.turn = Some(Turn { prompts: vec![pid], base, sent: false, at: now_ms() });
+        now.turn = Some(Turn { prompts: vec![pid], base, sent: false, at: now_ms(), fix: None, cancelled: false });
     }) else {
         return;
     };
@@ -990,7 +1226,7 @@ async fn give(
     if let Some(n) = &l.notes {
         text.push_str(n);
     }
-    match b.call_by("send", json!({ "text": text }), Some(&p.author)).await {
+    match b.call_by("send", json!({ "text": text }), Some(p.who())).await {
         Ok(_) => {
             update(dir, id, |now| started(now, keys, me));
         }
@@ -1029,9 +1265,205 @@ fn started(now: &mut Session, keys: &arugula_e2e::DeviceKeys, me: &str) {
         let d = SessionDetail {
             prompts,
             block: first.then(|| now.block.map(|b| b.to_string())).flatten(),
+            // The agent it runs on (M264), said once.
+            harness: first.then(|| now.harness.clone().unwrap_or_else(|| "claude".into())),
             ..Default::default()
         };
         now.push(keys, me, Kind::State, State::Working, d);
+    }
+}
+
+/// What a turn's finish step did (M261).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Finished {
+    /// The workspace has no finish step.
+    None,
+    Passed(FinishResult),
+    Failed(FinishResult),
+}
+
+impl Finished {
+    /// Whether the turn may be pushed: no finish step, or it passed.
+    pub fn may_push(&self) -> bool {
+        !matches!(self, Finished::Failed(_))
+    }
+
+    /// What the turn's report says of it.
+    pub fn result(&self) -> Option<FinishResult> {
+        match self {
+            Finished::None => None,
+            Finished::Passed(r) | Finished::Failed(r) => Some(r.clone()),
+        }
+    }
+}
+
+/// Run the workspace's finish step (`step`, from the latest pull) for
+/// session `l`'s turn that just ended, before the push: as the session's
+/// user, in its checkout, with that user's environment only and nothing
+/// secret on its command line, for at most its timeout (15 minutes unless
+/// the spec says), the last 4 KiB of its output kept. While it runs the
+/// session says it's alive, with the finish step as its tool.
+pub async fn finish_turn(
+    app: &Arc<App>,
+    l: &Session,
+    step: Option<&FinishStep>,
+    keys: &Arc<arugula_e2e::DeviceKeys>,
+    me: &str,
+) -> Finished {
+    let Some(step) = step.filter(|s| !s.command.trim().is_empty()) else { return Finished::None };
+    let dir = app.control.state_dir().to_owned();
+    info!(session = l.session, "hosted: running the finish step");
+    let run = run_finish(&l.user, &l.checkout, step);
+    tokio::pin!(run);
+    let mut beat = tokio::time::interval(heartbeat_every());
+    beat.tick().await;
+    let (ok, output_tail) = loop {
+        tokio::select! {
+            r = &mut run => break r,
+            _ = beat.tick() => {
+                let tool = Some(format!("finish: {}", step.command));
+                update(&dir, &l.session, |now| {
+                    if now.ended.is_none() {
+                        let to = now.now();
+                        now.push(keys, me, Kind::Heartbeat, to, SessionDetail { tool, ..Default::default() });
+                    }
+                });
+                send(app, &l.session).await;
+            }
+        }
+    };
+    info!(session = l.session, ok, "hosted: the finish step ended");
+    let r =
+        FinishResult { ok, command: step.command.clone(), output_tail: if ok { String::new() } else { output_tail } };
+    if ok { Finished::Passed(r) } else { Finished::Failed(r) }
+}
+
+/// `step` as user `u` in `checkout`: whether it exited 0 in time, and the
+/// last of what it printed. `timeout` (coreutils, on every hosted box)
+/// kills it and what it started when its time is up; where there's none
+/// (macOS), the daemon's own limit a little after is the only one.
+async fn run_finish(u: &AsUser, checkout: &str, step: &FinishStep) -> (bool, String) {
+    use tokio::io::AsyncReadExt as _;
+    let secs = if step.timeout_s == 0 { FINISH_TIMEOUT_S } else { step.timeout_s };
+    // The checkout and the command are arguments, never in the script.
+    let script = "cd -- \"$1\" || exit 125\nexec 2>&1\nexec sh -c \"$2\"";
+    let mut argv: Vec<String> = match ["/usr/bin/timeout", "/bin/timeout"].into_iter().find(|t| Path::new(t).exists()) {
+        Some(t) => vec![t.to_owned(), "-k".into(), "10".into(), secs.to_string()],
+        None => vec![],
+    };
+    argv.extend(["sh", "-c", script, "sh", checkout, &step.command].into_iter().map(str::to_owned));
+    let run = async {
+        let mut child = u
+            .command(&[], &argv)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| format!("can't run the finish step as {}: {e}", u.user))?;
+        let (mut out, mut err) = (child.stdout.take(), child.stderr.take());
+        let mut tail = Vec::new();
+        let mut buf = vec![0u8; 16 * 1024];
+        while let Some(o) = out.as_mut() {
+            match o.read(&mut buf).await {
+                Ok(0) | Err(_) => out = None,
+                Ok(n) => {
+                    tail.extend_from_slice(&buf[..n]);
+                    if tail.len() > 2 * FINISH_OUTPUT_MAX {
+                        tail.drain(..tail.len() - FINISH_OUTPUT_MAX);
+                    }
+                }
+            }
+        }
+        // What sudo or `timeout` said, if anything: after the command's.
+        let mut said = Vec::new();
+        if let Some(e) = err.as_mut() {
+            let _ = e.take(FINISH_OUTPUT_MAX as u64).read_to_end(&mut said).await;
+        }
+        tail.extend_from_slice(&said);
+        let status = child.wait().await.map_err(|e| format!("the finish step: {e}"))?;
+        Ok::<_, String>((status.code(), tail))
+    };
+    let (code, tail) = match tokio::time::timeout(Duration::from_secs(secs + 30), run).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => return (false, e),
+        Err(_) => (Some(124), vec![]),
+    };
+    let mut text = last(&String::from_utf8_lossy(&tail), FINISH_OUTPUT_MAX).trim_end().to_owned();
+    match code {
+        Some(0) => {}
+        Some(124) | Some(137) => text.push_str(&format!("\n(the finish step ran out of time after {secs} s)")),
+        Some(125) => text.push_str("\n(the session's checkout isn't there)"),
+        Some(c) => text.push_str(&format!("\n(exit {c})")),
+        None => text.push_str("\n(killed)"),
+    }
+    (code == Some(0), last(text.trim_start(), FINISH_OUTPUT_MAX))
+}
+
+/// The last `max` bytes of `s`, on a character's edge.
+fn last(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        return s.to_owned();
+    }
+    let mut at = s.len() - max;
+    while !s.is_char_boundary(at) {
+        at += 1;
+    }
+    s[at..].to_owned()
+}
+
+/// The prompt that gives the agent its one try at a failed finish step:
+/// what it ran and the last of its output, fenced so the output can't
+/// close it.
+pub fn fix_prompt(r: &FinishResult) -> String {
+    let mut longest = 0;
+    let mut run = 0;
+    for c in r.output_tail.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    let fence = "`".repeat((longest + 1).max(3));
+    format!(
+        "The finish step failed after your turn. It ran `{}` in your checkout, and the last of its output \
+         was:\n{fence}text\n{}\n{fence}\nFix what it reports, and commit. When this turn ends the finish step \
+         runs once more; the branch is pushed only if it passes.",
+        r.command,
+        r.output_tail.trim_end()
+    )
+}
+
+/// Give the block the finish step's fix prompt, as from the finish step:
+/// the fix turn under way. One the agent doesn't take ends the turn,
+/// unpushed.
+async fn give_fix(
+    app: &App,
+    b: &Arc<dyn crate::block::Block>,
+    id: &str,
+    text: String,
+    keys: &Arc<arugula_e2e::DeviceKeys>,
+    me: &str,
+) {
+    let dir = app.control.state_dir();
+    match b.call_by("send", json!({ "text": text }), Some(FINISH_STEP)).await {
+        Ok(_) => {
+            update(dir, id, |now| started(now, keys, me));
+        }
+        Err(e) => {
+            warn!(session = id, error = e, "hosted: a session's agent didn't take the finish step's fix");
+            let why = format!("couldn't give the agent the finish step's fix: {e}");
+            update(dir, id, |now| {
+                now.push(
+                    keys,
+                    me,
+                    Kind::Error,
+                    State::Working,
+                    SessionDetail { error: Some(why), ..Default::default() },
+                );
+                now.push(keys, me, Kind::State, State::Done, SessionDetail::default());
+                now.turn = None;
+            });
+            BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+        }
     }
 }
 
@@ -1061,6 +1493,7 @@ async fn end(app: &Arc<App>, id: &str, why: &str) {
     let Some((l, _)) = update(&dir, id, |now| now.ended = Some(why.to_owned())) else { return };
     info!(session = id, why, "hosted: a session ended; stopping its agent");
     stop_agent(app, &l).await;
+    clean_slot(&dir, &l).await;
 }
 
 /// Session `id` fails here, saying `why`, and its agent is stopped.
@@ -1081,6 +1514,7 @@ async fn fail(app: &Arc<App>, id: &str, why: &str) {
     };
     warn!(session = id, why, "hosted: a session failed");
     stop_agent(app, &l).await;
+    clean_slot(&dir, &l).await;
     send(app, id).await;
 }
 
@@ -1094,6 +1528,23 @@ async fn stop_agent(app: &App, l: &Session) {
     }
     if slots().is_some_and(|s| s.real) {
         super::kill_user(&l.user.user).await;
+    }
+}
+
+/// Leave an ended session's slot clean for the next session in it: what
+/// its pushes left ([`push::clean`]: the daemon's repo and bundle under
+/// `dir`), then its checkout and its user's `~/.claude` (its agent's
+/// conversations). The slot's are removed as the session's user, who owns
+/// them: never as root, through paths the agent could have made links of.
+/// `end` and `fail` call it, once each session.
+pub async fn clean_slot(dir: &Path, l: &Session) {
+    push::clean(dir, l).await;
+    let claude = Path::new(&l.user.home).join(".claude").display().to_string();
+    match as_user(&l.user, &["rm", "-rf", "--", &l.checkout, &claude]).await {
+        Ok(_) => info!(session = l.session, user = l.user.user, "hosted: cleaned an ended session's slot"),
+        Err(e) => {
+            warn!(session = l.session, user = l.user.user, error = e, "hosted: can't clean an ended session's slot")
+        }
     }
 }
 
@@ -1146,6 +1597,9 @@ async fn send_all(app: &Arc<App>) {
         send(app, &l.session).await;
     }
 }
+
+#[path = "work_sessions_push.rs"]
+pub mod push;
 
 #[cfg(test)]
 #[path = "work_sessions_tests.rs"]

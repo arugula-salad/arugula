@@ -20,6 +20,7 @@ import type { Client } from "../client";
 import { gateKey, type Gate, type PaneId } from "../../shared/proto";
 import { openMenu } from "../../shared/ui/menu";
 import type { BlockRenderer, BlockView } from "./view";
+import { BlockEmpty, BlockError, BlockLoading, OpenOutside } from "./block-states";
 
 export interface AppState {
   app: string;
@@ -138,7 +139,7 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
     [],
   );
 
-  if (!s) return <div class="browser-card">…</div>;
+  if (!s) return <BlockLoading what="the app" />;
   const name = s.title ?? s.app;
   return (
     <div class="browser app-block" data-app={s.app}>
@@ -166,9 +167,7 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
         >
           Records ▾
         </button>
-        <a class="browser-open" href={s.box_url} target="_blank" rel="noopener noreferrer" title="Open the box in a new tab">
-          ↗
-        </a>
+        <OpenOutside href={s.box_url} />
       </div>
       {s.gates.length > 0 && (
         <div class="app-gates" data-app-gates>
@@ -190,28 +189,22 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
         </div>
       )}
       {!owner ? (
-        <div class="browser-card">
+        <BlockEmpty>
           <p>{name} is a studio app of this machine's owner.</p>
-          <p class="dim">Only they can open it here; its questions still come to you if you may answer them.</p>
-        </div>
+          <p>Only they can open it here; its questions still come to you if you may answer them.</p>
+        </BlockEmpty>
       ) : error ? (
-        <div class="browser-card error">
-          <p>Couldn't get into {name}</p>
-          <p class="dim">{error}</p>
-          <button onClick={() => setWant((w) => ({ n: w.n + 1 }))}>Try again</button>
-        </div>
+        <BlockError title={`Couldn't get into ${name}`} detail={error} retry={() => setWant((w) => ({ n: w.n + 1 }))} />
       ) : (
         <>
-          {phase === "opening" && <div class="browser-card dim">Opening {name}…</div>}
+          {phase === "opening" && <BlockLoading what={name} />}
           {phase === "stuck" && (
-            <div class="browser-card error" data-app-stuck>
-              <p>{name} isn't answering</p>
-              <p class="dim">
-                {hostOf(s.box_url)} hasn't sent a page in {STUCK_AFTER / 1000} seconds
-                {s.follower.state === "error" && s.follower.error ? ` (${s.follower.error})` : ""}. It shows here if it answers.
-              </p>
-              <button onClick={() => setWant((w) => ({ n: w.n + 1 }))}>Try again</button>
-            </div>
+            <BlockError
+              data-app-stuck
+              title={`${name} isn't answering`}
+              detail={`${hostOf(s.box_url)} hasn't sent a page in ${STUCK_AFTER / 1000} seconds${s.follower.state === "error" && s.follower.error ? ` (${s.follower.error})` : ""}. It shows here if it answers.`}
+              retry={() => setWant((w) => ({ n: w.n + 1 }))}
+            />
           )}
           {/* The box's own origin, never the app's. */}
           <iframe

@@ -89,6 +89,8 @@ interface Msg {
   body?: string;
   tag?: string;
   pane?: number;
+  /** A follow invite's (#1473): whose window to follow on opening it. */
+  follow?: string;
   /** Through control (M21): the daemon it's from. */
   daemon?: string;
   approve?: { id: string; title?: string };
@@ -154,7 +156,7 @@ sw.addEventListener("push", (event: PushEvent) => {
       icon: "/icon.svg",
       requireInteraction: !!(approve || ask || gate || point),
       actions,
-      data: { pane: msg.pane, daemon: msg.daemon, chat: msg.chat, inbox: msg.inbox, deploy: msg.deploy, hosted: msg.hosted, approve, ask, reason, control: msg.control === true },
+      data: { pane: msg.pane, follow: typeof msg.follow === "string" ? msg.follow : undefined, daemon: msg.daemon, chat: msg.chat, inbox: msg.inbox, deploy: msg.deploy, hosted: msg.hosted, approve, ask, reason, control: msg.control === true },
     } as NotificationOptions),
   );
 });
@@ -315,7 +317,7 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
       const wins = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const w of wins) {
         if (w.focus) {
-          w.postMessage({ type: data.reason ? "open-card" : "open-pane", pane, daemon: data.daemon });
+          w.postMessage({ type: data.reason ? "open-card" : "open-pane", pane, daemon: data.daemon, follow: data.follow });
           return w.focus();
         }
       }

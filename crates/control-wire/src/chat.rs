@@ -1141,6 +1141,30 @@ pub enum ChatLive {
 pub const TYPING_MS: u64 = 6_000;
 pub const TYPING_PING_MS: u64 = 3_000;
 
+/// `POST /api/chat/rooms/{id}/typing`'s body, which may be left out (#111).
+/// `warm` (M262): the composer's text asks `@arugula`, so the project's
+/// agents box is woken now, before the message is sent. A page sends it
+/// once per composing burst. `show` false: only that, not typing (a reply
+/// thread's composer, whose typing nobody is shown).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatTyping {
+    #[serde(default)]
+    pub warm: bool,
+    #[serde(default = "shown")]
+    pub show: bool,
+}
+
+impl Default for ChatTyping {
+    fn default() -> Self {
+        ChatTyping { warm: false, show: true }
+    }
+}
+
+fn shown() -> bool {
+    true
+}
+
 /// What a daemon says of a thread's readers: for each pane or session it
 /// names, the whole list, which replaces the last one control had. Those it
 /// doesn't name keep theirs (a pane that closed keeps its readers).

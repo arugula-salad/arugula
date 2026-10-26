@@ -131,6 +131,8 @@ test("a team's runs: one started by hand, its view and its thread", async ({ bro
   await spec.locator("form button[type=submit]").click();
   await expect(spec.locator("[data-run-schedule]")).toContainText("15 4 * * *");
   await spec.locator("[data-run-schedule-delete]").click();
+  // It asks first (UI audit #158).
+  await alice.locator("[data-confirm-remove]").click();
   await expect(spec.locator("[data-run-schedule]")).toHaveCount(0);
 
   // A command, by hand: its view says what it runs and who started it.
@@ -144,8 +146,8 @@ test("a team's runs: one started by hand, its view and its thread", async ({ bro
   await expect(view.locator("[data-run-state-label]")).toHaveText("Pending");
   await expect(view.locator("[data-run-command]")).toHaveText(`sh -c 'echo hi && exit 2'`);
   await expect(view.locator("[data-run-op-hash]")).toHaveText(/^[0-9a-f]{64}$/);
-  await expect(view.locator("[data-run-started-by]")).toContainText("By hand, by alice");
-  await expect(view.locator("[data-run-live]")).toContainText("Waiting for its hosted workspace");
+  await expect(view.locator("[data-run-started-by]")).toContainText("Manual · alice");
+  await expect(view.locator("[data-run-live]")).toContainText("Waiting for its cloud workspace");
   await expect(view.locator("[data-run-event]")).toHaveCount(1);
   // No box runs here, so the platform keeps no log of it: the page says so.
   await expect(view.locator("[data-run-log-note]")).toContainText("keeps no log");
@@ -188,7 +190,7 @@ test("a running run's pane is on control's page; the list narrows by state", asy
   const pane = view.locator("[data-run-pane]");
   await expect(pane).toHaveText(/pane %3/);
   expect(await pane.getAttribute("href")).toMatch(new RegExp(`/#pane=${machine}\\.3$`));
-  await expect(view.locator("[data-run-event]")).toHaveText([/made it/, /its machine \(signed\) moved it to running · in pane %3/]);
+  await expect(view.locator("[data-run-event]")).toHaveText([/made it/, /Its machine \(signed\) moved it to running · in pane %3/]);
 });
 
 test("a run's kept log, its tail first then earlier, followed while it runs; its artifact downloads", async () => {
@@ -240,13 +242,13 @@ test("a run that fails is in the inbox, and opens there; a phone reads it", asyn
   // send the run there, and fails it. The open view hears it move.
   sql((db) => db.prepare("UPDATE hosted_workspaces SET machine = ? WHERE project_id = ?").run(`m${hex()}`, project));
   await expect(view.locator("[data-run-state-label]")).toHaveText("Failed", { timeout: 30_000 });
-  await expect(view.locator("[data-run-event]").last()).toContainText("Arugula moved it to failed · runs go only to their project's hosted workspaces");
+  await expect(view.locator("[data-run-event]").last()).toContainText("Arugula moved it to failed · runs go only to their project's cloud workspaces");
 
   await alice.locator("[data-platform-inbox]").click();
   const entry = alice.locator(`[data-inbox-group="run_failed"] [data-inbox-entry="${started}"]`);
-  await expect(entry).toContainText("Acme:");
+  await expect(entry).toContainText("Acme ·");
   await expect(entry).toContainText(`sh -c echo hi && exit 2`);
-  await expect(entry).toContainText("Run · failed · started by alice");
+  await expect(entry).toContainText("Run · Failed · started by alice");
   await entry.locator("a").click();
   await expect(alice).toHaveURL(new RegExp(`/runs/${started}$`));
   // The thread kept what was said.

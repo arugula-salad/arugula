@@ -294,7 +294,7 @@ async fn act(
         }
     }
     let mut results = Vec::new();
-    let by = who_is(&app, who).await;
+    let by = who_is(&app, who, dev.as_deref()).await;
     for pane in panes {
         let r = act_one(&app, pane, &req, by.clone()).await;
         results.push(ActResult { pane, ok: r.is_ok(), error: r.err() });
@@ -494,9 +494,13 @@ pub(crate) fn not_on_docs() -> ApiError {
     ApiError(StatusCode::FORBIDDEN, "a Doc block shows only its own cards".into())
 }
 
-/// What to call whoever made a request (M13), to attribute what they did.
-pub(crate) async fn who_is(app: &App, who: crate::acl::Principal) -> Option<Driver> {
-    app.mux.api(|r| Api::Who(who, r)).await
+/// What to call whoever made a request (M13), to attribute what they did:
+/// an owner through control by their own name, as their channel's client
+/// (UI audit #194: answers were the tailnet login's, commands the login).
+pub(crate) async fn who_is(app: &App, who: crate::acl::Principal, dev: Option<&crate::e2e::Caller>) -> Option<Driver> {
+    let name = dev.and_then(|c| c.owner_name(app, &who));
+    let d = app.mux.api(|r| Api::Who(who, r)).await?;
+    Some(Driver { name: name.unwrap_or(d.name), ..d })
 }
 
 /// A block's method, on someone's behalf (M29): an approval or answer is
@@ -661,6 +665,7 @@ async fn capture(State(app): AppState, Path(id): Path<PaneId>, Query(q): Query<C
 async fn open_block(
     State(app): AppState,
     who: Option<axum::Extension<crate::acl::Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
     headers: HeaderMap,
     Json(mut req): Json<arugula_proto::api::OpenRequest>,
 ) -> Res<Json<OpenResponse>> {
@@ -690,7 +695,7 @@ async fn open_block(
         // M37: a new issue says who asked for it; under an agent (the CLI's
         // header) it's a draft a person sends.
         if req.config["issue"] == "new" && req.config.is_object() {
-            let by = who_is(&app, who.clone().unwrap_or(crate::acl::Principal::Owner)).await;
+            let by = who_is(&app, who.clone().unwrap_or(crate::acl::Principal::Owner), dev.as_deref()).await;
             req.config["by"] = serde_json::json!(by.map(|d| d.name));
             if crate::invite::agent(&headers) {
                 req.config["agent"] = true.into();
@@ -906,7 +911,7 @@ async fn call(
         // M11: a file block's `open` is the owner's only. M36: a forge
         // block's writes say who sent them.
         "approve" | "expire" | "deny" | "answer" | "decline" | "send" | "terminal" | "open" | "comment" | "review"
-        | "merge" | "rerun_checks" | "revise" | "drop" => who_is(&app, who.clone()).await,
+        | "merge" | "rerun_checks" | "revise" | "drop" => who_is(&app, who.clone(), dev.as_deref()).await,
         _ => None,
     };
     // Answering an agent (a tool's approval, its question, its dialog), or

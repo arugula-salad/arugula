@@ -233,7 +233,7 @@ impl Daemon {
             file: s.file,
             command: None,
             resumes: None,
-            running: true,
+            running: !s.stopped,
             policy: meta.policy,
             current: None,
             last: None,

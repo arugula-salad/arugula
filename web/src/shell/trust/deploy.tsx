@@ -16,7 +16,10 @@
 // passkey (#764), the signing key is derived from it again too.
 
 import { useEffect, useState } from "preact/hooks";
+import { deployStateText, plannerText, shortRef } from "../../shared/deploys";
+import { deployTone } from "../../shared/tones";
 import { Modal } from "../../shared/ui/modal";
+import { StateChip } from "../../shared/ui/state-chip";
 import { api, type ControlSession } from "../control";
 import {
   DEFAULT_LIFE_MS,
@@ -102,7 +105,7 @@ async function check(d: Deploy): Promise<Checked | string> {
   const plan = await checkPlan(d.plan_text, op.plan);
   if (typeof plan === "string") return plan;
   if (plan.driver !== d.environment.driver) return "its plan names another driver than its environment's";
-  return { op, plan, planner: who.machine ? `${name}'s agent on ${d.agent?.machine_name || who.machine}` : name };
+  return { op, plan, planner: plannerText(name, who.machine ? { machine: who.machine, machine_name: d.agent?.machine_name } : null) };
 }
 
 const unb64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
@@ -210,13 +213,13 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
         <div class="deploy-approve" data-deploy-approve={d.id}>
           {ok ? (
             <p>
-              <b>{d.project.name}</b>: {ok.op.source.kind} <code>{ok.op.source.ref.slice(0, 12)}</code> from <code>{ok.op.source.where}</code>, planned
+              <b>{d.project.name}</b>: {ok.op.source.kind} <code title={ok.op.source.ref}>{shortRef(ok.op.source.ref)}</code> from <code>{ok.op.source.where}</code>, planned
               by {ok.planner}.
             </p>
           ) : null}
           {ok?.plan.rollBack ? (
             <p class="control-error" data-deploy-roll-back={ok.plan.rollBack.deploy}>
-              This is a roll back to <code>{ok.plan.rollBack.deploy}</code>
+              This is a rollback to <code>{ok.plan.rollBack.deploy}</code>
               {ok.plan.rollBack.image ? (
                 <>
                   , running the image <code>{ok.plan.rollBack.image}</code> again
@@ -247,8 +250,10 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
           ) : done ? (
             <p data-deploy-done>{done}</p>
           ) : !d.may_approve ? (
+            // Its state as the platform page shows it (UI audit #183).
             <p data-deploy-state={d.state}>
-              {d.stale ? "It's stale: another deploy was applied to the environment after it was planned." : `It's ${d.state}, not waiting for you.`}
+              <StateChip tone={deployTone(d.state)}>{deployStateText(d.state)}</StateChip>{" "}
+              {d.stale ? "Another deploy was applied to the environment after it was planned." : "It isn't waiting for your approval."}
             </p>
           ) : s.passkeys === 0 ? (
             <p data-deploy-no-passkey>
@@ -256,12 +261,12 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
             </p>
           ) : null}
           <div class="prompt-buttons">
-            <button data-deploy-back onClick={() => (back ? location.assign(back) : clearHash())}>
+            <button class="secondary" data-deploy-back onClick={() => (back ? location.assign(back) : clearHash())}>
               {back ? "Back" : "Close"}
             </button>
             {d.may_approve && !bad && !done && s.passkeys > 0 ? (
               <>
-                <button data-deploy-deny disabled={busy} onClick={() => void decide("deny")}>
+                <button class="secondary" data-deploy-deny disabled={busy} onClick={() => void decide("deny")}>
                   Deny
                 </button>
                 <button class="primary" data-deploy-approve-button disabled={busy} onClick={() => void decide("once")}>

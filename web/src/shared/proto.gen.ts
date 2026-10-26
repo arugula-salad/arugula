@@ -848,6 +848,15 @@ export type ChatThreads = { threads: Array<ChatThreadItem>, unread: number, ment
 export type ChatTopicSet = { topic?: string, description?: string, };
 
 /**
+ * `POST /api/chat/rooms/{id}/typing`'s body, which may be left out (#111).
+ * `warm` (M262): the composer's text asks `@arugula`, so the project's
+ * agents box is woken now, before the message is sent. A page sends it
+ * once per composing burst. `show` false: only that, not typing (a reply
+ * thread's composer, whose typing nobody is shown).
+ */
+export type ChatTyping = { warm: boolean, show: boolean, };
+
+/**
  * `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read
  * mark goes to just before it, backwards if need be (#116). The answer is
  * the room, as the reader now sees it.
@@ -1052,7 +1061,7 @@ export type DocOpened = { pane: number, };
 
 /**
  * One Doc in the library (#1493): `GET /api/docs`. `open` is the block
- * that shows it now, `shared` its link's dates (never the link).
+ * that shows it now, `shared` its link's dates and id (never its key).
  */
 export type DocRow = { id: string, title: string, made: number, updated: number, 
 /**
@@ -1064,7 +1073,12 @@ by: string, open?: number | null, shared?: DocShared | null, };
 /**
  * When a Doc was shared with a link, and last updated.
  */
-export type DocShared = { made: number, updated: number, };
+export type DocShared = { made: number, updated: number, 
+/**
+ * The link's id, as control's list of shared Docs names it (never the
+ * key): that list titles its rows from it (UI audit #174).
+ */
+link: string, };
 
 /**
  * An agent's write, waiting for a person.
@@ -1413,7 +1427,14 @@ hook: boolean,
 /**
  * M172: it's the platform's item, read through Arugula control.
  */
-pin: ForgePin | null, };
+pin: ForgePin | null, 
+/**
+ * The ways this repository lets a pull request be merged, as the
+ * `merge` method names them (UI audit #196: GitHub's `allow_*`), so
+ * Merge offers only those. None when it isn't known: the forge
+ * doesn't say, or says only to someone who can push.
+ */
+merge_styles?: Array<string>, };
 
 /**
  * A body, a comment, a review's text or a review comment.
@@ -1824,7 +1845,12 @@ drive_minutes?: number | null,
  * For an `account:` no grant or pin vouches for: their root device,
  * whose fingerprint the owner checked with them.
  */
-root?: string | null, };
+root?: string | null, 
+/**
+ * Their window follows the inviter's: to watch (#1473). Opening the
+ * invite starts following whichever of the owner's windows is there.
+ */
+follow?: boolean | null, };
 
 /**
  * What an invite answers.
@@ -1844,6 +1870,13 @@ drive: boolean | null, };
  * and the pull requests that refer to it.
  */
 export type Issue = { item: Item, events: Array<Event>, linked: Array<Linked>, };
+
+/**
+ * [`ISSUE_AGENT`]'s answer: the issue's thread and the message that asked,
+ * and the session it started, if it did (else the thread says why, or
+ * asks which box or repo).
+ */
+export type IssueAgent = { room: string, seq: number, session: string | null, };
 
 /**
  * A comment on an issue: a message in its thread.
@@ -1942,7 +1975,12 @@ native_issues: number,
  * It has issues in both places: native ones and a linked repo. The
  * page says so.
  */
-both: boolean, };
+both: boolean, 
+/**
+ * Every label on its native issues, open or closed, sorted: what the
+ * label menus offer (UI audit #163).
+ */
+labels: Array<string>, };
 
 /**
  * `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
@@ -2237,7 +2275,16 @@ agent: ChatAgent | null, labels: Array<string>,
 /**
  * Accounts.
  */
-assignees: Array<string>, github: IssueGithub | null, created_at: number, updated_at: number, closed_at: number | null, };
+assignees: Array<string>, github: IssueGithub | null, created_at: number, updated_at: number, closed_at: number | null, 
+/**
+ * Who closed a closed one (an agent's owner's account), as its latest
+ * `closed` event says: a list's row names them (UI audit #163).
+ */
+closed_by?: string, 
+/**
+ * The agent that closed it for its owner.
+ */
+closed_by_agent?: ChatAgent, };
 
 /**
  * A new issue, before and after it reached the forge.
@@ -2834,6 +2881,28 @@ export type Role = "viewer" | "editor" | "owner";
 export type RunArtifactView = { name: string, size: number, digest: string, created_at: number, };
 
 /**
+ * The deploy a deploy's run applies (M219, UI audit #145): which, to
+ * which environment, of what.
+ */
+export type RunDeployView = { 
+/**
+ * `dep_…`.
+ */
+id: string, 
+/**
+ * Its environment's name.
+ */
+environment: string, 
+/**
+ * `commit` or `artifact`.
+ */
+source_kind: string, 
+/**
+ * The commit's sha or the artifact's digest.
+ */
+reference: string, };
+
+/**
  * One change of a run's state.
  */
 export type RunEventView = { seq: number, from: string | null, to: string, at: number, 
@@ -2984,6 +3053,15 @@ chant_ledger?: string | null,
  */
 pane: number | null, 
 /**
+ * Its hosted workspace's name, deleted or not (UI audit #145): pages
+ * show it, with the `hw_…` id beside it.
+ */
+workspace_name?: string, 
+/**
+ * The deploy a deploy's run applies (M219), as pages name it.
+ */
+deploy?: RunDeployView, 
+/**
  * Its timeline, oldest first (left out of a list).
  */
 events?: Array<RunEventView>, artifacts?: Array<RunArtifactView>, };
@@ -3104,9 +3182,54 @@ machine: string | null, block: string | null,
  */
 ports: Array<SessionPort>, 
 /**
- * The draft PR its asker sent (M259).
+ * The PR its asker sent (M259): its URL.
  */
-pr: string | null, };
+pr: string | null, 
+/**
+ * When its PR merged (M265): the thread is done, and the session ends
+ * once a turn under way does. Its card says "merged ✓".
+ */
+merged_at: number | null, 
+/**
+ * A turn pushed its branch: its asker may draft its PR.
+ */
+pushed: boolean, 
+/**
+ * How many CI rounds went back to it (M260), of at most `ci_max`.
+ */
+ci_rounds: number, ci_max: number, 
+/**
+ * CI failed again after its last round, and nobody in its thread has
+ * prompted it since: it needs a person.
+ */
+needs_person: boolean, 
+/**
+ * What it is (M264): `thread` (the thread's own, `@arugula`), `try` (a
+ * Try 3's sibling of `parent_session`) or `review` (`@codex review`
+ * of `parent_session`).
+ */
+role: string, parent_session: string | null, 
+/**
+ * The agent asked for (`claude`, `codex`), and the one its box ran
+ * it on, once it took it (`claude` when the other isn't there).
+ */
+harness: string, ran: string | null, 
+/**
+ * A Try 3's sessions, on its parent's card: the parent first, then its
+ * siblings, oldest first. Empty for every other session.
+ */
+tries: Array<SessionTry>, 
+/**
+ * The one of [`SessionCard::tries`] kept, once one is picked; on a
+ * sibling, its parent's pick.
+ */
+picked: string | null, };
+
+/**
+ * A turn's finish step (M261): the command, whether it passed, and when
+ * it failed, the last of its output. A failed one isn't pushed.
+ */
+export type SessionFinish = { ok: boolean, command: string, output_tail: string, };
 
 /**
  * One entry of a session's history, in words.
@@ -3147,6 +3270,11 @@ question: string | null,
 options: Array<string>, at: number, };
 
 /**
+ * [`SESSION_PICK`]'s body: the session kept, one of the Try 3's.
+ */
+export type SessionPick = { session: string, };
+
+/**
  * One of a workspace's dev servers.
  */
 export type SessionPort = { port: number, label: string, 
@@ -3154,6 +3282,112 @@ export type SessionPort = { port: number, label: string,
  * Its public preview's URL, while it's public.
  */
 url: string | null, };
+
+/**
+ * A session's pull request, as its asker drafts it ([`SESSION_PR`]).
+ */
+export type SessionPr = { session: string, 
+/**
+ * `pdr_…`, once it's kept.
+ */
+id: string | null, 
+/**
+ * `owner/name`.
+ */
+repo: string, 
+/**
+ * The session's branch, which the PR is from.
+ */
+head: string, 
+/**
+ * The branch it goes into: the repo's default, unless its asker says.
+ */
+base: string, title: string, body: string, 
+/**
+ * Opened as a draft PR on GitHub.
+ */
+draft: boolean, 
+/**
+ * `new` (not kept yet: prefilled), `waiting`, `sending`, `sent` or
+ * `failed`.
+ */
+state: string, 
+/**
+ * Why the last send didn't get there.
+ */
+error: string | null, 
+/**
+ * The PR, once sent.
+ */
+url: string | null, number: number | null, 
+/**
+ * The repo's PR template the body started from, by its path.
+ */
+template: string | null, };
+
+/**
+ * [`SESSION_PR`]'s `PUT` body: what its asker wrote.
+ */
+export type SessionPrEdit = { title: string, body: string, draft?: boolean, base?: string, };
+
+/**
+ * [`SESSION_PR_SEND`]'s body: what to send (kept first, when given), and
+ * how: `browser` (GitHub's authorization in this browser, coming back to
+ * `back`, a path on the platform page) or `machine` (one of the asker's
+ * own).
+ */
+export type SessionPrSend = { edit?: SessionPrEdit, via?: string, back?: string, };
+
+/**
+ * [`SESSION_PR_SEND`]'s answer: the PR draft now, and GitHub's
+ * authorization page to go to when the send goes through the browser.
+ */
+export type SessionPrSent = { pr: SessionPr, authorize: string | null, 
+/**
+ * `token` or `machine`, once sent.
+ */
+via: string | null, 
+/**
+ * The machine that sent it.
+ */
+machine: string | null, };
+
+/**
+ * [`PROJECT_SESSION_STATS`]'s answer: of the project's sessions asked for
+ * in the last [`STATS_DAYS`] days, how many led to a PR (sent by its
+ * asker, or opened from its branch by hand) and how many merged, and the
+ * median time from the `@` to the PR.
+ */
+export type SessionStats = { days: number, sessions: number, prs_opened: number, prs_merged: number, 
+/**
+ * `None` until one led to a PR.
+ */
+median_to_pr_ms: number | null, };
+
+/**
+ * One of a Try 3's sessions, as its parent's compare view shows it.
+ */
+export type SessionTry = { session: string, state: string, branch: string, harness: string, ran: string | null, 
+/**
+ * What its latest turn left: its diffstat and how its finish step went.
+ */
+turn: SessionTurn | null, pushed: boolean, 
+/**
+ * Why it failed or stopped.
+ */
+reason: string | null, updated_at: number, 
+/**
+ * Queued with no slot on its box for it yet (the box holds three
+ * sessions, done ones too).
+ */
+no_slot: boolean, };
+
+/**
+ * [`SESSION_TRY`]'s body: the harnesses of the two siblings, `claude`
+ * or `codex` each (`["claude", "codex"]` when it's left out; a box
+ * without Codex runs Claude Code in its place).
+ */
+export type SessionTryAsk = { harnesses?: Array<string>, };
 
 /**
  * What a session's turn left, as its box reported it.
@@ -3166,7 +3400,12 @@ commits: Array<string>,
 /**
  * `git diff --stat`, shortened.
  */
-diffstat: string | null, uncommitted: number | null, };
+diffstat: string | null, uncommitted: number | null, 
+/**
+ * What the workspace's finish step did after it (M261), when it has
+ * one.
+ */
+finish: SessionFinish | null, };
 
 /**
  * [`SESSION`]'s answer.
@@ -3177,6 +3416,10 @@ export type SessionView = { card: SessionCard,
  * project.
  */
 may: boolean, 
+/**
+ * The reader asked for it: only they send its PR.
+ */
+asked: boolean, 
 /**
  * The platform's clock when it answered, so the page can tell a box
  * that went quiet whatever its own clock says.

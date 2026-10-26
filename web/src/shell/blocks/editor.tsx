@@ -3,11 +3,13 @@
 // port. The daemon starts the server; until it's up the block says why.
 
 import { render } from "preact";
+import { useState } from "preact/hooks";
 import { onAppearance, palette } from "../../shared/appearance";
 import type { Client } from "../client";
 import { editorTheme } from "../editor-theme";
 import type { OpenRequest, PaneId } from "../../shared/proto";
-import { BlockFrame } from "./block-frame";
+import { BlockFrame, RoutePill, throughControl } from "./block-frame";
+import { BlockEmpty, BlockError, BlockLoading, OpenOutside } from "./block-states";
 import { blocksOff } from "./browser";
 import { registerBlock, type BlockView } from "./view";
 
@@ -51,43 +53,75 @@ export function openEditor(client: Client, from: PaneId, path?: string) {
 const MB = (n: number) => `${Math.round(n / 1e6)} MB`;
 
 function EditorBlock({ client, id, s }: { client: Client; id: PaneId; s: EditorState | null }) {
-  if (!s) return <div class="browser-card dim">…</div>;
+  // Reloaded here only: the daemon's count is for its own reloads.
+  const [again, setAgain] = useState(0);
+  if (!s) return <BlockLoading what="VS Code" />;
   const server = s.server ?? { is: "stopped" };
+  // UI audit #177: the browser's bar, so an editor has one too: where it
+  // is, which way it went, Reload, and ↗ where it has an address of its
+  // own (through control, it opens only in its frame).
+  const own = !throughControl(client, s.site_key) && /^https?:\/\//.test(s.src) ? s.src : null;
+  const bar = (
+    <div class="browser-bar editor-bar">
+      <button title="Reload" aria-label="Reload" disabled={!s.src || server.is !== "running"} onClick={() => setAgain(again + 1)}>
+        ↻
+      </button>
+      {s.machine && (
+        <span class="host-tag" title={`On ${s.machine}, a throwaway VM`}>
+          VM
+        </span>
+      )}
+      <span class="editor-where" title={s.folder}>
+        <b>{s.name || s.folder}</b>
+        {s.file && <span class="dim"> · {s.file}</span>}
+      </span>
+      <RoutePill id={id} />
+      {own && <OpenOutside href={own} />}
+    </div>
+  );
+  let body;
   if (s.error || server.is === "failed") {
-    return (
-      <div class="browser-card error">
-        <p>VS Code couldn't open {s.name || "here"}</p>
-        <p class="dim">{s.error ?? (server.is === "failed" ? server.error : "")}</p>
-        {!s.error && <button onClick={() => void client.api(`/api/blocks/${id}/call/start`, {})}>Try again</button>}
-      </div>
+    body = (
+      <BlockError
+        title={`VS Code couldn't open ${s.name || "here"}`}
+        detail={s.error ?? (server.is === "failed" ? server.error : "")}
+        retry={s.error ? undefined : () => void client.api(`/api/blocks/${id}/call/start`, {})}
+      />
     );
-  }
-  if (server.is === "fetching") {
+  } else if (server.is === "fetching") {
     const pct = server.of ? Math.floor((100 * server.got) / server.of) : 0;
-    return (
-      <div class="browser-card dim" data-editor="fetching">
+    body = (
+      <BlockEmpty data-editor="fetching">
         <p>Downloading VS Code (code-server) for the first time…</p>
         <p>{server.of ? `${pct}% of ${MB(server.of)}` : MB(server.got)}</p>
+      </BlockEmpty>
+    );
+  } else if (!s.src) {
+    body = <BlockLoading what={s.name || "the folder"} />;
+  } else {
+    body = (
+      <div class="editor">
+        {/* Its own origin, never the app's; `allow-same-origin` means that one. */}
+        <BlockFrame
+          client={client}
+          id={id}
+          siteKey={s.site_key}
+          src={s.src}
+          reloads={s.reloads + again}
+          class="editor-frame"
+          title={`VS Code: ${s.file ?? s.name}`}
+          sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-downloads"
+          allow="clipboard-read; clipboard-write"
+        />
+        {server.is === "starting" && <div class="editor-note">Starting VS Code…</div>}
       </div>
     );
   }
-  if (!s.src) return <div class="browser-card dim">Finding {s.name || "the folder"}…</div>;
   return (
-    <div class="editor">
-      {/* Its own origin, never the app's; `allow-same-origin` means that one. */}
-      <BlockFrame
-        client={client}
-        id={id}
-        siteKey={s.site_key}
-        src={s.src}
-        reloads={s.reloads}
-        class="editor-frame"
-        title={`VS Code: ${s.file ?? s.name}`}
-        sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-downloads"
-        allow="clipboard-read; clipboard-write"
-      />
-      {server.is === "starting" && <div class="editor-note">Starting VS Code…</div>}
-    </div>
+    <>
+      {bar}
+      {body}
+    </>
   );
 }
 

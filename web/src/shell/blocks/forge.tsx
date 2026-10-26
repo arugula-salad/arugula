@@ -22,9 +22,11 @@ import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Draft, Event as ForgeEvent, ForgeState, PaneId, Pr } from "../../shared/proto";
 import { Markdown } from "../../shared/ui/markdown";
-import { askText } from "../../shared/ui/menu";
+import { askText, type PromptChoice } from "../../shared/ui/menu";
 import { isNativeIssue, NativeIssueBlock, nativeIssueText, nativeIssueTitle, type NativeIssueState } from "./native-issue";
+import { BlockError, BlockLoading, OpenOutside } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
+import { Time } from "../../shared/ui/time";
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
  * beside `split` or in a new tab of `session`. */
@@ -41,15 +43,6 @@ export async function openIssue(client: Client, where: { split?: PaneId; session
   if (!issue?.trim()) return;
   const place = where.split !== undefined ? { split: where.split, from_pane: where.split } : { session: where.session !== undefined ? String(where.session) : undefined };
   await client.openBlock({ type: "forge", config: { issue: issue.trim(), dir: where.dir ?? undefined }, local: true, ...place }, "couldn't open the issue");
-}
-
-function ago(ms: number | null | undefined): string {
-  if (!ms) return "";
-  const s = Math.max(0, (Date.now() - ms) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
 }
 
 const words = (s: string) => s.replace(/_/g, " ");
@@ -154,7 +147,7 @@ function Timeline({ events, s }: { events: ForgeEvent[]; s: ForgeState }) {
       <h4>Timeline</h4>
       {tidy(events).map((e) => (
         <div key={e.id} class="forge-row forge-event">
-          <span class="dim">{ago(e.at)}</span> <b>{e.actor ?? "someone"}</b> {eventLine(e)}
+          <Time class="dim" at={e.at} /> <b>{e.actor ?? "someone"}</b> {eventLine(e)}
           {e.body && <Body text={e.body} s={s} />}
         </div>
       ))}
@@ -187,12 +180,12 @@ function Foot({ s, buttons }: { s: ForgeState; buttons: ComponentChildren }) {
   const live = s.live && ` · ${s.live === "webhook" ? `live (${s.live_via === "github-app" ? "GitHub App" : "webhook"})` : "polling"}`;
   const polls = s.pin ? (
     <p class="dim ws-note forge-polls" data-forge-live-state data-forge-pin-read title={s.pin.stale ?? s.live_why ?? undefined}>
-      read through Arugula control {ago(s.updated_ms)}
+      read through Arugula control <Time at={s.updated_ms} />
       {s.pin.stale ? " · can't reach it now: as it said last" : live}
     </p>
   ) : (
     <p class="dim ws-note forge-polls" data-forge-live-state title={s.live_why ?? undefined}>
-      {s.polls} polls, {s.reads} full reads · read {ago(s.updated_ms)}
+      {plural(s.polls, "poll")}, {plural(s.reads, "full read")} · read <Time at={s.updated_ms} />
       {live}
     </p>
   );
@@ -244,6 +237,33 @@ function Chips({ pr }: { pr: Pr }) {
 
 const linkedState = (st: string) => <span class={`ws-tag forge-state ${st}`}>{st}</span>;
 
+/** How each forge merges, as the daemon names them, with a word each. */
+const MERGE_STYLES: Record<string, [string, string][]> = {
+  github: [["merge", "Merge commit"], ["squash", "Squash"], ["rebase", "Rebase"]],
+  gitlab: [["merge", "Merge commit"], ["squash", "Squash"]],
+  forgejo: [["merge", "Merge commit"], ["squash", "Squash"], ["rebase", "Rebase"], ["rebase-merge", "Rebase, then a merge commit"], ["fast-forward-only", "Fast-forward only"]],
+};
+
+/** The ways to merge to offer: the forge's, less those the repository
+ * doesn't allow when it says (UI audit #196). */
+function mergeStyles(provider: string, allowed: string[] | undefined): [string, string][] {
+  const all = MERGE_STYLES[provider] ?? MERGE_STYLES.forgejo;
+  if (!allowed) return all;
+  const ok = all.filter(([v]) => allowed.includes(v));
+  return ok.length ? ok : all;
+}
+
+/** Whether the block follows its item (UI audit #177: with a title, as
+ * the file and diff blocks' have; none while it can't read it). */
+function LiveTag({ s }: { s: ForgeState }) {
+  if (s.error) return null;
+  return (
+    <span class={`review-live ${s.watching ? "on" : ""}`} title={s.watching ? "Updates as it changes" : "Not watching: nobody's looking"}>
+      {s.watching ? "live" : "paused"}
+    </span>
+  );
+}
+
 /** M172: the bar's word that the block is the platform's item. */
 function PinTag({ s }: { s: ForgeState }) {
   if (!s.pin) return null;
@@ -287,7 +307,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
   if (s.loading && !s.updated_ms) {
     return (
       <div class="review ws forge">
-        <div class="browser-card dim">Reading the issue…</div>
+        <BlockLoading what="the issue" />
       </div>
     );
   }
@@ -308,33 +328,26 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
         </span>
         {it && <span class={`ws-tag forge-state ${it.state}`} data-issue-state={it.state}>{it.state}</span>}
         <PinTag s={s} />
-        {it && (
-          <a class="dim forge-link" href={it.url} target="_blank" rel="noopener">
-            open ↗
-          </a>
-        )}
         {mayWrite && (
           <button title="Read it again" aria-label="Read it again" disabled={busy !== null} onClick={refresh}>
             {busy === "refresh" ? "…" : "↻"}
           </button>
         )}
-        <span class={`review-live ${s.watching ? "on" : ""}`}>{s.watching ? "live" : "paused"}</span>
+        <LiveTag s={s} />
+        {it && <OpenOutside href={it.url} />}
       </div>
       {s.error && (
-        <div class="browser-card" data-forge-error>
-          <p>Can't read this issue</p>
-          <p class="dim">{s.error}</p>
+        <BlockError data-forge-error title="Can't read this issue" detail={s.error} retry={mayWrite ? refresh : undefined} inline={!!issue}>
           {mayOwn && s.logins.length > 0 && (
             <div class="ws-actions" data-forge-logins>
               {s.logins.map((x) => (
-                <button key={x.name} onClick={() => void call("login", { name: x.name }, "couldn't use that login")}>
+                <button class="secondary small" key={x.name} onClick={() => void call("login", { name: x.name }, "couldn't use that login")}>
                   Use login {x.name} ({x.url})
                 </button>
               ))}
             </div>
           )}
-          {mayWrite && <button onClick={refresh}>Try again</button>}
-        </div>
+        </BlockError>
       )}
       {issue && it && (
         <div class="review-body ws-body">
@@ -370,7 +383,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
             <h4>Agent</h4>
             {l ? (
               <div class="forge-row" data-agent-link={l.block}>
-                <b>{l.agent}</b> works on it in %{l.block}, on <code>{l.branch}</code> from <code>{l.base}</code> <span class="dim">{ago(l.at_ms)}</span>
+                <b>{l.agent}</b> works on it in %{l.block}, on <code>{l.branch}</code> from <code>{l.base}</code> <span class="dim"><Time at={l.at_ms} /></span>
                 <div class="dim">{l.worktree}</div>
                 <div>
                   {l.pr ? (
@@ -385,10 +398,10 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
               </div>
             ) : it.state === "open" && mayOwn ? (
               <div class="ws-actions">
-                <button class="pri" data-agent-on disabled={busy !== null} onClick={() => void agentOn(false)}>
+                <button class="primary small" data-agent-on disabled={busy !== null} onClick={() => void agentOn(false)}>
                   {busy === "agent" ? "Starting…" : "Agent on this"}
                 </button>
-                <button disabled={busy !== null} onClick={() => void agentOn(true)}>
+                <button class="secondary small" disabled={busy !== null} onClick={() => void agentOn(true)}>
                   With instructions…
                 </button>
                 <span class="dim ws-note">A worktree and branch i{s.number}-… from the default branch, Claude Code there with the issue, both in a tab.</span>
@@ -477,10 +490,10 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
     if (mode === "edit") {
       foot = (
         <div class="ws-actions forge-actions">
-          <button class="pri" data-new-send disabled={busy !== null || !title.trim()} onClick={send}>
+          <button class="primary small" data-new-send disabled={busy !== null || !title.trim()} onClick={send}>
             {busy === "answer" ? "Sending…" : "Send"}
           </button>
-          <button onClick={() => setMode("view")}>Cancel</button>
+          <button class="secondary small" onClick={() => setMode("view")}>Cancel</button>
           <span class="forge-spacer" />
           <span class="dim forge-as">{as}</span>
         </div>
@@ -502,29 +515,29 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
             />
           </label>
           <div class="ws-actions forge-actions">
-            <button class="pri" data-new-revise disabled={busy !== null || !note.trim()} onClick={revise}>
+            <button class="primary small" data-new-revise disabled={busy !== null || !note.trim()} onClick={revise}>
               {busy === "revise" ? "Sending…" : `Send to ${agent}`}
             </button>
-            <button onClick={() => setMode("view")}>Cancel</button>
+            <button class="secondary small" onClick={() => setMode("view")}>Cancel</button>
           </div>
         </div>
       );
     } else {
       foot = (
         <div class="ws-actions forge-actions">
-          <button class="pri" data-new-send disabled={busy !== null || revising} onClick={send}>
+          <button class="primary small" data-new-send disabled={busy !== null || revising} onClick={send}>
             {busy === "answer" ? "Sending…" : n.error ? "Try again" : "Send"}
           </button>
-          <button data-new-edit disabled={busy !== null || revising} onClick={edit}>
+          <button class="secondary small" data-new-edit disabled={busy !== null || revising} onClick={edit}>
             Edit
           </button>
           {n.pane !== undefined && (
-            <button data-new-ask disabled={busy !== null || revising} onClick={() => setMode("ask")}>
+            <button class="secondary small" data-new-ask disabled={busy !== null || revising} onClick={() => setMode("ask")}>
               Ask for changes…
             </button>
           )}
           <span class="forge-spacer" />
-          <button class="forge-drop" data-new-drop disabled={busy !== null} onClick={drop}>
+          <button class="secondary danger small forge-drop" data-new-drop disabled={busy !== null} onClick={drop}>
             Drop
           </button>
         </div>
@@ -571,7 +584,7 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
               <p class="dim forge-new-who">
                 {n.agent ? (
                   <>
-                    <b>{agent}</b> drafted this new issue · {ago(n.at_ms)}
+                    <b>{agent}</b> drafted this new issue · <Time at={n.at_ms} />
                   </>
                 ) : (
                   <>opening it as {n.by || "you"}…</>
@@ -579,14 +592,14 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
               </p>
               {revising && n.asked && (
                 <div class="forge-status asked" data-new-asked>
-                  <b>{n.asked.by}</b> asked for changes <span class="dim">· {ago(n.asked.at_ms)}</span>
+                  <b>{n.asked.by}</b> asked for changes <span class="dim">· <Time at={n.asked.at_ms} /></span>
                   <div class="forge-status-note">{n.asked.note}</div>
                   <div class="dim">{agent} is revising it. The new draft replaces this one here.</div>
                 </div>
               )}
               {waiting && !revising && n.asked?.revised_ms !== undefined && (
                 <div class="forge-status ok" data-new-revised>
-                  {agent} revised it after {n.asked.by}'s note <span class="dim">· {ago(n.asked.revised_ms)}</span>
+                  {agent} revised it after {n.asked.by}'s note <span class="dim">· <Time at={n.asked.revised_ms} /></span>
                   <div class="dim forge-status-note">“{n.asked.note}”</div>
                 </div>
               )}
@@ -625,7 +638,7 @@ function Drafts({ s }: { s: ForgeState }) {
       {[...waiting, ...settled].map((d) => (
         <div key={d.id} class={`forge-draft ${d.status}`} data-draft={d.id} data-draft-status={d.status}>
           <div>
-            <b>{d.by.replace(/^mcp:/, "")}</b> drafted {draftWhat(d)} <span class="dim">{ago(d.at_ms)}</span>
+            <b>{d.by.replace(/^mcp:/, "")}</b> drafted {draftWhat(d)} <span class="dim"><Time at={d.at_ms} /></span>
             {d.status === "sent" && (
               <span class="ws-tag">
                 sent by {d.settled_by}
@@ -681,8 +694,13 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
     await call("review", { event, body: body || undefined }, "couldn't review");
   };
   const gitlab = s?.provider === "gitlab";
+  // UI audit #178: the forge's ways to merge, to pick from, rather than a
+  // word to type; #196: only the ones the repository allows, when the
+  // forge says (a squash-only repo offers Squash alone).
   const merge = async () => {
-    const style = await askText("Merge: how?", "merge", gitlab ? "merge or squash" : s?.provider === "github" ? "merge, squash or rebase" : "merge, rebase, rebase-merge, squash or fast-forward-only");
+    const styles = mergeStyles(s?.provider ?? "", s?.merge_styles);
+    const choices: PromptChoice[] = styles.map(([value, label]) => ({ value, label }));
+    const style = await askText(`Merge #${s?.number ?? ""}`, "", "pick how, or type a method", Promise.resolve(choices));
     if (style?.trim()) await call("merge", { style: style.trim() }, "couldn't merge");
   };
   const refresh = () => void call("refresh", {}, "couldn't read the pull request");
@@ -691,7 +709,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
   if (!s || (s.loading && !s.updated_ms)) {
     return (
       <div class="review ws forge">
-        <div class="browser-card dim">Reading the pull request…</div>
+        <BlockLoading what="the pull request" />
       </div>
     );
   }
@@ -712,17 +730,13 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
         </span>
         {state && <span class={`ws-tag forge-state ${state}`} data-pr-state={state}>{state}</span>}
         <PinTag s={s} />
-        {it && (
-          <a class="dim forge-link" href={it.url} target="_blank" rel="noopener">
-            open ↗
-          </a>
-        )}
         {!viewer && (
           <button title="Read it again" aria-label="Read it again" disabled={busy !== null} onClick={refresh}>
             {busy === "refresh" ? "…" : "↻"}
           </button>
         )}
-        <span class={`review-live ${s.watching ? "on" : ""}`}>{s.watching ? "live" : "paused"}</span>
+        <LiveTag s={s} />
+        {it && <OpenOutside href={it.url} />}
       </div>
       {s.rate?.backoff && (
         <p class="dim ws-note" data-forge-rate>
@@ -730,20 +744,17 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
         </p>
       )}
       {s.error && (
-        <div class="browser-card" data-forge-error>
-          <p>Can't read this pull request</p>
-          <p class="dim">{s.error}</p>
+        <BlockError data-forge-error title="Can't read this pull request" detail={s.error} retry={viewer ? undefined : refresh} inline={!!pr}>
           {mayOwn && s.logins.length > 0 && (
             <div class="ws-actions" data-forge-logins>
               {s.logins.map((l) => (
-                <button key={l.name} onClick={() => void call("login", { name: l.name }, "couldn't use that login")}>
+                <button class="secondary small" key={l.name} onClick={() => void call("login", { name: l.name }, "couldn't use that login")}>
                   Use login {l.name} ({l.url})
                 </button>
               ))}
             </div>
           )}
-          {!viewer && <button onClick={refresh}>Try again</button>}
-        </div>
+        </BlockError>
       )}
       {s.read_only && (
         <p class="dim ws-note" data-forge-read-only>
@@ -781,21 +792,21 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
                   <div class="ws-actions">
                     {w.kind === "review" && mayWrite && (
                       <>
-                        <button class="pri" data-approve-review disabled={busy !== null} onClick={() => void review("approve")}>
+                        <button class="primary small" data-approve-review disabled={busy !== null} onClick={() => void review("approve")}>
                           {busy === "review" ? "Approving…" : "Approve"}
                         </button>
-                        <button disabled={busy !== null} onClick={() => void review("request_changes")}>
+                        <button class="secondary small" disabled={busy !== null} onClick={() => void review("request_changes")}>
                           Request changes…
                         </button>
                       </>
                     )}
                     {w.kind === "failed" && s.rerun?.api && mayWrite && (
-                      <button class="pri" data-rerun disabled={busy !== null} title={s.rerun.note} onClick={() => void call("rerun_checks", {}, "couldn't rerun the checks")}>
-                        {busy === "rerun_checks" ? "Retrying…" : "Rerun"}
+                      <button class="primary small" data-rerun disabled={busy !== null} title={s.rerun.note} onClick={() => void call("rerun_checks", {}, "couldn't rerun the checks")}>
+                        {busy === "rerun_checks" ? "Rerunning…" : "Rerun"}
                       </button>
                     )}
                     {w.kind === "failed" && s.rerun?.url && (
-                      <a class="button" href={s.rerun.url} target="_blank" rel="noopener" title={s.rerun.note} data-rerun-link>
+                      <a class="secondary small" href={s.rerun.url} target="_blank" rel="noopener" title={s.rerun.note} data-rerun-link>
                         Open the run ↗
                       </a>
                     )}

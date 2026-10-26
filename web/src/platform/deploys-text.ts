@@ -104,6 +104,15 @@ export function planBody(
   return { body: { environment, source: { kind: "commit", ref: c, where: r }, roll_back: rollBack } };
 }
 
+/** The repo "Deploy…" offers for `env` (UI audit #147): the one its last
+ * deploy came from, else the linked repo named as the environment is
+ * (`beds-smoke` for `arugula-salad/beds-smoke`), else the first linked. */
+export function repoFor(env: string | undefined, linked: string[], lastFrom?: string | null): string {
+  if (lastFrom) return lastFrom;
+  const named = env ? linked.find((r) => r.split("/")[1]?.toLowerCase() === env.toLowerCase()) : undefined;
+  return named ?? linked[0] ?? "";
+}
+
 /** A deploy as a project's history lists it (`GET
  * /api/projects/{project}/deploys`): its own page has the rest. */
 export interface DeploySummary {
@@ -145,5 +154,6 @@ export function historyPath(project: string, environment?: string, limit?: numbe
 /** When a deploy last moved: it ended, it was decided, or it was planned. */
 export const lastMoved = (d: Pick<DeploySummary, "finished_at" | "decided_at" | "created_at">) => d.finished_at ?? d.decided_at ?? d.created_at;
 
-/** A commit's or an artifact's reference, short. */
-export const shortRef = (ref: string) => ref.slice(0, 12);
+/** A commit's or an artifact's reference, short (../shared/deploys, which
+ * control's deploy prompt shares). */
+export { shortRef } from "../shared/deploys.ts";

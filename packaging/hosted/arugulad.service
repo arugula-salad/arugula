@@ -13,7 +13,9 @@
 # - KillMode=process: a restart stops only the daemon. Its panes' shims
 #   keep their terminals for the next one (`--hosted` keeps panes).
 # - It waits for envd's sandbox id, written at each /init: the daemon
-#   reads it to know its box (M180).
+#   reads it to know its box (M180). For 10 s at most: at the template's
+#   build there may be none yet, and the daemon starts without it there
+#   (it takes its box from the id when one appears).
 [Unit]
 Description=Arugula's hosted daemon (arugulad --hosted)
 StartLimitIntervalSec=0
@@ -25,7 +27,7 @@ Group=user
 WorkingDirectory=/home/user
 Environment=HOME=/home/user USER=user LOGNAME=user SHELL=/bin/bash
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStartPre=/bin/sh -c 'until [ -s /run/e2b/.E2B_SANDBOX_ID ]; do sleep 0.1; done'
+ExecStartPre=/bin/sh -c 'i=0; until [ -s /run/e2b/.E2B_SANDBOX_ID ] || [ "$$i" -ge 100 ]; do sleep 0.1; i=$$((i + 1)); done'
 ExecStart=/usr/local/bin/arugulad --hosted
 TimeoutStartSec=infinity
 Restart=always

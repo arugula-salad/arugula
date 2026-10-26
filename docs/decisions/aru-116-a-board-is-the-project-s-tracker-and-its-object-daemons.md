@@ -82,5 +82,5 @@ the approved design for the board (Arugula #187, step 1 of 5), three rulings:
 - **A board serves as the project's tracker,** so issues get no parent field
   for now. A board groups issues with everything else a row can point at.
 
-Where: the tables (migration `0053_boards`) and their rules (`crates/platform/src/db/boards.rs`), the routes (`crates/platform/src/boards.rs`, paths in `crates/control-wire/src/boards.rs`), boards as objects (`crates/platform/src/chat/objects.rs`). The page, the block, the MCP tools and the daemon's pushes follow.
+Where: the tables (migration `0058_boards`) and their rules (`crates/platform/src/db/boards.rs`), the routes (`crates/platform/src/boards.rs`, paths in `crates/control-wire/src/boards.rs`), boards as objects (`crates/platform/src/chat/objects.rs`). The page, the block, the MCP tools and the daemon's pushes follow.
 From: Arugula #187 (native, step 1 of the status board).

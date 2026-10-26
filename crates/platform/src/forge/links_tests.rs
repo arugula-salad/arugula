@@ -60,6 +60,11 @@ pub(crate) struct Gh {
     /// Logins whose installations are a user's, not an organization's
     /// (M232).
     pub(crate) user_accounts: std::collections::BTreeSet<String>,
+    /// Files on a repo's default branch, by `owner/name:path` (M259's PR
+    /// template).
+    pub(crate) files: BTreeMap<String, String>,
+    /// The permissions of each installation token minted, in order.
+    pub(crate) minted: Vec<Value>,
 }
 
 /// What the platform's real App (`arugula-io`) is granted today: it reads
@@ -122,7 +127,8 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
     // For one repository, no more than its installation grants. GitHub's
     // answer names the repository it covers, as M167 checks.
     assert_eq!(b["permissions"]["metadata"], "read");
-    let h = h.lock().unwrap();
+    let mut h = h.lock().unwrap();
+    h.minted.push(b["permissions"].clone());
     // By GitHub's id (a deploy's own repository), or by its short name.
     let by_id = b["repository_ids"][0].as_u64().and_then(|id| h.repos.iter().find(|(_, (i, _))| *i == id));
     if let Some((name, (id, _))) = by_id {
@@ -177,7 +183,27 @@ async fn ci_ref(State(h): State<Shared>, Path((_, _, kind, sha)): Path<(String, 
 
 /// `compare/{sha}...main`, as GitHub answered for real commits: `ahead`
 /// with `behind_by` 0 for one on main, `diverged` for a branch's.
-async fn compare(State(h): State<Shared>, Path((_, _, spec)): Path<(String, String, String)>) -> Response {
+async fn compare(
+    State(h): State<Shared>,
+    Path((o, r, spec)): Path<(String, String, String)>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    // A diff (M264's review): the file kept as `owner/name:compare:<spec>`.
+    if headers.get("accept").and_then(|v| v.to_str().ok()) == Some("application/vnd.github.diff") {
+        return match h.lock().unwrap().files.get(&format!("{o}/{r}:compare:{spec}")) {
+            Some(diff) => diff.clone().into_response(),
+            None => StatusCode::NOT_FOUND.into_response(),
+        };
+    }
+    // A session's branch (M259): its commits, oldest first, as GitHub
+    // lists them.
+    if spec.contains("...arugula/") {
+        return Json(json!({ "status": "ahead", "ahead_by": 2, "commits": [
+            { "sha": "a1a1a1a1a1", "commit": { "message": "Add farewell(name)\n\nNext to greet." } },
+            { "sha": "b2b2b2b2b2", "commit": { "message": "Add a test for farewell" } },
+        ] }))
+        .into_response();
+    }
     let sha = spec.split("...").next().unwrap_or_default();
     if h.lock().unwrap().on_main.contains(sha) {
         Json(json!({ "ahead_by": 3, "behind_by": 0, "status": "ahead" })).into_response()
@@ -189,7 +215,9 @@ async fn compare(State(h): State<Shared>, Path((_, _, spec)): Path<(String, Stri
 async fn repo(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
     let name = format!("{o}/{r}");
     match h.lock().unwrap().repos.get(&name) {
-        Some((id, private)) => Json(json!({ "id": id, "full_name": name, "private": private })).into_response(),
+        Some((id, private)) => {
+            Json(json!({ "id": id, "full_name": name, "private": private, "default_branch": "main" })).into_response()
+        }
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -236,18 +264,32 @@ async fn post_as(
     Json(json!({ "number": 12, "html_url": format!("https://github.com{path}#posted") })).into_response()
 }
 
+/// A file on a repo's default branch, as GitHub's contents API answers.
+async fn contents(State(h): State<Shared>, Path((o, r, path)): Path<(String, String, String)>) -> Response {
+    use base64::Engine as _;
+    match h.lock().unwrap().files.get(&format!("{o}/{r}:{path}")) {
+        Some(text) => {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(text);
+            Json(json!({ "type": "file", "path": path, "encoding": "base64", "content": b64 })).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, Json(json!({ "message": "Not Found" }))).into_response(),
+    }
+}
+
 pub(crate) async fn fake_github(h: Shared) -> String {
     let r = Router::new()
         .route("/user", get(user))
         .route("/repos/{o}/{r}/issues/{n}/comments", post(post_as))
         .route("/repos/{o}/{r}/pulls/{n}/reviews", post(post_as))
         .route("/repos/{o}/{r}/issues", post(post_as))
+        .route("/repos/{o}/{r}/pulls", post(post_as))
+        .route("/repos/{o}/{r}/contents/{*path}", get(contents))
         .route("/repos/{o}/{r}/installation", get(installation))
         .route("/app/installations/{id}/access_tokens", post(token))
         .route("/repos/{o}/{r}", get(repo))
         .route("/repos/{o}/{r}/collaborators/{login}/permission", get(permission))
         .route("/repos/{o}/{r}/git/ref/tags/ci/{kind}/{sha}", get(ci_ref))
-        .route("/repos/{o}/{r}/compare/{spec}", get(compare))
+        .route("/repos/{o}/{r}/compare/{*spec}", get(compare))
         .with_state(h);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());

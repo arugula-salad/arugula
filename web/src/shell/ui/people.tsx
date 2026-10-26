@@ -10,6 +10,8 @@ import { roleLabel } from "./roles";
 import type { MenuItem } from "../../shared/ui/menu";
 import { keyChanged, keyChangeSeen, personPin, pinPerson, verifyPerson, type ControlSession } from "../control";
 import { readVerifyCode, verifyWords } from "../e2e/words.ts";
+import { ConfirmRemove } from "../../shared/ui/confirm";
+import { Time } from "../../shared/ui/time";
 import { CopyText } from "../../shared/ui/copy";
 import { countView } from "../../shared/telemetry";
 import { canScan, Scanner } from "./scan";
@@ -189,7 +191,7 @@ function TrustRequest({ client }: { client: Client }) {
           </select>
         </label>
         <div class="prompt-buttons">
-          <button onClick={() => client.answerTrust(r.pane, r.who, null)}>Not now</button>
+          <button class="secondary" onClick={() => client.answerTrust(r.pane, r.who, null)}>Not now</button>
           <button class="primary" data-trust onClick={() => client.answerTrust(r.pane, r.who, minutes)}>
             Allow
           </button>
@@ -211,7 +213,7 @@ export function ControlRequests({ client }: { client: Client }) {
           <b>{r.name}</b> asks to drive %{r.pane}.
         </p>
         <div class="prompt-buttons">
-          <button onClick={() => client.answerRequest(r.pane, false)}>Not now</button>
+          <button class="secondary" onClick={() => client.answerRequest(r.pane, false)}>Not now</button>
           <button class="primary" data-give onClick={() => client.answerRequest(r.pane, true)}>
             Hand over
           </button>
@@ -239,14 +241,9 @@ interface Person {
   root: string;
 }
 
-/** "Oct 1", with the year only when it isn't this one. */
-const day = (ms: number) => {
-  const d = new Date(ms);
-  return d.toLocaleDateString(undefined, d.getFullYear() === new Date().getFullYear() ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
-};
 
 /** #763: verify someone you share with, if you want to: scan the code in
- * their Devices and machines…, or compare its words. Off the main path:
+ * their Devices and machines, or compare its words. Off the main path:
  * sharing pins their key on first use either way. */
 function VerifyPerson({ who, done, close }: { who: Person; done: () => void; close: () => void }) {
   const [words, setWords] = useState<string[]>([]);
@@ -262,7 +259,7 @@ function VerifyPerson({ who, done, close }: { who: Person; done: () => void; clo
   return (
     <div class="share-verify" data-verify={who.account}>
       <p>
-        Scan the code in {who.name}'s <i>Devices and machines…</i>, or check it shows these words:
+        Scan the code in {who.name}'s <i>Devices and machines</i>, or check it shows these words:
       </p>
       <p class="share-verify-words" data-verify-words>
         {words.join(" ")}
@@ -281,9 +278,9 @@ function VerifyPerson({ who, done, close }: { who: Person; done: () => void; clo
       ) : null}
       {err ? <p class="share-warning">{err}</p> : null}
       <div class="prompt-buttons">
-        <button onClick={close}>Cancel</button>
+        <button class="secondary" onClick={close}>Cancel</button>
         {canScan() && !scanning ? (
-          <button data-verify-scan onClick={() => setScanning(true)}>
+          <button class="secondary" data-verify-scan onClick={() => setScanning(true)}>
             Scan their code
           </button>
         ) : null}
@@ -302,15 +299,20 @@ interface Callers {
   tagged: { device: string; tags: string[]; at: number }[];
 }
 
-let openShare: ((s: SessionId) => void) | null = null;
+/** Opened for one pane (#1473): the invite opens there, and "Watch me" is on. */
+interface ShareAt {
+  pane?: PaneId;
+}
+
+let openShare: ((s: SessionId, at?: ShareAt) => void) | null = null;
 // Asked for before the dialog was there to open (#237: a card or a push
 // that switched machines first): it opens once it is.
-let pendingShare: SessionId | null = null;
+let pendingShare: { session: SessionId; at?: ShareAt } | null = null;
 
-export function shareSession(session: SessionId) {
+export function shareSession(session: SessionId, at?: ShareAt) {
   countView("share");
-  if (openShare) openShare(session);
-  else pendingShare = session;
+  if (openShare) openShare(session, at);
+  else pendingShare = { session, at };
 }
 
 /** Share a session (M13): who has access, add someone, revoke. */
@@ -334,10 +336,15 @@ export function ShareDialog({ client }: { client: Client }) {
   const [verifying, setVerifying] = useState<{ p: Person; then?: () => void } | null>(null);
   // An invite (#233): what the notification says, and how it went.
   const [note, setNote] = useState("");
+  // Where it opens, and whether their window follows ours (#1473).
+  const [pane, setPane] = useState<PaneId | null>(null);
+  const [watch, setWatch] = useState(false);
   const [told, setTold] = useState<{ delivery: string; text: string } | null>(null);
   const [link, setLink] = useState<string | null>(null);
   // After a share with someone outside your teams: what they see next.
   const [asked, setAsked] = useState<string | null>(null);
+  // Taking someone off asks first (UI audit #158).
+  const [removing, setRemoving] = useState<Grant | null>(null);
   const load = async (s: SessionId | null = session) => {
     const r = await client.request(OPS["acl.get"].method, opPath("acl.get"));
     if (r.ok) {
@@ -353,17 +360,19 @@ export function ShareDialog({ client }: { client: Client }) {
     }
   };
   useEffect(() => {
-    const open = (s: SessionId) => {
+    const open = (s: SessionId, at?: ShareAt) => {
       setSession(s);
+      setPane(at?.pane ?? null);
+      setWatch(at?.pane !== undefined);
       setErr("");
       setAsked(null);
       void load(s);
     };
     openShare = open;
     if (pendingShare !== null) {
-      const s = pendingShare;
+      const { session: s, at } = pendingShare;
       pendingShare = null;
-      open(s);
+      open(s, at);
     }
     // Only its own: when the page goes from its first, bare tree to the
     // workspace (M113), the dialog there opens before this one closes.
@@ -420,7 +429,7 @@ export function ShareDialog({ client }: { client: Client }) {
   const invite = async (whom: string, extra: Record<string, string> = {}) => {
     setErr("");
     setTold(null);
-    const res = await client.request(OPS["invite.send"].method, opPath("invite.send"), { session, who: whom, role, history, note, ...extra } satisfies InviteRequest);
+    const res = await client.request(OPS["invite.send"].method, opPath("invite.send"), { session, who: whom, role, history, note, pane, follow: watch, ...extra } satisfies InviteRequest);
     const body = await res.json<Partial<Invited> & { error?: string }>().catch(() => null);
     if (res.status === 404 && control && client.e2e && !extra.root) {
       control.person(whom).then((p) => offer(p, whom, true), (x: Error) => setErr(x.message));
@@ -505,16 +514,16 @@ export function ShareDialog({ client }: { client: Client }) {
                   {/* Always a cell, so Remove lines up whatever is here. */}
                   <span class="share-key">
                     {control && account && k ? (
-                      <button class="control-linkish share-warning" data-key-changed-row={g.principal} title="Their account key changed" onClick={() => warnFor(g, k)}>
+                      <button class="link share-warning" data-key-changed-row={g.principal} title="Their account key changed" onClick={() => warnFor(g, k)}>
                         ⚠ new key
                       </button>
                     ) : control && account && !verified(g) && rootOf(g) ? (
-                      <button class="control-linkish" data-verify-person={g.principal} onClick={() => setVerifying({ p: { account, name: g.name, root: rootOf(g)! } })}>
+                      <button class="link" data-verify-person={g.principal} onClick={() => setVerifying({ p: { account, name: g.name, root: rootOf(g)! } })}>
                         Verify
                       </button>
                     ) : null}
                   </span>
-                  <button class="control-revoke quiet-danger" onClick={() => void set(g.principal, null)}>
+                  <button class="secondary danger small" data-remove-grant={g.principal} onClick={() => setRemoving(g)}>
                     Remove
                   </button>
                 </li>
@@ -548,7 +557,7 @@ export function ShareDialog({ client }: { client: Client }) {
             <p key={x.pane} class="share-warning" data-secret={x.pane}>
               ⚠ %{x.pane} shows what looks like {x.kinds.join(" and ")} (a guess).{" "}
               <button
-                class="control-linkish"
+                class="link"
                 onClick={() => {
                   client.paneOp(x.pane, { op: "set_private", on: true });
                   setSecrets(secrets.filter((y) => y.pane !== x.pane));
@@ -573,11 +582,17 @@ export function ShareDialog({ client }: { client: Client }) {
               <b>⚠ {changed.who}'s account key changed since you first shared with them.</b>
             </p>
             <p class="dim">
-              {changed.first ? `You first shared on ${day(changed.first)}. ` : ""}Control has given a different key since {day(changed.seen)}. Nothing was
-              shared.
+              {changed.first ? (
+                <>
+                  You first shared <Time at={changed.first} on />.{" "}
+                </>
+              ) : (
+                ""
+              )}
+              Control has given a different key since <Time at={changed.seen} on />. Nothing was shared.
             </p>
             <div class="prompt-buttons">
-              <button onClick={() => setChanged(null)}>Cancel</button>
+              <button class="secondary" onClick={() => setChanged(null)}>Cancel</button>
               <button
                 class="primary"
                 data-key-verify
@@ -609,6 +624,7 @@ export function ShareDialog({ client }: { client: Client }) {
               .map((t) => (
                 <p key={t.team} class="share-team">
                   <button
+                    class="secondary"
                     data-share-team={t.team}
                     onClick={() =>
                       // Pinned to its founder, as this browser pinned the
@@ -671,8 +687,12 @@ export function ShareDialog({ client }: { client: Client }) {
             aria-label="Note"
             data-invite-note
           />
+          <label class="share-history" title="Their window follows yours when they open the invite">
+            <input type="checkbox" data-invite-watch checked={watch} onChange={(e) => setWatch((e.target as HTMLInputElement).checked)} /> Watch me
+          </label>
           <button
             type="button"
+            class="secondary"
             data-invite
             onClick={() => {
               const p = who.trim();
@@ -704,7 +724,7 @@ export function ShareDialog({ client }: { client: Client }) {
         {control && client.e2e ? (
           <p>
             <button
-              class="control-linkish"
+              class="link"
               data-make-link
               onClick={() =>
                 control!
@@ -720,9 +740,22 @@ export function ShareDialog({ client }: { client: Client }) {
         {link ? <CopyText text={link} share data-link /> : null}
         {err ? <p class="control-error">{err}</p> : null}
         <div class="prompt-buttons">
-          <button onClick={() => setSession(null)}>Done</button>
+          <button class="secondary" onClick={() => setSession(null)}>Done</button>
         </div>
       </div>
+      {removing && (
+        <ConfirmRemove
+          title={`Stop sharing ${name} with ${removing.name}?`}
+          cancel={() => setRemoving(null)}
+          go={() => {
+            const p = removing.principal;
+            setRemoving(null);
+            void set(p, null);
+          }}
+        >
+          <p>{removing.principal.startsWith("team:") ? "Its members lose" : "They lose"} it at once, and anyone watching is cut off. To let them back, share it again.</p>
+        </ConfirmRemove>
+      )}
     </div>
   );
 }

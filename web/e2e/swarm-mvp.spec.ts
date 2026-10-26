@@ -266,7 +266,7 @@ test("both people's swarms show the team's shared panes, grouped by person", asy
   for (const p of [jake, jakePhone, sam, samPhone]) await swarm(p, ALL);
   for (const p of [jake, jakePhone, sam, samPhone]) {
     await expect.poll(() => keys(p)).toEqual(expect.arrayContaining(["mac:1", "studio:1", "sam-1:1", "sam-2:1", "teambox:1"]));
-    await p.locator('[data-g="person"]').click();
+    await p.locator('[data-g="owner"]').click();
   }
   for (const p of [jake, jakePhone]) await expect.poll(() => clusters(p)).toEqual(["sam", "team Acme", "you"]);
   for (const p of [sam, samPhone]) await expect.poll(() => clusters(p)).toEqual(["jake", "team Acme", "you"]);

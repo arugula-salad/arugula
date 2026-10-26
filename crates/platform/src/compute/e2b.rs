@@ -11,6 +11,16 @@
 //! | hold | `POST /sandboxes/{id}/timeout` |
 //! | runs | `GET /events/sandboxes/{id}?types=…paused&types=…killed`, paged by `offset` |
 //! | set_rules | `PUT /sandboxes/{id}/network` (`rules`; 404: paused or gone) |
+//! | snapshots | `GET /snapshots?limit=1` (404: no snapshots here, as on loam) |
+//! | snapshot | `POST /sandboxes/{id}/snapshots` (`memory`; 201 `snapshotID`) |
+//! | list_snapshots | `GET /snapshots?sandboxID=…`, paged by `X-Next-Token` |
+//! | delete_snapshot | `DELETE /templates/{snapshot id}` (404: gone already) |
+//!
+//! A snapshot is a template on E2B's side (M263): its id (`abc123:default`)
+//! is what a create's `templateID` takes, and it's deleted as a template is.
+//! loam's E2B API answers 404 for every snapshot route, so there a
+//! snapshot is [`Error::Unsupported`], and a 404 from a snapshot's create is
+//! told apart from "no such box" by the box's status.
 //!
 //! A create's rules go in its `network.rules`. They can hold a key, so
 //! they're only ever in a request's body, never in an error or a log.
@@ -48,7 +58,7 @@ use reqwest::{Client, Method, Response, StatusCode, Url};
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
-use super::{Create, Created, Error, Paused, Result, Resumed, Rules, Run, Sandbox, State, Substrate};
+use super::{Create, Created, Error, Mode, Paused, Result, Resumed, Rules, Run, Sandbox, State, Substrate};
 
 /// Tries of a retried call, and the longest `Retry-After` waited out.
 const TRIES: u32 = 3;
@@ -260,6 +270,14 @@ struct Execution {
     started_at: String,
 }
 
+/// A snapshot as E2B answers one: only its id is kept (its `names` are the
+/// team's namespace).
+#[derive(Deserialize)]
+struct SnapshotInfo {
+    #[serde(rename = "snapshotID")]
+    snapshot_id: String,
+}
+
 /// The runs in a box's events, each once: deleting a paused box ends no
 /// run, and an event a page boundary repeated is the same id.
 fn runs_of(events: Vec<Event>, seen: &mut std::collections::BTreeSet<String>) -> Result<Vec<Run>> {
@@ -465,6 +483,92 @@ impl Substrate for E2b {
             let body = json!({"allowPublicTraffic": false, "rules": network_rules(rules)});
             let r = self.idempotent(Method::PUT, self.url(&["sandboxes", id, "network"])?, Some(&body)).await?;
             done(r).await
+        })
+    }
+
+    fn snapshots<'a>(&'a self) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(async move {
+            let mut url = self.url(&["snapshots"])?;
+            url.query_pairs_mut().append_pair("limit", "1");
+            let r = self.idempotent(Method::GET, url, None).await?;
+            match r.status() {
+                s if s.is_success() => Ok(true),
+                StatusCode::NOT_FOUND => Ok(false),
+                _ => Err(failure(r).await),
+            }
+        })
+    }
+
+    fn snapshot<'a>(&'a self, id: &'a str, mode: Mode) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move {
+            let body = json!({"memory": mode == Mode::Full});
+            // Never resent, as a create isn't: a lost answer may have made
+            // one, which the box's listing finds.
+            let r = self.send(Method::POST, self.url(&["sandboxes", id, "snapshots"])?, Some(&body)).await?;
+            if r.status().is_success() {
+                let made: SnapshotInfo = read(r).await?;
+                if made.snapshot_id.is_empty() {
+                    return Err(Error::Invalid);
+                }
+                return Ok(made.snapshot_id);
+            }
+            match failure(r).await {
+                // No such box, or (loam) no such route: the box says which.
+                Error::NotFound => match self.status(id).await? {
+                    Some(_) => Err(Error::Unsupported),
+                    None => Err(Error::NotFound),
+                },
+                e => Err(e),
+            }
+        })
+    }
+
+    fn list_snapshots<'a>(&'a self, of: Option<&'a str>) -> BoxFuture<'a, Result<Vec<String>>> {
+        Box::pin(async move {
+            let mut next: Option<String> = None;
+            let mut all = Vec::new();
+            for _ in 0..1000 {
+                let mut url = self.url(&["snapshots"])?;
+                {
+                    let mut q = url.query_pairs_mut();
+                    if let Some(of) = of {
+                        q.append_pair("sandboxID", of);
+                    }
+                    q.append_pair("limit", "100");
+                    if let Some(token) = &next {
+                        q.append_pair("nextToken", token);
+                    }
+                }
+                let r = self.idempotent(Method::GET, url, None).await?;
+                if r.status() == StatusCode::NOT_FOUND {
+                    return Err(Error::Unsupported);
+                }
+                if !r.status().is_success() {
+                    return Err(failure(r).await);
+                }
+                next = r
+                    .headers()
+                    .get("x-next-token")
+                    .and_then(|v| v.to_str().ok())
+                    .filter(|t| !t.is_empty())
+                    .map(str::to_owned);
+                let page: Vec<SnapshotInfo> = read(r).await?;
+                all.extend(page.into_iter().map(|s| s.snapshot_id));
+                if next.is_none() {
+                    return Ok(all);
+                }
+            }
+            Err(Error::Invalid)
+        })
+    }
+
+    fn delete_snapshot<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let r = self.idempotent(Method::DELETE, self.url(&["templates", id])?, None).await?;
+            match done(r).await {
+                Err(Error::NotFound) => Ok(()),
+                other => other,
+            }
         })
     }
 }

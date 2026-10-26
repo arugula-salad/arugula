@@ -18,12 +18,22 @@
 //! - **Gone quiet:** a turn under way whose box hasn't reported for
 //!   [`QUIET_MS`] is marked `unresponsive` (`Db::mark_unresponsive`'s
 //!   rule, for this one session).
+//! - **Merged** (M265): a `done` session whose PR merged while its turn
+//!   ran is `stopped`, saying so (`db::session_merged::MERGED`).
+//! - **Idle:** a `done` session with nothing queued and no prompt for
+//!   [`idle_end_ms`] (a day, `ARUGULA_SESSION_IDLE_END` seconds) is
+//!   `stopped`, saying so ([`IDLE`]): a done session holds a slot on its
+//!   box, which this frees. `@arugula` again starts a new one.
+//!
+//! - **Feedback** (M260, [`crate::sessions::feedback::flush`]): CI's
+//!   failures and reviews on its branch that are due go to it as prompts,
+//!   first, so the rest of the step sees them queued.
 //!
 //! It looks again in [`work::WAITING_MS`] while the session waits for its
 //! box, [`work::RUNNING_MS`] while a turn is under way, and [`IDLE_MS`]
-//! while it's `done` with nothing queued; a prompt queued in its thread
-//! makes it look at once (`Db::nudge_session`). It's done when the session
-//! ends.
+//! while it's `done` with nothing queued, or sooner when its feedback is
+//! due; a prompt queued in its thread, or feedback gathered, makes it look
+//! at once (`Db::nudge_session`). It's done when the session ends.
 
 use std::sync::Arc;
 
@@ -38,6 +48,7 @@ use crate::{
     db::{
         Db,
         jobs::{JobKind, LeasedJob},
+        session_merged::MERGED,
         session_threads::WORKSPACE_GONE,
         sessions::{MAX_SESSIONS_PER_BOX, Move, PromptState, QUIET_MS, State},
     },
@@ -48,6 +59,36 @@ use crate::{
 /// How often a `done` session with nothing queued is looked at: a prompt
 /// queued nudges it sooner.
 pub const IDLE_MS: u64 = 10 * 60_000;
+
+/// How long a `done` session may go without a prompt before it ends: a day.
+pub const IDLE_END_MS: u64 = 24 * 60 * 60_000;
+
+/// What an idle session's `stopped` says, first the code (the card knows
+/// it), then the words.
+pub const IDLE: &str = "idle";
+
+/// [`IDLE_END_MS`], unless `ARUGULA_SESSION_IDLE_END` says how many
+/// seconds.
+pub fn idle_end_ms() -> u64 {
+    std::env::var("ARUGULA_SESSION_IDLE_END")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|s| *s > 0)
+        .map_or(IDLE_END_MS, |s| s.saturating_mul(1000))
+}
+
+/// The reason an idle session stops with: "idle: ended after a day idle; …".
+pub fn idle_reason(ms: u64) -> String {
+    let h = ms / 3_600_000;
+    let long = match (h, ms / 60_000) {
+        (24, _) => "a day".to_owned(),
+        (h, _) if h >= 2 => format!("{h} hours"),
+        (1, _) => "an hour".to_owned(),
+        (_, m) if m >= 2 => format!("{m} minutes"),
+        _ => format!("{} seconds", ms / 1000),
+    };
+    format!("{IDLE}: ended after {long} idle; @arugula again to start a new one")
+}
 
 /// What a session's job keeps.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -79,6 +120,9 @@ impl Follow {
             db.uncancel_job(job, now)?;
         }
         let Some(s) = db.session(&job.id)? else { return Ok(Step::Done) };
+        // CI's failures and reviews that are due (M260): queued as its
+        // prompts, or, once it ended, dropped and said.
+        let feedback_due = crate::sessions::feedback::flush(&self.app, &s, now).await?;
         if s.state.terminal() {
             return Ok(Step::Done);
         }
@@ -100,7 +144,28 @@ impl Follow {
                 state = State::Unresponsive;
             }
         }
-        let queued = db.session_prompts(&s.id)?.iter().any(|p| p.state == PromptState::Queued);
+        // Its PR merged during the turn (M265): done now, it ends, and its
+        // slot on the box frees.
+        if state == State::Done && s.merged_at.is_some() {
+            let why = json!({ "reason": MERGED });
+            if control(&self.app, &s.id, State::Done, State::Stopped, why, now)? {
+                info!(session = s.id, "a session whose PR merged ended");
+                return Ok(Step::Done);
+            }
+        }
+        let prompts = db.session_prompts(&s.id)?;
+        let queued = prompts.iter().any(|p| p.state == PromptState::Queued);
+        // Idle: done, nothing queued, and no prompt for a day. It ends, and
+        // its slot on the box frees.
+        let idle_end = idle_end_ms();
+        let idle_since = prompts.iter().map(|p| p.created_at).max().unwrap_or(0).max(s.updated_at);
+        if state == State::Done && !queued && now.saturating_sub(idle_since) >= idle_end {
+            let why = json!({ "reason": idle_reason(idle_end) });
+            if control(&self.app, &s.id, State::Done, State::Stopped, why, now)? {
+                info!(session = s.id, "an idle session ended");
+                return Ok(Step::Done);
+            }
+        }
         let waiting = match state {
             State::Queued | State::Unresponsive => true,
             State::Done => queued,
@@ -124,7 +189,7 @@ impl Follow {
                 job.checkpoint = Some(serde_json::to_value(&cp)?);
                 db.checkpoint_job(job, now)?;
             } else if now.saturating_sub(cp.full_at.unwrap_or(0).max(s.updated_at)) > work::TAKE_MS {
-                let why = json!({ "reason": "not_taken: its hosted workspace didn't take it in 15 minutes" });
+                let why = json!({ "reason": "not_taken: its cloud workspace didn't take it in 15 minutes" });
                 if control(&self.app, &s.id, State::Queued, State::Failed, why, now)? {
                     info!(session = s.id, "a session no box took failed");
                 }
@@ -150,10 +215,10 @@ impl Follow {
         }
         let next = match state {
             _ if waiting => work::WAITING_MS,
-            State::Done => IDLE_MS,
+            State::Done => IDLE_MS.min(idle_since.saturating_add(idle_end).saturating_sub(now).max(1)),
             _ => work::RUNNING_MS,
         };
-        Ok(Step::Again(now + next))
+        Ok(Step::Again(feedback_due.map_or(now + next, |due| due.max(now).min(now + next))))
     }
 }
 

@@ -1,0 +1,76 @@
+/* One chip (UI audit #183, ./state-chip.tsx): a state, a label or an
+   agent's badge. A tone sets the chip's color (--c, its border, fill and
+   dot) and its text's (--ct): a color only where the palette keeps it
+   legible as text (shared/appearance.ts), so muted text is subtle. A
+   state has a dot before its word. */
+
+.chip {
+  --c: var(--muted);
+  --ct: var(--subtle);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: 1px solid var(--c);
+  border-radius: var(--chip-radius);
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  color: var(--ct);
+  font: 600 12px/1.3 var(--mono);
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+.chip-dot::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c);
+}
+
+button.chip {
+  cursor: pointer;
+}
+
+button.chip:is(:hover, :focus-visible) {
+  border-color: var(--accent);
+}
+
+.chip-accent {
+  --c: var(--accent);
+  --ct: var(--accent);
+}
+
+.chip-ok {
+  --c: var(--ok);
+  --ct: var(--ok);
+}
+
+.chip-warn {
+  --c: var(--warn);
+  --ct: var(--warn);
+}
+
+.chip-danger {
+  --c: var(--danger);
+  --ct: var(--danger);
+}
+
+.chip-info {
+  --c: var(--info);
+  --ct: var(--info);
+}
+
+.chip-teal {
+  --c: var(--teal);
+  --ct: var(--teal);
+}
+
+.chip-muted {
+  --c: var(--muted);
+  --ct: var(--subtle);
+}

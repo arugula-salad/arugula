@@ -337,7 +337,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
       )}
       </div>
       <div class="add-pane-actions">
-        <button onClick={() => addPane.close()} disabled={busy}>
+        <button class="secondary" onClick={() => addPane.close()} disabled={busy}>
           Cancel
         </button>
         <button class="primary" data-add-pane-create disabled={!!refusal || busy} title={refusal ?? "Ctrl+Enter"} onClick={() => void create()}>

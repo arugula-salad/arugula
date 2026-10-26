@@ -8,6 +8,7 @@
 
 import { cleanTitle } from "../shared/titles";
 import { OPS, opPath } from "./ops";
+import { pickFollowed, WATCH_MS } from "./follow";
 import {
   decodeFrame,
   encodeFrame,
@@ -400,6 +401,9 @@ export class Client {
    * read on each hello and when a menu opens; `null` until read, or from
    * a daemon too old to say (then menus offer everything, as before). */
   features: HostFeatures | null = null;
+  /** The daemon's name for its machine (`GET /api/host`'s `name`), for a
+   * page with no directory to name it, a read-only link's (UI audit #179). */
+  hostName: string | null = null;
   clientId: number | null = null;
   connected = false;
   error: string | null = null;
@@ -438,9 +442,9 @@ export class Client {
   private nextId = 1;
   private listeners = new Set<() => void>();
   private errorTimer: number | undefined;
-  /** When this client last asked for a change; panes that appear soon
-   * after are the ones it created, and become active. */
-  private lastIntentAt = 0;
+  /** When this client last made a pane, tab, or session; panes that appear
+   * soon after are the ones it created, and become active. */
+  private lastMadeAt = 0;
   private pendingBlocks = new Map<PaneId, unknown>();
   /** Who wants to hear that an intent was refused (M110: a layout
    * button says why), by the intent's id. */
@@ -612,11 +616,36 @@ export class Client {
 
   follow(client: ClientId | null) {
     this.following = client;
+    this.watching = null;
+    this.applyFollow();
+    this.emit();
+  }
+
+  /** A follow invite opened (#1473): follow `who`'s window as soon as
+   * presence has one, on `pane`'s session if they have more than one, for
+   * `WATCH_MS` or until this client acts. */
+  watching: { who: string; session?: SessionId; until: number } | null = null;
+
+  watch(who: string, pane: PaneId) {
+    const until = Date.now() + WATCH_MS;
+    const w = (this.watching = { who, session: this.sessionOfTab(this.tabOfPane(pane)?.id ?? -1), until });
+    setTimeout(() => {
+      if (this.watching === w) this.watching = null;
+    }, WATCH_MS);
     this.applyFollow();
     this.emit();
   }
 
   private applyFollow() {
+    const w = this.watching;
+    if (w && Date.now() >= w.until) this.watching = null;
+    else if (w) {
+      const c = pickFollowed(this.state?.presence ?? [], w.who, w.session, (t) => this.sessionOfTab(t), this.clientId);
+      if (c !== undefined) {
+        this.following = c;
+        this.watching = null;
+      }
+    }
     if (this.following === null) return;
     const p = this.state?.presence?.find((x) => x.client === this.following);
     if (!p) {
@@ -676,8 +705,10 @@ export class Client {
       if (!res.ok) return;
       const h = await res.json<HostInfo>();
       const features = h.features ?? null;
-      if (JSON.stringify(features) === JSON.stringify(this.features)) return;
+      const name = h.name || null;
+      if (JSON.stringify(features) === JSON.stringify(this.features) && name === this.hostName) return;
       this.features = features;
+      this.hostName = name;
       this.emit();
     } catch {
       // as it was
@@ -799,7 +830,7 @@ export class Client {
     const tab = where.session === undefined ? undefined : this.state?.sessions.find((s) => s.id === where.session)?.tabs[0];
     const fromPane = tab === undefined ? null : (this.active(tab) ?? null);
     // Show it when it appears, as for a tab made here.
-    this.lastIntentAt = Date.now();
+    this.lastMadeAt = Date.now();
     await this.api(
       "/api/run",
       {
@@ -815,7 +846,7 @@ export class Client {
 
   /** An agent block (M6b): beside `split`, or in a new tab of `session`. */
   async newAgent(o: { config: Record<string, unknown>; vm: boolean; split?: PaneId; session?: number; from?: PaneId }) {
-    this.lastIntentAt = Date.now();
+    this.lastMadeAt = Date.now();
     await this.api(
       "/api/blocks",
       {
@@ -833,7 +864,7 @@ export class Client {
   /** A chat block: a conversation with Claude, no tools, on this page's
    * machine; beside `split`, or in a new tab of `session`. */
   async newChat(o: { split?: PaneId; session?: number; from?: PaneId } = {}) {
-    this.lastIntentAt = Date.now();
+    this.lastMadeAt = Date.now();
     await this.api(
       "/api/blocks",
       {
@@ -852,7 +883,7 @@ export class Client {
    * has it already, shown; `then` continues or forks it. Its id, or null
    * (and the error as a toast). */
   async openConversation(o: { id: string; then?: "continue" | "fork"; split?: PaneId; session?: number }): Promise<PaneId | null> {
-    this.lastIntentAt = Date.now();
+    this.lastMadeAt = Date.now();
     try {
       const res = await this.request(OPS["conversation.open"].method, opPath("conversation.open"), {
         id: o.id,
@@ -878,7 +909,7 @@ export class Client {
   /** Open a block (`POST /api/blocks`) and show it: its id, or null (and
    * the error as a toast). */
   async openBlock(body: OpenRequest, failure = "couldn't open that"): Promise<PaneId | null> {
-    this.lastIntentAt = Date.now();
+    this.lastMadeAt = Date.now();
     try {
       const res = await this.request("POST", "/api/blocks", body);
       const v = await res.json<Partial<OpenResponse> & { error?: string }>().catch(() => null);
@@ -893,7 +924,7 @@ export class Client {
   /** POST to the API and show what it makes (a pane from `/api/run`);
    * the error if it failed, for whoever asked to show it. */
   async make(path: string, body: unknown): Promise<string | null> {
-    this.lastIntentAt = Date.now();
+    this.lastMadeAt = Date.now();
     try {
       const res = await this.request("POST", path, body);
       if (res.ok) return null;
@@ -1100,7 +1131,10 @@ export class Client {
 
   /** Send `intent`; `refused` hears the daemon's reason if it says no. */
   intent(intent: Intent, refused?: (message: string) => void): number {
-    this.lastIntentAt = Date.now();
+    // Stamp the time only for intents that create panes, tabs, or sessions.
+    if (intent.op === "new_session" || intent.op === "new_tab" || intent.op === "split") {
+      this.lastMadeAt = Date.now();
+    }
     // Closing a block that stands for something elsewhere (#17: a remote
     // pane) closes that too.
     const closing =
@@ -1381,7 +1415,7 @@ export class Client {
     this.fixSelection();
     this.applyFollow();
     // Show what we just made: a split's new pane, a new tab or session.
-    if (created.length && !this.only && Date.now() - this.lastIntentAt < 3000) {
+    if (created.length && !this.only && Date.now() - this.lastMadeAt < 3000) {
       const tab = this.tabOfPane(created[0]);
       if (tab) {
         this.session = this.sessionOfTab(tab.id) ?? this.session;

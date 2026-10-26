@@ -4,16 +4,25 @@
 // (shell/swarm/model.ts's REASON_COL); these are the palette's, so the
 // chosen appearance holds.
 
-/** A card's bar, by the palette color it takes. */
-export type Tone = "accent" | "ok" | "warn" | "danger" | "info" | "teal" | "muted";
+import type { Tone } from "../shared/ui/state-chip";
+
+/** A card's bar, by the palette color it takes: a state chip's tones
+ * (UI audit #183). */
+export type { Tone };
+
+/** A run's, a deploy's and an issue's, as their chips take them. */
+export { deployTone, issueTone, runTone } from "../shared/tones";
 
 /** The class that gives a card its tone. */
 export const toneClass = (t: Tone | null) => (t ? `sw-${t}` : "");
 
-/** A project: the reader's role in it. Their own project is theirs alone,
- * so they own it. */
+/** A project: the reader's role in it. Their own project, theirs alone,
+ * is muted, so its bar isn't a team owner's (UI audit #162); it has no
+ * team pill, so it isn't taken for one they only view. (Teal was the
+ * other choice, but it's the accent's near twin in the default palette.) */
 export function roleTone(role: string | null | undefined): Tone {
-  if (!role || role === "owner") return "accent";
+  if (!role) return "muted";
+  if (role === "owner") return "accent";
   return role === "editor" ? "info" : "muted";
 }
 
@@ -24,24 +33,6 @@ export function workspaceTone(state: string, asked: string | null): Tone {
   if (state === "ready") return "ok";
   if (state === "failed") return "danger";
   return "muted";
-}
-
-/** A run (S37's states): waiting for an approval or its workspace waits,
- * running goes, then how it ended. Denied, canceled and expired runs never
- * ran to an end of their own. */
-export function runTone(state: string): Tone {
-  if (state === "pending" || state === "approved") return "warn";
-  if (state === "running") return "accent";
-  if (state === "succeeded") return "ok";
-  if (state === "failed") return "danger";
-  return "muted";
-}
-
-/** A deploy (M217's states, a run's with `planned` before them and
- * `stale` beside them): planned and waiting for its approval waits, then
- * as a run. A stale one never applied, as a denied one didn't. */
-export function deployTone(state: string): Tone {
-  return state === "planned" ? "warn" : runTone(state);
 }
 
 /** An inbox entry (M171): why it wants the reader, as the swarm colors a

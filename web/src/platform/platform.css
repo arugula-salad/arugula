@@ -24,13 +24,14 @@
   box-sizing: border-box;
 }
 
-/* The project, as the shell's head names the machine. */
+/* The project, as the shell's head names the machine: the head's full
+   height, as the wordmark and the account beside it are (UI audit #185). */
 .platform-bar .platform-project {
+  align-self: stretch;
   gap: 4px;
-  height: 28px;
-  padding: 0 8px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 0;
   background: none;
   color: var(--fg);
   font-weight: 600;
@@ -63,6 +64,47 @@
   margin-left: 8px;
 }
 
+/* On /, the wordmark is the place you're in (UI audit #159). */
+.platform-bar .ws-wordmark[aria-current="page"] {
+  background: var(--chrome-selected);
+}
+
+/* The middle of the bar gives way before the account does (UI audit
+   #159): the search narrows and the places scroll, so the account stays
+   at the right edge (chat's search pushed it off at ~970px). */
+.platform-bar .places {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+/* The search gives way first (its shrink outweighs the places'), down
+   to its least, and then the places scroll. */
+.platform-bar .chat-search {
+  flex-shrink: 100;
+  min-width: 80px;
+}
+
+.platform-bar .platform-shell,
+.platform-bar .platform-me {
+  flex: none;
+}
+
+/* What's unread in a project's issues' or runs' threads, on its place:
+   the rows' dot and count (./thread-unread.tsx). */
+.frame-place .place-unread {
+  margin: 0 0 0 6px;
+}
+
+.place-unread-said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* The desktop app on macOS: its buttons sit over the head's left end,
    before the wordmark (the shell's rail is under them instead). */
 html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
@@ -76,13 +118,37 @@ html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
      rest, so headings, stats and lists all share one column. */
   padding: 20px max(24px, calc((100% - 880px) / 2));
   box-sizing: border-box;
-  border: 1px solid var(--chrome-line);
-  border-radius: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
   background: var(--bg);
 }
 
 .platform-section + .platform-section {
   margin-top: 8px;
+}
+
+/* Chat in the page's frame (UI audit #169): the bar, then the rooms in a
+   panel inset as a page's section is, not drawn over the window as the
+   shell's chat is. A phone's chat keeps the whole screen. */
+.platform-chat > .chat:not(.phone) {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  flex: 1;
+  min-height: 0;
+  background: none;
+}
+
+.platform-chat > .chat:not(.phone) > .chat-body {
+  margin: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+html[data-corners="square"] .platform-chat > .chat > .chat-body {
+  border-radius: 0;
 }
 
 /* A page that's one panel fills the frame, as a lone pane does. */
@@ -92,11 +158,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
 
 html[data-corners="square"] .platform-section {
   border-radius: 0;
-}
-
-.platform-section h1 {
-  margin: 0 0 16px;
-  font-size: 20px;
 }
 
 .platform-section h2 {
@@ -126,8 +187,8 @@ html[data-corners="square"] .platform-section {
   flex-direction: column;
   gap: 6px;
   padding: 14px;
-  border: 1px solid var(--raised);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
   color: var(--fg) !important;
   text-decoration: none;
@@ -151,73 +212,28 @@ html[data-corners="square"] .platform-section {
   gap: 24px;
 }
 
+/* A project of one: no members beside its lists (UI audit #162). */
+.platform-columns.solo {
+  grid-template-columns: 1fr;
+}
+
 .platform-members .chat-people span.dim {
   margin-left: auto;
 }
 
-/* A Cloud workspace is one panel: where you are as its head, as a pane's
-   header sits on the pane, and its sections in it. */
-.platform-workspace {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  box-sizing: border-box;
-  overflow: hidden;
-  border: 1px solid var(--chrome-line);
-  border-radius: 5px;
-  background: var(--bg);
+/* A member's picture as the bar's account button has it: round (UI audit
+   #162). */
+.platform-members .msg-avatar {
+  --msg-gutter: 24px;
+  border-radius: 50%;
+  font-size: 10px;
 }
 
-html[data-corners="square"] .platform-workspace {
-  border-radius: 0;
+/* Commands and ids in the page's mono, not the browser's (UI audit #162). */
+.platform code {
+  font-family: var(--f-mono);
 }
 
-.platform-ws-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 20px;
-  background: var(--chrome-panel);
-  border-bottom: 1px solid var(--chrome-line);
-}
-
-.hosted-ws-view .platform-section {
-  padding: 0 max(24px, calc((100% - 880px) / 2));
-  border: 0;
-  border-radius: 0;
-  background: none;
-}
-
-.hosted-ws-view .platform-section + .platform-section {
-  margin-top: 0;
-}
-
-/* Its way back, in line with the rest of the head and the text under it. */
-.platform-workspace .tab {
-  min-width: 0;
-  margin: 0;
-  padding: 2px 4px;
-  border-radius: 5px;
-  color: inherit;
-  text-decoration: none;
-}
-
-.platform-workspace .hosted-ws-view {
-  flex: 1;
-  overflow: auto;
-  padding: 4px 0 20px;
-}
-
-.hosted-ws-view button.link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
-  font: inherit;
-}
 
 .platform-toast {
   position: fixed;
@@ -227,14 +243,15 @@ html[data-corners="square"] .platform-workspace {
   transform: translateX(-50%);
   max-width: calc(100vw - 32px);
   padding: 10px 16px;
-  border: 1px solid var(--raised);
-  border-radius: 999px;
+  border: 1px solid var(--line);
+  border-radius: var(--chip-radius);
   background: var(--surface);
   color: var(--fg);
   box-shadow: 0 12px 40px var(--platform-shadow);
 }
 
-@media (max-width: 600px) {
+/* One phone width for every column (UI audit #186): the bar's, usePhone's. */
+@media (max-width: 700px) {
   .platform-columns {
     grid-template-columns: 1fr;
   }
@@ -258,7 +275,7 @@ html[data-corners="square"] .platform-workspace {
   grid-template-columns: 1fr auto;
   gap: 2px 12px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .platform-drafts li > :not(.platform-draft-actions) {
@@ -300,15 +317,15 @@ html[data-corners="square"] .platform-workspace {
   align-items: center;
   padding: 8px 12px;
   margin: 4px 0 8px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
 }
 
 .platform-send-result.sent {
-  border-color: var(--ok, var(--divider));
+  border-color: var(--ok, var(--line));
 }
 
-@media (max-width: 520px) {
+@media (max-width: 700px) {
   .platform-drafts li {
     grid-template-columns: 1fr;
   }
@@ -326,7 +343,7 @@ html[data-corners="square"] .platform-workspace {
   grid-template-columns: 1fr auto;
   gap: 2px 12px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .platform-inbox-list li > :not(.platform-inbox-actions) {
@@ -382,6 +399,9 @@ html[data-corners="square"] .platform-workspace {
      places hides it once the last (or first) is in view. */
   .platform-bar .places {
     --edge: color-mix(in srgb, var(--accent) 55%, transparent);
+    /* Holds the unread counts' hidden words, which would otherwise widen
+       the page past the places' scroll (UI audit #186). */
+    position: relative;
     align-self: stretch;
     min-width: 0;
     overflow-x: auto;
@@ -409,6 +429,21 @@ html[data-corners="square"] .platform-workspace {
     padding-left: 4px;
   }
 
+  /* A long project name gives way to the places, not the page's width
+     (UI audit #186). */
+  .platform-bar .platform-project {
+    flex: none;
+    max-width: 40vw;
+    min-width: 0;
+  }
+
+  .platform-bar .platform-project-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .platform-main {
     padding: 6px;
   }
@@ -419,14 +454,6 @@ html[data-corners="square"] .platform-workspace {
 
   .platform-section + .platform-section {
     margin-top: 6px;
-  }
-
-  .platform-ws-head {
-    padding: 6px 8px;
-  }
-
-  .hosted-ws-view .platform-section {
-    padding: 0 12px;
   }
 
   .issues-search {
@@ -461,7 +488,7 @@ html[data-corners="square"] .platform-workspace {
 }
 
 /* A deploy's card (M218): where it goes and its state, what it deploys,
-   the plan's digest in full, the operation an approval signs, and Approve
+   the plan's digest (short, to copy), the operation an approval signs, and Approve
    and Deny, which open on control's page. */
 .deploy-cards {
   display: grid;
@@ -470,8 +497,8 @@ html[data-corners="square"] .platform-workspace {
 
 .deploy-card {
   padding: 14px;
-  border: 1px solid var(--raised);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
   min-width: 0;
 }
@@ -484,25 +511,23 @@ html[data-corners="square"] .platform-workspace {
   gap: 4px 12px;
 }
 
-.platform-section .deploy-card h2 {
+/* Above .platform .sw-page h2's section margin (UI audit #167). Its
+   title is a card's name, as the swarm's cards' are (.sw-name): no
+   accent, underlined on hover. */
+.platform .sw-page .deploy-card h2 {
   margin: 0;
-  font-size: 16px;
+  font: 700 19px/1.05 var(--f-display);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
-.deploy-state {
-  font-size: 12px;
-  color: var(--dim);
+.platform .sw-page .deploy-card h2 a {
+  color: var(--fg);
+  text-decoration: none;
 }
 
-.deploy-state-pending {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.deploy-state-stale,
-.deploy-state-denied,
-.deploy-state-failed {
-  color: var(--danger, var(--dim));
+.platform .sw-page .deploy-card h2 a:is(:hover, :focus-visible) {
+  text-decoration: underline;
 }
 
 .deploy-facts {
@@ -540,7 +565,7 @@ html[data-corners="square"] .platform-workspace {
   word-break: break-all;
   font-size: 12px;
   background: var(--bg);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .deploy-note {
@@ -555,23 +580,11 @@ html[data-corners="square"] .platform-workspace {
   margin-top: 12px;
 }
 
-.deploy-actions .button {
-  box-sizing: border-box;
+/* Approve and Deny: the set's (shared/buttons.css), thumb-sized. */
+.deploy-actions :is(.primary, .secondary) {
   min-height: 40px;
   min-width: 96px;
   padding: 8px 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--raised);
-  border-radius: 8px;
-  color: var(--fg);
-  text-decoration: none;
-}
-
-.platform-section .deploy-actions .button.primary {
-  border-color: var(--accent);
-  color: var(--on-color);
 }
 
 .deploy-why {
@@ -580,14 +593,15 @@ html[data-corners="square"] .platform-workspace {
   font-size: 12px;
 }
 
-@media (max-width: 520px) {
+/* The phone width every column here folds at (UI audit #167, #186). */
+@media (max-width: 700px) {
   .deploy-facts {
     grid-template-columns: 1fr;
   }
   .deploy-facts dt {
     margin-top: 4px;
   }
-  .deploy-actions .button {
+  .deploy-actions :is(.primary, .secondary) {
     flex: 1;
   }
 }
@@ -629,16 +643,6 @@ html[data-corners="square"] .platform-workspace {
   }
 }
 
-.runs-about {
-  margin: -8px 0 12px;
-  font-size: 13px;
-}
-
-.platform-section a.run-title {
-  font-family: var(--mono, monospace);
-  font-weight: 500;
-}
-
 .run-id {
   flex: none;
   font-size: 12px;
@@ -651,8 +655,8 @@ html[data-corners="square"] .platform-workspace {
   align-items: center;
   margin: 0 0 12px;
   padding: 10px 12px;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
 }
 
@@ -661,8 +665,8 @@ html[data-corners="square"] .platform-workspace {
   box-sizing: border-box;
   height: 28px;
   padding: 4px 8px;
-  border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
   font: inherit;
@@ -683,11 +687,58 @@ html[data-corners="square"] .platform-workspace {
 
 .run-spec-list > li {
   padding: 8px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .run-spec-head {
   overflow-wrap: anywhere;
+}
+
+/* What a spec runs, on its own line under its name (UI audit #164): a
+   command, or its instruction's Markdown clamped to a line until Show. */
+.run-spec-list .run-spec-op {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-spec-instruction {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.run-spec-md {
+  min-width: 0;
+  flex: 0 1 auto;
+  color: var(--subtle);
+}
+
+.run-spec-instruction > .link {
+  flex: none;
+}
+
+.run-spec-instruction:not(.open) .run-spec-md {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.run-spec-instruction:not(.open) .run-spec-md :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote) {
+  display: inline;
+  margin: 0;
+  font-size: inherit;
+}
+
+/* Why a run ended without succeeding, under its state (UI audit #164). */
+.run-why {
+  color: var(--danger);
 }
 
 .run-spec-op,
@@ -701,7 +752,7 @@ html[data-corners="square"] .platform-workspace {
 .run-spec-actions {
   float: right;
   display: flex;
-  gap: 12px;
+  gap: 6px;
 }
 
 .run-triggers {
@@ -714,39 +765,6 @@ html[data-corners="square"] .platform-workspace {
 .run-add-trigger {
   margin: 4px 0 0 12px;
   font-size: 13px;
-}
-
-.run-head {
-  align-items: baseline;
-  gap: 10px;
-}
-
-.run-head h1 {
-  font-family: var(--mono, monospace);
-  overflow-wrap: anywhere;
-}
-
-.run-state {
-  padding: 2px 8px;
-  border: 1px solid var(--divider);
-  border-radius: 999px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.run-state.ok {
-  border-color: var(--ok);
-  color: var(--ok);
-}
-
-.run-state.bad {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.run-state.going {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 .run-facts {
@@ -776,8 +794,8 @@ html[data-corners="square"] .platform-workspace {
   overflow: auto;
   margin: 6px 0 0;
   padding: 10px 12px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   font-family: var(--mono, monospace);
   font-size: 12px;
@@ -824,10 +842,44 @@ html[data-corners="square"] .platform-workspace {
   }
 }
 
-/* A hosted workspace (M184): its label, and its closed agents' transcripts. */
+/* A cloud workspace (M184): its ids, its label, the command that rebuilds
+   it, and its closed agents' transcripts. */
+.hosted-ids {
+  margin: 0 0 4px;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.hosted-ids code {
+  color: var(--fg);
+}
+
 .hosted-label {
+  margin: 0;
   color: var(--dim);
   font-size: 13px;
+}
+
+/* "Hosted · operator can read" as a chip, dim, before what it means (UI
+   audit #184). */
+.hosted-chip {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--chip-radius);
+  color: var(--dim);
+  font: 600 11px/1.4 var(--f-mono);
+  white-space: nowrap;
+}
+
+.hosted-rebuild > p,
+.hosted-none > p {
+  margin: 0;
+}
+
+.platform .copy-text > .control-cmd {
+  font-family: var(--f-mono);
 }
 
 .hosted-transcripts {
@@ -839,17 +891,27 @@ html[data-corners="square"] .platform-workspace {
   margin: 6px 0;
 }
 
+/* A transcript's own headings are its text's, not the page's sections. */
+.platform .sw-page .hosted-transcript :is(h1, h2, h3, h4) {
+  margin: 14px 0 6px;
+  font: 600 15px/1.3 var(--f-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.platform .sw-page .hosted-transcript .md > :first-child {
+  margin-top: 0;
+}
+
 .hosted-transcript {
   max-height: 60vh;
   overflow: auto;
   margin: 6px 0 12px;
-  padding: 8px 10px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 /* A project's environments and "Deploy…" (M252): the forms that make an
@@ -862,8 +924,8 @@ html[data-corners="square"] .platform-workspace {
   max-width: 560px;
   margin: 12px 0;
   padding: 12px 14px;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
 }
 
@@ -889,8 +951,8 @@ html[data-corners="square"] .platform-workspace {
   min-width: 0;
   height: 30px;
   padding: 4px 8px;
-  border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
   font: inherit;
@@ -906,20 +968,12 @@ html[data-corners="square"] .platform-workspace {
 
 .deploy-secret-names {
   margin: 0;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
 }
 
 .deploy-secret-names p {
   margin: 4px 0;
-}
-
-.deploy-roll-back {
-  padding: 0 6px;
-  border: 1px solid var(--raised);
-  border-radius: 4px;
-  font-size: 12px;
-  color: var(--dim);
 }
 
 /* What's new in an issue's or a run's thread, on its row in the list
@@ -947,5 +1001,48 @@ html[data-corners="square"] .platform-workspace {
 }
 
 .frame-place .chat-count {
-  margin-left: 5px;
+  margin-left: var(--space-1);
+}
+
+/* A project's agent sessions in numbers (M265). */
+.session-stats {
+  margin-top: 12px;
+}
+
+.session-stats h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--subtle);
+  font-weight: 600;
+}
+
+.session-stat-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.session-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 72px;
+  padding: 8px 12px;
+  border: 1px solid var(--raised);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+}
+
+.session-stat b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-stat span {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.session-stat-to {
+  color: var(--dim);
 }

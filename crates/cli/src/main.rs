@@ -397,7 +397,7 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::agent_tokens::AgentTokensCmd>,
     },
-    /// A project's hosted workspaces on Arugula control.
+    /// A project's cloud workspaces on Arugula control.
     ///
     /// `create NAME` makes one (owner or editor on the project; `--repo`,
     /// `--package`, `--setup` and `--env` say what it's built from), `ls`
@@ -416,7 +416,7 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::cloud::CloudCmd,
     },
-    /// Runs on a project's hosted workspaces, on Arugula control.
+    /// Runs on a project's cloud workspaces, on Arugula control.
     ///
     /// `list`, `show RUN` and `logs RUN [--follow]` read them (logs: the
     /// platform's log of a run, or its pane while it runs). `start` runs a

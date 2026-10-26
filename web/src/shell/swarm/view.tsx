@@ -24,7 +24,8 @@ import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
 import { GateWhy } from "../ui/gate-why";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
-import { activityOf, bundleOf, cardTitle, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
+import { finished, needsYou, NEEDS_YOU } from "../../shared/needs-you";
+import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
 const THEME_KEY = "arugula.swarm.theme";
@@ -46,8 +47,10 @@ export function offeredThemes(labs: boolean): Theme[] {
 
 function savedBy(): GroupBy {
   try {
-    const v = localStorage.getItem(BY_KEY) as GroupBy | null;
-    return v && GROUPINGS.includes(v) ? v : "project";
+    const v = localStorage.getItem(BY_KEY);
+    // "person" is "owner" now (UI audit #172).
+    if (v === "person") return "owner";
+    return v && GROUPINGS.includes(v as GroupBy) ? (v as GroupBy) : "project";
   } catch {
     return "project";
   }
@@ -251,7 +254,7 @@ export function SwarmView({
             : `%${p.id} ${whatItDoes(p)}`,
           where: p.host,
           lastOut: p.info.activity?.last_ms ?? 0,
-          att: r && wanting.has(p.key) ? { col: REASON_COL[r.kind], bundle: onRail.get(p.key) ?? null, since: r.since_ms } : null,
+          att: r && wanting.has(p.key) ? { col: REASON_COL[r.kind], bundle: onRail.get(p.key) ?? null, since: r.since_ms, need: needsYou(p.info) } : null,
           id: p.id,
           sub: by === "machine" ? (p.info.project?.name ?? groupOf(p, "project")) : p.host,
           bps: p.stale ? 0 : (p.info.activity?.bps ?? 0),
@@ -398,9 +401,11 @@ export function SwarmView({
   // Every machine the host menu lists, not only those with panes here.
   const machines = fleet.list.length;
   const busy = panes.filter((p) => activityOf(p) > 0.3).length;
-  // What's on the rail (or waiting for room on it): a finished card that
-  // left it stops counting, here and in the views.
-  const need = wanting.size;
+  // What needs you, as the bell counts it (shared/needs-you); finished
+  // cards on the rail (or waiting for room on it) count apart, as finished
+  // (UI audit #154).
+  const need = panes.filter((p) => needsYou(p.info)).length;
+  const done = bundles.reduce((n, b) => n + b.panes.filter((p) => finished(p.info)).length, 0);
   const clusters = field.current?.clusters ?? [];
 
   return (
@@ -430,6 +435,11 @@ export function SwarmView({
           <div class="needs">
             <b data-stat="need">{need}</b>need you
           </div>
+          {done > 0 && (
+            <div>
+              <b data-stat="finished">{done}</b>finished
+            </div>
+          )}
         </div>
         <div class="swarm-spacer" />
         <div>
@@ -437,7 +447,7 @@ export function SwarmView({
           <div class="swarm-seg" role="group" aria-label="Cluster by">
             {GROUPINGS.map((g) => (
               <button key={g} data-g={g} aria-pressed={g === by} onClick={() => choose(g)}>
-                {g}
+                {GROUPING_LABEL[g]}
               </button>
             ))}
           </div>
@@ -448,7 +458,7 @@ export function SwarmView({
             <div class="swarm-seg" role="group" aria-label="Theme">
               {themes.map((t) => (
                 <button key={t} data-theme-pick={t} aria-pressed={t === theme} onClick={() => pickTheme(t)}>
-                  {t}
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>
               ))}
             </div>
@@ -475,6 +485,7 @@ export function SwarmView({
           <div class="swarm-tip" data-swarm-tip>
             <span>{HINT[theme][phone ? 1 : 0]}</span>
             <button
+              class="secondary small"
               onClick={() => {
                 setTipGone(true);
                 try {
@@ -493,7 +504,7 @@ export function SwarmView({
 
       <aside class="swarm-rail" aria-label="Needs you" ref={rail}>
         <header>
-          <h2>Needs you</h2>
+          <h2>{NEEDS_YOU}</h2>
 
         </header>
         <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
@@ -519,7 +530,7 @@ export function SwarmView({
         </div>
         {waiting > 0 && (
           <div class="swarm-waiting" data-waiting={waiting}>
-            <b>{waiting}</b> more pulsing in place until there's room
+            <b>+{waiting}</b> more waiting in the swarm
           </div>
         )}
       </aside>
@@ -530,7 +541,7 @@ export function SwarmView({
             {Object.entries(KINDS).map(([k, c]) => (
               <span key={k}>
                 <i style={{ background: `rgb(${c})` }} />
-                {k}
+                {KIND_LABEL[k as keyof typeof KINDS]}
               </span>
             ))}
           </div>
@@ -778,6 +789,8 @@ function Card({
   // Every project the card's panes are in, not only the first one's.
   const projects = [...new Set(b.panes.map((p) => p.info.project?.name ?? groupOf(p, "project")))];
   const project = projects.length > 2 ? `${projects.length} projects` : projects.join(", ");
+  // One pane's session, which its Share names (UI audit #172).
+  const session = n === 1 ? first.session?.name : null;
   // Someone else's panes say whose (a teammate's machine in a team too).
   const owners = [...new Set(b.panes.map((p) => fleet.host(p.host)?.owner).filter(Boolean))];
   const whose = owners.length === 1 && b.panes.every((p) => fleet.host(p.host)?.owner) ? `${owners[0]}'s` : owners.length > 1 ? "several people's" : null;
@@ -812,21 +825,23 @@ function Card({
       style={{ "--c": `rgb(${REASON_COL[r.kind]})` }}
     >
       <div class="ch">
-        <b class="ct" role="button" tabIndex={0} title="Find it in the swarm" onClick={show} onKeyDown={(e) => e.key === "Enter" && show()}>
+        {/* A real button (UI audit #172): Space works too. */}
+        <button class="ct" title="Find it in the swarm" onClick={show}>
           {cardTitle(r, n, machines.map(shortHost))}
-        </b>
+        </button>
         <Watching fleet={fleet} panes={b.panes} />
         {n > 1 && <span class="n">×{n}</span>}
       </div>
       <div class="cm" title={ids}>
         {whose ? <b class="whose">{whose} · </b> : null}
-        {n === 1 ? whatItDoes(first) : `${n} panes`} · {machines.length > 1 ? `${machines.length} machines` : shortHost(machines[0])} · {project}
+        {n === 1 ? whatItDoes(first) : `${n} panes`} · {session ? `${session} · ` : ""}
+        {machines.length > 1 ? `${machines.length} machines` : shortHost(machines[0])} · {project}
       </div>
       {diff ? null : ask?.kind === "permission" ? (
         <PermissionBody ask={ask} />
       ) : (
-        <div class="cq" title={r.command && !r.headline.includes(r.command) ? `${r.headline}\n${r.command}` : r.headline}>
-          {shortPaths(r.headline)}
+        <div class="cq" title={r.command && !r.headline.includes(r.command) ? `${headlineOf(r)}\n${r.command}` : headlineOf(r)}>
+          {shortPaths(headlineOf(r))}
           {r.command && r.kind !== "ask" && r.kind !== "gate" && !r.headline.includes(r.command) ? <code> {shortPaths(r.command)}</code> : null}
         </div>
       )}
@@ -852,7 +867,7 @@ function Card({
         <div class="ca" data-point={point.id}>
           {n === 1 && <PointChoices point={point} busy={busy} answer={(answer) => void run("answer", { content: { answer } })} />}
           {r.actions.includes("dismiss") && (
-            <button class="ghost" disabled={busy} onClick={() => void run("dismiss")}>
+            <button class="secondary small" disabled={busy} onClick={() => void run("dismiss")}>
               {all("Dismiss")}
             </button>
           )}
@@ -868,37 +883,37 @@ function Card({
       ) : (
         <div class="ca">
           {openFirst && (
-            <button class="pri" data-open-card onClick={open}>
+            <button class="primary small" data-open-card onClick={open}>
               Open
             </button>
           )}
           {r.actions.includes("rerun") && (
-            <button class="pri" data-rerun disabled={busy} onClick={() => void run("rerun")}>
+            <button class="primary small" data-rerun disabled={busy} onClick={() => void run("rerun")}>
               {all("Rerun")}
             </button>
           )}
           {r.actions.includes("continue") && (
-            <button class="pri" data-continue disabled={busy} onClick={() => void run("continue")}>
+            <button class="primary small" data-continue disabled={busy} onClick={() => void run("continue")}>
               {all("Continue")}
             </button>
           )}
           {r.actions.includes("allow") && (
-            <button class="pri" data-approve-gate={r.kind === "gate" ? "" : undefined} disabled={busy} onClick={() => void run("allow")}>
+            <button class="primary small" data-approve-gate={r.kind === "gate" ? "" : undefined} disabled={busy} onClick={() => void run("allow")}>
               {all(r.kind === "gate" ? "Approve" : "Allow")}
             </button>
           )}
           {r.actions.includes("expire") && (
-            <button data-expire-gate disabled={busy} title={EXPIRE_TITLE} onClick={() => void run("expire")}>
+            <button class="secondary small" data-expire-gate disabled={busy} title={EXPIRE_TITLE} onClick={() => void run("expire")}>
               {all("Expire")}
             </button>
           )}
           {r.actions.includes("deny") && r.ask?.what === "approve" && (
-            <button disabled={busy} onClick={() => void run("deny")}>
+            <button class="secondary danger small" disabled={busy} onClick={() => void run("deny")}>
               {all("Deny")}
             </button>
           )}
           {r.ask?.what === "question" && (
-            <button class="pri" onClick={open}>
+            <button class="primary small" onClick={open}>
               Answer…
             </button>
           )}
@@ -908,24 +923,24 @@ function Card({
           it's the main button above, and Dismiss. */}
       <div class="ca ca-nav">
         {!isPresence(first) && !openFirst && (
-          <button class="ghost" onClick={open}>
+          <button class="secondary small" onClick={open}>
             Open
           </button>
         )}
         {n === 1 && followable(first) && (
-          <button class="ghost" data-follow-card onClick={follow}>
+          <button class="secondary small" data-follow-card onClick={follow}>
             Follow
           </button>
         )}
         {/* #237: a pane that wants someone: bring them in. Its owner
             shares, as in the session menu; one pane's session only. */}
         {n === 1 && !isPresence(first) && first.session && fleet.role(first) === "owner" && (
-          <button class="ghost" data-share-card title={`Share ${first.session.name} with someone`} onClick={share}>
+          <button class="secondary small" data-share-card title={`Share ${first.session.name} with someone`} onClick={share}>
             Share
           </button>
         )}
         {can && !point && (r.actions.includes("dismiss") || r.kind === "ask" || r.kind === "diff") && (
-          <button class="ghost" data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
+          <button class="secondary small" data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
             {all("Dismiss")}
           </button>
         )}

@@ -3,7 +3,7 @@
 // else is nothing's address. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { idOf, parse, pathOf, slugOf, withSlug } from "../src/platform/paths.ts";
+import { TOP, idOf, parse, pathOf, slugOf, withSlug } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
 const names = (id) => ({ [P]: "Arugula Team", ch_0123456789abcdef: "general" })[id];
@@ -27,7 +27,9 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}/chat/saved`), { page: "chat", project: P, view: "saved" });
   assert.equal(pathOf({ page: "chat", project: P, view: "saved" }), `/p/${P}/chat/saved`);
   assert.deepEqual(parse(`/p/${P}/chat/search`, "?q=from%3A%40sam"), { page: "chat", project: P, view: "search", q: "from:@sam" });
-  assert.deepEqual(parse("/dm/dm_00aa11bb22cc33dd-sam"), { page: "dm", room: "dm_00aa11bb22cc33dd" });
+  // A DM is its team's project's (UI audit #169); an id-only one finds it.
+  assert.deepEqual(parse(`/p/${P}/dm/dm_00aa11bb22cc33dd-sam`), { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" });
+  assert.deepEqual(parse("/dm/dm_00aa11bb22cc33dd-sam", "?msg=3"), { page: "find", what: "chat", room: "dm_00aa11bb22cc33dd", msg: 3 });
   assert.deepEqual(parse(`/p/${P}/workspaces/hw_0123456789abcdef0123456789abcdef-app`), { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" });
   assert.deepEqual(parse(`/p/${P}-x/settings`), { page: "project-settings", project: P });
   assert.deepEqual(parse(`/p/${P}/settings`, "?link=acme%2Fapp"), { page: "project-settings", project: P, link: "acme/app" });
@@ -54,7 +56,7 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "project", project: P },
     { page: "chat", project: P, room: "ch_0123456789abcdef", msg: 4 },
     { page: "chat", project: P, view: "search", q: "has:quote deploy" },
-    { page: "dm", room: "dm_00aa11bb22cc33dd" },
+    { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" },
     { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" },
     { page: "project-settings", project: P, link: "acme/app" },
     { page: "installed", project: P, repo: "acme/app" },
@@ -67,6 +69,30 @@ test("links carry the current slug, and read back as the same route", () => {
     const [p, q] = path.split("?");
     assert.deepEqual(parse(p, q ? `?${q}` : ""), r, path);
   }
+});
+
+test("every route starts with a segment in TOP, the server's 404 list (UI audit #193)", () => {
+  const routes = [
+    { page: "project", project: P },
+    { page: "chat", project: P },
+    { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" },
+    { page: "issues", project: P },
+    { page: "runs", project: P },
+    { page: "installed" },
+    { page: "inbox" },
+    { page: "settings" },
+    { page: "deploy", deploy: `dep_${"0a".repeat(16)}` },
+    { page: "find", what: "chat" },
+    { page: "find", what: "chat", room: "dm_00aa11bb22cc33dd" },
+    { page: "find", what: "issue", issue: "iss_0123456789abcdef" },
+    { page: "find", what: "run", run: "run_0123456789abcdef" },
+  ];
+  for (const r of routes) {
+    const first = pathOf(r).split(/[/?]/)[1];
+    assert.ok(TOP.includes(first), `${pathOf(r)}: ${first} isn't in TOP`);
+    assert.notEqual(parse(pathOf(r).split("?")[0]).page, "missing", pathOf(r));
+  }
+  for (const first of TOP) assert.ok(/^[a-z]+$/.test(first), first);
 });
 
 test("slugs", () => {

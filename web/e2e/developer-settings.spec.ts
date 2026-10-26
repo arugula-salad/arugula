@@ -138,7 +138,7 @@ test("turning chat on in the dialog turns on chat, and nothing else, without a r
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   await expect(dialog(page).locator("[data-flag] input:checked")).toHaveCount(1);
   expect(onNow()).toEqual(["chat"]);
-  await dialog(page).getByRole("button", { name: "Close" }).click();
+  await dialog(page).getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog(page)).toBeHidden();
   expect(await shown(page, pane)).toEqual(["chat"]);
   // The swarm keeps its one view.

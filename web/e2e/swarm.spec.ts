@@ -62,7 +62,7 @@ const capture = (page: Page, host: string, pane: number) =>
     [host, pane] as const,
   );
 
-test("clusters by project (with fallback groups), machine, kind, session and person, remembered", async ({ page }) => {
+test("clusters by project (with fallback groups), machine, kind, session and owner, remembered", async ({ page }) => {
   await swarm(page);
   // By project: the git repositories, and directories for the rest, never
   // one "none" pile.
@@ -73,24 +73,24 @@ test("clusters by project (with fallback groups), machine, kind, session and per
   expect(await clusters(page)).not.toContain("none");
   // It says so (#551).
   await expect(page.locator(".swarm-hint")).toContainText("A pane's project is the git repository it's in");
-  // Machines, kinds, sessions, people.
+  // Machines, kinds, sessions, owners.
   await page.locator('[data-g="machine"]').click();
   await expect.poll(() => clusters(page)).toEqual(["build-01", "build-02", "workstation"]);
   await page.locator('[data-g="kind"]').click();
   await expect.poll(() => clusters(page)).toEqual(expect.arrayContaining(["build", "test", "server", "logs", "editor", "shell"]));
   await page.locator('[data-g="session"]').click();
   await expect.poll(async () => (await clusters(page)).every((c) => / · (workstation|build-01|build-02)$/.test(c))).toBe(true);
-  await page.locator('[data-g="person"]').click();
+  await page.locator('[data-g="owner"]').click();
   await expect.poll(() => clusters(page)).toEqual(["you"]);
   // Remembered on this device.
   await page.locator('[data-g="machine"]').click();
   await page.reload();
   await expect(page.locator('[data-g="machine"]')).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => clusters(page)).toEqual(["build-01", "build-02", "workstation"]);
-  // By person (M30): yours, a teammate's and a team's, from the synthetic
+  // By owner (M30): yours, a teammate's and a team's, from the synthetic
   // fleet's owners beside these.
   const stop = await page.evaluateHandle(() => window.__arugula.swarmFake(40));
-  await page.locator('[data-g="person"]').click();
+  await page.locator('[data-g="owner"]').click();
   await expect.poll(() => clusters(page)).toEqual(["sam", "team infra", "you"]);
   await stop.evaluate((f) => f());
     // Tiles are coloured by kind: the legend has every kind.
@@ -115,7 +115,7 @@ test("a finished card's main button is Open, and Dismiss is down with Show and E
   const pane = await fake.finish("workstation");
   const card = page.locator(`.swarm-card[data-panes~="workstation:${pane}"]`);
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await expect(card.locator(".ca button.pri")).toHaveText(["Open"]);
+  await expect(card.locator(".ca button.primary")).toHaveText(["Open"]);
   await expect(card.locator(".ca-nav [data-dismiss-card]")).toBeVisible();
   await card.locator("[data-open-card]").click();
   await expect(page.locator(".swarm")).toBeHidden();
@@ -126,7 +126,7 @@ test("failures on one machine bundle into one card, dismissed together", async (
   const panes = await fake.trouble("build-02", 3);
   const card = page.locator('.swarm-card[data-bundle="failed:build-02"]');
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await expect(card.locator(".ch b")).toHaveText("3 failed on build-02", { timeout: 10_000 });
+  await expect(card.locator(".ch .ct")).toHaveText("3 failed on build-02", { timeout: 10_000 });
   await expect(card.locator(".n")).toHaveText("×3");
   await expect(card.locator(".cq")).toContainText("cargo test -p relay failed (exit 101)");
   await card.getByRole("button", { name: "Dismiss all 3" }).click();
@@ -142,7 +142,7 @@ test("an agent's approval is allowed from the rail, and the follow-up wakes it",
   const pane = await fake.agentAsks("workstation", "api", "cargo test -p swarm");
   const card = page.locator(`.swarm-card[data-panes~="workstation:${pane}"]`);
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await expect(card.locator(".ch b")).toHaveText("Claude Code asks");
+  await expect(card.locator(".ch .ct")).toHaveText("Claude Code asks");
   await expect(card.locator(".agent-perm-cmd")).toHaveText("cargo test -p swarm");
   await card.getByRole("button", { name: "Allow", exact: true }).click();
   // The card says who allowed it, and offers a follow-up.
@@ -164,7 +164,7 @@ test("two agents asking in one project are one card: deny them both", async ({ p
   const b = await fake.agentAsks("build-01", "web", "rm -rf build");
   const card = page.locator(`.swarm-card[data-kind="ask"][data-panes~="workstation:${a}"]`);
   await expect(card).toHaveAttribute("data-panes", new RegExp(`build-01:${b}`), { timeout: 20_000 });
-  await expect(card.locator(".ch b")).toHaveText("2 agents ask");
+  await expect(card.locator(".ch .ct")).toHaveText("2 agents ask");
   await card.getByRole("button", { name: "Deny all 2" }).click();
   await expect(card).toHaveCount(0);
   await expect.poll(() => capture(page, "workstation", a)).toContain('"behavior":"deny"');

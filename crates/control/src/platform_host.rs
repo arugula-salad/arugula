@@ -16,8 +16,9 @@
 //!   WebSocket, is a 404;
 //! - any other GET or HEAD is the platform page (`arugula_platform::page`):
 //!   in process the hub serves the platform crate's embed, out of process it
-//!   forwards the GET to the platform, which serves its own. Never the
-//!   shell's `web/dist`. Any other method is a 405.
+//!   forwards the GET to the platform, which serves its own (as a 404 for
+//!   a path no route of the page's starts with). Never the shell's
+//!   `web/dist`. Any other method is a 405.
 //!
 //! Every answer here carries the page's own headers (the platform page's
 //! CSP, no framing, no referrer). The hub's session is host-only on control's

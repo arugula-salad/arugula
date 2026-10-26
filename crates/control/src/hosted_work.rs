@@ -5,14 +5,14 @@
 //! says which machine asked, from the hosted certificate it checked, with
 //! the key its reports are signed with, and passes the call on
 //! (`PlatformPort::hosted_work`, `hosted_report`, `hosted_upload`,
-//! `hosted_uploaded`), and their agent sessions' reports (M257,
-//! `hosted_session_report`).
+//! `hosted_uploaded`), their agent sessions' reports (M257,
+//! `hosted_session_report`) and push tokens (M259, `hosted_session_push`).
 
 use std::sync::Arc;
 
 use arugula_control_wire::{
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionReport, Work},
+    work::{ArtifactGiven, PushAsk, PushGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionReport, Work},
 };
 use arugula_platform::{PlatformPort as _, work::HostedMachine};
 use axum::{
@@ -62,6 +62,17 @@ pub async fn session_report(
     Json(r): Json<SessionReport>,
 ) -> Result<Json<Reported>, ApiError> {
     Ok(Json(app.platform.hosted_session_report(&machine(&h.0), &r).await?))
+}
+
+/// `POST /api/hosted/work/session/push` (M259): a token to push one of its
+/// sessions' branch, minted for that push. The platform mints it only for
+/// this machine's own session and that session's branch.
+pub async fn session_push(
+    State(app): State<Arc<App>>,
+    h: HostedAuth,
+    Json(a): Json<PushAsk>,
+) -> Result<Json<PushGiven>, ApiError> {
+    Ok(Json(app.platform.hosted_session_push(&machine(&h.0), &a).await?))
 }
 
 /// `POST /api/hosted/work/upload`: a URL to put one of its run's log

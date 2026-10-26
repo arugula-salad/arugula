@@ -26,6 +26,8 @@ import { GettingStartedLayer, useFirstRun } from "./welcome";
 import { machineSettingsItems } from "./commands";
 import { PaletteLayer } from "./palette";
 import { ControlBanner } from "./control-state";
+import { MovingNote } from "./moving-note";
+import { LinkNote } from "./link-note";
 import { MaintenanceNote } from "../../shared/ui/maintenance-note";
 import { AgentsNudge } from "./agents-setup";
 import { useWorkspaceKeys } from "./keys";
@@ -42,6 +44,8 @@ import { SessionOverview, useOverview } from "./shell/overview";
 import { TabArea } from "./panes/tab-area";
 import { DragGhost } from "./panes/drop-overlay";
 import { useHoverToSwitchTabs } from "./panes/drop";
+import { currentPlace } from "./places";
+import { shellTitle } from "./titles";
 
 /** How long a hidden page keeps its connection to a sandbox host. */
 const HIDDEN_GRACE_MS = 10_000;
@@ -72,7 +76,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   // Following someone stops as soon as you do something yourself.
   useEffect(() => {
     const stop = (e: Event) => {
-      if (client.following !== null && !(e.target as HTMLElement).closest?.(".avatar")) client.follow(null);
+      if ((client.following !== null || client.watching !== null) && !(e.target as HTMLElement).closest?.(".avatar")) client.follow(null);
     };
     window.addEventListener("pointerdown", stop, true);
     window.addEventListener("keydown", stop, true);
@@ -88,6 +92,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   useReportFocus(client, phone);
   useWorkspaceKeys(client, phone);
   useFirstRun(client);
+  useTabTitle(client);
   // M113 (#1028): a computer draws the workspace once a machine is shown;
   // a phone keeps its own header.
   const ws = !phone && !!client.state;
@@ -165,6 +170,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
                 </div>
               )}
               <ControlBanner client={client} />
+              <LinkNote />
+              <MovingNote />
               <MaintenanceNote />
               <NewMachineNote />
               <AgentsNudge client={client} />
@@ -188,11 +195,17 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {/* A computer gets here only before a machine answers. */}
       {state && phone && <PhoneHeader client={client} />}
       {state && <ControlBanner client={client} />}
+      <LinkNote />
+      <MovingNote />
       <MaintenanceNote />
       {state && <NewMachineNote />}
       {state && <AgentsNudge client={client} />}
       {main}
-      {phone && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && <KeyBar client={client} />}
+      {/* In the column, above the key bar (UI audit #199). */}
+      {phone && state && <InstallHint />}
+      {/* Only where this person's typing reaches the pane: not a viewer's,
+          nor a read-only link's (UI audit #149). */}
+      {phone && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && client.mayType(client.active()!) && <KeyBar client={client} />}
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
@@ -207,7 +220,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />
-      {phone && state && <InstallHint />}
       <DragGhost />
       {/* An ask to drive shows over the share dialog (#551). */}
       <ShareDialog client={client} />
@@ -245,6 +257,22 @@ function NoSessions({ client, phone }: { client: Client; phone: boolean }) {
 }
 
 // ---------------------------------------------------------------- attention
+
+/** The tab's title says what's shown (UI audit #170): the session and the
+ * machine, or the place. */
+function useTabTitle(client: Client) {
+  useSubscribe((fn) => directory.subscribe(fn));
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((t) => t + 1);
+    window.addEventListener("hashchange", fn);
+    return () => window.removeEventListener("hashchange", fn);
+  }, []);
+  const state = client.state;
+  const session = state ? (state.sessions.find((s) => s.id === client.session) ?? state.sessions[0])?.name : null;
+  const title = shellTitle(currentPlace(), directory.current || null, session);
+  useEffect(() => void (document.title = title), [title]);
+}
 
 /** Tell the daemon which pane this window is looking at, so it doesn't
  * notify you about the pane in front of you. */

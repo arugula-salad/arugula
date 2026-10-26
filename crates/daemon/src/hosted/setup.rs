@@ -21,6 +21,12 @@
 //!   [`super::PER_BOX`]: a daemon that restarts mid-setup watches its pane
 //!   again, and one that finished says so again until control has heard
 //!   it. A rebuild is a new box, which runs it again.
+//! - **Snapshots** (M263, [`super::snapshot`]). A snapshot's builder, once
+//!   its setup ran all right, wipes itself and says `ready` at step
+//!   `sealed` (or `failed`, for the wipe's reason), keeping nothing in its
+//!   state directory, which the wipe removed; then it stops. A box made
+//!   from the snapshot runs no setup: it says `ready` at step `snapshot`,
+//!   from the record the builder left.
 //! - **What a rebuild would lose** ([`status`], `GET /api/hosted/setup`):
 //!   each repo's changed files and commits on no remote branch, and
 //!   [`archive`], a tarball of the repos that have any.
@@ -32,7 +38,7 @@ use std::{
 };
 
 use anyhow::Context as _;
-use arugula_control_wire::hosted::{SetupPlan, SetupReport, SetupStatus};
+use arugula_control_wire::hosted::{FROM_SNAPSHOT, SEALED, SetupPlan, SetupReport, SetupStatus};
 use arugula_proto::{
     PaneId, Policy,
     api::{HostedRepo, HostedSetup, RunRequest},
@@ -117,12 +123,33 @@ pub fn start(app: Arc<App>, state_dir: PathBuf) {
     tokio::spawn(async move { run(app, state_dir).await });
 }
 
+/// Whether control enrolled this box to build a workspace's snapshot.
+fn builder(app: &App) -> bool {
+    app.control.enrolled().is_some_and(|e| e.saved.hosted.as_ref().is_some_and(|h| h.builder))
+}
+
 async fn run(app: Arc<App>, state_dir: PathBuf) {
     let control = app.control.clone();
     while control.enrolled().is_none() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     let mut saved = Saved::load(&state_dir);
+    // A box from a workspace's snapshot is set up already.
+    if saved.status.is_none()
+        && let Some(r) = super::snapshot::from_snapshot(&super::snapshot::dir(), &super::resume::sandbox_id_file())
+    {
+        info!("hosted: set up from the workspace's snapshot");
+        saved = Saved {
+            status: Some(SetupStatus::Ready),
+            step: FROM_SNAPSHOT.into(),
+            spec_hash: r.spec_hash,
+            repos: r.repos,
+            ..Saved::default()
+        };
+        saved.save(&state_dir);
+        report_until_heard(&app, &state_dir, &mut saved).await;
+        return;
+    }
     match saved.status {
         Some(SetupStatus::Ready | SetupStatus::Failed) => {
             if !saved.reported {
@@ -151,9 +178,10 @@ async fn run(app: Arc<App>, state_dir: PathBuf) {
                 return;
             }
             report_once(&app, &state_dir, &mut saved).await;
+            return watch(&app, &state_dir, saved, Some(&plan)).await;
         }
     }
-    watch(&app, &state_dir, saved).await;
+    watch(&app, &state_dir, saved, None).await;
 }
 
 /// Control's plan for this box, asked until it answers: `None` when it has
@@ -217,8 +245,10 @@ async fn begin(app: &App, state_dir: &Path, plan: &SetupPlan) -> anyhow::Result<
     })
 }
 
-/// Follow the setup's pane to its end, telling control each step.
-async fn watch(app: &App, state_dir: &Path, mut saved: Saved) {
+/// Follow the setup's pane to its end, telling control each step. `plan`
+/// is what it was given, when this daemon started it (a builder's wipe
+/// looks for its secrets).
+async fn watch(app: &App, state_dir: &Path, mut saved: Saved, plan: Option<&SetupPlan>) {
     let dir = state_dir.join(DIR);
     loop {
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -231,6 +261,9 @@ async fn watch(app: &App, state_dir: &Path, mut saved: Saved) {
         if let Some(code) = done {
             if !step.is_empty() {
                 saved.step = step;
+            }
+            if code == 0 && builder(app) {
+                return sealed(app, state_dir, saved, plan).await;
             }
             if code == 0 {
                 saved.status = Some(SetupStatus::Ready);
@@ -262,6 +295,52 @@ async fn watch(app: &App, state_dir: &Path, mut saved: Saved) {
             saved.save(state_dir);
             report_once(app, state_dir, &mut saved).await;
         }
+    }
+}
+
+/// A builder's setup ran all right (M263): wipe the box for its snapshot,
+/// say how that went until control hears, and stop. Nothing goes in the
+/// state directory after the wipe, which removed it. A daemon that
+/// restarted mid-setup has lost what setup was given, so it can't look for
+/// it: it refuses.
+async fn sealed(app: &App, state_dir: &Path, mut saved: Saved, plan: Option<&SetupPlan>) {
+    use super::snapshot::Refused;
+    let sandbox = super::resume::stamp(&super::resume::sandbox_id_file()).map(|(id, _)| id).unwrap_or_default();
+    let done = match plan {
+        _ if sandbox.is_empty() => Err(Refused::Failed("no sandbox id".into())),
+        Some(p) => super::snapshot::seal(state_dir, &sandbox, p, &saved.repos).await,
+        None => Err(Refused::Failed("the daemon restarted mid-setup".into())),
+    };
+    saved.step = SEALED.into();
+    match &done {
+        Ok(w) => {
+            info!(
+                killed = w.killed,
+                removed = w.removed.len(),
+                histories = w.histories,
+                journal = w.journal,
+                "hosted: wiped for the snapshot"
+            );
+            saved.status = Some(SetupStatus::Ready);
+        }
+        Err(r) => {
+            // Where a secret was left, never what.
+            warn!(reason = r.reason(), refused = ?r, "hosted: not wiped for the snapshot");
+            saved.status = Some(SetupStatus::Failed);
+            saved.reason = r.reason().into();
+        }
+    }
+    let mut wait = Duration::from_secs(1);
+    for _ in 0..30 {
+        match app.control.hosted_report(&saved.report()).await {
+            Ok(()) => break,
+            Err(e) => warn!(error = %format!("{e:#}"), "hosted: control didn't hear the wipe"),
+        }
+        tokio::time::sleep(wait).await;
+        wait = (wait * 2).min(Duration::from_secs(30));
+    }
+    if done.is_ok() {
+        super::snapshot::stop_self();
     }
 }
 

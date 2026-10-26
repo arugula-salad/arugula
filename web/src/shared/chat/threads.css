@@ -9,7 +9,7 @@
   margin-top: 4px;
   padding: 3px 8px 3px 4px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   color: var(--accent);
   font-size: 12px;
   text-align: left;
@@ -17,7 +17,7 @@
 
 .thread-footer:hover,
 .thread-footer:focus-visible {
-  border-color: var(--divider);
+  border-color: var(--line);
   background: var(--surface);
 }
 
@@ -75,19 +75,24 @@
   display: block;
 }
 
-/* The panel: the details column's place, a little wider. */
-.thread-panel {
+/* The panel: the details column's place, a little wider, beside the room
+   in .chat-main's row. Its own class, not the pane drawer's .thread-panel
+   (fixed over the window's right edge): UI audit #156. Two classes, to
+   win over .chat-details whichever stylesheet a page loads first. */
+.chat-details.chat-thread-panel {
   width: 400px;
   min-height: 0;
+  /* Narrow: smaller pictures, as the pane drawer's. */
+  --msg-gutter: 28px;
 }
 
-.thread-panel .thread-list {
+.chat-thread-panel .thread-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
 }
 
-.thread-panel .thread-compose {
+.chat-thread-panel .thread-compose {
   flex: none;
 }
 
@@ -95,14 +100,14 @@
   margin-top: 10px;
 }
 
-.thread-follow {
+.chat-info.thread-follow {
   width: auto;
   padding: 0 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   font-size: 12px;
 }
 
-.thread-follow.on {
+.chat-info.thread-follow.on {
   border-color: var(--accent);
 }
 
@@ -120,23 +125,26 @@
   accent-color: var(--accent);
 }
 
-/* A window too narrow for the room and the panel side by side: the panel
-   covers the room, as a phone's does. */
-@media (max-width: 900px) {
-  .chat-main {
-    position: relative;
-  }
+/* A room too narrow for itself and the panel side by side: the panel
+   covers the room, as a phone's does. The room's width, not the window's,
+   so a chat block in a narrow slot does the same (UI audit #156). */
+.chat-main {
+  container: chat-main / inline-size;
+  position: relative;
+}
 
-  .thread-panel {
+@container chat-main (max-width: 640px) {
+  .chat-details.chat-thread-panel {
     position: absolute;
     inset: 0 0 0 auto;
     z-index: 3;
     width: min(420px, 100%);
-    box-shadow: -4px 0 12px rgb(0 0 0 / 0.25);
+    /* UI audit #198: the shared shadow, lighter on a light palette. */
+    box-shadow: var(--shadow-md);
   }
 }
 
-.chat.phone .thread-panel {
+.chat.phone .chat-details.chat-thread-panel {
   position: static;
   flex: 1;
   width: 100%;
@@ -175,7 +183,7 @@
   right: 12px;
   bottom: 8px;
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   color: var(--dim);
   font-size: 11px;
   opacity: 0;

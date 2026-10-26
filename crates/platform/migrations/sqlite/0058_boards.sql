@@ -1,22 +1,20 @@
--- 0053: boards (live status board, step 1). A board is a project's object
+-- 0058: boards (live status board, step 1). A board is a project's object
 -- (`brd_` and 32 hex characters): an ordered list of zones, each an
 -- ordered list of rows. A board gets a thread like an issue does (`brd_`
 -- in `chat::objects`, an object thread of kind `object`). Times are
 -- milliseconds since the epoch.
 --
 -- Behind the `boards` Labs flag. `db::boards` has the rules.
--- SQLite's file in Postgres's words: `BIGINT` for its integers and
--- `COLLATE pg_c_utf8` text.
 
 -- A board. `created_by` is the person's account; empty once that account
 -- is deleted.
 CREATE TABLE boards (
-    id TEXT COLLATE pg_c_utf8 PRIMARY KEY,
-    project_id TEXT COLLATE pg_c_utf8 NOT NULL,
-    title TEXT COLLATE pg_c_utf8 NOT NULL,
-    created_by TEXT COLLATE pg_c_utf8 NOT NULL,
-    created_at BIGINT NOT NULL,
-    updated_at BIGINT NOT NULL
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
 );
 CREATE INDEX boards_project ON boards (project_id, created_at);
 
@@ -35,21 +33,21 @@ CREATE INDEX boards_project ON boards (project_id, created_at);
 -- a `block` the machine) and, for a block only, its `pane`. No pointer:
 -- free text. Nothing here resolves a pointer.
 CREATE TABLE board_entries (
-    id TEXT COLLATE pg_c_utf8 PRIMARY KEY,
-    board_id TEXT COLLATE pg_c_utf8 NOT NULL,
-    kind TEXT COLLATE pg_c_utf8 NOT NULL CHECK (kind IN ('zone', 'row')),
-    zone_id TEXT COLLATE pg_c_utf8,
-    position BIGINT NOT NULL,
-    rev BIGINT NOT NULL DEFAULT 1,
-    title TEXT COLLATE pg_c_utf8 NOT NULL DEFAULT '',
-    zone_kind TEXT COLLATE pg_c_utf8 CHECK (zone_kind IN ('proofs')),
-    note TEXT COLLATE pg_c_utf8 NOT NULL DEFAULT '',
-    status TEXT COLLATE pg_c_utf8 CHECK (status IN ('open', 'working', 'needs_input', 'done', 'failed')),
-    target_kind TEXT COLLATE pg_c_utf8 CHECK (target_kind IN ('forge_item', 'issue', 'run', 'workspace', 'block')),
-    target TEXT COLLATE pg_c_utf8,
-    pane TEXT COLLATE pg_c_utf8,
-    created_at BIGINT NOT NULL,
-    updated_at BIGINT NOT NULL,
+    id TEXT PRIMARY KEY,
+    board_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('zone', 'row')),
+    zone_id TEXT,
+    position INTEGER NOT NULL,
+    rev INTEGER NOT NULL DEFAULT 1,
+    title TEXT NOT NULL DEFAULT '',
+    zone_kind TEXT CHECK (zone_kind IN ('proofs')),
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT CHECK (status IN ('open', 'working', 'needs_input', 'done', 'failed')),
+    target_kind TEXT CHECK (target_kind IN ('forge_item', 'issue', 'run', 'workspace', 'block')),
+    target TEXT,
+    pane TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
     CHECK ((kind = 'row') = (zone_id IS NOT NULL)),
     CHECK (kind = 'zone' OR zone_kind IS NULL),
     CHECK (kind = 'row' OR (note = '' AND status IS NULL AND target_kind IS NULL)),

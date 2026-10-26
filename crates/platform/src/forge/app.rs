@@ -119,6 +119,10 @@ enum Scope {
     /// planter-prod): one repository's contents, pull requests and
     /// workflows, written.
     DeployScaffold,
+    /// An agent session's push of its branch (M259, S42 q2): one
+    /// repository's contents, written, and not its workflows, so GitHub
+    /// refuses a push that touches `.github/workflows/`.
+    SessionPush,
 }
 
 /// What a deploy's run's token may do on its one repository (M219–M233).
@@ -175,6 +179,7 @@ impl Scope {
             Scope::DeployScaffold => {
                 json!({ "metadata": "read", "contents": "write", "pull_requests": "write", "workflows": "write" })
             }
+            Scope::SessionPush => json!({ "metadata": "read", "contents": "write" }),
             Scope::Send(Writes::Issues) => json!({ "metadata": "read", "issues": "write" }),
             Scope::Send(Writes::PullRequests) => json!({ "metadata": "read", "pull_requests": "write" }),
             Scope::Send(Writes::Both) => json!({ "metadata": "read", "issues": "write", "pull_requests": "write" }),
@@ -190,6 +195,7 @@ impl Scope {
             Scope::DeployFollow => "deploy:actions",
             Scope::DeployPull => "deploy:contents+pull_requests",
             Scope::DeployScaffold => "deploy:contents+pull_requests+workflows",
+            Scope::SessionPush => "session:push",
             Scope::Send(Writes::Issues) => "send:issues",
             Scope::Send(Writes::PullRequests) => "send:pull_requests",
             Scope::Send(Writes::Both) => "send:issues+pull_requests",
@@ -646,6 +652,21 @@ impl GithubApp {
         scope: DeployScope,
     ) -> anyhow::Result<(String, String)> {
         let (secret, expires_at, _) = self.mint(c, install, repo, scope.scope()).await?;
+        Ok((secret, expires_at))
+    }
+
+    /// A token for one push of an agent session's branch (M259): one
+    /// repository's contents, written, without `workflows`, minted now (and
+    /// logged), never cached. The box that asked revokes it once it pushed
+    /// ([`GithubApp::revoke_url`]); it lasts an hour at most anyway.
+    /// `(token, expires_at)`.
+    pub async fn session_push_token(
+        &self,
+        c: &Caller<'_>,
+        install: u64,
+        repo: Repo<'_>,
+    ) -> anyhow::Result<(String, String)> {
+        let (secret, expires_at, _) = self.mint(c, install, repo, Scope::SessionPush).await?;
         Ok((secret, expires_at))
     }
 

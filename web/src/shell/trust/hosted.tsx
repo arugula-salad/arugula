@@ -54,10 +54,11 @@ export function HostedMachines({ s }: { s: ControlSession }) {
   };
   return (
     <>
-      <h3 class="control-group">Hosted machines</h3>
+      {/* One noun, and the label as a dim chip (UI audit #184). */}
+      <h3 class="control-group">Cloud workspaces</h3>
       <p class="dim">
-        Cloud workspaces run Arugula in a box Arugula's operator runs, so they're labelled <b>{HOSTED_LABEL}</b>: whoever runs a VM can read
-        its memory. Only a project's people reach its hosted machines.
+        Cloud workspaces run Arugula in a box Arugula's operator runs, so they're labelled <span class="control-badge">{HOSTED_LABEL}</span>:
+        whoever runs a VM can read its memory. Only a project's people reach its cloud workspaces.
       </p>
       {hosted.length ? (
         <ul class="control-devices" data-hosted-machines>
@@ -86,14 +87,14 @@ export function HostedMachines({ s }: { s: ControlSession }) {
               <li key={p.id} data-project={p.id} data-delegated={d ? "yes" : "no"}>
                 <span>
                   {p.name}
-                  <span class="dim">{d ? " · control may enroll hosted machines into it" : " · no hosted machines"}</span>
+                  <span class="dim">{d ? " · control may enroll cloud workspaces into it" : " · no cloud workspaces"}</span>
                 </span>
                 {d ? (
-                  <button class="control-revoke quiet-danger" disabled={!!busy} onClick={act(p.id, () => s.undelegate(d.delegation))}>
+                  <button class="secondary danger small" disabled={!!busy} onClick={act(p.id, () => s.undelegate(d.delegation))}>
                     Stop
                   </button>
                 ) : (
-                  <button disabled={!!busy} data-delegate={p.id} onClick={act(p.id, () => s.delegate(p.id, p.owner))}>
+                  <button class="secondary small" disabled={!!busy} data-delegate={p.id} onClick={act(p.id, () => s.delegate(p.id, p.owner))}>
                     Allow
                   </button>
                 )}
@@ -104,7 +105,7 @@ export function HostedMachines({ s }: { s: ControlSession }) {
       ) : null}
       {projects.length ? (
         <p class="dim control-explain">
-          <b>Allow</b> signs, with this device, that control may enroll hosted machines into the project until you stop it. Stopping ends new
+          <b>Allow</b> signs, with this device, that control may enroll cloud workspaces into the project until you stop it. Stopping ends new
           ones; the ones there stay until they're removed.
         </p>
       ) : null}

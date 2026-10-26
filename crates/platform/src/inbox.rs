@@ -142,13 +142,13 @@ fn notify(
 }
 
 /// Who did it, as a push names them: a person, or "<owner>'s agent on
-/// <machine>".
+/// <machine>" (an agent token's as a token's, UI audit #192).
 async fn actor_name(app: &Platform, by: Actor<'_>) -> anyhow::Result<String> {
     let me = chat::name_of(app, by.account).await?;
     Ok(match by.agent {
         Some(m) => {
             let machine = crate::grants::agent_names(app, &[m.to_owned()]).await?.remove(m).map(|d| d.name);
-            format!("{me}'s agent on {}", machine.unwrap_or_else(|| m.to_owned()))
+            crate::grants::agent_label(&me, m, machine.as_deref().unwrap_or(m))
         }
         None => me,
     })
@@ -277,18 +277,24 @@ pub fn thread_mentioned(
     notify(app, &n, to, quiet)
 }
 
-/// What a run did, in a line: its spec's name, or its command or
+/// What a run did, in a line: its spec's name, its deploy
+/// (`Deploy production · 1a2b3c4`, UI audit #145), or its command or
 /// instruction.
-fn run_what(app: &Platform, run: &Run) -> anyhow::Result<String> {
+pub(crate) fn run_what(app: &Platform, run: &Run) -> anyhow::Result<String> {
     if let Some(spec) = run.source["spec"].as_str()
         && let Some(s) = app.db.run_spec_by_id(spec)?
     {
         return Ok(s.name);
     }
+    if let Some(d) = crate::triggers::read::deploy_of(app, run)? {
+        return Ok(d.title());
+    }
     let line = match arugula_e2e::run::Op::decode(&run.op) {
-        Some((_, op)) => match op.instruction {
-            Some(i) => i.lines().next().unwrap_or_default().to_owned(),
-            None => op.argv.join(" "),
+        Some((_, op)) => match (op.deploy, op.instruction) {
+            // Its deploy's row is gone: the op still names it.
+            (Some(d), _) => format!("Deploy {}", d.deploy),
+            (None, Some(i)) => i.lines().next().unwrap_or_default().to_owned(),
+            (None, None) => op.argv.join(" "),
         },
         None => String::new(),
     };

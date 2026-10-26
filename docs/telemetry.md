@@ -132,8 +132,8 @@ Once on, the preview looks like this:
 - **`daily`**, once a day: terminals opened and the most open at once (taken
   when one opens), agent blocks started by runtime, blocks opened by kind,
   clients that attached by where (the web client, a phone, the CLI's
-  terminal, MCP), and which Labs flags are on. Restored panes and blocks
-  aren't counted again. `views` are the views the web client opened
+  terminal, MCP), and which flags in Developer settings are on. Restored
+  panes and blocks aren't counted again. `views` are the views the web client opened
   (swarm, chat, conversations, agents, palette, settings, getting started,
   share), and `web_errors` how many errors our code hit there:
   the page sends what it counted to its daemon each minute and as it goes

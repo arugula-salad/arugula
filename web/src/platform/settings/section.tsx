@@ -5,7 +5,7 @@
 // beside the column on a wide screen (../settings.css).
 
 import type { ComponentChildren, RefObject } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 
 export function Section({
   id,
@@ -46,9 +46,11 @@ export function Section({
 
 /** The section index, beside the column on a wide screen: the sections
  * the page shows, read off it as each one loads (some show only when
- * there's something in them). */
+ * there's something in them), the one you're in marked (UI audit #166):
+ * the topmost of those on the screen. */
 export function SectionIndex({ body }: { body: RefObject<HTMLDivElement | null> }) {
   const [secs, setSecs] = useState<{ id: string; title: string }[]>([]);
+  const [here, setHere] = useState("");
   useEffect(() => {
     const el = body.current;
     if (!el) return;
@@ -61,6 +63,30 @@ export function SectionIndex({ body }: { body: RefObject<HTMLDivElement | null> 
     watch.observe(el, { childList: true, subtree: true });
     return () => watch.disconnect();
   }, []);
+  // A link to a section (`/settings#tokens`, from a project's settings)
+  // goes to it once it has loaded, and stays on it while the sections
+  // above it come in, for the page's first two seconds.
+  const opened = useRef(Date.now());
+  useEffect(() => {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (!id || Date.now() - opened.current > 2000 || !secs.some((s) => s.id === id)) return;
+    document.getElementById(`${id}-h`)?.scrollIntoView({ block: "start" });
+  }, [secs]);
+  useEffect(() => {
+    const el = body.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const seen = new Set<Element>();
+    const look = new IntersectionObserver((entries) => {
+      for (const e of entries) e.isIntersecting ? seen.add(e.target) : seen.delete(e.target);
+      const top = secs.find((s) => [...seen].some((x) => x.id === s.id));
+      if (top) setHere(top.id);
+    });
+    for (const s of secs) {
+      const sec = document.getElementById(s.id);
+      if (sec) look.observe(sec);
+    }
+    return () => look.disconnect();
+  }, [secs]);
   // To the section's heading, which takes the focus for a keyboard.
   const go = (e: MouseEvent, id: string) => {
     const h = document.getElementById(`${id}-h`);
@@ -75,7 +101,7 @@ export function SectionIndex({ body }: { body: RefObject<HTMLDivElement | null> 
       <ul>
         {secs.map((s) => (
           <li key={s.id}>
-            <a href={`#${s.id}`} onClick={(e) => go(e, s.id)}>
+            <a href={`#${s.id}`} aria-current={here === s.id ? "location" : undefined} onClick={(e) => go(e, s.id)}>
               {s.title}
             </a>
           </li>

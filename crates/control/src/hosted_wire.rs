@@ -393,7 +393,7 @@ async fn a_box_asks_the_platform_about_its_turns() {
     // the hub.
     assert_eq!(r.status(), 404);
     let v: Value = r.json().await.unwrap();
-    assert_eq!(v["error"], "this machine isn't a live hosted workspace");
+    assert_eq!(v["error"], "this machine isn't a live cloud workspace");
     let r = signed_post(&boxk, "/api/hosted/turns/ht_1/end", b"").await.unwrap();
     assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()["ended"].clone()), (200, json!(false)));
 
@@ -520,4 +520,31 @@ async fn a_deploy_box_is_nobodys_to_reach() {
     let (st, e) = c.post("/api/hosted/enroll", &enroll_body(&other, Some(&t2), None)).await;
     assert_eq!(st, 200, "{e}");
     assert_eq!(serde_json::from_value::<Enrollment>(e).unwrap().purpose, None);
+}
+
+/// M263: a snapshot's builder is enrolled as a deploy's box is, with
+/// `purpose: snapshot`: it hears it, and nobody is routed to it. Any other
+/// purpose is refused.
+#[tokio::test]
+async fn a_snapshot_builder_is_nobodys_to_reach() {
+    let (c, fran, _cy, _ox) = acme().await;
+    let fran_s = session(&c.app, "f1");
+    let owner = format!("team:{TEAM}");
+    let d = delegation(&c, &owner, &fran);
+    let (st, _) = c.as_person(&fran_s, "POST", "/api/hosted/delegations", Some(json!({ "delegation": d }))).await;
+    assert_eq!(st, 200);
+    let mut a = ask(&owner, "hw_9", None);
+    a.purpose = Some("snapshot".into());
+    let EnrollGiven::Ready { ticket: Some(ticket), .. } = c.app.hub_port.hosted_enrollment(&a).await.unwrap() else {
+        panic!("no ticket")
+    };
+    let boxk = DeviceKeys::generate();
+    let (st, e) = c.post("/api/hosted/enroll", &enroll_body(&boxk, Some(&ticket), None)).await;
+    assert_eq!(st, 200, "{e}");
+    let e: Enrollment = serde_json::from_value(e).unwrap();
+    assert_eq!(e.purpose.as_deref(), Some("snapshot"), "the box hears what it's for");
+    assert_eq!(c.reach(&fran_s, &boxk.id()).await, 404, "nobody is routed to it");
+    let mut odd = ask(&owner, "hw_10", None);
+    odd.purpose = Some("anything".into());
+    assert!(c.app.hub_port.hosted_enrollment(&odd).await.is_err());
 }

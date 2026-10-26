@@ -532,6 +532,13 @@ pub fn is_open_target(target: &str) -> bool {
     matches!(Ref::parse(target), Ref::Id(_) | Ref::Number(_))
 }
 
+/// Something meant as an issue's id that isn't one (`iss_` with the wrong
+/// length, say): `arugula open` says so rather than open it as a web page
+/// on `https://iss_…` (UI audit #178).
+pub fn malformed_issue_id(target: &str) -> bool {
+    target.starts_with("iss_") && !is_issue_id(target)
+}
+
 /// The issue block's config for `arugula open iss_…|#N` (M203): a
 /// project's own issue, pinned to the platform's, or GitHub's `#N` in this
 /// clone, by the same rule as `arugula issue` (`project`: `--project`).
@@ -1139,6 +1146,10 @@ mod tests {
         for not in [":3000", "https://example.com", "#x", "12", "iss_01"] {
             assert!(!is_open_target(not), "{not}");
         }
+        assert!(malformed_issue_id("iss_01"));
+        assert!(malformed_issue_id("iss_0123456789abcdef0123456789abcdeg"));
+        assert!(!malformed_issue_id("iss_0123456789abcdef0123456789abcdef"));
+        assert!(!malformed_issue_id("https://example.com/iss_01"));
     }
 
     #[test]
@@ -1258,6 +1269,7 @@ mod tests {
             repos: repos.iter().map(|r| (*r).to_owned()).collect(),
             native_issues: 0,
             both: false,
+            labels: vec![],
         };
         assert_eq!(home_says(false, Some(&home("native", &[])), false).unwrap(), None);
         assert_eq!(
@@ -1307,6 +1319,8 @@ mod tests {
             created_at: 0,
             updated_at: 0,
             closed_at: Some(0),
+            closed_by: None,
+            closed_by_agent: None,
         };
         let names =
             HashMap::from([("acc_me".to_owned(), "Jake".to_owned()), ("acc_al".to_owned(), "Alice".to_owned())]);

@@ -1,7 +1,7 @@
 // The attention drawer (M111, #1026): what waits on you, on every machine,
 // from the fleet model the swarm already builds. The
-// header's bell, the footer's "needs input" and the sidebar's Needs you
-// open it. Selecting an item shows what it would run, where and who asks;
+// header's bell, the footer's "needs you" and the sidebar's Needs you
+// open it, and count the same (shared/needs-you, UI audit #154). Selecting an item shows what it would run, where and who asks;
 // Allow and Deny (or the question's answer) go through the existing
 // `act`, and Go to pane only goes there. Looking at the drawer, or closing
 // it, never answers or dismisses anything. Viewers see the items without
@@ -12,8 +12,9 @@ import { type Client } from "../../client";
 import type { FleetPane } from "../../fleet";
 import { directory } from "../../hosts";
 import { OPS, opPath } from "../../ops";
-import { gateKey, type ActRequest, type PaneInfo, type Reason } from "../../../shared/proto";
-import { cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../swarm/model";
+import { gateKey, type ActRequest, type PaneInfo } from "../../../shared/proto";
+import { needsYou, NEEDS_YOU } from "../../../shared/needs-you";
+import { agentDisplay, cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../swarm/model";
 import { AskCard, type Ask } from "../../../shared/ask";
 import { PermissionBody, PermissionButtons, permissionTarget, VIEWER_NOTE } from "../answer-card";
 import { DiffCard } from "../diff-card";
@@ -30,7 +31,7 @@ export interface AttentionItem {
   p: FleetPane;
   /** On the machine this page shows (its own client acts on it). */
   here: boolean;
-  /** It asks something of you now (the bell counts these); else it failed. */
+  /** It asks something of you now; else it failed. Both need you. */
   waiting: boolean;
   /** You may only watch it. */
   viewer: boolean;
@@ -38,14 +39,9 @@ export interface AttentionItem {
   tab?: string;
 }
 
-const failed = (r: Reason | null) => r?.kind === "failed" || r?.kind === "exited";
-
-function wants(info: PaneInfo): boolean {
-  if (info.attention === "needs_input") return true;
-  // A failure waits too, until someone looks or dismisses it; a plain
-  // "finished" doesn't (the swarm's rail and Chat's Activity have those).
-  return info.attention === "done" && failed(info.reason ?? null);
-}
+// A failure waits too, until someone looks or dismisses it; a plain
+// "finished" doesn't (the swarm's rail and Chat's Activity have those).
+const wants = needsYou;
 
 /** Owner-only asks (#234 invites, M79 tasks from another agent). */
 const ownersOnly = (info: PaneInfo) => info.ask?.source === "invite" || info.ask?.source === "a2a";
@@ -60,7 +56,7 @@ export function attentionItems(client: Client): AttentionItem[] {
   if (st) {
     for (const info of st.panes) {
       // A pane from another machine in this layout: its own machine lists it.
-      if (info.type === "remote" || !wants(info)) continue;
+      if (!wants(info)) continue;
       const tab = client.tabOfPane(info.id);
       const sid = tab ? (client.sessionOfTab(tab.id) ?? null) : null;
       const s = st.sessions.find((x) => x.id === sid);
@@ -98,9 +94,9 @@ export function attentionItems(client: Client): AttentionItem[] {
   return out.sort((a, b) => Number(b.waiting) - Number(a.waiting) || since(b) - since(a));
 }
 
-/** How many wait on you, for the bell. */
+/** How many need you, on every machine: the bell's and the footer's. */
 export function waitingCount(client: Client): number {
-  return attentionItems(client).filter((i) => i.waiting).length;
+  return attentionItems(client).length;
 }
 
 /** Re-render on the shown machine's state and the fleet's. */
@@ -161,7 +157,7 @@ export function AttentionBell({ client }: { client: Client }) {
   useAttentionTick(client);
   const open = useAttentionOpen();
   const n = waitingCount(client);
-  const label = n ? `Needs you: ${n} waiting` : "Needs you: nothing waiting";
+  const label = n ? `${NEEDS_YOU}: ${n}` : `${NEEDS_YOU}: nothing`;
   return (
     <button
       class={`ws-bell${n ? " has" : ""}${open ? " on" : ""}`}
@@ -188,7 +184,7 @@ export function AttentionBell({ client }: { client: Client }) {
 /** Who asks, in words: "Claude Code", "hud". */
 function agentOf(p: FleetPane): string | null {
   const a = p.info.reason?.ask?.agent ?? p.info.ask?.agent ?? (p.info.ask?.source === "hook" ? "claude" : null);
-  if (a) return a === "claude" ? "Claude Code" : a;
+  if (a) return agentDisplay(a);
   return kindOf(p) === "agent" ? whatItDoes(p) : null;
 }
 
@@ -287,11 +283,13 @@ export function AttentionDrawer({ client }: { client: Client }) {
             tabIndex={i === chosen ? 0 : -1}
             onClick={() => setSel(i.p.key)}
           >
-            <span class={`ws-dot ${i.waiting ? "needs_input" : "offline"}`} aria-hidden="true" />
+            <span class={`ws-dot ${i.waiting ? "needs_input" : "failed"}`} aria-hidden="true" />
+            {/* What it's about as the title, why and where under it (UI
+                audit #172): every title was "Needs you" before. */}
             <span class="ws-att-item-text">
-              <span class="ws-att-item-title">{titleOf(i)}</span>
+              <span class="ws-att-item-title">{whatItDoes(i.p)}</span>
               <span class="ws-att-item-sub">
-                {[shortHost(i.p.host), i.p.session?.name, whatItDoes(i.p)].filter(Boolean).join(" · ")}
+                {[titleOf(i), shortHost(i.p.host), i.p.session?.name].filter(Boolean).join(" · ")}
               </span>
             </span>
           </button>
@@ -340,6 +338,13 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
     ["Where", [p.session?.name, item.tab].filter(Boolean).join(" › ") || null],
   ];
   const diff = r?.kind === "diff" ? (p.info.diff ?? r.diff ?? null) : null;
+  const go = (
+    <button class="secondary" data-attention-goto onClick={() => goToItem(client, item)} title="Show it, on its machine; this doesn't answer it">
+      Go to pane
+    </button>
+  );
+  // Go to pane ends the item's own row of buttons, whatever kind it is,
+  // or is the row when it has none (UI audit #172, #194).
   return (
     <section class="ws-att-detail" aria-label={titleOf(item)} data-attention-detail={p.key}>
       <h3>{titleOf(item)}</h3>
@@ -358,9 +363,15 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
       </dl>
       <div class="ws-att-answer">
         {item.viewer ? (
-          <p class="ask-viewer">{VIEWER_NOTE}</p>
+          <>
+            <p class="ask-viewer">{VIEWER_NOTE}</p>
+            <div class="ws-att-acts">{go}</div>
+          </>
         ) : p.stale && !item.here ? (
-          <p class="ask-viewer">{shortHost(p.host)} isn't connected: go to the pane to answer once it is.</p>
+          <>
+            <p class="ask-viewer">{shortHost(p.host)} isn't connected: go to the pane to answer once it is.</p>
+            <div class="ws-att-acts">{go}</div>
+          </>
         ) : diff ? (
           <DiffCard
             diff={diff}
@@ -370,14 +381,15 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
               const res = await request(OPS["pane.diff"].method, opPath("pane.diff", { id: p.id }));
               return res.ok ? (await res.json<{ new: string }>()).new : null;
             }}
+            more={go}
           />
         ) : ask?.kind === "permission" ? (
           <div class="ask perm" data-ask={ask.id}>
             <PermissionBody ask={ask} />
-            <PermissionButtons ask={ask} act={(action, extra) => run(action, { ...extra, id: ask.id })} />
+            <PermissionButtons ask={ask} act={(action, extra) => run(action, { ...extra, id: ask.id })} more={go} />
           </div>
         ) : ask && r?.ask?.what === "question" ? (
-          <AskCard ask={ask} actions={{ answer: (content) => run("answer", { content, id: ask.id }), decline: () => run("deny", { id: ask.id }) }} />
+          <AskCard ask={ask} actions={{ answer: (content) => run("answer", { content, id: ask.id }), decline: () => run("deny", { id: ask.id }) }} more={go} />
         ) : r ? (
           <div class="ws-att-acts">
             {r.actions.includes("allow") && (
@@ -396,22 +408,20 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
               </button>
             )}
             {r.actions.includes("deny") && (
-              <button disabled={busy} onClick={() => run("deny")}>
+              <button class="secondary danger" disabled={busy} onClick={() => run("deny")}>
                 Deny
               </button>
             )}
             {r.actions.includes("dismiss") && (
-              <button disabled={busy} onClick={() => run("dismiss")}>
+              <button class="secondary" disabled={busy} onClick={() => run("dismiss")}>
                 Dismiss
               </button>
             )}
+            {go}
           </div>
-        ) : null}
-      </div>
-      <div class="ws-att-go">
-        <button class="ws-att-goto" data-attention-goto onClick={() => goToItem(client, item)} title="Show it, on its machine; this doesn't answer it">
-          Go to pane
-        </button>
+        ) : (
+          <div class="ws-att-acts">{go}</div>
+        )}
       </div>
     </section>
   );

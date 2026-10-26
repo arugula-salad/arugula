@@ -22,7 +22,9 @@
 //!   seen enroll yet. A rebuild clears it ([`super::worker`]).
 //!
 //! Only machines enrolled for the workspace reach either: the hub reads the
-//! workspace and project from the machine's certificate.
+//! workspace and project from the machine's certificate. A snapshot's
+//! builder (M263) reads its workspace's plan, with that workspace's
+//! secrets, as its own box would; what it says is kept on the builder.
 
 use std::collections::BTreeMap;
 
@@ -87,15 +89,26 @@ async fn app_token(app: &Platform, project: &str, url: &str) -> Option<String> {
     }
 }
 
+/// Workspace `workspace` of `project`, by its id: a people's workspace, or
+/// a snapshot's builder (M263), never a deploy's box.
+fn set_up(app: &Platform, project: &str, workspace: &str) -> anyhow::Result<Option<super::HostedWorkspace>> {
+    if let Some(w) = app.db.hosted_workspace(project, workspace)? {
+        return Ok(Some(w));
+    }
+    Ok(app.db.hosted_any(project, workspace)?.filter(|b| b.purpose == crate::db::hosted::SNAPSHOT))
+}
+
 /// What workspace `workspace` of `project` sets up, for `machine`: `None`
 /// when there's no such workspace, or it isn't that machine's.
 pub async fn plan(app: &Platform, project: &str, workspace: &str, machine: &str) -> anyhow::Result<Option<SetupPlan>> {
-    let Some(w) = app.db.hosted_workspace(project, workspace)? else { return Ok(None) };
+    let Some(w) = set_up(app, project, workspace)? else { return Ok(None) };
     if w.id != workspace || !its_box(&w, machine) {
         return Ok(None);
     }
-    let token = secret(app, project, &w.id, GIT_TOKEN)?;
-    let user = secret(app, project, &w.id, GIT_USERNAME)?.filter(|u| !u.is_empty());
+    // A builder sets up with its workspace's secrets.
+    let secrets_of = w.parent.clone().unwrap_or_else(|| w.id.clone());
+    let token = secret(app, project, &secrets_of, GIT_TOKEN)?;
+    let user = secret(app, project, &secrets_of, GIT_USERNAME)?.filter(|u| !u.is_empty());
     let mut repos = Vec::new();
     for url in &w.spec.repos {
         let r = if let Some(t) = app_token(app, project, url).await {
@@ -119,7 +132,7 @@ pub async fn plan(app: &Platform, project: &str, workspace: &str, machine: &str)
     }
     let (mut env, mut unset) = (BTreeMap::new(), Vec::new());
     for name in &w.spec.env {
-        match secret(app, project, &w.id, name)? {
+        match secret(app, project, &secrets_of, name)? {
             Some(v) => {
                 env.insert(name.clone(), v);
             }
@@ -145,7 +158,7 @@ pub async fn plan(app: &Platform, project: &str, workspace: &str, machine: &str)
 /// Keep what `machine` says of workspace `workspace`'s setup: whether it was
 /// kept (`false`: no such workspace, or not that machine's box).
 pub fn report(app: &Platform, project: &str, workspace: &str, machine: &str, r: &SetupReport) -> anyhow::Result<bool> {
-    let Some(w) = app.db.hosted_workspace(project, workspace)? else { return Ok(false) };
+    let Some(w) = set_up(app, project, workspace)? else { return Ok(false) };
     if w.id != workspace || !its_box(&w, machine) {
         return Ok(false);
     }
@@ -157,6 +170,11 @@ pub fn report(app: &Platform, project: &str, workspace: &str, machine: &str, r: 
     let kept = app.db.report_hosted_setup(&w.id, machine, &r, arugula_e2e::now_ms())?;
     if kept {
         info!(project, workspace = w.id, status = r.status.as_str(), step = r.step, "a hosted box's setup");
+        // A builder's end is the worker's to act on now (M263).
+        if w.purpose == crate::db::hosted::SNAPSHOT && r.status != arugula_control_wire::hosted::SetupStatus::SettingUp
+        {
+            app.db.nudge_hosted(&w.id)?;
+        }
     }
     Ok(kept)
 }

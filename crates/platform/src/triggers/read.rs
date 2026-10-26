@@ -28,8 +28,8 @@ use std::{
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::runs::{
-    RUN_LOG_PAGE_MAX, RUN_WAIT_MAX, RunArtifactView, RunEventView, RunList, RunListQuery, RunLogPage, RunLogQuery,
-    RunQuery, RunView,
+    RUN_LOG_PAGE_MAX, RUN_WAIT_MAX, RunArtifactView, RunDeployView, RunEventView, RunList, RunListQuery, RunLogPage,
+    RunLogQuery, RunQuery, RunView,
 };
 use axum::{
     Json,
@@ -116,6 +116,13 @@ pub(crate) fn pane_of(events: &[runs::Event]) -> Option<u64> {
 
 /// `run` as it's read: in a list (no timeline), or in full.
 pub(crate) fn view(app: &Platform, run: &Run, full: bool) -> anyhow::Result<RunView> {
+    view_in(app, run, full, &mut Default::default())
+}
+
+/// [`view`], with the workspaces' names a list has read so far: a list's
+/// runs mostly share a few workspaces, so each is read once (UI audit
+/// #164: a cold list waited on a few reads per run).
+fn view_in(app: &Platform, run: &Run, full: bool, ws: &mut HashMap<String, Option<String>>) -> anyhow::Result<RunView> {
     let events = app.db.run_events(&run.id)?;
     let pane = pane_of(&events);
     let (events, artifacts) = if full {
@@ -140,6 +147,17 @@ pub(crate) fn view(app: &Platform, run: &Run, full: bool) -> anyhow::Result<RunV
     } else {
         (vec![], vec![])
     };
+    let workspace_name = match &run.workspace {
+        Some(w) => match ws.get(w) {
+            Some(name) => name.clone(),
+            None => {
+                let name = app.db.hosted_any(&run.project, w)?.map(|w| w.name);
+                ws.insert(w.clone(), name.clone());
+                name
+            }
+        },
+        None => None,
+    };
     Ok(RunView {
         id: run.id.clone(),
         project: run.project.clone(),
@@ -160,9 +178,29 @@ pub(crate) fn view(app: &Platform, run: &Run, full: bool) -> anyhow::Result<RunV
         exit_code: run.exit_code,
         chant_ledger: run.chant_ledger.clone(),
         pane,
+        workspace_name,
+        deploy: deploy_of(app, run)?,
         events,
         artifacts,
     })
+}
+
+/// The deploy `run` applies, when it's a deploy's (M219): its environment
+/// by name and its source (UI audit #145).
+pub(crate) fn deploy_of(app: &Platform, run: &Run) -> anyhow::Result<Option<RunDeployView>> {
+    // A deploy's run names its deploy in its source: others aren't looked up.
+    if run.source.get("deploy").is_none() {
+        return Ok(None);
+    }
+    let Some(dr) = app.db.deploy_run_of(&run.id)? else { return Ok(None) };
+    let Some(d) = app.db.deploy(&dr.deploy)? else { return Ok(None) };
+    let environment = app.db.environment(&d.environment)?.map(|e| e.name).unwrap_or_default();
+    Ok(Some(RunDeployView {
+        id: d.id,
+        environment,
+        source_kind: d.source.kind.as_str().to_owned(),
+        reference: d.source.reference,
+    }))
 }
 
 /// A project's runs, newest first, as [`PROJECT_RUNS`] answers them.
@@ -173,15 +211,22 @@ pub(crate) fn list_of(app: &Platform, project: &str, q: &RunListQuery) -> Result
         Some(s) => Some(runs::State::parse(s).ok_or_else(|| err(StatusCode::BAD_REQUEST, "no such run state"))?),
         None => None,
     };
-    let trigger = match q.trigger.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        Some(t) => Some(runs::TriggerKind::parse(t).ok_or_else(|| err(StatusCode::BAD_REQUEST, "no such trigger"))?),
-        None => None,
+    // `deploy` is a deploy's run, which is `manual` underneath; `manual`
+    // is then a person's run by hand, without them (UI audit #164).
+    let (trigger, deploy) = match q.trigger.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some("deploy") => (Some(runs::TriggerKind::Manual), Some(true)),
+        Some(t) => {
+            let t = runs::TriggerKind::parse(t).ok_or_else(|| err(StatusCode::BAD_REQUEST, "no such trigger"))?;
+            (Some(t), (t == runs::TriggerKind::Manual).then_some(false))
+        }
+        None => (None, None),
     };
     let spec = q.spec.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let limit = q.limit.unwrap_or(LIST_DEFAULT).clamp(1, LIST_MAX);
-    let f = runs::RunFilter { state, trigger, spec };
+    let f = runs::RunFilter { state, trigger, spec, deploy };
     let runs = app.db.runs_of(project, &f, limit)?;
-    let runs = runs.iter().map(|r| view(app, r, false)).collect::<anyhow::Result<_>>()?;
+    let mut ws = HashMap::new();
+    let runs = runs.iter().map(|r| view_in(app, r, false, &mut ws)).collect::<anyhow::Result<_>>()?;
     Ok(RunList { project: project.to_owned(), runs })
 }
 
@@ -240,13 +285,21 @@ pub(crate) async fn log_of(app: &Platform, run: &Run, q: &RunLogQuery) -> Result
         },
         None => {
             let pane = pane_of(&app.db.run_events(&run.id)?);
-            let note = match pane {
-                Some(p) => format!(
+            // An ended run's note is in the past tense (UI audit #164).
+            let note = match (pane, ended) {
+                (Some(p), false) => format!(
                     "the platform keeps no log of this run yet: its output is in pane %{p} on its machine ({}), \
                      which the project's people watch end to end",
                     run.daemon
                 ),
-                None => "the platform keeps no log of this run yet, and it hasn't started in a pane".to_owned(),
+                (Some(p), true) => format!(
+                    "the platform kept no log of this run: its output was in pane %{p} on its machine ({})",
+                    run.daemon
+                ),
+                (None, false) => {
+                    "the platform keeps no log of this run yet, and it hasn't started in a pane".to_owned()
+                }
+                (None, true) => "the platform kept no log of this run: it ended without running in a pane".to_owned(),
             };
             let offset = match from {
                 crate::run_log::From::Offset(o) => o,

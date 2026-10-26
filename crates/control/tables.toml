@@ -1156,7 +1156,7 @@ name = "agent_sessions"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A thread's agent session (M254): its project, the thread it was asked in (a room and a message number), whose mention started it (it runs as them, on the project's key), the hosted workspace it runs on and that box's machine (the only one whose reports move it), its agent block, repo and the one branch it may push, its state (queued, working, needs input, done, failed, unresponsive or stopped), when the platform last heard from the box, the last tool it ran and the last error it hit (as the agent said it), the draft PR its asker sent, how many times CI sent it back, and its times."
+what = "A thread's agent session (M254): its project, the thread it was asked in (a room and a message number), whose mention started it (it runs as them, on the project's key), the hosted workspace it runs on and that box's machine (the only one whose reports move it), its agent block, repo and the one branch it may push, its state (queued, working, needs input, done, failed, unresponsive or stopped), when the platform last heard from the box, the last tool it ran and the last error it hit (as the agent said it), the draft PR its asker sent (or the one opened from its branch), how many times CI sent it back, when that PR merged (its thread is done then), and its times; and (M264) what it is to its thread (the thread's own, a Try 3's sibling of another session, or a review of one) with that session, the agent it asked for (Claude Code or Codex), and on a Try 3's parent the one kept, who picked it and when."
 why_asleep = "A session is asked for, followed and shown in its thread with every person's machine asleep; the box it runs on is the project's, not theirs."
 with_account = "partly"
 note = "The sessions of projects that go with it go. The rest stay, naming no one who asked."
@@ -1193,6 +1193,39 @@ what = "What people asked of an agent session that only its box can do (M257): a
 why_asleep = "A teammate answers a session's question from their phone, and the box picks it up, with every person's machine asleep."
 with_account = "partly"
 note = "Those of sessions that go, go. On the rest they stay, naming no one who asked, an answer's text blanked."
+seen_by = ["litestream", "e2b", "anthropic"]
+
+[[table]]
+name = "pr_drafts"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "An agent session's pull request as its asker drafts it (M259): the session, the repo, its branch and base, the title and body (prefilled from the repo's PR template and the session's turns), whether it opens as a draft on GitHub, its state, and the PR's number and URL once its asker sent it."
+why_asleep = "The asker edits and sends a session's PR from their phone with every machine asleep."
+with_account = "deleted"
+note = "Its PR drafts, and those of sessions that go with it. A sent PR stays on GitHub, and its link on the session."
+seen_by = ["litestream", "github"]
+
+[[table]]
+name = "session_feedback"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "What came back from GitHub to an agent session (M260): a CI round (the head commit whose checks failed) or a review (its id, the PR's number, the reviewer's GitHub login, numeric id, author_association and the review's state), when it's due, and whether it was sent to the session (the prompt, and a CI round's number), refused (the session had its CI rounds) or dropped (the session had ended)."
+why_asleep = "CI fails on a session's PR, or a teammate reviews it on GitHub, and the session takes it up with every person's machine asleep."
+with_account = "none"
+note = "It names GitHub's people, not accounts. Those of sessions that go, go."
+seen_by = ["litestream"]
+
+[[table]]
+name = "session_feedback_items"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "What a session's feedback gathered (M260), each once: a failed check's name, conclusion, link and the end of its output, or a review's text and its inline comments' text with their file and line, as GitHub's webhook brought them."
+why_asleep = "A session's CI round or review is gathered from GitHub's webhooks with every person's machine asleep."
+with_account = "none"
+note = "GitHub's text, not an account's. Those of sessions that go, go."
 seen_by = ["litestream", "e2b", "anthropic"]
 
 [[table]]
@@ -1316,6 +1349,17 @@ why_asleep = "A project's people read what its hosted workspaces' agents did aft
 with_account = "partly"
 note = "Those of its personal project and its disbanded teams' projects go. A team's stay with its project: its other people read them."
 seen_by = ["litestream"]
+
+[[table]]
+name = "hosted_snapshot_orphans"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A hosted workspace's snapshot (M263, an E2B template id) that the provider still held when its workspace was deleted for good, whose workspace and project it was, since when, and when the worker last asked to delete it."
+why_asleep = "The worker deletes it at the provider with every machine off."
+with_account = "none"
+note = "It names no account. A row goes once the provider deletes the snapshot."
+seen_by = ["litestream", "e2b"]
 
 [[table]]
 name = "hosted_usage"

@@ -61,7 +61,7 @@ use crate::{
 
 /// What a client calls such a machine, wherever it shows one: true of any
 /// VM, because whoever runs it can read its memory.
-pub const LABEL: &str = "Hosted: the operator can read";
+pub const LABEL: &str = "Hosted · operator can read";
 
 /// Who a project belongs to: a team, or one account.
 #[derive(Debug, Clone, PartialEq, Eq)]

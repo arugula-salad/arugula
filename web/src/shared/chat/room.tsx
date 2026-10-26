@@ -22,6 +22,7 @@ import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
 import { TypingLine } from "./typing";
+import { asksArugula, warmsIn } from "./warm";
 import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
 // Saved items (#116) fill the toolbar's save, mark-unread and reminder hooks.
 import "./saved-hooks";
@@ -41,6 +42,9 @@ import { usePlatformApi, type PlatformApi } from "../platform-api";
 import { ReplyTag, setThreadNav, ThreadFooter } from "./thread-ui";
 import { SessionCardMessage, sessionOf } from "./session-card";
 import { dmLabel } from "./members";
+import { useStickToBottom } from "./stick";
+import { BookmarkIcon } from "./icons";
+import { Time } from "../ui/time";
 
 // ---- machines, by control's id for them
 
@@ -239,6 +243,7 @@ export function RoomBody({
   between,
   empty,
   chip,
+  embedded,
 }: {
   room: ChatRoom;
   phone: boolean;
@@ -255,6 +260,10 @@ export function RoomBody({
   /** The host's header shows whose agents reach the room (a chip), so the
    * room doesn't repeat it above its messages. */
   chip?: boolean;
+  /** Part of a page about something else (an issue's or a run's): its box
+   * to write in doesn't take focus, so the page opens at its top (UI audit
+   * #144). */
+  embedded?: boolean;
 }) {
   useSubscribe((fn) => chat.subscribe(fn));
   // "Reply in thread" opens the thread where this room is shown (#106).
@@ -307,6 +316,7 @@ export function RoomBody({
   // names, once).
   const last = msgs?.at(-1)?.seq;
   const focused = useRef<number | null>(null);
+  useStickToBottom(list, () => stuck.current && focused.current === null);
   const topBefore = useRef<{ h: number; first?: number } | null>(null);
   useLayoutEffect(() => {
     const el = list.current;
@@ -450,6 +460,7 @@ export function RoomBody({
                     // Back to the composer once the edit is saved or cancelled.
                     if (!on) composeRef.current?.focus();
                   }}
+                  relative={embedded}
                 />
               </Fragment>
             );
@@ -464,7 +475,7 @@ export function RoomBody({
       </div>
       {error && <p class="thread-error">{error}</p>}
       {current.writable ? (
-        <RoomCompose room={current} phone={phone} quote={quote} setQuote={setQuote} setError={setError} name={name} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} />
+        <RoomCompose room={current} phone={phone} quote={quote} setQuote={setQuote} setError={setError} name={name} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} still={embedded} />
       ) : (
         <p class="thread-note" data-room-readonly>
           {readOnly(current)}
@@ -491,6 +502,7 @@ export function RoomMessage({
   editing,
   setEditing,
   inThread = false,
+  relative = false,
 }: {
   room: ChatRoom;
   m: ChatMessage;
@@ -501,6 +513,9 @@ export function RoomMessage({
   setEditing: (on: boolean) => void;
   /** Shown in a thread's panel (#106): no thread of its own to open there. */
   inThread?: boolean;
+  /** On a page about something else (an issue's, a run's): the head says
+   * how long ago, as the page's timeline does (UI audit #182). */
+  relative?: boolean;
 }) {
   const head =
     !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
@@ -604,7 +619,7 @@ export function RoomMessage({
                 via {m.via}
               </span>
             )}
-            <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>
+            {relative ? <Time at={m.at} long /> : <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>}
           </div>
         )}
         {!editing && <ReplyTag room={room} m={m} inThread={inThread} />}
@@ -672,7 +687,8 @@ export function RoomMessage({
             data-msg-save
             onClick={() => save.run(ctx)}
           >
-            {save.on?.(ctx) ? "★" : "☆"}
+            {/* A bookmark, not ☆: that's a room's star (UI audit #169). */}
+            <BookmarkIcon on={save.on?.(ctx)} />
           </button>
         )}
         <button title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={panel === "menu"} data-msg-more onClick={() => setPanel(panel === "menu" ? null : "menu")}>
@@ -690,7 +706,9 @@ export function RoomMessage({
           )}
           {save && (
             <button type="button" role="menuitem" class="msg-item" aria-pressed={save.on?.(ctx)} data-msg-save onClick={() => (close(), save.run(ctx))}>
-              <span class="msg-item-icon" aria-hidden="true">{save.on?.(ctx) ? "★" : "☆"}</span>
+              <span class="msg-item-icon" aria-hidden="true">
+                <BookmarkIcon on={save.on?.(ctx)} />
+              </span>
               {save.label?.(ctx) ?? "Save for later"}
             </button>
           )}
@@ -826,6 +844,7 @@ export function RoomCompose({
   name,
   editLast,
   thread,
+  still,
 }: {
   room: ChatRoom;
   phone: boolean;
@@ -838,6 +857,8 @@ export function RoomCompose({
   /** Writes a reply in the thread of this message (#106), with a draft of
    * its own and "Also send to the channel". */
   thread?: { parent: number };
+  /** Doesn't take focus when it opens (`RoomBody`'s `embedded`). */
+  still?: boolean;
 }) {
   const key = thread ? `chat.draft:thread:${room.id}:${thread.parent}` : `chat.draft:room:${room.id}`;
   const handle = thread ? threadComposeRef : composeRef;
@@ -861,8 +882,8 @@ export function RoomCompose({
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => keepDraft(key, text), [key, text]);
   useEffect(() => {
-    if (!phone) input.current?.focus();
-  }, [phone]);
+    if (!phone && !still) input.current?.focus();
+  }, [phone, still]);
   useLayoutEffect(() => {
     const el = input.current;
     if (!el) return;
@@ -971,6 +992,7 @@ export function RoomCompose({
         : await chat.post(room.id, text, quote, files.ids, paused && anyway);
       setMissed(posted.unreached.map((w) => `Nobody here called ${w} can read this room`));
       setText("");
+      chat.composed(room.id, thread?.parent);
       setQuote(undefined);
       setAlso(false);
       files.clear();
@@ -1091,7 +1113,10 @@ export function RoomCompose({
             const v = (e.target as HTMLTextAreaElement).value;
             setText(v);
             // Never while it's empty; the store holds it to one in 3 s.
-            if (v.trim() && !thread) chat.typing(room.id);
+            // An `@arugula` being written warms the project's box (M262);
+            // in a reply thread that's all the ping is.
+            if (!v.trim()) chat.composed(room.id, thread?.parent);
+            else chat.typing(room.id, warmsIn(room.kind) && asksArugula(v), thread?.parent);
           }}
           onKeyDown={(e) => {
             const n = options.length || emojis.length;

@@ -132,9 +132,22 @@ pub struct CloudCreateArgs {
     #[serde(default)]
     pub setup_script: Option<String>,
     /// The names of the secrets its box takes as env vars (set on
-    /// control's page).
+    /// Control).
     #[serde(default)]
     pub secrets: Vec<String>,
+    /// Its machine's size: small (2 vCPU, 2 GiB, the default) or large (8
+    /// vCPU, 8 GiB, for big builds such as Rust's).
+    #[serde(default)]
+    pub size: Option<CloudSize>,
+}
+
+/// A Cloud workspace's size (the platform's, M266).
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
+pub enum CloudSize {
+    Small,
+    Large,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -253,7 +266,7 @@ pub(crate) const READ: &[Kind] = &[
 pub(crate) const DRIVE: &[Kind] = &[
     Kind {
         name: "create",
-        description: "A new Cloud workspace in a project: a machine with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.",
+        description: "A new Cloud workspace in a project: a machine of a size (small, or large for big builds) with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.",
         schema: schema_for_type::<CloudCreateArgs>,
         flag: None,
     },

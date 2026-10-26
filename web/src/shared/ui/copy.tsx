@@ -1,5 +1,6 @@
 // Something to move somewhere else (#99): a command, a link, a code.
 
+import { Fragment } from "preact";
 import { useRef, useState } from "preact/hooks";
 
 /**
@@ -13,15 +14,25 @@ import { useRef, useState } from "preact/hooks";
  *   own line (a command, a link).
  * - `share`: also a Share button where the browser has navigator.share
  *   (phones), for links meant for someone else.
+ * - `groups`: a code in dashed groups (a recovery code, a device's code)
+ *   wraps only at its "-" and "." (UI audit #179), never mid-group.
  * - Anything else (`data-*` attributes) lands on the value's element, so
  *   tests find the value without the buttons' text.
  */
-export function CopyText({ text, inline, share, ...attrs }: { text: string; inline?: boolean; share?: boolean; [data: `data-${string}`]: unknown }) {
+export function CopyText({ text, inline, share, groups, ...attrs }: { text: string; inline?: boolean; share?: boolean; groups?: boolean; [data: `data-${string}`]: unknown }) {
   const value = useRef<HTMLElement>(null);
+  const cls = inline ? "control-cmd-inline" : "control-cmd";
   return (
     <span class={inline ? "copy-text inline" : "copy-text"}>
-      <span ref={value} class={inline ? "control-cmd-inline" : "control-cmd"} {...attrs}>
-        {text}
+      <span ref={value} class={groups ? `${cls} code-groups` : cls} {...attrs}>
+        {groups
+          ? text.split(/(?<=[-.])/).map((part, i) => (
+              <Fragment key={i}>
+                {i > 0 && <wbr />}
+                {part}
+              </Fragment>
+            ))
+          : text}
       </span>
       <CopyButton text={text} select={() => value.current} />
       {share && typeof navigator.share === "function" ? (
@@ -33,7 +44,7 @@ export function CopyText({ text, inline, share, ...attrs }: { text: string; inli
   );
 }
 
-/** Just the button, for something shown another way (recovery codes' "Copy both"). */
+/** Just the button, for something shown another way (recovery codes' "Copy all"). */
 export function CopyButton({ text, label = "Copy", select }: { text: string; label?: string; select?: () => HTMLElement | null }) {
   const [said, setSaid] = useState("");
   const say = (s: string) => {

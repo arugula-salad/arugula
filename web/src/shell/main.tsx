@@ -19,6 +19,8 @@ import "./interaction-chrome.css";
 import "./block-chrome.css";
 import "./phone-sheet.css";
 import "./phone-machines.css";
+// The one button set (UI audit #158), last: what it draws, it draws everywhere.
+import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { Client } from "./client";
@@ -28,6 +30,7 @@ import { App } from "./ui/app";
 import { openTeamChat, remotes } from "./blocks";
 import { measureCell } from "./ui/cells";
 import { desktopPush, enableControlPush, registerWorker, setPushBackend } from "./push";
+import { setReadOnlyLink } from "./ui/link-note";
 import { ControlSession, detectControl, restoreInvite, showMoving } from "./control";
 import { useControl } from "./trust/common";
 import { ControlGate } from "./trust/gate";
@@ -71,12 +74,14 @@ addEventListener("hashchange", () => {
   const to = platformOrigin() ? platformPath(location.hash) : null;
   if (to) location.replace(`${platformOrigin()}${to}`);
 });
-const linkMatch = /^#link=([0-9a-f]+)\.([0-9a-f]{64})\.([0-9a-f]{64})\.([0-9a-f]{64})$/.exec(location.hash);
+// UI audit #149: a link made since says when it ends, after the key.
+const linkMatch = /^#link=([0-9a-f]+)\.([0-9a-f]{64})\.([0-9a-f]{64})\.([0-9a-f]{64})(?:\.(\d+))?$/.exec(location.hash);
 const session = info && !linkMatch ? new ControlSession(info) : null;
 setControlSession(session);
 let linkTarget: import("./client").E2ETarget | undefined;
 if (info && linkMatch) {
-  const [, daemon, noise, seed, pub] = linkMatch;
+  const [, daemon, noise, seed, pub, ends] = linkMatch;
+  setReadOnlyLink(ends ? Number(ends) : null);
   const pkcs8 = new Uint8Array(48);
   pkcs8.set(unhex("302e020100300506032b656e04220420"));
   pkcs8.set(unhex(seed), 16);
@@ -401,15 +406,21 @@ if (!linkTarget) {
 
 // Opened from a notification (`#pane=N`), or told to by the service
 // worker. Notifications come from the home daemon, so show it first.
-const openPane = (pane: number, daemon?: string, share = false) => {
+const openPane = (pane: number, daemon?: string, share = false, follow?: string) => {
   // From a notification through control: that daemon's host first.
   const host = daemon ? directory.list?.hosts.find((h) => h.id === daemon)?.name : undefined;
   if (host) directory.select(host);
   else if (directory.home !== null) directory.select(directory.home);
+  let watched = false;
   const go = () => {
     if (!client.info(pane)) return false;
     client.setActive(pane);
     if (share) shareFrom(pane);
+    // Once: watching emits, and this runs again from inside that.
+    if (follow && !watched) {
+      watched = true;
+      client.watch(follow, pane);
+    }
     return true;
   };
   untilShown(go);
@@ -435,12 +446,12 @@ window.addEventListener("arugula:notice", (e) => {
 // A push's Share (#237) adds `&share`: the share picker opens over it.
 // An older daemon's mention push (before M125) adds `&thread=…`: the pane
 // opens, and its room is in chat.
-const fromHash = /^#pane=(?:([0-9a-f]+)\.)?(\d+)(?:&thread=(?:pane|session)-\d+)?(&share)?$/.exec(location.hash);
+const fromHash = /^#pane=(?:([0-9a-f]+)\.)?(\d+)(?:&thread=(?:pane|session)-\d+)?(&share)?(?:&follow=([^&]+))?$/.exec(location.hash);
 if (fromHash) {
-  const [, daemon, pane, share] = fromHash;
+  const [, daemon, pane, share, follow] = fromHash;
   // A notification through control names its daemon: once its host is in
   // the list, open the pane there.
-  const go = () => openPane(Number(pane), daemon, !!share);
+  const go = () => openPane(Number(pane), daemon, !!share, follow && decodeURIComponent(follow));
   if (daemon && !directory.find?.(directory.list?.hosts.find((h) => h.id === daemon)?.name ?? "")) {
     const off = directory.subscribe(() => {
       if (directory.list?.hosts.some((h) => h.id === daemon)) {

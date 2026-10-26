@@ -18,13 +18,13 @@ export const standalone = () =>
 /** Register the service worker (also what makes the app installable). A
  * notification through control (M21) says which daemon it's from. */
 export async function registerWorker(
-  onOpenPane: (pane: number, daemon?: string, share?: boolean) => void,
+  onOpenPane: (pane: number, daemon?: string, share?: boolean, follow?: string) => void,
 ) {
   if (!("serviceWorker" in navigator)) return;
   try {
     await navigator.serviceWorker.register("/sw.js");
     navigator.serviceWorker.addEventListener("message", (e) => {
-      if (e.data?.type === "open-pane" && typeof e.data.pane === "number") onOpenPane(e.data.pane, e.data.daemon, e.data.share === true);
+      if (e.data?.type === "open-pane" && typeof e.data.pane === "number") onOpenPane(e.data.pane, e.data.daemon, e.data.share === true, typeof e.data.follow === "string" ? e.data.follow : undefined);
       // M123: a room in control's chat (sw.ts made the address: `/#chat=…`).
       if (e.data?.type === "open-room" && typeof e.data.url === "string" && /^\/#chat=[a-z]{2}_[0-9a-f]+(?:&msg=-?\d+)?$/.test(e.data.url)) {
         location.hash = e.data.url.slice(2);

@@ -444,6 +444,13 @@ impl<T: TokenSource> Github<T> {
         Ok(["ssh_url", "clone_url", "html_url"].iter().filter_map(|k| v[*k].as_str().map(str::to_owned)).collect())
     }
 
+    /// The ways the repository lets a pull request be merged (UI audit
+    /// #196), when GitHub says: [`merge_styles`](crate::parse::merge_styles).
+    pub async fn merge_styles(&self, repo: &str) -> Result<Option<Vec<String>>, Error> {
+        let v = self.get(repo, &format!("repos/{repo}")).await?;
+        Ok(crate::parse::merge_styles(&v))
+    }
+
     /// The branch work starts from.
     pub async fn default_branch(&self, repo: &str) -> Result<String, Error> {
         let v = self.get(repo, &format!("repos/{repo}")).await?;
@@ -555,6 +562,23 @@ impl<T: TokenSource> Github<T> {
             url: None,
             said: format!("reran the failed jobs of {n} workflow run{}", if n == 1 { "" } else { "s" }),
         })
+    }
+
+    /// Open a pull request from `head` into `base` (as a draft on GitHub
+    /// when `draft`): its number, and where it is.
+    pub async fn new_pr(
+        &self,
+        repo: &str,
+        title: &str,
+        body: &str,
+        head: &str,
+        base: &str,
+        draft: bool,
+    ) -> Result<(u64, Sent), Error> {
+        let req = json!({ "title": title, "body": body, "head": head, "base": base, "draft": draft });
+        let (v, _) = self.send(reqwest::Method::POST, repo, &format!("repos/{repo}/pulls"), Some(&req)).await?;
+        let n = v["number"].as_u64().ok_or_else(|| Error::Http("GitHub didn't say the PR's number".into()))?;
+        Ok((n, Sent { url: v["html_url"].as_str().map(str::to_owned), said: format!("opened #{n}") }))
     }
 
     /// Open an issue: its number, and where it is.

@@ -8,13 +8,18 @@
 // has joined a control that keeps Docs) is `doc_shares`' answer, asked when
 // the block's state arrives and kept here for the menu to read.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { docHooks, type DocState } from "../blocks/doc";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import type { MenuItem } from "../../shared/ui/menu";
+import { useModal } from "../../shared/ui/modal";
+import { useSubscribe } from "../../shared/ui/hooks";
+import { ago, when } from "../../shared/time";
+import { OpenOutside } from "../blocks/block-states";
+import { LinkIcon } from "./shell/icons";
 
 /** What `doc_shares` said for a Doc that isn't shared. */
 interface Can {
@@ -23,6 +28,15 @@ interface Can {
 }
 
 const can = new Map<PaneId, Can>();
+
+/** A shared Doc's link, for its bar's ↗ (UI audit #196), as `doc_shares`
+ * last said it; and who to tell when it changes. */
+const links = new Map<PaneId, string>();
+const linkWatchers = new Set<() => void>();
+const onLinks = (fn: () => void) => {
+  linkWatchers.add(fn);
+  return () => void linkWatchers.delete(fn);
+};
 
 interface Shares {
   url?: string;
@@ -49,7 +63,32 @@ async function refresh(client: Client, id: PaneId) {
   const { ok, body } = await call(client, id, "doc_shares");
   if (ok && body.shared === null) can.set(id, { can: body.can !== false, why: body.why });
   else can.delete(id);
+  const url = ok ? body.url : undefined;
+  if (url !== links.get(id)) {
+    if (url) links.set(id, url);
+    else links.delete(id);
+    linkWatchers.forEach((fn) => fn());
+  }
 }
+
+/** In the Doc's bar (UI audit #196): "shared" once it has a link, with
+ * when its copy was last updated, and ↗ to open the link; nothing while
+ * it's only the owner's. */
+function ShareState({ id, s }: { id: PaneId; s: DocState }) {
+  useSubscribe(onLinks);
+  if (!s.shared) return null;
+  const url = links.get(id);
+  return (
+    <>
+      <span class="ws-tag doc-bar-shared" data-doc-bar-shared title={`Shared with a link; the link shows it as it was ${ago(s.shared.updated, Date.now(), "long")} (${when(s.shared.updated)})`}>
+        <LinkIcon /> shared
+      </span>
+      {url && <OpenOutside href={url} data-doc-bar-open />}
+    </>
+  );
+}
+
+docHooks.bar = (_client, id, s) => <ShareState id={id} s={s} />;
 
 docHooks.state = (client, id, s: DocState) => {
   // When it arrives, and each time it becomes shared or isn't.
@@ -86,6 +125,10 @@ export function DocShareLayer() {
       listeners.delete(fn);
     };
   }, []);
+  // UI audit #150: the link's and the update's dialog take the focus and
+  // close on Escape (Unshare's ConfirmRemove does its own).
+  const ref = useRef<HTMLDivElement>(null);
+  useModal(ref, () => show(null), !!shown && shown.kind !== "unshare");
   const o = shown;
   if (!o) return null;
   const close = () => show(null);
@@ -107,14 +150,14 @@ export function DocShareLayer() {
   if (o.kind === "update") {
     return (
       <div class="prompt-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-        <div class="prompt control-prompt" role="alertdialog" aria-modal="true" aria-label="Update shared copy" data-doc-update-dialog onKeyDown={(e) => e.key === "Escape" && close()}>
+        <div class="prompt control-prompt" role="alertdialog" aria-modal="true" aria-label="Update shared copy" data-doc-update-dialog ref={ref}>
           <h2>Update shared copy?</h2>
           <p>{UPDATE_NOTE}</p>
           <div class="prompt-buttons">
-            <button type="button" onClick={close}>
+            <button class="secondary" type="button" onClick={close}>
               Cancel
             </button>
-            <button
+            <button class="secondary"
               type="button"
               data-doc-update-go
               onClick={() => {
@@ -130,13 +173,13 @@ export function DocShareLayer() {
     );
   }
   return (
-    <div class="prompt-backdrop" role="dialog" aria-label={o.title} onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="prompt control-prompt" data-doc-link-dialog onKeyDown={(e) => e.key === "Escape" && close()}>
+    <div class="prompt-backdrop" role="dialog" aria-modal="true" aria-label={o.title} onPointerDown={(e) => e.target === e.currentTarget && close()}>
+      <div ref={ref} class="prompt control-prompt" data-doc-link-dialog>
         <h2>{o.title}</h2>
         <p class="hint">Anyone with this link can open the Doc, with no account. It shows the Doc as it is now.</p>
         <CopyText text={o.url} share data-doc-link-url />
         <div class="prompt-buttons">
-          <button type="button" onClick={close}>
+          <button class="secondary" type="button" onClick={close}>
             Done
           </button>
         </div>

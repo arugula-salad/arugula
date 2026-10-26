@@ -11,10 +11,11 @@
 // rev and never its bytes, and the page asks for one by name (`doc_asset`, a
 // viewer's call) the first time a section shows that rev.
 
-import { render } from "preact";
+import { render, type ComponentChildren } from "preact";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { DocBlock, markdown, type DocState } from "./doc-render";
+import { clearLabsOff, showLabsOff } from "./labs-off";
 import { registerBlock, type BlockView } from "./view";
 
 // The renderer is doc-render.tsx's; the share page imports it from there.
@@ -74,7 +75,25 @@ function makeImages(client: Client, id: PaneId): Images {
  * owner's, and lives in ui/doc-share.tsx, which sets this when the app
  * loads. The viewer behind a share link never loads it, so it stays out of
  * that page. */
-export const docHooks: { state?: (client: Client, id: PaneId, s: DocState) => void } = {};
+export const docHooks: {
+  state?: (client: Client, id: PaneId, s: DocState) => void;
+  /** Its share state and ↗ (the link, once it's shared), for its bar. */
+  bar?: (client: Client, id: PaneId, s: DocState) => ComponentChildren;
+} = {};
+
+/** The Doc's bar (UI audit #196): the one every block has, with its title,
+ * whether it's shared, and ↗ to its link. */
+function DocBar({ client, id, s }: { client: Client; id: PaneId; s: DocState | null }) {
+  const title = s?.title || "Doc";
+  return (
+    <div class="review-bar doc-bar" data-doc-bar={id}>
+      <span class="review-path" title={title}>
+        <b>{title}</b>
+      </span>
+      {s && !s.error && docHooks.bar?.(client, id, s)}
+    </div>
+  );
+}
 
 /** The caches of the Doc views that are open, for a spec to look at. */
 const open = new Map<PaneId, Images>();
@@ -93,16 +112,21 @@ registerBlock("doc", (client: Client, id): BlockView => {
     // The daemon's features arrive just after its layout. Without the flag a
     // saved Doc is still on the machine, but it isn't shown (#347).
     if (client.features !== null && !client.flag("docs")) {
-      host.className = "block block-unknown";
-      render(null, host);
-      host.textContent = "This block is in Labs";
+      if (!note) render(null, host);
+      showLabsOff(host, client, "docs");
       note = true;
       return;
     }
-    if (note) host.textContent = "";
+    if (note) clearLabsOff(host);
     note = false;
     host.className = "block block-doc";
-    render(<DocBlock id={id} s={state} fresh={fresh} load={images.load} cached={images.cache} />, host);
+    render(
+      <div class="review">
+        <DocBar client={client} id={id} s={state} />
+        <DocBlock id={id} s={state} fresh={fresh} load={images.load} cached={images.cache} />
+      </div>,
+      host,
+    );
   };
   const off = client.subscribe(draw);
   draw();

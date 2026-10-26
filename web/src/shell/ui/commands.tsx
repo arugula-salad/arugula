@@ -26,6 +26,7 @@ import { keyHint } from "./keys";
 import { sessionThreadItems, threadItems } from "./threads";
 import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
+import { watchingNote } from "./shell/live";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -44,6 +45,16 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
   const closePane: MenuItem = { label: "Close pane", danger: true, run: () => client.intent({ op: "close_pane", pane: id }) };
   // M110: fill the tab with it (everyone's view), or give the layout back.
   const focus = phone ? [] : focusItems(client, client.tabOfPane(id), id);
+  const cwd = client.cwd(id);
+  // UI audit #158: a viewer (a share's, a read-only link's) only watches.
+  const watching = watchingNote(client, client.sessionOfPane(id));
+  if (watching)
+    return [
+      { header: watching },
+      ...focus,
+      { label: "Copy working directory", disabled: !cwd, run: () => cwd && void navigator.clipboard?.writeText(cwd) },
+      ...threadItems(client, id),
+    ];
 
   if (info?.type === "remote") {
     // Its terminal is its host's: here, only where it is.
@@ -60,7 +71,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ];
   }
 
-  const cwd = client.cwd(id);
   const tabId = client.tabOfPane(id)?.id;
   const tabMachine = tabId === undefined ? undefined : client.tabMachine(tabId);
   const mine = client.machine(id);
@@ -106,7 +116,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     // like ports.
     ...(entry && !client.state?.roles ? [{ label: "Open in editor", run: () => openEditor(client, id) } as MenuItem] : []),
     // M11: what changed in its repository, where it runs.
-    ...(!client.state?.roles ? [{ label: "Changes", run: () => openChanges(client, id) } as MenuItem] : []),
+    ...(!client.state?.roles ? [{ id: "changes", label: "Changes", run: () => openChanges(client, id) } as MenuItem] : []),
     ...(workspace ? [{ label: "Open as workspace", run: () => openWorkspace(client, workspace, id) } as MenuItem] : []),
     ...(own && !tabMachine
       ? [{ label: "Share machine with tab", run: () => void client.api(`/api/panes/${id}/share-machine`) } as MenuItem]
@@ -118,7 +128,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
       ? [{ label: "Attach file…", shortcut: desktopPlatform() === "macos" ? keyHint("desktop.attach") : undefined, run: () => void client.attachFiles(id) } as MenuItem]
       : []),
     moveToTab,
-    { label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, id, phone) },
+    { id: "picker", label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, id, phone) },
     { label: "Copy working directory", disabled: !cwd, run: () => cwd && void navigator.clipboard?.writeText(cwd) },
     // A dial-out host's links would be on a daemon nobody can reach.
     ...(client.base.startsWith("/")
@@ -145,6 +155,11 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
             },
           } as MenuItem,
         ]),
+    // The owner's: the share form for this pane's session, opening here,
+    // with their window following ours (#1473).
+    ...(client.state?.roles || client.sessionOfPane(id) === null
+      ? []
+      : [{ label: "Share this pane…", run: () => shareSession(client.sessionOfPane(id)!, { pane: id }) } as MenuItem]),
     ...driveItems(client, id),
     "separator",
     // M61: the people's conversation about this pane.
@@ -171,16 +186,19 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
 /** A tab's right-click menu. */
 export function tabItems(client: Client, tab: TabView, rename: () => void): MenuItem[] {
   const machine = client.tabMachine(tab.id);
+  // UI audit #158: nothing a viewer could do to a tab.
+  const watching = watchingNote(client, client.sessionOfTab(tab.id) ?? null);
+  if (watching) return [{ header: watching }, ...(desktopApp() ? [{ label: "Open in new window", run: () => openInNewWindow(client.active(tab.id)) } as MenuItem] : [])];
   return [
     { label: "Rename tab", run: rename },
-    { label: "New tab", run: () => client.intent({ op: "new_tab", session: client.session!, from_pane: client.active(tab.id) ?? null }) },
-    ...(client.has("vms") ? [{ label: "New VM tab", run: () => void client.newVm({ session: client.session!, tab: true }) } as MenuItem] : []),
-    { label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, client.active(tab.id)) },
+    { id: "new-tab", label: "New tab", run: () => client.intent({ op: "new_tab", session: client.session!, from_pane: client.active(tab.id) ?? null }) },
+    ...(client.has("vms") ? [{ id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session: client.session!, tab: true }) } as MenuItem] : []),
+    { id: "picker", label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, client.active(tab.id)) },
     // The desktop app (M46): this tab in a window of its own.
     ...(desktopApp() ? [{ label: "Open in new window", run: () => openInNewWindow(client.active(tab.id)) } as MenuItem] : []),
     // M11: what changed in the active pane's repository, on its machine.
     ...(!client.state?.roles && client.active(tab.id) !== undefined
-      ? [{ label: "Changes", run: () => openChanges(client, client.active(tab.id)!) } as MenuItem]
+      ? [{ id: "changes", label: "Changes", run: () => openChanges(client, client.active(tab.id)!) } as MenuItem]
       : []),
     ...machineItems(client, tab),
     "separator",
@@ -190,14 +208,15 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
 
 /** The `+` button's menu: a new tab, and blocks in tabs of their own. */
 export function newTabItems(client: Client, session: SessionId): MenuItem[] {
+  // Each one a verb, "New …" or "Open …" (UI audit #171).
   return [
-    { label: "New tab", run: () => client.intent({ op: "new_tab", session, from_pane: client.active() ?? null }) },
-    ...(client.has("vms") ? [{ label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem] : []),
-    { label: "In a directory…", shortcut: keyHint("picker"), disabled: client.active() === undefined, run: () => openPicker(client, client.active()) },
+    { id: "new-tab", label: "New tab", run: () => client.intent({ op: "new_tab", session, from_pane: client.active() ?? null }) },
+    ...(client.has("vms") ? [{ id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem] : []),
+    { label: "New tab in a directory…", shortcut: keyHint("picker"), disabled: client.active() === undefined, run: () => openPicker(client, client.active()) },
     // M35: a studio app's box, in a tab of its own. The owner's.
     ...(!client.state?.roles && client.has("studio") ? [{ label: "Open a studio app…", run: () => pickApp(client, { session }) } as MenuItem] : []),
     // #123: the team's chat, in a tab of its own.
-    ...(!client.state?.roles && hasChat() ? [{ label: "Team chat", run: () => void openTeamChat(client, { session }) } as MenuItem] : []),
+    ...(!client.state?.roles && hasChat() ? [{ label: "Open team chat", run: () => void openTeamChat(client, { session }) } as MenuItem] : []),
     // M36: a pull request, in a tab of its own.
     ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { session }) } as MenuItem] : []),
     // M37: an issue, in a tab of its own.
@@ -207,42 +226,60 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
   ];
 }
 
-/** The session button's menu, after the list of sessions: what acts on
- * this session, and nothing else. Settings for the device, the machine and
- * the account are in the account menu (`settingsItems`). */
-export function sessionItems(client: Client, session: SessionId, rename: () => void, opts: { bar?: boolean } = {}): MenuItem[] {
+/** The session's menu: the sidebar row's … and the header's ▾ (after its
+ * list of sessions) show the same one (UI audit #171). What acts on this
+ * session first, then a new one, then closing it; settings for the
+ * device, the machine and the account are in the account menu
+ * (`settingsItems`). */
+export function sessionItems(client: Client, session: SessionId, rename: () => void): MenuItem[] {
   // A guest's: the session's thread and notifications. Making, renaming
   // and closing sessions are the machine owner's (M113).
   if (client.state?.roles) return [...sessionThreadItems(client, session), ...agentNotifyItems(client, session)];
   return [
+    { label: "Rename session", run: rename },
+    // M61: the people's conversation about this session.
+    ...sessionThreadItems(client, session),
+    // Sharing is the daemon's owner's (M13).
+    { label: "Share session…", run: () => shareSession(session) },
+    ...agentNotifyItems(client, session),
+    "separator",
     { label: "New session", run: () => client.intent({ op: "new_session", name: null, from_pane: client.active() ?? null }) },
     // VMs and sandboxes need wisp (#180).
     ...(client.has("vms")
       ? [
-          { label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem,
+          { id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem,
           { label: "Sandboxes…", run: () => openSandboxes(client) } as MenuItem,
         ]
       : []),
-    { label: "Rename session", run: rename },
-    // M61: the people's conversation about this session.
-    ...sessionThreadItems(client, session),
-    // The bar has Share beside the session's button: its menu doesn't
-    // repeat it (the palette has it).
-    // Sharing is the daemon's owner's (M13).
-    ...(client.state?.roles || opts.bar ? [] : [{ label: "Share session…", run: () => shareSession(session) } as MenuItem]),
-    ...agentNotifyItems(client, session),
     "separator",
     { label: "Close session", danger: true, run: () => client.intent({ op: "close_session", session }) },
   ];
 }
 
+/** What the session's menu holds, in a few words, for the tooltips of the
+ * buttons that open it: read from its items, so they never promise one it
+ * hasn't (UI audit #171). */
+export function sessionMenuHint(items: MenuItem[]): string {
+  const has = (re: RegExp) => items.some((i) => typeof i === "object" && "label" in i && re.test(i.label));
+  const words = [
+    has(/^Rename/) && "rename",
+    has(/thread/) && "its thread",
+    has(/^Share/) && "share",
+    has(/^Notify/) && "notifications",
+    has(/^New session/) && "a new session",
+    has(/^Close/) && "close",
+  ].filter((w): w is string => !!w);
+  return words.join(", ");
+}
+
 /** The account menu's settings: this device, this machine, and help. The
  * same everywhere (the panes, the swarm, chat, agents), with or without a
  * session. */
-export function settingsItems(client: Client | null): MenuItem[] {
+export function settingsItems(client: Client | null, opts: { machine?: boolean } = {}): MenuItem[] {
   // The machine's own settings are in the machine menu, where there is
-  // one; else (a daemon's page with no other machine) here.
-  const machine = client && !hostMenuShown() ? machineSettingsItems(client) : [];
+  // one; else (a daemon's page with no other machine) here. The rail's
+  // Settings always has them: its tooltip says so (UI audit #174).
+  const machine = client && (opts.machine || !hostMenuShown()) ? machineSettingsItems(client) : [];
   return [
     ...(machine.length ? [{ header: "This machine" } as MenuItem, ...machine, "separator" as const] : []),
     // How the page looks is this device's, with or without a machine.

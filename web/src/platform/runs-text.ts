@@ -12,6 +12,9 @@ export interface Op {
   instruction: string | null;
   agent: string | null;
   directory: string | null;
+  /** A deploy's apply (M219): which deploy, by which driver, and the
+   * hash of the operation its approval signs. */
+  deploy: { deploy: string; driver: string; apply: string } | null;
 }
 
 function unb64(s: string): string | null {
@@ -29,7 +32,7 @@ export function decodeOp(op: string): Op | null {
   if (!op.endsWith("\n")) return null;
   const lines = op.slice(0, -1).split("\n");
   if (lines[0] !== "arugula op v1") return null;
-  const out: Op = { daemon: "", kind: "", argv: [], instruction: null, agent: null, directory: null };
+  const out: Op = { daemon: "", kind: "", argv: [], instruction: null, agent: null, directory: null, deploy: null };
   for (const line of lines.slice(1)) {
     const at = line.indexOf(" ");
     if (at < 0) return null;
@@ -49,8 +52,13 @@ export function decodeOp(op: string): Op | null {
       out.instruction = unb64(value);
       if (out.instruction === null) return null;
     } else if (name === "agent") out.agent = value === "-" ? null : value;
+    else if (name === "deploy") out.deploy = { deploy: value, driver: "", apply: "" };
+    else if (name === "driver" && out.deploy) out.deploy.driver = value;
+    else if (name === "apply" && out.deploy) out.deploy.apply = value;
     else return null;
   }
+  // A deploy's apply is that and nothing else (UI audit #145).
+  if (out.deploy) return out.argv.length || out.instruction !== null || out.directory !== null ? null : out;
   return out.argv.length || out.instruction !== null ? out : null;
 }
 
@@ -88,13 +96,41 @@ export function argvOf(line: string): string[] | null {
   return out;
 }
 
-/** What a run did, in a line: its spec's name, else its command or the
- * first line of its instruction. */
-export function runTitle(op: string, specName?: string | null): string {
+/** The deploy a deploy's run applies, as the platform names it
+ * (`RunView.deploy`). */
+export interface RunDeploy {
+  id: string;
+  environment: string;
+  source_kind: string;
+  reference: string;
+}
+
+/** A deploy's source, short: a commit's first 7, a digest's first 12 hex. */
+export function shortSource(reference: string): string {
+  const at = reference.indexOf(":");
+  return at >= 0 ? reference.slice(at + 1, at + 13) : reference.slice(0, 7);
+}
+
+/** A deploy's run, in a line: `Deploy production · 1a2b3c4`. */
+export const deployTitle = (d: RunDeploy) => `Deploy ${d.environment} · ${shortSource(d.reference)}`;
+
+/** What a run did, in a line: its spec's name, its deploy (UI audit #145),
+ * else its command or the first line of its instruction. */
+export function runTitle(op: string, specName?: string | null, deploy?: RunDeploy | null): string {
   if (specName) return specName;
+  if (deploy) return deployTitle(deploy);
   const o = decodeOp(op);
   if (!o) return "a run";
+  if (o.deploy) return `Deploy ${o.deploy.deploy}`;
   return o.instruction !== null ? (o.instruction.split("\n")[0] ?? "") : commandLine(o.argv);
+}
+
+/** A run's workspace as pages name it (UI audit #145): its name, a deploy's
+ * own box as that, or its id when the platform sent no name. */
+export function workspaceLabel(run: { workspace?: string | null; workspace_name?: string | null; deploy?: RunDeploy | null }): string | null {
+  if (!run.workspace) return null;
+  if (run.deploy) return "its deploy's box";
+  return run.workspace_name || run.workspace;
 }
 
 /** S37's eight states, as the page says them. */
@@ -109,7 +145,33 @@ export const STATES: Record<string, string> = {
   expired: "Expired",
 };
 
-export const TRIGGERS: Record<string, string> = { manual: "By hand", schedule: "Schedule", event: "Event" };
+/** What starts runs, as the Trigger filter offers them (UI audit #164).
+ * `deploy` is a deploy's run (M219), `manual` underneath: the platform's
+ * list tells them apart. */
+export const TRIGGERS: Record<string, string> = { manual: "Manual", schedule: "Scheduled", event: "Event", deploy: "Deploy" };
+
+/** What started a run, as TRIGGERS names it: a deploy's run is `deploy`. */
+export function triggerOf(run: { trigger: string; source: Record<string, unknown>; deploy?: unknown }): string {
+  return run.deploy || (run.trigger === "manual" && typeof run.source?.deploy === "string") ? "deploy" : run.trigger;
+}
+
+/** A run's trigger and who, in a line (UI audit #164): `Manual · kim`,
+ * `Deploy · kim`, `Scheduled`, `Event · push on o/r`. */
+export function triggerLine(
+  run: { trigger: string; started_by: string; started_by_agent: string | null; source: Record<string, unknown>; deploy?: unknown },
+  name: (account: string) => string | undefined,
+): string {
+  const t = triggerOf(run);
+  const word = TRIGGERS[t] ?? t;
+  if (t === "manual" || t === "deploy") return `${word} · ${startedBy(run, name)}`;
+  if (t === "event") {
+    const s = run.source ?? {};
+    const ev = typeof s.event === "string" ? s.event.replace(/_/g, " ") : "";
+    const repo = typeof s.repo === "string" ? ` on ${s.repo}` : "";
+    return ev ? `${word} · ${ev}${repo}` : word;
+  }
+  return word;
+}
 
 /** Nothing leaves it. */
 export const ended = (state: string) => ["succeeded", "failed", "denied", "canceled", "expired"].includes(state);
@@ -131,20 +193,31 @@ export function took(from: number, to: number): string {
 }
 
 /** Who or what started it: a person (by hand, or an agent of theirs), a
- * schedule or a rule. `name` names an account. */
+ * schedule or a rule. `name` names an account. `start`: it begins a
+ * sentence (a timeline row's subject, UI audit #164), so what isn't a
+ * person's name is capitalised. */
 export function startedBy(
   run: { trigger: string; started_by: string; started_by_agent: string | null; source: Record<string, unknown> },
   name: (account: string) => string | undefined,
+  start = false,
 ): string {
   const s = run.source ?? {};
-  if (run.trigger === "schedule") return "its schedule";
+  const cap = (t: string) => (start ? `${t.charAt(0).toUpperCase()}${t.slice(1)}` : t);
+  if (run.trigger === "schedule") return cap("its schedule");
   if (run.trigger === "event") {
     const ev = typeof s.event === "string" ? s.event.replace(/_/g, " ") : "an event";
     const repo = typeof s.repo === "string" ? ` on ${s.repo}` : "";
-    return `a rule (${ev}${repo})`;
+    return cap(`a rule (${ev}${repo})`);
   }
-  const who = run.started_by ? (name(run.started_by) ?? "someone who left") : "someone who left";
+  const who = run.started_by ? (name(run.started_by) ?? cap("someone who left")) : cap("someone who left");
   return run.started_by_agent ? `${who}'s agent` : who;
+}
+
+/** An id short, its prefix kept: `hw_fa79e709` (UI audit #164). The page
+ * puts the whole one in a title. */
+export function shortId(id: string): string {
+  const at = id.indexOf("_");
+  return at >= 0 && at < 6 ? id.slice(0, at + 9) : id.slice(0, 8);
 }
 
 /** The run's pane on control's page, where its machine is: the shell's
@@ -192,6 +265,14 @@ export function stripAnsi(s: string): string {
     .replace(/\x1b[()*+][0-~]/g, "")
     .replace(/\x1b[0-~]/g, "")
     .replace(/\r+\n/g, "\n");
+}
+
+/** The note a pane writes when what it ran ended and it waits for Enter
+ * (arugula_mux's pane: `[exited with code 0 · press Enter for a shell]`):
+ * the terminal's, not the run's, so a kept log ends without it (UI audit
+ * #146). `text` is already without its escapes. */
+export function withoutExitNote(text: string): string {
+  return text.replace(/\n*\[(?:exited with code -?\d+|process ended by signal \d+) · press Enter for a shell\]\s*$/, "\n");
 }
 
 /** The most of a followed log a run's view keeps (about 4 MiB): older

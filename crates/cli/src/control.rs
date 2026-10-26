@@ -208,7 +208,7 @@ impl Enrolled {
                     }
                     Err(why) => {
                         if debug_http() {
-                            eprintln!("arugula: not trusting the hosted machine {}: {why:#}", m.name);
+                            eprintln!("arugula: not trusting the cloud workspace {}: {why:#}", m.name);
                         }
                     }
                 }

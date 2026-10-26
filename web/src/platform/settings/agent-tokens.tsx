@@ -1,4 +1,4 @@
-// Agents with no machine (M230): bearer agent grant tokens for an agent
+// Your agent tokens (M230), agents with no machine: bearer agent grant tokens for an agent
 // that runs somewhere without `arugulad` (a hosted service's), reaching
 // the platform's MCP endpoint. Each has powers over projects you read,
 // never approves anything, and its agent's writes are labelled
@@ -10,7 +10,9 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { Time } from "../../shared/ui/time";
 import { session } from "../session";
 import { toneClass } from "../swarm";
 import { Section } from "./section";
@@ -51,22 +53,28 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
   return v as T;
 }
 
-export function ago(ms: number): string {
-  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
-}
+// Each power in a few plain words, as the grants' switches say them (UI
+// audit #168): a card says these, the form the powers' own names.
+const POWER_WORDS: Record<string, string> = {
+  "threads.read": "read threads",
+  "threads.post": "post in threads",
+  "issues.write": "write issues",
+  "runs.read": "read runs",
+  "runs.start": "start run specs",
+  "runs.command": "run commands",
+  "deploys.plan": "plan deploys",
+  "secrets.write": "set secrets",
+};
 
-// "issues.write, deploys.plan on Acme; runs.read on Web".
+// "Write issues, plan deploys on Acme; read runs on Web".
 export function reachOf(t: AgentToken): string {
   const by = new Map<string, string[]>();
   for (const g of t.grants) {
     const p = g.project.name ?? g.project.id;
-    by.set(p, [...(by.get(p) ?? []), g.power]);
+    by.set(p, [...(by.get(p) ?? []), POWER_WORDS[g.power] ?? g.power]);
   }
-  return [...by].map(([p, ps]) => `${ps.join(", ")} on ${p}`).join("; ");
+  const line = [...by].map(([p, ps]) => `${ps.join(", ")} on ${p}`).join("; ");
+  return line.charAt(0).toUpperCase() + line.slice(1);
 }
 
 function Calls({ id }: { id: string }) {
@@ -83,7 +91,7 @@ function Calls({ id }: { id: string }) {
     <ul class="agent-token-calls" data-agent-token-calls={id}>
       {calls.map((c) => (
         <li key={c.id}>
-          <span class="dim">{ago(c.at)}</span> <code>{c.tool}</code> <span class={`agent-call-${c.outcome}`}>{c.outcome}</span> {c.detail}
+          <Time class="dim" at={c.at} /> <code>{c.tool}</code> <span class={`agent-call-${c.outcome}`}>{c.outcome}</span> {c.detail}
         </li>
       ))}
     </ul>
@@ -102,6 +110,8 @@ export function AgentTokens() {
   const [made, setMade] = useState<{ token: string; name: string } | null>(null);
   const [open, setOpen] = useState("");
   const [busy, setBusy] = useState(false);
+  // Revoke asks first (UI audit #158): the token is dead for good.
+  const [revoking, setRevoking] = useState<AgentToken | null>(null);
   const load = () =>
     call<{ tokens: AgentToken[]; mcp_url: string }>("/api/agent-tokens").then(
       (v) => {
@@ -141,7 +151,8 @@ export function AgentTokens() {
   return (
     <Section
       id="tokens"
-      title="Agents with no machine"
+      title="Your agent tokens"
+      count={tokens.length}
       lede="Tokens for agents that run somewhere without Arugula, reaching your projects through the platform's MCP endpoint."
       more={
         <p>
@@ -173,7 +184,7 @@ export function AgentTokens() {
             </code>
           </p>
           <div class="prompt-buttons">
-            <button type="button" onClick={() => void navigator.clipboard?.writeText(made.token)}>
+            <button class="secondary" type="button" onClick={() => void navigator.clipboard?.writeText(made.token)}>
               Copy
             </button>
             <button type="button" class="primary" onClick={() => setMade(null)}>
@@ -182,7 +193,7 @@ export function AgentTokens() {
           </div>
         </div>
       )}
-      {tokens.length === 0 && !making && <p class="dim">No agent tokens yet.</p>}
+      {tokens.length === 0 && !making && <p class="dim">None yet.</p>}
       {tokens.length > 0 && (
         <ul class="platform-list sw-cards settings-cards agent-tokens">
           {/* The bar: live, or revoked. */}
@@ -193,19 +204,31 @@ export function AgentTokens() {
                   <bdi>{t.name}</bdi>
                 </b>
                 <span class="settings-card-act">
-                  <button class="control-linkish" data-agent-token-calls-open={t.id} onClick={() => setOpen(open === t.id ? "" : t.id)}>
+                  <button class="secondary small" data-agent-token-calls-open={t.id} onClick={() => setOpen(open === t.id ? "" : t.id)}>
                     {open === t.id ? "Hide calls" : "Calls"}
                   </button>
                   {t.live && (
-                    <button class="control-linkish" data-agent-token-revoke={t.id} onClick={() => void revoke(t.id)}>
+                    <button class="secondary danger small" data-agent-token-revoke={t.id} onClick={() => setRevoking(t)}>
                       Revoke
                     </button>
                   )}
                 </span>
               </div>
-              <span class="sw-mono agent-token-reach">{reachOf(t)}</span>
+              <span class="agent-token-reach">{reachOf(t)}</span>
               <span class="dim">
-                {t.live ? (t.last_used_at ? `Used ${ago(t.last_used_at)}` : "Never used") : `Revoked ${ago(t.revoked_at ?? 0)}`}
+                {t.live ? (
+                  t.last_used_at ? (
+                    <>
+                      Used <Time at={t.last_used_at} />
+                    </>
+                  ) : (
+                    "Never used"
+                  )
+                ) : (
+                  <>
+                    Revoked <Time at={t.revoked_at ?? 0} />
+                  </>
+                )}
               </span>
               {open === t.id && <Calls id={t.id} />}
             </li>
@@ -213,7 +236,7 @@ export function AgentTokens() {
         </ul>
       )}
       {!making ? (
-        <button class="settings-btn" data-agent-token-new onClick={() => setMaking(true)}>
+        <button class="secondary settings-new" data-agent-token-new onClick={() => setMaking(true)}>
           New agent token
         </button>
       ) : (
@@ -264,7 +287,7 @@ export function AgentTokens() {
           )}
           <p class="dim">The token is shown once, and your devices get a notice that it was made.</p>
           <div class="prompt-buttons">
-            <button type="button" onClick={() => setMaking(false)}>
+            <button class="secondary" type="button" onClick={() => setMaking(false)}>
               Cancel
             </button>
             <button class="primary" disabled={busy || !projects.length || !powers.length} data-agent-token-make>
@@ -274,6 +297,20 @@ export function AgentTokens() {
         </form>
       )}
       {err ? <p class="control-error">{err}</p> : null}
+      {revoking && (
+        <ConfirmRemove
+          title={`Revoke ${revoking.name}?`}
+          label="Revoke"
+          cancel={() => setRevoking(null)}
+          go={() => {
+            const id = revoking.id;
+            setRevoking(null);
+            void revoke(id);
+          }}
+        >
+          <p>Its agent is refused from now on, everywhere. A token can't be revoked and used again: give the agent a new one.</p>
+        </ConfirmRemove>
+      )}
     </Section>
   );
 }

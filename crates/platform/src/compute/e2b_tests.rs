@@ -34,6 +34,18 @@ struct Fake {
     events: BTreeMap<String, Vec<Value>>,
     /// Each box's egress rules, as last set (M185).
     rules: BTreeMap<String, Value>,
+    /// Snapshots (M263): each id and the box it was taken of, and how many
+    /// were made. `no_snapshots`: as loam's E2B API, every snapshot route
+    /// is a 404.
+    snapshots: BTreeMap<String, String>,
+    snapped: u32,
+    no_snapshots: bool,
+    /// What each box was made from. As E2B (seen live): a snapshot isn't
+    /// deleted (400) while a box made from it exists, a paused one too, nor
+    /// for `linger` more tries after its last box is deleted.
+    from: BTreeMap<String, String>,
+    linger: u32,
+    lingering: BTreeMap<String, u32>,
 }
 
 type S = Arc<Mutex<Fake>>;
@@ -71,12 +83,15 @@ async fn create(AxState(s): AxState<S>, m: Method, uri: Uri, h: HeaderMap, Json(
     if !authed(&h) {
         return error(401, None);
     }
-    if body["templateID"] != "base" {
+    let mut f = s.lock().unwrap();
+    let from = body["templateID"].as_str().unwrap_or_default();
+    // Templates: `base`, and `base-large` for M266's large workspaces.
+    if from != "base" && from != "base-large" && !f.snapshots.contains_key(from) {
         return error(404, None);
     }
-    let mut f = s.lock().unwrap();
     f.made += 1;
     let id = format!("sbx{}", f.made);
+    f.from.insert(id.clone(), from.to_owned());
     f.boxes.insert(id.clone(), ("running".into(), body["metadata"].clone()));
     f.rules.insert(id.clone(), body["network"]["rules"].clone());
     let made = json!({
@@ -132,7 +147,13 @@ async fn one(AxState(s): AxState<S>, m: Method, uri: Uri, Path(id): Path<String>
     let mut f = s.lock().unwrap();
     if m == Method::DELETE {
         return match f.boxes.remove(&id) {
-            Some(_) => StatusCode::NO_CONTENT.into_response(),
+            Some(_) => {
+                if let Some(snap) = f.from.get(&id).filter(|t| f.snapshots.contains_key(*t)).cloned() {
+                    let linger = f.linger;
+                    f.lingering.insert(snap, linger);
+                }
+                StatusCode::NO_CONTENT.into_response()
+            }
             None => error(404, None),
         };
     }
@@ -158,6 +179,15 @@ async fn action(
         return r;
     }
     let mut f = s.lock().unwrap();
+    if what == "snapshots" && f.no_snapshots {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if what == "snapshots" && f.boxes.contains_key(&id) {
+        f.snapped += 1;
+        let snap = format!("snap{}:default", f.snapped);
+        f.snapshots.insert(snap.clone(), id);
+        return (StatusCode::CREATED, Json(json!({"snapshotID": snap, "names": []}))).into_response();
+    }
     let Some((st, _)) = f.boxes.get_mut(&id) else { return error(404, None) };
     match what.as_str() {
         "pause" if st == "paused" => error(409, None),
@@ -231,6 +261,48 @@ async fn network(
     }
 }
 
+/// `GET /snapshots` (M263), every one or a box's (`sandboxID`).
+async fn snapshots(AxState(s): AxState<S>, m: Method, uri: Uri, Query(q): Query<BTreeMap<String, String>>) -> Response {
+    if let Some(r) = record(&s, &m, &uri, Value::Null) {
+        return r;
+    }
+    let f = s.lock().unwrap();
+    if f.no_snapshots {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let of = q.get("sandboxID");
+    let all: Vec<Value> = f
+        .snapshots
+        .iter()
+        .filter(|(_, from)| of.is_none_or(|o| o == *from))
+        .map(|(id, _)| json!({"snapshotID": id, "names": []}))
+        .collect();
+    Json(all).into_response()
+}
+
+/// `DELETE /templates/{id}`: a snapshot, as E2B deletes one.
+async fn template(AxState(s): AxState<S>, m: Method, uri: Uri, Path(id): Path<String>) -> Response {
+    if let Some(r) = record(&s, &m, &uri, Value::Null) {
+        return r;
+    }
+    let mut f = s.lock().unwrap();
+    if f.no_snapshots {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if !f.snapshots.contains_key(&id) {
+        return error(404, None);
+    }
+    if f.boxes.keys().any(|b| f.from.get(b) == Some(&id)) {
+        return error(400, None);
+    }
+    if let Some(n) = f.lingering.get_mut(&id).filter(|n| **n > 0) {
+        *n -= 1;
+        return error(400, None);
+    }
+    f.snapshots.remove(&id);
+    StatusCode::NO_CONTENT.into_response()
+}
+
 async fn fake() -> (E2b, S, String) {
     let s: S = Arc::new(Mutex::new(Fake { page: 100, ..Default::default() }));
     let app = Router::new()
@@ -240,6 +312,8 @@ async fn fake() -> (E2b, S, String) {
         .route("/sandboxes/{id}/{what}", post(action))
         .route("/v2/sandboxes/{id}/{what}", post(action))
         .route("/events/sandboxes/{id}", get(events))
+        .route("/snapshots", get(snapshots))
+        .route("/templates/{id}", axum::routing::delete(template))
         .route("/health", get(|| async { "ok" }))
         .with_state(s.clone());
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -498,4 +572,493 @@ fn flags_and_urls() {
         assert!(E2b::new(base, "k".into()).is_err(), "{base}");
     }
     assert!(E2b::new("https://api.e2b.dev", " ".into()).is_err());
+}
+
+// ---------------------------------------------------------------- snapshots (M263)
+
+/// A snapshot of a running box is filesystem-only or full, as asked; a box
+/// is made from it as from a template; a box's are listed; a delete is
+/// fine twice. The source keeps running.
+#[tokio::test]
+async fn snapshots_are_made_used_listed_and_deleted() {
+    let (e2b, s, _) = fake().await;
+    assert!(e2b.snapshots().await.unwrap());
+    let id = e2b.create(&workspace("hw_1")).await.unwrap().id;
+    let snap = e2b.snapshot(&id, Mode::Filesystem).await.unwrap();
+    assert_eq!(snap, "snap1:default");
+    let (method, path, body) = calls(&s).pop().unwrap();
+    assert_eq!((method.as_str(), path), ("POST", format!("/sandboxes/{id}/snapshots")));
+    assert_eq!(body, json!({"memory": false}));
+    e2b.snapshot(&id, Mode::Full).await.unwrap();
+    assert_eq!(calls(&s).pop().unwrap().2, json!({"memory": true}));
+    assert_eq!(e2b.status(&id).await.unwrap().unwrap().state, State::Running, "the source runs on");
+
+    let mut child = workspace("hw_1");
+    child.template = snap.clone();
+    let made = e2b.create(&child).await.unwrap();
+    assert_eq!(calls(&s).pop().unwrap().2["templateID"], snap);
+    assert_ne!(made.id, id);
+
+    let mut of = e2b.list_snapshots(Some(&id)).await.unwrap();
+    of.sort();
+    assert_eq!(of, ["snap1:default", "snap2:default"]);
+    assert!(calls(&s).pop().unwrap().1.contains(&format!("sandboxID={id}")));
+    assert!(e2b.list_snapshots(Some(&made.id)).await.unwrap().is_empty());
+    // As E2B: not while a box made from it exists, paused or not, nor
+    // just after it's deleted.
+    s.lock().unwrap().linger = 1;
+    e2b.pause(&made.id).await.unwrap();
+    assert_eq!(e2b.delete_snapshot(&snap).await, Err(Error::Refused { status: 400, code: None }));
+    e2b.delete(&made.id).await.unwrap();
+    assert_eq!(e2b.delete_snapshot(&snap).await, Err(Error::Refused { status: 400, code: None }));
+    e2b.delete_snapshot(&snap).await.unwrap();
+    assert_eq!(calls(&s).pop().unwrap().1, "/templates/snap1:default");
+    e2b.delete_snapshot(&snap).await.unwrap();
+    assert_eq!(e2b.list_snapshots(None).await.unwrap(), ["snap2:default"]);
+    // A box from a snapshot that's gone isn't made.
+    assert_eq!(e2b.create(&child).await, Err(Error::Refused { status: 404, code: None }));
+    // No such box.
+    assert_eq!(e2b.snapshot("nope", Mode::Filesystem).await, Err(Error::NotFound));
+}
+
+/// loam's E2B API answers 404 for every snapshot route: there are none,
+/// and a snapshot of a box it has is unsupported, not "no such box".
+#[tokio::test]
+async fn a_provider_without_snapshots_says_so() {
+    let (e2b, s, _) = fake().await;
+    s.lock().unwrap().no_snapshots = true;
+    assert!(!e2b.snapshots().await.unwrap());
+    let id = e2b.create(&workspace("hw_1")).await.unwrap().id;
+    assert_eq!(e2b.snapshot(&id, Mode::Filesystem).await, Err(Error::Unsupported));
+    assert_eq!(e2b.snapshot("nope", Mode::Filesystem).await, Err(Error::NotFound));
+    assert_eq!(e2b.list_snapshots(None).await, Err(Error::Unsupported));
+    e2b.delete_snapshot("snap1:default").await.unwrap();
+}
+
+mod lifecycle {
+    //! The platform's snapshots through its worker and routes, on the E2B
+    //! adapter against the fake: building one, a box from it, a spec change
+    //! building another, a failure keeping the current one, and deleting.
+
+    use std::sync::Arc;
+
+    use arugula_control_wire::hosted::{FROM_SNAPSHOT, SEALED, SetupReport, SetupStatus};
+    use arugula_e2e::now_ms;
+    use serde_json::{Value, json};
+
+    use super::{S, fake};
+    use crate::{
+        Platform, PlatformPort,
+        chat_tests::{TestHub, call},
+        hosted::{
+            EnrollBy, snapshot,
+            tests::{drive, make, serve_on, serve_on_with, show},
+        },
+    };
+
+    async fn on_fake() -> (Arc<TestHub>, S, Arc<Platform>, String, String) {
+        let (e2b, s, _) = fake().await;
+        let (hub, app, base, project) = serve_on(EnrollBy::Sandbox, Arc::new(e2b), "base").await;
+        hub.delegate(&project);
+        (hub, s, app, base, project)
+    }
+
+    fn said(status: SetupStatus, step: &str, reason: &str) -> SetupReport {
+        SetupReport { status, step: step.into(), reason: reason.into(), pane: Some(1), spec_hash: String::new() }
+    }
+
+    /// The boxes the fake has: each one's `templateID` and workspace.
+    fn boxes(s: &S) -> Vec<(String, String)> {
+        let f = s.lock().unwrap();
+        let mut made: Vec<(String, String)> = f
+            .calls
+            .iter()
+            .filter(|(m, p, _)| m == "POST" && p == "/v2/sandboxes")
+            .map(|(_, _, b)| {
+                (
+                    b["templateID"].as_str().unwrap().to_owned(),
+                    b["metadata"]["arugula_workspace"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        made.dedup();
+        made
+    }
+
+    fn live(s: &S) -> usize {
+        s.lock().unwrap().boxes.len()
+    }
+
+    fn snapshots(s: &S) -> Vec<String> {
+        s.lock().unwrap().snapshots.keys().cloned().collect()
+    }
+
+    /// Workspace `ws`'s box enrolls as `machine` and says it's set up, as a
+    /// box set up by its setup (`step` `"Set up."`) or from a snapshot.
+    async fn set_up(app: &Platform, hub: &TestHub, project: &str, ws: &str, machine: &str, step: &str, now: u64) {
+        hub.enroll(ws, machine);
+        drive(app, now).await;
+        assert!(app.hosted_setup(project, ws, machine, &said(SetupStatus::Ready, step, "")).await.unwrap());
+    }
+
+    /// The worker looks at `ws` now: a build starts when one is due. Its
+    /// builder's id, if it has one.
+    async fn look(app: &Platform, ws: &str, now: u64) -> Option<String> {
+        app.db.nudge_hosted(ws).unwrap();
+        drive(app, now).await;
+        app.db.snapshot_builder(ws).unwrap().map(|b| b.id)
+    }
+
+    /// Builder `b` enrolls as `machine`, sets up and seals, and its daemon
+    /// goes off the relay: it's snapshotted and deleted.
+    async fn seal(app: &Platform, hub: &TestHub, project: &str, b: &str, machine: &str, now: u64) {
+        hub.enroll(b, machine);
+        drive(app, now).await;
+        assert!(app.hosted_setup(project, b, machine, &said(SetupStatus::SettingUp, "clone app", "")).await.unwrap());
+        assert!(app.hosted_setup(project, b, machine, &said(SetupStatus::Ready, SEALED, "")).await.unwrap());
+        hub.set_online(machine, false);
+        drive(app, now).await;
+    }
+
+    fn snap(w: &Value) -> &Value {
+        &w["snapshot"]
+    }
+
+    /// Made, used, rebuilt on a spec change, kept through a failure, and
+    /// deleted with its workspace.
+    #[tokio::test]
+    async fn a_workspace_snapshot_is_built_used_rebuilt_and_deleted() {
+        let (hub, s, app, base, project) = on_fake().await;
+        let (_, w) = make(&base, "alice", &project, "dev").await;
+        let ws = w["id"].as_str().unwrap().to_owned();
+        let path = format!("/api/projects/{project}/workspaces/{ws}");
+        let (status, _) =
+            call(&base, "alice", "PUT", &format!("{path}/secrets/GIT_TOKEN"), Some(json!({ "value": "tok-secret-1" })))
+                .await;
+        assert_eq!(status, 204);
+        let now = now_ms();
+        drive(&app, now).await;
+        assert!(look(&app, &ws, now).await.is_none(), "not before its box set up");
+        set_up(&app, &hub, &project, &ws, "m1", "Set up.", now + 3_000).await;
+        assert!(show(&base, &project, &ws).await.get("snapshot").is_none());
+
+        // Create: a builder, its own box from the template, enrolled for
+        // purpose snapshot, reading the workspace's plan and secrets.
+        let b = look(&app, &ws, now + 3_000).await.expect("a build once it set up");
+        assert_eq!(snap(&show(&base, &project, &ws).await)["status"], "building");
+        assert_eq!(boxes(&s), [("base".to_owned(), ws.clone()), ("base".to_owned(), b.clone())]);
+        let asked = hub.enrollments();
+        let ask = asked.iter().find(|a| a.workspace == b).unwrap();
+        assert_eq!(ask.purpose.as_deref(), Some("snapshot"));
+        let builder_box = s
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .rev()
+            .find(|(m, p, _)| m == "POST" && p == "/v2/sandboxes")
+            .unwrap()
+            .2
+            .clone();
+        assert_eq!(builder_box["timeout"], snapshot::BUILD_TIMEOUT.as_secs());
+        assert_eq!(builder_box["network"].get("rules"), None, "a builder runs no agents: no key");
+        assert!(look(&app, &ws, now + 3_000).await.is_some_and(|again| again == b), "one build at a time");
+        let listed = call(&base, "alice", "GET", &format!("/api/projects/{project}/workspaces"), None).await.1;
+        assert_eq!(listed["workspaces"].as_array().unwrap().len(), 1, "nobody lists a builder: {listed}");
+        hub.enroll(&b, "b1");
+        drive(&app, now + 6_000).await;
+        let plan = app.hosted_plan(&project, &b, "b1").await.unwrap().expect("the builder's plan");
+        assert_eq!(plan.repos[0].password.as_deref(), Some("tok-secret-1"), "the workspace's secrets");
+        assert!(app.hosted_plan(&project, &b, "someone-else").await.unwrap().is_none());
+
+        // Sealed, but its daemon is still on the relay: not yet.
+        assert!(app.hosted_setup(&project, &b, "b1", &said(SetupStatus::Ready, SEALED, "")).await.unwrap());
+        drive(&app, now + 6_000).await;
+        assert!(snapshots(&s).is_empty(), "the daemon hasn't stopped");
+        hub.set_online("b1", false);
+        drive(&app, now + 7_000).await;
+        assert_eq!(snapshots(&s), ["snap1:default"]);
+        let took = s.lock().unwrap().calls.iter().find(|(_, p, _)| p.ends_with("/snapshots")).unwrap().2.clone();
+        assert_eq!(took, json!({"memory": false}), "filesystem-only");
+        assert_eq!(live(&s), 1, "the builder's box is gone");
+        assert!(app.db.snapshot_builder(&ws).unwrap().is_none());
+        assert!(hub.gone().contains(&b));
+        let w = show(&base, &project, &ws).await;
+        assert_eq!(snap(&w)["status"], "ready");
+        assert!(snap(&w)["built_at"].as_u64().unwrap() >= now);
+        assert!(!w.to_string().contains("snap1"), "the snapshot's id isn't answered: {w}");
+
+        // Use: a rebuild starts from it, and its box says it's set up.
+        call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+        drive(&app, now + 8_000).await;
+        assert_eq!(boxes(&s).last().unwrap(), &("snap1:default".to_owned(), ws.clone()));
+        let made = s
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .rev()
+            .find(|(m, p, _)| m == "POST" && p == "/v2/sandboxes")
+            .unwrap()
+            .2
+            .clone();
+        assert_eq!(made["metadata"]["arugula_snapshot"], "snap1:default");
+        assert_eq!(made["metadata"]["arugula_template"], "base");
+        set_up(&app, &hub, &project, &ws, "m2", FROM_SNAPSHOT, now + 11_000).await;
+        let w = show(&base, &project, &ws).await;
+        assert_eq!((w["state"].as_str(), w["setup"]["step"].as_str()), (Some("ready"), Some(FROM_SNAPSHOT)));
+        assert_eq!(w["rebuild_needed"], false);
+        assert!(look(&app, &ws, now + 11_000).await.is_none(), "nothing's due");
+
+        // A spec change: a rebuild before the next snapshot starts from the
+        // template, and the next build starts at once.
+        let spec = json!({ "repos": ["https://github.com/acme/app"], "setup": "make all" });
+        assert_eq!(call(&base, "alice", "PUT", &format!("{path}/spec"), Some(spec)).await.0, 200);
+        call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+        drive(&app, now + 12_000).await;
+        assert_eq!(boxes(&s).last().unwrap(), &("base".to_owned(), ws.clone()), "the snapshot is the old spec's");
+        set_up(&app, &hub, &project, &ws, "m3", "Set up.", now + 15_000).await;
+        let b2 = look(&app, &ws, now + 15_000).await.expect("a build for the new spec");
+        seal(&app, &hub, &project, &b2, "b2", now + 18_000).await;
+        assert_eq!(snapshots(&s), ["snap2:default"], "the one before was deleted: no box is made from it");
+        assert_eq!(snap(&show(&base, &project, &ws).await)["status"], "ready");
+
+        // The one before stays while the box made from it lives.
+        call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+        drive(&app, now + 19_000).await;
+        assert_eq!(boxes(&s).last().unwrap(), &("snap2:default".to_owned(), ws.clone()));
+        set_up(&app, &hub, &project, &ws, "m4", FROM_SNAPSHOT, now + 22_000).await;
+        let day = 24 * 3600 * 1000;
+        // A day after the last try (b2's, at +15 s).
+        let day = day + 30_000;
+        assert!(look(&app, &ws, now + day - 20_000).await.is_none(), "not quite a day");
+        let b3 = look(&app, &ws, now + day).await.expect("a day on, built again");
+        seal(&app, &hub, &project, &b3, "b3", now + day + 3_000).await;
+        assert_eq!(snapshots(&s), ["snap2:default", "snap3:default"], "snap2 is its box's");
+        call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+        drive(&app, now + day + 4_000).await;
+        assert_eq!(boxes(&s).last().unwrap(), &("snap3:default".to_owned(), ws.clone()));
+        set_up(&app, &hub, &project, &ws, "m5", FROM_SNAPSHOT, now + day + 7_000).await;
+        // E2B holds snap2 a while after its box went: a deferred delete,
+        // asked at each look, never the build's error.
+        s.lock().unwrap().lingering.insert("snap2:default".into(), 1);
+        look(&app, &ws, now + day + 7_000).await;
+        assert_eq!(snapshots(&s), ["snap2:default", "snap3:default"], "still held");
+        let w = show(&base, &project, &ws).await;
+        assert_eq!(snap(&w)["status"], "ready");
+        assert!(snap(&w).get("error").is_none(), "{w}");
+        look(&app, &ws, now + day + 8_000).await;
+        assert_eq!(snapshots(&s), ["snap3:default"], "deleted once its box went");
+
+        // A failure keeps the current one, and says why.
+        let b4 = look(&app, &ws, now + 2 * day).await.expect("another day");
+        hub.enroll(&b4, "b4");
+        drive(&app, now + 2 * day + 3_000).await;
+        let r = said(SetupStatus::Failed, "setup script", "exit");
+        assert!(app.hosted_setup(&project, &b4, "b4", &r).await.unwrap());
+        drive(&app, now + 2 * day + 3_000).await;
+        let w = show(&base, &project, &ws).await;
+        assert_eq!(snap(&w)["status"], "failed");
+        assert!(snap(&w)["error"].as_str().unwrap().contains("setup script"), "{w}");
+        assert!(snap(&w)["built_at"].as_u64().is_some(), "the current one stays");
+        assert_eq!(snapshots(&s), ["snap3:default"]);
+        assert!(app.db.snapshot_builder(&ws).unwrap().is_none(), "the failed builder went");
+        assert!(look(&app, &ws, now + 2 * day + 4_000).await.is_none(), "not again until it's due");
+        call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+        drive(&app, now + 2 * day + 5_000).await;
+        assert_eq!(boxes(&s).last().unwrap(), &("snap3:default".to_owned(), ws.clone()), "still used");
+
+        // A builder whose wipe found a secret left: no snapshot either.
+        set_up(&app, &hub, &project, &ws, "m6", FROM_SNAPSHOT, now + 3 * day).await;
+        let b5 = look(&app, &ws, now + 3 * day).await.unwrap();
+        hub.enroll(&b5, "b5");
+        drive(&app, now + 3 * day + 3_000).await;
+        assert!(app.hosted_setup(&project, &b5, "b5", &said(SetupStatus::Failed, SEALED, "seal_left")).await.unwrap());
+        drive(&app, now + 3 * day + 3_000).await;
+        let w = show(&base, &project, &ws).await;
+        assert!(snap(&w)["error"].as_str().unwrap().contains("still on the snapshot's box"), "{w}");
+        assert_eq!(snapshots(&s), ["snap3:default"]);
+
+        // Delete: its builder and boxes go, then every snapshot, once E2B
+        // lets go of the one its box was made from: until then it stays
+        // `deleting`, and asks again.
+        let b6 = look(&app, &ws, now + 4 * day).await.unwrap();
+        s.lock().unwrap().linger = 2;
+        assert_eq!(call(&base, "alice", "DELETE", &path, None).await.0, 200);
+        drive(&app, now + 4 * day + 1_000).await;
+        assert_eq!(snapshots(&s), ["snap3:default"], "held just after its box went");
+        assert_eq!(live(&s), 0, "its boxes went first");
+        let state = |app: &Platform| -> String {
+            app.db.hosted_any(&project, &ws).unwrap().map(|w| w.state).unwrap_or_default()
+        };
+        assert_eq!(state(&app), "deleting");
+        drive(&app, now + 4 * day + 20_000).await;
+        assert_eq!(state(&app), "deleting");
+        drive(&app, now + 4 * day + 40_000).await;
+        assert!(snapshots(&s).is_empty(), "{:?}", snapshots(&s));
+        assert_eq!(state(&app), "deleted");
+        assert_eq!(live(&s), 0, "every box went");
+        assert!(app.db.snapshot_builder(&ws).unwrap().is_none());
+        assert!(hub.gone().contains(&b6));
+    }
+
+    /// A deleted workspace whose snapshot E2B never lets go waits a day at
+    /// most: then it's deleted, and the snapshot is an orphan the worker
+    /// keeps asking about, until it goes.
+    #[tokio::test]
+    async fn a_snapshot_held_past_a_day_is_left_as_an_orphan() {
+        let (hub, s, app, base, project) = on_fake().await;
+        let (_, w) = make(&base, "alice", &project, "dev").await;
+        let ws = w["id"].as_str().unwrap().to_owned();
+        let path = format!("/api/projects/{project}/workspaces/{ws}");
+        let now = now_ms();
+        drive(&app, now).await;
+        set_up(&app, &hub, &project, &ws, "m1", "Set up.", now + 3_000).await;
+        let b = look(&app, &ws, now + 3_000).await.unwrap();
+        seal(&app, &hub, &project, &b, "b1", now + 6_000).await;
+        call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+        drive(&app, now + 7_000).await;
+        assert_eq!(boxes(&s).last().unwrap(), &("snap1:default".to_owned(), ws.clone()));
+
+        s.lock().unwrap().linger = u32::MAX;
+        assert_eq!(call(&base, "alice", "DELETE", &path, None).await.0, 200);
+        let state = || app.db.hosted_any(&project, &ws).unwrap().map(|w| w.state).unwrap_or_default();
+        let asks = || {
+            s.lock().unwrap().calls.iter().filter(|(m, p, _)| m == "DELETE" && p == "/templates/snap1:default").count()
+        };
+        let hour = 3600 * 1000;
+        // Held from +8 s: asked every 15 s for an hour...
+        let held = now + 8_000;
+        let mut asked = Vec::new();
+        for t in [held, held + 5_000, held + 15_000, held + 25_000, held + 30_000] {
+            drive(&app, t).await;
+            asked.push(asks());
+        }
+        assert_eq!(asked, [1, 1, 2, 2, 3], "every 15 s");
+        drive(&app, held + hour - 1_000).await;
+        assert_eq!(asks(), 4);
+        // ...then every 10 minutes.
+        let mut asked = Vec::new();
+        for t in
+            [held + hour + 14_000, held + hour + 60_000, held + hour + 9 * 60_000, held + hour + 10 * 60_000 + 14_000]
+        {
+            drive(&app, t).await;
+            asked.push(asks());
+        }
+        assert_eq!(asked, [5, 5, 5, 6], "every 10 minutes after the first hour");
+        for t in [now + hour, now + 23 * hour] {
+            drive(&app, t).await;
+            assert_eq!(state(), "deleting", "at +{} ms", t - now);
+        }
+        assert!(app.db.orphan_snapshot_ids().unwrap().is_empty());
+        drive(&app, now + 25 * hour).await;
+        assert_eq!(state(), "deleted", "a day at most");
+        assert_eq!(app.db.orphan_snapshot_ids().unwrap(), [("snap1:default".to_owned(), ws.clone())]);
+        assert_eq!(snapshots(&s), ["snap1:default"]);
+
+        // E2B lets go: the worker's next ask deletes it.
+        s.lock().unwrap().lingering.clear();
+        drive(&app, now + 25 * hour + 60_000).await;
+        assert_eq!(snapshots(&s), ["snap1:default"], "not asked again yet");
+        drive(&app, now + 25 * hour + snapshot::ORPHAN_MS + 1_000).await;
+        assert!(snapshots(&s).is_empty());
+        assert!(app.db.orphan_snapshot_ids().unwrap().is_empty());
+    }
+
+    /// A builder whose daemon doesn't seal (an older template), and a
+    /// snapshot the provider lost: no snapshot, and boxes from the template.
+    #[tokio::test]
+    async fn an_old_daemon_and_a_lost_snapshot_fall_back_to_the_template() {
+        let (hub, s, app, base, project) = on_fake().await;
+        let (_, w) = make(&base, "alice", &project, "dev").await;
+        let ws = w["id"].as_str().unwrap().to_owned();
+        let path = format!("/api/projects/{project}/workspaces/{ws}");
+        let now = now_ms();
+        drive(&app, now).await;
+        set_up(&app, &hub, &project, &ws, "m1", "Set up.", now + 3_000).await;
+        let b = look(&app, &ws, now + 3_000).await.unwrap();
+        hub.enroll(&b, "b1");
+        drive(&app, now + 6_000).await;
+        assert!(app.hosted_setup(&project, &b, "b1", &said(SetupStatus::Ready, "Set up.", "")).await.unwrap());
+        drive(&app, now + 6_000).await;
+        let w = show(&base, &project, &ws).await;
+        assert_eq!(snap(&w)["error"], snapshot::NO_SEAL);
+        assert!(snapshots(&s).is_empty());
+
+        let b = look(&app, &ws, now + 25 * 3600 * 1000).await.unwrap();
+        seal(&app, &hub, &project, &b, "b2", now + 25 * 3600 * 1000 + 3_000).await;
+        assert_eq!(snapshots(&s), ["snap1:default"]);
+        s.lock().unwrap().snapshots.clear();
+        call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+        drive(&app, now + 25 * 3600 * 1000 + 4_000).await;
+        let made = boxes(&s);
+        assert_eq!(made[made.len() - 2..], [("snap1:default".to_owned(), ws.clone()), ("base".to_owned(), ws.clone())]);
+        let w = show(&base, &project, &ws).await;
+        assert_eq!(
+            (w["state"].as_str(), snap(&w)["error"].as_str()),
+            (Some("enrolling"), Some(snapshot::SNAPSHOT_GONE))
+        );
+        assert!(snap(&w)["built_at"].is_null());
+    }
+
+    /// loam's E2B API takes no snapshots: no builder is ever made, and it's
+    /// asked once per interval, not at every look.
+    #[tokio::test]
+    async fn no_builds_where_the_provider_takes_no_snapshots() {
+        let (hub, s, app, base, project) = on_fake().await;
+        s.lock().unwrap().no_snapshots = true;
+        let (_, w) = make(&base, "alice", &project, "dev").await;
+        let ws = w["id"].as_str().unwrap().to_owned();
+        let now = now_ms();
+        drive(&app, now).await;
+        set_up(&app, &hub, &project, &ws, "m1", "Set up.", now + 3_000).await;
+        assert!(look(&app, &ws, now + 3_000).await.is_none());
+        assert!(look(&app, &ws, now + 70_000).await.is_none());
+        let asked = s.lock().unwrap().calls.iter().filter(|(_, p, _)| p.starts_with("/snapshots")).count();
+        assert_eq!(asked, 1);
+        assert_eq!(boxes(&s).len(), 1);
+        assert!(show(&base, &project, &ws).await.get("snapshot").is_none());
+    }
+
+    /// M266: a workspace's snapshot follows its size. A large one's builder
+    /// is made from the large template, so its snapshot is large too; once
+    /// its size changes, its spec's hash does, and the rebuild starts from
+    /// the small template rather than the large snapshot.
+    #[tokio::test]
+    async fn a_snapshot_follows_the_workspaces_size() {
+        let (e2b, s, _) = fake().await;
+        let (hub, app, base, project) = serve_on_with(EnrollBy::Sandbox, Arc::new(e2b), "base", |c| {
+            c.template_large = Some("base-large".into());
+        })
+        .await;
+        hub.delegate(&project);
+        let spec = json!({ "repos": ["https://github.com/acme/app"], "size": "large" });
+        let (status, w) = call(
+            &base,
+            "alice",
+            "POST",
+            &format!("/api/projects/{project}/workspaces"),
+            Some(json!({ "name": "big", "spec": spec })),
+        )
+        .await;
+        assert_eq!(status, 201, "{w}");
+        let ws = w["id"].as_str().unwrap().to_owned();
+        let path = format!("/api/projects/{project}/workspaces/{ws}");
+        let now = now_ms();
+        drive(&app, now).await;
+        set_up(&app, &hub, &project, &ws, "m1", "Set up.", now + 3_000).await;
+        let b = look(&app, &ws, now + 3_000).await.expect("a build once it set up");
+        assert_eq!(boxes(&s), [("base-large".to_owned(), ws.clone()), ("base-large".to_owned(), b.clone())]);
+        seal(&app, &hub, &project, &b, "b1", now + 6_000).await;
+        assert_eq!(snap(&show(&base, &project, &ws).await)["status"], "ready");
+
+        // Small again: the large snapshot isn't its box's any more.
+        let mut spec = w["spec"].clone();
+        spec["size"] = json!("small");
+        let (status, w) = call(&base, "alice", "PUT", &format!("{path}/spec"), Some(spec)).await;
+        assert_eq!((status, w["rebuild_needed"].as_bool()), (200, Some(true)), "{w}");
+        call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+        drive(&app, now + 8_000).await;
+        assert_eq!(boxes(&s).last().unwrap(), &("base".to_owned(), ws.clone()));
+    }
 }

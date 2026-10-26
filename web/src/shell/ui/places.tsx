@@ -5,7 +5,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { directory } from "../hosts";
-import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
+import { SWARM_ABOUT, closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { closeDocsPage, docsRoute, openDocsPage } from "./docs-route";
 import { getFleet } from "./hosts";
@@ -137,7 +137,7 @@ export function Places({ client, at }: { client: Client; at: Place }) {
       {machines && (
         <button
           class={at === "swarm" ? "place here" : "place"}
-          title="Every pane, everywhere (the swarm)"
+          title={`Swarm: ${SWARM_ABOUT}`}
           data-open-swarm
           aria-pressed={at === "swarm"}
           onClick={() => at !== "swarm" && openSwarm()}

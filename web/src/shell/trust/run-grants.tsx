@@ -7,6 +7,7 @@
 // too. The platform keeps them; the hosted machines check them.
 
 import { useEffect, useState } from "preact/hooks";
+import { Time } from "../../shared/ui/time";
 import { api, type ControlSession, type RunGrantView } from "../control";
 import type { Delegation } from "../e2e/hosted.ts";
 import { GRANT_DAYS } from "../e2e/run-grant.ts";
@@ -23,7 +24,6 @@ interface Row {
 }
 
 const DAYS = [30, GRANT_DAYS, 365];
-const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
 export function RunGrants({ s }: { s: ControlSession }) {
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -76,7 +76,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
   );
   return (
     <>
-      <h3 class="control-group">Runs on hosted workspaces</h3>
+      <h3 class="control-group">Runs on cloud workspaces</h3>
       <ul class="control-devices" data-run-grants>
         {rows.map((r) => {
           const g = r.view?.grant;
@@ -89,9 +89,21 @@ export function RunGrants({ s }: { s: ControlSession }) {
                   {g
                     ? r.view?.stale
                       ? " · the grant is for an earlier delegation: sign it again"
-                      : ` · runs may start until ${g.grant.expires ? day(g.grant.expires) : "revoked"}${r.view?.renew ? ": renew it" : ""}`
+                      : (
+                        <>
+                          {" "}
+                          · runs may start {g.grant.expires ? (
+                            <>
+                              until it expires <Time at={g.grant.expires} />
+                            </>
+                          ) : (
+                            "until it's revoked"
+                          )}
+                          {r.view?.renew ? ": renew it" : ""}
+                        </>
+                      )
                     : r.view?.offer
-                      ? " · has hosted workspaces: allow runs on them"
+                      ? " · has cloud workspaces: allow runs on them"
                       : " · no runs"}
                 </span>
               </span>
@@ -101,6 +113,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
                     <>
                       {pick(r)}{" "}
                       <button
+                        class="secondary small"
                         disabled={!!busy || !mine}
                         data-renew-run-grant={r.id}
                         onClick={act(r.id, async () => {
@@ -112,18 +125,18 @@ export function RunGrants({ s }: { s: ControlSession }) {
                       </button>{" "}
                     </>
                   ) : null}
-                  <label class="dim">
+                  <label class="control-check dim">
                     <input type="checkbox" data-stop-running checked={!!stop[r.id]} onChange={(e) => setStop({ ...stop, [r.id]: (e.target as HTMLInputElement).checked })} /> also
                     stop the runs going
                   </label>{" "}
-                  <button class="control-revoke quiet-danger" disabled={!!busy || !mine} data-revoke-run-grant={r.id} onClick={act(r.id, () => s.revokeRunGrants(r.id, delegationsOf(r), !!stop[r.id]))}>
+                  <button class="secondary danger small" disabled={!!busy || !mine} data-revoke-run-grant={r.id} onClick={act(r.id, () => s.revokeRunGrants(r.id, delegationsOf(r), !!stop[r.id]))}>
                     Revoke
                   </button>
                 </span>
               ) : (
                 <span>
                   {pick(r)}{" "}
-                  <button disabled={!!busy || !mine} data-sign-run-grant={r.id} onClick={act(r.id, () => s.signRunGrant(r.delegation, daysOf(r)))}>
+                  <button class="secondary small" disabled={!!busy || !mine} data-sign-run-grant={r.id} onClick={act(r.id, () => s.signRunGrant(r.delegation, daysOf(r)))}>
                     Allow runs
                   </button>
                 </span>
@@ -134,7 +147,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
       </ul>
       <p class="dim control-explain">
         <b>Allow runs</b> signs, with this device, a standing grant: for as long as you pick, the platform may start runs and instruct them on
-        every hosted workspace of the project, running whatever command the project's runs start, with none of your devices awake. Each
+        every cloud workspace of the project, running whatever command the project's runs start, with none of your devices awake. Each
         workspace checks the signature. Deploys still ask you every time. <b>Revoke</b> stops new runs; the ones going finish unless you stop
         them too. A workspace that's asleep when you revoke is told later; one that's never told keeps honouring the grant until it expires.
       </p>

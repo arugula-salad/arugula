@@ -26,6 +26,10 @@
 //!   can watch ([`setup`], M183).
 //! - **Archives closed agent blocks' transcripts** to its project
 //!   ([`archive`], M184).
+//! - **Snapshots** (M263, [`snapshot`]): a builder (enrolled for a
+//!   workspace's snapshot) wipes itself after its setup; a box from the
+//!   snapshot clears what's left of a daemon's state at its first start,
+//!   takes its sandbox id as its own at once, and is set up already.
 //! - **Is supervised** by the template (M258, Arugula #124): `arugula-hosted-start`
 //!   or `arugulad.service` (packaging/hosted) starts it again when it exits
 //!   and gives it an `oom_score_adj` of -1000, which it logs at start
@@ -42,6 +46,7 @@ pub mod reseed;
 pub mod resume;
 pub mod runs;
 pub mod setup;
+pub mod snapshot;
 
 use std::{
     path::{Path, PathBuf},
@@ -82,6 +87,11 @@ pub fn headless(args: &mut RunArgs) {
     args.no_claude_ide = true;
     args.keep_panes = true;
     args.guest_ssh = "off".into();
+}
+
+/// The sandbox id this state directory's keys were made for, if noted.
+pub fn noted_box(state_dir: &Path) -> Option<String> {
+    std::fs::read_to_string(state_dir.join(BOX_FILE)).ok().map(|s| s.trim().to_owned())
 }
 
 /// Whether this box is the one the state directory was made for: `None`
@@ -152,7 +162,8 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
         // In the snapshot (or the template's build): wait for a box of our
         // own, then start over in it.
         if ticket.is_none() && own_box(&state_dir, &id_file) == Some(false) {
-            let id = enroll::new_box(&id_file).await;
+            let of = snapshot::snapshot_of(&snapshot::dir());
+            let id = enroll::new_box(&id_file, of.as_deref()).await;
             let Err(e) = fresh_box(&state_dir, &id);
             warn!(error = %format!("{e:#}"), "hosted: can't start over in the new box");
             return;

@@ -1,17 +1,36 @@
 // What an issue's page says (M201): a timeline event as a line, who did
-// it (a person, or "<owner>'s agent on <machine>", M197), how long ago,
+// it (a person, or "<owner>'s agent on <machine>", M197, or their agent
+// token, UI audit #192), how long ago,
 // and what a list asks the platform for. Plain functions, for the page
 // and its tests (scripts/issues.test.mjs).
 
 import type { ChatAgent, IssueEvent, NativeIssue } from "../proto";
+import { agentLabel, agentShort } from "../agent-label.ts";
+import { ago as timeAgo } from "../time.ts";
 
 /** An account's name now, or null for someone the page doesn't know. */
 export type NameOf = (account: string) => string | null | undefined;
 
-/** Who did something: a person by name, or their agent (M197). */
+/** Who did something: a person by name, or their agent (M197) on a
+ * machine or by a token (UI audit #192). */
 export function whoLabel(account: string, agent: ChatAgent | null, nameOf: NameOf): string {
   const name = account ? nameOf(account) || "someone who left" : "a deleted account";
-  return agent ? `${name}'s agent on ${agent.machine_name || "a machine that left"}` : name;
+  return agent ? agentLabel(name, agent, "a machine that left") : name;
+}
+
+/** Who, short, for a list's row (UI audit #163): a person by name, an
+ * agent as `agent · <machine>` (or `agent token · <name>`). */
+export function whoShort(account: string, agent: ChatAgent | null, nameOf: NameOf): string {
+  if (agent) return agentShort(agent, "a machine that left");
+  return account ? nameOf(account) || "someone who left" : "a deleted account";
+}
+
+/** A list row's line after its number: `opened 3 days ago by kim`, or a
+ * closed one's `closed as completed by kim 2 days ago` (UI audit #163). */
+export function rowLine(i: Pick<NativeIssue, "state" | "close_reason" | "author" | "agent" | "created_at" | "closed_at" | "closed_by" | "closed_by_agent">, nameOf: NameOf, now = Date.now()): string {
+  if (i.state !== "closed" || !i.closed_at) return `opened ${ago(i.created_at, now)} by ${whoShort(i.author, i.agent, nameOf)}`;
+  const by = i.closed_by !== undefined ? ` by ${whoShort(i.closed_by, i.closed_by_agent ?? null, nameOf)}` : "";
+  return `closed as ${reasonLabel(i.close_reason)}${by} ${ago(i.closed_at, now)}`;
 }
 
 const REASONS: Record<string, string> = {
@@ -68,17 +87,9 @@ export function eventLine(e: IssueEvent, nameOf: NameOf): string | null {
   }
 }
 
-/** "just now", "5 minutes ago", "3 days ago", else the date. */
-export function ago(at: number, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - at) / 1000));
-  const n = (v: number, unit: string) => `${v} ${unit}${v === 1 ? "" : "s"} ago`;
-  if (s < 45) return "just now";
-  if (s < 3600) return n(Math.max(1, Math.round(s / 60)), "minute");
-  if (s < 86_400) return n(Math.round(s / 3600), "hour");
-  if (s < 30 * 86_400) return n(Math.round(s / 86_400), "day");
-  const d = new Date(at);
-  return `on ${d.toLocaleDateString([], { month: "short", day: "numeric", ...(d.getFullYear() === new Date(now).getFullYear() ? {} : { year: "numeric" }) })}`;
-}
+/** "just now", "5 minutes ago", "3 days ago", else "on Oct 23": the
+ * shared words (../time.ts, UI audit #182), spelled out for a sentence. */
+export const ago = (at: number, now = Date.now()): string => timeAgo(at, now, "long");
 
 /** Labels typed in a box: comma-separated, trimmed, once each. */
 export function labelsOf(text: string): string[] {

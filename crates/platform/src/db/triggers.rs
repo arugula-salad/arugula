@@ -252,6 +252,12 @@ pub enum RuleEvent {
     CheckFailed,
     /// A push to a branch.
     Push,
+    /// A review, or a review's inline comment, on a PR (M260): no rule
+    /// names it (it isn't in [`RuleEvent::ALL`], and isn't read from a
+    /// request), it goes back to the PR's session
+    /// (`sessions::feedback`).
+    #[serde(skip)]
+    Review,
 }
 
 impl RuleEvent {
@@ -262,6 +268,7 @@ impl RuleEvent {
             RuleEvent::PrOpened => "pr_opened",
             RuleEvent::CheckFailed => "check_failed",
             RuleEvent::Push => "push",
+            RuleEvent::Review => "review",
         }
     }
 
@@ -374,8 +381,8 @@ impl Started {
     pub fn why_not(&self) -> Option<&'static str> {
         match self {
             Started::Made(_) | Started::Already(_) => None,
-            Started::NoWorkspace => Some("its hosted workspace is gone"),
-            Started::NoMachine => Some("its hosted workspace has no machine yet"),
+            Started::NoWorkspace => Some("its cloud workspace is gone"),
+            Started::NoMachine => Some("its cloud workspace has no machine yet"),
             Started::NoProject => Some("its project is gone"),
             Started::Outsider => Some("the event came from a fork or from outside the repo"),
             Started::Capped => Some("its rule started its most runs this hour"),

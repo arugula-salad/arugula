@@ -14,6 +14,13 @@
    line           the tool it's on, the error it hit, or that its box went
                   quiet
    pre            its last turn's diffstat
+   finish line    what the workspace's finish step made of that turn (a
+                  check, or "failed" and its last lines)
+   form           its PR as its asker drafts it (M259): the base, title,
+                  description, and whether it opens as a draft
+   compare view   a Try 3's three side by side (M264): each one's bar and
+                  border its state (kept ok, not picked muted), its harness,
+                  its diffstat, its finish, its page and its diff, and Pick
 
    Palette tokens only, so every appearance holds; the swarm's font stacks
    where the page has them (control's platform page), else the UI's own. */
@@ -29,9 +36,9 @@
   width: 100%;
   max-width: 560px;
   margin: 2px 0 4px;
-  padding: 9px 12px 9px 15px;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--divider));
-  border-radius: 6px;
+  padding: var(--space-2) 12px var(--space-2) 15px;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line));
+  border-radius: var(--field-radius);
   background: color-mix(in srgb, var(--c) 7%, var(--surface));
   color: var(--fg);
   font-size: 13px;
@@ -175,11 +182,25 @@ a.session-card-id:hover {
 .session-card-turn pre {
   margin: 4px 0 0;
   padding: 6px 8px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   background: var(--letterbox);
   font: 12px/1.35 var(--f-mono, ui-monospace, Menlo, monospace);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* The workspace's finish step (M261): a line, and a failure's last lines. */
+.session-card-finish,
+.session-card-finish p {
+  margin: 4px 0 0;
+}
+
+.session-card-finish code {
+  font-family: var(--f-mono, ui-monospace, Menlo, monospace);
+}
+
+.session-card-finish .bad {
+  color: var(--danger);
 }
 
 /* The question card inside it keeps its own look, without its outer gap. */
@@ -193,8 +214,8 @@ a.session-card-id:hover {
 
 .session-card-buttons :is(button, a.button) {
   padding: 3px 10px;
-  border: 1px solid var(--divider);
-  border-radius: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--btn-radius);
   background: var(--surface);
   color: var(--fg);
   font-size: 12px;
@@ -218,6 +239,56 @@ a.session-card-id:hover {
   border-color: var(--danger);
 }
 
+/* Its PR's draft, as its asker writes it. */
+.session-pr {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--c) 40%, var(--divider));
+}
+
+.session-pr-where {
+  color: var(--subtle);
+  font: 500 12px/1.6 var(--f-mono, ui-monospace, Menlo, monospace);
+  overflow-wrap: anywhere;
+}
+
+.session-pr :is(input:not([type="checkbox"]), textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-1) 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+
+.session-pr input.session-pr-base {
+  width: 16ch;
+  padding: 1px 6px;
+  font: inherit;
+}
+
+.session-pr textarea.session-pr-body {
+  min-height: 9em;
+  resize: vertical;
+  font: 12px/1.4 var(--f-mono, ui-monospace, Menlo, monospace);
+}
+
+.session-pr :is(input, textarea):focus-visible {
+  outline: none;
+  border-color: var(--c);
+}
+
+.session-pr-draft,
+.session-pr-note {
+  margin: 0;
+  font-size: 12px;
+}
+
 .session-card-foot {
   font-size: 11px;
 }
@@ -232,10 +303,10 @@ a.session-card-id:hover {
 
 .session-history li {
   display: grid;
-  grid-template-columns: 9ch 1fr auto;
+  grid-template-columns: 12ch 1fr auto;
   gap: 10px;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--divider);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .session-history time,
@@ -243,4 +314,170 @@ a.session-card-id:hover {
   color: var(--dim);
   font: 12px/1.4 var(--f-mono, ui-monospace, Menlo, monospace);
   font-variant-numeric: tabular-nums;
+}
+
+/* Try 3 (M264): the button and the agents the two more run on. */
+.session-try3 {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.session-try3 button {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.session-try3 select {
+  padding: 2px 4px;
+  border: 1px solid var(--divider);
+  border-left: 0;
+  border-radius: 0 5px 5px 0;
+  background: var(--surface);
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+/* Its compare view: the three side by side, each a small card of its own
+   whose bar is its state. */
+.session-tries {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--c) 40%, var(--divider));
+}
+
+.session-tries-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.session-try {
+  --c: var(--muted);
+  --ct: var(--subtle);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 6px 8px 6px 11px;
+  border: 1px solid color-mix(in srgb, var(--c) 40%, var(--divider));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--c) 6%, var(--surface));
+  font-size: 12px;
+}
+
+.session-try::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+}
+
+.session-try.tone-accent {
+  --c: var(--accent);
+  --ct: var(--accent);
+}
+
+.session-try.tone-ok {
+  --c: var(--ok);
+  --ct: var(--ok);
+}
+
+.session-try.tone-warn {
+  --c: var(--warn);
+  --ct: var(--warn);
+}
+
+.session-try.tone-danger {
+  --c: var(--danger);
+  --ct: var(--danger);
+}
+
+.session-try.kept {
+  border-color: var(--ok);
+}
+
+.session-try-top,
+.session-try-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+}
+
+.session-try-n {
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.session-try-state {
+  color: var(--ct);
+  font: 800 13px/1 var(--f-display, "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.session-try-harness {
+  color: var(--subtle);
+}
+
+.session-try pre {
+  margin: 0;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--letterbox);
+  font: 11px/1.35 var(--f-mono, ui-monospace, Menlo, monospace);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.session-try-none,
+.session-try-finish {
+  margin: 0;
+}
+
+.session-try-finish code,
+.session-try-links {
+  font-family: var(--f-mono, ui-monospace, Menlo, monospace);
+}
+
+.session-try-finish .ok {
+  color: var(--ok);
+}
+
+.session-try-finish .bad {
+  color: var(--danger);
+}
+
+.session-try-links a {
+  color: var(--subtle);
+}
+
+.session-try-links a:hover {
+  color: var(--accent);
+}
+
+.session-try-links button {
+  padding: 1px 8px;
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg);
+  font: 12px/1.4 inherit;
+}
+
+.session-try-links button:not(:disabled):hover {
+  border-color: var(--ok);
+}
+
+/* The three side by side want more room than one card. */
+.session-card:has(.session-tries) {
+  max-width: 860px;
 }

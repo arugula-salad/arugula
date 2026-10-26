@@ -9,9 +9,12 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { EXPIRE_TITLE, gateKey, type DecisionRef, type Gate, type Lease, type MemberWhy, type PaneId, type RunRequest, type WorkspaceRecord, type WorkspaceRun } from "../../shared/proto";
+import { askText } from "../../shared/ui/menu";
+import { BlockError, BlockLoading } from "./block-states";
 import { openWorkspace } from "./open-labs";
 import type { BlockRenderer, BlockView } from "./view";
 import { ago, decisionLine, GateWhy, governs } from "../ui/gate-why";
+import { Time } from "../../shared/ui/time";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { Graph, type Clicks, type GraphStatus } from "./workspace-graph";
 
@@ -83,10 +86,10 @@ function Principals({ client, id, s, close }: { client: Client; id: PaneId; s: W
       </label>
       <p class="dim ws-note">The chant principal its ledger records for an approval. A name not listed is passed as is.</p>
       <div class="ws-actions">
-        <button class="pri" data-ws-principals-save onClick={() => void save()}>
+        <button class="primary small" data-ws-principals-save onClick={() => void save()}>
           Save
         </button>
-        <button onClick={close}>Cancel</button>
+        <button class="secondary small" onClick={close}>Cancel</button>
       </div>
     </div>
   );
@@ -110,13 +113,6 @@ function hint(error: string, code: string | null, root: string): string | null {
   return error.startsWith("no chant.workspace.json") ? "This directory isn't in a chant workspace." : null;
 }
 
-/** "until 1:23 PM" for a time today, else the date too. */
-function until(t: string | null): string {
-  if (!t) return "";
-  const d = new Date(t);
-  return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleString();
-}
-
 /** A member card's why (#618): the decisions covering it, the commits no
  * decision covers, the leases and runs on it, each linked to its pane while
  * that pane is open. Proposed decisions are reviewed in hud. */
@@ -134,12 +130,13 @@ function WhyCard({ client, id, s, m, mayOpen }: { client: Client; id: PaneId; s:
   const review = async (d: DecisionRef) => {
     let hud = s.hud ?? "";
     if (!hud) {
-      hud = window.prompt("hud's address, where this workspace's records are reviewed", "http://localhost:")?.trim() ?? "";
+      // The page's own prompt, not the browser's (UI audit #178).
+      hud = (await askText("hud's address, where this workspace's records are reviewed", "http://localhost:", "http://localhost:4000"))?.trim() ?? "";
       if (!hud || !(await client.api(`/api/blocks/${id}/call/hud`, { url: hud }, "couldn't keep hud's address"))) return;
     }
     window.open(`${hud.replace(/\/$/, "")}/decisions#${encodeURIComponent(d.id)}`, "_blank", "noopener");
   };
-  if (!w) return <div class="dim ws-why">Reading…</div>;
+  if (!w) return <div class="dim ws-why">Loading why…</div>;
   const current = (w.decisions ?? []).filter((d) => d.current);
   const replaced = (w.decisions ?? []).filter((d) => !d.current);
   const runLine = (r: WorkspaceRun) =>
@@ -150,7 +147,7 @@ function WhyCard({ client, id, s, m, mayOpen }: { client: Client; id: PaneId; s:
       {w.note ? (
         <p class="dim">{w.note}</p>
       ) : !w.decisions ? (
-        <p class="dim">Reading the decisions…</p>
+        <p class="dim">Loading the decisions…</p>
       ) : current.length === 0 ? (
         <p class="dim">No decision covers {m.name}.</p>
       ) : (
@@ -183,7 +180,13 @@ function WhyCard({ client, id, s, m, mayOpen }: { client: Client; id: PaneId; s:
       ) : (
         m.leases.map((l) => (
           <div key={l.item} class="ws-why-row" data-why-lease={l.item}>
-            <b>{l.item}</b> held by {l.holder} · {l.state === "active" ? `until ${until(l.expires_at)}` : l.state} {paneLink(l.pane)}
+            <b>{l.item}</b> held by {l.holder} · {l.state === "active" && l.expires_at ? (
+              <>
+                expires <Time at={Date.parse(l.expires_at)} title="Until" />
+              </>
+            ) : (
+              l.state
+            )} {paneLink(l.pane)}
           </div>
         ))
       )}
@@ -315,15 +318,15 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
   const refresh = () => void client.api(`/api/blocks/${id}/call/refresh`, {}, "couldn't read the workspace");
   // The block watches one env's gates and releases (#312): switching reads
   // again, and the choice is kept in its config.
-  const switchEnv = (name: string) => {
-    if (name === OTHER) name = window.prompt("Which environment?", "")?.trim() ?? "";
+  const switchEnv = async (name: string) => {
+    if (name === OTHER) name = (await askText("Which environment?", "", "an environment's name"))?.trim() ?? "";
     if (name && name !== s?.env) void client.api(`/api/blocks/${id}/call/env`, { name }, "couldn't switch the environment");
   };
 
   if (!s || (s.loading && !s.updated_ms)) {
     return (
       <div class="review ws">
-        <div class="browser-card dim">Reading the workspace…</div>
+        <BlockLoading what="the workspace" />
       </div>
     );
   }
@@ -345,7 +348,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
               const name = e.currentTarget.value;
               // Shows the env watched until the block says it switched.
               e.currentTarget.value = s.env;
-              switchEnv(name);
+              void switchEnv(name);
             }}
           >
             {(s.envs ?? [s.env]).map((e) => (
@@ -360,9 +363,11 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
             {s.env}
           </span>
         )}
-        <span class="dim ws-meta" title={s.chant ?? ""}>
-          chant {s.version ?? "?"}
-        </span>
+        {s.version && (
+          <span class="dim ws-meta" title={s.chant ?? ""}>
+            chant {s.version}
+          </span>
+        )}
         {mayOpen && (
           <button class="ws-meta" data-ws-actor title="Who chant records approvals here as" onClick={() => setWho(!who)}>
             as {s.actor || "you"}
@@ -373,27 +378,25 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
             {s.loading ? "…" : "↻"}
           </button>
         )}
-        <span class={`review-live ${s.watching ? "on" : ""}`}>{s.watching ? "live" : "paused"}</span>
+        {!s.error && (
+          <span class={`review-live ${s.watching ? "on" : ""}`} title={s.watching ? "Updates as the workspace changes" : "Not watching: nobody's looking"}>
+            {s.watching ? "live" : "paused"}
+          </span>
+        )}
       </div>
       {mayOpen && who && <Principals client={client} id={id} s={s} close={() => setWho(false)} />}
       {mayOpen && graphOn !== null && (
         <Graph client={client} id={id} s={s} member={graphOn} close={() => setGraphOn(null)} picked={picked} />
       )}
       {s.error ? (
-        <div class="browser-card" data-ws-error>
-          <p>Can't show this workspace</p>
-          <p class="dim">
-            {s.error}
-            {s.error_code && (
-              <>
-                {" "}
-                <code data-ws-reason>{s.error_code}</code>
-              </>
-            )}
-          </p>
-          {help && <p class="dim">{help}</p>}
-          {mayOpen && <button onClick={refresh}>Try again</button>}
-        </div>
+        <BlockError data-ws-error title="Can't show this workspace" detail={s.error} retry={mayOpen ? refresh : undefined}>
+          {s.error_code && (
+            <p class="block-error-detail">
+              <code data-ws-reason>{s.error_code}</code>
+            </p>
+          )}
+          {help && <p class="block-error-detail">{help}</p>}
+        </BlockError>
       ) : (
         <div class="review-body ws-body">
           {s.gates.length > 0 && (
@@ -405,23 +408,33 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                     <b>{g.member}</b>: {g.op} waits at gate <b>{g.gate}</b>
                     <div class="dim ws-gate-when">
                       {g.approvals}/{g.needed} approvals
-                      {g.since && ` · ${ago(g.since)}`}
-                      {g.expires && ` · expires ${new Date(g.expires).toLocaleString()}`}
+                      {g.since && (
+                        <>
+                          {" "}
+                          · <Time at={Date.parse(g.since)} />
+                        </>
+                      )}
+                      {g.expires && (
+                        <>
+                          {" "}
+                          · expires <Time at={Date.parse(g.expires)} />
+                        </>
+                      )}
                     </div>
                     <GateWhy gate={g} />
                   </div>
                   <div class="ws-actions">
                     {mayApprove && (
-                      <button class="pri" data-approve disabled={busy !== null} onClick={() => void approve(g)}>
+                      <button class="primary small" data-approve disabled={busy !== null} onClick={() => void approve(g)}>
                         {busy === `approve:${gateKey(g)}` ? "Approving…" : "Approve"}
                       </button>
                     )}
                     {mayApprove && g.source.kind === "chant" && (
-                      <button data-expire disabled={busy !== null} title={EXPIRE_TITLE} onClick={() => void expire(g)}>
+                      <button class="secondary small" data-expire disabled={busy !== null} title={EXPIRE_TITLE} onClick={() => void expire(g)}>
                         {busy === `expire:${gateKey(g)}` ? "Expiring…" : "Expire"}
                       </button>
                     )}
-                    {mayOpen && <button onClick={() => runOp(g)}>Run {g.op}</button>}
+                    {mayOpen && <button class="secondary small" onClick={() => runOp(g)}>Run {g.op}</button>}
                   </div>
                 </div>
               ))}
@@ -482,23 +495,23 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                     {mayOpen && (
                       <div class="ws-actions">
                         {m.nested ? (
-                          <button data-open-nested onClick={() => nested(m)}>
+                          <button class="secondary small" data-open-nested onClick={() => nested(m)}>
                             Open
                           </button>
                         ) : (
                           <>
-                            <button onClick={() => shell(m.path)}>Shell</button>
-                            <button
+                            <button class="secondary small" onClick={() => shell(m.path)}>Shell</button>
+                            <button class="secondary small"
                               title={m.agents[0] ? `As agent session ${m.agents[0]}` : "The declaration binds no agent session to this member"}
                               onClick={() => agent(m)}
                             >
                               Agent
                             </button>
-                            <button onClick={() => changes(m)}>Changes</button>
-                            <button data-graph title="behold's estate graph, on this member" onClick={() => graph(m)}>
+                            <button class="secondary small" onClick={() => changes(m)}>Changes</button>
+                            <button class="secondary small" data-graph title="behold's estate graph, on this member" onClick={() => graph(m)}>
                               Graph
                             </button>
-                            <button data-run-op onClick={() => (setPicking(picking === m.name ? null : m.name), setTyped(""))}>
+                            <button class="secondary small" data-run-op onClick={() => (setPicking(picking === m.name ? null : m.name), setTyped(""))}>
                               Run op
                             </button>
                           </>
@@ -507,7 +520,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                     )}
                     {!m.nested && mayApprove && (
                       <div class="ws-actions">
-                        <button data-why-toggle={m.name} title="The decisions covering it, the leases and runs on it" onClick={() => toggleWhy(m)}>
+                        <button class="secondary small" data-why-toggle={m.name} title="The decisions covering it, the leases and runs on it" onClick={() => toggleWhy(m)}>
                           {why.has(m.name) ? "Hide why" : "Why"}
                         </button>
                       </div>
@@ -516,7 +529,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                     {mayOpen && picking === m.name && (
                       <div class="ws-actions" data-run-ops={m.name}>
                         {m.ops.map((op) => (
-                          <button key={op} data-op={op} onClick={() => (setPicking(null), run(m.path, op))}>
+                          <button class="secondary small" key={op} data-op={op} onClick={() => (setPicking(null), run(m.path, op))}>
                             {op}
                           </button>
                         ))}
@@ -526,7 +539,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                           onInput={(e) => setTyped(e.currentTarget.value)}
                           onKeyDown={(e) => e.key === "Enter" && runTyped(m)}
                         />
-                        <button disabled={!typed.trim()} onClick={() => runTyped(m)}>
+                        <button class="secondary small" disabled={!typed.trim()} onClick={() => runTyped(m)}>
                           Run
                         </button>
                       </div>
@@ -555,7 +568,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
             s.records_note && <p class="dim ws-note">Records: {s.records_note}</p>
           )}
           <p class="dim ws-note">
-            {s.reads.map((r) => `${r.name} ${r.ms} ms${r.ok ? "" : ` (failed${r.reason ? `: ${r.reason}` : ""})`}`).join(" · ")} · read {ago(new Date(s.updated_ms).toISOString())}
+            {s.reads.map((r) => `${r.name} ${r.ms} ms${r.ok ? "" : ` (failed${r.reason ? `: ${r.reason}` : ""})`}`).join(" · ")} · read <Time at={s.updated_ms} />
           </p>
         </div>
       )}
@@ -578,7 +591,12 @@ function PointGate({ g, may, busy, answer }: { g: Gate; may: boolean; busy: bool
           decision point {point.point}
           {g.member && ` · ${g.op} waits at gate ${g.gate}`}
           {g.needed > 1 && ` · ${g.needed} people answer it`}
-          {g.since && ` · asked ${ago(g.since)}`}
+          {g.since && (
+            <>
+              {" "}
+              · asked <Time at={Date.parse(g.since)} />
+            </>
+          )}
         </div>
         {proposal && <div class="dim">{proposal}</div>}
         {g.why && <GateWhy gate={g} />}

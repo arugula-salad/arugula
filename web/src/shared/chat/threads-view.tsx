@@ -12,6 +12,7 @@ import { usePlatformApi } from "../platform-api";
 import { authorLabel } from "./agents";
 import { AuthorAvatar, roomLabel, roomSigil } from "./room";
 import { footer, repliesOf } from "./threads";
+import { iso, when } from "../time";
 
 function Row({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
   const api = usePlatformApi();
@@ -30,7 +31,7 @@ function Row({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
       >
         <span class="chat-hit-where">
           <span>{room ? `${roomSigil(room)} ${roomLabel(room, api)}` : "a room"}</span>
-          <time>{footer(t, Date.now())}</time>
+          <time dateTime={iso(t.last)} title={when(t.last)}>{footer(t, Date.now())}</time>
         </span>
         <span class="chat-hit-body">
           <AuthorAvatar m={m} />
@@ -74,7 +75,7 @@ export function ThreadsView({ store, phone }: { store: ChatStore; phone: boolean
   const n = shown.length;
   return (
     <section class="chat-thread chat-view" aria-label="Threads" data-chat-threads-view>
-      <header class="chat-head">
+      <header class="chat-head chat-view-head">
         {phone && (
           <button class="chat-back" title="Every room" onClick={() => nav.openChat()}>
             ‹

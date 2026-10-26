@@ -8,7 +8,8 @@ import { UsageReports } from "../../shared/ui/account-telemetry";
 import { agentName, api, shownName, type ControlSession } from "../control";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "../../shared/ui/confirm";
-import { RecoveryAndName } from "./recovery";
+import { Time } from "../../shared/ui/time";
+import { NameLine, RecoveryLeft } from "./recovery";
 
 export interface SessionRow {
   id: string;
@@ -35,13 +36,20 @@ interface DeletePreview {
   stays_in: string[];
 }
 
-const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
 /** What a sign-in or passkey came from, in the words Devices uses for a
  * browser ("Safari on iPhone"). Sign-ins from before control kept the
  * browser have none. */
 export function describeAgent(ua: string): string {
-  return ua ? agentName(ua) : "An earlier sign-in";
+  if (!ua) return "An earlier sign-in";
+  const name = agentName(ua);
+  // UI audit #195: a sign-in from no browser, named by what it is. The CLI
+  // keeps none (it signs each call with its device key), and the desktop
+  // app's window names its device once its page loads (sessionName), so
+  // what's left signed in without a browser is a headless device (the
+  // tests' and dev-control's) or a script: named by its runtime's word.
+  const runtime = name === "A program" ? /\b(node|undici|curl|reqwest)\b/i.exec(ua)?.[1] : null;
+  return runtime ? `A headless device (${runtime.toLowerCase()})` : name;
 }
 
 /** A sign-in's name: its device's, once its page said which it is, so
@@ -80,6 +88,11 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
   };
   if (deleting) return <DeleteAccount s={s} back={() => setDeleting(false)} />;
   const others = (sessions ?? []).filter((x) => !x.current).length;
+  // Sign-ins from before control kept the browser all read "An earlier
+  // sign-in": folded into a count by Sign out everywhere (UI audit #174:
+  // ten rows of them).
+  const earlier = (x: SessionRow) => !x.current && !x.agent && !(x.device && s.trusted.has(x.device));
+  const unnamed = (sessions ?? []).filter(earlier).length;
   return (
     <>
       <h2>Sign-in and account</h2>
@@ -87,21 +100,24 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         Signed in as <b>{s.login}</b>
         {keys?.github ? ` (GitHub: ${keys.github})` : ""}.
       </p>
-      <RecoveryAndName s={s} />
+      <NameLine s={s} />
+      <RecoveryLeft s={s} />
       <h3 class="control-group">Where you're signed in</h3>
-      <ul class="control-devices" data-sessions>
-        {(sessions ?? []).map((x) => (
+      <ul class="control-devices control-rows" data-sessions>
+        {(sessions ?? []).filter((x) => !earlier(x)).map((x) => (
           <li key={x.id} data-session={x.id}>
             <span>
               {sessionName(s, x)}
               {x.current ? " (this browser)" : ""}
             </span>
-            <span class="dim">since {day(x.created)}</span>
+            <span class="dim">
+              signed in <Time at={x.created} on />
+            </span>
             {x.current ? (
               <span />
             ) : (
               <button
-                class={confirming === x.id ? "control-revoke danger" : "control-revoke"}
+                class={confirming === x.id ? "primary danger small" : "secondary danger small"}
                 data-end-session={x.id}
                 onClick={() => (confirming === x.id ? act(() => api(`/api/me/sessions/${x.id}/end`, {})) : setConfirming(x.id))}
               >
@@ -112,9 +128,9 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         ))}
       </ul>
       <p class="dim">
-        {others ? `${others} other session${others === 1 ? "" : "s"}. ` : "Nowhere else. "}
+        {others ? `${others} other session${others === 1 ? "" : "s"}${unnamed ? `, ${unnamed} of them from before control kept which browser` : ""}. ` : "Nowhere else. "}
         <button
-          class={confirming === "all" ? "control-linkish danger" : "control-linkish"}
+          class={confirming === "all" ? "link danger" : "link"}
           data-end-all
           onClick={() => {
             if (confirming !== "all") return setConfirming("all");
@@ -132,16 +148,22 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         <>
           <h3 class="control-group">Passkeys</h3>
           {keys && keys.passkeys.length === 0 ? <p class="dim">None.</p> : null}
-          <ul class="control-devices" data-passkeys>
+          <ul class="control-devices control-rows" data-passkeys>
             {(keys?.passkeys ?? []).map((k, i) => (
               <li key={k.id} data-passkey={k.id}>
                 <span data-passkey-name>{passkeyName(k, i)}</span>
                 <span class="dim">
-                  added {day(k.created)}
-                  {k.used ? `, last used ${day(k.used)}` : ""}
+                  added <Time at={k.created} on />
+                  {k.used ? (
+                    <>
+                      , last used <Time at={k.used} on />
+                    </>
+                  ) : (
+                    ""
+                  )}
                 </span>
                 <button
-                  class="control-revoke quiet-danger"
+                  class="secondary danger small"
                   data-remove-passkey={k.id}
                   disabled={(keys?.ways ?? 0) <= 1}
                   title={(keys?.ways ?? 0) <= 1 ? "Your only way to sign in" : undefined}
@@ -169,7 +191,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
             </ConfirmRemove>
           ) : null}
           {s.info.passkeys ? (
-            <button data-add-passkey onClick={() => act(() => s.addPasskey())}>
+            <button class="secondary" data-add-passkey onClick={() => act(() => s.addPasskey())}>
               Add a passkey
             </button>
           ) : null}
@@ -180,13 +202,13 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
       <h3 class="control-group">Delete your account</h3>
       <p class="dim">
         Removes your account from this control, with your devices, machines, sessions and passkeys.{" "}
-        <button class="control-linkish danger" data-delete-account onClick={() => setDeleting(true)}>
+        <button class="link danger" data-delete-account onClick={() => setDeleting(true)}>
           Delete account…
         </button>
       </p>
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
-        <button onClick={close}>Done</button>
+        <button class="secondary" onClick={close}>Done</button>
       </div>
     </>
   );
@@ -254,9 +276,9 @@ function DeleteAccount({ s, back }: { s: ControlSession; back: () => void }) {
       ) : null}
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
-        <button onClick={back}>Back</button>
+        <button class="secondary" onClick={back}>Back</button>
         <button
-          class="danger"
+          class="primary danger"
           data-delete-go
           disabled={blocked || !matches || busy}
           onClick={() => {
@@ -297,7 +319,7 @@ function LendDevice({ s }: { s: ControlSession }) {
         Agents on your machines may ask to use this device: its location, camera, microphone, clipboard, or you. You allow or
         deny each request here, while this page is open.
       </p>
-      <label class="control-confirm">
+      <label class="control-check">
         <input
           type="checkbox"
           data-lend-device

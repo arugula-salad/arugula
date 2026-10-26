@@ -1,7 +1,7 @@
 // Reply threads on a message (#106), the parts a room's messages carry: the
-// footer under a message that has replies ("3 replies · last 5m ago", with
-// the repliers' pictures), the tag on a reply sent to the channel, and the
-// "Reply in thread" hook of the message tools (./msg-actions). The panel
+// footer under a message that has replies ("3 replies · last reply 5m
+// ago", with the repliers' pictures), the tag on a reply sent to the
+// channel, and the "Reply in thread" hook of the message tools (./msg-actions). The panel
 // that reads a thread is ./thread-panel, the Threads view ./threads-view.
 
 import "./threads.css";
@@ -10,6 +10,7 @@ import { usePlatformApi, type ChatNav } from "../platform-api";
 import { MsgAvatar } from "./avatar";
 import { messageHooks } from "./msg-actions";
 import { ago, footer, rootOf } from "./threads";
+import { when } from "../time";
 
 // The hook can't ask for the page's nav: the room it's shown in registers
 // it (`RoomBody`), and the hook opens the thread there.
@@ -42,7 +43,7 @@ export function ThreadFooter({ room, m }: { room: ChatRoom; m: ChatMessage }) {
       type="button"
       class={`thread-footer${unread ? " unread" : ""}`}
       data-thread-footer={m.seq}
-      title={`Open the thread. The newest reply was ${new Date(t.last).toLocaleString()}`}
+      title={`Open the thread. The newest reply was ${when(t.last)}`}
       onClick={() => nav.openRoom(room.id, undefined, m.seq)}
     >
       <span class="thread-footer-faces">

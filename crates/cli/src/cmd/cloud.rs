@@ -16,12 +16,15 @@ use serde_json::{Value, json};
 use crate::control::Enrolled;
 use crate::util::print_json;
 
+/// A cloud workspace's sizes (M266): the platform's `Size`.
+const SIZES: [&str; 2] = ["small", "large"];
+
 #[derive(clap::Subcommand)]
 pub enum CloudCmd {
-    /// Make a hosted workspace.
+    /// Make a cloud workspace.
     ///
-    /// Its box is made from the current release's template and enrolls
-    /// into the project. Needs owner or editor on the project.
+    /// Its box is made from the current release's template of its size
+    /// and enrolls into the project. Needs owner or editor on the project.
     Create {
         /// Its name in the project: letters, digits, `-`, `_` and `.`.
         name: String,
@@ -37,20 +40,23 @@ pub enum CloudCmd {
         /// The name of an env var it takes from its secrets. Repeatable.
         #[arg(long = "env")]
         env: Vec<String>,
+        /// Its box's size: small (2 vCPU, 2 GiB) or large (8 vCPU, 8 GiB).
+        #[arg(long, value_parser = SIZES, default_value = "small")]
+        size: String,
         /// Wait until it's set up (or failed).
         #[arg(long)]
         wait: bool,
         #[arg(long)]
         project: Option<String>,
     },
-    /// The project's hosted workspaces (every project's, without
+    /// The project's cloud workspaces (every project's, without
     /// `--project`).
     #[command(visible_alias = "list")]
     Ls {
         #[arg(long)]
         project: Option<String>,
     },
-    /// Open a hosted workspace: wakes it if it's paused, and says its
+    /// Open a cloud workspace: wakes it if it's paused, and says its
     /// machine.
     Open {
         /// Its id (hw_…) or name.
@@ -61,10 +67,11 @@ pub enum CloudCmd {
         #[arg(long)]
         project: Option<String>,
     },
-    /// Change what a hosted workspace is built from.
+    /// Change what a cloud workspace is built from.
     ///
     /// Each flag given replaces that part of its spec; the rest stays. Its
-    /// box isn't touched: it shows "rebuild needed" until it's rebuilt.
+    /// box isn't touched: it shows "rebuild needed" until it's rebuilt,
+    /// except for the finish step, which its next turn runs.
     Edit {
         workspace: String,
         /// An HTTPS clone URL. Repeatable; replaces the repos.
@@ -87,10 +94,24 @@ pub enum CloudCmd {
         /// replaces the names.
         #[arg(long = "env")]
         env: Vec<String>,
+        /// A command (`just check`) agent sessions run after each turn,
+        /// before the push.
+        ///
+        /// "" for none. It needs no rebuild.
+        #[arg(long)]
+        finish: Option<String>,
+        /// How long the finish step may run, in seconds (default: 15 min).
+        #[arg(long, value_name = "SECONDS")]
+        finish_timeout: Option<u64>,
+        /// Its box's size: small (2 vCPU, 2 GiB) or large (8 vCPU, 8 GiB).
+        ///
+        /// It takes a rebuild.
+        #[arg(long, value_parser = SIZES)]
+        size: Option<String>,
         #[arg(long)]
         project: Option<String>,
     },
-    /// A hosted workspace's secrets, which its box reads on its next setup.
+    /// A cloud workspace's secrets, which its box reads on its next setup.
     ///
     /// `GIT_TOKEN` (and `GIT_USERNAME`) clone repos the GitHub App doesn't;
     /// the rest are the env vars its spec's `--env` names.
@@ -98,7 +119,7 @@ pub enum CloudCmd {
         #[command(subcommand)]
         cmd: SecretCmd,
     },
-    /// Make a hosted workspace's box again from its spec.
+    /// Make a cloud workspace's box again from its spec.
     ///
     /// It asks the box first: a repo with changes or commits that aren't
     /// pushed stops it, unless `--download` saves them first or `--force`.
@@ -113,7 +134,7 @@ pub enum CloudCmd {
         #[arg(long)]
         project: Option<String>,
     },
-    /// Delete a hosted workspace and its box.
+    /// Delete a cloud workspace and its box.
     #[command(visible_alias = "rm")]
     Delete {
         workspace: String,
@@ -132,7 +153,7 @@ pub enum CloudCmd {
         #[command(subcommand)]
         cmd: KeyCmd,
     },
-    /// A hosted workspace's ports, and their public previews.
+    /// A cloud workspace's ports, and their public previews.
     ///
     /// `ls` lists the ports and which are public. `public PORT` makes one
     /// public at its own address, which anyone can open signed out, for 7
@@ -241,14 +262,15 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
     };
     let show = |w: &Value| if json_out { print_json(w) } else { println!("{}", line(w)) };
     match cmd {
-        CloudCmd::Create { name, repos, packages, setup, env, wait, project } => {
+        CloudCmd::Create { name, repos, packages, setup, env, size, wait, project } => {
             let setup = match setup.as_deref() {
                 None => String::new(),
                 Some(f) => read_setup(f)?,
             };
             let project = project_of(&e, project.as_deref())?;
-            let body =
-                json!({ "name": name, "spec": { "repos": repos, "packages": packages, "setup": setup, "env": env } });
+            let body = json!({ "name": name, "spec": {
+                "repos": repos, "packages": packages, "setup": setup, "env": env, "size": size,
+            } });
             let w = e.api("POST", &format!("/api/projects/{project}/workspaces"), Some(&body))?;
             let w = if wait { with_tail(wait_ready(&e, &project, &w)?) } else { w };
             show(&w);
@@ -267,7 +289,7 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
             if json_out {
                 print_json(&json!({ "workspaces": all }));
             } else if all.is_empty() {
-                println!("No hosted workspaces.");
+                println!("No cloud workspaces.");
             } else {
                 for w in &all {
                     println!("{}", line(w));
@@ -281,7 +303,19 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
             show(&w);
             return Ok(failed(&w));
         }
-        CloudCmd::Edit { workspace, repos, no_repos, packages, no_packages, setup, env, project } => {
+        CloudCmd::Edit {
+            workspace,
+            repos,
+            no_repos,
+            packages,
+            no_packages,
+            setup,
+            env,
+            finish,
+            finish_timeout,
+            size,
+            project,
+        } => {
             let (project, w) = find(&e, project.as_deref(), &workspace)?;
             let mut spec = w["spec"].clone();
             if no_repos || !repos.is_empty() {
@@ -295,6 +329,15 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
             }
             if !env.is_empty() {
                 spec["env"] = json!(env);
+            }
+            if let Some(f) = finish {
+                spec["finish"] = json!(f.trim());
+            }
+            if let Some(t) = finish_timeout {
+                spec["finish_timeout_s"] = json!(t);
+            }
+            if let Some(s) = size {
+                spec["size"] = json!(s);
             }
             show(&e.api("PUT", &format!("{}/spec", path(&project, &w)), Some(&spec))?);
         }
@@ -558,8 +601,8 @@ fn find(e: &Enrolled, project: Option<&str>, workspace: &str) -> anyhow::Result<
     }
     match found.len() {
         1 => Ok(found.remove(0)),
-        0 => bail!("no hosted workspace called {workspace}"),
-        _ => bail!("more than one project has a hosted workspace called {workspace}: say which with --project"),
+        0 => bail!("no cloud workspace called {workspace}"),
+        _ => bail!("more than one project has a cloud workspace called {workspace}: say which with --project"),
     }
 }
 
@@ -598,6 +641,10 @@ fn wait_ready(e: &Enrolled, project: &str, w: &Value) -> anyhow::Result<Value> {
 fn line(w: &Value) -> String {
     let s = |k: &str| w[k].as_str().unwrap_or_default();
     let mut out = format!("{:<24} {:<10} {}", s("name"), s("state"), s("id"));
+    // Small unless it says (a small spec leaves it out).
+    if let Some(size) = w["spec"]["size"].as_str().filter(|z| *z != "small") {
+        out.push_str(&format!("  {size}"));
+    }
     if let Some(m) = w["machine"].as_str() {
         out.push_str(&format!("  machine {m}"));
     }
@@ -669,6 +716,9 @@ mod tests {
             &["arugula", "cloud", "rebuild", "dev", "--force"],
             &["arugula", "cloud", "edit", "dev", "--repo", "https://github.com/acme/app", "--setup", "setup.sh"],
             &["arugula", "cloud", "edit", "dev", "--no-packages", "--env", "NPM_TOKEN"],
+            &["arugula", "cloud", "edit", "dev", "--finish", "just check", "--finish-timeout", "1200"],
+            &["arugula", "cloud", "create", "dev", "--size", "large"],
+            &["arugula", "cloud", "edit", "dev", "--size", "small"],
             &["arugula", "cloud", "secret", "set", "dev", "GIT_TOKEN"],
             &["arugula", "cloud", "secret", "ls", "dev"],
             &["arugula", "cloud", "secret", "rm", "dev", "GIT_TOKEN", "--project", "Acme"],
@@ -718,5 +768,10 @@ mod tests {
         w["setup"]["tail"] = json!("make: no\nError 2");
         assert!(line(&w).ends_with("\n  | make: no\n  | Error 2"), "{}", line(&w));
         assert!(crate::Cli::try_parse_from(["arugula", "cloud", "edit", "dev", "--repo", "x", "--no-repos"]).is_err());
+        assert!(crate::Cli::try_parse_from(["arugula", "cloud", "create", "dev", "--size", "huge"]).is_err());
+        let w = json!({ "name": "dev", "state": "ready", "id": "hw_1", "spec": { "size": "large" } });
+        assert!(line(&w).ends_with("hw_1  large"), "{}", line(&w));
+        let w = json!({ "name": "dev", "state": "ready", "id": "hw_1", "spec": { "size": "small" } });
+        assert!(line(&w).ends_with("hw_1"), "{}", line(&w));
     }
 }

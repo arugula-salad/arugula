@@ -23,31 +23,43 @@ export function reasonItems(client: Client, pane: PaneId, reason: Reason | null 
   return items;
 }
 
-/** A dot for "needs you", a tick for "done", a cross for a failure (M24);
- * the reason's headline is its title. With a client and pane, a failure
- * that can be run again opens a menu with Rerun (M11). */
+/** A dot for "needs you", a tick for "done", a "!" for a failure (M24;
+ * not a cross, which reads as "remove", UI audit #185); the reason's
+ * headline is its title. With a client and pane, a failure that can be
+ * run again is a menu button with Rerun (M11). */
 export function AttentionBadge({ state, reason, pane, client }: { state: Attention; reason?: Reason | null; pane?: PaneId; client?: Client }) {
   if (state !== "needs_input" && state !== "done") return null;
   const failed = reason?.kind === "failed" || reason?.kind === "exited";
   const label = reason?.headline ?? (state === "done" ? "Finished" : "Needs you");
   const items = client && pane !== undefined && (reason?.actions.includes("rerun") || reason?.actions.includes("continue")) ? reasonItems(client, pane, reason) : [];
+  const cls = `att ${state}${failed ? " failed" : ""}${items.length ? " acts" : ""}`;
+  const mark = failed ? "!" : state === "done" ? "✓" : "●";
+  if (!items.length) {
+    return (
+      <span class={cls} title={label} aria-label={label}>
+        {mark}
+      </span>
+    );
+  }
   return (
-    <span
-      class={`att ${state}${failed ? " failed" : ""}${items.length ? " acts" : ""}`}
+    <button
+      type="button"
+      class={cls}
       title={label}
       aria-label={label}
-      data-rerun-badge={items.length ? pane : undefined}
-      onPointerDown={items.length ? (e) => e.stopPropagation() : undefined}
-      onClick={
-        items.length
-          ? (e) => {
-              e.stopPropagation();
-              openMenu(e, [{ header: label }, ...items]);
-            }
-          : undefined
-      }
+      aria-haspopup="menu"
+      data-rerun-badge={pane}
+      onPointerDown={(e) => e.stopPropagation()}
+      // Its own keys: a tab's Enter and Space select the tab.
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        // Under the badge, from a key as from a click.
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, [{ header: label }, ...items], e.currentTarget as HTMLElement);
+      }}
     >
-      {failed ? "✗" : state === "done" ? "✓" : "●"}
-    </span>
+      {mark}
+    </button>
   );
 }

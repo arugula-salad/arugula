@@ -7,6 +7,7 @@
 // store has them.
 
 import type {
+  IssueAgent,
   IssueEvent,
   IssueEvents,
   IssueHome,
@@ -92,10 +93,16 @@ export const issues = {
     return r;
   },
   home: (project: string) => call<IssueHome>("GET", `/api/projects/${enc(project)}/issue-home`),
+  /** Every label on the project's issues, open or closed (UI audit #163):
+   * the issue home says them. */
+  labels: (project: string) => call<IssueHome>("GET", `/api/projects/${enc(project)}/issue-home`).then((h) => h.labels ?? []),
   /** `native`, `github`, or null for the default again. */
   setHome: (project: string, home: string | null) => call<IssueHome>("PUT", `/api/projects/${enc(project)}/issue-home`, { home }),
   /** The issue's thread (made the first time someone opens it). */
   thread: (id: string) => chat.openObject(id),
+  /** Agent on this (M265): `@arugula` in the issue's thread, as the
+   * reader. */
+  agent: (id: string) => call<IssueAgent>("POST", `/api/issues/${enc(id)}/agent`),
   /** Where the project's export downloads from. */
   exportUrl: (project: string, format: "json" | "md") => `/api/projects/${enc(project)}/issues/export?format=${format}`,
 };

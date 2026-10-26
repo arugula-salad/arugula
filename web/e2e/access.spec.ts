@@ -132,7 +132,9 @@ test("a viewer's workspace hides what they can't do, or says why it's off", asyn
   // Tabs and the layout are an editor's: off, with the reason.
   await expect(friend.locator(".ws-tabs .new-tab")).toBeDisabled();
   await expect(friend.locator(".ws-tabs .new-tab")).toHaveAttribute("title", "Viewers can't open tabs in this session");
-  for (const sel of ["[data-add-pane]", '[data-preset="columns"]', "[data-pane-focus]"]) {
+  // Adding a pane isn't theirs at all (UI audit #197): no greyed + Pane.
+  await expect(friend.locator("[data-add-pane]")).toHaveCount(0);
+  for (const sel of ['[data-preset="columns"]', "[data-pane-focus]"]) {
     await expect(friend.locator(sel)).toBeDisabled();
     await expect(friend.locator(sel)).toHaveAttribute("title", "Viewers can't change the layout");
   }
@@ -147,7 +149,7 @@ test("a viewer's workspace hides what they can't do, or says why it's off", asyn
   await expect(friend.locator("[data-sized-elsewhere]")).toHaveCount(0);
   // The session's menu: its thread and notifications, nothing of the owner's.
   await friend.locator("[data-crumb-menu]").click();
-  await expect(friend.getByRole("menuitem").first()).toBeVisible();
+  await expect(friend.getByRole("menu")).toBeVisible();
   for (const item of ["New session", "Rename session", "Close session", "Share session…"])
     await expect(friend.getByRole("menuitem", { name: item })).toHaveCount(0);
   await friend.keyboard.press("Escape");

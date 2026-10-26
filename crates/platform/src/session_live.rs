@@ -31,7 +31,8 @@ use std::sync::Arc;
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::sessions::{
-    SessionAct, SessionAnswered, SessionCard, SessionLine, SessionOpen, SessionPort, SessionTurn, SessionView,
+    SessionAct, SessionAnswered, SessionCard, SessionFinish, SessionLine, SessionOpen, SessionPort, SessionTry,
+    SessionTurn, SessionView,
 };
 use arugula_control_wire::work::{Reported, SessionReport};
 use arugula_e2e::{now_ms, team::TeamRole};
@@ -45,8 +46,15 @@ use tracing::{info, warn};
 use crate::{
     Platform,
     auth::Person,
-    db::sessions::{ActionKind, DaemonReport, Event, Kind, Move, NewAction, Refused, Session, SessionDetail, State},
+    db::{
+        session_merged::MERGED,
+        sessions::{
+            ActionKind, DaemonReport, Event, Kind, Move, NOT_PICKED, NewAction, Refused, Role, Session, SessionDetail,
+            State,
+        },
+    },
     forge::links::membership,
+    sessions::review::REVIEWED,
     work::HostedMachine,
 };
 
@@ -111,8 +119,12 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &SessionReport) -> any
         return Ok(refused_report(Refused::OtherDaemon.to_string()));
     }
     match record(app, &r.session, &Move::Daemon { report: &checked, now: now_ms() })? {
-        Ok((s, _)) => {
+        Ok((s, events)) => {
             info!(session = s.id, machine = m.machine, kind = %kind, to = %s.state, "a hosted machine reported on its session");
+            // A review's reply goes in its thread (M264).
+            if let Err(e) = crate::sessions::review::reported(app, &s, &events).await {
+                warn!(session = s.id, error = %format!("{e:#}"), "a review's report");
+            }
             Ok(Reported::Taken)
         }
         Err(why) => {
@@ -146,7 +158,7 @@ async fn readable(app: &Platform, account: &str, id: &str, now: bool) -> Result<
     }
 }
 
-async fn actor(app: &Platform, account: &str, id: &str) -> Result<Session, ApiError> {
+pub(crate) async fn actor(app: &Platform, account: &str, id: &str) -> Result<Session, ApiError> {
     let (s, may) = readable(app, account, id, true).await?;
     if !may {
         return Err(err(StatusCode::FORBIDDEN, "a viewer can't stop or answer a session"));
@@ -191,6 +203,15 @@ fn line(e: &Event, name: &dyn Fn(&str) -> String) -> String {
         },
         (Kind::State, _, State::Done) => "The turn finished".into(),
         (Kind::State, _, State::Unresponsive) => "Its box stopped responding".into(),
+        (Kind::State, _, State::Stopped) if d.reason.as_deref() == Some(MERGED) => {
+            "Its pull request merged: done".into()
+        }
+        (Kind::State, _, State::Stopped) if d.reason.as_deref() == Some(NOT_PICKED) => {
+            "Stopped: another try was kept".into()
+        }
+        (Kind::State, _, State::Stopped) if d.reason.as_deref().is_some_and(|r| r.starts_with(REVIEWED)) => {
+            "Its review is posted in the thread".into()
+        }
         (Kind::State, _, State::Stopped) => match by {
             Some(n) => format!("Stopped by {n}"),
             None => format!("Stopped{}", d.reason.map(|r| format!(": {r}")).unwrap_or_default()),
@@ -201,18 +222,96 @@ fn line(e: &Event, name: &dyn Fn(&str) -> String) -> String {
         (Kind::Turn, ..) => {
             let n = d.commits.len();
             let commits = format!("{n} commit{}", if n == 1 { "" } else { "s" });
+            let finish = match &d.finish {
+                Some(f) if f.ok => format!(" (finish passed: {})", f.command),
+                Some(f) => format!(" (finish failed: {})", f.command),
+                None => String::new(),
+            };
             if d.pushed == Some(true) {
-                format!("Turn pushed {}: {commits}", d.branch.unwrap_or_default())
+                format!("Turn pushed {}: {commits}{finish}", d.branch.unwrap_or_default())
             } else {
-                format!("Turn left {commits}, not pushed")
+                format!("Turn left {commits}, not pushed{finish}")
             }
         }
         (Kind::Heartbeat, ..) => "Heard from its box".into(),
     }
 }
 
-/// Session `s`'s card and history, for a reader who `may` act on it.
-pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<SessionView, ApiError> {
+/// What its latest turn left, from its history.
+fn last_turn(events: &[Event]) -> Option<SessionTurn> {
+    events.iter().rev().find(|e| e.kind == Kind::Turn).map(|e| {
+        let d = detail(e);
+        SessionTurn {
+            at: e.at,
+            pushed: d.pushed.unwrap_or(false),
+            head: d.head,
+            commits: d.commits,
+            diffstat: d.diffstat,
+            uncommitted: d.uncommitted,
+            finish: d.finish.map(|f| SessionFinish { ok: f.ok, command: f.command, output_tail: f.output_tail }),
+        }
+    })
+}
+
+/// The agent its box ran it on, as its box said on taking it (M264).
+fn ran_on(events: &[Event]) -> Option<String> {
+    events
+        .iter()
+        .find(|e| e.kind == Kind::State && e.from == Some(State::Queued) && e.to == State::Working)
+        .map(|e| detail(e).harness.unwrap_or_else(|| "claude".into()))
+}
+
+fn pushed_in(events: &[Event]) -> bool {
+    events.iter().any(|e| e.kind == Kind::Turn && detail(e).pushed == Some(true))
+}
+
+/// Why it ended, or why it's queued again (its box was rebuilt).
+fn reason_of(s: &Session, events: &[Event]) -> Option<String> {
+    let again = s.state == State::Queued && s.last_seq > 1;
+    (s.state.terminal() || again)
+        .then(|| events.iter().rev().find(|e| e.kind == Kind::State && e.to == s.state))
+        .flatten()
+        .and_then(|e| detail(e).reason)
+}
+
+/// The Try 3 `s` is in (M264): its parent, then the siblings, and the one
+/// kept. Nothing for a session in none.
+fn tries(app: &Platform, s: &Session) -> anyhow::Result<(Vec<SessionTry>, Option<String>)> {
+    let parent = match (s.role, &s.parent_session) {
+        (Role::Thread, _) => s.clone(),
+        (Role::Try, Some(p)) => match app.db.session(p)? {
+            Some(p) => p,
+            None => return Ok((vec![], None)),
+        },
+        _ => return Ok((vec![], None)),
+    };
+    let siblings = app.db.session_siblings(&parent.id)?;
+    if siblings.is_empty() {
+        return Ok((vec![], None));
+    }
+    // What its box may take now: a queued one not listed waits for a slot.
+    let listed: Vec<String> = app.db.session_work(&parent.workspace)?.into_iter().map(|w| w.session).collect();
+    let mut out = Vec::new();
+    for t in std::iter::once(parent.clone()).chain(siblings) {
+        let events = app.db.session_events(&t.id)?;
+        out.push(SessionTry {
+            session: t.id.clone(),
+            state: t.state.as_str().into(),
+            branch: t.branch.clone(),
+            harness: t.harness.clone(),
+            ran: ran_on(&events),
+            turn: last_turn(&events),
+            pushed: pushed_in(&events),
+            reason: reason_of(&t, &events),
+            updated_at: t.updated_at,
+            no_slot: t.state == State::Queued && !listed.contains(&t.id),
+        });
+    }
+    Ok((out, parent.picked))
+}
+
+/// Session `s`'s card and history, for `reader`, who `may` act on it.
+pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -> Result<SessionView, ApiError> {
     let events = app.db.session_events(&s.id)?;
     let actions = app.db.session_actions(&s.id)?;
     let pending: Vec<_> = actions.iter().filter(|a| a.state == crate::db::sessions::ActionState::Pending).collect();
@@ -227,17 +326,8 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<Sessi
     let accounts = app.cache.accounts(&*app.hub, &who).await?;
     let name = |a: &str| accounts.get(a).map(|x| x.name.clone()).unwrap_or_default();
     let last_state = |to: State| events.iter().rev().find(|e| e.kind == Kind::State && e.to == to);
-    let turn = events.iter().rev().find(|e| e.kind == Kind::Turn).map(|e| {
-        let d = detail(e);
-        SessionTurn {
-            at: e.at,
-            pushed: d.pushed.unwrap_or(false),
-            head: d.head,
-            commits: d.commits,
-            diffstat: d.diffstat,
-            uncommitted: d.uncommitted,
-        }
-    });
+    let pushed = pushed_in(&events);
+    let turn = last_turn(&events);
     let open = (s.seen_as() == State::NeedsInput).then(|| last_state(State::NeedsInput)).flatten().map(|e| {
         let d = detail(e);
         SessionOpen { request: d.request, ask: d.ask, question: d.question, options: d.options, at: e.at }
@@ -249,9 +339,8 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<Sessi
         at: a.at,
     });
     let ended = matches!(s.state, State::Done | State::Failed | State::Stopped);
-    // Why it ended, or why it's queued again (its box was rebuilt).
-    let again = s.state == State::Queued && s.last_seq > 1;
-    let reason = (s.state.terminal() || again).then(|| last_state(s.state)).flatten().and_then(|e| detail(e).reason);
+    let reason = reason_of(s, &events);
+    let (tries, picked) = tries(app, s)?;
     let ports = crate::hosted::previews::ports(app, &s.workspace, now_ms())?
         .into_iter()
         .map(|p| SessionPort { port: p.port, label: p.label, url: p.url })
@@ -284,6 +373,17 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<Sessi
         block: s.block.clone(),
         ports,
         pr: s.pr.clone(),
+        merged_at: s.merged_at,
+        pushed,
+        ci_rounds: s.ci_rounds,
+        ci_max: crate::db::session_feedback::MAX_CI_ROUNDS,
+        needs_person: crate::sessions::feedback::needs_person(app, s)?,
+        role: s.role.as_str().into(),
+        parent_session: s.parent_session.clone(),
+        harness: s.harness.clone(),
+        ran: ran_on(&events),
+        tries,
+        picked,
     };
     let lines = events
         .iter()
@@ -297,7 +397,8 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<Sessi
             text: line(e, &name),
         })
         .collect();
-    Ok(SessionView { card, may, now: now_ms(), events: lines })
+    let asked = !s.asker.is_empty() && s.asker == reader;
+    Ok(SessionView { card, may, asked, now: now_ms(), events: lines })
 }
 
 /// `GET /api/sessions/{ses}`.
@@ -307,10 +408,10 @@ pub async fn show(
     Path(id): Path<String>,
 ) -> Result<Json<SessionView>, ApiError> {
     let (s, may) = readable(&app, &account, &id, false).await?;
-    Ok(Json(view(&app, &s, may).await?))
+    Ok(Json(view(&app, &s, may, &account).await?))
 }
 
-fn refused(r: &Refused) -> ApiError {
+pub(crate) fn refused(r: &Refused) -> ApiError {
     match r {
         Refused::NoSession => no_session(),
         Refused::Moved { now } => err(StatusCode::CONFLICT, &format!("the session is {} now", said(*now))),
@@ -333,7 +434,7 @@ pub async fn stop(
         }
         let m = Move::Control { from: s.state, to: State::Stopped, at: now_ms(), detail: &detail };
         match record(&app, &id, &m)? {
-            Ok((after, _)) => return Ok(Json(view(&app, &after, true).await?)),
+            Ok((after, _)) => return Ok(Json(view(&app, &after, true, &account).await?)),
             Err(Refused::Moved { .. }) => s = app.db.session(&id)?.ok_or_else(no_session)?,
             Err(r) => return Err(refused(&r)),
         }
@@ -376,7 +477,7 @@ pub async fn act(
         Ok(_) => {
             let after = app.db.session(&id)?.ok_or_else(no_session)?;
             app.chat.session(&app.db, &after);
-            Ok(Json(view(&app, &after, true).await?))
+            Ok(Json(view(&app, &after, true, &account).await?))
         }
         Err(Refused::Detail(why)) if why.starts_with("only") || why.starts_with("an answer") => {
             Err(err(StatusCode::BAD_REQUEST, why))

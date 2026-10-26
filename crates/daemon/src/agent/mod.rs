@@ -265,6 +265,10 @@ pub struct TurnStat {
     /// Its run in the chant workspace's run ledger (#304).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run: Option<String>,
+    /// Whose prompt it was, when that isn't the block's owner (M29): a
+    /// hosted session credits a turn typed in its block to them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
     #[serde(skip)]
     cost_base: Option<f64>,
 }
@@ -835,6 +839,7 @@ impl Inner {
                     "rule" => format!("Allowed {title} (always allowed)"),
                     "standing" => format!("Allowed {title} (standing rule: {})", e["rule"].as_str().unwrap_or("?")),
                     "builtin" => format!("Allowed {title} (allowed by Arugula)"),
+                    "session" => format!("Allowed {title} (a session on its box)"),
                     "always" => format!("Allowed {title}, and always from now on"),
                     "standing-new" => {
                         format!("Allowed {title}, and from now on: {}", e["rule"].as_str().unwrap_or("?"))
@@ -928,8 +933,9 @@ impl Inner {
                             .collect::<Vec<_>>()
                             .join("\n");
                         let sent = Queued { text, images: blocks.iter().filter_map(image).collect(), by: None };
+                        let mut by = None;
                         if self.queue.front().is_some_and(|q| q.is(&sent)) {
-                            self.queue.pop_front();
+                            by = self.queue.pop_front().and_then(|q| q.by);
                         }
                         let Queued { text, images, .. } = sent;
                         self.t.user(&text, images, at);
@@ -948,6 +954,7 @@ impl Inner {
                             started_ms: at,
                             cost_base: self.cost,
                             run: self.carry_run.take(),
+                            by,
                             ..Default::default()
                         });
                         Purpose::Prompt
@@ -2494,7 +2501,13 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
             // #963: building a Doc writes only the Doc's own folder, and an
             // agent block has no settings or hooks to allow it with.
             let builtin = crate::mcp::same_tool(&p.tool, DOC_TOOL);
-            if (allowed || standing.is_some() || builtin)
+            // A hosted thread session's block (the daemon's word, not the
+            // block's config) runs in bypassPermissions, and what still
+            // asks is allowed too: the box is the blast radius (aru-115),
+            // and nobody watches each call. Questions aren't permissions:
+            // they come as elicitations, and still go to its card.
+            let session = crate::work::sessions::session_of(ctx.id).is_some();
+            if (allowed || standing.is_some() || builtin || session)
                 && let Some(opt) = p.options.iter().find(|o| o.kind == "allow_once")
             {
                 match standing {
@@ -2502,7 +2515,8 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
                         g.note(json!({ "e": "approve", "title": p.title, "how": "standing", "rule": r.describe() }))
                     }
                     None if allowed => g.note(json!({ "e": "approve", "title": p.title, "how": "rule" })),
-                    None => g.note(json!({ "e": "approve", "title": p.title, "how": "builtin" })),
+                    None if builtin => g.note(json!({ "e": "approve", "title": p.title, "how": "builtin" })),
+                    None => g.note(json!({ "e": "approve", "title": p.title, "how": "session" })),
                 }
                 let opt = opt.id.clone();
                 g.out(json!({ "jsonrpc": "2.0", "id": p.rpc, "result": { "outcome": { "outcome": "selected", "optionId": opt } } }));
@@ -3151,7 +3165,10 @@ impl Block for Agent {
     }
 
     fn summary(&self) -> crate::block::Summary {
-        crate::block::Summary { title: self.inner.lock().unwrap().shown_title(), ..Default::default() }
+        let g = self.inner.lock().unwrap();
+        // A stopped agent isn't running (UI audit #154).
+        let stopped = matches!(g.status, Status::Exited | Status::Stopped);
+        crate::block::Summary { title: g.shown_title(), stopped, ..Default::default() }
     }
 
     fn state(&self) -> Value {

@@ -3,16 +3,48 @@
 // dialogs opened by name (the `arugula:control-panel` event), taking a
 // link out of the address bar, and how long ago something was.
 
+import { useEffect, useState } from "preact/hooks";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { qr, qrPath } from "../../shared/ui/qr";
+import { ago } from "../../shared/time";
+import { Time } from "../../shared/ui/time";
 import type { ControlSession } from "../control";
+import { MovingNote } from "../ui/moving-note";
 
 export function useControl(s: ControlSession) {
   useSubscribe((fn) => s.subscribe(fn));
 }
 
+/** A gate screen: centred while it fits the window, scrolling when it
+ * doesn't (UI audit #148). */
 export function Center({ children }: { children: preact.ComponentChildren }) {
-  return <div class="control-center">{children}</div>;
+  return (
+    <div class="control-gate">
+      <div class="control-center">
+        <MovingNote />
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** A waiting screen's one line (UI audit #179): that it's waiting, live,
+ * and for how long, rather than a dim "Waiting…" or three. */
+export function WaitingLine({ what = "Waiting for approval" }: { what?: string }) {
+  const [from] = useState(() => Date.now());
+  const [now, setNow] = useState(from);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const s = Math.floor((now - from) / 1000);
+  const took = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return (
+    <p class="control-waiting" role="status" data-waiting-line>
+      <span class="control-waiting-dot" aria-hidden="true" />
+      {what} <span class="dim">· {took}</span>
+    </p>
+  );
 }
 
 /** A link as a QR code, for a phone's camera. */
@@ -26,10 +58,8 @@ export function QrCode({ text, label }: { text: string; label: string }) {
   );
 }
 
-export const since = (ms: number) => {
-  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
-};
+/** "2d ago", or "on Oct 16" (../../shared/time.ts), in a sentence. */
+export const since = (ms: number) => ago(Math.min(ms, Date.now()), Date.now(), "on");
 
 export type Panel = "devices" | "add" | "add-device" | "teams" | "account" | "shared-docs";
 
@@ -51,7 +81,7 @@ export function dropHash() {
   history.replaceState(null, "", location.pathname + location.search);
 }
 
-/** When a device was added, to the minute: with the last use beside it,
- * what tells apart two devices of the same name (#759). */
-export const addedAt = (ms: number) =>
-  new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", ...(new Date(ms).getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }), hour: "numeric", minute: "2-digit" });
+/** When a device was added: with the last use beside it, what tells
+ * apart two devices of the same name (#759); the minute is in its title
+ * (UI audit #182). */
+export const AddedAt = ({ at }: { at: number }) => <Time at={Math.min(at, Date.now())} on data-added={at} />;
