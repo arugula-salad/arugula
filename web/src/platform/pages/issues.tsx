@@ -359,7 +359,8 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
           <LabelChip key={l} label={l} onClick={() => label(l)} />
         ))}
         <span class="issue-row-meta dim">
-          <StateChip tone={issueTone(i.state)}>{stateLabel(i)}</StateChip> · #{i.number} {rowLine(i, nameOf)}
+          {/* The row's line says why it closed, so its chip needn't (UI audit #163). */}
+          <StateChip tone={issueTone(i.state)}>{i.state === "closed" ? "Closed" : stateLabel(i)}</StateChip> · #{i.number} {rowLine(i, nameOf)}
         </span>
       </div>
       {i.assignees.length > 0 && (
