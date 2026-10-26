@@ -62,7 +62,8 @@ impl Hub {
 /// `POST /api/chat/rooms/{id}/typing`: I'm typing here. For a room I see
 /// and may write in; a read-only or watched room has nobody to tell. With
 /// `warm` ([`wire::ChatTyping`]), the project's agents box is woken too,
-/// in the background ([`warm`]).
+/// in the background ([`warm`]); with `show` false (a reply thread's
+/// composer), only that: nothing is kept or sent as typing.
 pub async fn typing(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -74,10 +75,13 @@ pub async fn typing(
     if watching(&app, &facts, &s.account, &room)? || !writable(&app, &facts, &room, &s.account)? {
         return Err(err(StatusCode::CONFLICT, "you can't write here"));
     }
-    let name = name_of(&app, &s.account).await?;
+    let ping = body.map(|Json(b)| b).unwrap_or_default();
     let now = now_ms();
-    app.chat.typing(&app.db, &room.id, &s.account, &name, now);
-    if body.is_some_and(|Json(b)| b.warm) {
+    if ping.show {
+        let name = name_of(&app, &s.account).await?;
+        app.chat.typing(&app.db, &room.id, &s.account, &name, now);
+    }
+    if ping.warm {
         let account = s.account.clone();
         tokio::spawn(async move {
             if let Err(e) = warm(&app, &room, &account, now).await {
@@ -228,6 +232,43 @@ mod tests {
         assert!(app.db.take_warm("prj_other", now + 61_000).unwrap(), "another project's own");
         app.db.prune_typing(now + 200_000).unwrap();
         assert!(app.db.chat_events_after(0, 10).unwrap().iter().all(|e| e.kind != "warm"));
+    }
+
+    /// M262: a reply thread's composer sends a warm-only ping (`show`
+    /// false). It isn't typing: no row is kept as one and no stream hears
+    /// it. It still goes through the same checks and the same minute: a
+    /// viewer's takes nothing, an editor's takes the project's minute once.
+    #[tokio::test]
+    async fn a_warm_only_ping_isnt_typing() {
+        let (_hub, app, base, t, _u, _keys) =
+            crate::sessions_hydrate_tests::platform(&["https://github.com/o/app"]).await;
+        let mut rx = app.chat.tx.subscribe();
+        let ping = |who: &'static str, body: serde_json::Value| {
+            let base = base.clone();
+            async move {
+                crate::chat_tests::call(&base, who, "POST", "/api/chat/rooms/ch_general/typing", Some(body)).await.0
+            }
+        };
+        let kinds = || app.db.chat_events_after(0, 100).unwrap().into_iter().map(|e| e.kind).collect::<Vec<_>>();
+        let quiet = serde_json::json!({ "warm": true, "show": false });
+        assert_eq!(ping("x", quiet.clone()).await, 204);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(kinds().is_empty(), "a viewer's: nothing, not even the minute");
+        assert_eq!(ping("b", quiet.clone()).await, 204);
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while kinds().is_empty() {
+            assert!(std::time::Instant::now() < until, "the minute was never taken");
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert_eq!(kinds(), ["warm"], "not typing");
+        assert!(rx.try_recv().is_err(), "nobody hears it");
+        assert!(!app.db.take_warm(&t, now_ms()).unwrap(), "the same minute as a shown ping's");
+        assert_eq!(ping("a", quiet).await, 204);
+        // A plain ping, or one that only shows, is typing as before.
+        assert_eq!(ping("a", serde_json::json!({})).await, 204);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert_eq!(kinds(), ["warm", "typing"], "the second warm-only ping took nothing");
+        assert!(matches!(&rx.try_recv().unwrap().ev, ChatLive::Typing { account, .. } if account == "a"));
     }
 
     /// M262: machines asking at once (each its own connection) take a

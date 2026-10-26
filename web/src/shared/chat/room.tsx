@@ -982,7 +982,7 @@ export function RoomCompose({
         : await chat.post(room.id, text, quote, files.ids, paused && anyway);
       setMissed(posted.unreached.map((w) => `Nobody here called ${w} can read this room`));
       setText("");
-      chat.composed(room.id);
+      chat.composed(room.id, thread?.parent);
       setQuote(undefined);
       setAlso(false);
       files.clear();
@@ -1103,9 +1103,10 @@ export function RoomCompose({
             const v = (e.target as HTMLTextAreaElement).value;
             setText(v);
             // Never while it's empty; the store holds it to one in 3 s.
-            // An `@arugula` being written warms the project's box (M262).
-            if (!v.trim()) chat.composed(room.id);
-            else if (!thread) chat.typing(room.id, warmsIn(room.kind) && asksArugula(v));
+            // An `@arugula` being written warms the project's box (M262);
+            // in a reply thread that's all the ping is.
+            if (!v.trim()) chat.composed(room.id, thread?.parent);
+            else chat.typing(room.id, warmsIn(room.kind) && asksArugula(v), thread?.parent);
           }}
           onKeyDown={(e) => {
             const n = options.length || emojis.length;

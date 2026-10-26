@@ -3,7 +3,7 @@
 // `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asksArugula, warmsIn, Warming } from "../src/shared/chat/warm.ts";
+import { asksArugula, burstOf, typingBody, warmsIn, Warming } from "../src/shared/chat/warm.ts";
 
 test("text asks @arugula when it starts with it or has it as a word", () => {
   assert.ok(asksArugula("@arugula fix the canary"));
@@ -31,4 +31,15 @@ test("one warm ping per burst, per room", () => {
   assert.equal(w.ping("ch_2", true), true, "another room's own");
   w.ended("ch_1");
   assert.equal(w.ping("ch_1", true), true, "the next message");
+});
+
+test("a reply thread's composer sends only a warm ping, never typing", () => {
+  assert.equal(typingBody(false, false), undefined, "the room's: plain typing");
+  assert.deepEqual(typingBody(true, false), { warm: true, show: true });
+  assert.deepEqual(typingBody(true, true), { warm: true, show: false }, "warm-only");
+  assert.equal(typingBody(false, true), null, "nothing at all");
+  const w = new Warming();
+  assert.equal(w.ping(burstOf("ch_1"), true), true);
+  assert.equal(w.ping(burstOf("ch_1", 5), true), true, "a thread's burst is its own");
+  assert.equal(w.ping(burstOf("ch_1", 5), true), false);
 });

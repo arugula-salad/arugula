@@ -30,7 +30,6 @@ import type {
   ChatSaved,
   ChatSavedItem,
   ChatTargetKind,
-  ChatTyping,
   NotifyLevel,
 } from "./proto";
 import { platformFetch, refusalOf } from "./maintenance";
@@ -39,7 +38,7 @@ import { chatUnread, listedInChat } from "./chat/unread";
 import { presence } from "./chat/presence";
 import { emptySidebar } from "./chat/sidebar";
 import { ThreadState } from "./chat/thread-state";
-import { Warming } from "./chat/warm";
+import { burstOf, typingBody, Warming } from "./chat/warm";
 
 /** A refusal from control's chat API: its status, and `reason`
  * (`chat_off`, or `maintenance` for a window that outlasted the wait,
@@ -448,20 +447,23 @@ export class ChatStore {
    * room, and the caller sends none while the composer is empty. `asks`
    * (M262): the text asks `@arugula` where it works, so the burst's first
    * such ping says `warm` (control wakes the project's box), sent at once
-   * rather than after the gap. */
-  typing(room: string, asks = false) {
+   * rather than after the gap. A reply thread's composer (`thread`, its
+   * parent) shows no typing: it sends only that warm ping. */
+  typing(room: string, asks = false, thread?: number) {
     const now = Date.now();
-    const warm = this.warming.ping(room, asks);
+    const warm = this.warming.ping(burstOf(room, thread), asks);
+    const body = typingBody(warm, thread !== undefined);
+    if (body === null) return;
     if (!warm && now - (this.typed.get(room) ?? 0) < TYPING_PING_MS) return;
-    this.typed.set(room, now);
-    const body: ChatTyping | undefined = warm ? { warm: true } : undefined;
+    if (thread === undefined) this.typed.set(room, now);
     void call("POST", `/api/chat/rooms/${enc(room)}/typing`, body).catch(() => {});
   }
 
-  /** The composer in `room` was emptied (sent, or cleared): its burst is
-   * over, and its next `@arugula` warms again. */
-  composed(room: string) {
-    this.warming.ended(room);
+  /** The composer in `room` (or its reply thread `thread`) was emptied
+   * (sent, or cleared): its burst is over, and its next `@arugula` warms
+   * again. */
+  composed(room: string, thread?: number) {
+    this.warming.ended(burstOf(room, thread));
   }
 
   /** Whoever wrote a message has stopped typing it. */
