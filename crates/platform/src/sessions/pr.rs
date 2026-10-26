@@ -12,8 +12,10 @@
 //! - **Prefilled** ([`show`]): until the asker keeps one, the draft is
 //!   the repo's PR template (`.github/pull_request_template.md` and the
 //!   other places GitHub looks, read from the base branch with the App's
-//!   read token) and what the session's turns left: the commits, and the
-//!   last turn's diffstat. The title is the one commit's subject, or the
+//!   read token) and what the session's pushed turns left: the commits,
+//!   and the last pushed turn's diffstat. A later turn that didn't push
+//!   (its finish step failed, M261, or its push did) isn't on GitHub, so
+//!   it's left out. The title is the one commit's subject, or the
 //!   session's slug in words. The base is the repo's default branch. It's
 //!   a draft PR on GitHub unless the asker says not.
 //! - **Sent** ([`send`]) as a forge draft is: the browser hop for a
@@ -126,6 +128,14 @@ fn pushed(app: &Platform, s: &Session) -> anyhow::Result<bool> {
     Ok(turns(app, s)?.iter().any(|d| d.pushed == Some(true)))
 }
 
+/// The turns up to the last one that pushed: what's on GitHub. A turn
+/// after it didn't push, so its commits aren't in the PR.
+fn on_github(mut turns: Vec<SessionDetail>) -> Vec<SessionDetail> {
+    let kept = turns.iter().rposition(|d| d.pushed == Some(true)).map_or(0, |i| i + 1);
+    turns.truncate(kept);
+    turns
+}
+
 /// A ref GitHub takes as a branch's name.
 fn good_branch(b: &str) -> bool {
     !b.is_empty()
@@ -212,8 +222,8 @@ fn title_for(s: &Session, commits: &[String]) -> String {
     }
 }
 
-/// What the turns left, for the body: each commit once (newest first), and
-/// the last turn's diffstat.
+/// What the (pushed) turns left, for the body: each commit once (newest
+/// first), and the last turn's diffstat.
 fn summary(s: &Session, asker: &str, turns: &[SessionDetail]) -> (Vec<String>, String) {
     let mut commits: Vec<String> = vec![];
     for d in turns.iter().rev() {
@@ -244,7 +254,7 @@ async fn draft_view(app: &Platform, s: &Session, link: &LinkedRepo, account: &st
         return Ok(wire(&d, now_ms()));
     }
     let base = default_branch(app, link).await;
-    let turns = turns(app, s)?;
+    let turns = on_github(turns(app, s)?);
     let names = app.cache.accounts(&*app.hub, &[account.to_owned()]).await?;
     let asker = names.get(account).map(|a| a.name.clone()).unwrap_or_default();
     let (commits, said) = summary(s, &asker, &turns);
