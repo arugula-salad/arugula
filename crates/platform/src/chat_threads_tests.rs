@@ -444,3 +444,120 @@ async fn an_agent_replies_in_a_thread_and_reads_it() {
     assert_eq!(list(&base, "b").await[0]["thread"]["unread"], 1);
     assert_eq!(list(&base, "a").await[0]["thread"]["following"], false, "the owner didn't reply");
 }
+
+/// `@arugula` (M256) from a viewer, or from an editor who isn't on the
+/// hosted beta's list, starts nothing and says why in the thread; in a DM
+/// it says where it works. The word names nobody.
+#[tokio::test]
+async fn arugula_from_a_viewer_or_an_unlisted_member_starts_nothing() {
+    use crate::sessions_hydrate_tests::{lines, platform, post_in, sessions};
+    let (_hub, app, base, t, _u, _keys) = platform(&["https://github.com/o/app"]).await;
+    let p = post_in(&base, "ch_general", "x", "@arugula fix the canary", None).await;
+    assert_eq!(p["unreached"], json!([]), "{p}");
+    let p = p["seq"].as_i64().unwrap();
+    assert_eq!(
+        lines(&base, "ch_general", Some(p)).await,
+        ["@arugula needs an owner or editor of this project to ask: x can only view it."]
+    );
+    let q = post_in(&base, "ch_general", "y", "@arugula fix the canary", None).await["seq"].as_i64().unwrap();
+    assert_eq!(
+        lines(&base, "ch_general", Some(q)).await,
+        ["@arugula runs on hosted workspaces, which are in a limited beta: y isn't on its list yet."]
+    );
+    // A reply from someone who may doesn't pick up another's refused ask.
+    post_in(&base, "ch_general", "b", "dev", Some(p)).await;
+    assert!(sessions(&app, &t).is_empty());
+    // Nowhere but a project's threads.
+    let dm = crate::db::chat::Room {
+        id: "dm_ab".into(),
+        scope: "team:t".into(),
+        kind: "dm".into(),
+        name: "dm_ab".into(),
+        machine: None,
+        target: None,
+        created_by: "a".into(),
+        created: 1,
+        archived: None,
+        last_seq: 0,
+    };
+    app.db.add_chat_room(&dm, &["a", "b"], None).unwrap();
+    let d = post_in(&base, "dm_ab", "a", "@arugula hi", None).await["seq"].as_i64().unwrap();
+    assert_eq!(lines(&base, "dm_ab", Some(d)).await, [crate::chat::sessions::NOT_HERE], "in the message's thread");
+    assert!(sessions(&app, &t).is_empty());
+}
+
+/// A reply in a session's thread is a prompt, credited to its author, from
+/// the asker or any owner or editor; queued while a turn runs, and the
+/// session's job looks again at once. A viewer's reply is only chat.
+#[tokio::test]
+async fn a_reply_mid_turn_is_a_queued_prompt() {
+    use crate::{
+        db::sessions::{PromptState, State},
+        sessions_hydrate_tests::{platform, post_in, sessions, take},
+    };
+    let (_hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
+    let p = post_in(&base, "ch_general", "b", "@arugula fix the canary", None).await["seq"].as_i64().unwrap();
+    let s = sessions(&app, &t).pop().unwrap();
+    take(&app, &keys, &s.id);
+    assert_eq!(app.db.session(&s.id).unwrap().unwrap().state, State::Working);
+    post_in(&base, "ch_general", "a", "also check the logs", Some(p)).await;
+    post_in(&base, "ch_general", "x", "+1", Some(p)).await;
+    post_in(&base, "ch_general", "b", "and the flaky test", Some(p)).await;
+    // In the channel, not the thread: nothing to do with it.
+    post_in(&base, "ch_general", "a", "lunch?", None).await;
+    let prompts: Vec<(String, String, PromptState)> = app
+        .db
+        .session_prompts(&s.id)
+        .unwrap()
+        .into_iter()
+        .map(|p| (p.author, if p.text.len() > 40 { "<first>".into() } else { p.text }, p.state))
+        .collect();
+    assert_eq!(
+        prompts,
+        [
+            ("b".into(), "<first>".into(), PromptState::Sent),
+            ("a".into(), "also check the logs".into(), PromptState::Queued),
+            ("b".into(), "and the flaky test".into(), PromptState::Queued),
+        ]
+    );
+    let job = app.db.platform_job(&s.id).unwrap().unwrap();
+    assert!(job.next_at <= arugula_e2e::now_ms(), "nudged: {job:?}");
+}
+
+/// Several repos on the box: a line asks which, and the asker's reply
+/// naming one starts the session there; anyone else's, or one naming
+/// none, is chat. Several boxes and none chosen: asked first, the same
+/// way. No box: a line says to set one up.
+#[tokio::test]
+async fn arugula_asks_which_box_and_repo() {
+    use crate::sessions_hydrate_tests::{add_box, lines, platform, post_in, sessions};
+    let (_hub, app, base, t, _u, _keys) = platform(&["https://github.com/o/app", "https://github.com/o/web.git"]).await;
+    let p = post_in(&base, "ch_general", "b", "@arugula fix the canary", None).await["seq"].as_i64().unwrap();
+    let ask = "Which repo should @arugula work in on dev? Reply with one: o/app or o/web.";
+    assert_eq!(lines(&base, "ch_general", Some(p)).await, [ask]);
+    post_in(&base, "ch_general", "a", "web", Some(p)).await;
+    post_in(&base, "ch_general", "b", "hmm, not sure", Some(p)).await;
+    assert!(sessions(&app, &t).is_empty());
+    post_in(&base, "ch_general", "b", "web, please", Some(p)).await;
+    let s = sessions(&app, &t).pop().expect("started");
+    assert_eq!((s.repo.as_deref(), s.workspace.as_str(), s.parent_seq), (Some("o/web"), "hw_dev", p as u64));
+    assert_eq!(s.branch, format!("arugula/{}-fix-the-canary", s.id));
+    let said = lines(&base, "ch_general", Some(p)).await;
+    assert_eq!(said[1], "@arugula is starting a session for b on dev, in o/web. Replies here go to it.");
+
+    // A second box, none chosen: which box first, then which repo.
+    add_box(&app, &t, "hw_stage", "staging", &["https://github.com/o/app"], None);
+    let q = post_in(&base, "ch_general", "b", "@arugula deploy it", None).await["seq"].as_i64().unwrap();
+    let box_ask = "Which hosted workspace should @arugula run on? Reply with its name: dev or staging. (An owner or \
+                   editor can choose one for the project in its settings: agents run on.)";
+    assert_eq!(lines(&base, "ch_general", Some(q)).await, [box_ask]);
+    post_in(&base, "ch_general", "b", "staging", Some(q)).await;
+    let s = sessions(&app, &t).into_iter().find(|s| s.parent_seq == q as u64).expect("started on staging");
+    assert_eq!((s.workspace.as_str(), s.repo.as_deref()), ("hw_stage", Some("o/app")));
+
+    // No box at all.
+    crate::db::sql::Sql::execute(&app.db.c(), "UPDATE hosted_workspaces SET deleted_at = 1", crate::db::sql::params![])
+        .unwrap();
+    let r = post_in(&base, "ch_general", "b", "@arugula again", None).await["seq"].as_i64().unwrap();
+    assert_eq!(lines(&base, "ch_general", Some(r)).await, [crate::chat::sessions::NO_BOX]);
+}
