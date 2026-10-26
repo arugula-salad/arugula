@@ -26,6 +26,9 @@ import { SettingsPage } from "./pages/settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
 import { runs } from "./runs";
+import { runTitle } from "./runs-text";
+import { titleOf } from "./titles";
+import { barProject, where } from "./where";
 
 export function PlatformPage() {
   useSubscribe((fn) => session.subscribe(fn));
@@ -33,6 +36,7 @@ export function PlatformPage() {
   useEffect(() => void session.load(), []);
   useSlug(r);
   const lost = useFind(r);
+  useTitle(r);
   const s = session.state;
   if (s === null) return <Shell><p class="platform-section dim">Loading…</p></Shell>;
   if (s === "signed-out") return <SignIn />;
@@ -147,6 +151,29 @@ function useFind(r: Route): string | null {
     if (to) go(to, true);
   }, [to]);
   return lost;
+}
+
+/** The tab's title for the route (UI audit #159), as names arrive. */
+function useTitle(r: Route) {
+  useSubscribe((fn) => where.subscribe(fn));
+  const title = titleOf(r, {
+    project: (id) => session.project(id)?.name,
+    issue: (id) => issues.known(id),
+    run: (id) => {
+      const x = runs.known(id);
+      return x ? runTitle(x.op) : null;
+    },
+    room: (id) => {
+      const x = chat.room(id);
+      if (!x) return null;
+      if (x.kind === "channel") return `#${x.name}`;
+      // A DM by its people, unless it was renamed.
+      if (x.kind === "dm") return x.name || x.others.map((o) => o.name).join(", ") || x.with?.name;
+      return x.name;
+    },
+    shown: barProject(r),
+  });
+  useEffect(() => void (document.title = title), [title]);
 }
 
 /** Put the address's slugs right once the names are known: only the ids

@@ -11,7 +11,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { LinkedRepos } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { planBody, type Driver, type Environment } from "../deploys-text";
+import { historyPath, planBody, repoFor, type DeployHistory, type Driver, type Environment } from "../deploys-text";
 import { names } from "../links";
 import { follow, pathOf, REPO } from "../router";
 import { session } from "../session";
@@ -40,6 +40,11 @@ export function NewDeployPage({ project, env }: { project: string; env?: string 
   const [environment, setEnvironment] = useState(env ?? "");
   const [commit, setCommit] = useState("");
   const [repo, setRepo] = useState("");
+  // A repo typed by hand stays when the environment changes.
+  const [typed, setTyped] = useState(false);
+  // Where each environment's last deploy came from (null: none), for the
+  // repo it offers (UI audit #147).
+  const [lastFrom, setLastFrom] = useState<Record<string, string | null>>({});
   const [rollBack, setRollBack] = useState(false);
   const [planned, setPlanned] = useState<Deploy | null>(null);
   const [err, setErr] = useState("");
@@ -61,11 +66,25 @@ export function NewDeployPage({ project, env }: { project: string; env?: string 
       (v) => {
         const linked = v.repos.filter((r) => r.purge_after === null).map((r) => r.full_name);
         setRepos(linked);
-        setRepo((was) => was || linked[0] || "");
       },
       () => {},
     );
   }, [project]);
+  useEffect(() => {
+    if (!environment || environment in lastFrom) return;
+    const known = (where: string | null) => setLastFrom((m) => ({ ...m, [environment]: where }));
+    call<DeployHistory>("GET", historyPath(project, environment, 1)).then(
+      (v) => {
+        const s = v.deploys[0]?.source;
+        known(s?.kind === "commit" && REPO.test(s.where) ? s.where : null);
+      },
+      () => known(null),
+    );
+  }, [project, environment]);
+  const envName = envs?.find((e) => e.id === environment)?.name;
+  useEffect(() => {
+    if (!typed && environment in lastFrom) setRepo(repoFor(envName, repos, lastFrom[environment]));
+  }, [environment, envName, repos, lastFrom, typed]);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const settings = pathOf({ page: "project-settings", project: p.id }, names);
   const back = (
@@ -138,7 +157,17 @@ export function NewDeployPage({ project, env }: { project: string; env?: string 
           </label>
           <label>
             Repo
-            <input required list="deploy-repos" placeholder="OWNER/NAME" value={repo} data-deploy-repo onInput={(e) => setRepo(e.currentTarget.value)} />
+            <input
+              required
+              list="deploy-repos"
+              placeholder="OWNER/NAME"
+              value={repo}
+              data-deploy-repo
+              onInput={(e) => {
+                setRepo(e.currentTarget.value);
+                setTyped(true);
+              }}
+            />
             <datalist id="deploy-repos">
               {repos.map((r) => (
                 <option key={r} value={r} />

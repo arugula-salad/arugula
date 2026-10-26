@@ -30,10 +30,14 @@ export function PlaceUnread({ project, prefix }: { project: string; prefix: "iss
   const { n, mention } = projectUnread(chat.rooms, project, prefix);
   if (!n) return null;
   const what = prefix === "iss_" ? "issues'" : "runs'";
-  const title = `${n} new in this project's ${what} threads${mention ? ", mentioning you" : ""}`;
+  const title = `${n} unread in this project's ${what} threads${mention ? ", mentioning you" : ""}`;
+  // The rows' mark, a dot before the count, so "Issues 29" doesn't read
+  // as 29 issues (UI audit #159); a reader hears the title.
   return (
-    <span class={mention ? "chat-count mention" : "chat-count"} title={title} aria-label={title} data-place-unread={n}>
-      {mention ? `@${n}` : n}
+    <span class={mention ? "thread-unread place-unread mention" : "thread-unread place-unread"} title={title} data-place-unread={n}>
+      <span class="thread-unread-dot" aria-hidden="true" />
+      <span aria-hidden="true">{mention ? `@${n}` : n}</span>
+      <span class="place-unread-said">{title}</span>
     </span>
   );
 }

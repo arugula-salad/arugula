@@ -63,6 +63,47 @@
   margin-left: 8px;
 }
 
+/* On /, the wordmark is the place you're in (UI audit #159). */
+.platform-bar .ws-wordmark[aria-current="page"] {
+  background: var(--chrome-selected);
+}
+
+/* The middle of the bar gives way before the account does (UI audit
+   #159): the search narrows and the places scroll, so the account stays
+   at the right edge (chat's search pushed it off at ~970px). */
+.platform-bar .places {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+/* The search gives way first (its shrink outweighs the places'), down
+   to its least, and then the places scroll. */
+.platform-bar .chat-search {
+  flex-shrink: 100;
+  min-width: 80px;
+}
+
+.platform-bar .platform-shell,
+.platform-bar .platform-me {
+  flex: none;
+}
+
+/* What's unread in a project's issues' or runs' threads, on its place:
+   the rows' dot and count (./thread-unread.tsx). */
+.frame-place .place-unread {
+  margin: 0 0 0 6px;
+}
+
+.place-unread-said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* The desktop app on macOS: its buttons sit over the head's left end,
    before the wordmark (the shell's rail is under them instead). */
 html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
