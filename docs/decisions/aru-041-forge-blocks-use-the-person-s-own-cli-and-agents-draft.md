@@ -75,5 +75,13 @@ back to their machine". So is an agent's native comment on an issue exported
 to GitHub, which stays native until it's sent ("Taking custody of issues
 stays reversible"). MCP's tool descriptions say which is which, so an agent
 knows when a person must send.
+
+**A session's box may push its own branch** (thread = session, Arugula
+#129). An agent session on a project's hosted box pushes
+`arugula/<session>-<slug>`, and only that ref, with an installation token
+minted for each push and never written to disk. That's the one push a
+machine makes. The PR stays a draft the session's asker sends, with their
+one-use user token: machines never send, merge or approve ("A thread's agent
+session runs on the project's hosted box").
 Where: `crates/daemon/src/forge/`.
 From: [Forge track](docs/plan-archive.md#forge-track-s23-m36m40-added-2026-10-02), [M36](docs/plan-archive.md#m36-forgejo-pull-request-blocks-88), #457, #1204 (step 4), M159 (#1205), M168 (#1214), #1263 (step 6), M193 (#1264), M200 (#1271), M205 (#1276).

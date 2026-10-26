@@ -1,0 +1,113 @@
+---
+schema: 1
+id: "aru-115"
+title: "A thread's agent session runs on the project's hosted box"
+state: "decided"
+area: "Agents and blocks"
+source:
+  via: "cli"
+  issue: "arugula-salad/arugula#1438"
+question: "What does @arugula in a thread do, where does the agent it starts run, as whom, and what may it push?"
+options:
+  - id: "a"
+    label: "@arugula starts a session on the project's hosted box, as the asker on the project's key; it pushes only its own arugula/ branch, and the PR stays a draft the asker sends"
+    how: "A mention of @arugula in a project's thread makes an agent session (ses_), a platform object: an ACP agent block on the hosted box the project's agents run on, in a worktree of its own, as its own Unix user on the box. It runs as the asker, on the project's key, under the project's standing grant's runs.instruct. Each reply in the thread is a prompt that starts its next turn. The box reports each state change, question, error and turn's result to the platform, signed. It pushes arugula/<session>-<slug> with an installation token minted for that one push, and opens nothing: the PR is a draft its asker sends. The session's status card is the one card a chat timeline shows."
+    tradeoff: "Only projects with a hosted box get agents in their threads, and every session costs box time and the project's model use."
+  - id: "b"
+    label: "@ wakes an agent on any machine, personal ones included"
+    how: "A mention of a machine's agents, or of @arugula, starts a turn on whichever machine the mention names, the mentioner's or a teammate's."
+    tradeoff: "Anyone in a thread could make a teammate's computer run an agent, with that teammate's credentials and files, while they're away."
+  - id: "c"
+    label: "Keep aru-091 as it was: mentions are read, nothing dispatches"
+    how: "An agent reads its mentions over MCP when its person runs it, and people start and link agents themselves."
+    tradeoff: "A thread can't ask for work; someone has to be at a machine to start each turn and carry the answer back."
+  - id: "d"
+    label: "The box pushes and opens the PR itself"
+    how: "The session's box gets a token that may push any branch and open or update the PR, and the platform shows what it did."
+    tradeoff: "A machine would act on GitHub as the project with nobody sending it, against \"agents draft, people send\", and a token that pushes any ref can push to main."
+choice:
+  option: "a"
+  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129."
+rejected:
+  - option: "b"
+    why: "Agents on personal machines are never woken by other people's mentions: a person's machine runs what its person starts."
+  - option: "c"
+    why: "Superseded for hosted boxes by Jake's thread = session. On personal machines it still holds."
+  - option: "d"
+    why: "Machines never send, merge or approve (\"Forge blocks use the person's own CLI, and agents draft while people send\"); a session's token pushes its own branch only."
+supersedes: []
+evidence:
+  - title: "#1438"
+    url: "https://github.com/arugula-salad/arugula/issues/1438"
+  - title: "Arugula #129"
+    url: "https://app.arugula.io/issues/iss_c2af265d6402c7a2f22e8d24154fb215"
+  - title: "Arugula #130"
+    url: "https://app.arugula.io/issues/iss_e2a536bc47833538c4a29793052acbc1"
+  - title: "Arugula #131"
+    url: "https://app.arugula.io/issues/iss_9eac7586846748abea4bf7264dfd9771"
+decided_by: "jhgaylor"
+decided_on: "2026-10-25"
+reviews: []
+constrains:
+  - "aru-091"
+  - "aru-041"
+  - "path:crates/platform/src/db/sessions.rs"
+  - "path:crates/platform/migrations"
+  - "path:crates/e2e/src/session.rs"
+  - "path:crates/control-wire/src/work.rs"
+  - "path:crates/platform/src/chat/objects.rs"
+---
+
+# A thread's agent session runs on the project's hosted box
+
+A thread can ask for work (Jake, 2026-10-25, thread = session, Arugula #129).
+Writing `@arugula` in a project's thread starts an **agent session**: a
+platform object (`ses_`), like a run, that lives across many turns. Each
+reply in the thread is a prompt that starts its next turn. This amends
+"Agents are in conversations" and "Forge blocks use the person's own CLI, and
+agents draft while people send".
+
+- **It dispatches, on hosted project boxes only.** `@arugula` is the one
+  mention that starts work, and only on the project's hosted box ("A hosted
+  machine is arugulad in a rented sandbox"). Agents on personal machines
+  are never woken by other people's mentions: on them, mentions are still
+  read, not pushed. `@arugula` comes first; `@<recipe>` (a project recipe's
+  agent) comes later.
+- **One card in the timeline.** The session's status card is the one card
+  kind a chat timeline shows; everything else in it stays a message.
+- **It runs as the asker, on the project's key.** The session is the
+  asker's: it acts for them, under their access. Its model use is on the
+  project's key ("Hosted inference: strangers bring their own key"), and its
+  box time is the project's workspace's, metered as hosted usage already is.
+  Nobody else's credentials or subscription are used.
+- **The grant is the project's standing `runs.instruct`** ("One standing
+  grant per project starts runs"): no new grant kind.
+- **Which box:** the project's setting "agents run on `<hw_>`". With none
+  chosen it's the project's only workspace; with several, the agent asks
+  in the thread which one.
+- **On the box:** an ACP agent block, as its own Unix user, in a worktree of
+  its own, at most three sessions with a turn under way per box. How the
+  user and the worktree are set up is the box's to settle (S42).
+- **Untrusted text.** A project member's text goes into a prompt plain.
+  Text from GitHub (a review, a comment, a check's log) goes in fenced as
+  quoted data, saying whose it is and its `author_association`, so the
+  agent weighs it and doesn't follow it.
+- **The push path.** The box pushes `arugula/<session>-<slug>`, the
+  session's one branch, with a short-lived installation token minted for
+  each push and never written to disk. Any other ref is refused. Machines
+  never send, merge or approve: the PR is still a draft the **asker**
+  sends, with their one-use user token ("Sending as a person uses a one-use
+  user token, falling back to their machine").
+- **Signed and append-only.** The box signs everything it reports of a
+  session (`arugula session event v1`), numbered so a report can't be
+  replayed, and the platform keeps each state change, error and turn's
+  result as an append-only event, as run events are ("A run is a platform
+  object on a hosted workspace"). The platform marks a session whose box
+  goes quiet for 60 s mid-turn `unresponsive`, until it's heard from again.
+
+What doesn't change: agents on people's machines read and post through
+their machine's grants ("Agents are in conversations"), an agent's
+"approve" is never an approval, and an agent's GitHub write from a person's
+machine is still a draft its person sends.
+Where: the sessions tables and their rules (`crates/platform/src/db/sessions.rs`, migration `0049_agent_sessions`), the states and the signed event (`crates/e2e/src/session.rs`), what the box pulls and reports (`crates/control-wire/src/work.rs`), sessions as objects (`crates/platform/src/chat/objects.rs`); dispatch (M256) and the card (M257) follow.
+From: thread = session (Arugula #129, native, behind #1438), M254 (Arugula #131), S42 (Arugula #130).

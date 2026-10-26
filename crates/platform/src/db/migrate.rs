@@ -386,6 +386,12 @@ const SQLITE: &[Migration] = &[
     },
     Migration {
         version: 49,
+        name: "agent_sessions",
+        sql: include_str!("../../migrations/sqlite/0049_agent_sessions.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 49,
         name: "hosted_waking",
         sql: include_str!("../../migrations/sqlite/0049_hosted_waking.sql"),
         additive: true,
@@ -683,6 +689,12 @@ const POSTGRES: &[Migration] = &[
         name: "chat_channel_members",
         sql: include_str!("../../migrations/postgres/0048_chat_channel_members.sql"),
         additive: false,
+    },
+    Migration {
+        version: 49,
+        name: "agent_sessions",
+        sql: include_str!("../../migrations/postgres/0049_agent_sessions.sql"),
+        additive: true,
     },
     Migration {
         version: 49,
