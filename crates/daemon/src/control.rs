@@ -189,6 +189,11 @@ pub struct HostedPin {
     /// never stops being one.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub deploy: bool,
+    /// A box made to build a workspace's snapshot (M263, `purpose:
+    /// snapshot`): nobody gets in, it takes no runs or sessions, and after
+    /// its setup it wipes itself for the snapshot. It never stops being one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub builder: bool,
     /// The project owners' browsers and phones that grandfathered app
     /// windows approved, by account (`arugula_e2e::deploy::check_apply`):
     /// the first set control sent, and since then only what every later
@@ -4226,6 +4231,7 @@ pub(crate) mod tests {
                 delegation: d,
                 revocations: vec![],
                 deploy: false,
+                builder: false,
                 legacy_app_children: None,
             }),
             ..team_saved.clone()
@@ -4339,6 +4345,7 @@ pub(crate) mod tests {
                 delegation: d,
                 revocations: vec![],
                 deploy: false,
+                builder: false,
                 legacy_app_children: None,
             }),
             ..team_saved.clone()

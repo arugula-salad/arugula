@@ -420,6 +420,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "instant-acme",
+ "memchr",
  "nix",
  "p256",
  "percent-encoding",

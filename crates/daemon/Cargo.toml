@@ -53,6 +53,8 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 x509-parser = "0.18.1"
 tower = { version = "0.5.3", features = ["util"] }
 hex = { workspace = true }
+# A hosted builder's wipe (M263) looks for its secrets through the disk.
+memchr = "2.8.3"
 url = { workspace = true }
 webpki-root-certs = { workspace = true }
 zstd = { workspace = true }
