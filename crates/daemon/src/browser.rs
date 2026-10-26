@@ -274,7 +274,9 @@ impl Browser {
         });
     }
 
-    /// The page couldn't be loaded: ask for you, and for a port, keep trying.
+    /// The page couldn't be loaded: say why on the block, and for a port,
+    /// keep trying. It's an error on the block, not something that needs
+    /// you: a dev server that stopped isn't a question (UI audit #154).
     fn failed(&self, epoch: u64, url: &str, error: String) {
         info!(block = self.ctx.id, url, error, "page didn't load");
         {
@@ -283,7 +285,7 @@ impl Browser {
             st.error = Some(error.clone());
         }
         self.log(&json!({ "e": "load_error", "url": url, "error": error }));
-        self.ctx.attention(Attention::NeedsInput, format!("couldn't load {url}: {error}"));
+        self.ctx.attention(Attention::Idle, format!("couldn't load {url}: {error}"));
         self.ctx.event(EventKind::LoadError { url: url.to_owned(), error });
         self.ctx.changed();
         if matches!(*self.page.lock().unwrap(), Page::Port { .. }) {

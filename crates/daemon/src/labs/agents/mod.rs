@@ -546,14 +546,20 @@ async fn recipes_all(State(app): AppState, who: Option<axum::Extension<Principal
     if !owner(&who) {
         return refuse(StatusCode::FORBIDDEN, "the owner's");
     }
-    // The repositories this machine's own panes are in.
     let panes = app.mux.api(crate::mux::Api::Panes).await.unwrap_or_default();
-    let open: Vec<String> = panes
-        .iter()
-        .filter(|p| p.info.host.is_none())
-        .filter_map(|p| p.info.project.as_ref().map(|x| x.root.clone()))
-        .collect();
+    let open = open_projects(panes.iter().map(|p| &p.info));
     Json(manage::every(app.control.state_dir(), &home(&app), &open)).into_response()
+}
+
+/// The repositories this machine's own panes work in: only terminals and
+/// agents, which have a working directory here. A PR or issue block's
+/// project is its forge's URL, not a folder (UI audit #155).
+fn open_projects<'a>(panes: impl Iterator<Item = &'a arugula_proto::PaneInfo>) -> Vec<String> {
+    panes
+        .filter(|p| p.host.is_none())
+        .filter(|p| matches!(p.kind, arugula_proto::BlockType::Terminal | arugula_proto::BlockType::Agent))
+        .filter_map(|p| p.project.as_ref().map(|x| x.root.clone()))
+        .collect()
 }
 
 /// Write a recipe from the page's form: this machine's own account's.
@@ -930,6 +936,28 @@ mod tests {
             let r: RunReq = serde_json::from_value(serde_json::json!({ "agent": "a", key: true })).unwrap();
             assert!(r.managoat, "{key}");
         }
+    }
+
+    /// A PR block's project (a forge URL) isn't a project on the page;
+    /// a terminal's and an agent's are, and another machine's aren't.
+    #[test]
+    fn projects_come_from_terminals_and_agents() {
+        let pane = |kind: &str, root: &str, host: Option<u32>| -> arugula_proto::PaneInfo {
+            serde_json::from_value(serde_json::json!({
+                "id": 1, "epoch": 1, "cwd": null, "command": null, "running": true,
+                "policy": { "kind": "shell" }, "type": kind, "host": host,
+                "project": { "root": root, "name": "x" },
+            }))
+            .unwrap()
+        };
+        let panes = [
+            pane("terminal", "/src/a", None),
+            pane("agent", "/src/b", None),
+            pane("forge", "https://github.com/o/r", None),
+            pane("browser", "/src/c", None),
+            pane("terminal", "/src/d", Some(2)),
+        ];
+        assert_eq!(open_projects(panes.iter()), ["/src/a", "/src/b"]);
     }
 
     #[test]

@@ -24,6 +24,7 @@ import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
 import { GateWhy } from "../ui/gate-why";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
+import { finished, needsYou, NEEDS_YOU } from "../../shared/needs-you";
 import { activityOf, bundleOf, cardTitle, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
@@ -251,7 +252,7 @@ export function SwarmView({
             : `%${p.id} ${whatItDoes(p)}`,
           where: p.host,
           lastOut: p.info.activity?.last_ms ?? 0,
-          att: r && wanting.has(p.key) ? { col: REASON_COL[r.kind], bundle: onRail.get(p.key) ?? null, since: r.since_ms } : null,
+          att: r && wanting.has(p.key) ? { col: REASON_COL[r.kind], bundle: onRail.get(p.key) ?? null, since: r.since_ms, need: needsYou(p.info) } : null,
           id: p.id,
           sub: by === "machine" ? (p.info.project?.name ?? groupOf(p, "project")) : p.host,
           bps: p.stale ? 0 : (p.info.activity?.bps ?? 0),
@@ -398,9 +399,11 @@ export function SwarmView({
   // Every machine the host menu lists, not only those with panes here.
   const machines = fleet.list.length;
   const busy = panes.filter((p) => activityOf(p) > 0.3).length;
-  // What's on the rail (or waiting for room on it): a finished card that
-  // left it stops counting, here and in the views.
-  const need = wanting.size;
+  // What needs you, as the bell counts it (shared/needs-you); finished
+  // cards on the rail (or waiting for room on it) count apart, as finished
+  // (UI audit #154).
+  const need = panes.filter((p) => needsYou(p.info)).length;
+  const done = bundles.reduce((n, b) => n + b.panes.filter((p) => finished(p.info)).length, 0);
   const clusters = field.current?.clusters ?? [];
 
   return (
@@ -430,6 +433,11 @@ export function SwarmView({
           <div class="needs">
             <b data-stat="need">{need}</b>need you
           </div>
+          {done > 0 && (
+            <div>
+              <b data-stat="finished">{done}</b>finished
+            </div>
+          )}
         </div>
         <div class="swarm-spacer" />
         <div>
@@ -493,7 +501,7 @@ export function SwarmView({
 
       <aside class="swarm-rail" aria-label="Needs you" ref={rail}>
         <header>
-          <h2>Needs you</h2>
+          <h2>{NEEDS_YOU}</h2>
 
         </header>
         <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>

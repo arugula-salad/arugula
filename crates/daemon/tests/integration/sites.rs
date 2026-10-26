@@ -233,18 +233,19 @@ async fn a_port_through_its_own_site() {
     assert_eq!(r.send().await.unwrap().status(), 200);
     d.wait_for("navigated", || d.get(&format!("/api/blocks/{id}"))["state"]["path"] == "/headers?x=1");
 
-    // The server dies: the block asks for you, and says why.
+    // The server dies: the block says why, an error on it, not attention
+    // (UI audit #154).
     server.abort();
     let _ = server.await;
     // (A new connection: an old one may still reach the dying server.)
     let r = client(&host, d.block_port).get(&url).send().await.unwrap();
     assert_eq!(r.status(), 502);
-    d.wait_for("needs input", || d.get(&format!("/api/blocks/{id}"))["info"]["attention"] == "needs_input");
-    assert!(d.get(&format!("/api/blocks/{id}"))["state"]["error"].as_str().unwrap().contains("nothing is answering"));
+    d.wait_for("the error", || d.get(&format!("/api/blocks/{id}"))["state"]["error"].as_str().is_some_and(|e| e.contains("nothing is answering")));
+    assert_eq!(d.get(&format!("/api/blocks/{id}"))["info"]["attention"], "idle");
     // ...and lets go when it's back.
     let _server = dev_server(dev_port).await;
-    d.wait_for("back", || d.get(&format!("/api/blocks/{id}"))["info"]["attention"] == "idle");
-    assert_eq!(d.get(&format!("/api/blocks/{id}"))["state"]["error"], Value::Null);
+    d.wait_for("back", || d.get(&format!("/api/blocks/{id}"))["state"]["error"] == Value::Null);
+    assert_eq!(d.get(&format!("/api/blocks/{id}"))["info"]["attention"], "idle");
 
     let kinds = |t: &str| {
         events.lock().unwrap().iter().filter(|e| e["pane"] == id && e["type"] == t).cloned().collect::<Vec<_>>()

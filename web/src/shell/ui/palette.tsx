@@ -30,6 +30,7 @@ import type { DocRow } from "../../shared/proto";
 import { askText, closeMenu, type MenuItem } from "../../shared/ui/menu";
 import { ariaKeys, keyHint } from "./keys";
 import { newTabItems, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
+import { needsYou } from "../../shared/needs-you";
 
 export interface Command {
   /** Stable enough to remember as a recent pick. */
@@ -225,7 +226,7 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   }
 
   // The swarm, and the next pane that wants you after the active one.
-  const wanting = state.panes.filter((p) => p.attention === "needs_input").map((p) => p.id);
+  const wanting = state.panes.filter(needsYou).map((p) => p.id);
   const next: PaneId | undefined = wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
   out.push({ key: "Swarm/open", group: "Swarm", label: "Open the swarm", run: openSwarm });
   if (hasChat()) out.push({ key: "Chat/open", group: "Chat", label: "Open chat: every thread", run: () => openChat() });
