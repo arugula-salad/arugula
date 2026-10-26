@@ -11,6 +11,7 @@ import type { MenuItem } from "../../shared/ui/menu";
 import { keyChanged, keyChangeSeen, personPin, pinPerson, verifyPerson, type ControlSession } from "../control";
 import { readVerifyCode, verifyWords } from "../e2e/words.ts";
 import { ConfirmRemove } from "../../shared/ui/confirm";
+import { Time } from "../../shared/ui/time";
 import { CopyText } from "../../shared/ui/copy";
 import { countView } from "../../shared/telemetry";
 import { canScan, Scanner } from "./scan";
@@ -240,11 +241,6 @@ interface Person {
   root: string;
 }
 
-/** "Oct 1", with the year only when it isn't this one. */
-const day = (ms: number) => {
-  const d = new Date(ms);
-  return d.toLocaleDateString(undefined, d.getFullYear() === new Date().getFullYear() ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
-};
 
 /** #763: verify someone you share with, if you want to: scan the code in
  * their Devices and machines…, or compare its words. Off the main path:
@@ -586,8 +582,14 @@ export function ShareDialog({ client }: { client: Client }) {
               <b>⚠ {changed.who}'s account key changed since you first shared with them.</b>
             </p>
             <p class="dim">
-              {changed.first ? `You first shared on ${day(changed.first)}. ` : ""}Control has given a different key since {day(changed.seen)}. Nothing was
-              shared.
+              {changed.first ? (
+                <>
+                  You first shared <Time at={changed.first} on />.{" "}
+                </>
+              ) : (
+                ""
+              )}
+              Control has given a different key since <Time at={changed.seen} on />. Nothing was shared.
             </p>
             <div class="prompt-buttons">
               <button class="secondary" onClick={() => setChanged(null)}>Cancel</button>

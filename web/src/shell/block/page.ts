@@ -61,7 +61,7 @@ const ASK_EVERY_MS = 300;
  * this frame (seen live on control.arugula.io, #150). */
 export function askParent(origins: string[], ask: Ask["ask"], timeoutMs = 10_000): Promise<Held> {
   return new Promise((res, rej) => {
-    if (parent === window) return rej(new Error("a block opens inside Arugula control's page"));
+    if (parent === window) return rej(new Error("a block opens inside Control"));
     const done = (f: () => void) => {
       clearTimeout(t);
       clearInterval(again);

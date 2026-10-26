@@ -133,7 +133,7 @@ fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Resul
                 (Some(r), _) if r.team == team => (r, &e.saved.team_certs),
                 (_, Some(t)) => (&t.roster, &t.certs),
                 _ => anyhow::bail!(
-                    "its team isn't one this machine knows: open control's page in a browser of this account once, which pins your teams here"
+                    "its team isn't one this machine knows: open Control in a browser of this account once, which pins your teams here"
                 ),
             };
             accept(me, &cert, &d, &revokes, &Owners::Team { roster, certs })

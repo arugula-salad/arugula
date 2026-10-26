@@ -16,8 +16,8 @@
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-radius: 0 0 14px 14px;
-  box-shadow: 0 10px 30px #000a;
+  border-radius: 0 0 var(--panel-radius) var(--panel-radius);
+  box-shadow: var(--shadow-lg);
   font-size: 15px;
 }
 
@@ -26,7 +26,7 @@
   .sheet {
     right: auto;
     width: 520px;
-    border-radius: 0 0 14px 0;
+    border-radius: 0 0 var(--panel-radius) 0;
   }
 }
 
@@ -58,7 +58,7 @@
 
 .sheet-group {
   padding-top: 8px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .sheet-panel > .sheet-group:first-child {
@@ -96,6 +96,7 @@
 
 /* Close pane and Close tab: the danger styling the old bottom block had. */
 .sheet-actions .danger {
+  color: var(--danger);
   background: none;
   border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent);
 }
@@ -107,8 +108,8 @@
   gap: 2px;
   margin: 0 10px 10px;
   padding: 3px;
-  border: 1px solid var(--divider);
-  border-radius: 999px;
+  border: 1px solid var(--line);
+  border-radius: var(--chip-radius);
   background: var(--bg);
 }
 
@@ -117,7 +118,7 @@
   flex: 1;
   min-height: 44px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   color: var(--dim);
   font: 500 12px/1 var(--f-mono);
   text-transform: uppercase;

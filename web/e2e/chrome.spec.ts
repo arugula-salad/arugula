@@ -69,7 +69,9 @@ test.describe("on a computer", () => {
     await expect(r.locator(".att")).toBeVisible();
     for (const width of [200, 248, 380]) {
       await page.locator(".ws-sidebar").evaluate((el, w) => { el.style.width = `${w}px`; }, width);
-      for (const time of ["now", "59m ago", "123d ago"]) {
+      // The shared time words (UI audit #182): the shortest, a long one,
+      // and a day with its year.
+      for (const time of ["just now", "59m ago", "Dec 31, 2025"]) {
         await r.locator(".ws-session-ago").evaluate((el, t) => { el.textContent = t; }, time);
         const boxes = await Promise.all([".ws-session-ago", ".att", ".ws-session-more"].map((s) => r.locator(s).boundingBox()));
         const [ago, badge, more] = boxes.map((b) => b!);
@@ -106,14 +108,14 @@ test.describe("on a computer", () => {
 
     await rail.locator("[data-open-swarm]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("#swarm");
-    await expect(rail.locator("[data-open-swarm]")).toHaveAttribute("aria-pressed", "true");
+    await expect(rail.locator("[data-open-swarm]")).toHaveAttribute("aria-current", "page");
     await expect(rail.locator("[data-open-swarm]")).toHaveAttribute("aria-label", /all machines/);
     // The swarm's bar leaves the places to the rail.
     await expect(page.locator(".app-bar .places")).toHaveCount(0);
 
     await rail.locator("[data-open-panes]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
-    await expect(rail.locator("[data-open-panes]")).toHaveAttribute("aria-pressed", "true");
+    await expect(rail.locator("[data-open-panes]")).toHaveAttribute("aria-current", "page");
     expect((await tab(page)).id).toBe(t);
     expect(await active(page)).toBe(pane);
 
@@ -382,7 +384,7 @@ test.describe("accessibility", () => {
 
     // The terminal has the keys; the palette moves them to the tabs.
     await page.keyboard.press("Control+Shift+KeyP");
-    await expect(page.getByRole("textbox", { name: "Command", exact: true })).toBeFocused();
+    await expect(page.getByRole("combobox", { name: "Command", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the tabs");
     await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the tabs");
     await page.keyboard.press("Enter");
@@ -399,7 +401,7 @@ test.describe("accessibility", () => {
     await expect.poll(() => tab(page).then((t) => t.id)).toBe(t1);
     // A state change doesn't take the keys from a tab a keyboard is on.
     await page.keyboard.press("Control+Shift+KeyP");
-    await expect(page.getByRole("textbox", { name: "Command", exact: true })).toBeFocused();
+    await expect(page.getByRole("combobox", { name: "Command", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the tabs");
     await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the tabs");
     await page.keyboard.press("Enter");
@@ -409,7 +411,7 @@ test.describe("accessibility", () => {
     await expect(page.locator(`[data-tab-id="${t1}"]`)).toBeFocused();
     // And the sidebar: the palette puts the keys in its search.
     await page.keyboard.press("Control+Shift+KeyP");
-    await expect(page.getByRole("textbox", { name: "Command", exact: true })).toBeFocused();
+    await expect(page.getByRole("combobox", { name: "Command", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the sessions");
     await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the sessions");
     await page.keyboard.press("Enter");

@@ -1484,7 +1484,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "cloud",
             title: "Drive a Cloud workspace",
-            description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on control's page.",
+            description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.",
             args: Args::Kinds { kinds: table(super::cloud::DRIVE), default: None },
             read_only: false,
             destructive: true,
@@ -1915,7 +1915,7 @@ pub struct Call<'a> {
     client: String,
     progress: Option<ProgressToken>,
     /// The MCP request, when there is one: a call another machine sends
-    /// for a hosted workspace (M184, `hosted.rs`) has none, so no progress
+    /// for a cloud workspace (M184, `hosted.rs`) has none, so no progress
     /// and no headers.
     ctx: Option<RequestContext<RoleServer>>,
 }
@@ -3931,7 +3931,9 @@ impl Call<'_> {
     /// owner, or the agent that did. An agent a guest stands behind may
     /// not ask at all.
     async fn started_text(&self) -> Result<String, String> {
-        let Some(me) = self.me() else { return Ok("your own client".into()) };
+        // Not in a pane: the person's own client, whose card needs no
+        // more than the pane it names (UI audit #178).
+        let Some(me) = self.me() else { return Ok(String::new()) };
         if self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some() {
             return Err("only the owner's own agents may ask to invite someone".into());
         }

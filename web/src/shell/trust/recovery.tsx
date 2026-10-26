@@ -1,7 +1,7 @@
 // The account's recovery codes (M17): the form that uses one on a browser
 // no device can approve, the codes shown once to keep, and the count left
-// with Make new codes, beside the account's name (#102) in Sign-in and
-// account.
+// with Make new codes, in Sign-in and account, under the account's name
+// (#102).
 
 import { useState } from "preact/hooks";
 import { CopyButton, CopyText, download } from "../../shared/ui/copy";
@@ -9,8 +9,9 @@ import { Modal } from "../../shared/ui/modal";
 import type { ControlSession } from "../control";
 import { PasskeyNudge } from "./devices";
 
-/** What other people see (#102), changed in place. */
-function NameLine({ s }: { s: ControlSession }) {
+/** What other people see (#102), changed in place: Sign-in and account's
+ * own row under its title (UI audit #174: it sat under Recovery codes). */
+export function NameLine({ s }: { s: ControlSession }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(s.name);
   const [err, setErr] = useState("");
@@ -88,11 +89,11 @@ export function RecoveryCodes({ s }: { s: ControlSession }) {
       <p>If you lose every device that can approve new ones, one of these lets a new browser in. Each works once. Keep them somewhere safe and offline: they're shown only now, and this service never had them.</p>
       {s.recoveryCodes!.map((c) => (
         <p key={c}>
-          <CopyText text={c} data-recovery-code />
+          <CopyText text={c} groups data-recovery-code />
         </p>
       ))}
       <div class="prompt-buttons">
-        <CopyButton text={all} label="Copy both" />
+        <CopyButton text={all} label="Copy all" />
         <button class="secondary" data-download-codes onClick={() => download("arugula-recovery-codes.txt", all)}>
           Download .txt
         </button>
@@ -111,9 +112,9 @@ export function RecoveryCodes({ s }: { s: ControlSession }) {
   );
 }
 
-/** The account's recovery codes and its name: Sign-in and account's, with
- * the passkeys (they were at the foot of Devices and machines). */
-export function RecoveryAndName({ s }: { s: ControlSession }) {
+/** The account's recovery codes: Sign-in and account's, with the passkeys
+ * (they were at the foot of Devices and machines). */
+export function RecoveryLeft({ s }: { s: ControlSession }) {
   const [renewing, setRenewing] = useState(false);
   const [err, setErr] = useState("");
   const left = s.recoveryLeft;
@@ -139,7 +140,6 @@ export function RecoveryAndName({ s }: { s: ControlSession }) {
           {renewing ? "Make new ones" : "Make new codes"}
         </button>
       </p>
-      <NameLine s={s} />
       {err ? <p class="control-error">{err}</p> : null}
     </>
   );

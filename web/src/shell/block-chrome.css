@@ -1,33 +1,183 @@
-/* Shared embedded-pane chrome: keep controls subordinate to pane identity. */
+/* Shared embedded-pane chrome: keep controls subordinate to pane identity.
+   UI audit #177: one bar for every block, the same height and buttons,
+   the team chat's and the workspace graph's too (they ran 33-45px, each
+   with its own buttons). */
 .browser-bar,
 .agent-bar,
-.review-bar {
-  min-height: 34px;
+.review-bar,
+.chat-block-bar,
+.ws-graph-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  height: 36px;
+  min-height: 36px;
+  flex: none;
   box-sizing: border-box;
   gap: 8px;
-  padding: 5px 10px;
+  padding: 0 10px;
   background: var(--surface);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   color: var(--subtle);
   font-size: 12px;
+  white-space: nowrap;
 }
 
-.browser-bar button,
-.browser-open,
-.agent-bar button,
-.review-bar button {
-  border: 1px solid var(--divider);
-  border-radius: 5px;
+/* Its plain buttons and selects, alike (the ↻, ←, Resume, an env); a
+   primary or secondary in a bar keeps its own look. */
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:not(.primary):not(.secondary):not(.link),
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field),
+.block-open {
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--btn-radius);
   background: var(--bg);
   color: var(--subtle);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
 }
 
-.browser-bar button:hover:not(:disabled),
-.browser-open:hover,
-.agent-bar button:hover,
-.review-bar button:hover {
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field) {
+  display: inline-block;
+  padding: 0 4px;
+}
+
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:not(.primary):not(.secondary):not(.link):hover:not(:disabled),
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field):hover:not(:disabled),
+.block-open:hover {
   background: var(--raised);
   color: var(--fg);
+}
+
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:disabled,
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field):disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Which way a port or editor went (M50), in its bar now (UI audit #177),
+   not floating over the page's corner. */
+.browser-bar .block-route,
+.editor-bar .block-route {
+  position: static;
+  flex: none;
+  margin: 0;
+}
+
+/* A tab's other host (#17) comes after its title, and gives way to it. */
+.tab .host-tag.remote {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* UI audit #178: one error card, one empty or loading line, for every
+   block. */
+.block-error {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.block-error.inline {
+  flex: none;
+  display: block;
+  padding: 10px 12px 0;
+}
+
+.block-error-card {
+  box-sizing: border-box;
+  max-width: 34em;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--card-radius);
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg));
+  color: var(--fg);
+  text-align: left;
+}
+
+.block-error.inline .block-error-card {
+  max-width: none;
+}
+
+.block-error-card > * {
+  margin: 0;
+}
+
+.block-error-card > * + * {
+  margin-top: 6px;
+}
+
+.block-error-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.block-error-detail {
+  color: var(--dim);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.block-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.block-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  color: var(--dim);
+}
+
+/* A block whose Labs flag is off here (UI audit #178): a card that says
+   so and where to turn it on. */
+.block-unknown {
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.block-labs {
+  max-width: 30em;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  text-align: center;
+}
+
+.block-labs p {
+  margin: 0 0 10px;
+}
+
+.block-labs p:last-child {
+  margin-bottom: 0;
 }
 
 .browser-url input {
@@ -41,14 +191,14 @@
 }
 
 .agent-user {
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   padding: 10px 12px;
 }
 
 .agent-tool {
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   overflow: hidden;
 }
 
@@ -59,8 +209,8 @@
 
 .agent-composer textarea {
   background: var(--bg);
-  border-color: var(--divider);
-  border-radius: 6px;
+  border-color: var(--line);
+  border-radius: var(--field-radius);
   line-height: 1.5;
 }
 
@@ -75,8 +225,8 @@
 .editor-note {
   background: var(--surface);
   color: var(--subtle);
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
 }
 
 .agent-msg > .md,
@@ -94,16 +244,41 @@
 
 /* A project's own issue (M203): the platform page's issue view in a
    block, which scrolls as one page. */
-.issue-block .review-bar a.browser-open {
-  padding: 3px 8px;
-  font-size: 12px;
-  text-decoration: none;
-}
-
 .issue-block-body {
   padding: 12px 16px 0;
 }
 
 .issue-block .issue-head h1 {
   font-size: 20px;
+}
+
+/* The editor's bar (UI audit #177): its folder and file where a browser's
+   address goes. */
+.editor-where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-where b {
+  color: var(--fg);
+}
+
+/* The agents block (M77): its empty line centred in it, and its headings
+   off the edge (UI audit #178). */
+.review.agents > .review-body {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 6px 12px;
+}
+
+.review.agents .agents-shelf-head {
+  margin: 12px 8px 0;
+}
+
+.block.block-loading {
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
 }

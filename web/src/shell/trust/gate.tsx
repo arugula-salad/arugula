@@ -8,7 +8,8 @@ import { useEffect, useState } from "preact/hooks";
 import { CopyText } from "../../shared/ui/copy";
 import { cameToRecover, DEVICE_HASH, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, signInNext, wholeJoinInHash, type ControlSession } from "../control";
 import { fingerprint } from "../e2e/cert.ts";
-import { addedAt, Center, QrCode, useControl } from "./common";
+import { AddedAt, Center, QrCode, useControl, WaitingLine } from "./common";
+import { Mark } from "../ui/shell/icons";
 import { DeviceDetails } from "./devices";
 import { RecoveryForm } from "./recovery";
 
@@ -30,7 +31,7 @@ function HostedTerms() {
 /** Everything before the app: sign in, approval, no machines yet. */
 export function ControlGate({ s }: { s: ControlSession }) {
   useControl(s);
-  if (s.phase === "loading") return <Center>Connecting to control…</Center>;
+  if (s.phase === "loading") return <Center>Connecting to Arugula control…</Center>;
   if (s.phase === "error")
     return (
       <Center>
@@ -45,9 +46,12 @@ export function ControlGate({ s }: { s: ControlSession }) {
     const next = encodeURIComponent(signInNext());
     return (
       <Center>
-        <h1>Arugula</h1>
+        <h1 class="control-brand">
+          <Mark />
+          Arugula
+        </h1>
         <WhyHere />
-        <p>Your terminals, on every machine, from any device. End to end encrypted: this service introduces your devices to your machines and relays for them, but can't read what they say.</p>
+        <p>Your terminals, on every machine, from any device. End-to-end encrypted: this service introduces your devices to your machines and relays for them, but can't read what they say.</p>
         <div class="control-signins">
           {s.info.github ? (
             <a class="primary control-signin" href={`/auth/github?next=${next}`} data-signin="github">
@@ -69,7 +73,14 @@ export function ControlGate({ s }: { s: ControlSession }) {
         <h1>This browser lost its device key</h1>
         <p data-lost-key>
           It can't read back the key it was approved with (<b>{s.enrollment?.cert.name ?? "this browser"}</b>
-          {s.enrollment ? `, added ${addedAt(s.enrollment.cert.created)}` : ""}), so it can't approve machines or reach them. Some versions of Safari lose keys this way.
+          {s.enrollment ? (
+            <>
+              , added <AddedAt at={s.enrollment.cert.created} />
+            </>
+          ) : (
+            ""
+          )}
+          ), so it can't approve machines or reach them. Some versions of Safari lose keys this way.
         </p>
         {s.enrollment ? <DeviceDetails s={s} c={s.enrollment.cert} /> : null}
         <p>
@@ -90,7 +101,14 @@ export function ControlGate({ s }: { s: ControlSession }) {
         <h1>This browser isn't trusted any more</h1>
         <p data-untrusted={s.untrustedWhy}>
           Your account {s.untrustedWhy === "removed" ? "removed this browser" : "no longer trusts this browser"} (<b>{s.enrollment?.cert.name ?? "this browser"}</b>
-          {s.enrollment ? `, added ${addedAt(s.enrollment.cert.created)}` : ""}), so it can't approve machines or devices, or reach your machines.
+          {s.enrollment ? (
+            <>
+              , added <AddedAt at={s.enrollment.cert.created} />
+            </>
+          ) : (
+            ""
+          )}
+          ), so it can't approve machines or devices, or reach your machines.
         </p>
         {s.enrollment ? <DeviceDetails s={s} c={s.enrollment.cert} /> : null}
         <p>
@@ -105,18 +123,35 @@ export function ControlGate({ s }: { s: ControlSession }) {
   if (s.phase === "turned-down")
     return (
       <Center>
-        <h1>Turned down</h1>
+        <h1>This browser was turned down</h1>
         <p data-turned-down>
-          <b>{s.turnedDownBy || "Another device"}</b> turned this browser down. If that was a mistake, ask again and approve it there.
+          <TurnedDownBy name={s.turnedDownBy} /> turned this browser down. If that was a mistake, ask again and approve it there.
         </p>
-        <button class="primary" data-try-again onClick={() => s.tryAgain()}>
-          Try again
-        </button>
-        <RecoveryForm s={s} label="Use a recovery code" />
+        {/* One row (UI audit #179): they stacked with a 4px gap. */}
+        <div class="control-actions">
+          <button class="primary" data-try-again onClick={() => s.tryAgain()}>
+            Try again
+          </button>
+          <RecoveryForm s={s} label="Use a recovery code" />
+        </div>
         <SignOuts s={s} />
       </Center>
     );
   return null;
+}
+
+/** Who turned this browser down, told apart from it (UI audit #179):
+ * "Chrome on Linux turned this browser down" read as this one when both
+ * are Chrome on Linux. */
+function TurnedDownBy({ name }: { name: string }) {
+  if (!name) return <>Another of your devices</>;
+  const same = name === deviceName();
+  return (
+    <>
+      {same ? "Another" : "Your other device,"} <b>{name}</b>
+      {same ? " of yours" : ","}
+    </>
+  );
 }
 
 /** Sign out, keeping this browser's key for next time, or forgetting it
@@ -207,7 +242,7 @@ function Waiting({ s }: { s: ControlSession }) {
             {fp}
           </>
         )}
-        <p class="dim">Waiting…</p>
+        <WaitingLine />
         <PasskeyInstead s={s} />
         <RecoveryForm s={s} open={recovering()} />
         <SignOuts s={s} />
@@ -225,9 +260,9 @@ function Waiting({ s }: { s: ControlSession }) {
           </p>
           <div class="control-device-code" data-device-code={mine}>
             <QrCode text={`${s.info.url}/#device=${mine}`} label="QR code for this browser's code" />
-            <CopyText text={mine} data-device-code-text />
+            <CopyText text={mine} groups data-device-code-text />
           </div>
-          <p class="dim">Waiting…</p>
+          <WaitingLine />
           {older}
         </>
       ) : (
@@ -238,7 +273,7 @@ function Waiting({ s }: { s: ControlSession }) {
           </p>
           <p>It shows this fingerprint; check it matches:</p>
           {fp}
-          <p class="dim">Waiting…</p>
+          <WaitingLine />
         </>
       )}
       <p class="control-aside" data-waiting-machine>
@@ -282,7 +317,7 @@ function Unvouched({ s }: { s: ControlSession }) {
           {by} approved this browser, but its answer doesn't match the code this browser showed: the code was mistyped, or control changed the account
           it was approved into. This browser doesn't trust it, and that code is used up.
         </p>
-        <p>Enroll it again to get a new code. If the old one is listed under <i>Devices and machines…</i> on your other device, remove it there.</p>
+        <p>Enroll it again to get a new code. If the old one is listed under <i>Devices and machines</i> on your other device, remove it there.</p>
         <button class="primary" data-enroll-again onClick={() => void s.enrollAgain()}>
           Forget this browser and enroll again
         </button>
@@ -291,10 +326,10 @@ function Unvouched({ s }: { s: ControlSession }) {
     );
   return (
     <Center>
-      <h1>Check your account</h1>
+      <h1>Check your account's fingerprint</h1>
       <p data-unvouched="missing">
         {by} approved this browser from a page that didn't use its code, so this browser can't tell your account from one control made up. On{" "}
-        {v.by ? "that device" : "a device you use"}, open <i>Devices and machines…</i> and check your account's fingerprint there is this one:
+        {v.by ? "that device" : "a device you use"}, open <i>Devices and machines</i> and check your account's fingerprint there is this one:
       </p>
       <p class="fingerprint" data-unvouched-account={v.root}>
         {fingerprint(v.root)}

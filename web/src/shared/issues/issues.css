@@ -12,12 +12,14 @@
 }
 
 
-.issues-export,
+/* One control height on the list pages, the button set's (UI audit #163,
+   #164): filters, the open/closed toggle and the search box beside
+   Export and New issue. */
 .issues-filter,
 .issues-states button {
-  height: 28px;
+  height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--btn-radius);
   background: var(--surface);
   color: var(--fg);
@@ -53,7 +55,7 @@
 .issue-form textarea,
 .issue-title-edit input {
   box-sizing: border-box;
-  height: 28px;
+  height: 32px;
   padding: 4px 8px;
   border: 1px solid var(--raised-hover);
   border-radius: var(--field-radius);
@@ -69,18 +71,32 @@
   line-height: 1.45;
 }
 
+/* Issues here and on linked repos (UI audit #163): a note, in the info
+   tone, not a warning; several repos behind its disclosure. */
 .issues-note {
+  margin: 0 0 12px;
   padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
-  border-radius: 6px;
-  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--info) 45%, transparent);
+  border-left-width: 3px;
+  border-radius: var(--card-radius);
+  color: var(--fg);
+}
+
+details.issues-note > summary {
+  cursor: pointer;
+}
+
+.issues-note-repos {
+  margin: 6px 0 0;
+  padding-left: 1.2em;
+  color: var(--subtle);
 }
 
 .issues-list {
   list-style: none;
   margin: 12px 0 0;
   padding: 0;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
 }
 
@@ -96,7 +112,7 @@
 }
 
 .issue-row + .issue-row {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .issue-row-main {
@@ -134,33 +150,39 @@
   font-size: 10px;
 }
 
-/* A native issue's state tag: closed is done, not failed, so it's
-   neutral where a forge's closed PR is red (UI audit #157). */
-.forge-state.issue-state.closed {
-  background: var(--raised);
-  color: var(--fg);
-}
-
-.ws-tag.issue-label {
+/* A label's chip (../ui/state-chip.css), beside the next. */
+.chip.issue-label {
   margin-right: 4px;
-  border: 1px solid var(--divider);
-  background: var(--surface);
-  color: var(--subtle);
 }
 
-button.ws-tag.issue-label:hover {
-  border-color: var(--accent);
+.issues-home-line {
+  margin: 16px 0 0;
+  font-size: 12px;
 }
 
-.issues-home {
-  margin-top: 28px;
-  padding-top: 4px;
-  border-top: 1px solid var(--divider);
-}
-
-.issues-home .control-confirm {
+/* Where new issues go, in the project's settings (UI audit #163). */
+[data-issue-home] .control-confirm {
   display: block;
   padding: 3px 0;
+}
+
+/* A list's rows' shapes while it loads (UI audit #163, #164). */
+.issues-loading .issue-row-main {
+  display: grid;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.loading-bar {
+  display: block;
+  height: 12px;
+  border-radius: var(--chip-radius);
+  background: var(--raised);
+}
+
+.loading-bar.short {
+  width: 22%;
+  height: 9px;
 }
 
 .issue-actions {
@@ -208,7 +230,7 @@ button.ws-tag.issue-label:hover {
   gap: 24px;
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .issue-side {
@@ -260,8 +282,8 @@ button.ws-tag.issue-label:hover {
 .issue-text .md code,
 .issue-thread .md code {
   padding: 1px 4px;
-  border-radius: 4px;
-  border: 1px solid var(--divider);
+  border-radius: var(--tag-radius);
+  border: 1px solid var(--line);
   background: var(--letterbox);
   color: var(--peach);
   font: 12px ui-monospace, monospace;
@@ -284,10 +306,19 @@ button.ws-tag.issue-label:hover {
   padding: 2px 0;
 }
 
+/* Whose agents reach the thread: the chip alone at the line's end, not
+   a box of its own (UI audit #163). */
 .issue-thread .room-agents {
   margin-top: 12px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  padding: 0;
+  border: 0;
+}
+
+/* Chat's thread insets its box 8px; here it lines up with the post and
+   the thread above it (UI audit #163). */
+.issue-thread.chat-thread :is(.thread-compose, .thread-note) {
+  margin-left: 0;
+  margin-right: 0;
 }
 
 .issue-thread .thread-compose {
@@ -348,15 +379,28 @@ button.ws-tag.issue-label:hover {
   display: block;
 }
 
+/* Labels and Assignees: a label over their chips or boxes, as the other
+   fields have, with no box of their own (UI audit #163). */
 .issue-assignees {
   margin: 0;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  padding: 0;
+  border: 0;
 }
 
-.issue-cancel {
-  align-self: center;
-  margin-right: 8px;
+.issue-form-part {
+  display: grid;
+  gap: 5px;
+}
+
+.issue-form-label {
+  padding: 0;
+}
+
+.issue-form .ws-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
 }
 
 /* An issue in a narrow place (a phone, a block in a split): its labels
@@ -394,8 +438,8 @@ button.ws-tag.issue-label:hover {
 .issue-stale {
   margin: 8px 0 0;
   padding: 6px 10px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   color: var(--subtle);
   font-size: 12px;
 }

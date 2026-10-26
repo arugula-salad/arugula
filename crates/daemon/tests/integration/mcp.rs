@@ -1286,7 +1286,7 @@ fn an_invite_waits_for_the_owner_and_only_they_send_it() {
     assert_eq!(
         card["message"],
         format!(
-            "claude-code (pane %{pane}, your own client) wants to bring sam@example.com [{sam}] (editor) into {name} at pane %{pane}: {note}"
+            "claude-code (pane %{pane}) wants to bring sam@example.com (editor) into {name} at pane %{pane}: {note}"
         )
     );
     assert!(card_on(&d, pane).is_null(), "never on the pane itself");
@@ -1466,9 +1466,8 @@ fn an_agent_block_drafts_beside_itself() {
     // The card goes up after invite_person answers, on its own task.
     d.wait_for("its card", || card_on(&d, block)["id"] == draft.as_str());
     let card = card_on(&d, block);
-    // Whose agent it is, and whom exactly, by their principal.
-    let want =
-        format!("fake-agent (pane %{a}, you started it) wants to bring sam@example.com [tailnet:sam@example.com]");
+    // Whose agent it is, and whom, by name (the login is the name here).
+    let want = format!("fake-agent (pane %{a}, you started it) wants to bring sam@example.com (");
     assert!(card["message"].as_str().unwrap().starts_with(&want), "{card}");
     let r = agent_mcp(&d, a, "read_invite", json!({ "draft": draft })).unwrap();
     assert_eq!(r["status"], "waiting", "{r}");
@@ -1705,7 +1704,7 @@ async fn an_agent_drives_cloud_workspaces_through_control() {
     let row = &listed["cloud_workspaces"][0];
     assert_eq!((row["kind"].as_str(), row["name"].as_str()), (Some("hosted"), Some("App box")), "{listed}");
     let why = refused(&s, "read_cloud", json!({ "kind": "files", "cloud_workspace": "cw_0a" })).await;
-    assert!(why.contains("no hosted workspace cw_0a"), "{why}");
+    assert!(why.contains("no cloud workspace cw_0a"), "{why}");
     let why = refused(&s, "wait", json!({ "cloud_workspace": "hw_0a", "tab": "3", "until": "exit" })).await;
     assert!(why.contains("until idle or needs_input"), "{why}");
 

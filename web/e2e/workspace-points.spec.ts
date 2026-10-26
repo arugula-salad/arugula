@@ -166,7 +166,7 @@ test("an open decision point is a card on the rail, answered from the phone, and
   await page.goto("/#swarm");
   const card = page.locator('.swarm-card[data-kind="gate"]');
   await expect(card).toBeVisible({ timeout: 15_000 });
-  await expect(card.locator(".ch b")).toHaveText("A decision waits on you");
+  await expect(card.locator(".ch .ct")).toHaveText("A decision waits on you");
   await expect(card.locator(".cq")).toHaveText("Which builder tier builds this work item (W-001)");
   await expect(card.locator("[data-answer-point]")).toHaveText(["Small", "Medium", "Large"]);
   await expect(card.locator('[data-answer-point="small"]')).toHaveAttribute("title", "A small builder.");

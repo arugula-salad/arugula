@@ -112,6 +112,10 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   // size (viewers see it letterboxed; the daemon takes editors' sizes).
   const viewer = client.role(client.sessionOfTab(tab.id) ?? null) === "viewer";
   const elsewhere = client.connected && !viewer && tab.owner !== null && tab.owner !== client.clientId;
+  // Said in a pane's header, the active one's, where it covers nothing
+  // (UI audit #171); a phone, with no headers, keeps the note.
+  const chipOn = elsewhere && headers ? (active ?? tab.layout.panes[0]?.[0] ?? null) : null;
+  const claimHere = () => client.claim(tab.id, false, true);
 
   return (
     <div class={scale < 1 ? "tab-area scaled" : "tab-area"} ref={ref}>
@@ -128,7 +132,7 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
         ))}
         {headers &&
           drawingTab.layout.panes.map(([id, r]) => (
-            <PaneHeader key={`h${id}`} client={client} tab={tab} id={id} rect={r} cell={drawingCell} height={chrome?.header} active={id === active} />
+            <PaneHeader key={`h${id}`} client={client} tab={tab} id={id} rect={r} cell={drawingCell} height={chrome?.header} active={id === active} sizedElsewhere={id === chipOn ? claimHere : undefined} />
           ))}
         {chrome && Array.from(chrome.frames, ([id, r]) => (
           <div key={`f${id}`} class={`pane-frame${id === active ? " active" : ""}`} style={px(r, PIXELS)} aria-hidden="true" />
@@ -141,10 +145,10 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
           )}
         <DropOverlay client={client} tab={drawingTab} cell={drawingCell} />
       </div>
-      {elsewhere && (
+      {elsewhere && chipOn === null && (
         <div class="sized-elsewhere" data-sized-elsewhere>
           Another window set this tab's size.
-          <button onClick={() => client.claim(tab.id, false, true)}>Use this window's size</button>
+          <button onClick={claimHere}>Use this window's size</button>
         </div>
       )}
     </div>

@@ -24,13 +24,14 @@
   box-sizing: border-box;
 }
 
-/* The project, as the shell's head names the machine. */
+/* The project, as the shell's head names the machine: the head's full
+   height, as the wordmark and the account beside it are (UI audit #185). */
 .platform-bar .platform-project {
+  align-self: stretch;
   gap: 4px;
-  height: 28px;
-  padding: 0 8px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 0;
   background: none;
   color: var(--fg);
   font-weight: 600;
@@ -117,13 +118,37 @@ html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
      rest, so headings, stats and lists all share one column. */
   padding: 20px max(24px, calc((100% - 880px) / 2));
   box-sizing: border-box;
-  border: 1px solid var(--chrome-line);
-  border-radius: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
   background: var(--bg);
 }
 
 .platform-section + .platform-section {
   margin-top: 8px;
+}
+
+/* Chat in the page's frame (UI audit #169): the bar, then the rooms in a
+   panel inset as a page's section is, not drawn over the window as the
+   shell's chat is. A phone's chat keeps the whole screen. */
+.platform-chat > .chat:not(.phone) {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  flex: 1;
+  min-height: 0;
+  background: none;
+}
+
+.platform-chat > .chat:not(.phone) > .chat-body {
+  margin: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+html[data-corners="square"] .platform-chat > .chat > .chat-body {
+  border-radius: 0;
 }
 
 /* A page that's one panel fills the frame, as a lone pane does. */
@@ -162,7 +187,7 @@ html[data-corners="square"] .platform-section {
   flex-direction: column;
   gap: 6px;
   padding: 14px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
   color: var(--fg) !important;
@@ -187,8 +212,26 @@ html[data-corners="square"] .platform-section {
   gap: 24px;
 }
 
+/* A project of one: no members beside its lists (UI audit #162). */
+.platform-columns.solo {
+  grid-template-columns: 1fr;
+}
+
 .platform-members .chat-people span.dim {
   margin-left: auto;
+}
+
+/* A member's picture as the bar's account button has it: round (UI audit
+   #162). */
+.platform-members .msg-avatar {
+  --msg-gutter: 24px;
+  border-radius: 50%;
+  font-size: 10px;
+}
+
+/* Commands and ids in the page's mono, not the browser's (UI audit #162). */
+.platform code {
+  font-family: var(--f-mono);
 }
 
 
@@ -200,14 +243,15 @@ html[data-corners="square"] .platform-section {
   transform: translateX(-50%);
   max-width: calc(100vw - 32px);
   padding: 10px 16px;
-  border: 1px solid var(--raised);
-  border-radius: 999px;
+  border: 1px solid var(--line);
+  border-radius: var(--chip-radius);
   background: var(--surface);
   color: var(--fg);
   box-shadow: 0 12px 40px var(--platform-shadow);
 }
 
-@media (max-width: 600px) {
+/* One phone width for every column (UI audit #186): the bar's, usePhone's. */
+@media (max-width: 700px) {
   .platform-columns {
     grid-template-columns: 1fr;
   }
@@ -231,7 +275,7 @@ html[data-corners="square"] .platform-section {
   grid-template-columns: 1fr auto;
   gap: 2px 12px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .platform-drafts li > :not(.platform-draft-actions) {
@@ -273,15 +317,15 @@ html[data-corners="square"] .platform-section {
   align-items: center;
   padding: 8px 12px;
   margin: 4px 0 8px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
 }
 
 .platform-send-result.sent {
-  border-color: var(--ok, var(--divider));
+  border-color: var(--ok, var(--line));
 }
 
-@media (max-width: 520px) {
+@media (max-width: 700px) {
   .platform-drafts li {
     grid-template-columns: 1fr;
   }
@@ -299,7 +343,7 @@ html[data-corners="square"] .platform-section {
   grid-template-columns: 1fr auto;
   gap: 2px 12px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .platform-inbox-list li > :not(.platform-inbox-actions) {
@@ -355,6 +399,9 @@ html[data-corners="square"] .platform-section {
      places hides it once the last (or first) is in view. */
   .platform-bar .places {
     --edge: color-mix(in srgb, var(--accent) 55%, transparent);
+    /* Holds the unread counts' hidden words, which would otherwise widen
+       the page past the places' scroll (UI audit #186). */
+    position: relative;
     align-self: stretch;
     min-width: 0;
     overflow-x: auto;
@@ -380,6 +427,21 @@ html[data-corners="square"] .platform-section {
   .platform-bar {
     gap: 4px;
     padding-left: 4px;
+  }
+
+  /* A long project name gives way to the places, not the page's width
+     (UI audit #186). */
+  .platform-bar .platform-project {
+    flex: none;
+    max-width: 40vw;
+    min-width: 0;
+  }
+
+  .platform-bar .platform-project-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .platform-main {
@@ -426,7 +488,7 @@ html[data-corners="square"] .platform-section {
 }
 
 /* A deploy's card (M218): where it goes and its state, what it deploys,
-   the plan's digest in full, the operation an approval signs, and Approve
+   the plan's digest (short, to copy), the operation an approval signs, and Approve
    and Deny, which open on control's page. */
 .deploy-cards {
   display: grid;
@@ -435,7 +497,7 @@ html[data-corners="square"] .platform-section {
 
 .deploy-card {
   padding: 14px;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
   min-width: 0;
@@ -449,25 +511,23 @@ html[data-corners="square"] .platform-section {
   gap: 4px 12px;
 }
 
-.platform-section .deploy-card h2 {
+/* Above .platform .sw-page h2's section margin (UI audit #167). Its
+   title is a card's name, as the swarm's cards' are (.sw-name): no
+   accent, underlined on hover. */
+.platform .sw-page .deploy-card h2 {
   margin: 0;
-  font-size: 16px;
+  font: 700 19px/1.05 var(--f-display);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
-.deploy-state {
-  font-size: 12px;
-  color: var(--dim);
+.platform .sw-page .deploy-card h2 a {
+  color: var(--fg);
+  text-decoration: none;
 }
 
-.deploy-state-pending {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.deploy-state-stale,
-.deploy-state-denied,
-.deploy-state-failed {
-  color: var(--danger, var(--dim));
+.platform .sw-page .deploy-card h2 a:is(:hover, :focus-visible) {
+  text-decoration: underline;
 }
 
 .deploy-facts {
@@ -505,7 +565,7 @@ html[data-corners="square"] .platform-section {
   word-break: break-all;
   font-size: 12px;
   background: var(--bg);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .deploy-note {
@@ -533,7 +593,8 @@ html[data-corners="square"] .platform-section {
   font-size: 12px;
 }
 
-@media (max-width: 520px) {
+/* The phone width every column here folds at (UI audit #167, #186). */
+@media (max-width: 700px) {
   .deploy-facts {
     grid-template-columns: 1fr;
   }
@@ -594,7 +655,7 @@ html[data-corners="square"] .platform-section {
   align-items: center;
   margin: 0 0 12px;
   padding: 10px 12px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
 }
@@ -626,11 +687,58 @@ html[data-corners="square"] .platform-section {
 
 .run-spec-list > li {
   padding: 8px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .run-spec-head {
   overflow-wrap: anywhere;
+}
+
+/* What a spec runs, on its own line under its name (UI audit #164): a
+   command, or its instruction's Markdown clamped to a line until Show. */
+.run-spec-list .run-spec-op {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-spec-instruction {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.run-spec-md {
+  min-width: 0;
+  flex: 0 1 auto;
+  color: var(--subtle);
+}
+
+.run-spec-instruction > .link {
+  flex: none;
+}
+
+.run-spec-instruction:not(.open) .run-spec-md {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.run-spec-instruction:not(.open) .run-spec-md :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote) {
+  display: inline;
+  margin: 0;
+  font-size: inherit;
+}
+
+/* Why a run ended without succeeding, under its state (UI audit #164). */
+.run-why {
+  color: var(--danger);
 }
 
 .run-spec-op,
@@ -686,8 +794,8 @@ html[data-corners="square"] .platform-section {
   overflow: auto;
   margin: 6px 0 0;
   padding: 10px 12px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   font-family: var(--mono, monospace);
   font-size: 12px;
@@ -734,10 +842,44 @@ html[data-corners="square"] .platform-section {
   }
 }
 
-/* A hosted workspace (M184): its label, and its closed agents' transcripts. */
+/* A cloud workspace (M184): its ids, its label, the command that rebuilds
+   it, and its closed agents' transcripts. */
+.hosted-ids {
+  margin: 0 0 4px;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.hosted-ids code {
+  color: var(--fg);
+}
+
 .hosted-label {
+  margin: 0;
   color: var(--dim);
   font-size: 13px;
+}
+
+/* "Hosted · operator can read" as a chip, dim, before what it means (UI
+   audit #184). */
+.hosted-chip {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--chip-radius);
+  color: var(--dim);
+  font: 600 11px/1.4 var(--f-mono);
+  white-space: nowrap;
+}
+
+.hosted-rebuild > p,
+.hosted-none > p {
+  margin: 0;
+}
+
+.platform .copy-text > .control-cmd {
+  font-family: var(--f-mono);
 }
 
 .hosted-transcripts {
@@ -749,17 +891,27 @@ html[data-corners="square"] .platform-section {
   margin: 6px 0;
 }
 
+/* A transcript's own headings are its text's, not the page's sections. */
+.platform .sw-page .hosted-transcript :is(h1, h2, h3, h4) {
+  margin: 14px 0 6px;
+  font: 600 15px/1.3 var(--f-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.platform .sw-page .hosted-transcript .md > :first-child {
+  margin-top: 0;
+}
+
 .hosted-transcript {
   max-height: 60vh;
   overflow: auto;
   margin: 6px 0 12px;
-  padding: 8px 10px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 /* A project's environments and "Deploy…" (M252): the forms that make an
@@ -772,7 +924,7 @@ html[data-corners="square"] .platform-section {
   max-width: 560px;
   margin: 12px 0;
   padding: 12px 14px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
 }
@@ -816,20 +968,12 @@ html[data-corners="square"] .platform-section {
 
 .deploy-secret-names {
   margin: 0;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
 }
 
 .deploy-secret-names p {
   margin: 4px 0;
-}
-
-.deploy-roll-back {
-  padding: 0 6px;
-  border: 1px solid var(--raised);
-  border-radius: 4px;
-  font-size: 12px;
-  color: var(--dim);
 }
 
 /* What's new in an issue's or a run's thread, on its row in the list

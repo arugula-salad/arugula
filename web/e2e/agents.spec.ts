@@ -167,7 +167,7 @@ test("a standing rule outlives its block and is forgotten from the account menu"
   await page.getByRole("menuitem", { name: "Permission rules…" }).click();
   const dialog = page.getByRole("dialog", { name: "Permission rules" });
   await expect(dialog.locator("[data-rule]")).toHaveCount(1);
-  await expect(dialog.locator("[data-rule=\"0\"] .rule-text")).toContainText("Bash make… in ");
+  await expect(dialog.locator("[data-rule=\"0\"] .rule-text")).toContainText("Bash commands starting “make” in ");
   await dialog.locator("[data-rule=\"0\"]").getByRole("button", { name: "Forget" }).click();
   await expect(dialog.locator("[data-rule]")).toHaveCount(0);
   await expect(dialog).toContainText("No standing tool rules yet");

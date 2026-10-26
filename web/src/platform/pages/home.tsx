@@ -47,7 +47,7 @@ export function Home() {
                   {p.id.slice(0, 12)}
                 </span>
                 <span class="dim">
-                  {p.team ? `${p.team.name}'s · ${people} ${people === 1 ? "person" : "people"} · you're ${p.team.role === "editor" ? "an editor" : `the ${p.team.role === "owner" ? "owner" : "viewer"}`}` : "Yours alone"}
+                  {p.team ? `Team ${p.team.name} · ${people} ${people === 1 ? "person" : "people"} · you're ${p.team.role === "editor" ? "an editor" : `the ${p.team.role === "owner" ? "owner" : "viewer"}`}` : "Yours alone"}
                 </span>
               </a>
             </li>

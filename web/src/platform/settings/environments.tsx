@@ -11,8 +11,9 @@
 //
 // Each environment is a card in the swarm's language (../swarm.css): its
 // bar is its latest deploy's state (none yet is muted), its driver a tag,
-// each secret a chip saying whether the environment holds it or the
-// platform mints it per run, and its deploys a compact table.
+// its driver's settings a chip each, each secret a chip saying whether the
+// environment holds it or the platform mints it per run, and its deploys a
+// compact table under mono column heads, as the repos' are.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
@@ -131,16 +132,21 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
         )}
       </div>
       {settings.length > 0 && (
-        <dl class="env-facts">
-          {settings.map(([k, v]) => (
-            <div key={k}>
-              <dt>{k}</dt>
-              <dd>
-                <code>{v}</code>
-              </dd>
-            </div>
-          ))}
-        </dl>
+        // Labelled as its secrets and deploys are, a chip each, so a lone
+        // `.` reads as a value (UI audit #166).
+        <div class="env-part">
+          <span class="env-label">Driver settings</span>
+          <ul class="env-secrets env-settings">
+            {settings.map(([k, v]) => (
+              <li key={k}>
+                <span class="settings-chip setting" title={`${k}: ${v}`}>
+                  <code>{k}</code>
+                  <span>{v}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {env.secret_names.length + minted.length > 0 && (
         <div class="env-part">
@@ -216,7 +222,8 @@ function useHistory(project: string, env: string) {
   return { page, busy, err, older };
 }
 
-/** Those deploys as a table: each row opens its own page. */
+/** Those deploys as a table: each row opens its own page. Its heads show,
+ * small and mono, as the repos' do (UI audit #166). */
 function RecentDeploys({ env, history: { page, busy, err, older } }: { env: string; history: History }) {
   if (err) return <p class="control-error">{err}</p>;
   if (!page) return null;
@@ -227,11 +234,13 @@ function RecentDeploys({ env, history: { page, busy, err, older } }: { env: stri
         <p class="dim">None yet.</p>
       ) : (
         <table class="settings-table deploy-table">
-          <thead class="settings-hidden">
+          <thead>
             <tr>
               <th scope="col">State</th>
-              <th scope="col">Commit</th>
-              <th scope="col">Roll back</th>
+              <th scope="col">Source</th>
+              <th scope="col">
+                <span class="settings-hidden">Rollback</span>
+              </th>
               <th scope="col">When</th>
             </tr>
           </thead>
@@ -288,7 +297,7 @@ function SecretRow({ env, name }: { env: string; name: string }) {
           data-env-secret-value={name}
           onInput={(e) => setValue(e.currentTarget.value)}
         />
-        <button class="primary small" disabled={busy || !value} data-env-secret-save={name}>
+        <button class="primary" disabled={busy || !value} data-env-secret-save={name}>
           Set
         </button>
         {said && (
@@ -339,8 +348,10 @@ function NewEnvironment({ base, drivers, done }: { base: string; drivers: Driver
     <form class="deploy-form" aria-label="New environment" data-environment-form onSubmit={(e) => void submit(e)}>
       <h3>New environment</h3>
       <label>
-        Name
-        <input required placeholder="production" value={name} data-environment-name onInput={(e) => setName(e.currentTarget.value)} />
+        <span>
+          Name <span class="dim">(a-z, 0-9 and -: production, staging)</span>
+        </span>
+        <input required value={name} data-environment-name onInput={(e) => setName(e.currentTarget.value)} />
       </label>
       <label>
         Driver

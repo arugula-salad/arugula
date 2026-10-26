@@ -462,7 +462,7 @@ async fn arugula_from_a_viewer_or_an_unlisted_member_starts_nothing() {
     let q = post_in(&base, "ch_general", "y", "@arugula fix the canary", None).await["seq"].as_i64().unwrap();
     assert_eq!(
         lines(&base, "ch_general", Some(q)).await,
-        ["@arugula runs on hosted workspaces, which are in a limited beta: y isn't on its list yet."]
+        ["@arugula runs on cloud workspaces, which are in a limited beta: y isn't on its list yet."]
     );
     // A reply from someone who may doesn't pick up another's refused ask.
     post_in(&base, "ch_general", "b", "dev", Some(p)).await;
@@ -549,7 +549,7 @@ async fn arugula_asks_which_box_and_repo() {
     // A second box, none chosen: which box first, then which repo.
     add_box(&app, &t, "hw_stage", "staging", &["https://github.com/o/app"], None);
     let q = post_in(&base, "ch_general", "b", "@arugula deploy it", None).await["seq"].as_i64().unwrap();
-    let box_ask = "Which hosted workspace should @arugula run on? Reply with its name: dev or staging. (An owner or \
+    let box_ask = "Which cloud workspace should @arugula run on? Reply with its name: dev or staging. (An owner or \
                    editor can choose one for the project in its settings: agents run on.)";
     assert_eq!(lines(&base, "ch_general", Some(q)).await, [box_ask]);
     post_in(&base, "ch_general", "b", "staging", Some(q)).await;

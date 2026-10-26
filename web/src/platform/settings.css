@@ -73,7 +73,7 @@
 .platform .settings-more > summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: var(--tag-radius);
 }
 
 .platform .settings-more p {
@@ -88,7 +88,7 @@
   align-items: baseline;
   gap: 2px 12px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .platform .settings-rows > li:last-child {
@@ -334,7 +334,7 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .agent-matrix thead th,
 .platform .settings-table thead th {
   padding-top: 2px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   font: 500 11px/1.3 var(--f-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -371,7 +371,7 @@ html[data-corners="square"] .platform input.sw-switch {
 
 .platform .agent-matrix tbody tr + tr > *,
 .platform .settings-table tbody tr + tr > * {
-  border-top: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
 }
 
 /* Top-aligned, so a row's switches stay in line when one has an "only …"
@@ -385,11 +385,18 @@ html[data-corners="square"] .platform input.sw-switch {
 }
 
 /* Your DMs' one column sits under the projects' Threads & issues, which
-   it's the DMs' version of: the table is a project's first two columns
-   wide (24% + 19%). */
+   it's the DMs' version of: its card is about a project's first two
+   columns wide (24% + 19%), and its table fills it, so the card and the
+   table are one size (UI audit #168). */
+.platform .agent-card[data-agent-dms] {
+  justify-self: start;
+  width: 46%;
+  min-width: 280px;
+  box-sizing: border-box;
+}
+
 .platform .agent-matrix:not(.agent-matrix-wide) {
-  width: 43%;
-  min-width: 240px;
+  width: 100%;
 }
 
 .platform .agent-matrix:not(.agent-matrix-wide) thead th:first-child {
@@ -628,9 +635,10 @@ html[data-corners="square"] .platform input.sw-switch {
   gap: 8px;
 }
 
+/* As tall as every other field and its button (UI audit #166). */
 .platform .env-secret input {
   flex: 0 1 240px;
-  height: 26px;
+  height: 32px;
 }
 
 /* A chip: the secret's name in mono, then where its value comes from. */
@@ -666,10 +674,47 @@ html[data-corners="square"] .platform input.sw-switch {
   color: var(--dim);
 }
 
-/* Its deploys: state (in its tone, after a dot), short commit, roll back,
-   when. The whole row opens the deploy. */
+/* A driver's setting: its name, then its value, in the text's colour. */
+.platform .settings-chip.setting > span {
+  color: var(--fg);
+  white-space: pre;
+}
+
+/* Its deploys: state (in its tone, after a dot), what it deployed (a
+   commit, or an image's digest, labelled), whether it's a rollback, when.
+   The whole row opens the deploy; the source is its link, in the links'
+   colour. Mono heads over them, left and right as the cells are. */
 .platform .deploy-table {
   font-size: 12px;
+}
+
+.platform .deploy-table thead th {
+  padding-right: 12px;
+  text-align: left;
+}
+
+.platform .deploy-table thead th:last-child {
+  padding-right: 0;
+  text-align: right;
+}
+
+.platform .deploy-source-kind {
+  margin-right: 5px;
+  font: 500 10px/1.3 var(--f-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* A rollback: a tag, as a repo's private is, not a button. */
+.platform .deploy-table .deploy-roll-back {
+  padding: 0 6px;
+  border: 1px solid var(--raised-hover);
+  border-radius: var(--chip-radius);
+  background: none;
+  box-shadow: none;
+  font: 500 11px/1.4 var(--f-mono);
+  color: var(--dim);
 }
 
 .platform .deploy-table tr {
@@ -685,7 +730,7 @@ html[data-corners="square"] .platform input.sw-switch {
   width: 12em;
 }
 
-/* The commit as wide as it is; roll back, after it, takes the rest. */
+/* The commit as wide as it is; rollback, after it, takes the rest. */
 .platform .deploy-table td:nth-child(2) {
   width: 1%;
 }
@@ -697,24 +742,8 @@ html[data-corners="square"] .platform input.sw-switch {
   font-variant-numeric: tabular-nums;
 }
 
-.platform .deploy-table .deploy-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font: 600 12px/1.3 var(--f-ui);
-  color: var(--ct);
-}
-
-.platform .deploy-table .deploy-state::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--c);
-}
-
 .platform .deploy-table a {
-  color: var(--fg);
+  color: var(--accent);
   text-decoration: none;
 }
 
@@ -750,7 +779,8 @@ html[data-corners="square"] .platform input.sw-switch {
 /* -- The index: in the panel's left gutter, where it's wide enough for
       one (a panel of 880px plus two gutters of ~200px), and sticky as the
       page scrolls. Narrower, there's no gutter to put it in, and the page
-      goes without. */
+      goes without. 180px holds the longest title on one line ("Agents on
+      your machines", UI audit #168). */
 
 .platform .settings-index {
   display: none;
@@ -759,9 +789,9 @@ html[data-corners="square"] .platform input.sw-switch {
 @media (min-width: 1320px) {
   .platform .settings-layout {
     display: grid;
-    grid-template-columns: 160px minmax(0, 1fr);
-    column-gap: 40px;
-    margin-left: -200px;
+    grid-template-columns: 180px minmax(0, 1fr);
+    column-gap: 28px;
+    margin-left: -208px;
   }
   .platform .settings-index {
     display: block;
@@ -774,7 +804,7 @@ html[data-corners="square"] .platform input.sw-switch {
     margin: 0;
     padding: 0;
     list-style: none;
-    border-left: 1px solid var(--divider);
+    border-left: 1px solid var(--line);
   }
   .platform .settings-index a {
     display: block;
@@ -791,15 +821,24 @@ html[data-corners="square"] .platform input.sw-switch {
     border-left-color: var(--accent);
     color: var(--fg);
   }
+  /* The section you're in (UI audit #166). */
+  .platform .settings-index a[aria-current] {
+    border-left-color: var(--accent);
+    color: var(--accent);
+  }
 }
 
 /* -- A phone: each machine of a project's matrix is a row of its own, its
       name above its four switches, each labelled, so nothing is wider than
       the screen. */
 
-@media (max-width: 600px) {
+@media (max-width: 700px) {
   .platform .agent-key {
     grid-template-columns: 1fr;
+  }
+  .platform .agent-card[data-agent-dms] {
+    justify-self: stretch;
+    width: auto;
   }
   .platform .agent-matrix-wide thead {
     position: absolute;
@@ -818,7 +857,7 @@ html[data-corners="square"] .platform input.sw-switch {
     padding: 8px 0;
   }
   .platform .agent-matrix-wide tbody tr + tr {
-    border-top: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
   }
   .platform .agent-matrix-wide tbody tr + tr > * {
     border-top: 0;
@@ -855,8 +894,8 @@ html[data-corners="square"] .platform input.sw-switch {
       and when, then its commit; a spend line's who, then its numbers,
       each labelled. */
 
-@media (max-width: 600px) {
-  .platform .settings-table:not(.deploy-table) thead {
+@media (max-width: 700px) {
+  .platform .settings-table thead {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -873,7 +912,7 @@ html[data-corners="square"] .platform input.sw-switch {
     padding: 8px 0;
   }
   .platform .settings-table tbody tr + tr {
-    border-top: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
   }
   .platform .settings-table tbody tr > *,
   .platform .settings-table tbody tr + tr > * {

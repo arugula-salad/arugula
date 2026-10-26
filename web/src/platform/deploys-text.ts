@@ -154,5 +154,6 @@ export function historyPath(project: string, environment?: string, limit?: numbe
 /** When a deploy last moved: it ended, it was decided, or it was planned. */
 export const lastMoved = (d: Pick<DeploySummary, "finished_at" | "decided_at" | "created_at">) => d.finished_at ?? d.decided_at ?? d.created_at;
 
-/** A commit's or an artifact's reference, short. */
-export const shortRef = (ref: string) => ref.slice(0, 12);
+/** A commit's or an artifact's reference, short (../shared/deploys, which
+ * control's deploy prompt shares). */
+export { shortRef } from "../shared/deploys.ts";

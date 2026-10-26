@@ -1061,7 +1061,7 @@ export type DocOpened = { pane: number, };
 
 /**
  * One Doc in the library (#1493): `GET /api/docs`. `open` is the block
- * that shows it now, `shared` its link's dates (never the link).
+ * that shows it now, `shared` its link's dates and id (never its key).
  */
 export type DocRow = { id: string, title: string, made: number, updated: number, 
 /**
@@ -1073,7 +1073,12 @@ by: string, open?: number | null, shared?: DocShared | null, };
 /**
  * When a Doc was shared with a link, and last updated.
  */
-export type DocShared = { made: number, updated: number, };
+export type DocShared = { made: number, updated: number, 
+/**
+ * The link's id, as control's list of shared Docs names it (never the
+ * key): that list titles its rows from it (UI audit #174).
+ */
+link: string, };
 
 /**
  * An agent's write, waiting for a person.
@@ -1956,7 +1961,12 @@ native_issues: number,
  * It has issues in both places: native ones and a linked repo. The
  * page says so.
  */
-both: boolean, };
+both: boolean, 
+/**
+ * Every label on its native issues, open or closed, sorted: what the
+ * label menus offer (UI audit #163).
+ */
+labels: Array<string>, };
 
 /**
  * `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
@@ -2251,7 +2261,16 @@ agent: ChatAgent | null, labels: Array<string>,
 /**
  * Accounts.
  */
-assignees: Array<string>, github: IssueGithub | null, created_at: number, updated_at: number, closed_at: number | null, };
+assignees: Array<string>, github: IssueGithub | null, created_at: number, updated_at: number, closed_at: number | null, 
+/**
+ * Who closed a closed one (an agent's owner's account), as its latest
+ * `closed` event says: a list's row names them (UI audit #163).
+ */
+closed_by?: string, 
+/**
+ * The agent that closed it for its owner.
+ */
+closed_by_agent?: ChatAgent, };
 
 /**
  * A new issue, before and after it reached the forge.

@@ -195,6 +195,8 @@ fn issue_wire(i: &db::Issue, names: &Names) -> wire::Issue {
         created_at: i.created_at,
         updated_at: i.updated_at,
         closed_at: i.closed_at,
+        closed_by: None,
+        closed_by_agent: None,
     }
 }
 
@@ -210,8 +212,23 @@ fn event_wire(e: &db::Event, names: &Names) -> wire::IssueEvent {
 }
 
 async fn issues_wire(app: &Platform, issues: &[db::Issue]) -> anyhow::Result<Vec<wire::Issue>> {
-    let names = machine_names(app, issues.iter().filter_map(|i| i.author_agent.as_ref())).await?;
-    Ok(issues.iter().map(|i| issue_wire(i, &names)).collect())
+    // Who closed the closed ones, for their rows (UI audit #163).
+    let closed: Vec<&str> = issues.iter().filter(|i| i.state.reason().is_some()).map(|i| i.id.as_str()).collect();
+    let closers = app.db.closers(&closed)?;
+    let agents =
+        issues.iter().filter_map(|i| i.author_agent.as_ref()).chain(closers.values().filter_map(|(_, a)| a.as_ref()));
+    let names = machine_names(app, agents).await?;
+    Ok(issues
+        .iter()
+        .map(|i| {
+            let mut w = issue_wire(i, &names);
+            if let Some((by, by_agent)) = closers.get(&i.id) {
+                w.closed_by = Some(by.clone());
+                w.closed_by_agent = agent(&names, by_agent);
+            }
+            w
+        })
+        .collect())
 }
 
 async fn events_wire(app: &Platform, events: &[db::Event]) -> anyhow::Result<Vec<wire::IssueEvent>> {
@@ -445,6 +462,7 @@ fn home_of(app: &Platform, p: &db::IssueProject) -> Result<wire::IssueHome, ApiE
         both: native_issues > 0 && !repos.is_empty(),
         repos,
         native_issues,
+        labels: app.db.issue_labels(&p.id)?,
     })
 }
 
@@ -486,11 +504,23 @@ pub async fn export(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire
         threads.push(comments);
     }
     let names = machine_names(app, agents.iter()).await?;
+    // Who closed each, as a read of it says (UI audit #163): their agents
+    // are among the events' already.
+    let closed: Vec<&str> =
+        all.iter().filter(|e| e.issue.state.reason().is_some()).map(|e| e.issue.id.as_str()).collect();
+    let closers = app.db.closers(&closed)?;
     let issues = all
         .iter()
         .zip(threads)
         .map(|(e, comments)| wire::ExportedIssue {
-            issue: issue_wire(&e.issue, &names),
+            issue: {
+                let mut w = issue_wire(&e.issue, &names);
+                if let Some((by, by_agent)) = closers.get(&e.issue.id) {
+                    w.closed_by = Some(by.clone());
+                    w.closed_by_agent = agent(&names, by_agent);
+                }
+                w
+            },
             events: e.events.iter().map(|ev| event_wire(ev, &names)).collect(),
             comments: comments
                 .into_iter()

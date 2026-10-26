@@ -60,7 +60,14 @@ test("a team's project lists its issues, and an owner opens one", async ({ brows
   await alice.locator("[data-issue-new]").click();
   await alice.locator("[data-issue-title-input]").fill("Search misses hyphenated words");
   await alice.locator("[data-issue-body-input]").fill("Searching for dry-run finds nothing.");
-  await alice.locator("[data-issue-labels-input]").fill("bug, search");
+  // Labels with the issue page's picker (UI audit #163): New label… twice.
+  for (const label of ["bug", "search"]) {
+    await alice.locator("[data-issue-labels-pick]").click();
+    await alice.getByRole("menuitem", { name: "New label…" }).click();
+    await alice.locator(".prompt input").fill(label);
+    await alice.locator(".prompt input").press("Enter");
+  }
+  await expect(alice.locator("[data-issue-labels-input] [data-issue-label]")).toHaveText(["bug", "search"]);
   await alice.locator("[data-issue-create]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/issues\/iss_[0-9a-f]{32}-search-misses-hyphenated-words$/, { timeout: 15_000 });
   issuePath = new URL(alice.url()).pathname;
@@ -154,7 +161,7 @@ test("the owner closes it as not planned, and the timeline and the lists say so"
   await expect(view.locator('[data-issue-event="reopened"]')).toBeVisible();
 });
 
-test("what's new in its thread is in the inbox, and Done there reads it", async () => {
+test("what's new in its thread is in the inbox, and Dismiss there reads it", async () => {
   test.setTimeout(90_000);
   await alice.locator("[data-issue-back]").click();
   await expect(alice.locator("[data-issue-row]")).toHaveCount(1);

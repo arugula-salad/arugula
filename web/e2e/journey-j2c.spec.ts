@@ -120,10 +120,10 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
       async (p) => {
         await show(p, "sammac");
         await p.getByTitle("Hosts").click();
-        // Its place on its line, and what that means under This machine.
-        const line = await p.getByRole("menuitem", { name: /^(✓\s*)?sammac\b/ }).innerText();
-        expect(line).toContain("In Arugula");
-        const means = await p.getByRole("menuitem", { name: /^In Arugula:/ }).innerText();
+        // Its place, and what that means, in its line's tooltip (UI audit
+        // #175: its group's header says the place).
+        const means = (await p.getByRole("menuitem", { name: /^(✓\s*)?sammac\b/ }).getAttribute("title")) ?? "";
+        expect(means).toContain("In Arugula");
         if (!/owner/.test(means)) j.issue(`it doesn't say who counts as sammac's owner: "${means.trim()}"`);
         await p.keyboard.press("Escape");
       },

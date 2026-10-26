@@ -7,7 +7,8 @@
 
 import type { ComponentChildren } from "preact";
 import { useSubscribe } from "../shared/ui/hooks";
-import { openMenu, type MenuItem } from "../shared/ui/menu";
+import { useRef } from "preact/hooks";
+import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { openAppearance } from "../shared/ui/appearance";
 import { WindowButtons } from "../shared/ui/window-buttons";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
@@ -19,6 +20,7 @@ import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
 import { PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
+import { InboxCount } from "./inbox-count";
 
 /** The bar's place a route is under (UI audit #159): a project's workspaces
  * are its home's, and its settings, Deploy… and a deploy are Settings. */
@@ -71,9 +73,13 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // None on a page that's no project's: the bar says "All projects".
   const project = barProject(r);
   const p = session.project(project);
-  const here = sectionOf(r);
-  // Chat is a team's: a project without one opens the first team's.
-  const chatTo = project && p?.team ? pathOf({ page: "chat", project }, names) : "/chat";
+  // An id that's none of the reader's lights no place (UI audit #170): the
+  // body says it isn't one of theirs.
+  const unknown = !!project && !p && session.state === "ready";
+  const here = unknown ? null : sectionOf(r);
+  // Each project's chat is its own rooms (UI audit #169): a team's
+  // channels and DMs, Personal's your machines' threads.
+  const chatTo = project ? pathOf({ page: "chat", project }, names) : "/chat";
   const pick = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
@@ -82,26 +88,34 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       { header: "Projects" },
       ...session.projects.map((x) => ({ label: x.name, checked: x.id === project, run: () => go(pathOf({ page: "project", project: x.id }, names)) })),
     ];
-    openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
+    openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
   const me = session.me;
   const account = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
-      { header: me?.login || me?.name || "Signed in" },
+      { header: me?.login || me?.name || "Signed in", name: !!(me?.login || me?.name) },
       { label: "Account settings", run: () => go("/settings") },
       // This device's look, as in the shell's settings menu; on arugula.io
       // the two pages share it.
       { label: "Appearance…", run: openAppearance },
       // Who's around (#110): chat's people see this, and only they.
       ...presenceItems(),
-      { label: "Your machines, devices and teams ↗", run: () => location.assign(controlOrigin()) },
+      // Control's one label (UI audit #184): it opens in this tab, so no ↗.
+      { label: "Open Control", run: () => location.assign(controlOrigin()) },
       "separator",
       // This page only: the hub's session, on control's page, stays.
       { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },
     ];
-    openMenu({ clientX: at.right, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
+    openMenu({ clientX: at.right, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
+  // Both are menu buttons (UI audit #185): they say so, and whether theirs is open.
+  const switcher = useRef<HTMLButtonElement>(null);
+  const accountButton = useRef<HTMLButtonElement>(null);
+  const switcherOpen = useMenuFrom(switcher);
+  const accountOpen = useMenuFrom(accountButton);
+  // An id that's none of the reader's says so, not a name.
+  const projectName = project ? (p?.name ?? (session.state === "ready" ? "Unknown project" : "…")) : "All projects";
   return (
     <header class="ws-head platform-bar" data-tauri-drag-region data-platform-bar>
       {/* As the shell's "Arugula / Control": which page this is, and the
@@ -117,9 +131,17 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       >
         Arugula <span aria-hidden="true">/</span> <strong>Projects</strong>
       </a>
-      <button class="scope-label platform-project" data-project-switcher title="Your projects" onClick={pick}>
-        {/* An id that's none of the reader's says so, not a name. */}
-        {project ? (p?.name ?? (session.state === "ready" ? "Unknown project" : "…")) : "All projects"} <span class="caret">▾</span>
+      <button
+        ref={switcher}
+        class="scope-label platform-project"
+        data-project-switcher
+        title="Your projects"
+        aria-label={`Project: ${projectName}`}
+        aria-haspopup="menu"
+        aria-expanded={switcherOpen}
+        onClick={pick}
+      >
+        <span class="platform-project-name">{projectName}</span> <span class="caret" aria-hidden="true">▾</span>
       </button>
       <nav class="places" aria-label="Places">
         {project && (
@@ -145,6 +167,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         </Place>
         <Place to="/inbox" here={here === "inbox"} data="inbox">
           Inbox
+          <InboxCount />
         </Place>
         {/* In a project, its settings; account settings are the account menu's. */}
         <Place to={project ? pathOf({ page: "project-settings", project }, names) : "/settings"} here={here === "settings"} data="settings">
@@ -153,11 +176,20 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       </nav>
       {children}
       <div class="bar-fill" data-tauri-drag-region />
-      <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals and devices, on control's page" data-platform-shell>
-        Machines ↗
+      <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals, devices and teams, on Control" data-platform-shell>
+        Control
       </a>
       {me && (
-        <button class="account-button platform-me" title={me.login ? `Signed in as ${me.login}` : "Signed in"} aria-label={`Account: ${me.login || me.name}`} data-signed-in-as onClick={account}>
+        <button
+          ref={accountButton}
+          class="account-button platform-me"
+          title={me.login ? `Signed in as ${me.login}` : "Signed in"}
+          aria-label={`Account: ${me.login || me.name}`}
+          aria-haspopup="menu"
+          aria-expanded={accountOpen}
+          data-signed-in-as
+          onClick={account}
+        >
           <span class="account-avatar" aria-hidden="true">
             {(me.login || me.name || "?").slice(0, 1).toUpperCase()}
             <AccountPicture />

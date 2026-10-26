@@ -48,7 +48,7 @@ test("a jump to a pane in another session, and Escape gives the focus back", asy
 
   const mod = process.platform === "darwin" ? "Meta" : "Control";
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  const filter = palette.getByRole("textbox", { name: "Command" });
+  const filter = palette.getByRole("combobox", { name: "Command" });
   await page.keyboard.press(`${mod}+Shift+KeyP`);
   await filter.fill("jumps");
   const key = `Go/pane ${target}`;

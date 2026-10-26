@@ -201,7 +201,7 @@ export interface BlockClient {
 /** Credentials for block `block` on `c`'s daemon. Refusals are sentences
  * the frame shows. */
 export async function credsFor(c: BlockClient, block: string, ua = navigator.userAgent, touchMac = isTouchMac()): Promise<Creds> {
-  if (!c.e2e) throw new Error("blocks open through Arugula control's page");
+  if (!c.e2e) throw new Error("blocks open through Control");
   const clock = c.daemonClock();
   if (!clock) throw new Error("this machine isn't connected, or its Arugula is too old to show blocks here: update it");
   const direct = c.directE2E();

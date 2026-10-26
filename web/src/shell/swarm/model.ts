@@ -8,8 +8,19 @@ import type { FleetPane } from "../fleet";
 import type { Reason, WorkKind } from "../../shared/proto";
 import { NEEDS_YOU } from "../../shared/needs-you";
 
-export type GroupBy = "project" | "machine" | "kind" | "session" | "person";
-export const GROUPINGS: GroupBy[] = ["project", "machine", "kind", "session", "person"];
+// "owner", not "person": it groups by whose a pane is, and a team owns
+// some (UI audit #172).
+export type GroupBy = "project" | "machine" | "kind" | "session" | "owner";
+export const GROUPINGS: GroupBy[] = ["project", "machine", "kind", "session", "owner"];
+
+/** Each grouping's button, in sentence case. */
+export const GROUPING_LABEL: Record<GroupBy, string> = {
+  project: "Project",
+  machine: "Machine",
+  kind: "Kind",
+  session: "Session",
+  owner: "Owner",
+};
 
 /** The prototype's palette, one colour per kind. */
 export const KINDS: Record<WorkKind, [number, number, number]> = {
@@ -29,6 +40,58 @@ export const KINDS: Record<WorkKind, [number, number, number]> = {
   // M43: the Managoat account view (removed; an older daemon may still say it).
   managoat: [120, 170, 250],
 };
+
+/** Each kind in words, for the legend (UI audit #172). */
+export const KIND_LABEL: Record<WorkKind, string> = {
+  shell: "Shell",
+  build: "Build",
+  test: "Test",
+  agent: "Agent",
+  server: "Server",
+  logs: "Logs",
+  editor: "Editor",
+  app: "Studio app",
+  pr: "Pull request",
+  issue: "Issue",
+  managoat: "Managoat",
+};
+
+/** Agents as people name them, by the ids panes and asks carry
+ * (`claude-code`, `claude`): "Claude Code" (UI audit #172). */
+const AGENTS: Record<string, string> = {
+  claude: "Claude Code",
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  gemini: "Gemini",
+  aider: "Aider",
+  opencode: "OpenCode",
+  "cursor-agent": "Cursor Agent",
+  // hud writes its own name in lower case.
+  hud: "hud",
+};
+
+/** An agent's name in words: a known id's, else its first letter up (and
+ * an id's dashes as spaces). */
+export function agentDisplay(id: string): string {
+  const known = AGENTS[id.toLowerCase()];
+  if (known) return known;
+  const up = id.charAt(0).toUpperCase() + id.slice(1);
+  return /^[\w.-]+$/.test(id) ? up.replace(/[-_]/g, " ") : up;
+}
+
+/** A reason's line with an agent's id at its start in words ("claude-code
+ * is done" reads "Claude Code is done"). */
+export function headlineOf(r: Reason): string {
+  return r.headline.replace(/^[\w-]+(?=\s)/, (id) => AGENTS[id.toLowerCase()] ?? id);
+}
+
+/** A command as words when it's an agent's: `claude.exe --resume <uuid>`
+ * (or `/usr/bin/claude …`) says "Claude Code"; anything else is itself. */
+export function readableCommand(cmd: string): string {
+  const program = cmd.trim().split(/\s+/)[0]?.replace(/^"|"$/g, "") ?? "";
+  const name = program.split(/[\\/]/).pop()!.replace(/\.exe$/i, "").toLowerCase();
+  return AGENTS[name] ?? cmd;
+}
 
 /** What a reason looks like on the rail. */
 export const REASON_COL: Record<Reason["kind"], [number, number, number]> = {
@@ -77,9 +140,9 @@ export function dirGroup(cwd: string | null | undefined, host: string): string {
   return top ? `/${top}` : "/";
 }
 
-/** Whose a pane is, for clustering by person (M30): you, a teammate, or a
+/** Whose a pane is, for clustering by owner (M30): you, a teammate, or a
  * team. */
-export function personOf(p: FleetPane): string {
+export function ownerOf(p: FleetPane): string {
   if (!p.person || p.person.kind === "me") return "you";
   return p.person.kind === "team" ? `team ${p.person.name}` : p.person.name;
 }
@@ -94,8 +157,8 @@ export function groupOf(p: FleetPane, by: GroupBy): string {
       return kindOf(p);
     case "session":
       return p.session ? `${p.session.name} · ${p.host}` : p.host;
-    case "person":
-      return personOf(p);
+    case "owner":
+      return ownerOf(p);
   }
 }
 
@@ -136,7 +199,7 @@ export function cardTitle(r: Reason, n: number, machines: string[], agent?: stri
   switch (r.kind) {
     case "ask":
       if (n > 1) return `${n} agents ask`;
-      return `${titleCase(agent ?? r.ask?.agent ?? "An agent")} asks`;
+      return `${agentDisplay(agent ?? r.ask?.agent ?? "An agent")} asks`;
     case "failed":
       return n > 1 ? `${n} failed on ${where}` : "Failed";
     case "exited":
@@ -161,12 +224,6 @@ export function cardTitle(r: Reason, n: number, machines: string[], agent?: stri
       if (r.gate?.source.kind === "point") return n > 1 ? `${n} decisions wait on you` : "A decision waits on you";
       return n > 1 ? `${n} workspaces wait at gates` : "Waits at a gate";
   }
-}
-
-function titleCase(s: string): string {
-  // hud writes its own name in lower case.
-  if (s === "hud") return s;
-  return s === "claude" ? "Claude Code" : s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** A card's text with long paths cut to their last part (a scratchpad
@@ -219,7 +276,8 @@ export function holdStill<T extends { key: string }>(held: boolean, kept: T[], n
 export function whatItDoes(p: FleetPane): string {
   const title = cleanTitle(p.info.title ?? "");
   const shells = /^[^\s@]+@[^\s:]+:/.test(title);
-  return (!shells && title) || p.info.current?.text || p.info.command || kindOf(p);
+  const cmd = p.info.current?.text || p.info.command;
+  return (!shells && title) || (cmd && readableCommand(cmd)) || KIND_LABEL[kindOf(p)] || kindOf(p);
 }
 
 /** A machine's name as a card shows it: a Mac's `.local` (or a LAN's

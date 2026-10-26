@@ -332,9 +332,11 @@ async fn a_projects_issue_home() {
         .unwrap();
     let (_, h) = get(&base, "v", &path).await;
     assert_eq!((&h["home"], &h["repos"], &h["both"]), (&json!("github"), &json!(["o/app"]), &json!(false)));
-    new_issue(&base, "a", &p, json!({ "title": "native anyway" })).await;
+    new_issue(&base, "a", &p, json!({ "title": "native anyway", "labels": ["web", "bug"] })).await;
     let (_, h) = get(&base, "v", &path).await;
     assert_eq!((&h["home"], &h["native_issues"], &h["both"]), (&json!("github"), &json!(1), &json!(true)));
+    // Every label on its issues, for the label menus (UI audit #163).
+    assert_eq!(h["labels"], json!(["bug", "web"]));
 
     let (st, h) = call(&base, "e", "PUT", &path, Some(json!({ "home": "native" }))).await;
     assert_eq!((st, &h["home"], &h["chosen"]), (200, &json!("native"), &json!(true)), "{h}");

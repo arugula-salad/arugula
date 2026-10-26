@@ -17,6 +17,23 @@ import { KINDS } from "./model";
 export const UNREAD = "#e6ebf4";
 export const UNREAD_MENTION = "#f9e2af";
 
+/** The swarm's dark set, as the canvases paint it: style.css's
+ * `:where(.swarm, …)` rule is where it's defined, and each scene reads it
+ * from there (readColors) when it's made (UI audit #180). These are only
+ * what it starts as. */
+export const C = { void: "#06080d", ink: "#e6ebf4", mute: "#7c8698", line: "#1a2030", fail: "#ff5468" };
+
+/** Takes C from the swarm's custom properties, as `el` (a canvas in the
+ * swarm) inherits them. */
+export function readColors(el: Element) {
+  const css = getComputedStyle(el);
+  const from = { void: "--void", ink: "--ink", mute: "--mute", line: "--line", fail: "--s-fail" } as const;
+  for (const k of Object.keys(from) as (keyof typeof from)[]) {
+    const v = css.getPropertyValue(from[k]).trim();
+    if (v) C[k] = v;
+  }
+}
+
 export interface FieldPane {
   key: string;
   kind: WorkKind;
@@ -196,6 +213,7 @@ export class Field implements SwarmScene {
     private hooks: FieldHooks,
   ) {
     this.cx = cv.getContext("2d")!;
+    readColors(cv);
     this.listen();
     // Labels are drawn in the swarm's faces (shared/fonts.css), and a field
     // asleep doesn't draw: draw again once those load. A face that didn't
@@ -712,7 +730,7 @@ export class Field implements SwarmScene {
     const { cx, W, H } = this;
     const z = this.cam.z;
     cx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    cx.fillStyle = "#06080d";
+    cx.fillStyle = C.void;
     cx.fillRect(0, 0, W, H);
 
     // Dot grid.
@@ -781,7 +799,7 @@ export class Field implements SwarmScene {
         cx.beginPath();
         cx.rect(x, y, w, h);
         cx.clip();
-        cx.fillStyle = "#06080d";
+        cx.fillStyle = C.void;
         cx.fillText(`${t.label} · ${t.where}`, x + fs * 0.6, y + fs * 1.15);
         cx.fillStyle = "rgba(200,210,226,.35)";
         stubs(t.key).forEach((len, i) => cx.fillRect(x + fs * 0.6, y + fs * 2.4 + i * fs * 1.35, (w - fs * 1.2) * len * act, fs * 0.5));
@@ -879,6 +897,7 @@ export class Field implements SwarmScene {
   private placeLabels(z: number): Label[] {
     const { cx, W } = this;
     const big = clamp(14 + z * 10, 14, 30);
+    const right = W - this.hooks.railW();
     const placed: Label[] = [];
     // A little air between names, so two never read as one.
     const PAD = 4;
@@ -902,7 +921,10 @@ export class Field implements SwarmScene {
     const order = [...this.groups].sort(([, a], [, b]) => b.need - a.need || b.n - a.n);
     for (const [name, g] of order) {
       const s = this.toScreen(g.x, g.y - g.r);
-      const title = name.toUpperCase();
+      // As named, not in capitals: a cluster is a path, a repo, a host or a
+      // session, and capitals garble them ("~/ALECRASO", 0 for O) (UI
+      // audit #172).
+      const title = name;
       cx.font = META_FONT;
       const panes = `${g.n} pane${g.n === 1 ? "" : "s"}`;
       const needText = g.need ? `${g.need} need you` : "";
@@ -921,9 +943,13 @@ export class Field implements SwarmScene {
         cx.font = `800 ${size}px "Big Shoulders Display", "Arial Narrow", sans-serif`;
         const w = Math.max(cx.measureText(title).width, metaW) + 8;
         const y = s.y + dy;
+        // A cluster on screen keeps its whole name on the canvas, not cut
+        // at its edge or under the rail (UI audit #172).
+        const half = w / 2 + 6;
+        const x = s.x >= 0 && s.x <= right && right > 2 * half ? clamp(s.x, half, right - half) : s.x;
         return {
-          name, title, meta, needText: need, need: g.need, big: size, metaW, x: s.x, y,
-          box: { x0: s.x - w / 2, x1: s.x + w / 2, y0: y - 12 - size * 0.85, y1: lines ? y + 6 : y - 8 },
+          name, title, meta, needText: need, need: g.need, big: size, metaW, x, y,
+          box: { x0: x - w / 2, x1: x + w / 2, y0: y - 12 - size * 0.85, y1: lines ? y + 6 : y - 8 },
         };
       };
       let chosen: Label | null = null;

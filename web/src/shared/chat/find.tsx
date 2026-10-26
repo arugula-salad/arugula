@@ -40,8 +40,20 @@ export function ViewHead({ title, sub, phone }: { title: string; sub?: string; p
 
 // ---- control's chat (M123): search and Activity over its rooms
 
-/** A message found in a room, and a way there. */
-function RoomHits({ store, hits }: { store: ChatStore; hits: { room: string; m: ChatMessage }[] }) {
+/** What a search's hits mark (UI audit #169): its words, not its in:,
+ * from: and has:, each where a word starts (`mea*` as `mea`), in any case. */
+export function hitMark(q: string): RegExp | undefined {
+  const words = q
+    .split(/\s+/)
+    .filter((w) => w && !/^(in|from|has):/i.test(w))
+    .map((w) => w.replace(/^["']+|["'*]+$/g, ""))
+    .filter(Boolean)
+    .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return words.length ? new RegExp(`(?<![\\p{L}\\p{N}_])(?:${words.join("|")})`, "giu") : undefined;
+}
+
+/** A message found in a room, and a way there; `mark`, what to mark in it. */
+function RoomHits({ store, hits, mark }: { store: ChatStore; hits: { room: string; m: ChatMessage }[]; mark?: RegExp }) {
   const api = usePlatformApi();
   return (
     <ul class="chat-hits">
@@ -59,7 +71,7 @@ function RoomHits({ store, hits }: { store: ChatStore; hits: { room: string; m: 
                 <AuthorAvatar m={m} />
                 <span class={m.agent ? "chat-hit-text by-agent" : "chat-hit-text"}>
                   <b>{authorLabel(m)}</b>
-                  {m.text ? <Markup text={m.text} /> : <p class="thread-text">{m.quote}</p>}
+                  {m.text ? <Markup text={m.text} mark={mark} /> : <p class="thread-text">{m.quote}</p>}
                 </span>
               </span>
             </button>
@@ -105,7 +117,7 @@ export function RoomSearchView({ store, q, phone }: { store: ChatStore; q: strin
         {!q && <p class="thread-empty">Type to search every room you read. in:#channel, from:@someone and has:quote narrow it.</p>}
         {q && hits?.length === 0 && !err && <p class="thread-empty">No messages match.</p>}
         {err && <p class="thread-error">{err}</p>}
-        <RoomHits store={store} hits={(hits ?? []).map((h) => ({ room: h.room, m: h.message }))} />
+        <RoomHits store={store} hits={(hits ?? []).map((h) => ({ room: h.room, m: h.message }))} mark={hitMark(q)} />
       </div>
     </section>
   );

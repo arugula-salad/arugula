@@ -6,9 +6,9 @@
 
 .grid.pane-chrome .pane-header.live {
   box-sizing: border-box;
-  padding: 0 7px 0 9px;
-  gap: 7px;
-  border-radius: 5px 5px 0 0;
+  padding: 0 var(--space-2);
+  gap: var(--space-2);
+  border-radius: var(--radius, 0) var(--radius, 0) 0 0;
   background: var(--chrome-panel, var(--surface));
   color: var(--subtle);
   font-size: 11px;
@@ -50,7 +50,7 @@
 }
 
 html:not([data-corners="square"]) .app:not(.phone) .grid.pane-chrome .pane {
-  border-radius: 0 0 5px 5px;
+  border-radius: 0 0 var(--radius, 0) var(--radius, 0);
 }
 
 html .app:not(.phone) .grid.pane-chrome .pane::after {
@@ -61,7 +61,7 @@ html .app:not(.phone) .grid.pane-chrome .pane::after {
   position: absolute;
   z-index: 5;
   pointer-events: none;
-  border-radius: 5px;
+  border-radius: var(--radius, 0);
   box-shadow: inset 0 0 0 1px var(--chrome-line, var(--raised));
 }
 
@@ -96,11 +96,14 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   border-radius: 0;
 }
 
-.grid.pane-chrome .pane-header.live { gap: 9px; }
+.grid.pane-chrome .pane-header.live { gap: var(--space-2); }
+/* Two sizes in the header: 13px for the title, 11px for everything about
+   it (UI audit #171). */
 .grid.pane-chrome .pane-header-n {
-  font: 12px ui-monospace, Menlo, monospace;
+  font: 11px ui-monospace, Menlo, monospace;
   font-variant-numeric: tabular-nums;
 }
+.grid.pane-chrome .pane-header-branch { font-size: 11px; }
 .grid.pane-chrome .pane-header-type {
   display: inline-flex;
   flex: none;
@@ -119,4 +122,39 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
 @container (max-width: 560px) {
   .grid.pane-chrome .pane-header-where,
   .grid.pane-chrome .pane-header-branch { display: none; }
+}
+
+/* Another window sizes the tab (UI audit #171): a chip in the active
+   pane's header, not a note over its prompt. */
+.grid.pane-chrome .pane-header-sized {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 2px 0 8px;
+  border-radius: var(--chip-radius);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  color: var(--fg);
+  font-size: 11px;
+  cursor: default;
+}
+.grid.pane-chrome .pane-header-sized button {
+  height: 18px;
+  padding: 0 8px;
+  border-radius: var(--chip-radius);
+  background: var(--warn);
+  color: var(--on-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.grid.pane-chrome .pane-header-sized button:hover {
+  filter: brightness(1.1);
+}
+@container (max-width: 420px) {
+  .grid.pane-chrome .pane-header-sized-what { display: none; }
 }

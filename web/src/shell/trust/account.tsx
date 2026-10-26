@@ -8,7 +8,8 @@ import { UsageReports } from "../../shared/ui/account-telemetry";
 import { agentName, api, shownName, type ControlSession } from "../control";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "../../shared/ui/confirm";
-import { RecoveryAndName } from "./recovery";
+import { Time } from "../../shared/ui/time";
+import { NameLine, RecoveryLeft } from "./recovery";
 
 export interface SessionRow {
   id: string;
@@ -35,13 +36,18 @@ interface DeletePreview {
   stays_in: string[];
 }
 
-const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
 /** What a sign-in or passkey came from, in the words Devices uses for a
  * browser ("Safari on iPhone"). Sign-ins from before control kept the
  * browser have none. */
 export function describeAgent(ua: string): string {
-  return ua ? agentName(ua) : "An earlier sign-in";
+  if (!ua) return "An earlier sign-in";
+  const name = agentName(ua);
+  // UI audit #179: which program, by its own word ("curl", "node"): the
+  // CLI signs its calls with its device key and keeps no sign-in, so a
+  // sign-in from a program is a script's.
+  const program = name === "A program" ? /\b(node|undici|curl|reqwest)\b/i.exec(ua)?.[1] : null;
+  return program ? `A program (${program.toLowerCase()})` : name;
 }
 
 /** A sign-in's name: its device's, once its page said which it is, so
@@ -80,6 +86,11 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
   };
   if (deleting) return <DeleteAccount s={s} back={() => setDeleting(false)} />;
   const others = (sessions ?? []).filter((x) => !x.current).length;
+  // Sign-ins from before control kept the browser all read "An earlier
+  // sign-in": folded into a count by Sign out everywhere (UI audit #174:
+  // ten rows of them).
+  const earlier = (x: SessionRow) => !x.current && !x.agent && !(x.device && s.trusted.has(x.device));
+  const unnamed = (sessions ?? []).filter(earlier).length;
   return (
     <>
       <h2>Sign-in and account</h2>
@@ -87,16 +98,19 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         Signed in as <b>{s.login}</b>
         {keys?.github ? ` (GitHub: ${keys.github})` : ""}.
       </p>
-      <RecoveryAndName s={s} />
+      <NameLine s={s} />
+      <RecoveryLeft s={s} />
       <h3 class="control-group">Where you're signed in</h3>
       <ul class="control-devices control-rows" data-sessions>
-        {(sessions ?? []).map((x) => (
+        {(sessions ?? []).filter((x) => !earlier(x)).map((x) => (
           <li key={x.id} data-session={x.id}>
             <span>
               {sessionName(s, x)}
               {x.current ? " (this browser)" : ""}
             </span>
-            <span class="dim">since {day(x.created)}</span>
+            <span class="dim">
+              signed in <Time at={x.created} on />
+            </span>
             {x.current ? (
               <span />
             ) : (
@@ -112,7 +126,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         ))}
       </ul>
       <p class="dim">
-        {others ? `${others} other session${others === 1 ? "" : "s"}. ` : "Nowhere else. "}
+        {others ? `${others} other session${others === 1 ? "" : "s"}${unnamed ? `, ${unnamed} of them from before control kept which browser` : ""}. ` : "Nowhere else. "}
         <button
           class={confirming === "all" ? "link danger" : "link"}
           data-end-all
@@ -137,8 +151,14 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
               <li key={k.id} data-passkey={k.id}>
                 <span data-passkey-name>{passkeyName(k, i)}</span>
                 <span class="dim">
-                  added {day(k.created)}
-                  {k.used ? `, last used ${day(k.used)}` : ""}
+                  added <Time at={k.created} on />
+                  {k.used ? (
+                    <>
+                      , last used <Time at={k.used} on />
+                    </>
+                  ) : (
+                    ""
+                  )}
                 </span>
                 <button
                   class="secondary danger small"

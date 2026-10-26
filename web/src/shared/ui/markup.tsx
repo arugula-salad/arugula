@@ -10,15 +10,16 @@ export type IsMe = (token: string) => boolean;
 
 /** `landed`: whether an @token reached someone (a thread message's, #296).
  * Given, only those are marked; the rest stay plain text, so a highlight
- * never promises a notification nobody got. */
-export function Markup({ text, isMe, landed }: { text: string; isMe?: IsMe; landed?: (token: string) => boolean }) {
+ * never promises a notification nobody got. `mark`: words to put in a
+ * `<mark>` (a search's, UI audit #169), a global pattern. */
+export function Markup({ text, isMe, landed, mark }: { text: string; isMe?: IsMe; landed?: (token: string) => boolean; mark?: RegExp }) {
   const out: ComponentChildren[] = [];
   // Fenced blocks first: nothing inside them is formatted.
   const fence = /```[^\n]*\n?([\s\S]*?)```/g;
   let at = 0;
   let k = 0;
   for (let m = fence.exec(text); m; m = fence.exec(text)) {
-    if (m.index > at) out.push(<Lines key={k++} text={text.slice(at, m.index)} isMe={isMe} landed={landed} />);
+    if (m.index > at) out.push(<Lines key={k++} text={text.slice(at, m.index)} isMe={isMe} landed={landed} mark={mark} />);
     out.push(
       <pre key={k++} class="msg-code">
         {m[1].replace(/\n$/, "")}
@@ -26,15 +27,30 @@ export function Markup({ text, isMe, landed }: { text: string; isMe?: IsMe; land
     );
     at = m.index + m[0].length;
   }
-  if (at < text.length) out.push(<Lines key={k++} text={text.slice(at)} isMe={isMe} landed={landed} />);
+  if (at < text.length) out.push(<Lines key={k++} text={text.slice(at)} isMe={isMe} landed={landed} mark={mark} />);
   return <>{out}</>;
 }
 
 /** Text between code blocks, trimmed of the newlines around the blocks. */
-function Lines({ text, isMe, landed }: { text: string; isMe?: IsMe; landed?: (token: string) => boolean }) {
+function Lines({ text, isMe, landed, mark }: { text: string; isMe?: IsMe; landed?: (token: string) => boolean; mark?: RegExp }) {
   const t = text.replace(/^\n/, "").replace(/\n$/, "");
   if (!t) return null;
-  return <p class="thread-text">{inline(t, isMe, landed)}</p>;
+  return <p class="thread-text">{inline(t, isMe, landed, undefined, mark)}</p>;
+}
+
+/** `s`, each match of `mark` in a `<mark>`. */
+function marked(s: string, mark: RegExp | undefined, key: () => number): ComponentChildren[] {
+  if (!mark) return [s];
+  const out: ComponentChildren[] = [];
+  let at = 0;
+  for (const m of s.matchAll(mark)) {
+    if (!m[0]) continue;
+    if (m.index! > at) out.push(s.slice(at, m.index));
+    out.push(<mark key={`m${key()}`}>{m[0]}</mark>);
+    at = m.index! + m[0].length;
+  }
+  if (at < s.length) out.push(s.slice(at));
+  return out;
 }
 
 // One pattern for every inline form; the first group that matched says
@@ -69,18 +85,18 @@ export type ForgeInline = {
 /** Only these hrefs come out of a body: whoever opened the PR wrote it. */
 const safeHref = (u: string) => /^https?:\/\/[^\s/]/i.test(u);
 
-export function inline(text: string, isMe?: IsMe, landed?: (token: string) => boolean, forge?: ForgeInline): ComponentChildren[] {
+export function inline(text: string, isMe?: IsMe, landed?: (token: string) => boolean, forge?: ForgeInline, mark?: RegExp): ComponentChildren[] {
   const out: ComponentChildren[] = [];
   const plain = forge?.text ?? ((s: string) => s);
   let at = 0;
   let k = 0;
   for (const m of text.matchAll(forge ? (forge.image ? DOC_INLINE : FORGE_INLINE) : INLINE)) {
     const i = m.index!;
-    if (i > at) out.push(plain(text.slice(at, i)));
+    if (i > at) out.push(...marked(plain(text.slice(at, i)), mark, () => k++));
     const s = m[0];
     if (m[1]) out.push(<code key={k++}>{s.slice(1, -1)}</code>);
-    else if (m[2]) out.push(forge ? <strong key={k++}>{inline(s.slice(2, -2), isMe, landed, forge)}</strong> : <b key={k++}>{inline(s.slice(2, -2), isMe, landed)}</b>);
-    else if (m[3]) out.push(forge ? <em key={k++}>{inline(s.slice(1, -1), isMe, landed, forge)}</em> : <i key={k++}>{inline(s.slice(1, -1), isMe, landed)}</i>);
+    else if (m[2]) out.push(forge ? <strong key={k++}>{inline(s.slice(2, -2), isMe, landed, forge)}</strong> : <b key={k++}>{inline(s.slice(2, -2), isMe, landed, undefined, mark)}</b>);
+    else if (m[3]) out.push(forge ? <em key={k++}>{inline(s.slice(1, -1), isMe, landed, forge)}</em> : <i key={k++}>{inline(s.slice(1, -1), isMe, landed, undefined, mark)}</i>);
     else if (m[4])
       out.push(
         <a key={k++} href={s} target="_blank" rel="noopener noreferrer">
@@ -121,7 +137,7 @@ export function inline(text: string, isMe?: IsMe, landed?: (token: string) => bo
     }
     at = i + s.length;
   }
-  if (at < text.length) out.push(plain(text.slice(at)));
+  if (at < text.length) out.push(...marked(plain(text.slice(at)), mark, () => k++));
   return out;
 }
 

@@ -16,12 +16,12 @@ export interface Known {
   run(id: string): string | null | undefined;
   /** A chat room's title (`#general`, a person's name). */
   room(id: string): string | null | undefined;
-  /** The project the bar shows (a DM's team's, a deploy's). */
+  /** The project the bar shows for a route that names none (a deploy's). */
   shown?: string;
 }
 
 const APP = "Arugula";
-const CHAT_VIEWS = { activity: "Activity", saved: "Saved for later", search: "Search", threads: "Threads" } as const;
+const CHAT_VIEWS = { activity: "Activity", saved: "Saved", search: "Search", threads: "Threads" } as const;
 
 /** The tab's title for `r`. */
 export function titleOf(r: Route, k: Known): string {
@@ -52,9 +52,9 @@ export function titleOf(r: Route, k: Known): string {
     case "dm":
       return parts(k.room(r.room) ?? "Direct message", p);
     case "workspaces":
-      return parts("Workspaces", p);
+      return parts("Cloud workspaces", p);
     case "workspace":
-      return parts("Workspace", p);
+      return parts("Cloud workspace", p);
     case "project-settings":
       return parts("Settings", p);
     case "new-deploy":

@@ -393,7 +393,7 @@ async fn a_box_asks_the_platform_about_its_turns() {
     // the hub.
     assert_eq!(r.status(), 404);
     let v: Value = r.json().await.unwrap();
-    assert_eq!(v["error"], "this machine isn't a live hosted workspace");
+    assert_eq!(v["error"], "this machine isn't a live cloud workspace");
     let r = signed_post(&boxk, "/api/hosted/turns/ht_1/end", b"").await.unwrap();
     assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()["ended"].clone()), (200, json!(false)));
 

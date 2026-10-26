@@ -11,7 +11,9 @@ import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
 import type { DocRow } from "../../shared/proto";
 import { ConfirmRemove } from "../../shared/ui/confirm";
+import { Time } from "../../shared/ui/time";
 import { AppBar } from "./app-bar";
+import { directory } from "../hosts";
 import { docsRoute, openDoc } from "./docs-route";
 import { LinkIcon } from "./shell/icons";
 
@@ -26,16 +28,6 @@ export function DocsPage({ client }: { client: Client }) {
   }, []);
   if (!docsRoute() || !client.flag("docs") || client.state?.roles) return null;
   return <Page client={client} />;
-}
-
-/** "3h ago": when a Doc was last written. */
-function ago(ms: number): string {
-  const s = Math.max(0, (Date.now() - ms) / 1000);
-  if (s < 90) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  if (s < 86400 * 30) return `${Math.round(s / 86400)}d ago`;
-  return `on ${new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`;
 }
 
 /** Who made it: an agent (`mcp:NAME`), a person's driver, a Doc from
@@ -90,9 +82,19 @@ function Page({ client }: { client: Client }) {
     <div class="chat agents-page docs-page" data-docs-page>
       <AppBar client={client} at="docs" />
       <div class="agents-body">
+        {/* Whose Docs, and what they are, like the Recipes tab (UI audit #173). */}
+        <h3 class="agents-machine" data-docs-machine>
+          Docs on {directory.current || "this machine"}
+        </h3>
+        <p class="agents-lead">The Docs your agents write on this machine, newest first. Closing a Doc's pane keeps it: open it again here.</p>
         {error && (
-          <p class="control-error" data-docs-error>
+          <p class="control-error agents-error" data-docs-error>
             {error}
+          </p>
+        )}
+        {!rows && !error && (
+          <p class="dim agents-loading" data-docs-loading>
+            Reading this machine's Docs…
           </p>
         )}
         {rows && rows.length === 0 && (
@@ -112,13 +114,13 @@ function Page({ client }: { client: Client }) {
                     </span>
                   )}
                   {r.shared && (
-                    <span class="ws-tag" data-doc-shared title="Shared with a link" aria-label="Shared with a link">
-                      <LinkIcon />
+                    <span class="ws-tag" data-doc-shared title="Shared with a link">
+                      <LinkIcon /> shared
                     </span>
                   )}
                 </div>
                 <p class="dim">
-                  written {ago(r.updated)} · {madeBy(r.by)}
+                  updated <Time at={r.updated} on /> · {madeBy(r.by)}
                 </p>
               </div>
               <div class="agents-buttons">

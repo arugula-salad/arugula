@@ -164,7 +164,7 @@ test("sessions: create, switch, close", async ({ page }) => {
   expect(name1).toMatch(/^[a-z]+ [a-z]+$/);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(s2);
   await page.locator("[data-crumb-menu]").click();
-  await page.getByRole("menuitem", { name: new RegExp(`${name1}$`) }).click();
+  await page.getByRole("menuitemradio", { name: new RegExp(`${name1}$`) }).click();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(s1);
   await page.locator("[data-crumb-menu]").click();
   await page.getByRole("menuitem", { name: "Close session" }).click();

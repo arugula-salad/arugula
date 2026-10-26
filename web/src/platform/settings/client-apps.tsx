@@ -3,25 +3,28 @@
 // members' to open in that product (editors and owners), so its owners are
 // the project's. The product puts it here for a member who edits the
 // project; nothing on this page changes it. A section (./section), a row
-// each.
+// each, there with none too where the platform keeps products' apps (UI
+// audit #166: a project's settings show every section).
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
+import { Time } from "../../shared/ui/time";
 import type { PlatformProject } from "../session";
 import { nameIn } from "../pages/issues";
-import { ago } from "./agent-tokens";
+import { useProductNames } from "./linked";
 import { Section } from "./section";
 
 type App = { client: string; app: string; title: string; added_by: string | null; added_at: number };
 
 export function ClientApps({ p }: { p: PlatformProject }) {
   const [apps, setApps] = useState<App[] | null>(null);
+  const product = useProductNames();
   useEffect(() => {
     platformFetch(`/api/projects/${encodeURIComponent(p.id)}/clients`, { credentials: "same-origin" })
       .then((r) => (r.ok ? (r.json() as Promise<{ apps: App[] }>) : null))
       .then((v) => setApps(v?.apps ?? null), () => setApps(null));
   }, [p.id]);
-  if (!apps?.length) return null;
+  if (!apps) return null;
   return (
     <Section
       id="apps"
@@ -36,16 +39,17 @@ export function ClientApps({ p }: { p: PlatformProject }) {
         </p>
       }
     >
+      {apps.length === 0 && <p class="dim">None yet.</p>}
       <ul class="platform-list settings-rows">
         {apps.map((a) => (
           <li key={`${a.client}/${a.app}`} data-client-app={a.app}>
             <strong>
               <bdi>{a.title}</bdi>
             </strong>
-            <span class="settings-tag">{a.client}</span>
+            <span class="settings-tag">{product(a.client)}</span>
             <code class="sw-mono">{a.app}</code>
             <span class="dim">
-              added {ago(a.added_at)}
+              added <Time at={a.added_at} />
               {a.added_by ? (
                 <>
                   {" "}

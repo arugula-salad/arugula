@@ -4,11 +4,13 @@
 // sends the person to GitHub to install it, and GitHub sends them back to
 // `/installed`, which comes here with the repo filled in. Each linked repo
 // has a switch for content mirroring (M166), with what turning it on means.
-// Then its environments, their secrets and "Deploy…" (M252), its
-// standing grant for runs (M211), its hosted workspaces' finish step for
-// agent sessions (M261), for its owners the agent tokens over it
+// Then where its new issues go (M195, moved here by UI audit #163), its
+// environments, their secrets and "Deploy…" (M252), its standing grant for
+// runs (M211), its cloud workspaces' finish step for agent sessions (M261),
+// for its owners the agent tokens over it
 // and its own secrets (M230), what its Claude calls cost (M231), and the
-// apps products keep in it (M236). Each part is a section
+// apps products keep in it (M236), and for a team's owners its chat's
+// owners-only switches (UI audit #168). Each part is a section
 // (../settings/section), as /settings's are: a heading, one line, the rest
 // behind More, and on a wide screen an index of them beside the column.
 // The repos are a table, a row each with its switch.
@@ -23,12 +25,14 @@ import { names } from "../links";
 import { follow, go, pathOf, REPO } from "../router";
 import { session } from "../session";
 import { Missing } from "./project";
+import { IssueHomeSetting } from "./issues";
 import { RunGrant } from "../settings/runs";
 import { FinishStep } from "../settings/finish-step";
 import { Environments } from "../settings/environments";
 import { ProjectAgents } from "../settings/project-agents";
 import { ClaudeSpend } from "../settings/spend";
 import { ClientApps } from "../settings/client-apps";
+import { TeamChat } from "../settings/chat-alerts";
 import { Section, SectionIndex } from "../settings/section";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
@@ -89,7 +93,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
   const submit = (e: Event) => {
     e.preventDefault();
     const r = repo.trim();
-    if (!REPO.test(r)) return setErr("A repo on GitHub: OWNER/NAME");
+    if (!REPO.test(r)) return setErr("A repo on GitHub: owner/name");
     void act(async () => {
       await call("POST", base, { repo: r });
       setRepo("");
@@ -194,7 +198,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
             </div>
             {changes ? (
               <form class="platform-link-repo" aria-label="Link a repo" onSubmit={submit}>
-                <input required aria-label="Repo" placeholder="OWNER/NAME" value={repo} data-link-repo onInput={(e) => setRepo(e.currentTarget.value)} />
+                <input required aria-label="Repo" placeholder="Owner/name" value={repo} data-link-repo onInput={(e) => setRepo(e.currentTarget.value)} />
                 <button class="primary" disabled={busy}>
                   Link
                 </button>
@@ -218,12 +222,14 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
               </ConfirmRemove>
             )}
           </Section>
+          <IssueHomeSetting key={linked} p={p} />
           <Environments p={p} />
           <RunGrant project={p.id} />
           <FinishStep p={p} />
           <ProjectAgents p={p} />
           <ClaudeSpend p={p} />
           <ClientApps p={p} />
+          <TeamChat p={p} />
         </div>
       </div>
     </section>

@@ -1,6 +1,6 @@
-// A project's agents with no machine and its own secrets (M230), for its
-// owners: every agent token over the project, whoever minted it, with a
-// revoke that takes its reach here back; and the secrets set by name, by
+// A project's agent tokens (agents with no machine) and its own secrets
+// (M230), for its owners: every agent token over the project, whoever
+// minted it, with a revoke that takes its reach here back; and the secrets set by name, by
 // agents (`set_secret`) or by an owner here (M236), each with who last set
 // it and when, never a value. Beside each secret, which registered clients
 // (studio, M236) may read it for their apps in the project, and how often
@@ -11,9 +11,12 @@
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { ConfirmRemove } from "../../shared/ui/confirm";
+import { Time } from "../../shared/ui/time";
 import type { PlatformProject } from "../session";
+import { names } from "../links";
+import { follow, pathOf } from "../router";
 import { toneClass } from "../swarm";
-import { ago, reachOf, type AgentToken } from "./agent-tokens";
+import { reachOf, type AgentToken } from "./agent-tokens";
 import { roleIn } from "./environments";
 import { Section } from "./section";
 
@@ -124,22 +127,28 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
     }
     await load();
   };
+  // Where an owner makes their own tokens: the account's settings, at
+  // that section (UI audit #166).
+  const own = `${pathOf({ page: "settings" }, names)}#tokens`;
   return (
     <>
       <Section
         id="agents"
-        title="Agents with no machine"
+        title="Agent tokens"
         count={tokens?.length}
         hooks={{ "data-project-agents": "" }}
-        lede="Every agent token over this project, whoever made it."
+        lede="Every agent token over this project, whoever made it: agents with no machine."
         more={
           <p>
-            Revoke here takes a token's reach over this project back at once; its owner keeps it for the rest. Owners make them on their own
-            Settings.
+            Revoke takes a token's reach over this project back at once; its owner keeps it for the rest. Owners make them in{" "}
+            <a href={own} onClick={(e) => follow(e, own)} data-project-agents-own>
+              their own settings
+            </a>
+            .
           </p>
         }
       >
-        {tokens?.length === 0 && <p class="dim">None.</p>}
+        {tokens?.length === 0 && <p class="dim">None yet.</p>}
         {tokens?.length ? (
           <ul class="platform-list sw-cards settings-cards agent-tokens">
             {/* The bar: live, or revoked. */}
@@ -154,12 +163,20 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
                   </span>
                   <span class="settings-card-act">
                     <button class="secondary danger small" data-project-agent-revoke={t.id} onClick={() => setRevoking(t)}>
-                      Revoke here
+                      Revoke
                     </button>
                   </span>
                 </div>
-                <span class="sw-mono agent-token-reach">{reachOf(t)}</span>
-                <span class="dim">{t.last_used_at ? `Used ${ago(t.last_used_at)}` : "Never used"}</span>
+                <span class="agent-token-reach">{reachOf(t)}</span>
+                <span class="dim">
+                  {t.last_used_at ? (
+                    <>
+                      Used <Time at={t.last_used_at} />
+                    </>
+                  ) : (
+                    "Never used"
+                  )}
+                </span>
               </li>
             ))}
           </ul>
@@ -199,14 +216,14 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
           </>
         }
       >
-        {secrets?.secrets.length === 0 && <p class="dim">None.</p>}
+        {secrets?.secrets.length === 0 && <p class="dim">None yet.</p>}
         <ul class="platform-list settings-rows secret-rows" data-project-secrets>
           {secrets?.secrets.map((s) => (
             <li key={s.name} data-project-secret={s.name}>
               <div class="secret-head">
                 <code class="secret-name">{s.name}</code>
                 <span class="dim">
-                  set {ago(s.updated_at)}
+                  set <Time at={s.updated_at} />
                   {s.updated_by ? (
                     <>
                       {" "}
@@ -245,7 +262,14 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
                     ) : (
                       <span class="dim">
                         {" "}
-                        · {g.reads ? `read ${g.reads} ${g.reads === 1 ? "time" : "times"}, last ${ago(g.last_read_at ?? g.granted_at)}` : "not read yet"}
+                        ·{" "}
+                        {g.reads ? (
+                          <>
+                            read {g.reads} {g.reads === 1 ? "time" : "times"}, last <Time at={g.last_read_at ?? g.granted_at} />
+                          </>
+                        ) : (
+                          "not read yet"
+                        )}
                         {g.changed_since_grant ? ` · changed since by ${s.updated_by?.name ?? s.updated_by?.account ?? g.value_set_by ?? "someone"}` : ""}
                       </span>
                     )}
@@ -259,7 +283,7 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
           <input
             required
             aria-label="Secret name"
-            placeholder="NAME"
+            placeholder="Name"
             spellcheck={false}
             value={name}
             data-project-secret-name

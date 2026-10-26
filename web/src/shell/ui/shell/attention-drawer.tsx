@@ -14,7 +14,7 @@ import { directory } from "../../hosts";
 import { OPS, opPath } from "../../ops";
 import { gateKey, type ActRequest, type PaneInfo } from "../../../shared/proto";
 import { needsYou, NEEDS_YOU } from "../../../shared/needs-you";
-import { cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../swarm/model";
+import { agentDisplay, cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../swarm/model";
 import { AskCard, type Ask } from "../../../shared/ask";
 import { PermissionBody, PermissionButtons, permissionTarget, VIEWER_NOTE } from "../answer-card";
 import { DiffCard } from "../diff-card";
@@ -184,7 +184,7 @@ export function AttentionBell({ client }: { client: Client }) {
 /** Who asks, in words: "Claude Code", "hud". */
 function agentOf(p: FleetPane): string | null {
   const a = p.info.reason?.ask?.agent ?? p.info.ask?.agent ?? (p.info.ask?.source === "hook" ? "claude" : null);
-  if (a) return a === "claude" ? "Claude Code" : a;
+  if (a) return agentDisplay(a);
   return kindOf(p) === "agent" ? whatItDoes(p) : null;
 }
 
@@ -283,11 +283,13 @@ export function AttentionDrawer({ client }: { client: Client }) {
             tabIndex={i === chosen ? 0 : -1}
             onClick={() => setSel(i.p.key)}
           >
-            <span class={`ws-dot ${i.waiting ? "needs_input" : "offline"}`} aria-hidden="true" />
+            <span class={`ws-dot ${i.waiting ? "needs_input" : "failed"}`} aria-hidden="true" />
+            {/* What it's about as the title, why and where under it (UI
+                audit #172): every title was "Needs you" before. */}
             <span class="ws-att-item-text">
-              <span class="ws-att-item-title">{titleOf(i)}</span>
+              <span class="ws-att-item-title">{whatItDoes(i.p)}</span>
               <span class="ws-att-item-sub">
-                {[shortHost(i.p.host), i.p.session?.name, whatItDoes(i.p)].filter(Boolean).join(" · ")}
+                {[titleOf(i), shortHost(i.p.host), i.p.session?.name].filter(Boolean).join(" · ")}
               </span>
             </span>
           </button>
@@ -336,6 +338,13 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
     ["Where", [p.session?.name, item.tab].filter(Boolean).join(" › ") || null],
   ];
   const diff = r?.kind === "diff" ? (p.info.diff ?? r.diff ?? null) : null;
+  const go = (
+    <button class="secondary" data-attention-goto onClick={() => goToItem(client, item)} title="Show it, on its machine; this doesn't answer it">
+      Go to pane
+    </button>
+  );
+  // Its own buttons, or none: Go to pane goes in their row then.
+  const own = !item.viewer && !(p.stale && !item.here) && !diff && ask?.kind !== "permission" && !(ask && r?.ask?.what === "question") && !!r;
   return (
     <section class="ws-att-detail" aria-label={titleOf(item)} data-attention-detail={p.key}>
       <h3>{titleOf(item)}</h3>
@@ -401,14 +410,12 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
                 Dismiss
               </button>
             )}
+            {/* Every action in one row (UI audit #172). */}
+            {go}
           </div>
         ) : null}
       </div>
-      <div class="ws-att-go">
-        <button class="secondary small" data-attention-goto onClick={() => goToItem(client, item)} title="Show it, on its machine; this doesn't answer it">
-          Go to pane
-        </button>
-      </div>
+      {!own && <div class="ws-att-go">{go}</div>}
     </section>
   );
 }

@@ -83,7 +83,7 @@ const docId = async (title: string) => ((await (await fetch(`${url}/api/docs`)).
 test("with no Doc the page says where they come from", async ({ page }) => {
   await reset(page);
   await goToDocs(page);
-  await expect(page.locator(".ws-rail [data-open-docs]")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".ws-rail [data-open-docs]")).toHaveAttribute("aria-current", "page");
   await expect(page.locator("[data-docs-empty]")).toHaveText("Docs your agents write show up here.");
   await expect(page.locator("[data-doc]")).toHaveCount(0);
 });
@@ -97,7 +97,7 @@ test("a Doc whose pane was closed is on the page, and Open shows it again with i
   await goToDocs(page);
   const r = row(page, "Quarterly plan");
   await expect(r).toHaveCount(1);
-  await expect(r).toContainText(/written (just now|\d+m ago)/);
+  await expect(r).toContainText(/updated (just now|\d+m ago)/);
   await expect(r).toContainText("made by");
   await expect(r.locator("[data-doc-shared]")).toHaveCount(0);
   await r.locator("[data-open-doc]").click();

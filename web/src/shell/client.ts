@@ -401,6 +401,9 @@ export class Client {
    * read on each hello and when a menu opens; `null` until read, or from
    * a daemon too old to say (then menus offer everything, as before). */
   features: HostFeatures | null = null;
+  /** The daemon's name for its machine (`GET /api/host`'s `name`), for a
+   * page with no directory to name it, a read-only link's (UI audit #179). */
+  hostName: string | null = null;
   clientId: number | null = null;
   connected = false;
   error: string | null = null;
@@ -702,8 +705,10 @@ export class Client {
       if (!res.ok) return;
       const h = await res.json<HostInfo>();
       const features = h.features ?? null;
-      if (JSON.stringify(features) === JSON.stringify(this.features)) return;
+      const name = h.name || null;
+      if (JSON.stringify(features) === JSON.stringify(this.features) && name === this.hostName) return;
       this.features = features;
+      this.hostName = name;
       this.emit();
     } catch {
       // as it was

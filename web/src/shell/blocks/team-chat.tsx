@@ -38,6 +38,7 @@ import { useControlState } from "../ui/control-state";
 import { getControlSession } from "../ui/people";
 import { openGettingStarted } from "../ui/welcome";
 import { registerBlock, type BlockView } from "./view";
+import { BlockLoading } from "./block-states";
 
 /** The block's state: its layout entry, which the daemon says whole. */
 export interface TeamChatState {
@@ -219,7 +220,7 @@ function TeamChatBlock({ client, id, s, shown }: { client: Client; id: PaneId; s
 
   const signedIn = session?.phase === "ready";
   let body;
-  if (!s) body = <p class="chat-none">…</p>;
+  if (!s) body = <BlockLoading what="chat" />;
   else if (chat.on === true || (signedIn && chat.on === false)) {
     body = (
       <PlatformApiContext.Provider value={api}>
@@ -228,7 +229,7 @@ function TeamChatBlock({ client, id, s, shown }: { client: Client; id: PaneId; s
         </ChatShown.Provider>
       </PlatformApiContext.Provider>
     );
-  } else if (signedIn) body = <p class="chat-none" data-chat-reading>Reading chat from Arugula control…</p>;
+  } else if (signedIn) body = <BlockLoading data-chat-reading what="chat from Arugula control" />;
   else body = <NeedsControl client={client} joined={owned?.state === "joined"} guest={!!client.state?.roles} />;
   return (
     <div class="chat-block" ref={box} data-chat-block={id} data-chat-pinned-to={pinned} data-chat-narrow={narrow ? "" : undefined}>
@@ -243,9 +244,9 @@ function NeedsControl({ client, joined, guest }: { client: Client; joined: boole
     <div class="chat-block-needs" data-chat-needs-control>
       <h3>Team chat needs Arugula control</h3>
       {guest ? (
-        <p>Chat is your team's, on Arugula control, and you read it as yourself. Open this machine through control's page, signed in, to chat here.</p>
+        <p>Chat is your team's, on Arugula control, and you read it as yourself. Open this machine through Control, signed in, to chat here.</p>
       ) : joined ? (
-        <p>This machine has joined Arugula control, but this page isn't signed in to it. Open the machine through control's page and chat is here as you.</p>
+        <p>This machine has joined Arugula control, but this page isn't signed in to it. Open the machine through Control and chat is here as you.</p>
       ) : (
         <>
           <p>Channels, direct messages and threads are held by Arugula control, and you read them as yourself. This machine hasn't joined one.</p>

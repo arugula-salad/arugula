@@ -69,7 +69,7 @@ pub const NOT_HERE: &str =
     "@arugula works in a project's channels, and in the threads on its issues and pull requests.";
 /// Said when the project has no hosted workspace.
 pub const NO_BOX: &str =
-    "@arugula runs on this project's hosted workspace, and it has none: set one up first, then ask again.";
+    "@arugula runs on this project's cloud workspace, and it has none: set one up first, then ask again.";
 
 /// A person posted `text` as message `seq` (under `parent`) in `room`: start
 /// a session, answer one's question, or prompt one. An agent's or a
@@ -175,7 +175,7 @@ fn refusal(who: &str, why: Cannot) -> String {
     match why {
         Cannot::Viewer => format!("@arugula needs an owner or editor of this project to ask: {who} can only view it."),
         Cannot::Unlisted => {
-            format!("@arugula runs on hosted workspaces, which are in a limited beta: {who} isn't on its list yet.")
+            format!("@arugula runs on cloud workspaces, which are in a limited beta: {who} isn't on its list yet.")
         }
         Cannot::Outside => format!("@arugula needs a member of this project to ask: {who} isn't in it."),
     }
@@ -267,7 +267,7 @@ async fn start(app: &Platform, room: &Room, thread: u64, project: &str, asker: &
                 room,
                 thread,
                 &format!(
-                    "Which hosted workspace should @arugula run on? Reply with its name: {}. (An owner or editor can \
+                    "Which cloud workspace should @arugula run on? Reply with its name: {}. (An owner or editor can \
                      choose one for the project in its settings: agents run on.)",
                     list(&names)
                 ),

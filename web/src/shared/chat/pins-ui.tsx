@@ -11,6 +11,7 @@ import { askText } from "../ui/menu";
 import { usePlatformApi } from "../platform-api";
 import { authorLabel } from "./agents";
 import { mayPin, preview, systemText } from "./pins";
+import { Time } from "../ui/time";
 
 /** Ask for a channel's new topic. */
 export async function editTopic(store: ChatStore, room: ChatRoom, toast: (s: string) => void) {
@@ -178,7 +179,7 @@ export function PinsButton({ room, toast }: { room: ChatRoom; toast: (s: string)
             {pins?.map((p) => (
               <li key={p.message.seq} data-pin={p.message.seq}>
                 <div class="chat-pin-who">
-                  {authorLabel(p.message)} · <time>{new Date(p.message.at).toLocaleDateString()}</time>
+                  {authorLabel(p.message)} · <Time at={p.message.at} />
                 </div>
                 <div class="chat-pin-text">{preview(p.message.text) || (p.message.quote ? "A quote from a pane" : "")}</div>
                 <div class="chat-pop-buttons">

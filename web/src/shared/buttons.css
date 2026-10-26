@@ -126,11 +126,37 @@ a.secondary.danger:hover {
   font-size: 12px;
 }
 
+/* A finger, not a pointer (UI audit #186): on a touch screen the set is
+   tall enough to hit, the compact size too. Rows that held a 24px button
+   grow by the difference; nothing else moves. */
+@media (pointer: coarse) {
+  .primary,
+  .secondary {
+    min-height: 40px;
+  }
+
+  .primary.small,
+  .secondary.small {
+    min-height: 34px;
+  }
+}
+
 .primary:disabled,
 .secondary:disabled,
 .link:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* A primary that can't be pressed yet is grey, not a faded accent that
+   still reads as the thing to do (UI audit #179). Its fill is the
+   variable, so every finish draws it grey. */
+.primary:disabled {
+  --btn-fill: color-mix(in srgb, var(--fg) 9%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 16%, transparent);
+  color: var(--dim);
+  text-shadow: none;
+  opacity: 1;
 }
 
 .primary:focus-visible,

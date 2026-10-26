@@ -47,6 +47,22 @@ export function paneStatus(info: PaneInfo | undefined): { cls: string; word: str
   return { cls: "idle", word: "idle" };
 }
 
+/** Blocks with a program behind them, whose header says how it is; the
+ * rest (a page, a file, a PR) have no run state, so no "idle" (UI audit
+ * #177). Needing you, or done, still shows on any. */
+const RUNS = new Set<string | undefined>([undefined, "terminal", "remote", "agent", "chat"]);
+
+/** The glyph a pane's header draws (UI audit #177: one per block type): a
+ * forge block is a pull request, an issue, or a project's own issue. */
+export function paneGlyph(client: Client, id: PaneId, info: PaneInfo | undefined): { glyph: string; word: string } {
+  if (info?.type === "forge") {
+    const s = client.blocks.get(id)?.state as { kind?: string; native?: boolean } | null | undefined;
+    if (s?.native) return { glyph: "native-issue", word: "project issue" };
+    return s?.kind === "issue" ? { glyph: "issue", word: "issue" } : { glyph: "pr", word: "pull request" };
+  }
+  return { glyph: info?.type ?? "terminal", word: paneType(info) };
+}
+
 /** Where a pane runs when that isn't here: a remote pane's host, a VM. */
 function hostOf(client: Client, id: PaneId, info: PaneInfo | undefined): string | null {
   if (info?.type === "remote") return (client.blocks.get(id)?.state as { host?: string } | null)?.host ?? "remote";
@@ -67,6 +83,7 @@ export function PaneHeader({
   cell,
   active,
   height = cell.height,
+  sizedElsewhere,
 }: {
   client: Client;
   tab: TabView;
@@ -75,6 +92,9 @@ export function PaneHeader({
   cell: Cell;
   active: boolean;
   height?: number;
+  /** Another window sizes the tab: a chip here says so, and its button
+   * takes the size for this window (UI audit #171). */
+  sizedElsewhere?: () => void;
 }) {
   const info = client.info(id);
   const title = client.title(id) || info?.command || `pane %${id}`;
@@ -83,8 +103,9 @@ export function PaneHeader({
   const style = { left: len(rect.x * cell.width), top: len(rect.y * cell.height - height), width: len(rect.cols * cell.width), height: len(height) };
 
   const n = ordinal(tab, id);
-  const type = paneType(info);
-  const status = paneStatus(info);
+  const { glyph, word: type } = paneGlyph(client, id, info);
+  const said = paneStatus(info);
+  const status = RUNS.has(info?.type) || said.cls === "needs_input" || said.cls === "done" ? said : { cls: "idle", word: "" };
   const host = hostOf(client, id, info);
   const branch = info?.branch ?? null;
   const focused = tab.focus === id;
@@ -125,7 +146,7 @@ export function PaneHeader({
           {String(n).padStart(2, "0")}
         </span>
       )}
-      <span class="pane-header-type" role="img" aria-label={type} title={type}><PaneTypeIcon type={info?.type} /></span>
+      <span class="pane-header-type" role="img" aria-label={type} title={type}><PaneTypeIcon type={glyph} /></span>
       <span class="pane-header-title">{title}</span>
       {status.word && client.connected && (
         <span class={`pane-header-status ${status.cls}`} data-pane-status={status.cls}>
@@ -142,6 +163,14 @@ export function PaneHeader({
         </span>
       )}
       <span class="pane-header-fill" />
+      {sizedElsewhere && (
+        <span class="pane-header-sized" data-sized-elsewhere title="Another window set this tab's size">
+          <span class="pane-header-sized-what">Sized by another window</span>
+          <button aria-label="Use this window's size" title="Use this window's size" onClick={sizedElsewhere}>
+            Use this one
+          </button>
+        </span>
+      )}
       <button
         class={`pane-header-button${focused ? " on" : ""}`}
         data-pane-expand={id}
@@ -167,13 +196,29 @@ const ExpandIcon = ({ on }: { on: boolean }) => (
   </svg>
 );
 
-/** Type remains named for assistive technology and in the hover label. */
-function PaneTypeIcon({ type }: { type: string | undefined }) {
-  const path = type === "agent" ? "M7 8h10v11H7zM12 8V4M9 12h1M14 12h1M10 16h4"
-    : type === "chat" ? "M4 5h16v11H9l-5 4z"
-    : type === "editor" ? "M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"
-    : type === "diff" ? "M6 3v18M18 3v18M3 8h6M15 16h6M18 13v6"
-    : type === "browser" ? "M3 5h18v14H3zM3 9h18M6 7h1M9 7h1"
-    : "M4 6l6 6-6 6M12 18h8";
-  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={path} /></svg>;
+/** Type remains named for assistive technology and in the hover label.
+ * Each block type draws its own (UI audit #177). */
+const GLYPHS: Record<string, string> = {
+  terminal: "M4 6l6 6-6 6M12 18h8",
+  remote: "M3 4h18v12H3zM7 8l3 2-3 2M12 12h4M8 20h8M12 16v4",
+  agent: "M7 8h10v11H7zM12 8V4M9 12h1M14 12h1M10 16h4",
+  chat: "M4 5h16v11H9l-5 4z",
+  team_chat: "M3 4h12v9H7l-4 3zM18 8h3v11l-3-3h-7v-3",
+  editor: "M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16",
+  file: "M6 3h8l4 4v14H6zM14 3v5h4M10.5 12l-2 2.5 2 2.5M13.5 12l2 2.5-2 2.5",
+  doc: "M5 3h14v18H5zM8 7h8M8 11h8M8 15h5",
+  diff: "M6 3v18M18 3v18M3 8h6M15 16h6M18 13v6",
+  browser: "M3 5h18v14H3zM3 9h18M6 7h1M9 7h1",
+  pr: "M6 3a2 2 0 1 0 0 4a2 2 0 1 0 0-4M6 7v10M6 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4M18 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4M18 17V9a3 3 0 0 0-3-3h-4M13 4l-2 2 2 2",
+  issue: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 10.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 1 0 0-3",
+  "native-issue": "M4 4h16v16H4zM12 10.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 1 0 0-3",
+  workspace: "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5",
+  app: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM16.5 13v7M13 16.5h7",
+  invite: "M9 5a3 3 0 1 0 0 6a3 3 0 1 0 0-6M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M19 8v6M16 11h6",
+  agents: "M3 10h8v8H3zM13 10h8v8h-8zM7 10V6M17 10V6M6 14h.5M8.5 14h.5M16 14h.5M18.5 14h.5",
+};
+
+function PaneTypeIcon({ type }: { type: string }) {
+  const path = GLYPHS[type] ?? GLYPHS.terminal;
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-pane-glyph={type}><path d={path} /></svg>;
 }

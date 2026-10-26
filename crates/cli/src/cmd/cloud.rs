@@ -18,7 +18,7 @@ use crate::util::print_json;
 
 #[derive(clap::Subcommand)]
 pub enum CloudCmd {
-    /// Make a hosted workspace.
+    /// Make a cloud workspace.
     ///
     /// Its box is made from the current release's template and enrolls
     /// into the project. Needs owner or editor on the project.
@@ -43,14 +43,14 @@ pub enum CloudCmd {
         #[arg(long)]
         project: Option<String>,
     },
-    /// The project's hosted workspaces (every project's, without
+    /// The project's cloud workspaces (every project's, without
     /// `--project`).
     #[command(visible_alias = "list")]
     Ls {
         #[arg(long)]
         project: Option<String>,
     },
-    /// Open a hosted workspace: wakes it if it's paused, and says its
+    /// Open a cloud workspace: wakes it if it's paused, and says its
     /// machine.
     Open {
         /// Its id (hw_…) or name.
@@ -61,7 +61,7 @@ pub enum CloudCmd {
         #[arg(long)]
         project: Option<String>,
     },
-    /// Change what a hosted workspace is built from.
+    /// Change what a cloud workspace is built from.
     ///
     /// Each flag given replaces that part of its spec; the rest stays. Its
     /// box isn't touched: it shows "rebuild needed" until it's rebuilt,
@@ -100,7 +100,7 @@ pub enum CloudCmd {
         #[arg(long)]
         project: Option<String>,
     },
-    /// A hosted workspace's secrets, which its box reads on its next setup.
+    /// A cloud workspace's secrets, which its box reads on its next setup.
     ///
     /// `GIT_TOKEN` (and `GIT_USERNAME`) clone repos the GitHub App doesn't;
     /// the rest are the env vars its spec's `--env` names.
@@ -108,7 +108,7 @@ pub enum CloudCmd {
         #[command(subcommand)]
         cmd: SecretCmd,
     },
-    /// Make a hosted workspace's box again from its spec.
+    /// Make a cloud workspace's box again from its spec.
     ///
     /// It asks the box first: a repo with changes or commits that aren't
     /// pushed stops it, unless `--download` saves them first or `--force`.
@@ -123,7 +123,7 @@ pub enum CloudCmd {
         #[arg(long)]
         project: Option<String>,
     },
-    /// Delete a hosted workspace and its box.
+    /// Delete a cloud workspace and its box.
     #[command(visible_alias = "rm")]
     Delete {
         workspace: String,
@@ -142,7 +142,7 @@ pub enum CloudCmd {
         #[command(subcommand)]
         cmd: KeyCmd,
     },
-    /// A hosted workspace's ports, and their public previews.
+    /// A cloud workspace's ports, and their public previews.
     ///
     /// `ls` lists the ports and which are public. `public PORT` makes one
     /// public at its own address, which anyone can open signed out, for 7
@@ -277,7 +277,7 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
             if json_out {
                 print_json(&json!({ "workspaces": all }));
             } else if all.is_empty() {
-                println!("No hosted workspaces.");
+                println!("No cloud workspaces.");
             } else {
                 for w in &all {
                     println!("{}", line(w));
@@ -585,8 +585,8 @@ fn find(e: &Enrolled, project: Option<&str>, workspace: &str) -> anyhow::Result<
     }
     match found.len() {
         1 => Ok(found.remove(0)),
-        0 => bail!("no hosted workspace called {workspace}"),
-        _ => bail!("more than one project has a hosted workspace called {workspace}: say which with --project"),
+        0 => bail!("no cloud workspace called {workspace}"),
+        _ => bail!("more than one project has a cloud workspace called {workspace}: say which with --project"),
     }
 }
 

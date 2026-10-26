@@ -8,13 +8,14 @@ import { useEffect, useState } from "preact/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import { Modal } from "../../shared/ui/modal";
+import { Time } from "../../shared/ui/time";
 import { api, shownName, type ControlSession } from "../control";
-import { fingerprint, type Cert } from "../e2e/cert.ts";
+import { fingerprint, fromApp, type Cert } from "../e2e/cert.ts";
 import { verifyCode, verifyWords } from "../e2e/words.ts";
 import { directory } from "../hosts";
 import { machinePlace, machineState, placeMeans } from "../ui/hosts";
 import type { SessionRow } from "./account";
-import { addedAt, openPanel, QrCode, since } from "./common";
+import { AddedAt, openPanel, QrCode, since } from "./common";
 import { HostedMachines } from "./hosted";
 import { RunGrants } from "./run-grants";
 
@@ -155,7 +156,7 @@ function SignedIn({ sessions, end }: { sessions: SessionRow[] | null; end: (id: 
   return (
     <span class="dim" data-signed-in="yes">
       {" "}
-      · signed in since {new Date(first).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+      · signed in <Time at={Math.min(first, Date.now())} on />
       {here ? null : (
         <>
           {" · "}
@@ -169,9 +170,10 @@ function SignedIn({ sessions, end }: { sessions: SessionRow[] | null; end: (id: 
 }
 
 /** A device's kind, in a row's words. Machines are under their own
- * heading, so they don't say it. */
-const kindText = (k: Cert["kind"]) =>
-  k === "cli" ? "command line" : k === "recovery" ? "recovery code" : k === "daemon" ? "machine" : k === "app" ? "desktop app" : "browser or app";
+ * heading, so they don't say it. The app's window from before it had a
+ * kind of its own is the app too (UI audit #174: it said "browser or app"). */
+const kindText = (c: Cert) =>
+  c.kind === "cli" ? "command line" : c.kind === "recovery" ? "recovery code" : c.kind === "daemon" ? "machine" : fromApp(c) ? "desktop app" : "browser or phone";
 
 /** What labels a device in a row, a dialog or a banner (#759): its kind
  * and when it was added. Its fingerprint labels it too, but nobody
@@ -179,7 +181,7 @@ const kindText = (k: Cert["kind"]) =>
 function DeviceLabel({ s, c, kind = true }: { s: ControlSession; c: Cert; kind?: boolean }) {
   return (
     <span class="dim control-device-label">
-      {kind ? `${kindText(c.kind)} · ` : ""}added <span data-added={c.created}>{addedAt(c.created)}</span> <DeviceDetails s={s} c={c} />
+      {kind ? `${kindText(c)} · ` : ""}added <AddedAt at={c.created} /> <DeviceDetails s={s} c={c} />
     </span>
   );
 }
@@ -361,11 +363,20 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
                 {c.device === s.keys.id ? <b data-this-browser> (this browser)</b> : ""}
                 <span class="dim" data-used={at ?? ""}>
                   {" · "}
-                  {c.device === s.keys.id ? "using it now" : at ? `used ${since(at)}` : "last use unknown"}
+                  {c.device === s.keys.id ? (
+                    "using it now"
+                  ) : at ? (
+                    <>
+                      used <Time at={Math.min(at, Date.now())} on />
+                    </>
+                  ) : (
+                    "last use unknown"
+                  )}
                 </span>
                 {old ? <span class="control-badge unused-badge">unused</span> : null}
                 <SignedIn sessions={sessions?.filter((x) => x.device === c.device) ?? null} end={endSession} />
-                <DeviceLabel s={s} c={c} />
+                {/* Under "Browsers and phones", a browser's kind says nothing. */}
+                <DeviceLabel s={s} c={c} kind={c.kind !== "browser" || fromApp(c)} />
               </span>
               {c.device !== s.keys.id ? remove(c) : <span />}
             </li>
@@ -405,8 +416,9 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
           </div>
         </ConfirmRemove>
       ) : null}
+      {/* Sign out is the account menu's: here it read as a second Done
+          (UI audit #174). */}
       <div class="prompt-buttons">
-        <button class="secondary" onClick={() => s.signOut(false)}>Sign out</button>
         <button class="secondary" onClick={close}>Done</button>
       </div>
     </Modal>

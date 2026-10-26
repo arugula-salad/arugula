@@ -16,6 +16,8 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { getFleet } from "../ui/hosts";
 import { askText } from "../../shared/ui/menu";
+import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
+import { Time } from "../../shared/ui/time";
 import type { BlockRenderer, BlockView } from "./view";
 
 interface Card {
@@ -71,15 +73,6 @@ export interface AgentsState {
 
 const model = (c: Card) => c.skills?.[0]?.tags?.find((t) => t !== "claude-code") ?? null;
 
-function ago(ms: number | null): string {
-  if (!ms) return "";
-  const s = Math.max(0, (Date.now() - ms) / 1000);
-  if (s < 90) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
-}
-
 function plain(s: AgentsState | null): string {
   if (!s) return "Team agents";
   const lines = ["Team agents"];
@@ -100,7 +93,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
   if (!s || (s.loading && !s.updated_ms)) {
     return (
       <div class="review ws agents" data-agents-block={id}>
-        <div class="browser-card dim">Asking every machine for its agents…</div>
+        <BlockLoading what="the team's agents" />
       </div>
     );
   }
@@ -144,15 +137,19 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
         <span class="dim" data-agents-count>
           {total} on {s.catalog.machines.length} machine{s.catalog.machines.length === 1 ? "" : "s"}
         </span>
-        <span class="dim">{s.loading ? "asking…" : ago(s.catalog.refreshed_ms)}</span>
+        <span class="dim">{s.loading ? "asking…" : <Time at={s.catalog.refreshed_ms} title="Asked" />}</span>
         <button title="Ask every machine for its agents again" data-agents-refresh disabled={busy !== null || s.loading} onClick={() => void call("refresh", {}, "couldn't refresh the catalog")}>
           {busy === "refresh" ? "…" : "↻"}
         </button>
       </div>
       {s.error && (
-        <div class="browser-card" data-agents-error>
-          <p class="dim">{s.error}</p>
-        </div>
+        <BlockError
+          inline
+          data-agents-error
+          title="Couldn't ask every machine for its agents"
+          detail={s.error}
+          retry={busy === null && !s.loading ? () => void call("refresh", {}, "couldn't refresh the catalog") : undefined}
+        />
       )}
       {s.said && <p class="dim offer-said">{s.said}</p>}
       {(s.waiting?.length ?? 0) > 0 && (
@@ -172,7 +169,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
       )}
       {s.catalog.note && <p class="dim offer-said">{s.catalog.note}</p>}
       <div class="review-body">
-        {total === 0 && !s.error && <p class="dim offer-empty">No agents offered on any machine you reach</p>}
+        {total === 0 && !s.error && <BlockEmpty data-agents-empty>No machine you reach offers an agent yet.</BlockEmpty>}
         {shelves.map((m) => (
           <section key={m.machine} class="agents-shelf" data-shelf={m.name} data-online={String(m.online)}>
             <h4 class="agents-shelf-head">
@@ -181,7 +178,14 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                 {m.here ? " · this machine" : ""}
                 {m.owner ? ` · ${m.owner}'s` : ""}
                 {m.team ? " · team" : ""}
-                {!m.online ? ` · offline, as seen ${ago(m.fetched_ms)}` : ""}
+                {!m.online ? (
+                  <>
+                    {" "}
+                    · offline{m.fetched_ms ? <>, as seen <Time at={m.fetched_ms} /></> : ""}
+                  </>
+                ) : (
+                  ""
+                )}
               </span>
             </h4>
             {m.note && m.online && <p class="dim offer-said">{m.note}</p>}
@@ -205,7 +209,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                       </button>
                     )}
                     {!m.here && (
-                      <span class="dim" data-send-task={c.name} title={`An agent of yours: delegate {kind: send, agent: "${c.name}"} (pr: true for a fix in its own project); or arugula agents send ${m.name} ${c.name} …`}>
+                      <span class="dim" data-send-task={c.name} title={`Your agents send it tasks with Arugula's delegate tool; from a terminal: arugula agents send ${m.name} ${c.name}`}>
                         your agents can delegate to it
                       </span>
                     )}
@@ -223,7 +227,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                 <li key={`${g.account}/${g.agent}`} data-grant={`${g.name}/${g.agent}`}>
                   <b>{g.name}</b>
                   <span class="dim">
-                    {g.agent}, until {new Date(g.until_ms).toLocaleTimeString()}
+                    {g.agent}, ends <Time at={g.until_ms} title="Until" />
                   </span>
                   <button data-revoke={`${g.name}/${g.agent}`} disabled={busy !== null} onClick={() => void call("revoke", { account: g.account, agent: g.agent }, "couldn't take it back")}>
                     Revoke
@@ -252,7 +256,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                       Stop offering
                     </button>
                   ) : (
-                    <button data-offer={r.name} disabled={busy !== null} title={`Your team's agents may find it, and (from M78) send it tasks you approve, working in ${s.dir}`} onClick={() => void call("offer", { agent: r.name, dir: s.dir }, `couldn't offer ${r.name}`)}>
+                    <button data-offer={r.name} disabled={busy !== null} title={`Your team's agents can find it and send it tasks you approve; it works in ${s.dir}`} onClick={() => void call("offer", { agent: r.name, dir: s.dir }, `couldn't offer ${r.name}`)}>
                       Offer
                     </button>
                   )}

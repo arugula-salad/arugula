@@ -1,6 +1,7 @@
 // Right-click menus: one open at a time, closed by Escape, a click
 // elsewhere, or choosing an item.
 
+import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useModal } from "./modal";
 
@@ -15,14 +16,27 @@ export type MenuItem =
       checked?: boolean;
       /** Its chord, shown beside it here and in the command palette. */
       shortcut?: string;
+      /** What follows its name, dim, cut short when the menu is narrow: a
+       * machine's panes and state (UI audit #175). */
+      detail?: string;
+      /** Shown dim (an offline machine), though it can still be chosen. */
+      faded?: boolean;
+      /** In a list with one current (the machine shown): its ●, the same
+       * mark as a checked item's, with aria-current. */
+      current?: boolean;
     }
-  | { header: string }
+  /** `name`: the header holds a name (a channel's, a login), shown as
+   * written rather than in capitals (UI audit #169). `note`: a line under
+   * it saying what the items do (UI audit #163). */
+  | { header: string; name?: boolean; note?: string }
   | "separator";
 
 interface OpenMenu {
   x: number;
   y: number;
   items: MenuItem[];
+  /** Opened from a menu button: the keys go into it (UI audit #171). */
+  focus: boolean;
 }
 
 let current: OpenMenu | null = null;
@@ -30,18 +44,47 @@ let current: OpenMenu | null = null;
  * runs, so a dialog the item opens returns the focus there when it shuts
  * (UI audit #150), and Escape gives it back too. */
 let opener: HTMLElement | null = null;
+/** The menu button it was opened from, which says it's expanded while it
+ * is (UI audit #171). */
+let from: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 /** The layers mounted, latest last: only it draws the menu (the swarm's,
  * over the tab view's), else each would close the other's on a click. */
 const layers: object[] = [];
 
-export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[]) {
+/** `opts.from`: the button that opens it (a ▾, a …): it gets
+ * `aria-expanded`, the first item gets the keys, and the focus goes back
+ * to it when the menu shuts. */
+export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[], opts: { from?: HTMLElement | null } | HTMLElement = {}) {
   e.preventDefault();
-  if (!current) opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  current = { x: e.clientX, y: e.clientY, items };
+  if (opts instanceof HTMLElement) opts = { from: opts };
+  if (!current) opener = opts.from ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  expanded(opts.from ?? null);
+  current = { x: e.clientX, y: e.clientY, items, focus: !!opts.from };
   changed();
 }
+
+function expanded(el: HTMLElement | null) {
+  if (from && from !== el) from.setAttribute("aria-expanded", "false");
+  from = el;
+  el?.setAttribute("aria-expanded", "true");
+}
+
+/** Whether the menu open now hangs from `el`, for a menu button's
+ * aria-expanded in its own markup (UI audit #174). */
+export function useMenuOpenFrom(el: { current: HTMLElement | null }): boolean {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((t) => t + 1);
+    listeners.add(fn);
+    return () => void listeners.delete(fn);
+  }, []);
+  return !!current && !!from && from === el.current;
+}
+
+/** The same, by the name the platform bar knows it (UI audit #185). */
+export const useMenuFrom = useMenuOpenFrom;
 
 /** Close it, and put the focus back where it was when it opened. */
 function closeAndReturn() {
@@ -55,6 +98,7 @@ const tookEscape = new WeakSet<Event>();
 export const escapeTaken = (e: Event) => tookEscape.has(e);
 
 export function closeMenu() {
+  expanded(null);
   if (current) {
     current = null;
     changed();
@@ -95,15 +139,45 @@ export function MenuLayer() {
   }, []);
 
   const top = layers.at(-1) === me;
-  // Keep the menu on screen.
+  // Keep the menu on screen, a gutter from its edges (UI audit #171).
+  const focusIn = useRef(false);
   useLayoutEffect(() => {
     if (!current || !ref.current) return setPos(null);
+    // Measured at the window's left, where nothing squeezes it: near the
+    // right edge it wrapped ("Command palette… Ctrl+Shift+P") and then sat
+    // flush with the edge, wider than measured (UI audit #174).
+    const was = ref.current.style.left;
+    ref.current.style.left = "0px";
     const r = ref.current.getBoundingClientRect();
+    ref.current.style.left = was;
+    focusIn.current = current.focus;
     setPos({
-      left: Math.max(4, Math.min(current.x, window.innerWidth - r.width - 4)),
-      top: Math.max(4, Math.min(current.y, window.innerHeight - r.height - 4)),
+      left: Math.max(8, Math.min(current.x, window.innerWidth - r.width - 8)),
+      top: Math.max(8, Math.min(current.y, window.innerHeight - r.height - 8)),
     });
   }, [current, top]);
+  // From a menu button, the first item has the keys once it's shown.
+  useEffect(() => {
+    if (!pos || !focusIn.current) return;
+    focusIn.current = false;
+    ref.current?.querySelector<HTMLElement>(".menu-item:not(:disabled)")?.focus({ preventScroll: true });
+  }, [pos]);
+  // The arrows, Home and End move between the items.
+  const onKey = (e: KeyboardEvent) => {
+    const items = [...(ref.current?.querySelectorAll<HTMLElement>(".menu-item:not(:disabled)") ?? [])];
+    if (!items.length) return;
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    const to =
+      e.key === "ArrowDown" ? (i + 1) % items.length
+      : e.key === "ArrowUp" ? (i <= 0 ? items.length - 1 : i - 1)
+      : e.key === "Home" ? 0
+      : e.key === "End" ? items.length - 1
+      : null;
+    if (to === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    items[to].focus();
+  };
 
   if (!current || !top) return null;
   return (
@@ -117,21 +191,24 @@ export function MenuLayer() {
         visibility: pos ? "visible" : "hidden",
       }}
       onContextMenu={(e) => e.preventDefault()}
+      onKeyDown={onKey}
     >
       {current.items.map((item, i) =>
         item === "separator" ? (
           <div key={i} class="menu-sep" />
         ) : "header" in item ? (
-          <div key={i} class="menu-header">
-            {item.header}
-          </div>
+          <Fragment key={i}>
+            <div class={item.name ? "menu-header named" : "menu-header"}>{item.header}</div>
+            {item.note && <div class="menu-note">{item.note}</div>}
+          </Fragment>
         ) : (
           <button
             key={i}
             role={item.checked === undefined ? "menuitem" : "menuitemradio"}
             aria-checked={item.checked}
+            aria-current={item.current || undefined}
             aria-keyshortcuts={item.shortcut?.replace("Ctrl", "Control")}
-            class={item.danger ? "menu-item danger" : "menu-item"}
+            class={`menu-item${item.danger ? " danger" : ""}${item.faded ? " faded" : ""}`}
             disabled={item.disabled}
             title={item.hint}
             onClick={() => {
@@ -141,8 +218,18 @@ export function MenuLayer() {
               item.run();
             }}
           >
-            {item.checked !== undefined && <span class="menu-check">{item.checked ? "●" : ""}</span>}
+            {(item.checked ?? item.current) !== undefined && (
+              <span class="menu-check" aria-hidden="true">
+                {item.checked || item.current ? "●" : ""}
+              </span>
+            )}
             {item.label}
+            {item.detail && (
+              <>
+                {" "}
+                <span class="menu-detail">{item.detail}</span>
+              </>
+            )}
             {item.shortcut && (
               <kbd class="menu-key" aria-hidden="true">
                 {item.shortcut}

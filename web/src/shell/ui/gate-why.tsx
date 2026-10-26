@@ -6,15 +6,12 @@
 // card and the phone's sheet.
 
 import type { DecisionRef, Gate } from "../../shared/proto";
+import { ago as timeAgo } from "../../shared/time";
 
-/** "3m ago", "2h ago" from an RFC 3339 time. */
+/** "3m ago", "2h ago" from an RFC 3339 time: the shared words
+ * (../../shared/time.ts, UI audit #182). */
 export function ago(t: string | null | undefined): string {
-  if (!t) return "";
-  const s = Math.max(0, (Date.now() - Date.parse(t)) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
+  return t ? timeAgo(Math.min(Date.parse(t), Date.now())) : "";
 }
 
 /** Whether a decision governs the region chant read it for: current,

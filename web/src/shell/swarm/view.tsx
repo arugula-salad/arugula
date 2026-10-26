@@ -25,7 +25,7 @@ import { DiffCard } from "../ui/diff-card";
 import { GateWhy } from "../ui/gate-why";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { finished, needsYou, NEEDS_YOU } from "../../shared/needs-you";
-import { activityOf, bundleOf, cardTitle, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
+import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
 const THEME_KEY = "arugula.swarm.theme";
@@ -47,8 +47,10 @@ export function offeredThemes(labs: boolean): Theme[] {
 
 function savedBy(): GroupBy {
   try {
-    const v = localStorage.getItem(BY_KEY) as GroupBy | null;
-    return v && GROUPINGS.includes(v) ? v : "project";
+    const v = localStorage.getItem(BY_KEY);
+    // "person" is "owner" now (UI audit #172).
+    if (v === "person") return "owner";
+    return v && GROUPINGS.includes(v as GroupBy) ? (v as GroupBy) : "project";
   } catch {
     return "project";
   }
@@ -445,7 +447,7 @@ export function SwarmView({
           <div class="swarm-seg" role="group" aria-label="Cluster by">
             {GROUPINGS.map((g) => (
               <button key={g} data-g={g} aria-pressed={g === by} onClick={() => choose(g)}>
-                {g}
+                {GROUPING_LABEL[g]}
               </button>
             ))}
           </div>
@@ -456,7 +458,7 @@ export function SwarmView({
             <div class="swarm-seg" role="group" aria-label="Theme">
               {themes.map((t) => (
                 <button key={t} data-theme-pick={t} aria-pressed={t === theme} onClick={() => pickTheme(t)}>
-                  {t}
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>
               ))}
             </div>
@@ -483,6 +485,7 @@ export function SwarmView({
           <div class="swarm-tip" data-swarm-tip>
             <span>{HINT[theme][phone ? 1 : 0]}</span>
             <button
+              class="secondary small"
               onClick={() => {
                 setTipGone(true);
                 try {
@@ -527,7 +530,7 @@ export function SwarmView({
         </div>
         {waiting > 0 && (
           <div class="swarm-waiting" data-waiting={waiting}>
-            <b>{waiting}</b> more pulsing in place until there's room
+            <b>+{waiting}</b> more waiting in the swarm
           </div>
         )}
       </aside>
@@ -538,7 +541,7 @@ export function SwarmView({
             {Object.entries(KINDS).map(([k, c]) => (
               <span key={k}>
                 <i style={{ background: `rgb(${c})` }} />
-                {k}
+                {KIND_LABEL[k as keyof typeof KINDS]}
               </span>
             ))}
           </div>
@@ -786,6 +789,8 @@ function Card({
   // Every project the card's panes are in, not only the first one's.
   const projects = [...new Set(b.panes.map((p) => p.info.project?.name ?? groupOf(p, "project")))];
   const project = projects.length > 2 ? `${projects.length} projects` : projects.join(", ");
+  // One pane's session, which its Share names (UI audit #172).
+  const session = n === 1 ? first.session?.name : null;
   // Someone else's panes say whose (a teammate's machine in a team too).
   const owners = [...new Set(b.panes.map((p) => fleet.host(p.host)?.owner).filter(Boolean))];
   const whose = owners.length === 1 && b.panes.every((p) => fleet.host(p.host)?.owner) ? `${owners[0]}'s` : owners.length > 1 ? "several people's" : null;
@@ -820,21 +825,23 @@ function Card({
       style={{ "--c": `rgb(${REASON_COL[r.kind]})` }}
     >
       <div class="ch">
-        <b class="ct" role="button" tabIndex={0} title="Find it in the swarm" onClick={show} onKeyDown={(e) => e.key === "Enter" && show()}>
+        {/* A real button (UI audit #172): Space works too. */}
+        <button class="ct" title="Find it in the swarm" onClick={show}>
           {cardTitle(r, n, machines.map(shortHost))}
-        </b>
+        </button>
         <Watching fleet={fleet} panes={b.panes} />
         {n > 1 && <span class="n">×{n}</span>}
       </div>
       <div class="cm" title={ids}>
         {whose ? <b class="whose">{whose} · </b> : null}
-        {n === 1 ? whatItDoes(first) : `${n} panes`} · {machines.length > 1 ? `${machines.length} machines` : shortHost(machines[0])} · {project}
+        {n === 1 ? whatItDoes(first) : `${n} panes`} · {session ? `${session} · ` : ""}
+        {machines.length > 1 ? `${machines.length} machines` : shortHost(machines[0])} · {project}
       </div>
       {diff ? null : ask?.kind === "permission" ? (
         <PermissionBody ask={ask} />
       ) : (
-        <div class="cq" title={r.command && !r.headline.includes(r.command) ? `${r.headline}\n${r.command}` : r.headline}>
-          {shortPaths(r.headline)}
+        <div class="cq" title={r.command && !r.headline.includes(r.command) ? `${headlineOf(r)}\n${r.command}` : headlineOf(r)}>
+          {shortPaths(headlineOf(r))}
           {r.command && r.kind !== "ask" && r.kind !== "gate" && !r.headline.includes(r.command) ? <code> {shortPaths(r.command)}</code> : null}
         </div>
       )}

@@ -51,8 +51,8 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
 type Head = { head: string; short?: string; name: string; gives: string };
 const HEADS: Record<Column, Head> = {
   threads: { head: "Threads & issues", short: "Threads", name: "threads & issues", gives: "read and post in its threads (a team's channels), and write its issues" },
-  runs: { head: "Runs", name: "runs", gives: "read its runs, and start its run specs on its hosted workspaces" },
-  commands: { head: "Commands", name: "commands", gives: "start commands of their own on its hosted workspaces" },
+  runs: { head: "Runs", name: "runs", gives: "read its runs, and start its run specs on its cloud workspaces" },
+  commands: { head: "Commands", name: "commands", gives: "start commands of their own on its cloud workspaces" },
   deploys: { head: "Deploys", name: "deploys", gives: "plan its deploys and ask its owners to approve them" },
 };
 
@@ -129,8 +129,9 @@ export function AgentGrants() {
   const turnCell = (machine: string, s: AgentScope, column: Column, on: boolean) =>
     void (column === "deploys" ? turnDeploys(machine, s, on) : turn(machine, s, on, column === "threads" ? undefined : column));
 
-  // A scope's card: its name, how many machines reach it, and the matrix.
-  // The bar says whether any machine's agents reach it at all.
+  // A scope's card: its name, how many machines reach it (0/5 too, UI
+  // audit #168), and the matrix. The bar says whether any machine's agents
+  // reach it at all.
   const card = (s: AgentScope, title: string, sub: string, columns: Column[], heads: Head[], data: object) => {
     const rows = matrixOf(grants, machines, s, columns);
     const n = reaching(rows);
@@ -138,11 +139,9 @@ export function AgentGrants() {
       <div key={s.id ?? "dms"} class={`sw-card agent-card ${toneClass(n ? "accent" : "muted")}`} {...data}>
         <div class="sw-head">
           <b class="sw-name">{title}</b>
-          {n > 0 && (
-            <span class="sw-n" title={`Agents on ${n} of ${machines.length} ${machines.length === 1 ? "machine" : "machines"} reach it`}>
-              {n}/{machines.length}
-            </span>
-          )}
+          <span class="sw-n" title={`Agents on ${n} of ${machines.length} ${machines.length === 1 ? "machine" : "machines"} reach it`}>
+            {n}/{machines.length}
+          </span>
         </div>
         <span class="dim agent-card-sub">{sub}</span>
         <table class={`agent-matrix${columns.length > 1 ? " agent-matrix-wide" : ""}`}>

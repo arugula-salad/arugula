@@ -1,25 +1,20 @@
 // Chat's alerts (#114): the words that notify you in chat as if you were
-// mentioned, and, for a team you own, whether `@channel` and `@here` are
-// for owners only. Control keeps both (`/api/chat/keywords`,
-// `/api/chat/teams/{team}/settings`).
+// mentioned, on /settings; and, for a team you own, whether `@channel` and
+// `@here` and a channel's topic are for owners only, which is the team's,
+// so it's in its project's settings, as Team chat (UI audit #168). Control
+// keeps both (`/api/chat/keywords`, `/api/chat/teams/{team}/settings`).
 
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import type { ChatTeamSettings } from "../../shared/proto";
 import { keywords, setKeywords, setTeamSettings, teamSettings } from "../../shared/chat/alerts";
-import { usePlatformApi } from "../../shared/platform-api";
+import { useSubscribe } from "../../shared/ui/hooks";
+import type { PlatformProject } from "../session";
 import { Section } from "./section";
 
-function Words() {
-  const [words, setWords] = useState<string[] | null>(null);
+function Words({ words, setWords }: { words: string[]; setWords: (w: string[]) => void }) {
   const [draft, setDraft] = useState("");
   const [err, setErr] = useState("");
-  useEffect(() => {
-    keywords().then(
-      (k) => setWords(k.words),
-      (e: Error) => setErr(e.message),
-    );
-  }, []);
   const save = async (next: string[]) => {
     setErr("");
     try {
@@ -28,7 +23,6 @@ function Words() {
       setErr((e as Error).message);
     }
   };
-  if (words === null) return err ? <p class="control-error">{err}</p> : null;
   return (
     <>
       <ul class="platform-list settings-rows" data-chat-keywords>
@@ -40,7 +34,7 @@ function Words() {
             </button>
           </li>
         ))}
-        {!words.length && <li class="dim">No words yet.</li>}
+        {!words.length && <li class="dim">None yet.</li>}
       </ul>
       <form
         class="settings-add"
@@ -88,7 +82,7 @@ function OwnersOnly({ team, name }: { team: string; name: string }) {
           checked={s.broadcast_owners}
           onChange={() => flip({ broadcast_owners: !s.broadcast_owners })}
         />
-        <span>Only owners of {name} may use @channel and @here</span>
+        <span>Only {name}'s owners may use @channel and @here</span>
       </label>
       <label class="settings-switch">
         <input
@@ -99,7 +93,7 @@ function OwnersOnly({ team, name }: { team: string; name: string }) {
           checked={s.topic_owners}
           onChange={() => flip({ topic_owners: !s.topic_owners })}
         />
-        <span>Only owners of {name} may set a channel's topic</span>
+        <span>Only {name}'s owners may set a channel's topic</span>
       </label>
       {err ? <p class="control-error">{err}</p> : null}
     </>
@@ -107,22 +101,50 @@ function OwnersOnly({ team, name }: { team: string; name: string }) {
 }
 
 export function ChatAlerts() {
-  const api = usePlatformApi();
+  useSubscribe((fn) => chat.subscribe(fn));
   // Only while chat is on for the account: the keywords are control's chat's.
   if (chat.on !== true) return null;
-  const owned = api.teams().filter((t) => t.role === "owner");
+  return <Alerts />;
+}
+
+function Alerts() {
+  const [words, setWords] = useState<string[] | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    keywords().then(
+      (k) => setWords(k.words),
+      (e: Error) => setErr(e.message),
+    );
+  }, []);
+  if (words === null) return err ? <p class="control-error">{err}</p> : null;
   return (
     <Section
       id="chat-alerts"
       title="Chat alerts"
+      count={words.length}
       lede="Words that notify you in chat as if someone had mentioned you."
       more={<p class="dim">A word counts when a message has it whole, in any case: "deploy" doesn't match "redeployed". Rooms you muted stay quiet.</p>}
       hooks={{ "data-chat-alerts": "" }}
     >
-      <Words />
-      {owned.map((t) => (
-        <OwnersOnly key={t.team} team={t.team} name={t.roster.name || "this team"} />
-      ))}
+      <Words words={words} setWords={setWords} />
+    </Section>
+  );
+}
+
+/** A team project's settings, for its owners while chat is on: who in the
+ * team may notify a whole room, and set a channel's topic. */
+export function TeamChat({ p }: { p: PlatformProject }) {
+  useSubscribe((fn) => chat.subscribe(fn));
+  if (chat.on !== true || p.team?.role !== "owner") return null;
+  return (
+    <Section
+      id="team-chat"
+      title="Team chat"
+      lede={`Who in ${p.team.name || "this team"} may notify a whole room, and set a channel's topic.`}
+      more={<p>Everyone in the team may, until you turn these on. @channel notifies everyone in a room; @here, those active now.</p>}
+      hooks={{ "data-team-chat": p.team.id }}
+    >
+      <OwnersOnly team={p.team.id} name={p.team.name || "the team"} />
     </Section>
   );
 }

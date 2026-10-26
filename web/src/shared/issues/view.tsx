@@ -19,14 +19,17 @@ import type { ChatRoom, IssueEvent, IssuePatch, IssuePatched, NativeIssue } from
 import { chat } from "../chat-store";
 import { MsgAvatar } from "../chat/avatar";
 import { RoomBody, type Between } from "../chat/room";
+import { Time } from "../ui/time";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
 import { PageHeader, type BackLink } from "../ui/page-header";
+import { Chip, StateChip } from "../ui/state-chip";
+import { issueTone } from "../tones";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { IssueError, issues } from "./store";
 import "./issues.css";
-import { ago, eventLine, stateLabel, whoLabel, type NameOf } from "./text";
+import { eventLine, stateLabel, whoLabel, type NameOf } from "./text";
 
 /** What an issue's view reads and changes it through. */
 export interface IssueApi {
@@ -39,6 +42,9 @@ export interface IssueApi {
   known(id: string): NativeIssue | undefined;
   /** Every issue read, for the labels a project's issues have. */
   all(): NativeIssue[];
+  /** Every label on the project's issues, where the reader has them
+   * (UI audit #163): the menu offers those besides what `all` has. */
+  labels?(project: string): Promise<string[]>;
 }
 
 /** The platform's routes as the reader, unless the page says otherwise. */
@@ -65,26 +71,22 @@ function Gone({ what }: { what: string }) {
   );
 }
 
-/** A label, as a chip. */
+/** A label, as a chip: the one chip (UI audit #183), muted. */
 export function LabelChip({ label, onClick }: { label: string; onClick?: (e: MouseEvent) => void }) {
-  return onClick ? (
-    <button type="button" class="ws-tag issue-label" data-issue-label={label} onClick={onClick}>
+  return (
+    <Chip class="issue-label" data-issue-label={label} onClick={onClick}>
       {label}
-    </button>
-  ) : (
-    <span class="ws-tag issue-label" data-issue-label={label}>
-      {label}
-    </span>
+    </Chip>
   );
 }
 
 export function StateTag({ i }: { i: Pick<NativeIssue, "state" | "close_reason"> }) {
   return (
-    // Closed is done, not failed (UI audit #157): neutral, where a forge's
-    // closed PR is red. On the platform page it's the head's state tag.
-    <span class={`ws-tag forge-state issue-state page-state ${i.state === "closed" ? "closed sw-muted" : "open sw-ok"}`} data-issue-state={i.state}>
+    // Closed is done, not failed (UI audit #157): muted, where a forge's
+    // closed PR is red. A state's chip, as a run's and a deploy's are (#183).
+    <StateChip tone={issueTone(i.state)} class="issue-state" data-issue-state={i.state}>
       {stateLabel(i)}
-    </span>
+    </StateChip>
   );
 }
 
@@ -92,6 +94,28 @@ const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
   openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
 };
+
+/** The label picker, under the button that opens it: the project's labels
+ * (`known`) each checked when it's on, and New label…. An issue's page and
+ * New issue both pick with it (UI audit #163). */
+export function pickLabels(e: MouseEvent, known: Iterable<string>, on: string[], set: (label: string, on: boolean) => void) {
+  const all = [...new Set([...known, ...on])].sort();
+  menuAt(e, [
+    { header: "Labels" },
+    ...all.map((l) => {
+      const has = on.includes(l);
+      return { label: l, checked: has, run: () => set(l, !has) };
+    }),
+    ...(all.length ? ["separator" as const] : []),
+    {
+      label: "New label…",
+      run: async () => {
+        const v = (await askText("Add a label", "", "one or a few words"))?.trim();
+        if (v) set(v, true);
+      },
+    },
+  ]);
+}
 
 /** Whether a read failed because the platform couldn't be reached (or
  * didn't answer), not because it refused. */
@@ -244,13 +268,18 @@ export function IssueView({
           <div class="issue-meta">
             <StateTag i={issue} />
             <span>
-              <b class="issue-who">{whoLabel(issue.author, issue.agent, nameOf)}</b> opened this {ago(issue.created_at)}
-              {issue.state === "closed" && issue.closed_at ? ` · closed ${ago(issue.closed_at)}` : ""}
+              <b class="issue-who">{whoLabel(issue.author, issue.agent, nameOf)}</b> opened this <Time at={issue.created_at} long />
+              {issue.state === "closed" && issue.closed_at ? (
+                <>
+                  {" "}
+                  · closed <Time at={issue.closed_at} long />
+                </>
+              ) : null}
             </span>
             {issue.agent && (
-              <span class="msg-badge agent-badge" title={`Opened by an agent on ${issue.agent.machine_name || "a machine"}, through its owner's grant`}>
-                agent
-              </span>
+              <Chip tone="teal" title={`Opened by an agent on ${issue.agent.machine_name || "a machine"}, through its owner's grant`} data-issue-agent>
+                Agent
+              </Chip>
             )}
           </div>
         }
@@ -266,7 +295,7 @@ export function IssueView({
       </PageHeader>
       {stale && (
         <p class="issue-stale" role="status" data-issue-stale>
-          Can't reach Arugula control now: this is what it said {read ? ago(read) : "last"}.
+          Can't reach Arugula control now: this is what it said {read ? <Time at={read} long /> : "last"}.
         </p>
       )}
       <div class="issue-cols">
@@ -282,7 +311,7 @@ export function IssueView({
             <div class="issue-post-body">
               <div class="thread-head">
                 <span class="thread-name">{whoLabel(issue.author, issue.agent, nameOf)}</span>
-                <time title={new Date(issue.created_at).toLocaleString()}>{ago(issue.created_at)}</time>
+                <Time at={issue.created_at} long />
                 {writer && editing !== "body" && (
                   <button class="secondary small issue-edit" data-issue-edit-body onClick={() => setEditing("body")}>
                     Edit
@@ -332,9 +361,7 @@ function IssueEventRow({ e, line, nameOf }: { e: IssueEvent; line: string; nameO
       </span>
       <span>
         <b>{whoLabel(e.actor, e.agent, nameOf)}</b> {line}{" "}
-        <time class="dim" title={new Date(e.at).toLocaleString()}>
-          {ago(e.at)}
-        </time>
+        <Time class="dim" at={e.at} long />
       </span>
     </div>
   );
@@ -343,26 +370,19 @@ function IssueEventRow({ e, line, nameOf }: { e: IssueEvent; line: string; nameO
 type Change = (x: Partial<IssuePatch>) => Promise<boolean>;
 
 function Labels({ api, issue, change, writer }: { api: IssueApi; issue: NativeIssue; change: Change; writer: boolean }) {
+  // The project's labels, open issues' and closed ones' (UI audit #163),
+  // where the reader has them; and those this page has seen.
+  const [project, setProject] = useState<string[]>([]);
+  useEffect(() => {
+    if (!writer || !api.labels) return;
+    let live = true;
+    api.labels(issue.project).then((l) => live && setProject(l), () => {});
+    return () => void (live = false);
+  }, [api, issue.project, writer]);
   const pick = (e: MouseEvent) => {
-    // The labels this page has seen in the project, and the issue's own.
-    const seen = new Set(issue.labels);
+    const seen = new Set(project);
     for (const i of api.all()) if (i.project === issue.project) for (const l of i.labels) seen.add(l);
-    const items: MenuItem[] = [
-      { header: "Labels" },
-      ...[...seen].sort().map((l) => {
-        const on = issue.labels.includes(l);
-        return { label: l, checked: on, run: () => void change({ labels: on ? { remove: [l] } : { add: [l] } }) };
-      }),
-      "separator",
-      {
-        label: "New label…",
-        run: async () => {
-          const v = (await askText("Add a label", "", "one or a few words"))?.trim();
-          if (v) void change({ labels: { add: [v] } });
-        },
-      },
-    ];
-    menuAt(e, items);
+    pickLabels(e, seen, issue.labels, (l, on) => void change({ labels: on ? { add: [l] } : { remove: [l] } }));
   };
   return (
     <section class="issue-side-part" data-issue-labels>

@@ -27,7 +27,9 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}/chat/saved`), { page: "chat", project: P, view: "saved" });
   assert.equal(pathOf({ page: "chat", project: P, view: "saved" }), `/p/${P}/chat/saved`);
   assert.deepEqual(parse(`/p/${P}/chat/search`, "?q=from%3A%40sam"), { page: "chat", project: P, view: "search", q: "from:@sam" });
-  assert.deepEqual(parse("/dm/dm_00aa11bb22cc33dd-sam"), { page: "dm", room: "dm_00aa11bb22cc33dd" });
+  // A DM is its team's project's (UI audit #169); an id-only one finds it.
+  assert.deepEqual(parse(`/p/${P}/dm/dm_00aa11bb22cc33dd-sam`), { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" });
+  assert.deepEqual(parse("/dm/dm_00aa11bb22cc33dd-sam", "?msg=3"), { page: "find", what: "chat", room: "dm_00aa11bb22cc33dd", msg: 3 });
   assert.deepEqual(parse(`/p/${P}/workspaces/hw_0123456789abcdef0123456789abcdef-app`), { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" });
   assert.deepEqual(parse(`/p/${P}-x/settings`), { page: "project-settings", project: P });
   assert.deepEqual(parse(`/p/${P}/settings`, "?link=acme%2Fapp"), { page: "project-settings", project: P, link: "acme/app" });
@@ -54,7 +56,7 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "project", project: P },
     { page: "chat", project: P, room: "ch_0123456789abcdef", msg: 4 },
     { page: "chat", project: P, view: "search", q: "has:quote deploy" },
-    { page: "dm", room: "dm_00aa11bb22cc33dd" },
+    { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" },
     { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" },
     { page: "project-settings", project: P, link: "acme/app" },
     { page: "installed", project: P, repo: "acme/app" },

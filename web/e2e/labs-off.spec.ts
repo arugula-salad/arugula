@@ -133,11 +133,11 @@ test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async 
   await page.keyboard.press("ControlOrMeta+Shift+KeyP");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await expect(palette).toBeVisible();
-  await palette.getByRole("textbox", { name: "Command" }).fill("chat");
+  await palette.getByRole("combobox", { name: "Command" }).fill("chat");
   await expect(palette.getByRole("option", { name: /chat/i }).filter({ hasNotText: "Start a chat" })).toHaveCount(0);
-  await palette.getByRole("textbox", { name: "Command" }).fill("docs");
-  await expect(palette.getByRole("option", { name: /^Docs\b|Open Doc/ })).toHaveCount(0);
-  await palette.getByRole("textbox", { name: "Command" }).fill("split");
+  await palette.getByRole("combobox", { name: "Command" }).fill("docs");
+  await expect(palette.getByRole("option", { name: /Go to Docs|Open Doc/ })).toHaveCount(0);
+  await palette.getByRole("combobox", { name: "Command" }).fill("split");
   await expect(palette.getByRole("option").first()).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(palette).toBeHidden();
@@ -179,7 +179,8 @@ test("the swarm has one theme and no picker, whatever this browser saved", async
   await expect(page.getByText("Theme", { exact: true })).toHaveCount(0);
   await expect(page.locator("canvas.swarm-city")).toHaveCount(0);
   // Its tiles show no unread: chat is control's (M125), and there's none here.
-  expect(await page.evaluate(() => window.__arugula.fleet.panes.map((p) => [p.unread, p.mention]))).not.toEqual([]);
+  // (The fleet reads its panes after the swarm draws: wait for them.)
+  await expect.poll(() => page.evaluate(() => window.__arugula.fleet.panes.length)).toBeGreaterThan(0);
   expect(await page.evaluate(() => window.__arugula.fleet.panes.every((p) => !p.unread && !p.mention))).toBe(true);
   // The rest of the bar is still there.
   await expect(page.locator('[data-g="machine"]')).toBeVisible();

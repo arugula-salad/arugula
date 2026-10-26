@@ -12,8 +12,8 @@ import { toast } from "./toast";
 import { barProject } from "./where";
 
 const chatIn = (view?: "activity" | "saved" | "search" | "threads", q?: string): Route | null => {
-  // The project the bar is in (a DM's team's too, UI audit #159), else
-  // the first team's: chat is a team's.
+  // The project the bar is in (each has its own rooms, UI audit #169),
+  // else the first team's.
   const project = barProject(current()) ?? session.projects.find((p) => p.team)?.id ?? session.personal()?.id;
   return project ? { page: "chat", project, view, q } : null;
 };
@@ -41,12 +41,13 @@ export const platformApi: PlatformApi = {
       go(pathOf(r, names), view === "search" && now.page === "chat" && now.view === "search");
     },
     roomLink: (room, seq, thread) => `${location.origin}${roomPath(room, seq, thread)}`,
+    roomHref: (room) => roomPath(room),
     openGrants: () => go("/settings"),
   },
   ...noMachines,
   // A pane's chip opens on control's page, where the machines are.
-  goToPane: () => toast(`Panes open on control's page (${new URL(controlOrigin()).host}), where your machines are`),
-  goToSession: () => toast(`Sessions open on control's page (${new URL(controlOrigin()).host}), where your machines are`),
+  goToPane: () => toast(`Panes open on Control (${new URL(controlOrigin()).host}), where your machines are`),
+  goToSession: () => toast(`Sessions open on Control (${new URL(controlOrigin()).host}), where your machines are`),
   Bar: PlatformBar,
   controlHref: (hash) => `${controlOrigin()}/#${hash}`,
   sessionHref: (project, ses) => pathOf({ page: "session", project, session: ses }, names),

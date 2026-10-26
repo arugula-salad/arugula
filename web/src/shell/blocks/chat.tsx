@@ -11,7 +11,8 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { AdapterHelp, installAdapter } from "../ui/adapter";
 import { AgentMessage } from "../../shared/agent-message";
-import { Composer, KeptImage, STATUS, filesOf, money, type AgentState, type Entry } from "./agent";
+import { Composer, EarlierNote, KeptImage, STATUS, filesOf, money, type AgentState, type Entry } from "./agent";
+import { BlockLoading } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
 
 /** Plain text of the conversation, roughly as `capture --text` gives it. */
@@ -88,7 +89,7 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
     const el = scroller.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   });
-  if (!s) return <div class="agent-empty">Starting…</div>;
+  if (!s) return <BlockLoading what="the chat" />;
   const stopped = s.status === "stopped" || s.status === "exited";
   const said = s.entries.some((e) => e.type === "user" || e.type === "agent");
   return (
@@ -105,7 +106,8 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
       }}
     >
       <div class="agent-bar">
-        {s.status !== "ready" && <span class={`agent-status ${s.status}`}>{STATUS[s.status]}</span>}
+        {/* One rule with the agent block's (UI audit #178): always says how it is. */}
+        <span class={`agent-status ${s.status}`}>{STATUS[s.status]}</span>
         <span class="agent-name">{chatTitle(s)}</span>
         <span class="agent-spacer" />
         {s.cost && (
@@ -125,7 +127,7 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
         }}
       >
         <div class="chat-block-column">
-          {s.entries_from > 0 && <div class="agent-note">{s.entries_from} earlier messages: `arugula capture %{id}`</div>}
+          {s.entries_from > 0 && <EarlierNote n={s.entries_from} id={id} />}
           {!said && !s.queued.length && (
             <div class="chat-block-empty">
               <h3>What's on your mind?</h3>
@@ -143,7 +145,7 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
       {s.adapter && stopped && (
         <AdapterHelp client={client} a={s.adapter} said then="Resume once it's done." install={() => void installAdapter(client, s.adapter!.kind, { split: id })} />
       )}
-      <Composer client={client} id={id} s={s} attached={attached} setAttached={setAttached} placeholder="Message Claude…" />
+      <Composer client={client} id={id} s={s} attached={attached} setAttached={setAttached} placeholder={`Message ${s.label}…`} />
     </div>
   );
 }
