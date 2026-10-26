@@ -3,22 +3,12 @@
    shell's issue blocks draw too (shared/issues/view.tsx). Chips, tags and
    the thread are the forge blocks' and chat's (../style.css). */
 
-.issues-head,
 .issue-meta,
 .issues-tools {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-
-.issues-head h1 {
-  flex: 1;
-  margin: 0;
-}
-
-.issues-head {
-  margin-bottom: 16px;
 }
 
 .platform-section a.primary {
@@ -149,17 +139,11 @@
   font-size: 10px;
 }
 
-.issue-dot {
-  flex: none;
-  width: 10px;
-  height: 10px;
-  margin-top: 4px;
-  border-radius: 50%;
-  background: var(--ok);
-}
-
-.issue-dot.closed {
-  background: var(--danger);
+/* A native issue's state tag: closed is done, not failed, so it's
+   neutral where a forge's closed PR is red (UI audit #157). */
+.forge-state.issue-state.closed {
+  background: var(--raised);
+  color: var(--fg);
 }
 
 .ws-tag.issue-label {
@@ -182,15 +166,6 @@ button.ws-tag.issue-label:hover {
 .issues-home .control-confirm {
   display: block;
   padding: 3px 0;
-}
-
-.issue-back {
-  margin: 0 0 8px;
-}
-
-.issue-head h1 {
-  margin-bottom: 8px;
-  overflow-wrap: anywhere;
 }
 
 .issue-actions {

@@ -12,6 +12,7 @@ import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
 import { usePlatformApi } from "../../shared/platform-api";
+import { PageHeader } from "../../shared/ui/page-header";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { controlOrigin, session } from "../session";
@@ -151,8 +152,7 @@ export function HostedWorkspaces({ project: id }: { project: string }) {
   const list = useHostedWorkspaces(id);
   return (
     <section class="platform-section sw-page hosted-list" data-hosted-workspaces>
-      <h1>Workspaces</h1>
-      {list?.length ? <WorkspaceStats list={list} /> : null}
+      <PageHeader title="Workspaces" stats={list?.length ? <WorkspaceStats list={list} /> : null} />
       {list === null ? <p class="dim">Loading…</p> : list.length ? <HostedWorkspaceList project={id} list={list} /> : <NoWorkspaces project={id} />}
     </section>
   );
@@ -200,6 +200,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
   if (err && !w) return <Missing what={err} />;
   if (!w) return <p class="platform-section dim">Loading…</p>;
   const up = w.machine ? api.machine(w.machine)?.up : undefined;
+  const list = pathOf({ page: "workspaces", project: id }, names);
   const readTranscript = async (t: Transcript) => {
     if (open?.id === t.id) return setOpen(null);
     try {
@@ -210,32 +211,34 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
     }
   };
   return (
-    <section class="platform-workspace hosted-workspace" data-hosted-workspace={w.id}>
-      <nav class="platform-ws-head" aria-label="Where you are">
-        <a class="tab" href={pathOf({ page: "workspaces", project: id }, names)}>
-          Workspaces
-        </a>
-        <span class="dim">›</span>
-        <b>{w.name}</b>
-        <span class="dim" data-hosted-state={w.state}>
-          {said(w)}
-        </span>
-        <span class="bar-fill" />
-        {w.machine && w.state === "ready" && (
-          <button type="button" class="primary" onClick={() => window.open(machineHref(w.machine ?? "", true), "_blank", "noopener")} data-hosted-agent>
-            + Agent ↗
-          </button>
-        )}
-      </nav>
-      <div class="hosted-ws-view">
-        <section class="platform-section">
-          <p class="hosted-label" title={HOSTED_MEANS}>
+    <section class="platform-section sw-page hosted-workspace" data-hosted-workspace={w.id}>
+      <PageHeader
+        title={w.name}
+        named
+        back={{ href: list, label: "Workspaces", onClick: (e) => follow(e, list) }}
+        state={
+          <span class={`page-state ${toneClass(workspaceTone(w.state, w.asked))}`} data-hosted-state={w.state}>
+            {said(w)}
+          </span>
+        }
+        actions={
+          w.machine &&
+          w.state === "ready" && (
+            <button type="button" class="primary" onClick={() => window.open(machineHref(w.machine ?? "", true), "_blank", "noopener")} data-hosted-agent>
+              + Agent ↗
+            </button>
+          )
+        }
+        sub={
+          <span class="hosted-label" title={HOSTED_MEANS}>
             {HOSTED_LABEL}: {HOSTED_MEANS}
-          </p>
-          {w.error && <p class="control-error">{w.error}</p>}
-          {w.rebuild_needed && <p class="dim">Its spec changed since its box was made: a rebuild makes it again.</p>}
-        </section>
-        <section class="platform-section" data-hosted-live>
+          </span>
+        }
+      />
+      {w.error && <p class="control-error">{w.error}</p>}
+      {w.rebuild_needed && <p class="dim">Its spec changed since its box was made: a rebuild makes it again.</p>}
+      <div class="hosted-ws-view">
+        <section data-hosted-live>
           <h2>Panes and agents</h2>
           {w.machine ? (
             <p>
@@ -253,7 +256,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
             tools (run, start_agent, wait, read_output).
           </p>
         </section>
-        <section class="platform-section" data-hosted-transcripts>
+        <section data-hosted-transcripts>
           <h2>Closed agents</h2>
           {transcripts === null ? (
             <p class="dim">Loading…</p>

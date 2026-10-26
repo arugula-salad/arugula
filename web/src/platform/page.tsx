@@ -6,6 +6,7 @@ import { useEffect, useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
 import { useSubscribe } from "../shared/ui/hooks";
 import { MaintenanceNote } from "../shared/ui/maintenance-note";
+import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
 import { names, resolve } from "./links";
 import { go, pathOf, useRoute, type Route } from "./router";
@@ -105,8 +106,8 @@ function SignIn() {
   return (
     <div class="platform" data-platform data-platform-signed-out>
       <main class="platform-main">
-        <section class="platform-section">
-          <h1>Arugula</h1>
+        <section class="platform-section sw-page">
+          <PageHeader title="Arugula" />
           <p>
             <button class="primary" data-sign-in onClick={() => void signIn(controlOrigin())}>
               Sign in
