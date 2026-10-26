@@ -1,5 +1,5 @@
 // File blocks (M11): one file on the block's machine, read-only, in the
-// follow view's CodeMirror (highlighting, line numbers, the terminal's
+// follow view's CodeMirror (highlighting, line numbers, the palette's
 // colours), with its line marked. The daemon follows the file while
 // someone draws it; edits replace only what changed, so where you've
 // scrolled stays put, and the view scrolls to the line only when someone

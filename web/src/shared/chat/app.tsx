@@ -8,7 +8,9 @@
 //    `teams()` and `subscribe`, the machines it can see (or `noMachines`),
 //    and `Bar`, the strip search sits in;
 //  - control's chat signed in as the reader: `chat.on` (../chat-store) is
-//    true when it is on for them, and `maintenance` says when control is down;
+//    true when it is on for them (null while not known yet, `signedOut`
+//    when control no longer knows the session), and `maintenance` says
+//    when control is down;
 //  - the `route` it is showing, read from its own address: a host with no
 //    address of its own (a block) keeps it in its layout entry;
 //  - `.chat` styles and a box with a height to fill; `fit` says how it
@@ -16,6 +18,7 @@
 
 import { maintenance, MAINTENANCE_SAID } from "../maintenance";
 import { useSubscribe } from "../ui/hooks";
+import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import type { ChatRoute } from "./route";
 import { RoomsView, useChat, type ChatFit } from "./rooms";
@@ -25,17 +28,33 @@ export function ChatApp({ route, fit }: { route: ChatRoute; fit?: ChatFit }) {
   const store = useChat();
   useSubscribe((fn) => maintenance.subscribe(fn));
   if (store) return <RoomsView route={route} store={store} fit={fit} />;
+  // Not known yet is not off (UI audit #143): "off" only once control said
+  // so, and a session control no longer knows says that instead.
+  let note;
+  if (maintenance.down) note = <p data-maintenance-note>{MAINTENANCE_SAID}</p>;
+  else if (chat.on === null) {
+    note = chat.unreachable ? (
+      <p data-chat-unreachable>Can't reach chat on Arugula control. Trying again…</p>
+    ) : (
+      <p class="dim" data-chat-loading>
+        Loading chat…
+      </p>
+    );
+  } else if (chat.signedOut) {
+    note = (
+      <p data-chat-signed-out>
+        You're signed out of Arugula control.{" "}
+        <button class="primary" onClick={() => location.reload()}>
+          Sign in again
+        </button>
+      </p>
+    );
+  } else note = <p>Chat is off for you. A team owner turns it on in the team's Labs, on control's page, for the team's channels and messages.</p>;
   return (
-    <div class="chat" data-chat data-chat-off>
+    <div class="chat" data-chat data-chat-off={chat.on === false && !chat.signedOut ? "" : undefined}>
       <Bar />
       <div class="chat-body">
-        <div class="chat-thread chat-empty">
-          {maintenance.down ? (
-            <p data-maintenance-note>{MAINTENANCE_SAID}</p>
-          ) : (
-            <p>Chat is off for you. A team owner turns it on in the team's Labs, on control's page, for the team's channels and messages.</p>
-          )}
-        </div>
+        <div class="chat-thread chat-empty">{note}</div>
       </div>
     </div>
   );

@@ -26,6 +26,7 @@ import { keyHint } from "./keys";
 import { sessionThreadItems, threadItems } from "./threads";
 import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
+import { watchingNote } from "./shell/live";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -44,6 +45,16 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
   const closePane: MenuItem = { label: "Close pane", danger: true, run: () => client.intent({ op: "close_pane", pane: id }) };
   // M110: fill the tab with it (everyone's view), or give the layout back.
   const focus = phone ? [] : focusItems(client, client.tabOfPane(id), id);
+  const cwd = client.cwd(id);
+  // UI audit #158: a viewer (a share's, a read-only link's) only watches.
+  const watching = watchingNote(client, client.sessionOfPane(id));
+  if (watching)
+    return [
+      { header: watching },
+      ...focus,
+      { label: "Copy working directory", disabled: !cwd, run: () => cwd && void navigator.clipboard?.writeText(cwd) },
+      ...threadItems(client, id),
+    ];
 
   if (info?.type === "remote") {
     // Its terminal is its host's: here, only where it is.
@@ -60,7 +71,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ];
   }
 
-  const cwd = client.cwd(id);
   const tabId = client.tabOfPane(id)?.id;
   const tabMachine = tabId === undefined ? undefined : client.tabMachine(tabId);
   const mine = client.machine(id);
@@ -171,6 +181,9 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
 /** A tab's right-click menu. */
 export function tabItems(client: Client, tab: TabView, rename: () => void): MenuItem[] {
   const machine = client.tabMachine(tab.id);
+  // UI audit #158: nothing a viewer could do to a tab.
+  const watching = watchingNote(client, client.sessionOfTab(tab.id) ?? null);
+  if (watching) return [{ header: watching }, ...(desktopApp() ? [{ label: "Open in new window", run: () => openInNewWindow(client.active(tab.id)) } as MenuItem] : [])];
   return [
     { label: "Rename tab", run: rename },
     { label: "New tab", run: () => client.intent({ op: "new_tab", session: client.session!, from_pane: client.active(tab.id) ?? null }) },

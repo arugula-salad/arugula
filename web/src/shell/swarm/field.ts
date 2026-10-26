@@ -32,8 +32,9 @@ export interface FieldPane {
   /** When it last printed (ms), to flash when that moves. */
   lastOut: number;
   /** Its reason: a card on the rail (`bundle`), or waiting for room;
-   * `since` is when it started wanting someone (ms). */
-  att: { col: [number, number, number]; bundle: string | null; since?: number } | null;
+   * `since` is when it started wanting someone (ms); `need`: it needs
+   * you (asks or failed), else it only finished (UI audit #154). */
+  att: { col: [number, number, number]; bundle: string | null; since?: number; need: boolean } | null;
   // What the city (M41) draws besides; the field doesn't need them.
   /** Its pane number. */
   id?: number;
@@ -640,7 +641,7 @@ export class Field implements SwarmScene {
       const g = this.groups.get(t.group);
       if (!g) continue;
       if (t.act > 0.3) g.busy++;
-      if (t.att) g.need++;
+      if (t.att?.need) g.need++;
       if (t.fly) continue;
       const k = 0.0016 + 0.0055 * t.act;
       t.vx += (g.x - t.x) * k;

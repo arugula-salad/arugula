@@ -124,11 +124,10 @@ export function ControlGate({ s }: { s: ControlSession }) {
 function SignOuts({ s }: { s: ControlSession }) {
   return (
     <p class="control-signouts">
-      <button class="control-linkish" data-sign-out onClick={() => void s.signOut(false)}>
+      <button class="secondary small" data-sign-out onClick={() => void s.signOut(false)}>
         Sign out
       </button>
-      {" · "}
-      <button class="control-linkish" data-sign-out-forget onClick={() => void s.signOut(true)}>
+      <button class="secondary small" data-sign-out-forget onClick={() => void s.signOut(true)}>
         Sign out and forget this browser
       </button>
     </p>
@@ -260,7 +259,7 @@ function PasskeyInstead({ s }: { s: ControlSession }) {
   if (!s.info.passkeys || !s.passkeys || s.fromPasskey || inApp()) return null;
   return (
     <>
-      <button class="control-secondary" data-use-passkey onClick={() => s.usePasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
+      <button class="secondary" data-use-passkey onClick={() => s.usePasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
         Use your passkey instead
       </button>
       {err ? <p class="control-error">{err}</p> : null}
@@ -301,7 +300,7 @@ function Unvouched({ s }: { s: ControlSession }) {
         {fingerprint(v.root)}
       </p>
       <div class="prompt-buttons">
-        <button data-enroll-again onClick={() => void s.enrollAgain()}>
+        <button class="secondary" data-enroll-again onClick={() => void s.enrollAgain()}>
           It isn't: forget this browser
         </button>
         <button class="primary" data-vouch onClick={() => s.vouchFor()}>
@@ -401,7 +400,7 @@ function PasskeyButtons() {
           <p class="dim">Teammates see this name. You can change it later.</p>
         </form>
       ) : (
-        <button class="control-signin control-secondary" data-signup="passkey" onClick={() => setNaming(true)}>
+        <button class="secondary control-signin" data-signup="passkey" onClick={() => setNaming(true)}>
           New here? Make an account with a passkey
         </button>
       )}

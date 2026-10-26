@@ -58,7 +58,7 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
             this link.
           </p>
           <div class="prompt-buttons">
-            <button onClick={clearHash}>Cancel</button>
+            <button class="secondary" onClick={clearHash}>Cancel</button>
             <button
               class="primary"
               data-app-login-allow
@@ -100,7 +100,7 @@ export function ConfirmPasskey({ s }: { s: ControlSession }) {
       </p>
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
-        <button onClick={() => s.dropPasskey()}>Cancel</button>
+        <button class="secondary" onClick={() => s.dropPasskey()}>Cancel</button>
         <button
           class="primary"
           data-passkey-confirm-go
@@ -130,7 +130,7 @@ export function AddPasskeyAgain({ s }: { s: ControlSession }) {
       <p data-add-passkey-again>You signed in with GitHub again. Add the passkey now: it signs you in without GitHub from then on.</p>
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
-        <button onClick={clearHash}>Not now</button>
+        <button class="secondary" onClick={clearHash}>Not now</button>
         <button
           class="primary"
           data-add-passkey
@@ -203,7 +203,7 @@ export function ShareOfferPrompt({ s, o }: { s: ControlSession; o: ShareOffer })
       <p class="dim">Accept only if you know them. Accepting lists the machine here and lets its notifications reach you.</p>
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
-        <button data-share-decline disabled={busy} onClick={answer(false)}>
+        <button class="secondary" data-share-decline disabled={busy} onClick={answer(false)}>
           Decline
         </button>
         <button class="primary" data-share-accept disabled={busy} onClick={answer(true)}>
@@ -272,7 +272,7 @@ export function InvitePrompt({ s, team, code, old }: { s: ControlSession; team: 
       ) : null}
       {done ? <p data-invite-pending>Asked to join. An owner adds you when they're next here; their machines appear once they do.</p> : null}
       <div class="prompt-buttons">
-        <button onClick={clearHash}>{gone ? "Close" : done ? "Done" : "Not now"}</button>
+        <button class="secondary" onClick={clearHash}>{gone ? "Close" : done ? "Done" : "Not now"}</button>
         {!done && !gone ? (
           <button
             class="primary"
@@ -330,7 +330,7 @@ export function PresignedPrompt({ s, team, seed }: { s: ControlSession; team: st
         </p>
       ) : null}
       <div class="prompt-buttons">
-        <button onClick={clearHash}>{member ? "Done" : "Not now"}</button>
+        <button class="secondary" onClick={clearHash}>{member ? "Done" : "Not now"}</button>
         {!member ? (
           <button class="primary" data-accept-invite disabled={!info || busy} onClick={join}>
             {busy ? "Joining…" : `Join ${info?.name ?? ""}`.trim()}
@@ -356,7 +356,7 @@ export function AdmitPrompt({ s, team, req }: { s: ControlSession; team: Team; r
       </p>
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
-        <button data-admit-no onClick={() => s.rejectRequest(team.team, req.account).catch((e: Error) => setErr(e.message))}>
+        <button class="secondary" data-admit-no onClick={() => s.rejectRequest(team.team, req.account).catch((e: Error) => setErr(e.message))}>
           Not now
         </button>
         <button class="primary" data-admit-yes onClick={() => s.admit(team.team, req).catch((e: Error) => setErr(e.message))}>

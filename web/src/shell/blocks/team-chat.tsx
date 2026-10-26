@@ -110,7 +110,8 @@ function hostApi(client: Client, id: PaneId, go: (r: ChatRoute) => void, pin: ()
       // The ✕ of the phone's list: this block is the whole chat page here.
       closeChat: () => client.intent({ op: "close_pane", pane: id }),
       // A pinned block stays on its room: another is the platform page's.
-      openRoom: (room, msg) => (pin() && room !== pin() ? base.nav.openRoom(room, msg) : go({ room, msg })),
+      // A thread opens beside the room here too (UI audit #156: it was dropped).
+      openRoom: (room, msg, thread) => (pin() && room !== pin() ? base.nav.openRoom(room, msg, thread) : go({ room, msg, thread })),
       openChatView: (view, q) => (pin() ? base.nav.openChatView(view, q) : go({ view, q })),
     },
     // The panes of this layout open in it; others as the shell does.

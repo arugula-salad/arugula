@@ -327,13 +327,13 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
           {mayOwn && s.logins.length > 0 && (
             <div class="ws-actions" data-forge-logins>
               {s.logins.map((x) => (
-                <button key={x.name} onClick={() => void call("login", { name: x.name }, "couldn't use that login")}>
+                <button class="secondary small" key={x.name} onClick={() => void call("login", { name: x.name }, "couldn't use that login")}>
                   Use login {x.name} ({x.url})
                 </button>
               ))}
             </div>
           )}
-          {mayWrite && <button onClick={refresh}>Try again</button>}
+          {mayWrite && <button class="primary" onClick={refresh}>Try again</button>}
         </div>
       )}
       {issue && it && (
@@ -385,10 +385,10 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
               </div>
             ) : it.state === "open" && mayOwn ? (
               <div class="ws-actions">
-                <button class="pri" data-agent-on disabled={busy !== null} onClick={() => void agentOn(false)}>
+                <button class="primary small" data-agent-on disabled={busy !== null} onClick={() => void agentOn(false)}>
                   {busy === "agent" ? "Starting…" : "Agent on this"}
                 </button>
-                <button disabled={busy !== null} onClick={() => void agentOn(true)}>
+                <button class="secondary small" disabled={busy !== null} onClick={() => void agentOn(true)}>
                   With instructions…
                 </button>
                 <span class="dim ws-note">A worktree and branch i{s.number}-… from the default branch, Claude Code there with the issue, both in a tab.</span>
@@ -477,10 +477,10 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
     if (mode === "edit") {
       foot = (
         <div class="ws-actions forge-actions">
-          <button class="pri" data-new-send disabled={busy !== null || !title.trim()} onClick={send}>
+          <button class="primary small" data-new-send disabled={busy !== null || !title.trim()} onClick={send}>
             {busy === "answer" ? "Sending…" : "Send"}
           </button>
-          <button onClick={() => setMode("view")}>Cancel</button>
+          <button class="secondary small" onClick={() => setMode("view")}>Cancel</button>
           <span class="forge-spacer" />
           <span class="dim forge-as">{as}</span>
         </div>
@@ -502,29 +502,29 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
             />
           </label>
           <div class="ws-actions forge-actions">
-            <button class="pri" data-new-revise disabled={busy !== null || !note.trim()} onClick={revise}>
+            <button class="primary small" data-new-revise disabled={busy !== null || !note.trim()} onClick={revise}>
               {busy === "revise" ? "Sending…" : `Send to ${agent}`}
             </button>
-            <button onClick={() => setMode("view")}>Cancel</button>
+            <button class="secondary small" onClick={() => setMode("view")}>Cancel</button>
           </div>
         </div>
       );
     } else {
       foot = (
         <div class="ws-actions forge-actions">
-          <button class="pri" data-new-send disabled={busy !== null || revising} onClick={send}>
+          <button class="primary small" data-new-send disabled={busy !== null || revising} onClick={send}>
             {busy === "answer" ? "Sending…" : n.error ? "Try again" : "Send"}
           </button>
-          <button data-new-edit disabled={busy !== null || revising} onClick={edit}>
+          <button class="secondary small" data-new-edit disabled={busy !== null || revising} onClick={edit}>
             Edit
           </button>
           {n.pane !== undefined && (
-            <button data-new-ask disabled={busy !== null || revising} onClick={() => setMode("ask")}>
+            <button class="secondary small" data-new-ask disabled={busy !== null || revising} onClick={() => setMode("ask")}>
               Ask for changes…
             </button>
           )}
           <span class="forge-spacer" />
-          <button class="forge-drop" data-new-drop disabled={busy !== null} onClick={drop}>
+          <button class="secondary danger small forge-drop" data-new-drop disabled={busy !== null} onClick={drop}>
             Drop
           </button>
         </div>
@@ -736,13 +736,13 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
           {mayOwn && s.logins.length > 0 && (
             <div class="ws-actions" data-forge-logins>
               {s.logins.map((l) => (
-                <button key={l.name} onClick={() => void call("login", { name: l.name }, "couldn't use that login")}>
+                <button class="secondary small" key={l.name} onClick={() => void call("login", { name: l.name }, "couldn't use that login")}>
                   Use login {l.name} ({l.url})
                 </button>
               ))}
             </div>
           )}
-          {!viewer && <button onClick={refresh}>Try again</button>}
+          {!viewer && <button class="primary" onClick={refresh}>Try again</button>}
         </div>
       )}
       {s.read_only && (
@@ -781,21 +781,21 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
                   <div class="ws-actions">
                     {w.kind === "review" && mayWrite && (
                       <>
-                        <button class="pri" data-approve-review disabled={busy !== null} onClick={() => void review("approve")}>
+                        <button class="primary small" data-approve-review disabled={busy !== null} onClick={() => void review("approve")}>
                           {busy === "review" ? "Approving…" : "Approve"}
                         </button>
-                        <button disabled={busy !== null} onClick={() => void review("request_changes")}>
+                        <button class="secondary small" disabled={busy !== null} onClick={() => void review("request_changes")}>
                           Request changes…
                         </button>
                       </>
                     )}
                     {w.kind === "failed" && s.rerun?.api && mayWrite && (
-                      <button class="pri" data-rerun disabled={busy !== null} title={s.rerun.note} onClick={() => void call("rerun_checks", {}, "couldn't rerun the checks")}>
+                      <button class="primary small" data-rerun disabled={busy !== null} title={s.rerun.note} onClick={() => void call("rerun_checks", {}, "couldn't rerun the checks")}>
                         {busy === "rerun_checks" ? "Retrying…" : "Rerun"}
                       </button>
                     )}
                     {w.kind === "failed" && s.rerun?.url && (
-                      <a class="button" href={s.rerun.url} target="_blank" rel="noopener" title={s.rerun.note} data-rerun-link>
+                      <a class="secondary small" href={s.rerun.url} target="_blank" rel="noopener" title={s.rerun.note} data-rerun-link>
                         Open the run ↗
                       </a>
                     )}

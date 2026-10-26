@@ -256,12 +256,12 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
             </p>
           ) : null}
           <div class="prompt-buttons">
-            <button data-deploy-back onClick={() => (back ? location.assign(back) : clearHash())}>
+            <button class="secondary" data-deploy-back onClick={() => (back ? location.assign(back) : clearHash())}>
               {back ? "Back" : "Close"}
             </button>
             {d.may_approve && !bad && !done && s.passkeys > 0 ? (
               <>
-                <button data-deploy-deny disabled={busy} onClick={() => void decide("deny")}>
+                <button class="secondary" data-deploy-deny disabled={busy} onClick={() => void decide("deny")}>
                   Deny
                 </button>
                 <button class="primary" data-deploy-approve-button disabled={busy} onClick={() => void decide("once")}>

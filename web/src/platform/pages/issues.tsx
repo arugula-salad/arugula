@@ -12,6 +12,7 @@ import { chat } from "../../shared/chat-store";
 import { MsgAvatar } from "../../shared/chat/avatar";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
+import { PageHeader } from "../../shared/ui/page-header";
 import { issues, type IssueFilter } from "../../shared/issues/store";
 import { ago, githubNewIssue, labelsOf, stateLabel, whoLabel } from "../../shared/issues/text";
 import { LabelChip } from "../../shared/issues/view";
@@ -19,6 +20,7 @@ import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
+import { issueTone, toneClass } from "../swarm";
 import { ThreadUnread } from "../thread-unread";
 import { Missing } from "./project";
 
@@ -53,10 +55,28 @@ export function useIssuesOn(id: string): { p: PlatformProject } | { show: preact
 
 export function IssuesOff() {
   return (
-    <section class="platform-section" data-issues-off>
-      <h1>Issues</h1>
+    <section class="platform-section sw-page" data-issues-off>
+      <PageHeader title="Issues" />
       <p class="dim">Issues come with chat, which is off for you. A team owner turns it on in the team's Labs, on control's page.</p>
     </section>
+  );
+}
+
+/** What the list holds, as the runs' list counts its runs: the issues
+ * shown (a page of them), and of them those assigned to the reader. */
+function IssueStats({ list, me }: { list: NativeIssue[]; me?: string }) {
+  const mine = me ? list.filter((i) => i.assignees.includes(me)).length : 0;
+  return (
+    <div class="sw-stats" data-issues-stats>
+      <span>
+        <b>{list.length}</b> shown
+      </span>
+      {mine > 0 && (
+        <span class="needs">
+          <b>{mine}</b> assigned to you
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -97,6 +117,12 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
     clearTimeout(typing.current);
     typing.current = window.setTimeout(() => to({ ...filter, q: q.trim() || undefined }, true), 250);
   };
+  // Every narrowing off, as the runs' list's Clear: open or closed stays.
+  const clear = () => {
+    clearTimeout(typing.current);
+    setTyped("");
+    to({ state: filter.state });
+  };
   const next = async () => {
     const last = list?.at(-1);
     if (!last) return;
@@ -132,14 +158,19 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
   const onGithub = home?.home === "github" && home.repos.length > 0;
 
   return (
-    <section class="platform-section issues-page" data-issues={p.id}>
-      <header class="issues-head">
-        <h1>Issues</h1>
-        <button class="issues-export" title="Download every issue" data-issues-export onClick={exportMenu}>
-          Export <span class="caret">▾</span>
-        </button>
-        {mayWrite(p) && <NewIssueButton p={p} home={home} />}
-      </header>
+    <section class="platform-section sw-page issues-page" data-issues={p.id}>
+      <PageHeader
+        title="Issues"
+        actions={
+          <>
+            <button class="issues-export" title="Download every issue" data-issues-export onClick={exportMenu}>
+              Export <span class="caret">▾</span>
+            </button>
+            {mayWrite(p) && <NewIssueButton p={p} home={home} />}
+          </>
+        }
+        stats={!!list?.length && <IssueStats list={list} me={session.me?.account} />}
+      />
       {home?.both && (
         <p class="issues-note" role="note" data-issues-both>
           This project has issues in two places: {home.native_issues} here, and more on {home.repos.join(", ")} on GitHub.{" "}
@@ -162,6 +193,11 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
         <button class={filter.assignee ? "issues-filter on" : "issues-filter"} data-issues-assignee onClick={assigneeMenu}>
           {filter.assignee ? `Assignee: ${nameOf(filter.assignee) ?? "someone"}` : "Assignee"} <span class="caret">▾</span>
         </button>
+        {narrowed && (
+          <button class="link" data-issues-clear onClick={clear}>
+            Clear
+          </button>
+        )}
       </div>
       {error && <p class="control-error" role="alert">{error}</p>}
       {list === null && !error && <p class="dim">Loading…</p>}
@@ -178,7 +214,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
                   : "No open issues."}
         </p>
       )}
-      <ul class="issues-list" data-issues-list>
+      <ul class="issues-list sw-cards" data-issues-list>
         {list?.map((i) => (
           <IssueRow key={i.id} p={p} i={i} nameOf={nameOf} label={(l) => to({ ...filter, label: l })} />
         ))}
@@ -240,8 +276,9 @@ function NewIssueButton({ p, home, plus }: { p: PlatformProject; home: IssueHome
 function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue; nameOf: (a: string) => string | undefined; label: (l: string) => void }) {
   const to = pathOf({ page: "issue", project: p.id, issue: i.id }, names);
   return (
-    <li class="issue-row" data-issue-row={i.number}>
-      <span class={`issue-dot ${i.state === "closed" ? "closed" : "open"}`} title={stateLabel(i)} aria-label={stateLabel(i)} />
+    // A card in the swarm's language (../swarm.css), as a run's is: its bar
+    // is the issue's state (open ok, closed muted: done, not failed).
+    <li class={`issue-row sw-card ${toneClass(issueTone(i.state))}`} data-issue-row={i.number} data-issue-row-state={i.state}>
       <div class="issue-row-main">
         <a href={to} class="issue-row-title" onClick={(e) => follow(e, to)}>
           {i.title}
@@ -251,7 +288,7 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
           <LabelChip key={l} label={l} onClick={() => label(l)} />
         ))}
         <span class="issue-row-meta dim">
-          #{i.number} {i.state === "closed" && i.closed_at ? `closed ${ago(i.closed_at)}` : `opened ${ago(i.created_at)} by ${whoLabel(i.author, i.agent, nameOf)}`}
+          {stateLabel(i)} · #{i.number} {i.state === "closed" && i.closed_at ? `closed ${ago(i.closed_at)}` : `opened ${ago(i.created_at)} by ${whoLabel(i.author, i.agent, nameOf)}`}
         </span>
       </div>
       {i.assignees.length > 0 && (
@@ -324,10 +361,11 @@ function NewIssue({ p }: { p: PlatformProject }) {
   const [error, setError] = useState<string | null>(null);
   const [home] = useHome(p.id);
   const list = pathOf({ page: "issues", project: p.id }, names);
+  const back = { href: list, label: "Issues", onClick: (e: MouseEvent) => follow(e, list) };
   if (!mayWrite(p)) {
     return (
-      <section class="platform-section" data-issue-new-viewer>
-        <h1>New issue</h1>
+      <section class="platform-section sw-page" data-issue-new-viewer>
+        <PageHeader title="New issue" back={back} />
         <p class="dim">You're a viewer in {p.team?.name}: you read its issues and comment on them, and its owners and editors open them.</p>
       </section>
     );
@@ -335,13 +373,8 @@ function NewIssue({ p }: { p: PlatformProject }) {
   if (!home) return <p class="platform-section dim">Loading…</p>;
   if (home.home === "github") {
     return (
-      <section class="platform-section issue-new" data-issue-new-github-only>
-        <p class="issue-back">
-          <a href={list} onClick={(e) => follow(e, list)}>
-            ‹ Issues
-          </a>
-        </p>
-        <h1>New issue</h1>
+      <section class="platform-section sw-page issue-new" data-issue-new-github-only>
+        <PageHeader title="New issue" back={back} />
         <p>
           This project's new issues go to GitHub
           {home.repos.length > 1 ? ": open one on the repo it's about." : "."}
@@ -374,13 +407,8 @@ function NewIssue({ p }: { p: PlatformProject }) {
     }
   };
   return (
-    <section class="platform-section issue-new" data-issue-new-form>
-      <p class="issue-back">
-        <a href={list} onClick={(e) => follow(e, list)}>
-          ‹ Issues
-        </a>
-      </p>
-      <h1>New issue</h1>
+    <section class="platform-section sw-page issue-new" data-issue-new-form>
+      <PageHeader title="New issue" back={back} />
       <form class="issue-form" onSubmit={(e) => void submit(e)}>
         <label>
           Title

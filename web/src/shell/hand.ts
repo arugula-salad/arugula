@@ -151,6 +151,7 @@ const TOOLS: Tool[] = [
       body.textContent = `Recording… up to ${secs}s`;
       const stop = document.createElement("button");
       stop.textContent = "Stop";
+      stop.className = "secondary danger";
       stop.onclick = () => rec.state !== "inactive" && rec.stop();
       card.querySelector("[data-hand-buttons]")!.replaceChildren(stop);
       const timer = setTimeout(() => rec.state !== "inactive" && rec.stop(), secs * 1000);
@@ -175,12 +176,14 @@ const TOOLS: Tool[] = [
         const choices = Array.isArray(a.choices) ? a.choices.map(String) : [];
         const no = document.createElement("button");
         no.textContent = "Decline";
+        no.className = "secondary";
         no.onclick = () => reject(new Error("the person declined to answer"));
         if (choices.length) {
           buttons.replaceChildren(
             ...choices.map((c) => {
               const b = document.createElement("button");
               b.textContent = c;
+              b.className = "secondary";
               b.onclick = () => resolve({ answer: c });
               return b;
             }),
@@ -381,6 +384,7 @@ class Hand {
     };
     const deny = document.createElement("button");
     deny.textContent = "Deny";
+    deny.className = "secondary danger";
     deny.onclick = () => {
       reply(undefined, "the person denied it");
       close();
@@ -394,6 +398,7 @@ class Hand {
     if (!tool.person) {
       const keep = document.createElement("button");
       keep.textContent = "Allow for 15 min";
+      keep.className = "secondary";
       keep.onclick = () => {
         this.standing.set(key, Date.now() + STANDING_MS);
         run();

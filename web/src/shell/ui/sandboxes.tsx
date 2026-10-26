@@ -5,7 +5,8 @@
 // (this page's own), whichever host is shown: it holds the provider.
 
 import { opPath } from "../ops";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { useModal } from "../../shared/ui/modal";
 import { directory } from "../hosts";
 import type { RunRequest, RunResponse } from "../../shared/proto";
 
@@ -63,6 +64,9 @@ function size(bytes: number): string {
 const ORDER: Record<string, number> = { running: 0, warm: 1, cold: 2 };
 
 function Sandboxes({ close }: { close: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // UI audit #150: takes the focus, keeps it, and Escape closes it.
+  useModal(ref, close);
   const [list, setList] = useState<SandboxList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -113,8 +117,8 @@ function Sandboxes({ close }: { close: () => void }) {
     .sort((a, b) => (ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3) || a.name.localeCompare(b.name));
 
   return (
-    <div class="prompt-backdrop" role="dialog" aria-label="Sandboxes" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="prompt sandboxes" onKeyDown={(e) => e.key === "Escape" && close()}>
+    <div class="prompt-backdrop" role="dialog" aria-modal="true" aria-label="Sandboxes" onPointerDown={(e) => e.target === e.currentTarget && close()}>
+      <div ref={ref} class="prompt sandboxes">
         <h2>Sandboxes{list ? ` on ${list.provider.name}` : ""}</h2>
         {list && (
           <p class="hint">
@@ -166,7 +170,7 @@ function Sandboxes({ close }: { close: () => void }) {
           ))}
         </ul>
         <div class="prompt-buttons">
-          <button type="button" onClick={close}>
+          <button class="secondary" type="button" onClick={close}>
             Close
           </button>
         </div>

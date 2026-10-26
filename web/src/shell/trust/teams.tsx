@@ -41,7 +41,7 @@ function LabsFlagList({ scope, what, flags, edit, set }: { scope: string; what: 
               </span>
               {edit ? (
                 <select
-                  class="control-select"
+                  class="field"
                   value={value}
                   aria-label={`${f.title} for ${scope}`}
                   onChange={(e) => {
@@ -129,13 +129,13 @@ export function Teams({ s, close }: { s: ControlSession; close: () => void }) {
         }}
       >
         <input placeholder="New team's name" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} aria-label="Team name" />
-        <button type="submit" disabled={!name.trim()}>
+        <button type="submit" class="primary" disabled={!name.trim()}>
           Make a team
         </button>
       </form>
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
-        <button onClick={close}>Done</button>
+        <button class="secondary" onClick={close}>Done</button>
       </div>
     </Modal>
   );
@@ -202,7 +202,7 @@ function TeamSection({
       <h4 class="control-subgroup" data-team-members-head>
         Members <span class="dim">· {t.roster.members.length}</span>
       </h4>
-      <ul class="control-devices" data-team-members={t.team}>
+      <ul class="control-devices control-rows" data-team-members={t.team}>
         {t.roster.members.map((m) => (
           <li key={m.account} data-member={m.account}>
             <span data-member-name>
@@ -211,7 +211,7 @@ function TeamSection({
             </span>
             {owner && m.account !== s.account ? (
               <select
-                class="control-select"
+                class="field"
                 value={m.role}
                 aria-label={`${t.names?.[m.account] ?? m.name}'s role`}
                 onChange={(e) => {
@@ -225,7 +225,7 @@ function TeamSection({
               <span class="dim">{roleLabel(m.role)}</span>
             )}
             {owner && m.account !== s.account ? (
-              <button class="control-revoke quiet-danger" data-remove-member={m.account} title="They lose access to the team's machines at once" onClick={() => setRemoving(m.account)}>
+              <button class="secondary danger small" data-remove-member={m.account} title="They lose access to the team's machines at once" onClick={() => setRemoving(m.account)}>
                 Remove
               </button>
             ) : (
@@ -250,7 +250,7 @@ function TeamSection({
         Machines <span class="dim">· {machines.length}</span>
       </h4>
       {machines.length ? (
-        <ul class="control-devices" data-team-machines={t.team}>
+        <ul class="control-devices control-rows" data-team-machines={t.team}>
           {machines.map((d) => {
             const mine = !d.account || d.account === s.account;
             return (
@@ -263,7 +263,7 @@ function TeamSection({
                   {machineState(d.name)}
                 </span>
                 {owner && !mine ? (
-                  <button class="control-revoke quiet-danger" data-take-out={d.id} title="Take it out of the team; it stays its owner's" onClick={() => setTakingOut(d.id)}>
+                  <button class="secondary danger small" data-take-out={d.id} title="Take it out of the team; it stays its owner's" onClick={() => setTakingOut(d.id)}>
                     Take out
                   </button>
                 ) : (
@@ -272,11 +272,11 @@ function TeamSection({
                 {takingOut === d.id ? (
                   <p class="dim control-explain" data-take-out-explain>
                     {t.roster.name}'s members lose {d.name} at once. It stays {d.owner_name || "its owner"}'s, and they can add it again.{" "}
-                    <button data-take-out-cancel onClick={() => setTakingOut(null)}>
+                    <button class="secondary small" data-take-out-cancel onClick={() => setTakingOut(null)}>
                       Cancel
                     </button>{" "}
                     <button
-                      class="danger"
+                      class="primary danger small"
                       data-take-out-go
                       onClick={() => {
                         setTakingOut(null);
@@ -312,7 +312,7 @@ function TeamSection({
           <div class="control-code control-invite">
             <label>
               Invite{" "}
-              <select class="control-select" value={role} aria-label="Invite as" data-invite-role={t.team} onChange={(e) => setRole((e.target as HTMLSelectElement).value as TeamRole)}>
+              <select class="field" value={role} aria-label="Invite as" data-invite-role={t.team} onChange={(e) => setRole((e.target as HTMLSelectElement).value as TeamRole)}>
                 {ROLE_HELP.map(([r]) => (
                   <option key={r} value={r}>
                     {roleAs(r).replace(/^as /, "")}
@@ -325,6 +325,7 @@ function TeamSection({
               Ask me first
             </label>
             <button
+              class="primary"
               data-invite={t.team}
               disabled={t.locked}
               onClick={() =>
@@ -355,7 +356,7 @@ function TeamSection({
           {unused.length ? (
             <>
               <p class="dim">One-click links nobody has used yet:</p>
-              <ul class="control-devices" data-presigned-list>
+              <ul class="control-devices control-rows" data-presigned-list>
                 {unused.map((i) => (
                   <li key={i.key} data-presigned={i.key}>
                     <span>
@@ -364,7 +365,7 @@ function TeamSection({
                     </span>
                     <span class="dim">{expiresIn(i.expires)}</span>
                     <button
-                      class="control-revoke"
+                      class="secondary danger small"
                       data-cancel-presigned={i.key}
                       title="Nobody can join with this link any more"
                       onClick={() =>
@@ -387,9 +388,9 @@ function TeamSection({
                 ? "Locked: only owners reach the team's machines and add to it."
                 : "Locking lets only owners reach the team's machines; open invites and requests are dropped."}
             </p>
-            {confirming === "lock" ? <button onClick={() => setConfirming(null)}>Cancel</button> : null}
+            {confirming === "lock" ? <button class="secondary small" onClick={() => setConfirming(null)}>Cancel</button> : null}
             <button
-              class={t.locked ? "control-revoke" : confirming === "lock" ? "control-revoke danger" : "control-revoke quiet-danger"}
+              class={t.locked ? "secondary small" : confirming === "lock" ? "primary danger small" : "secondary danger small"}
               data-lock={t.team}
               onClick={() => {
                 if (!t.locked && confirming !== "lock") return setConfirming("lock");

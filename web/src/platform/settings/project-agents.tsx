@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import type { PlatformProject } from "../session";
 import { toneClass } from "../swarm";
 import { ago, reachOf, type AgentToken } from "./agent-tokens";
@@ -61,6 +62,9 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  // Revoke and Clear ask first (UI audit #158).
+  const [revoking, setRevoking] = useState<Over | null>(null);
+  const [clearing, setClearing] = useState<string | null>(null);
   const base = `/api/projects/${encodeURIComponent(p.id)}`;
   const load = () =>
     Promise.all([
@@ -149,7 +153,7 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
                     <bdi>{t.owner.name ?? t.owner.account}</bdi>'s agent token
                   </span>
                   <span class="settings-card-act">
-                    <button class="control-linkish" data-project-agent-revoke={t.id} onClick={() => void revoke(t.id)}>
+                    <button class="secondary danger small" data-project-agent-revoke={t.id} onClick={() => setRevoking(t)}>
                       Revoke here
                     </button>
                   </span>
@@ -160,6 +164,20 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
             ))}
           </ul>
         ) : null}
+        {revoking && (
+          <ConfirmRemove
+            title={`Revoke ${revoking.name} here?`}
+            label="Revoke"
+            cancel={() => setRevoking(null)}
+            go={() => {
+              const id = revoking.id;
+              setRevoking(null);
+              void revoke(id);
+            }}
+          >
+            <p>Its agent loses its reach over this project at once. {revoking.owner.name ?? revoking.owner.account} keeps the token for the rest.</p>
+          </ConfirmRemove>
+        )}
       </Section>
       <Section
         id="secrets"
@@ -202,12 +220,7 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
                   ) : null}
                 </span>
                 <span class="settings-card-act">
-                  <button
-                    class="control-linkish"
-                    data-project-secret-clear={s.name}
-                    disabled={busy}
-                    onClick={() => void act(() => call(`${base}/secrets/${encodeURIComponent(s.name)}`, undefined, "DELETE"))}
-                  >
+                  <button class="secondary danger small" data-project-secret-clear={s.name} disabled={busy} onClick={() => setClearing(s.name)}>
                     Clear
                   </button>
                 </span>
@@ -268,6 +281,20 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
           </button>
         </form>
         {err ? <p class="control-error">{err}</p> : null}
+        {clearing && (
+          <ConfirmRemove
+            title={`Clear ${clearing}?`}
+            label="Clear"
+            cancel={() => setClearing(null)}
+            go={() => {
+              const n = clearing;
+              setClearing(null);
+              void act(() => call(`${base}/secrets/${encodeURIComponent(n)}`, undefined, "DELETE"));
+            }}
+          >
+            <p>Its value is deleted for good: nothing that reads it gets it any more, until someone sets it again.</p>
+          </ConfirmRemove>
+        )}
       </Section>
     </>
   );

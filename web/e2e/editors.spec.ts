@@ -396,7 +396,7 @@ test("a viewer can't open one", async ({ browser, page }) => {
   await ready(friend, term);
   // Not on the pane's menu...
   await paneEl(friend, term).click({ button: "right", position: { x: 60, y: 60 } });
-  await expect(friend.getByRole("menuitem", { name: "Split right" })).toBeVisible();
+  await expect(friend.getByRole("menuitem", { name: "Copy working directory" })).toBeVisible();
   await expect(friend.getByRole("menuitem", { name: "Open in editor" })).toHaveCount(0);
   await friend.keyboard.press("Escape");
   // ...and refused if asked anyway.

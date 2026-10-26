@@ -38,7 +38,7 @@ export function UsageReports({ telemetry: t, setTelemetry }: { telemetry: Consen
         Counts from your account on this page: which views you open and how often, and errors our code hits. Never what your
         terminals show, names, file names, commands or prompts.
       </p>
-      <label class="control-confirm">
+      <label class="control-check">
         <input
           type="checkbox"
           role="switch"

@@ -667,7 +667,7 @@ test.describe("Shared Docs… in the account menu", () => {
     // machine and show no menu, so the panel is opened by its event.)
     await page.evaluate(() => dispatchEvent(new Event("arugula:control-refresh")));
     await expect.poll(() => page.evaluate(() => window.__arugula.control?.daemons.map((x) => x.online)), { timeout: 20_000 }).toEqual([false]);
-    await page.locator("[data-shared-docs]").getByRole("button", { name: "Close", exact: true }).click();
+    await page.locator("[data-shared-docs]").getByRole("button", { name: "Done", exact: true }).click();
     await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:control-panel", { detail: "shared-docs" })));
     const row = page.locator(`[data-shared-doc="${id}"]`);
     await expect(row).toBeVisible();

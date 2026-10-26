@@ -6,6 +6,7 @@ import { useEffect, useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
 import { useSubscribe } from "../shared/ui/hooks";
 import { MaintenanceNote } from "../shared/ui/maintenance-note";
+import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
 import { names, resolve } from "./links";
 import { go, pathOf, useRoute, type Route } from "./router";
@@ -27,6 +28,9 @@ import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace"
 import { RunPage, RunsPage } from "./pages/runs";
 import { SessionPage } from "./pages/session";
 import { runs } from "./runs";
+import { runTitle } from "./runs-text";
+import { titleOf } from "./titles";
+import { barProject, where } from "./where";
 
 export function PlatformPage() {
   useSubscribe((fn) => session.subscribe(fn));
@@ -34,6 +38,7 @@ export function PlatformPage() {
   useEffect(() => void session.load(), []);
   useSlug(r);
   const lost = useFind(r);
+  useTitle(r);
   const s = session.state;
   if (s === null) return <Shell><p class="platform-section dim">Loading…</p></Shell>;
   if (s === "signed-out") return <SignIn />;
@@ -104,8 +109,8 @@ function SignIn() {
   return (
     <div class="platform" data-platform data-platform-signed-out>
       <main class="platform-main">
-        <section class="platform-section">
-          <h1>Arugula</h1>
+        <section class="platform-section sw-page">
+          <PageHeader title="Arugula" />
           <p>
             <button class="primary" data-sign-in onClick={() => void signIn(controlOrigin())}>
               Sign in
@@ -150,6 +155,29 @@ function useFind(r: Route): string | null {
     if (to) go(to, true);
   }, [to]);
   return lost;
+}
+
+/** The tab's title for the route (UI audit #159), as names arrive. */
+function useTitle(r: Route) {
+  useSubscribe((fn) => where.subscribe(fn));
+  const title = titleOf(r, {
+    project: (id) => session.project(id)?.name,
+    issue: (id) => issues.known(id),
+    run: (id) => {
+      const x = runs.known(id);
+      return x ? runTitle(x.op) : null;
+    },
+    room: (id) => {
+      const x = chat.room(id);
+      if (!x) return null;
+      if (x.kind === "channel") return `#${x.name}`;
+      // A DM by its people, unless it was renamed.
+      if (x.kind === "dm") return x.name || x.others.map((o) => o.name).join(", ") || x.with?.name;
+      return x.name;
+    },
+    shown: barProject(r),
+  });
+  useEffect(() => void (document.title = title), [title]);
 }
 
 /** Put the address's slugs right once the names are known: only the ids

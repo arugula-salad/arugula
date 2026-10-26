@@ -3,7 +3,6 @@
    shell's issue blocks draw too (shared/issues/view.tsx). Chips, tags and
    the thread are the forge blocks' and chat's (../style.css). */
 
-.issues-head,
 .issue-meta,
 .issues-tools {
   display: flex;
@@ -12,28 +11,14 @@
   gap: 8px;
 }
 
-.issues-head h1 {
-  flex: 1;
-  margin: 0;
-}
-
-.issues-head {
-  margin-bottom: 16px;
-}
-
-.platform-section a.primary {
-  color: var(--on-color);
-  text-decoration: none;
-}
 
 .issues-export,
 .issues-filter,
-.issues-states button,
-.issue-action {
+.issues-states button {
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   background: var(--surface);
   color: var(--fg);
   white-space: nowrap;
@@ -50,12 +35,12 @@
 }
 
 .issues-states button:first-child {
-  border-radius: 6px 0 0 6px;
+  border-radius: var(--btn-radius) 0 0 var(--btn-radius);
 }
 
 .issues-states button:last-child {
   margin-left: -1px;
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--btn-radius) var(--btn-radius) 0;
 }
 
 .issues-search {
@@ -71,7 +56,7 @@
   height: 28px;
   padding: 4px 8px;
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
   font: inherit;
@@ -96,7 +81,7 @@
   margin: 12px 0 0;
   padding: 0;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
 }
 
 .issues-list:empty {
@@ -149,17 +134,11 @@
   font-size: 10px;
 }
 
-.issue-dot {
-  flex: none;
-  width: 10px;
-  height: 10px;
-  margin-top: 4px;
-  border-radius: 50%;
-  background: var(--ok);
-}
-
-.issue-dot.closed {
-  background: var(--danger);
+/* A native issue's state tag: closed is done, not failed, so it's
+   neutral where a forge's closed PR is red (UI audit #157). */
+.forge-state.issue-state.closed {
+  background: var(--raised);
+  color: var(--fg);
 }
 
 .ws-tag.issue-label {
@@ -184,15 +163,6 @@ button.ws-tag.issue-label:hover {
   padding: 3px 0;
 }
 
-.issue-back {
-  margin: 0 0 8px;
-}
-
-.issue-head h1 {
-  margin-bottom: 8px;
-  overflow-wrap: anywhere;
-}
-
 .issue-actions {
   display: flex;
   gap: 6px;
@@ -203,22 +173,20 @@ button.ws-tag.issue-label:hover {
   display: flex;
 }
 
-.issue-split .issue-action:first-child {
-  border-radius: 6px 0 0 6px;
+/* Close issue and its ▾, one split button of the set's (buttons.css). */
+.issue-split > button:first-child {
+  border-radius: var(--btn-radius) 0 0 var(--btn-radius);
 }
 
-.issue-split .issue-action:last-child {
+.issue-split > button:last-child {
   margin-left: -1px;
   padding: 0 7px;
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--btn-radius) var(--btn-radius) 0;
 }
 
-.issue-action.small {
-  height: 22px;
+/* Edit (the body, labels, assignees): at the end of its line. */
+.issue-edit {
   margin-left: auto;
-  padding: 0 7px;
-  font-size: 12px;
-  font-weight: normal;
 }
 
 .issue-title-edit {

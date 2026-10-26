@@ -19,6 +19,8 @@ import "./interaction-chrome.css";
 import "./block-chrome.css";
 import "./phone-sheet.css";
 import "./phone-machines.css";
+// The one button set (UI audit #158), last: what it draws, it draws everywhere.
+import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { Client } from "./client";
@@ -28,6 +30,7 @@ import { App } from "./ui/app";
 import { openTeamChat, remotes } from "./blocks";
 import { measureCell } from "./ui/cells";
 import { desktopPush, enableControlPush, registerWorker, setPushBackend } from "./push";
+import { setReadOnlyLink } from "./ui/link-note";
 import { ControlSession, detectControl, restoreInvite, showMoving } from "./control";
 import { useControl } from "./trust/common";
 import { ControlGate } from "./trust/gate";
@@ -71,12 +74,14 @@ addEventListener("hashchange", () => {
   const to = platformOrigin() ? platformPath(location.hash) : null;
   if (to) location.replace(`${platformOrigin()}${to}`);
 });
-const linkMatch = /^#link=([0-9a-f]+)\.([0-9a-f]{64})\.([0-9a-f]{64})\.([0-9a-f]{64})$/.exec(location.hash);
+// UI audit #149: a link made since says when it ends, after the key.
+const linkMatch = /^#link=([0-9a-f]+)\.([0-9a-f]{64})\.([0-9a-f]{64})\.([0-9a-f]{64})(?:\.(\d+))?$/.exec(location.hash);
 const session = info && !linkMatch ? new ControlSession(info) : null;
 setControlSession(session);
 let linkTarget: import("./client").E2ETarget | undefined;
 if (info && linkMatch) {
-  const [, daemon, noise, seed, pub] = linkMatch;
+  const [, daemon, noise, seed, pub, ends] = linkMatch;
+  setReadOnlyLink(ends ? Number(ends) : null);
   const pkcs8 = new Uint8Array(48);
   pkcs8.set(unhex("302e020100300506032b656e04220420"));
   pkcs8.set(unhex(seed), 16);

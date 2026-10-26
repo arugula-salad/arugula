@@ -104,6 +104,15 @@ export function planBody(
   return { body: { environment, source: { kind: "commit", ref: c, where: r }, roll_back: rollBack } };
 }
 
+/** The repo "Deploy…" offers for `env` (UI audit #147): the one its last
+ * deploy came from, else the linked repo named as the environment is
+ * (`beds-smoke` for `arugula-salad/beds-smoke`), else the first linked. */
+export function repoFor(env: string | undefined, linked: string[], lastFrom?: string | null): string {
+  if (lastFrom) return lastFrom;
+  const named = env ? linked.find((r) => r.split("/")[1]?.toLowerCase() === env.toLowerCase()) : undefined;
+  return named ?? linked[0] ?? "";
+}
+
 /** A deploy as a project's history lists it (`GET
  * /api/projects/{project}/deploys`): its own page has the rest. */
 export interface DeploySummary {

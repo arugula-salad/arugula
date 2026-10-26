@@ -3151,7 +3151,10 @@ impl Block for Agent {
     }
 
     fn summary(&self) -> crate::block::Summary {
-        crate::block::Summary { title: self.inner.lock().unwrap().shown_title(), ..Default::default() }
+        let g = self.inner.lock().unwrap();
+        // A stopped agent isn't running (UI audit #154).
+        let stopped = matches!(g.status, Status::Exited | Status::Stopped);
+        crate::block::Summary { title: g.shown_title(), stopped, ..Default::default() }
     }
 
     fn state(&self) -> Value {

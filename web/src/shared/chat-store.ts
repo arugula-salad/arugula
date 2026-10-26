@@ -93,6 +93,12 @@ export const ROOM_ID = /^[a-z]{2}_[0-9a-f]{8,32}$/;
 export class ChatStore {
   /** Whether chat is on for this account: null until control has said. */
   on: boolean | null = null;
+  /** Off because control no longer knows this page's session (a 401), not
+   * because chat is off for the account (UI audit #143). */
+  signedOut = false;
+  /** The last ask didn't reach control (it's asked again soon): while `on`
+   * is still null, the page says so rather than "loading" forever. */
+  unreachable = false;
   /** The account reading: control's id for it. */
   me = "";
   /** What `@` of me looks like: my login and name, lowercased. */
@@ -190,17 +196,23 @@ export class ChatStore {
       void this.loadSidebar();
       if (!this.es) this.listen();
     } catch (e) {
-      if (e instanceof ChatError && (e.reason === "chat_off" || e.status === 401 || e.status === 404)) this.turnOff();
+      if (e instanceof ChatError && (e.reason === "chat_off" || e.status === 401 || e.status === 404)) this.turnOff(e.status === 401);
       // Control didn't answer, or a maintenance window (M141) outlasted
       // the wait: as it was, and ask again soon, the live stream too.
       else failed = true;
     }
+    if (failed !== this.unreachable) {
+      this.unreachable = failed;
+      this.emit();
+    }
     if (this.on !== true || failed) this.probe = window.setTimeout(() => void this.check(), failed ? 15_000 : 60_000);
   }
 
-  private turnOff() {
+  private turnOff(signedOut: boolean) {
     const was = this.on;
+    const wasOut = this.signedOut;
     this.on = false;
+    this.signedOut = signedOut;
     this.es?.close();
     this.es = null;
     this.stream = null;
@@ -211,12 +223,13 @@ export class ChatStore {
     this.loaded.clear();
     this.detail.clear();
     presence.stop();
-    if (was !== false) this.emit();
+    if (was !== false || wasOut !== signedOut) this.emit();
   }
 
   async loadRooms() {
     const r = await call<ChatRooms>("GET", "/api/chat");
     this.on = true;
+    this.signedOut = false;
     presence.start();
     this.rooms = r.rooms;
     this.threadsUnread = { n: r.threads_unread ?? 0, mentions: r.threads_mentions ?? 0 };
@@ -264,7 +277,7 @@ export class ChatStore {
     clearTimeout(this.roomsTimer);
     this.roomsTimer = window.setTimeout(() => {
       this.loadRooms().catch((e) => {
-        if (e instanceof ChatError && e.reason === "chat_off") this.turnOff();
+        if (e instanceof ChatError && e.reason === "chat_off") this.turnOff(false);
       });
     }, 120);
   }

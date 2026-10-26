@@ -2834,6 +2834,28 @@ export type Role = "viewer" | "editor" | "owner";
 export type RunArtifactView = { name: string, size: number, digest: string, created_at: number, };
 
 /**
+ * The deploy a deploy's run applies (M219, UI audit #145): which, to
+ * which environment, of what.
+ */
+export type RunDeployView = { 
+/**
+ * `dep_…`.
+ */
+id: string, 
+/**
+ * Its environment's name.
+ */
+environment: string, 
+/**
+ * `commit` or `artifact`.
+ */
+source_kind: string, 
+/**
+ * The commit's sha or the artifact's digest.
+ */
+reference: string, };
+
+/**
  * One change of a run's state.
  */
 export type RunEventView = { seq: number, from: string | null, to: string, at: number, 
@@ -2983,6 +3005,15 @@ chant_ledger?: string | null,
  * live view, which the project's people watch end to end.
  */
 pane: number | null, 
+/**
+ * Its hosted workspace's name, deleted or not (UI audit #145): pages
+ * show it, with the `hw_…` id beside it.
+ */
+workspace_name?: string, 
+/**
+ * The deploy a deploy's run applies (M219), as pages name it.
+ */
+deploy?: RunDeployView, 
 /**
  * Its timeline, oldest first (left out of a list).
  */

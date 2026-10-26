@@ -134,7 +134,7 @@ test("the settings switch flips it, and No turns it off for good", async ({ page
   await expect.poll(async () => (await info()).on).toBe(true);
   await dialog.getByText("What's sent").click();
   await expect(dialog.locator("[data-telemetry-preview] pre")).toContainText('"install"');
-  await dialog.getByRole("button", { name: "Close" }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
 
   // Asked again only where nobody has answered: the daemon forgets.
   rmSync(join(state, "telemetry.json"));

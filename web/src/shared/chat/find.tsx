@@ -19,10 +19,12 @@ export function when(at: number): string {
     : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+/** A view's head: its name (the platform page sets it as a page's, UI
+ * audit #157), and a line about what's in it. */
 export function ViewHead({ title, sub, phone }: { title: string; sub?: string; phone: boolean }) {
   const { nav } = usePlatformApi();
   return (
-    <header class="chat-head">
+    <header class="chat-head chat-view-head">
       {phone && (
         <button class="chat-back" title="Every thread" onClick={() => nav.openChat()}>
           ‹
@@ -95,7 +97,9 @@ export function RoomSearchView({ store, q, phone }: { store: ChatStore; q: strin
   const n = hits?.length ?? 0;
   return (
     <section class="chat-thread chat-view" aria-label="Search" data-chat-search-view>
-      <ViewHead title={q ? `Results for “${q}”` : "Search"} sub={q ? (hits === null ? "Looking…" : `${n >= 50 ? "50+" : n} ${n === 1 ? "message" : "messages"}`) : undefined} phone={phone} />
+      {/* The view's name, and what was looked for under it: a name is set as
+          a page's, and the words are the reader's own. */}
+      <ViewHead title="Search" sub={q ? (hits === null ? `Looking for “${q}”…` : `${n >= 50 ? "50+" : n} ${n === 1 ? "message" : "messages"} for “${q}”`) : undefined} phone={phone} />
       {phone && <SearchField route={{ view: "search", q }} phone />}
       <div class="thread-list">
         {!q && <p class="thread-empty">Type to search every room you read. in:#channel, from:@someone and has:quote narrow it.</p>}

@@ -18,10 +18,39 @@ import { chat } from "../shared/chat-store";
 import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
 import { PlaceUnread } from "./thread-unread";
+import { barProject, where } from "./where";
 
-/** The project the route is in, else the reader's own. */
-export function routeProject(r: Route): string | undefined {
-  return ("project" in r ? r.project : undefined) ?? session.personal()?.id;
+/** The bar's place a route is under (UI audit #159): a project's workspaces
+ * are its home's, and its settings, Deploy… and a deploy are Settings. */
+type Section = "home" | "issues" | "runs" | "chat" | "inbox" | "settings";
+function sectionOf(r: Route): Section | null {
+  switch (r.page) {
+    case "project":
+    case "workspaces":
+    case "workspace":
+      return "home";
+    case "issues":
+    case "issue":
+    case "new-issue":
+      return "issues";
+    case "runs":
+    case "run":
+    case "session":
+      return "runs";
+    case "chat":
+    case "dm":
+      return "chat";
+    case "inbox":
+      return "inbox";
+    case "settings":
+    case "project-settings":
+    case "new-deploy":
+    case "deploy":
+    case "installed":
+      return "settings";
+    default:
+      return null;
+  }
 }
 
 function Place({ to, here, children, data }: { to: string; here: boolean; children: ComponentChildren; data: string }) {
@@ -37,12 +66,19 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // Issues come with chat (M201): its Labs flag says whether they're there,
   // and its rooms what's new in issues' and runs' threads.
   useSubscribe((fn) => chat.subscribe(fn));
+  useSubscribe((fn) => where.subscribe(fn));
   const r = useRoute();
-  const project = routeProject(r);
+  // None on a page that's no project's: the bar says "All projects".
+  const project = barProject(r);
   const p = session.project(project);
+  const here = sectionOf(r);
+  // Chat is a team's: a project without one opens the first team's.
+  const chatTo = project && p?.team ? pathOf({ page: "chat", project }, names) : "/chat";
   const pick = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
+      // The way back to / where the wordmark is hidden (a phone).
+      { label: "All projects", checked: !project, run: () => go("/") },
       { header: "Projects" },
       ...session.projects.map((x) => ({ label: x.name, checked: x.id === project, run: () => go(pathOf({ page: "project", project: x.id }, names)) })),
     ];
@@ -53,7 +89,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
       { header: me?.login || me?.name || "Signed in" },
-      { label: "Settings", run: () => go("/settings") },
+      { label: "Account settings", run: () => go("/settings") },
       // This device's look, as in the shell's settings menu; on arugula.io
       // the two pages share it.
       { label: "Appearance…", run: openAppearance },
@@ -82,35 +118,36 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         Arugula <span aria-hidden="true">/</span> <strong>Projects</strong>
       </a>
       <button class="scope-label platform-project" data-project-switcher title="Your projects" onClick={pick}>
-        {p?.name ?? "Arugula"} <span class="caret">▾</span>
+        {/* An id that's none of the reader's says so, not a name. */}
+        {project ? (p?.name ?? (session.state === "ready" ? "Unknown project" : "…")) : "All projects"} <span class="caret">▾</span>
       </button>
       <nav class="places" aria-label="Places">
         {project && (
-          <Place to={pathOf({ page: "project", project }, names)} here={r.page === "project" || r.page === "workspaces" || r.page === "workspace"} data="home">
+          <Place to={pathOf({ page: "project", project }, names)} here={here === "home"} data="home">
             Project
           </Place>
         )}
-        {project && chat.on && (
-          <Place to={pathOf({ page: "issues", project }, names)} here={r.page === "issues" || r.page === "issue" || r.page === "new-issue"} data="issues">
+        {/* From the start: only chat saying it's off takes Issues away. */}
+        {project && chat.on !== false && (
+          <Place to={pathOf({ page: "issues", project }, names)} here={here === "issues"} data="issues">
             Issues
             <PlaceUnread project={project} prefix="iss_" />
           </Place>
         )}
         {project && (
-          <Place to={pathOf({ page: "runs", project }, names)} here={r.page === "runs" || r.page === "run" || r.page === "session"} data="runs">
+          <Place to={pathOf({ page: "runs", project }, names)} here={here === "runs"} data="runs">
             Runs
             <PlaceUnread project={project} prefix="run_" />
           </Place>
         )}
-        {project && (
-          <Place to={pathOf({ page: "chat", project }, names)} here={r.page === "chat" || r.page === "dm"} data="chat">
-            Chat
-          </Place>
-        )}
-        <Place to="/inbox" here={r.page === "inbox"} data="inbox">
+        <Place to={chatTo} here={here === "chat"} data="chat">
+          Chat
+        </Place>
+        <Place to="/inbox" here={here === "inbox"} data="inbox">
           Inbox
         </Place>
-        <Place to="/settings" here={r.page === "settings"} data="settings">
+        {/* In a project, its settings; account settings are the account menu's. */}
+        <Place to={project ? pathOf({ page: "project-settings", project }, names) : "/settings"} here={here === "settings"} data="settings">
           Settings
         </Place>
       </nav>

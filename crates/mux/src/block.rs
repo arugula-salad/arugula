@@ -122,6 +122,9 @@ pub struct Summary {
     pub title: Option<String>,
     /// An editor's own report (M28).
     pub editor: Option<arugula_proto::EditorInfo>,
+    /// Its program ended: an agent block whose agent stopped. It isn't
+    /// running then (UI audit #154).
+    pub stopped: bool,
 }
 
 /// An open permission request or question in a block (M24's `ask` reason).

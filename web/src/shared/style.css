@@ -20,9 +20,21 @@
   --muted: #585b70;
   --subtle: #a6adc8;
   --on-color: #11111b;
+  /* The shared mono stack (shared/fonts.css's "Arugula Mono"), for code and
+     ids outside a terminal; terminals keep their own (terminal-view.ts).
+     UI audit #152: var(--mono) was used but never defined. */
+  --mono: "Arugula Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* How dark a floating thing's shadow is: 1 on a dark palette, lighter on
+     a light one (below), where black at two-thirds is a smudge (as
+     finish.css's --platform-shadow on the platform page). UI audit #152. */
+  --shadow-k: 1;
   --bar-h: env(titlebar-area-height, 36px);
   --app-height: 100dvh;
   color-scheme: dark;
+}
+
+html[data-scheme="light"] {
+  --shadow-k: 0.35;
 }
 
 html,
@@ -283,13 +295,16 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-weight: 700;
 }
 
-/* The swarm under the shared bar. */
+/* The swarm under the shared bar: as wide as left and right leave it
+   (beside the rail), not .bar's 100%, which ran it 56px off the right
+   edge and hid half the account button (UI audit #153). */
 .swarm-shell > .bar {
   position: fixed;
   z-index: 21;
   top: 0;
   left: 0;
   right: 0;
+  width: auto;
 }
 
 .swarm-shell > .swarm {
@@ -379,9 +394,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--chip-radius);
   background: var(--surface);
-  box-shadow: 0 4px 16px #0006;
+  box-shadow: 0 4px 16px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
   font-size: 13px;
 }
 
@@ -486,7 +501,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 4px 10px;
   background: var(--raised);
   border-radius: 6px;
-  box-shadow: 0 4px 16px #0008;
+  box-shadow: 0 4px 16px rgb(0 0 0 / calc(0.53 * var(--shadow-k)));
   max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -506,7 +521,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border-radius: 8px;
   background: var(--surface);
   border: 1px solid var(--divider);
-  box-shadow: 0 4px 16px #0006;
+  box-shadow: 0 4px 16px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
   color: var(--dim);
   font-size: 12px;
   white-space: nowrap;
@@ -573,14 +588,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--dim);
 }
 
-.primary {
-  padding: 8px 16px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
-}
-
 /* ---- menus */
 
 .menu {
@@ -592,7 +599,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 4px;
   background: var(--raised);
   border-radius: 8px;
-  box-shadow: 0 8px 28px #000a;
+  box-shadow: 0 8px 28px rgb(0 0 0 / calc(0.67 * var(--shadow-k)));
   display: flex;
   flex-direction: column;
   /* A long menu in a short window scrolls rather than running off it. */
@@ -779,7 +786,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 /* A card: one session, or what needs you. */
 .sheet-card {
-  border-radius: 10px;
+  border-radius: var(--card-radius);
   background: var(--bg);
   border: 1px solid var(--divider);
   padding: 2px 4px;
@@ -902,17 +909,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 10px 12px;
   border-radius: 10px;
   background: var(--raised);
-  box-shadow: 0 6px 24px #0008;
+  box-shadow: 0 6px 24px rgb(0 0 0 / calc(0.53 * var(--shadow-k)));
   font-size: 13px;
 }
 
 .install-hint > span {
   flex: 1;
-}
-
-.install-hint .primary {
-  padding: 6px 12px;
-  border-radius: 6px;
 }
 
 .install-hint-close {
@@ -973,7 +975,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--accent);
   color: var(--on-color);
   font-weight: 600;
-  box-shadow: 0 4px 16px #0008;
+  box-shadow: 0 4px 16px rgb(0 0 0 / calc(0.53 * var(--shadow-k)));
 }
 
 /* ---- one-line prompt */
@@ -994,7 +996,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 16px;
   border-radius: 12px;
   background: var(--raised);
-  box-shadow: 0 12px 40px #000a;
+  box-shadow: 0 12px 40px rgb(0 0 0 / calc(0.67 * var(--shadow-k)));
 }
 
 .prompt label {
@@ -1018,7 +1020,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   outline: none;
 }
 
@@ -1062,11 +1064,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
-}
-
-.prompt-buttons button {
-  padding: 6px 14px;
-  border-radius: 6px;
 }
 
 /* A deploy's approval (M218): the operation's bytes wrap rather than run
@@ -1150,7 +1147,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-size: 11px;
   font-weight: 600;
   pointer-events: none;
-  box-shadow: 0 2px 8px #0008;
+  box-shadow: 0 2px 8px rgb(0 0 0 / calc(0.53 * var(--shadow-k)));
 }
 
 .pane-badge.needs_input {
@@ -1360,7 +1357,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   height: 26px;
   padding: 0 8px;
   border: 1px solid var(--divider);
-  border-radius: 4px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
   font: inherit;
@@ -1388,17 +1385,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .browser-card .dim,
 .browser-card.dim {
   color: var(--dim);
-}
-
-.browser-card .button,
-.browser-card button {
-  padding: 6px 14px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--on-color);
-  text-decoration: none;
-  font-weight: 600;
 }
 
 .editor {
@@ -1759,22 +1745,10 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   align-items: center;
 }
 
-/* Big enough to hit with a thumb. */
-.agent-perm-buttons button {
+/* Big enough to hit with a thumb; the buttons are the set's (buttons.css). */
+.agent-perm-buttons :is(.primary, .secondary) {
   min-height: 40px;
   padding: 8px 16px;
-  border-radius: 8px;
-  background: var(--raised);
-  font-weight: 600;
-}
-
-.agent-perm-buttons button.primary {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.agent-perm-buttons button.danger {
-  color: var(--danger);
 }
 
 .agent-perm-standing {
@@ -1817,6 +1791,19 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .rules h2 {
   margin: 0;
   font-size: 15px;
+}
+
+/* Its × (UI audit #158) shares the heading's row: the dialog is a grid,
+   where Modal's float doesn't apply. */
+.rules > .modal-close {
+  grid-area: 1 / 1;
+  justify-self: end;
+  margin: -6px -6px 0 0;
+}
+
+.rules > .modal-close + h2 {
+  grid-area: 1 / 1;
+  padding-right: 32px;
 }
 
 .rules .hint {
@@ -1918,29 +1905,15 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border-color: var(--accent);
 }
 
-.agent-composer button {
+.agent-composer :is(.primary, .secondary) {
   min-height: 36px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  background: var(--raised);
-  font-weight: 600;
-}
-
-.agent-composer button.primary {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.agent-composer button:disabled {
-  opacity: 0.5;
-}
-
-.agent-composer button.danger {
-  color: var(--danger);
 }
 
 .agent-composer button.attach {
+  min-height: 36px;
   padding: 6px 8px;
+  border-radius: var(--btn-radius);
+  background: var(--raised);
 }
 
 /* M71: what goes with the next prompt, above the box. */
@@ -2037,7 +2010,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .agent-dialog label.check {
@@ -2183,7 +2156,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 14px;
   border-radius: 12px;
   background: var(--raised);
-  box-shadow: 0 12px 40px #000a;
+  box-shadow: 0 12px 40px rgb(0 0 0 / calc(0.67 * var(--shadow-k)));
   box-sizing: border-box;
 }
 
@@ -2521,7 +2494,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   min-height: 36px;
   padding: 6px 8px;
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--bg);
   color: inherit;
   font: inherit;
@@ -2572,25 +2545,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   align-items: center;
 }
 
-.ask-buttons button {
+.ask-buttons :is(.primary, .secondary) {
   min-height: 40px;
   padding: 8px 16px;
-  border-radius: 8px;
-  background: var(--raised);
-  font-weight: 600;
-}
-
-.ask-buttons button.primary {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.ask-buttons button.primary:disabled {
-  opacity: 0.5;
-}
-
-.ask-buttons button.danger {
-  color: var(--danger);
 }
 
 /* A terminal's question (Claude Code's hook), over the bottom of its pane. */
@@ -2604,7 +2561,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   overflow-y: auto;
   border-radius: 10px;
   background: var(--surface);
-  box-shadow: 0 6px 24px #0008;
+  box-shadow: 0 6px 24px rgb(0 0 0 / calc(0.53 * var(--shadow-k)));
 }
 
 .pane-ask .ask {
@@ -2640,17 +2597,38 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 /* ---- Arugula control (M17): sign-in, approvals, devices */
 
-.control-center {
+/* The gate's screens flow and scroll (UI audit #148): a window shorter
+   than the screen scrolls it, from its heading, and it's centred only
+   while there's room. The page itself doesn't scroll (body), so the
+   window-wide wrapper does. */
+.control-gate {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-content: center;
-  justify-items: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.control-center {
+  box-sizing: border-box;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
   gap: 4px;
   padding: 24px 16px;
   max-width: 34rem;
   margin: 0 auto;
   line-height: 1.5;
+}
+
+/* Control's moving away (#507): a note above the screen, not an error. */
+.control-center .control-moving {
+  align-self: stretch;
+  margin-bottom: 12px;
+  border: 0;
+  border-radius: 6px;
+  line-height: 1.45;
 }
 
 .control-center h1 {
@@ -2669,10 +2647,18 @@ html[data-native-tabs][data-desktop="macos"] .bar {
    under a long deploy plan can be reached. */
 .control-prompt {
   position: relative;
-  max-height: calc(100vh - 15vh - 24px);
-  max-height: calc(100dvh - 15vh - 24px);
+  /* Less its own padding (16px top and bottom), else it ran 8px past the
+     window's bottom (UI audit #150). */
+  max-height: calc(100vh - 15vh - 24px - 32px);
+  max-height: calc(100dvh - 15vh - 24px - 32px);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* A dialog holds the focus itself until Tab moves it to a control
+   (UI audit #150): no ring round the whole of it. */
+.prompt:focus {
+  outline: none;
 }
 
 .modal-close {
@@ -2716,7 +2702,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 16px;
   border-radius: 12px;
   background: var(--raised);
-  box-shadow: 0 12px 40px #000a;
+  box-shadow: 0 12px 40px rgb(0 0 0 / calc(0.67 * var(--shadow-k)));
 }
 
 .telemetry-card h2 {
@@ -2780,14 +2766,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--danger);
 }
 
-.control-select {
-  padding: 4px;
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
-  border-radius: 6px;
-}
-
 .dim {
   color: var(--dim);
 }
@@ -2815,7 +2793,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   width: 10rem;
 }
 
@@ -2834,7 +2812,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font: 14px ui-monospace, monospace;
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .control-rest-field:focus-within {
@@ -2896,30 +2874,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .control-name p {
   flex-basis: 100%;
   margin: 0;
-}
-
-.control-code button,
-.control-revoke {
-  padding: 6px 12px;
-  border-radius: 6px;
-  background: var(--raised-hover);
-}
-
-.control-revoke.danger {
-  background: var(--danger);
-  color: var(--on-color);
-}
-
-/* Takes something away, but asks first: reads as destructive without
-   being the loudest thing on the row. */
-.control-revoke.quiet-danger {
-  background: none;
-  color: var(--danger);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent);
-}
-
-.control-revoke.quiet-danger:hover {
-  background: color-mix(in srgb, var(--danger) 15%, transparent);
 }
 
 /* A team's members and its machines, each under its own heading. */
@@ -3002,6 +2956,33 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   }
 }
 
+/* UI audit #151: rows of three, name | what | action (a team's members and
+   machines, where you're signed in, passkeys, unused invite links), the
+   action a small button at the right end, never a row of its own. */
+.control-devices.control-rows li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.control-devices li > button {
+  justify-self: end;
+}
+
+@media (max-width: 700px) {
+  /* On a phone what it is goes under its name, the action beside both. */
+  .control-devices.control-rows li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .control-devices.control-rows li > :nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+  }
+  .control-devices.control-rows li > :nth-child(3) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
 /* Devices and machines (#106): two groups, a team badge, what Remove does. */
 .control-prompt h3.control-group {
   margin: 14px 0 0;
@@ -3067,16 +3048,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--raised);
 }
 
-.control-linkish.danger {
-  color: var(--danger);
-}
-
 /* Deleting an account (#173): type its login to confirm. */
-.prompt-buttons button.danger:not(:disabled) {
-  background: var(--danger);
-  color: var(--on-color);
-}
-
 .prompt label.control-confirm {
   display: grid;
   gap: 6px;
@@ -3095,9 +3067,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   accent-color: var(--accent);
 }
 
-.prompt-buttons button:disabled {
-  opacity: 0.5;
-  cursor: default;
+/* A checkbox in a list's row, beside its buttons (UI audit #151). */
+.prompt li label.control-check {
+  display: inline-flex;
+  margin: 0;
+  font-weight: 400;
 }
 
 /* #326: a machine's join and the device that came to approve it, side by
@@ -3112,7 +3086,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .control-both-card {
   padding: 8px 10px;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -3133,8 +3107,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 /* Add a phone or browser (#105): the control URL as a QR code. */
 .control-qr {
   display: block;
-  width: min(220px, 60vw);
-  height: auto;
+  /* Square, sized outright: an SVG with only a viewBox has no height of
+     its own to lay out by (UI audit #148). A short window gets a smaller
+     one. */
+  width: min(220px, 60vw, 32vh);
+  height: min(220px, 60vw, 32vh);
+  flex: none;
   margin: 8px 0;
   border-radius: 6px;
 }
@@ -3158,18 +3136,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .control-legal a {
   color: inherit;
-}
-
-.control-secondary {
-  padding: 8px 16px;
-  border-radius: 8px;
-  background: var(--raised);
-}
-
-.control-linkish {
-  color: var(--accent);
-  text-decoration: underline;
-  padding: 0;
 }
 
 .host-path {
@@ -3368,7 +3334,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .pane-private {
@@ -3493,7 +3459,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   bottom: 8px;
   border-radius: 10px;
   background: var(--surface);
-  box-shadow: 0 6px 24px #0008;
+  box-shadow: 0 6px 24px rgb(0 0 0 / calc(0.53 * var(--shadow-k)));
   padding-bottom: 8px;
 }
 
@@ -3852,7 +3818,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   position: relative;
   border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
   background: color-mix(in srgb, var(--c) 7%, #0b0e16);
-  border-radius: 6px;
+  border-radius: var(--card-radius);
   padding: 10px 12px 10px 14px;
   flex: 0 0 auto;
   animation: swarm-card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
@@ -3931,23 +3897,15 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .swarm-card .ca-nav {
   margin-top: 6px;
 }
-.swarm-card .ca button,
-.swarm-card .agent-perm-buttons button {
-  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
-  background: none;
-  border-radius: 4px;
-  padding: 5px 10px;
-  font: 600 12px/1 var(--f-ui);
+/* The set's buttons (buttons.css), small; the main one in the card's
+   tone, the swarm's language. */
+.swarm-card .primary {
+  --btn-fill: var(--c);
 }
-.swarm-card .ca button.pri,
-.swarm-card .agent-perm-buttons button.primary {
-  background: var(--c);
-  color: var(--void);
-  border-color: var(--c);
-}
-.swarm-card .ca button.ghost {
-  border-color: var(--line);
-  color: var(--mute);
+.swarm-card :is(.primary, .secondary) {
+  min-height: 24px;
+  padding: 3px 10px;
+  font-size: 12px;
 }
 .swarm-card .ask {
   margin: 0;
@@ -4094,17 +4052,17 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 /* M28: an edit Claude Code proposes, as a diff. */
 .diff-text .hunk {
-  color: #89b4fa;
+  color: var(--info);
 }
 .diff-card .agent-perm-q b {
   font-weight: 600;
 }
 .diff-counts .add {
-  color: #a6e3a1;
+  color: var(--ok);
   font-style: normal;
 }
 .diff-counts .del {
-  color: #f38ba8;
+  color: var(--danger);
   font-style: normal;
 }
 .diff-edit {
@@ -4115,15 +4073,19 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   max-height: 40vh;
   margin: 4px 0;
   font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #cdd6f4;
-  background: #181825;
-  border: 1px solid #45475a;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--raised-hover);
   border-radius: 4px;
   resize: vertical;
 }
 
-/* M28: following an editor, over the swarm's field. */
+/* M28: following an editor, over the swarm's field. The panel is the
+   page's palette, as the file block is (UI audit #152), not the swarm's
+   always-dark one: its words and lines take the palette's. */
 .follow {
+  --mute: var(--dim);
+  --line: var(--divider);
   position: absolute;
   z-index: 8;
   top: 76px;
@@ -4132,7 +4094,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   bottom: 56px;
   display: flex;
   flex-direction: column;
-  background: #1e1e2e;
+  color: var(--fg);
+  background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
@@ -4143,8 +4106,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   align-items: center;
   gap: 14px;
   padding: 8px 12px;
-  border-bottom: 1px solid #313244;
-  background: #181825;
+  border-bottom: 1px solid var(--raised);
+  background: var(--surface);
   min-width: 0;
 }
 .follow-title {
@@ -4173,45 +4136,28 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   margin-left: 10px;
 }
 .follow-diag .e {
-  color: #f38ba8;
+  color: var(--danger);
 }
 .follow-diag .w {
-  color: #f9e2af;
+  color: var(--warn);
 }
 .follow-tools {
   display: flex;
   gap: 6px;
   flex: none;
 }
-.follow-tools button {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 5px;
-  border: 1px solid #45475a;
-  background: #313244;
-}
-.follow-tools button.pri {
-  background: #89b4fa;
-  color: #11111b;
-  border-color: #89b4fa;
-  font-weight: 600;
-}
-.follow-tools button.ghost {
-  background: none;
-  border-color: transparent;
-}
 .follow-note {
   padding: 4px 12px;
   font-size: 12px;
   color: var(--mute);
-  border-bottom: 1px solid #313244;
+  border-bottom: 1px solid var(--raised);
 }
 .follow-note.paused {
-  color: #f9e2af;
+  color: var(--warn);
 }
 .follow-note.gone,
 .follow-note.error {
-  color: #f38ba8;
+  color: var(--danger);
 }
 .follow-code {
   flex: 1;
@@ -4287,7 +4233,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .review-live.on {
-  color: #a6e3a1;
+  color: var(--ok);
 }
 
 .review-live.on::before {
@@ -4299,11 +4245,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .review .adds {
-  color: #a6e3a1;
+  color: var(--ok);
 }
 
 .review .dels {
-  color: #f38ba8;
+  color: var(--danger);
 }
 
 .review-body {
@@ -4358,20 +4304,20 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border-radius: 3px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-weight: 700;
-  color: #f9e2af;
+  color: var(--warn);
 }
 
 .diff-st.st-added,
 .diff-st.st-untracked {
-  color: #a6e3a1;
+  color: var(--ok);
 }
 
 .diff-st.st-deleted {
-  color: #f38ba8;
+  color: var(--danger);
 }
 
 .diff-st.st-renamed {
-  color: #89b4fa;
+  color: var(--info);
 }
 
 .diff-path {
@@ -4392,8 +4338,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .diff-at {
   padding: 2px 8px;
-  color: #89b4fa;
-  background: #89b4fa14;
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 8%, transparent);
   overflow-wrap: anywhere;
 }
 
@@ -4412,7 +4358,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .diff-why-run {
-  color: #89b4fa;
+  color: var(--info);
 }
 
 button.diff-why-run {
@@ -4425,7 +4371,7 @@ button.diff-why-run {
 }
 
 .diff-why-wip {
-  color: #f9e2af;
+  color: var(--warn);
 }
 
 .dl {
@@ -4440,12 +4386,14 @@ button.diff-why-run {
   outline: 1px solid var(--raised);
 }
 
+/* UI audit #152: the palette's, as the rest of the block (Mocha's hex
+   before, on every palette). */
 .dl.add {
-  background: #a6e3a11c;
+  background: color-mix(in srgb, var(--ok) 11%, transparent);
 }
 
 .dl.del {
-  background: #f38ba81c;
+  background: color-mix(in srgb, var(--danger) 11%, transparent);
 }
 
 .dl.eol {
@@ -4482,30 +4430,32 @@ button.diff-why-run {
   }
 }
 
+/* Syntax colors (swarm/code.ts's classes, and chat's): the same tokens as
+   the file block's and the editor block's (editor-theme.ts). */
 .hl-k {
-  color: #f5c2e7;
+  color: var(--accent);
 }
 .hl-s {
-  color: #a6e3a1;
+  color: var(--ok);
 }
 .hl-n {
-  color: #fab387;
+  color: var(--peach);
 }
 .hl-c {
-  color: #585b70;
+  color: var(--dim);
   font-style: italic;
 }
 .hl-f {
-  color: #89b4fa;
+  color: var(--info);
 }
 .hl-t {
-  color: #f9e2af;
+  color: var(--warn);
 }
 .hl-p {
-  color: #9399b2;
+  color: var(--subtle);
 }
 .hl-m {
-  color: #94e2d5;
+  color: var(--teal);
 }
 
 /* ---- Claude Code conversations (M33) */
@@ -4618,7 +4568,10 @@ button.diff-why-run {
   gap: 14px;
 }
 
-.ws h4 {
+/* The blocks' own (the app's root is a .ws too); not the agents block's
+   nor the Agents page's: their headings hold paths, which keep their case
+   (UI audit #155). */
+.review.ws:not(.agents) h4 {
   margin: 0 0 6px;
   font-size: 11px;
   font-weight: 600;
@@ -4746,7 +4699,7 @@ button.diff-why-run {
 .ws-card {
   background: var(--surface);
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
@@ -4784,7 +4737,7 @@ button.diff-why-run {
 .ws-tag {
   font-size: 11px;
   padding: 0 6px;
-  border-radius: 8px;
+  border-radius: var(--chip-radius);
   background: var(--raised);
   color: var(--dim);
   white-space: nowrap;
@@ -4814,28 +4767,6 @@ button.diff-why-run {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
-}
-
-.ws-actions button {
-  background: var(--raised);
-  color: var(--fg);
-  border-radius: 4px;
-  padding: 3px 9px;
-  font-size: 12px;
-}
-
-.ws-actions button:hover {
-  background: var(--raised-hover);
-}
-
-.ws-actions button.pri {
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
-}
-
-.ws-actions button:disabled {
-  opacity: 0.6;
 }
 
 .ws-record {
@@ -5434,7 +5365,8 @@ button.diff-why-run {
   box-sizing: border-box;
 }
 
-.start button {
+/* Low: the set's buttons (buttons.css) keep their own colors. */
+:where(.start) button {
   font: inherit;
   color: inherit;
   cursor: pointer;
@@ -5578,7 +5510,7 @@ button.diff-why-run {
   padding: 12px;
   border: 1px solid var(--line);
   border-left: 3px solid rgb(138, 160, 190);
-  border-radius: 10px;
+  border-radius: var(--card-radius);
   background: var(--panel);
 }
 
@@ -5659,50 +5591,13 @@ button.diff-why-run {
   border-color: var(--s-fail);
 }
 
-.start-btn {
-  display: inline-block;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  padding: 8px 14px;
-  border-radius: 999px;
-  font: 500 12px/1 var(--f-mono) !important;
-  text-decoration: none;
-  color: var(--ink) !important;
-}
-
-.start-btn:hover:not(:disabled) {
-  border-color: #2b3448;
-}
-
-.start-btn.primary {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--void) !important;
-  font-weight: 700 !important;
-}
-
-.start-btn.big {
+/* The tour's buttons are the set's (buttons.css); its biggest, the step's
+   one thing to do, louder still. */
+.start .primary.big {
   padding: 12px 20px;
-  font-size: 13px !important;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-}
-
-.start-btn.ghost {
-  background: none;
-}
-
-.start-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.start-linkish {
-  border: 0;
-  background: none;
-  padding: 0;
-  color: var(--s-ask) !important;
-  font: inherit;
 }
 
 .start-said {
@@ -5971,51 +5866,6 @@ button.diff-why-run {
   margin: 0 8px 16px;
 }
 
-/* Every button on the page looks like one: filled, with the main one in
-   the accent and the one that destroys in the danger color. */
-.agents-actions button,
-.agents-buttons button {
-  padding: 5px 12px;
-  border-radius: 6px;
-  background: var(--raised);
-  color: var(--fg);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.agents-actions button:hover:not(:disabled),
-.agents-buttons button:hover:not(:disabled) {
-  background: var(--raised-hover);
-}
-
-.agents-actions button.pri,
-.agents-buttons button.pri {
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
-}
-
-.agents-actions button.pri:hover:not(:disabled),
-.agents-buttons button.pri:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 85%, var(--fg));
-}
-
-.agents-buttons button.danger {
-  background: none;
-  color: var(--danger);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent);
-}
-
-.agents-buttons button.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 18%, transparent);
-}
-
-.agents-actions button:disabled,
-.agents-buttons button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .agents-said {
   color: var(--accent);
 }
@@ -6094,7 +5944,7 @@ button.diff-why-run {
   align-items: center;
   gap: 8px 16px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   border: 1px solid var(--divider);
 }
@@ -6150,23 +6000,6 @@ button.diff-why-run {
 .activity-need[data-kind="failed"] b,
 .activity-need[data-kind="exited"] b {
   color: var(--danger);
-}
-
-.activity-need-buttons {
-  display: flex;
-  gap: 6px;
-}
-
-.activity-need-buttons button {
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: var(--raised);
-}
-
-.activity-need-buttons button.pri {
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
 }
 
 /* Recipes: which machine's, and the places with none yet, compact. */
@@ -6301,7 +6134,7 @@ button.diff-why-run {
   min-width: 0;
   box-sizing: border-box;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--field-radius);
   border: 1px solid var(--divider);
   background: var(--bg);
   color: var(--fg);
@@ -6397,7 +6230,7 @@ button.diff-why-run {
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   border: 1px solid var(--divider);
   min-width: 0;
@@ -6461,7 +6294,7 @@ button.diff-why-run {
 .update-chip {
   padding: 2px 8px;
   border: 1px solid var(--accent);
-  border-radius: 10px;
+  border-radius: var(--chip-radius);
   color: var(--accent);
   font-size: 12px;
   white-space: nowrap;
@@ -6480,7 +6313,7 @@ button.diff-why-run {
   padding: 10px 12px;
   background: var(--raised);
   border-radius: 8px;
-  box-shadow: 0 8px 28px #000a;
+  box-shadow: 0 8px 28px rgb(0 0 0 / calc(0.67 * var(--shadow-k)));
   line-height: 1.45;
 }
 
@@ -6567,7 +6400,7 @@ button.diff-why-run {
   flex-direction: column;
   background: var(--surface);
   border-left: 1px solid var(--divider);
-  box-shadow: -8px 0 24px #0006;
+  box-shadow: -8px 0 24px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
 }
 
 .thread-panel.phone {
@@ -6714,6 +6547,9 @@ button.diff-why-run {
 
 .msg-gutter {
   display: flex;
+  /* The picture (and its dot and badge) at the top of a long message, not
+     stretched down it (UI audit #156). */
+  align-items: flex-start;
   justify-content: center;
 }
 
@@ -6873,7 +6709,7 @@ button.diff-why-run {
   border: 1px solid var(--divider);
   border-radius: 6px;
   background: var(--surface);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+  box-shadow: 0 2px 8px rgb(0 0 0 / calc(0.3 * var(--shadow-k)));
 }
 
 .thread-msg:hover .msg-tools,
@@ -6911,7 +6747,7 @@ button.diff-why-run {
   border: 1px solid var(--divider);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+  box-shadow: 0 6px 24px rgb(0 0 0 / calc(0.35 * var(--shadow-k)));
 }
 
 .msg-item {
@@ -6988,7 +6824,7 @@ button.diff-why-run {
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
+  box-shadow: 0 2px 10px rgb(0 0 0 / calc(0.35 * var(--shadow-k)));
 }
 
 /* Compact rows (#121, Appearance → Messages): IRC's, one line each: time,
@@ -7119,7 +6955,7 @@ button.diff-why-run {
   border: 1px solid var(--divider);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+  box-shadow: 0 6px 24px rgb(0 0 0 / calc(0.35 * var(--shadow-k)));
 }
 
 .react-menu > button {
@@ -7403,7 +7239,7 @@ button.thread-quote:hover {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   padding: 6px 8px;
 }
 
@@ -7467,7 +7303,7 @@ button.thread-quote:hover {
   border: 1px solid var(--divider);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+  box-shadow: 0 6px 24px rgb(0 0 0 / calc(0.35 * var(--shadow-k)));
 }
 
 .mention-pick li {
@@ -7787,7 +7623,7 @@ input.chat-search {
   border: 1px solid var(--divider);
   border-radius: 10px;
   background: var(--surface);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.5);
+  box-shadow: 0 12px 40px rgb(0 0 0 / calc(0.5 * var(--shadow-k)));
   overflow: hidden;
 }
 
@@ -8050,16 +7886,24 @@ input.chat-search {
   color: var(--dim);
 }
 
-.chat-members .avatar {
-  width: 20px;
-  height: 20px;
+/* The header's faces: small, overlapping (UI audit #156: they were full
+   size, a 200px chip that squeezed the room's name). */
+.chat-members {
+  --msg-gutter: 20px;
+}
+
+.chat-members > :not(:last-child) {
   margin-right: -4px;
+}
+
+.chat-members .msg-avatar {
   border-radius: 5px;
   font-size: 9px;
   box-shadow: 0 0 0 2px var(--bg);
 }
 
-.chat-members span {
+/* The count (not the faces' own spans). */
+.chat-members > span:last-child {
   margin-left: 10px;
 }
 
@@ -8224,7 +8068,7 @@ input.chat-search {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .chat-people li .dim {
@@ -8242,28 +8086,6 @@ input.chat-search {
 .conv-remove:hover {
   background: var(--raised);
   color: var(--fg);
-}
-
-.conv-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.conv-actions button {
-  padding: 5px 12px;
-  border-radius: 6px;
-  background: var(--raised);
-}
-
-.conv-actions button.primary {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.conv-actions button.danger {
-  color: var(--danger);
 }
 
 .chat-thread .thread-msg {
@@ -8301,9 +8123,41 @@ input.chat-search {
 
 .chat-title {
   flex: 1;
-  min-width: 0;
+  /* The name truncates last: the buttons wrap under it first (below). */
+  min-width: min(8em, 100%);
   display: flex;
   flex-direction: column;
+}
+
+/* A room too narrow for its name and its buttons in one row (the Details
+   or a thread panel open beside it, a narrow window or block): the name
+   keeps the first row, the buttons take a row of their own under it, as
+   a phone's do. The room's width, not the window's (UI audit #156). */
+.chat-thread {
+  container: chat-room / inline-size;
+}
+
+.chat-thread > .chat-head > :not(.chat-title) {
+  flex: none;
+}
+
+@container chat-room (max-width: 600px) {
+  .chat-head {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .chat-head .chat-title {
+    flex: 1 1 100%;
+  }
+
+  .chat-head .chat-back + .chat-title {
+    flex-basis: calc(100% - 48px);
+  }
+
+  .chat-head .chat-title + * {
+    margin-left: auto;
+  }
 }
 
 /* A phone's room header has more buttons than width (pins, about, star,
@@ -8373,9 +8227,9 @@ input.chat-search {
   background: var(--raised);
   color: var(--fg);
   border: 1px solid var(--accent);
-  border-radius: 10px;
+  border-radius: var(--card-radius);
   padding: 12px 14px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 24px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
 }
 
 .hand-title {
@@ -8388,12 +8242,8 @@ input.chat-search {
 }
 
 .hand-card .prompt-buttons button {
+  min-height: 40px;
   padding: 10px 16px;
-}
-
-.hand-card button.primary {
-  background: var(--accent);
-  color: var(--bg);
 }
 
 .hand-answer {
@@ -8581,7 +8431,7 @@ input.chat-search {
   color: var(--fg);
   background: var(--surface);
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   padding: 7px 9px;
   width: 100%;
   box-sizing: border-box;
@@ -8637,15 +8487,6 @@ input.chat-search {
 
 .forge-as {
   font-size: 11px;
-}
-
-.ws-actions button.forge-drop {
-  background: none;
-  color: var(--danger);
-}
-
-.ws-actions button.forge-drop:hover {
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
 }
 
 .forge-compose {
@@ -8900,8 +8741,6 @@ input.chat-search {
 }
 
 [data-look="aqua"] .sample-button,
-html[data-finish="aqua"] .primary,
-html[data-finish="aqua"] .prompt-buttons button.primary,
 html[data-finish="aqua"] .sized-elsewhere button {
   border-radius: 999px;
   background:
@@ -8924,8 +8763,6 @@ html[data-finish="aqua"] .sized-elsewhere button {
 }
 
 [data-look="brushed"] .sample-button,
-html[data-finish="brushed"] .primary,
-html[data-finish="brushed"] .prompt-buttons button,
 html[data-finish="brushed"] .sized-elsewhere button {
   border-radius: 4px;
   background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--raised);
@@ -9028,9 +8865,27 @@ html[data-corners="round"] .prompt {
   border-radius: 18px;
 }
 
-html[data-corners="round"] .prompt-buttons button,
-html[data-corners="round"] .primary {
-  border-radius: 999px;
+/* The corners of what's on the page, not only the panes' (UI audit #158):
+   buttons (buttons.css), fields, cards and chips take these. Soft is the
+   default. */
+:root {
+  --btn-radius: 6px;
+  --field-radius: 6px;
+  --card-radius: 8px;
+  --chip-radius: 999px;
+}
+
+html[data-corners="square"] {
+  --btn-radius: 2px;
+  --field-radius: 2px;
+  --card-radius: 2px;
+  --chip-radius: 2px;
+}
+
+html[data-corners="round"] {
+  --btn-radius: 999px;
+  --field-radius: 10px;
+  --card-radius: 14px;
 }
 
 /* -- Aqua: a lit title bar, pinstripes behind the panes, gel buttons,
@@ -9067,7 +8922,7 @@ html[data-finish="aqua"] .pane-header.active {
 html[data-finish="aqua"] .menu {
   background: color-mix(in srgb, var(--raised) 88%, transparent);
   backdrop-filter: blur(10px) saturate(1.4);
-  box-shadow: 0 10px 30px #0006, 0 0 0 1px #0002;
+  box-shadow: 0 10px 30px rgb(0 0 0 / calc(0.4 * var(--shadow-k))), 0 0 0 1px #0002;
 }
 
 html[data-finish="aqua"] .menu-item:hover:not(:disabled) {
@@ -9077,7 +8932,7 @@ html[data-finish="aqua"] .menu-item:hover:not(:disabled) {
 
 html[data-finish="aqua"] .prompt {
   background: linear-gradient(#fff2, #fff0 30px), var(--raised);
-  box-shadow: 0 20px 50px #0007, 0 0 0 1px #0002;
+  box-shadow: 0 20px 50px rgb(0 0 0 / calc(0.47 * var(--shadow-k))), 0 0 0 1px #0002;
 }
 
 html[data-finish="aqua"] .account-avatar {
@@ -9119,13 +8974,7 @@ html[data-finish="brushed"] .pane-header.active {
 html[data-finish="brushed"] .menu,
 html[data-finish="brushed"] .prompt {
   background: var(--grain), linear-gradient(#fff2, #fff0 40px, #0001), var(--raised);
-  box-shadow: inset 0 1px 0 #fff3, 0 12px 36px #0008, 0 0 0 1px #0003;
-}
-
-html[data-finish="brushed"] .prompt-buttons button.primary,
-html[data-finish="brushed"] .primary {
-  background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--accent);
-  color: var(--on-color);
+  box-shadow: inset 0 1px 0 #fff3, 0 12px 36px rgb(0 0 0 / calc(0.53 * var(--shadow-k))), 0 0 0 1px #0003;
 }
 
 html[data-finish="brushed"] .account-avatar {
@@ -9173,7 +9022,7 @@ html[data-finish="glass"] .menu,
 html[data-finish="glass"] .prompt {
   background: color-mix(in srgb, var(--raised) 62%, transparent);
   backdrop-filter: blur(20px) saturate(1.6);
-  box-shadow: inset 0 1px 0 #fff2, 0 0 0 1px #fff1, 0 16px 40px #0006;
+  box-shadow: inset 0 1px 0 #fff2, 0 0 0 1px #fff1, 0 16px 40px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
 }
 
 html[data-finish="glass"] .prompt-backdrop {
@@ -9548,7 +9397,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   top: 0;
   bottom: 0;
   left: 0;
-  box-shadow: 8px 0 24px #0006;
+  box-shadow: 8px 0 24px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
 }
 
 .ws-sidebar-head {
@@ -10201,7 +10050,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   flex-direction: column;
   background: var(--surface);
   border-left: 1px solid var(--raised);
-  box-shadow: -10px 0 28px #0005;
+  box-shadow: -10px 0 28px rgb(0 0 0 / calc(0.33 * var(--shadow-k)));
 }
 
 .ws-att-head {
@@ -10346,18 +10195,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid var(--raised);
-}
-
-.ws-att-goto {
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--raised);
-  border-radius: 6px;
-  color: var(--fg);
-}
-
-.ws-att-goto:hover {
-  background: var(--raised);
 }
 
 .ws-att-foot {
@@ -10928,7 +10765,7 @@ html[data-workspace="new"] .thread-panel {
   background: var(--surface);
   border: 1px solid var(--raised);
   border-radius: 10px;
-  box-shadow: 0 12px 32px #0008;
+  box-shadow: 0 12px 32px rgb(0 0 0 / calc(0.53 * var(--shadow-k)));
   color: var(--fg);
   font-size: 12px;
   white-space: normal;
@@ -10985,7 +10822,7 @@ html[data-workspace="new"] .thread-panel {
   padding: 0 8px;
   box-sizing: border-box;
   border: 1px solid var(--raised);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -11000,8 +10837,7 @@ html[data-workspace="new"] .thread-panel {
   font-family: ui-monospace, Menlo, monospace;
 }
 
-.add-pane-choose,
-.add-pane-actions button {
+.add-pane-choose {
   flex: none;
   height: 28px;
   padding: 0 12px;
@@ -11009,13 +10845,11 @@ html[data-workspace="new"] .thread-panel {
   border-radius: 6px;
 }
 
-.add-pane-choose:hover:not(:disabled),
-.add-pane-actions button:hover:not(:disabled) {
+.add-pane-choose:hover:not(:disabled) {
   background: var(--raised);
 }
 
-.add-pane-choose:disabled,
-.add-pane-actions button:disabled {
+.add-pane-choose:disabled {
   opacity: 0.45;
   cursor: default;
 }
@@ -11042,18 +10876,6 @@ html[data-workspace="new"] .thread-panel {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.add-pane-actions button.primary {
-  border-color: transparent;
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
-}
-
-.add-pane-actions button.primary:hover:not(:disabled) {
-  background: var(--accent);
-  filter: brightness(1.1);
 }
 
 
@@ -11434,7 +11256,7 @@ html[data-workspace="new"] .thread-panel {
   border: 1px solid var(--divider);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+  box-shadow: 0 6px 24px rgb(0 0 0 / calc(0.35 * var(--shadow-k)));
 }
 
 .emoji-search {
@@ -11543,7 +11365,7 @@ html[data-workspace="new"] .thread-panel {
   padding: 8px 10px;
   border: 1px solid var(--divider);
   border-left: 3px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   color: var(--fg);
   text-decoration: none;
@@ -11767,7 +11589,7 @@ html[data-workspace="new"] .thread-panel {
   border: 1px solid var(--divider);
   border-radius: 6px;
   background: var(--surface);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+  box-shadow: 0 2px 8px rgb(0 0 0 / calc(0.3 * var(--shadow-k)));
 }
 
 .msg-tools .msg-menu button {
@@ -11841,7 +11663,7 @@ html[data-workspace="new"] .thread-panel {
   max-width: 100%;
   padding: 4px 6px;
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--chip-radius);
   background: var(--surface);
   font-size: 12px;
   overflow: hidden;
@@ -11935,6 +11757,7 @@ html[data-workspace="new"] .thread-panel {
 .msg-image {
   display: block;
   max-width: 100%;
+  min-width: 0;
   padding: 0;
   border: 1px solid var(--divider);
   border-radius: 6px;
@@ -11950,6 +11773,13 @@ html[data-workspace="new"] .thread-panel {
   max-width: min(100%, 360px);
   max-height: 320px;
   object-fit: contain;
+}
+
+/* Sized from the file's own size (files-ui's pictureSize): only a narrower
+   room shrinks it, keeping its shape. */
+.msg-image img[style] {
+  max-width: 100%;
+  max-height: none;
 }
 
 .msg-media {
@@ -12115,7 +11945,7 @@ html[data-workspace="new"] .thread-panel {
   border: 1px solid var(--divider);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+  box-shadow: 0 6px 24px rgb(0 0 0 / calc(0.35 * var(--shadow-k)));
   font-size: 13px;
 }
 

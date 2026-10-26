@@ -8,6 +8,7 @@ import { chat } from "../../shared/chat-store";
 import { ProjectDrafts } from "../drafts";
 import { MsgAvatar } from "../../shared/chat/avatar";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { PageHeader } from "../../shared/ui/page-header";
 import { names, roomPath } from "../links";
 import { follow, pathOf } from "../router";
 import { controlOrigin, session, type PlatformProject } from "../session";
@@ -31,13 +32,18 @@ export function ProjectHome({ id }: { id: string }) {
     account === session.me?.account ? "you" : (p.team?.members.find((m) => m.account === account)?.name ?? "someone who left");
   return (
     <section class="platform-section sw-page" data-project-home={p.id}>
-      <h1>{p.name}</h1>
-      <p>
-        <a href={settingsPath} data-project-settings onClick={(e) => follow(e, settingsPath)}>
-          Project settings
-        </a>
-        <span class="dim"> · linked repos, environments</span>
-      </p>
+      <PageHeader
+        title={p.name}
+        named
+        sub={
+          <>
+            <a href={settingsPath} data-project-settings onClick={(e) => follow(e, settingsPath)}>
+              Project settings
+            </a>
+            <span> · linked repos, environments</span>
+          </>
+        }
+      />
       <div class="platform-columns">
         <div>
           <ProjectDrafts project={p.id} nameOf={nameOf} />
@@ -46,7 +52,8 @@ export function ProjectHome({ id }: { id: string }) {
               Chat
             </a>
           </h2>
-          {chat.on === false && <p class="dim">Chat is off for you. A team owner turns it on in the team's Labs, on control's page.</p>}
+          {chat.on === false && chat.signedOut && <p class="dim">You're signed out of Arugula control: reload the page to sign in again.</p>}
+          {chat.on === false && !chat.signedOut && <p class="dim">Chat is off for you. A team owner turns it on in the team's Labs, on control's page.</p>}
           {chat.on && rooms.length === 0 && <p class="dim">No channels yet.</p>}
           <ul class="platform-list sw-rows" data-project-rooms>
             {rooms

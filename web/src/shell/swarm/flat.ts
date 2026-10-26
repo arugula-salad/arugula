@@ -31,7 +31,8 @@ export function runtimeOf(p: FieldPane, now: number): number | null {
 }
 
 /** A pane waits on you (not just "finished"). */
-export const needs = (p: FieldPane) => !!p.att;
+/** It needs you; a finished pane's card doesn't count (UI audit #154). */
+export const needs = (p: FieldPane) => !!p.att?.need;
 
 export function fmtDur(s: number): string {
   if (s < 60) return `${Math.round(s)}s`;

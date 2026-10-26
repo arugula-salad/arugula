@@ -28,8 +28,8 @@ use std::{
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::runs::{
-    RUN_LOG_PAGE_MAX, RUN_WAIT_MAX, RunArtifactView, RunEventView, RunList, RunListQuery, RunLogPage, RunLogQuery,
-    RunQuery, RunView,
+    RUN_LOG_PAGE_MAX, RUN_WAIT_MAX, RunArtifactView, RunDeployView, RunEventView, RunList, RunListQuery, RunLogPage,
+    RunLogQuery, RunQuery, RunView,
 };
 use axum::{
     Json,
@@ -140,6 +140,10 @@ pub(crate) fn view(app: &Platform, run: &Run, full: bool) -> anyhow::Result<RunV
     } else {
         (vec![], vec![])
     };
+    let workspace_name = match &run.workspace {
+        Some(w) => app.db.hosted_any(&run.project, w)?.map(|w| w.name),
+        None => None,
+    };
     Ok(RunView {
         id: run.id.clone(),
         project: run.project.clone(),
@@ -160,9 +164,25 @@ pub(crate) fn view(app: &Platform, run: &Run, full: bool) -> anyhow::Result<RunV
         exit_code: run.exit_code,
         chant_ledger: run.chant_ledger.clone(),
         pane,
+        workspace_name,
+        deploy: deploy_of(app, run)?,
         events,
         artifacts,
     })
+}
+
+/// The deploy `run` applies, when it's a deploy's (M219): its environment
+/// by name and its source (UI audit #145).
+pub(crate) fn deploy_of(app: &Platform, run: &Run) -> anyhow::Result<Option<RunDeployView>> {
+    let Some(dr) = app.db.deploy_run_of(&run.id)? else { return Ok(None) };
+    let Some(d) = app.db.deploy(&dr.deploy)? else { return Ok(None) };
+    let environment = app.db.environment(&d.environment)?.map(|e| e.name).unwrap_or_default();
+    Ok(Some(RunDeployView {
+        id: d.id,
+        environment,
+        source_kind: d.source.kind.as_str().to_owned(),
+        reference: d.source.reference,
+    }))
 }
 
 /// A project's runs, newest first, as [`PROJECT_RUNS`] answers them.

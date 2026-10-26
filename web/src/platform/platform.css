@@ -63,6 +63,47 @@
   margin-left: 8px;
 }
 
+/* On /, the wordmark is the place you're in (UI audit #159). */
+.platform-bar .ws-wordmark[aria-current="page"] {
+  background: var(--chrome-selected);
+}
+
+/* The middle of the bar gives way before the account does (UI audit
+   #159): the search narrows and the places scroll, so the account stays
+   at the right edge (chat's search pushed it off at ~970px). */
+.platform-bar .places {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+/* The search gives way first (its shrink outweighs the places'), down
+   to its least, and then the places scroll. */
+.platform-bar .chat-search {
+  flex-shrink: 100;
+  min-width: 80px;
+}
+
+.platform-bar .platform-shell,
+.platform-bar .platform-me {
+  flex: none;
+}
+
+/* What's unread in a project's issues' or runs' threads, on its place:
+   the rows' dot and count (./thread-unread.tsx). */
+.frame-place .place-unread {
+  margin: 0 0 0 6px;
+}
+
+.place-unread-said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* The desktop app on macOS: its buttons sit over the head's left end,
    before the wordmark (the shell's rail is under them instead). */
 html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
@@ -94,11 +135,6 @@ html[data-corners="square"] .platform-section {
   border-radius: 0;
 }
 
-.platform-section h1 {
-  margin: 0 0 16px;
-  font-size: 20px;
-}
-
 .platform-section h2 {
   margin: 20px 0 8px;
   font-size: 14px;
@@ -127,7 +163,7 @@ html[data-corners="square"] .platform-section {
   gap: 6px;
   padding: 14px;
   border: 1px solid var(--raised);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   color: var(--fg) !important;
   text-decoration: none;
@@ -155,69 +191,6 @@ html[data-corners="square"] .platform-section {
   margin-left: auto;
 }
 
-/* A Cloud workspace is one panel: where you are as its head, as a pane's
-   header sits on the pane, and its sections in it. */
-.platform-workspace {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  box-sizing: border-box;
-  overflow: hidden;
-  border: 1px solid var(--chrome-line);
-  border-radius: 5px;
-  background: var(--bg);
-}
-
-html[data-corners="square"] .platform-workspace {
-  border-radius: 0;
-}
-
-.platform-ws-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 20px;
-  background: var(--chrome-panel);
-  border-bottom: 1px solid var(--chrome-line);
-}
-
-.hosted-ws-view .platform-section {
-  padding: 0 max(24px, calc((100% - 880px) / 2));
-  border: 0;
-  border-radius: 0;
-  background: none;
-}
-
-.hosted-ws-view .platform-section + .platform-section {
-  margin-top: 0;
-}
-
-/* Its way back, in line with the rest of the head and the text under it. */
-.platform-workspace .tab {
-  min-width: 0;
-  margin: 0;
-  padding: 2px 4px;
-  border-radius: 5px;
-  color: inherit;
-  text-decoration: none;
-}
-
-.platform-workspace .hosted-ws-view {
-  flex: 1;
-  overflow: auto;
-  padding: 4px 0 20px;
-}
-
-.hosted-ws-view button.link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
-  font: inherit;
-}
 
 .platform-toast {
   position: fixed;
@@ -421,14 +394,6 @@ html[data-corners="square"] .platform-workspace {
     margin-top: 6px;
   }
 
-  .platform-ws-head {
-    padding: 6px 8px;
-  }
-
-  .hosted-ws-view .platform-section {
-    padding: 0 12px;
-  }
-
   .issues-search {
     order: -1;
     flex-basis: 100%;
@@ -471,7 +436,7 @@ html[data-corners="square"] .platform-workspace {
 .deploy-card {
   padding: 14px;
   border: 1px solid var(--raised);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   min-width: 0;
 }
@@ -555,23 +520,11 @@ html[data-corners="square"] .platform-workspace {
   margin-top: 12px;
 }
 
-.deploy-actions .button {
-  box-sizing: border-box;
+/* Approve and Deny: the set's (shared/buttons.css), thumb-sized. */
+.deploy-actions :is(.primary, .secondary) {
   min-height: 40px;
   min-width: 96px;
   padding: 8px 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--raised);
-  border-radius: 8px;
-  color: var(--fg);
-  text-decoration: none;
-}
-
-.platform-section .deploy-actions .button.primary {
-  border-color: var(--accent);
-  color: var(--on-color);
 }
 
 .deploy-why {
@@ -587,7 +540,7 @@ html[data-corners="square"] .platform-workspace {
   .deploy-facts dt {
     margin-top: 4px;
   }
-  .deploy-actions .button {
+  .deploy-actions :is(.primary, .secondary) {
     flex: 1;
   }
 }
@@ -629,16 +582,6 @@ html[data-corners="square"] .platform-workspace {
   }
 }
 
-.runs-about {
-  margin: -8px 0 12px;
-  font-size: 13px;
-}
-
-.platform-section a.run-title {
-  font-family: var(--mono, monospace);
-  font-weight: 500;
-}
-
 .run-id {
   flex: none;
   font-size: 12px;
@@ -652,7 +595,7 @@ html[data-corners="square"] .platform-workspace {
   margin: 0 0 12px;
   padding: 10px 12px;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
 }
 
@@ -662,7 +605,7 @@ html[data-corners="square"] .platform-workspace {
   height: 28px;
   padding: 4px 8px;
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
   font: inherit;
@@ -701,7 +644,7 @@ html[data-corners="square"] .platform-workspace {
 .run-spec-actions {
   float: right;
   display: flex;
-  gap: 12px;
+  gap: 6px;
 }
 
 .run-triggers {
@@ -714,39 +657,6 @@ html[data-corners="square"] .platform-workspace {
 .run-add-trigger {
   margin: 4px 0 0 12px;
   font-size: 13px;
-}
-
-.run-head {
-  align-items: baseline;
-  gap: 10px;
-}
-
-.run-head h1 {
-  font-family: var(--mono, monospace);
-  overflow-wrap: anywhere;
-}
-
-.run-state {
-  padding: 2px 8px;
-  border: 1px solid var(--divider);
-  border-radius: 999px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.run-state.ok {
-  border-color: var(--ok);
-  color: var(--ok);
-}
-
-.run-state.bad {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.run-state.going {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 .run-facts {
@@ -863,7 +773,7 @@ html[data-corners="square"] .platform-workspace {
   margin: 12px 0;
   padding: 12px 14px;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
 }
 
@@ -890,7 +800,7 @@ html[data-corners="square"] .platform-workspace {
   height: 30px;
   padding: 4px 8px;
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
   font: inherit;

@@ -473,7 +473,7 @@ export class City implements SwarmScene {
   }
 
   private needOf(b: Block) {
-    return b.bs.filter((x) => x.att).length;
+    return b.bs.filter((x) => x.att?.need).length;
   }
   private failedIn(b: Block) {
     return b.bs.some((x) => x.att && x.lastExit != null && x.lastExit !== 0 && x.started == null);
