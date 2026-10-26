@@ -2640,17 +2640,38 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 /* ---- Arugula control (M17): sign-in, approvals, devices */
 
-.control-center {
+/* The gate's screens flow and scroll (UI audit #148): a window shorter
+   than the screen scrolls it, from its heading, and it's centred only
+   while there's room. The page itself doesn't scroll (body), so the
+   window-wide wrapper does. */
+.control-gate {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-content: center;
-  justify-items: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.control-center {
+  box-sizing: border-box;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
   gap: 4px;
   padding: 24px 16px;
   max-width: 34rem;
   margin: 0 auto;
   line-height: 1.5;
+}
+
+/* Control's moving away (#507): a note above the screen, not an error. */
+.control-center .control-moving {
+  align-self: stretch;
+  margin-bottom: 12px;
+  border: 0;
+  border-radius: 6px;
+  line-height: 1.45;
 }
 
 .control-center h1 {
@@ -3133,8 +3154,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 /* Add a phone or browser (#105): the control URL as a QR code. */
 .control-qr {
   display: block;
-  width: min(220px, 60vw);
-  height: auto;
+  /* Square, sized outright: an SVG with only a viewBox has no height of
+     its own to lay out by (UI audit #148). A short window gets a smaller
+     one. */
+  width: min(220px, 60vw, 32vh);
+  height: min(220px, 60vw, 32vh);
+  flex: none;
   margin: 8px 0;
   border-radius: 6px;
 }

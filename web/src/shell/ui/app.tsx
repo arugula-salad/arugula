@@ -26,6 +26,7 @@ import { GettingStartedLayer, useFirstRun } from "./welcome";
 import { machineSettingsItems } from "./commands";
 import { PaletteLayer } from "./palette";
 import { ControlBanner } from "./control-state";
+import { MovingNote } from "./moving-note";
 import { MaintenanceNote } from "../../shared/ui/maintenance-note";
 import { AgentsNudge } from "./agents-setup";
 import { useWorkspaceKeys } from "./keys";
@@ -165,6 +166,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
                 </div>
               )}
               <ControlBanner client={client} />
+              <MovingNote />
               <MaintenanceNote />
               <NewMachineNote />
               <AgentsNudge client={client} />
@@ -188,6 +190,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {/* A computer gets here only before a machine answers. */}
       {state && phone && <PhoneHeader client={client} />}
       {state && <ControlBanner client={client} />}
+      <MovingNote />
       <MaintenanceNote />
       {state && <NewMachineNote />}
       {state && <AgentsNudge client={client} />}
