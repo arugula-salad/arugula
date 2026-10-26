@@ -253,7 +253,7 @@ a.session-card-id:hover {
   font: inherit;
 }
 
-.session-pr textarea {
+.session-pr textarea.session-pr-body {
   min-height: 9em;
   resize: vertical;
   font: 12px/1.4 var(--f-mono, ui-monospace, Menlo, monospace);
