@@ -392,12 +392,12 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
               </button>
             )}
             {r.actions.includes("deny") && (
-              <button disabled={busy} onClick={() => run("deny")}>
+              <button class="secondary danger" disabled={busy} onClick={() => run("deny")}>
                 Deny
               </button>
             )}
             {r.actions.includes("dismiss") && (
-              <button disabled={busy} onClick={() => run("dismiss")}>
+              <button class="secondary" disabled={busy} onClick={() => run("dismiss")}>
                 Dismiss
               </button>
             )}
@@ -405,7 +405,7 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
         ) : null}
       </div>
       <div class="ws-att-go">
-        <button class="ws-att-goto" data-attention-goto onClick={() => goToItem(client, item)} title="Show it, on its machine; this doesn't answer it">
+        <button class="secondary small" data-attention-goto onClick={() => goToItem(client, item)} title="Show it, on its machine; this doesn't answer it">
           Go to pane
         </button>
       </div>

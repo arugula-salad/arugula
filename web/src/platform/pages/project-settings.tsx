@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { names } from "../links";
 import { go, pathOf, REPO } from "../router";
@@ -54,6 +55,8 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
   const [repo, setRepo] = useState(link ?? "");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // Unlink asks first (UI audit #158): what was read of the repo goes.
+  const [unlinking, setUnlinking] = useState<string | null>(null);
   const body = useRef<HTMLDivElement>(null);
   const base = `/api/projects/${encodeURIComponent(id)}/repos`;
   const load = () =>
@@ -146,7 +149,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
                             </td>
                             <td class="settings-row-act">
                               {changes && (
-                                <button class="control-linkish" disabled={busy} onClick={() => act(() => call("POST", base, { repo: r.full_name }))}>
+                                <button class="secondary small" disabled={busy} onClick={() => act(() => call("POST", base, { repo: r.full_name }))}>
                                   Link again
                                 </button>
                               )}
@@ -172,12 +175,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
                             </td>
                             <td class="settings-row-act">
                               {changes && (
-                                <button
-                                  class="control-linkish"
-                                  data-unlink={r.full_name}
-                                  disabled={busy}
-                                  onClick={() => act(() => call("DELETE", `${base}/${r.full_name}`))}
-                                >
+                                <button class="secondary danger small" data-unlink={r.full_name} disabled={busy} onClick={() => setUnlinking(r.full_name)}>
                                   Unlink
                                 </button>
                               )}
@@ -201,6 +199,20 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
               <p class="dim">A team's owners and editors link repos.</p>
             )}
             {err && <p class="control-error" data-link-error>{err}</p>}
+            {unlinking && (
+              <ConfirmRemove
+                title={`Unlink ${unlinking}?`}
+                label="Unlink"
+                cancel={() => setUnlinking(null)}
+                go={() => {
+                  const r = unlinking;
+                  setUnlinking(null);
+                  void act(() => call("DELETE", `${base}/${r}`));
+                }}
+              >
+                <p>The project stops reading it at once, and what was read of it, kept bodies included, goes within a day.</p>
+              </ConfirmRemove>
+            )}
           </Section>
           <Environments p={p} />
           <RunGrant project={p.id} />

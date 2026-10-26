@@ -38,7 +38,7 @@ export function Plan({ billing: b, upgrade, close }: { billing: Billing | null; 
         <p key={t.team} data-team-plan={t.team}>
           <b>{t.name}</b>: {t.plan === "team" ? `team plan, ${t.seats} seats` : "free"}; {t.sandbox_minutes} VM minutes this month.{" "}
           {t.owner && t.plan !== "team" ? (
-            <button class="control-linkish" onClick={() => upgrade(t.team).catch((e: Error) => setErr(e.message))}>
+            <button class="link" onClick={() => upgrade(t.team).catch((e: Error) => setErr(e.message))}>
               Upgrade ({t.seats} seat{t.seats === 1 ? "" : "s"})
             </button>
           ) : null}
@@ -46,14 +46,14 @@ export function Plan({ billing: b, upgrade, close }: { billing: Billing | null; 
       ))}
       {b.plan !== "paid" ? (
         <p>
-          <button class="control-linkish" onClick={() => upgrade().catch((e: Error) => setErr(e.message))}>
+          <button class="link" onClick={() => upgrade().catch((e: Error) => setErr(e.message))}>
             Add a payment method for hosted VMs (by the minute)
           </button>
         </p>
       ) : null}
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
-        <button onClick={close}>Done</button>
+        <button class="secondary" onClick={close}>Done</button>
       </div>
     </Modal>
   );

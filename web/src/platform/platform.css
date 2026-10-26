@@ -168,7 +168,7 @@ html[data-corners="square"] .platform-section {
   gap: 6px;
   padding: 14px;
   border: 1px solid var(--raised);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   color: var(--fg) !important;
   text-decoration: none;
@@ -248,16 +248,6 @@ html[data-corners="square"] .platform-workspace {
   flex: 1;
   overflow: auto;
   padding: 4px 0 20px;
-}
-
-.hosted-ws-view button.link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
-  font: inherit;
 }
 
 .platform-toast {
@@ -512,7 +502,7 @@ html[data-corners="square"] .platform-workspace {
 .deploy-card {
   padding: 14px;
   border: 1px solid var(--raised);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   min-width: 0;
 }
@@ -596,23 +586,11 @@ html[data-corners="square"] .platform-workspace {
   margin-top: 12px;
 }
 
-.deploy-actions .button {
-  box-sizing: border-box;
+/* Approve and Deny: the set's (shared/buttons.css), thumb-sized. */
+.deploy-actions :is(.primary, .secondary) {
   min-height: 40px;
   min-width: 96px;
   padding: 8px 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--raised);
-  border-radius: 8px;
-  color: var(--fg);
-  text-decoration: none;
-}
-
-.platform-section .deploy-actions .button.primary {
-  border-color: var(--accent);
-  color: var(--on-color);
 }
 
 .deploy-why {
@@ -628,7 +606,7 @@ html[data-corners="square"] .platform-workspace {
   .deploy-facts dt {
     margin-top: 4px;
   }
-  .deploy-actions .button {
+  .deploy-actions :is(.primary, .secondary) {
     flex: 1;
   }
 }
@@ -693,7 +671,7 @@ html[data-corners="square"] .platform-workspace {
   margin: 0 0 12px;
   padding: 10px 12px;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
 }
 
@@ -703,7 +681,7 @@ html[data-corners="square"] .platform-workspace {
   height: 28px;
   padding: 4px 8px;
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
   font: inherit;
@@ -742,7 +720,7 @@ html[data-corners="square"] .platform-workspace {
 .run-spec-actions {
   float: right;
   display: flex;
-  gap: 12px;
+  gap: 6px;
 }
 
 .run-triggers {
@@ -770,7 +748,7 @@ html[data-corners="square"] .platform-workspace {
 .run-state {
   padding: 2px 8px;
   border: 1px solid var(--divider);
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -904,7 +882,7 @@ html[data-corners="square"] .platform-workspace {
   margin: 12px 0;
   padding: 12px 14px;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
 }
 
@@ -931,7 +909,7 @@ html[data-corners="square"] .platform-workspace {
   height: 30px;
   padding: 4px 8px;
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
   font: inherit;

@@ -128,16 +128,16 @@ function Buttons({
           {labels?.submit ?? "Submit"}
         </button>
       )}
-      <button data-ask-decline onClick={() => actions.decline()}>
+      <button class="secondary" data-ask-decline onClick={() => actions.decline()}>
         {labels?.decline ?? "Skip"}
       </button>
       {actions.terminal && (
-        <button title="Claude Code shows its own picker" onClick={() => actions.terminal!()}>
+        <button class="secondary" title="Claude Code shows its own picker" onClick={() => actions.terminal!()}>
           Answer in terminal
         </button>
       )}
       {actions.stop && (
-        <button class="danger" onClick={() => actions.stop!()}>
+        <button class="secondary danger" onClick={() => actions.stop!()}>
           Stop
         </button>
       )}
@@ -396,7 +396,9 @@ function LinkCard({ ask, actions }: { ask: Ask; actions: AskActions }) {
             Open link
           </button>
         )}
-        <button onClick={() => actions.decline()}>Dismiss</button>
+        <button class="secondary" onClick={() => actions.decline()}>
+          Dismiss
+        </button>
       </div>
     </>
   );

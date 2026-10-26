@@ -17,7 +17,7 @@
 //   never here, so no view counts twice.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import { useModal } from "../../shared/ui/modal";
+import { CloseX, useModal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { desktopApp } from "../../shared/desktop";
 import { OPS, opPath } from "../ops";
@@ -210,6 +210,7 @@ function MachineTelemetrySettings({ client, close }: { client: Client; close: ()
       onPointerDown={(e) => e.target === e.currentTarget && close()}
     >
       <div ref={ref} class="prompt rules machine-telemetry">
+        <CloseX close={close} />
         <h2>Usage and crash reports</h2>
         <p class="hint">{ABOUT}</p>
         {error && <p class="error">{error}</p>}
@@ -231,7 +232,7 @@ function MachineTelemetrySettings({ client, close }: { client: Client; close: ()
           </>
         )}
         <div class="prompt-buttons">
-          <button type="button" onClick={close}>
+          <button class="secondary" type="button" onClick={close}>
             Done
           </button>
         </div>

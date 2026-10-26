@@ -240,7 +240,7 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
               <p>
                 <label>
                   Join to{" "}
-                  <select class="control-select" data-join-to value={to} onChange={(e) => setTo((e.target as HTMLSelectElement).value)}>
+                  <select class="field" data-join-to value={to} onChange={(e) => setTo((e.target as HTMLSelectElement).value)}>
                     <option value="">Just me</option>
                     {teams.map((t) => (
                       <option key={t.team} value={t.team}>
@@ -276,7 +276,7 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
         <p class="dim">Looking up {code}…</p>
       )}
       <div class="prompt-buttons">
-        <button data-cancel-join onClick={cancel}>
+        <button class="secondary" data-cancel-join onClick={cancel}>
           {refused ? "Close" : "Cancel"}
         </button>
         <button
@@ -380,7 +380,7 @@ function RestOfCode({
         {what === "device" && canScan() && !scanning ? (
           <>
             {" "}
-            <button type="button" class="control-linkish" data-scan onClick={() => setScanning(true)}>
+            <button type="button" class="link" data-scan onClick={() => setScanning(true)}>
               Scan it
             </button>
           </>
@@ -495,7 +495,7 @@ function CliJoin({
       ) : null}
       <p class="dim">It reaches your machines (directly or through control's relay, end to end encrypted) and can approve devices, as this one can.</p>
       <div class="prompt-buttons">
-        <button data-cancel-join onClick={cancel}>
+        <button class="secondary" data-cancel-join onClick={cancel}>
           {refused ? "Close" : "Cancel"}
         </button>
         <button
@@ -564,7 +564,7 @@ export function DevicePrompt({ s, c, given, done }: { s: ControlSession; c: Cert
         </p>
       )}
       <div class="prompt-buttons">
-        <button data-reject onClick={() => act(() => s.reject(c))}>
+        <button class="secondary" data-reject onClick={() => act(() => s.reject(c))}>
           Turn down
         </button>
         <button class="primary" data-approve disabled={(sealed && !code) || !mayApprove} onClick={() => act(() => s.approve(c, code))}>

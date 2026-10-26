@@ -131,6 +131,8 @@ test("a team's runs: one started by hand, its view and its thread", async ({ bro
   await spec.locator("form button[type=submit]").click();
   await expect(spec.locator("[data-run-schedule]")).toContainText("15 4 * * *");
   await spec.locator("[data-run-schedule-delete]").click();
+  // It asks first (UI audit #158).
+  await alice.locator("[data-confirm-remove]").click();
   await expect(spec.locator("[data-run-schedule]")).toHaveCount(0);
 
   // A command, by hand: its view says what it runs and who started it.

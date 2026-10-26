@@ -328,16 +328,16 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
         </div>
 
         <footer class="start-foot">
-          <button class="start-btn ghost" disabled={step === 0} onClick={() => go(step - 1)}>
+          <button class="secondary" disabled={step === 0} onClick={() => go(step - 1)}>
             ‹ Back
           </button>
           <span class="start-hint">Always in the account menu: Getting started</span>
           {last ? (
-            <button class="start-btn primary" onClick={close}>
+            <button class="primary" onClick={close}>
               Done
             </button>
           ) : (
-            <button class="start-btn primary" onClick={() => go(step + 1)} data-start-next>
+            <button class="primary" onClick={() => go(step + 1)} data-start-next>
               {step === 0 ? "Set it up ›" : done[id] ? "Next ›" : "Skip for now ›"}
             </button>
           )}
@@ -445,7 +445,7 @@ function Said({ outcome }: { outcome: Outcome | null }) {
         </>
       )}
       {outcome.link && (
-        <a class="start-btn" href={outcome.link.url} target="_blank" rel="noreferrer" data-start-link>
+        <a class="secondary" href={outcome.link.url} target="_blank" rel="noreferrer" data-start-link>
           {outcome.link.label} ↗
         </a>
       )}
@@ -501,7 +501,7 @@ function Phone({ name, setup, host, manual, refresh }: { name: string; setup: Se
             <Check state={ts?.seen || host?.tailnet_seen ? "done" : "todo"}>Opened from another device</Check>
           </ul>
           {!ts?.serving && (
-            <button class="start-btn primary big" disabled={busy || !setup} onClick={serve} data-start-serve>
+            <button class="primary big" disabled={busy || !setup} onClick={serve} data-start-serve>
               {busy ? "Putting it on the tailnet…" : "Put it on my tailnet"}
             </button>
           )}
@@ -669,10 +669,10 @@ function Cloud({
             machine trusts the account.
           </p>
           <div class="start-confirm">
-            <button class="start-btn primary" disabled={busy} onClick={() => void confirm(true)} data-start-same>
+            <button class="primary" disabled={busy} onClick={() => void confirm(true)} data-start-same>
               They match
             </button>
-            <button class="start-btn" disabled={busy} onClick={() => void confirm(false)} data-start-different>
+            <button class="secondary" disabled={busy} onClick={() => void confirm(false)} data-start-different>
               They don't
             </button>
           </div>
@@ -682,7 +682,7 @@ function Cloud({
           {droppedNote}
           <div class="start-kicker">Approve this code on a device you use</div>
           <WholeCode code={c.pending.code} />
-          <a class="start-btn primary big" href={c.pending.approve} target="_blank" rel="noreferrer" data-start-approve>
+          <a class="primary big" href={c.pending.approve} target="_blank" rel="noreferrer" data-start-approve>
             Approve in Arugula cloud ↗
           </a>
           <p class="start-dim">
@@ -700,7 +700,7 @@ function Cloud({
           <div class="start-kicker">{c.elsewhere.by} is joining this machine</div>
           {c.elsewhere.code && <WholeCode code={c.elsewhere.code} />}
           {c.elsewhere.approve && (
-            <a class="start-btn primary big" href={c.elsewhere.approve} target="_blank" rel="noreferrer" data-start-approve>
+            <a class="primary big" href={c.elsewhere.approve} target="_blank" rel="noreferrer" data-start-approve>
               Approve in Arugula cloud ↗
             </a>
           )}
@@ -712,7 +712,7 @@ function Cloud({
           <p class="start-dim" data-start-join-how>
             {name} shows a code, and you approve it on a device you use, picking your account or a team there: that one approval joins it.
           </p>
-          <button class="start-btn primary big" disabled={busy || !setup} onClick={connect} data-start-connect>
+          <button class="primary big" disabled={busy || !setup} onClick={connect} data-start-connect>
             {busy ? "Asking the cloud…" : dropped ? `Join ${hostOf(control)} again` : ours ? "Connect to Arugula cloud" : `Connect to ${hostOf(control)}`}
           </button>
           {(error ?? c?.error) && (
@@ -741,7 +741,7 @@ function UseClaude({ setup, refresh }: { setup: AgentsSetup | null; refresh: () 
   return (
     <>
       {!claudeReady(setup) && (
-        <button class="start-btn primary" disabled={busy || !setup} onClick={go} data-start-claude>
+        <button class="primary" disabled={busy || !setup} onClick={go} data-start-claude>
           {busy ? "Setting it up…" : "Use Claude Code with Arugula"}
         </button>
       )}
@@ -804,7 +804,7 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
               ))}
             {client && session !== null && (
               <button
-                class="start-btn"
+                class="secondary"
                 data-start-agent
                 onClick={() => {
                   close();
@@ -875,7 +875,7 @@ function Ready({ done, go }: { done: Record<StepId, boolean>; go: (i: number) =>
             {done[id] ? (
               yes
             ) : (
-              <button class="start-linkish" onClick={() => go(STEPS.findIndex((s) => s.id === id))}>
+              <button class="link" onClick={() => go(STEPS.findIndex((s) => s.id === id))}>
                 {no} ›
               </button>
             )}

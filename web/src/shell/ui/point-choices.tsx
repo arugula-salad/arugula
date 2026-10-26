@@ -26,7 +26,8 @@ function tip(p: PointSource, c: PointChoice): string | undefined {
   return parts.length ? parts.join(" · ") : undefined;
 }
 
-/** A button for each choice, the one a model proposed first among equals.
+/** A button for each choice, the one a model proposed first among equals
+ * (the set's primary, the rest secondary; or `cls`, the phone sheet's own).
  * With none (the points read didn't say), nothing: it's answered where
  * chant runs. */
 export function PointChoices({ point, answer, busy, cls }: { point: PointSource; answer: (value: string) => void; busy?: boolean; cls?: string }) {
@@ -35,7 +36,7 @@ export function PointChoices({ point, answer, busy, cls }: { point: PointSource;
       {point.choices.map((c) => (
         <button
           key={c.value}
-          class={[cls, c.value === point.proposed ? "pri" : ""].filter(Boolean).join(" ") || undefined}
+          class={cls ?? (c.value === point.proposed ? "primary small" : "secondary small")}
           data-answer-point={c.value}
           title={tip(point, c)}
           disabled={busy}

@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import { toneClass } from "../swarm";
 import { Section } from "./section";
 
@@ -37,6 +38,8 @@ export function LinkedProducts() {
   const [links, setLinks] = useState<ProductLink[] | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
+  // Unlink asks first (UI audit #158).
+  const [unlinking, setUnlinking] = useState<ProductLink | null>(null);
   const load = () =>
     call<{ links: ProductLink[] }>("/api/linked-products").then(
       (v) => setLinks(v.links),
@@ -92,12 +95,7 @@ export function LinkedProducts() {
               <li key={l.client} class={`sw-card ${toneClass(l.user ? "accent" : "muted")}`} data-linked-product={l.client}>
                 <div class="sw-head">
                   <b class="sw-name">{l.product}</b>
-                  <button
-                    class="control-linkish settings-card-act"
-                    data-unlink={l.client}
-                    disabled={busy === l.client}
-                    onClick={() => void unlink(l)}
-                  >
+                  <button class="secondary danger small settings-card-act" data-unlink={l.client} disabled={busy === l.client} onClick={() => setUnlinking(l)}>
                     Unlink
                   </button>
                 </div>
@@ -125,6 +123,20 @@ export function LinkedProducts() {
         </ul>
       )}
       {err ? <p class="control-error">{err}</p> : null}
+      {unlinking && (
+        <ConfirmRemove
+          title={`Unlink ${unlinking.product}?`}
+          label="Unlink"
+          cancel={() => setUnlinking(null)}
+          go={() => {
+            const l = unlinking;
+            setUnlinking(null);
+            void unlink(l);
+          }}
+        >
+          <p>It stops signing you in with Arugula, and your account there is no longer linked to this one. Signing in to it through Arugula again links it again.</p>
+        </ConfirmRemove>
+      )}
     </Section>
   );
 }

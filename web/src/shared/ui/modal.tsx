@@ -125,6 +125,17 @@ export function useModal(ref: { current: HTMLElement | null }, close: (() => voi
   }, [open]);
 }
 
+/** The corner ×, pinned where it can always be seen: Modal's, and the
+ * dialogs drawn by hand (Permission rules, Developer settings, Usage and
+ * crash reports: UI audit #158). */
+export function CloseX({ close }: { close: () => void }) {
+  return (
+    <button class="modal-close" aria-label="Close dialog" title="Close" onClick={close}>
+      ×
+    </button>
+  );
+}
+
 /** A control dialog: as tall as the window allows, scrolling inside, with
  * its close button pinned where it can always be seen. Its name is its
  * `label`, else its heading. */
@@ -143,11 +154,7 @@ export function Modal({ children, close, label, class: cls }: { children: preact
   return (
     <div class="prompt-backdrop" onClick={(e) => e.target === e.currentTarget && close?.()}>
       <div ref={ref} class={cls ? `prompt control-prompt ${cls}` : "prompt control-prompt"} role="dialog" aria-modal="true" aria-label={label}>
-        {close ? (
-          <button class="modal-close" aria-label="Close dialog" title="Close" onClick={close}>
-            ×
-          </button>
-        ) : null}
+        {close ? <CloseX close={close} /> : null}
         {children}
       </div>
     </div>

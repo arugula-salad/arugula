@@ -127,13 +127,13 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
                 {size(r.size)} · shared {when(r.made)} · updated {when(r.updated)} · {opened(r.opens)}
               </span>
             </span>
-            <button data-open-shared-doc disabled={!machine(r)} title={machine(r) ? undefined : OFFLINE} onClick={() => void openIt(r)}>
+            <button class="primary small" data-open-shared-doc disabled={!machine(r)} title={machine(r) ? undefined : OFFLINE} onClick={() => void openIt(r)}>
               Open
             </button>
-            <button data-copy-doc-link disabled={!machine(r)} title={machine(r) ? undefined : OFFLINE} onClick={() => void copy(r)}>
+            <button class="secondary small" data-copy-doc-link disabled={!machine(r)} title={machine(r) ? undefined : OFFLINE} onClick={() => void copy(r)}>
               Copy link
             </button>
-            <button class="quiet-danger" data-unshare-doc onClick={() => setRemoving(r)}>
+            <button class="secondary danger small" data-unshare-doc onClick={() => setRemoving(r)}>
               Unshare
             </button>
           </li>
@@ -141,7 +141,7 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
       </ul>
       {link && <CopyText text={link} share data-doc-link-url />}
       <div class="prompt-buttons">
-        <button type="button" onClick={close}>
+        <button class="secondary" type="button" onClick={close}>
           Done
         </button>
       </div>

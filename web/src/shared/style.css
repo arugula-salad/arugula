@@ -394,7 +394,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--chip-radius);
   background: var(--surface);
   box-shadow: 0 4px 16px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
   font-size: 13px;
@@ -586,14 +586,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   place-content: center;
   justify-items: center;
   color: var(--dim);
-}
-
-.primary {
-  padding: 8px 16px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
 }
 
 /* ---- menus */
@@ -794,7 +786,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 /* A card: one session, or what needs you. */
 .sheet-card {
-  border-radius: 10px;
+  border-radius: var(--card-radius);
   background: var(--bg);
   border: 1px solid var(--divider);
   padding: 2px 4px;
@@ -925,11 +917,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   flex: 1;
 }
 
-.install-hint .primary {
-  padding: 6px 12px;
-  border-radius: 6px;
-}
-
 .install-hint-close {
   flex: none;
   min-width: 32px;
@@ -1033,7 +1020,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   outline: none;
 }
 
@@ -1077,11 +1064,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
-}
-
-.prompt-buttons button {
-  padding: 6px 14px;
-  border-radius: 6px;
 }
 
 /* A deploy's approval (M218): the operation's bytes wrap rather than run
@@ -1375,7 +1357,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   height: 26px;
   padding: 0 8px;
   border: 1px solid var(--divider);
-  border-radius: 4px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
   font: inherit;
@@ -1403,17 +1385,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .browser-card .dim,
 .browser-card.dim {
   color: var(--dim);
-}
-
-.browser-card .button,
-.browser-card button {
-  padding: 6px 14px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--on-color);
-  text-decoration: none;
-  font-weight: 600;
 }
 
 .editor {
@@ -1774,22 +1745,10 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   align-items: center;
 }
 
-/* Big enough to hit with a thumb. */
-.agent-perm-buttons button {
+/* Big enough to hit with a thumb; the buttons are the set's (buttons.css). */
+.agent-perm-buttons :is(.primary, .secondary) {
   min-height: 40px;
   padding: 8px 16px;
-  border-radius: 8px;
-  background: var(--raised);
-  font-weight: 600;
-}
-
-.agent-perm-buttons button.primary {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.agent-perm-buttons button.danger {
-  color: var(--danger);
 }
 
 .agent-perm-standing {
@@ -1832,6 +1791,19 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .rules h2 {
   margin: 0;
   font-size: 15px;
+}
+
+/* Its × (UI audit #158) shares the heading's row: the dialog is a grid,
+   where Modal's float doesn't apply. */
+.rules > .modal-close {
+  grid-area: 1 / 1;
+  justify-self: end;
+  margin: -6px -6px 0 0;
+}
+
+.rules > .modal-close + h2 {
+  grid-area: 1 / 1;
+  padding-right: 32px;
 }
 
 .rules .hint {
@@ -1933,29 +1905,15 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border-color: var(--accent);
 }
 
-.agent-composer button {
+.agent-composer :is(.primary, .secondary) {
   min-height: 36px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  background: var(--raised);
-  font-weight: 600;
-}
-
-.agent-composer button.primary {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.agent-composer button:disabled {
-  opacity: 0.5;
-}
-
-.agent-composer button.danger {
-  color: var(--danger);
 }
 
 .agent-composer button.attach {
+  min-height: 36px;
   padding: 6px 8px;
+  border-radius: var(--btn-radius);
+  background: var(--raised);
 }
 
 /* M71: what goes with the next prompt, above the box. */
@@ -2052,7 +2010,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .agent-dialog label.check {
@@ -2536,7 +2494,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   min-height: 36px;
   padding: 6px 8px;
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--bg);
   color: inherit;
   font: inherit;
@@ -2587,25 +2545,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   align-items: center;
 }
 
-.ask-buttons button {
+.ask-buttons :is(.primary, .secondary) {
   min-height: 40px;
   padding: 8px 16px;
-  border-radius: 8px;
-  background: var(--raised);
-  font-weight: 600;
-}
-
-.ask-buttons button.primary {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.ask-buttons button.primary:disabled {
-  opacity: 0.5;
-}
-
-.ask-buttons button.danger {
-  color: var(--danger);
 }
 
 /* A terminal's question (Claude Code's hook), over the bottom of its pane. */
@@ -2824,14 +2766,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--danger);
 }
 
-.control-select {
-  padding: 4px;
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--raised-hover);
-  border-radius: 6px;
-}
-
 .dim {
   color: var(--dim);
 }
@@ -2859,7 +2793,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   width: 10rem;
 }
 
@@ -2878,7 +2812,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font: 14px ui-monospace, monospace;
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .control-rest-field:focus-within {
@@ -2940,30 +2874,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .control-name p {
   flex-basis: 100%;
   margin: 0;
-}
-
-.control-code button,
-.control-revoke {
-  padding: 6px 12px;
-  border-radius: 6px;
-  background: var(--raised-hover);
-}
-
-.control-revoke.danger {
-  background: var(--danger);
-  color: var(--on-color);
-}
-
-/* Takes something away, but asks first: reads as destructive without
-   being the loudest thing on the row. */
-.control-revoke.quiet-danger {
-  background: none;
-  color: var(--danger);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent);
-}
-
-.control-revoke.quiet-danger:hover {
-  background: color-mix(in srgb, var(--danger) 15%, transparent);
 }
 
 /* A team's members and its machines, each under its own heading. */
@@ -3053,10 +2963,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
-.control-devices li > .control-revoke {
+.control-devices li > button {
   justify-self: end;
-  padding: 3px 10px;
-  font-size: 12px;
 }
 
 @media (max-width: 700px) {
@@ -3140,16 +3048,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--raised);
 }
 
-.control-linkish.danger {
-  color: var(--danger);
-}
-
 /* Deleting an account (#173): type its login to confirm. */
-.prompt-buttons button.danger:not(:disabled) {
-  background: var(--danger);
-  color: var(--on-color);
-}
-
 .prompt label.control-confirm {
   display: grid;
   gap: 6px;
@@ -3175,11 +3074,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-weight: 400;
 }
 
-.prompt-buttons button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 /* #326: a machine's join and the device that came to approve it, side by
  * side, approved together. */
 .control-both {
@@ -3192,7 +3086,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .control-both-card {
   padding: 8px 10px;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -3242,18 +3136,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .control-legal a {
   color: inherit;
-}
-
-.control-secondary {
-  padding: 8px 16px;
-  border-radius: 8px;
-  background: var(--raised);
-}
-
-.control-linkish {
-  color: var(--accent);
-  text-decoration: underline;
-  padding: 0;
 }
 
 .host-path {
@@ -3452,7 +3334,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .pane-private {
@@ -3936,7 +3818,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   position: relative;
   border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
   background: color-mix(in srgb, var(--c) 7%, #0b0e16);
-  border-radius: 6px;
+  border-radius: var(--card-radius);
   padding: 10px 12px 10px 14px;
   flex: 0 0 auto;
   animation: swarm-card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
@@ -4015,23 +3897,15 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .swarm-card .ca-nav {
   margin-top: 6px;
 }
-.swarm-card .ca button,
-.swarm-card .agent-perm-buttons button {
-  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
-  background: none;
-  border-radius: 4px;
-  padding: 5px 10px;
-  font: 600 12px/1 var(--f-ui);
+/* The set's buttons (buttons.css), small; the main one in the card's
+   tone, the swarm's language. */
+.swarm-card .primary {
+  --btn-fill: var(--c);
 }
-.swarm-card .ca button.pri,
-.swarm-card .agent-perm-buttons button.primary {
-  background: var(--c);
-  color: var(--void);
-  border-color: var(--c);
-}
-.swarm-card .ca button.ghost {
-  border-color: var(--line);
-  color: var(--mute);
+.swarm-card :is(.primary, .secondary) {
+  min-height: 24px;
+  padding: 3px 10px;
+  font-size: 12px;
 }
 .swarm-card .ask {
   margin: 0;
@@ -4271,23 +4145,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   display: flex;
   gap: 6px;
   flex: none;
-}
-.follow-tools button {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 5px;
-  border: 1px solid var(--raised-hover);
-  background: var(--raised);
-}
-.follow-tools button.pri {
-  background: var(--info);
-  color: var(--on-color);
-  border-color: var(--info);
-  font-weight: 600;
-}
-.follow-tools button.ghost {
-  background: none;
-  border-color: transparent;
 }
 .follow-note {
   padding: 4px 12px;
@@ -4842,7 +4699,7 @@ button.diff-why-run {
 .ws-card {
   background: var(--surface);
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
@@ -4880,7 +4737,7 @@ button.diff-why-run {
 .ws-tag {
   font-size: 11px;
   padding: 0 6px;
-  border-radius: 8px;
+  border-radius: var(--chip-radius);
   background: var(--raised);
   color: var(--dim);
   white-space: nowrap;
@@ -4910,28 +4767,6 @@ button.diff-why-run {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
-}
-
-.ws-actions button {
-  background: var(--raised);
-  color: var(--fg);
-  border-radius: 4px;
-  padding: 3px 9px;
-  font-size: 12px;
-}
-
-.ws-actions button:hover {
-  background: var(--raised-hover);
-}
-
-.ws-actions button.pri {
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
-}
-
-.ws-actions button:disabled {
-  opacity: 0.6;
 }
 
 .ws-record {
@@ -5530,7 +5365,8 @@ button.diff-why-run {
   box-sizing: border-box;
 }
 
-.start button {
+/* Low: the set's buttons (buttons.css) keep their own colors. */
+:where(.start) button {
   font: inherit;
   color: inherit;
   cursor: pointer;
@@ -5674,7 +5510,7 @@ button.diff-why-run {
   padding: 12px;
   border: 1px solid var(--line);
   border-left: 3px solid rgb(138, 160, 190);
-  border-radius: 10px;
+  border-radius: var(--card-radius);
   background: var(--panel);
 }
 
@@ -5755,50 +5591,13 @@ button.diff-why-run {
   border-color: var(--s-fail);
 }
 
-.start-btn {
-  display: inline-block;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  padding: 8px 14px;
-  border-radius: 999px;
-  font: 500 12px/1 var(--f-mono) !important;
-  text-decoration: none;
-  color: var(--ink) !important;
-}
-
-.start-btn:hover:not(:disabled) {
-  border-color: #2b3448;
-}
-
-.start-btn.primary {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--void) !important;
-  font-weight: 700 !important;
-}
-
-.start-btn.big {
+/* The tour's buttons are the set's (buttons.css); its biggest, the step's
+   one thing to do, louder still. */
+.start .primary.big {
   padding: 12px 20px;
-  font-size: 13px !important;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-}
-
-.start-btn.ghost {
-  background: none;
-}
-
-.start-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.start-linkish {
-  border: 0;
-  background: none;
-  padding: 0;
-  color: var(--s-ask) !important;
-  font: inherit;
 }
 
 .start-said {
@@ -6067,51 +5866,6 @@ button.diff-why-run {
   margin: 0 8px 16px;
 }
 
-/* Every button on the page looks like one: filled, with the main one in
-   the accent and the one that destroys in the danger color. */
-.agents-actions button,
-.agents-buttons button {
-  padding: 5px 12px;
-  border-radius: 6px;
-  background: var(--raised);
-  color: var(--fg);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.agents-actions button:hover:not(:disabled),
-.agents-buttons button:hover:not(:disabled) {
-  background: var(--raised-hover);
-}
-
-.agents-actions button.pri,
-.agents-buttons button.pri {
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
-}
-
-.agents-actions button.pri:hover:not(:disabled),
-.agents-buttons button.pri:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 85%, var(--fg));
-}
-
-.agents-buttons button.danger {
-  background: none;
-  color: var(--danger);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent);
-}
-
-.agents-buttons button.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 18%, transparent);
-}
-
-.agents-actions button:disabled,
-.agents-buttons button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .agents-said {
   color: var(--accent);
 }
@@ -6190,7 +5944,7 @@ button.diff-why-run {
   align-items: center;
   gap: 8px 16px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   border: 1px solid var(--divider);
 }
@@ -6246,23 +6000,6 @@ button.diff-why-run {
 .activity-need[data-kind="failed"] b,
 .activity-need[data-kind="exited"] b {
   color: var(--danger);
-}
-
-.activity-need-buttons {
-  display: flex;
-  gap: 6px;
-}
-
-.activity-need-buttons button {
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: var(--raised);
-}
-
-.activity-need-buttons button.pri {
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
 }
 
 /* Recipes: which machine's, and the places with none yet, compact. */
@@ -6397,7 +6134,7 @@ button.diff-why-run {
   min-width: 0;
   box-sizing: border-box;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--field-radius);
   border: 1px solid var(--divider);
   background: var(--bg);
   color: var(--fg);
@@ -6493,7 +6230,7 @@ button.diff-why-run {
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   border: 1px solid var(--divider);
   min-width: 0;
@@ -6557,7 +6294,7 @@ button.diff-why-run {
 .update-chip {
   padding: 2px 8px;
   border: 1px solid var(--accent);
-  border-radius: 10px;
+  border-radius: var(--chip-radius);
   color: var(--accent);
   font-size: 12px;
   white-space: nowrap;
@@ -7502,7 +7239,7 @@ button.thread-quote:hover {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   padding: 6px 8px;
 }
 
@@ -8331,7 +8068,7 @@ input.chat-search {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .chat-people li .dim {
@@ -8349,28 +8086,6 @@ input.chat-search {
 .conv-remove:hover {
   background: var(--raised);
   color: var(--fg);
-}
-
-.conv-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.conv-actions button {
-  padding: 5px 12px;
-  border-radius: 6px;
-  background: var(--raised);
-}
-
-.conv-actions button.primary {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.conv-actions button.danger {
-  color: var(--danger);
 }
 
 .chat-thread .thread-msg {
@@ -8512,7 +8227,7 @@ input.chat-search {
   background: var(--raised);
   color: var(--fg);
   border: 1px solid var(--accent);
-  border-radius: 10px;
+  border-radius: var(--card-radius);
   padding: 12px 14px;
   box-shadow: 0 8px 24px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
 }
@@ -8527,12 +8242,8 @@ input.chat-search {
 }
 
 .hand-card .prompt-buttons button {
+  min-height: 40px;
   padding: 10px 16px;
-}
-
-.hand-card button.primary {
-  background: var(--accent);
-  color: var(--bg);
 }
 
 .hand-answer {
@@ -8720,7 +8431,7 @@ input.chat-search {
   color: var(--fg);
   background: var(--surface);
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   padding: 7px 9px;
   width: 100%;
   box-sizing: border-box;
@@ -8776,15 +8487,6 @@ input.chat-search {
 
 .forge-as {
   font-size: 11px;
-}
-
-.ws-actions button.forge-drop {
-  background: none;
-  color: var(--danger);
-}
-
-.ws-actions button.forge-drop:hover {
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
 }
 
 .forge-compose {
@@ -9039,8 +8741,6 @@ input.chat-search {
 }
 
 [data-look="aqua"] .sample-button,
-html[data-finish="aqua"] .primary,
-html[data-finish="aqua"] .prompt-buttons button.primary,
 html[data-finish="aqua"] .sized-elsewhere button {
   border-radius: 999px;
   background:
@@ -9063,8 +8763,6 @@ html[data-finish="aqua"] .sized-elsewhere button {
 }
 
 [data-look="brushed"] .sample-button,
-html[data-finish="brushed"] .primary,
-html[data-finish="brushed"] .prompt-buttons button,
 html[data-finish="brushed"] .sized-elsewhere button {
   border-radius: 4px;
   background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--raised);
@@ -9167,9 +8865,27 @@ html[data-corners="round"] .prompt {
   border-radius: 18px;
 }
 
-html[data-corners="round"] .prompt-buttons button,
-html[data-corners="round"] .primary {
-  border-radius: 999px;
+/* The corners of what's on the page, not only the panes' (UI audit #158):
+   buttons (buttons.css), fields, cards and chips take these. Soft is the
+   default. */
+:root {
+  --btn-radius: 6px;
+  --field-radius: 6px;
+  --card-radius: 8px;
+  --chip-radius: 999px;
+}
+
+html[data-corners="square"] {
+  --btn-radius: 2px;
+  --field-radius: 2px;
+  --card-radius: 2px;
+  --chip-radius: 2px;
+}
+
+html[data-corners="round"] {
+  --btn-radius: 999px;
+  --field-radius: 10px;
+  --card-radius: 14px;
 }
 
 /* -- Aqua: a lit title bar, pinstripes behind the panes, gel buttons,
@@ -9259,12 +8975,6 @@ html[data-finish="brushed"] .menu,
 html[data-finish="brushed"] .prompt {
   background: var(--grain), linear-gradient(#fff2, #fff0 40px, #0001), var(--raised);
   box-shadow: inset 0 1px 0 #fff3, 0 12px 36px rgb(0 0 0 / calc(0.53 * var(--shadow-k))), 0 0 0 1px #0003;
-}
-
-html[data-finish="brushed"] .prompt-buttons button.primary,
-html[data-finish="brushed"] .primary {
-  background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--accent);
-  color: var(--on-color);
 }
 
 html[data-finish="brushed"] .account-avatar {
@@ -10487,18 +10197,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   border-top: 1px solid var(--raised);
 }
 
-.ws-att-goto {
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--raised);
-  border-radius: 6px;
-  color: var(--fg);
-}
-
-.ws-att-goto:hover {
-  background: var(--raised);
-}
-
 .ws-att-foot {
   display: flex;
   align-items: center;
@@ -11124,7 +10822,7 @@ html[data-workspace="new"] .thread-panel {
   padding: 0 8px;
   box-sizing: border-box;
   border: 1px solid var(--raised);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -11139,8 +10837,7 @@ html[data-workspace="new"] .thread-panel {
   font-family: ui-monospace, Menlo, monospace;
 }
 
-.add-pane-choose,
-.add-pane-actions button {
+.add-pane-choose {
   flex: none;
   height: 28px;
   padding: 0 12px;
@@ -11148,13 +10845,11 @@ html[data-workspace="new"] .thread-panel {
   border-radius: 6px;
 }
 
-.add-pane-choose:hover:not(:disabled),
-.add-pane-actions button:hover:not(:disabled) {
+.add-pane-choose:hover:not(:disabled) {
   background: var(--raised);
 }
 
-.add-pane-choose:disabled,
-.add-pane-actions button:disabled {
+.add-pane-choose:disabled {
   opacity: 0.45;
   cursor: default;
 }
@@ -11181,18 +10876,6 @@ html[data-workspace="new"] .thread-panel {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.add-pane-actions button.primary {
-  border-color: transparent;
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
-}
-
-.add-pane-actions button.primary:hover:not(:disabled) {
-  background: var(--accent);
-  filter: brightness(1.1);
 }
 
 
@@ -11682,7 +11365,7 @@ html[data-workspace="new"] .thread-panel {
   padding: 8px 10px;
   border: 1px solid var(--divider);
   border-left: 3px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   color: var(--fg);
   text-decoration: none;
@@ -11980,7 +11663,7 @@ html[data-workspace="new"] .thread-panel {
   max-width: 100%;
   padding: 4px 6px;
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--chip-radius);
   background: var(--surface);
   font-size: 12px;
   overflow: hidden;

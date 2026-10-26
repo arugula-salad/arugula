@@ -19,6 +19,8 @@ import "./interaction-chrome.css";
 import "./block-chrome.css";
 import "./phone-sheet.css";
 import "./phone-machines.css";
+// The one button set (UI audit #158), last: what it draws, it draws everywhere.
+import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { Client } from "./client";

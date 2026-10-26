@@ -114,7 +114,7 @@ export function Graph({ client, id, s, member, close, picked }: {
         <div class="browser-card" data-ws-graph-error>
           <p>behold didn't start</p>
           <p class="dim">{g.error}</p>
-          <button onClick={() => void client.api(`/api/blocks/${id}/call/graph`, {}, "couldn't start behold")}>Try again</button>
+          <button class="primary" onClick={() => void client.api(`/api/blocks/${id}/call/graph`, {}, "couldn't start behold")}>Try again</button>
         </div>
       ) : (
         <div class="browser-card dim">Starting behold…</div>

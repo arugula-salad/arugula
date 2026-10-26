@@ -294,11 +294,11 @@ function PermCard({ client, id, p, cwd, owner }: { client: Client; id: PaneId; p
           Approve
         </button>
         {always && (
-          <button title={`Allow ${p.title} from now on, in this block`} onClick={() => call("approve", { id: p.id, option: "always" })}>
+          <button class="secondary" title={`Allow ${p.title} from now on, in this block`} onClick={() => call("approve", { id: p.id, option: "always" })}>
             Always
           </button>
         )}
-        <button class="danger" onClick={() => call("deny", { id: p.id })}>
+        <button class="secondary danger" onClick={() => call("deny", { id: p.id })}>
           Deny
         </button>
         <button
@@ -500,7 +500,7 @@ export function Composer({
         }}
       />
       {busy ? (
-        <button type="button" class="danger" onClick={() => void client.api(`/api/blocks/${id}/call/cancel`, {}, "couldn't stop it")}>
+        <button type="button" class="secondary danger" onClick={() => void client.api(`/api/blocks/${id}/call/cancel`, {}, "couldn't stop it")}>
           Stop
         </button>
       ) : null}

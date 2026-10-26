@@ -142,10 +142,10 @@ export function DeployCard({ d, link, planOpen }: { d: Deploy; link?: boolean; p
       {d.stale ? <p class="deploy-note">Another deploy was applied to {d.environment.name} after this was planned, so it can't be approved. Plan it again.</p> : null}
       {d.may_approve ? (
         <div class="deploy-actions">
-          <a class="button" href={approveHref(d.id)} data-deploy-deny>
+          <a class="secondary" href={approveHref(d.id)} data-deploy-deny>
             Deny
           </a>
-          <a class="button primary" href={approveHref(d.id)} data-deploy-approve>
+          <a class="primary" href={approveHref(d.id)} data-deploy-approve>
             Approve
           </a>
           <p class="dim deploy-why">Opens on control's page, where your device keys are. You confirm with a passkey there.</p>

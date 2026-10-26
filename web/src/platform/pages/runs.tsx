@@ -22,6 +22,7 @@ import { RoomBody } from "../../shared/chat/room";
 import type { ChatRoom } from "../../shared/proto";
 import type { RunEventView } from "../../shared/proto.gen";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { ago } from "../../shared/issues/text";
 import "../../shared/issues/issues.css";
@@ -192,7 +193,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
           {filter.spec ? `Spec: ${specName(filter.spec) ?? "one"}` : "Spec"} <span class="caret">▾</span>
         </button>
         {narrowed && (
-          <button class="control-linkish" data-runs-clear onClick={() => to({})}>
+          <button class="link" data-runs-clear onClick={() => to({})}>
             Clear
           </button>
         )}
@@ -309,6 +310,8 @@ function StartRun({ p, specs, workspaces, done }: { p: PlatformProject; specs: R
 function Specs({ p, specs, workspaces, reread }: { p: PlatformProject; specs: RunSpec[] | null; workspaces: HostedWorkspace[]; reread: () => void }) {
   const can = starter(p);
   const [adding, setAdding] = useState(false);
+  // Delete and Remove ask first, in the page's own dialog (UI audit #158).
+  const [removing, setRemoving] = useState<{ title: string; label: string; what: string; body: string; go: () => Promise<unknown> } | null>(null);
   const act = async (what: string, f: () => Promise<unknown>) => {
     try {
       await f();
@@ -344,10 +347,22 @@ function Specs({ p, specs, workspaces, reread }: { p: PlatformProject; specs: Ru
                 <code class="run-spec-op">{s.instruction ?? commandLine(s.argv ?? [])}</code> <span class="dim">on {wsName(s.workspace)}</span>
                 {can && (
                   <span class="run-spec-actions">
-                    <button class="control-linkish" data-run-spec-run={s.name} onClick={() => void act("start it", async () => go(pathOf({ page: "run", project: p.id, run: (await runs.start(p.id, { spec: s.id })).id }, names)))}>
+                    <button class="secondary small" data-run-spec-run={s.name} onClick={() => void act("start it", async () => go(pathOf({ page: "run", project: p.id, run: (await runs.start(p.id, { spec: s.id })).id }, names)))}>
                       Run now
                     </button>
-                    <button class="control-linkish" data-run-spec-delete={s.name} onClick={() => confirm(`Delete the run spec ${s.name}, with its schedules and rules?`) && void act("delete it", () => runs.deleteSpec(p.id, s.id))}>
+                    <button
+                      class="secondary danger small"
+                      data-run-spec-delete={s.name}
+                      onClick={() =>
+                        setRemoving({
+                          title: `Delete the run spec ${s.name}?`,
+                          label: "Delete",
+                          what: "delete it",
+                          body: "Its schedules and event rules go with it. Runs it started stay in the list.",
+                          go: () => runs.deleteSpec(p.id, s.id),
+                        })
+                      }
+                    >
                       Delete
                     </button>
                   </span>
@@ -362,10 +377,22 @@ function Specs({ p, specs, workspaces, reread }: { p: PlatformProject; specs: Ru
                     {can && (
                       <>
                         {" "}
-                        <button class="control-linkish" onClick={() => void act("change it", () => runs.setSchedule(p.id, s.id, x.id, !x.enabled))}>
+                        <button class="secondary small" onClick={() => void act("change it", () => runs.setSchedule(p.id, s.id, x.id, !x.enabled))}>
                           {x.enabled ? "Turn off" : "Turn on"}
                         </button>{" "}
-                        <button class="control-linkish" data-run-schedule-delete={x.id} onClick={() => void act("remove it", () => runs.deleteSchedule(p.id, s.id, x.id))}>
+                        <button
+                          class="secondary danger small"
+                          data-run-schedule-delete={x.id}
+                          onClick={() =>
+                            setRemoving({
+                              title: `Remove the schedule ${x.cron}?`,
+                              label: "Remove",
+                              what: "remove it",
+                              body: `${s.name} stops running on it. To run on it again, add it again.`,
+                              go: () => runs.deleteSchedule(p.id, s.id, x.id),
+                            })
+                          }
+                        >
                           Remove
                         </button>
                       </>
@@ -380,10 +407,22 @@ function Specs({ p, specs, workspaces, reread }: { p: PlatformProject; specs: Ru
                     {can && (
                       <>
                         {" "}
-                        <button class="control-linkish" onClick={() => void act("change it", () => runs.setRule(p.id, s.id, x.id, !x.enabled))}>
+                        <button class="secondary small" onClick={() => void act("change it", () => runs.setRule(p.id, s.id, x.id, !x.enabled))}>
                           {x.enabled ? "Turn off" : "Turn on"}
                         </button>{" "}
-                        <button class="control-linkish" data-run-rule-delete={x.id} onClick={() => void act("remove it", () => runs.deleteRule(p.id, s.id, x.id))}>
+                        <button
+                          class="secondary danger small"
+                          data-run-rule-delete={x.id}
+                          onClick={() =>
+                            setRemoving({
+                              title: "Remove this event rule?",
+                              label: "Remove",
+                              what: "remove it",
+                              body: `${s.name} stops running on ${x.event.replace(/_/g, " ")}s. To run on them again, add it again.`,
+                              go: () => runs.deleteRule(p.id, s.id, x.id),
+                            })
+                          }
+                        >
                           Remove
                         </button>
                       </>
@@ -396,6 +435,20 @@ function Specs({ p, specs, workspaces, reread }: { p: PlatformProject; specs: Ru
           );
         })}
       </ul>
+      {removing && (
+        <ConfirmRemove
+          title={removing.title}
+          label={removing.label}
+          cancel={() => setRemoving(null)}
+          go={() => {
+            const r = removing;
+            setRemoving(null);
+            void act(r.what, r.go);
+          }}
+        >
+          <p>{removing.body}</p>
+        </ConfirmRemove>
+      )}
     </div>
   );
 }
@@ -447,10 +500,10 @@ function AddTrigger({ p, spec, act }: { p: PlatformProject; spec: RunSpec; act: 
   if (!open) {
     return (
       <p class="run-add-trigger">
-        <button class="control-linkish" data-run-schedule-add={spec.name} onClick={() => setOpen("schedule")}>
+        <button class="secondary small" data-run-schedule-add={spec.name} onClick={() => setOpen("schedule")}>
           + Schedule
         </button>{" "}
-        <button class="control-linkish" data-run-rule-add={spec.name} onClick={() => setOpen("rule")}>
+        <button class="secondary small" data-run-rule-add={spec.name} onClick={() => setOpen("rule")}>
           + Event rule
         </button>
       </p>
@@ -485,7 +538,7 @@ function AddTrigger({ p, spec, act }: { p: PlatformProject; spec: RunSpec; act: 
       <button class="primary" type="submit">
         Add
       </button>
-      <button type="button" class="control-linkish" onClick={() => setOpen(null)}>
+      <button type="button" class="secondary" onClick={() => setOpen(null)}>
         Cancel
       </button>
     </form>
