@@ -1280,7 +1280,7 @@ mod tests {
         assert_eq!(home_says(false, Some(&home("github", &["a/b", "a/c"])), false).unwrap(), Some(None));
         assert_eq!(home_says(true, Some(&home("github", &["acme/app"])), false).unwrap(), None);
         assert_eq!(home_says(false, None, false).unwrap(), Some(None));
-        assert!(home_says(true, None, true).unwrap_err().to_string().contains("Labs"));
+        assert!(home_says(true, None, true).unwrap_err().to_string().contains("turn it on in control"));
     }
 
     #[test]

@@ -490,9 +490,9 @@ fn the_issue_home_decides() {
     // Chat off: what only the platform has says so; the rest is GitHub's,
     // as before.
     rig.state.lock().unwrap().chat_off = true;
-    assert!(rig.fails(false, &["issue", "list", "--native"]).contains("Labs"));
-    assert!(rig.fails(false, &["issue", "export", "--project", "personal"]).contains("Labs"));
-    assert!(rig.fails(false, &["issue", "list"]).contains("Labs"));
+    assert!(rig.fails(false, &["issue", "list", "--native"]).contains("turn it on in control"));
+    assert!(rig.fails(false, &["issue", "export", "--project", "personal"]).contains("turn it on in control"));
+    assert!(rig.fails(false, &["issue", "list"]).contains("turn it on in control"));
     assert!(rig.fails(false, &["issue", "new", "-t", "x"]).contains("can't reach arugulad"));
 }
 

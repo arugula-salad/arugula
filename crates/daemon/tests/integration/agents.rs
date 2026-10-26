@@ -697,7 +697,7 @@ fn an_agent_that_dies_says_so_and_starts_again_on_send() {
     let (status, err) =
         d.raw("POST", "/api/blocks", Some(json!({ "type": "agent", "vm": true, "config": { "agent": "claude" } })));
     assert_eq!(status, 400);
-    assert!(err.contains("VM"), "{err}");
+    assert!(err.contains("sandbox providers"), "{err}");
 }
 
 /// The CLI, built for its `arugula agent`.

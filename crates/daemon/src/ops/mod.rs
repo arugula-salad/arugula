@@ -432,7 +432,6 @@ const ROUTERS: &[(&str, &str)] = &[
     // #578 part c.
     ("src/sync.rs", "pub fn routes()"),
     ("src/labs/resident.rs", "pub fn routes()"),
-    ("src/labs/apps/routes.rs", "pub fn routes("),
 ];
 
 /// The routes in [`ROUTERS`] that are not operations, each with why. A new

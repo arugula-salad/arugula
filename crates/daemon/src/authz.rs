@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn encoded_paths() {
         let p = Method::POST;
-        for m in ["%70rincipals", "%65nter", "agen%74", "run%5Fhere", "%6C%6F%67%69%6E", "%68ud", "gr%61ph"] {
+        for m in ["%70rincipals", "agen%74", "run%5Fhere", "%6C%6F%67%69%6E", "%68ud", "gr%61ph"] {
             assert_eq!(policy(&p, &format!("/api/blocks/7/call/{m}")), Policy::Owner, "{m}");
         }
         assert_eq!(policy(&p, "/api/blocks/7/call/%61pprove"), Policy::On(7, Role::Editor));
