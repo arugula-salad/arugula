@@ -79,24 +79,15 @@ export interface ControlInfo {
   platform?: string | null;
 }
 
-/** On a URL control is moving away from (#507): a line at the top saying
- * where it is now, with the same page there. This site keeps working for
- * now: its passkeys and approved browsers are its own, so the new one is
- * signed in and approved from here. */
+/** On a URL control is moving away from (#507): where it is now, with the
+ * same page there, for a note in the page's layout (ui/moving-note.tsx).
+ * This site keeps working for now: its passkeys and approved browsers are
+ * its own, so the new one is signed in and approved from here. */
+export let movingTo: URL | null = null;
+
 export function showMoving(info: ControlInfo): void {
   if (!info.primary || info.primary === info.url) return;
-  const to = new URL(location.pathname + location.search + location.hash, info.primary);
-  const bar = document.createElement("div");
-  bar.className = "control-dropped";
-  bar.setAttribute("role", "status");
-  bar.dataset.controlMoving = "";
-  const p = document.createElement("p");
-  const a = document.createElement("a");
-  a.href = to.href;
-  a.textContent = to.host;
-  p.append("Control is moving to ", a, ". Sign in there, then approve that browser from this one; this address stops working once everyone has moved.");
-  bar.append(p);
-  document.body.prepend(bar);
+  movingTo = new URL(location.pathname + location.search + location.hash, info.primary);
 }
 
 export interface DirDaemon {
@@ -2010,7 +2001,11 @@ export class ControlSession {
     const pub = new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey));
     const res = await request("POST", "/api/links", { session, key: hex(pub), ttl_secs: ttlSecs, history });
     if (!res.ok) throw new Error((await res.json<{ error?: string }>().catch(() => null))?.error ?? "couldn't make a link");
-    return `${this.info.url}/#link=${d.id}.${d.cert.noise}.${hex(seed)}.${hex(pub)}`;
+    // UI audit #149: when it ends rides along, so its page can say so (the
+    // daemon ends it then either way). A link made before says only that
+    // it's read-only.
+    const expires = (await res.json<{ expires?: number }>().catch(() => null))?.expires;
+    return `${this.info.url}/#link=${d.id}.${d.cert.noise}.${hex(seed)}.${hex(pub)}${typeof expires === "number" ? `.${expires}` : ""}`;
   }
 
   /** Approve another device's request: sign its certificate. With the

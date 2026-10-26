@@ -11,6 +11,7 @@ import { MenuLayer } from "../../shared/ui/menu";
 import type { ControlSession, Team } from "../control";
 import { splitJoinCode } from "../e2e/cert.ts";
 import { AccountButton } from "../ui/app-bar";
+import { MovingNote } from "../ui/moving-note";
 
 /** Ready, but no machine to show yet: the account's menu (#97), any team
  * this account is waiting on (#103), and how to add a machine (#98). */
@@ -23,6 +24,7 @@ export function NoMachines({ s }: { s: ControlSession }) {
         <AccountButton client={null} />
       </header>
       <MenuLayer />
+      <MovingNote />
       <main>
         {s.asked.map((a) => (
           <p key={a.team} class="control-asked" data-asked={a.team}>
