@@ -461,11 +461,17 @@ fn keep_closed(root: &std::path::Path, block: PaneId, drafter: &str, drafts: Vec
 pub fn card(d: &Draft) -> Ask {
     let agent = d.by.strip_prefix("mcp:").unwrap_or(&d.by).to_owned();
     let started = if d.started.is_empty() { String::new() } else { format!(", {}", d.started) };
+    // Whom by name; their principal only where it says more than the name
+    // does (a tailnet login that isn't it), never an opaque account id
+    // (UI audit #178).
+    let who = match d.person.strip_prefix("tailnet:") {
+        Some(login) if login != d.name => format!(" ({login})"),
+        _ => String::new(),
+    };
     let message = format!(
-        "{agent} (pane %{}{started}) wants to bring {} [{}] ({}) into {} at pane %{}: {}",
+        "{agent} (pane %{}{started}) wants to bring {}{who} ({}) into {} at pane %{}: {}",
         d.from,
         d.name,
-        d.person,
         d.role.as_str(),
         d.session_name,
         d.pane,
@@ -581,8 +587,8 @@ impl Block for InviteBlock {
         Summary {
             title: Some(match waiting {
                 0 => "Invites".into(),
-                1 => "An invite waits for you".into(),
-                n => format!("{n} invites wait for you"),
+                1 => "An invite waits".into(),
+                n => format!("{n} invites wait"),
             }),
             ..Summary::default()
         }
@@ -604,7 +610,7 @@ mod tests {
         let a = card(&d);
         assert_eq!(
             a.message,
-            "claude-code (pane %3, you started it) wants to bring Sam [account:s1] (editor) into api-work at pane %3: the flaky test"
+            "claude-code (pane %3, you started it) wants to bring Sam (editor) into api-work at pane %3: the flaky test"
         );
         assert_eq!((a.kind, a.source.as_str()), (AskKind::Form, "invite"));
         let s = a.schema.unwrap();

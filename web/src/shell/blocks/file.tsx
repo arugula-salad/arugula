@@ -11,6 +11,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import type { CodeView } from "../swarm/code";
 import { registerBlock, type BlockView } from "./view";
+import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
 
 export interface FileState {
   path: string;
@@ -76,22 +77,21 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
           {s?.line ? <span class="dim">:{s.line}</span> : null} <span class="dim">{path.slice(0, slash)}</span>
         </span>
         {machine && (
-          <span class="host-tag" title={`on ${machine.name ?? machine.sprite}`}>
+          <span class="host-tag" title={`On ${machine.name ?? machine.sprite}, a throwaway VM`}>
             VM
           </span>
         )}
         {s?.truncated && <span class="dim" title={`${KB(s.size)}: only the start is shown`}>first {KB(s.text.length)}</span>}
-        <span class={`review-live ${s?.watching ? "on" : ""}`} title={s?.watching ? "Updates as the file changes" : "Not watching: nobody's looking"}>
-          {s?.watching ? "live" : "paused"}
-        </span>
+        {!s?.error && (
+          <span class={`review-live ${s?.watching ? "on" : ""}`} title={s?.watching ? "Updates as the file changes" : "Not watching: nobody's looking"}>
+            {s?.watching ? "live" : "paused"}
+          </span>
+        )}
       </div>
       {problem && (
-        <div class="browser-card error">
-          <p>{s?.error ? "Can't show this file" : problem}</p>
-          {s?.error && <p class="dim">{s.error}</p>}
-        </div>
+        s?.error ? <BlockError title="Can't show this file" detail={s.error} /> : <BlockEmpty>{problem}.</BlockEmpty>
       )}
-      {!s || (s.loading && !s.text) ? <div class="browser-card dim">Reading {s?.name ?? "the file"}…</div> : null}
+      {!s || (s.loading && !s.text) ? <BlockLoading what={s?.name ?? "the file"} /> : null}
       <div class="file-code" ref={box} style={problem || !s || (s.loading && !s.text) ? { display: "none" } : undefined} />
     </div>
   );

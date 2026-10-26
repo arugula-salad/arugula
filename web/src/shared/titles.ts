@@ -3,7 +3,8 @@
 
 /** A title as people read it: a program's status marks in front of it
  * (Claude Code's ✳ and spinner, a prompt's ‹ or ❯, braille spinners) mean
- * nothing outside its terminal, and change while it works. */
+ * nothing outside its terminal, and change while it works. A port's
+ * `:5173/` keeps its colon (UI audit #177), as its address bar shows it. */
 export function cleanTitle(t: string): string {
-  return t.replace(/^[^\p{L}\p{N}~/.@(["'_-]+/u, "").trim();
+  return t.replace(/^(?:(?!:\d)[^\p{L}\p{N}~/.@(["'_-])+/u, "").trim();
 }

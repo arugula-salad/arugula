@@ -186,7 +186,7 @@ test("a dev server beside a terminal: its own origin, hot reload, no way into Ar
   // that needs you (UI audit #154)...
   await vite!.close();
   vite = undefined;
-  await expect(paneEl(page, block).locator(".browser-card")).toContainText(`Nothing is answering on :${VITE}`, { timeout: 15_000 });
+  await expect(paneEl(page, block).locator(".block-error")).toContainText(`Nothing is answering on :${VITE}`, { timeout: 15_000 });
   expect(await attention(page, block)).toBe("idle");
   // ...and when it's back, so is the page.
   await startVite();

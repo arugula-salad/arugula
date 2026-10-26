@@ -9,6 +9,8 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { EXPIRE_TITLE, gateKey, type DecisionRef, type Gate, type Lease, type MemberWhy, type PaneId, type RunRequest, type WorkspaceRecord, type WorkspaceRun } from "../../shared/proto";
+import { askText } from "../../shared/ui/menu";
+import { BlockError, BlockLoading } from "./block-states";
 import { openWorkspace } from "./open-labs";
 import type { BlockRenderer, BlockView } from "./view";
 import { ago, decisionLine, GateWhy, governs } from "../ui/gate-why";
@@ -134,12 +136,13 @@ function WhyCard({ client, id, s, m, mayOpen }: { client: Client; id: PaneId; s:
   const review = async (d: DecisionRef) => {
     let hud = s.hud ?? "";
     if (!hud) {
-      hud = window.prompt("hud's address, where this workspace's records are reviewed", "http://localhost:")?.trim() ?? "";
+      // The page's own prompt, not the browser's (UI audit #178).
+      hud = (await askText("hud's address, where this workspace's records are reviewed", "http://localhost:", "http://localhost:4000"))?.trim() ?? "";
       if (!hud || !(await client.api(`/api/blocks/${id}/call/hud`, { url: hud }, "couldn't keep hud's address"))) return;
     }
     window.open(`${hud.replace(/\/$/, "")}/decisions#${encodeURIComponent(d.id)}`, "_blank", "noopener");
   };
-  if (!w) return <div class="dim ws-why">Reading…</div>;
+  if (!w) return <div class="dim ws-why">Loading why…</div>;
   const current = (w.decisions ?? []).filter((d) => d.current);
   const replaced = (w.decisions ?? []).filter((d) => !d.current);
   const runLine = (r: WorkspaceRun) =>
@@ -150,7 +153,7 @@ function WhyCard({ client, id, s, m, mayOpen }: { client: Client; id: PaneId; s:
       {w.note ? (
         <p class="dim">{w.note}</p>
       ) : !w.decisions ? (
-        <p class="dim">Reading the decisions…</p>
+        <p class="dim">Loading the decisions…</p>
       ) : current.length === 0 ? (
         <p class="dim">No decision covers {m.name}.</p>
       ) : (
@@ -315,15 +318,15 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
   const refresh = () => void client.api(`/api/blocks/${id}/call/refresh`, {}, "couldn't read the workspace");
   // The block watches one env's gates and releases (#312): switching reads
   // again, and the choice is kept in its config.
-  const switchEnv = (name: string) => {
-    if (name === OTHER) name = window.prompt("Which environment?", "")?.trim() ?? "";
+  const switchEnv = async (name: string) => {
+    if (name === OTHER) name = (await askText("Which environment?", "", "an environment's name"))?.trim() ?? "";
     if (name && name !== s?.env) void client.api(`/api/blocks/${id}/call/env`, { name }, "couldn't switch the environment");
   };
 
   if (!s || (s.loading && !s.updated_ms)) {
     return (
       <div class="review ws">
-        <div class="browser-card dim">Reading the workspace…</div>
+        <BlockLoading what="the workspace" />
       </div>
     );
   }
@@ -345,7 +348,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
               const name = e.currentTarget.value;
               // Shows the env watched until the block says it switched.
               e.currentTarget.value = s.env;
-              switchEnv(name);
+              void switchEnv(name);
             }}
           >
             {(s.envs ?? [s.env]).map((e) => (
@@ -360,9 +363,11 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
             {s.env}
           </span>
         )}
-        <span class="dim ws-meta" title={s.chant ?? ""}>
-          chant {s.version ?? "?"}
-        </span>
+        {s.version && (
+          <span class="dim ws-meta" title={s.chant ?? ""}>
+            chant {s.version}
+          </span>
+        )}
         {mayOpen && (
           <button class="ws-meta" data-ws-actor title="Who chant records approvals here as" onClick={() => setWho(!who)}>
             as {s.actor || "you"}
@@ -373,27 +378,25 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
             {s.loading ? "…" : "↻"}
           </button>
         )}
-        <span class={`review-live ${s.watching ? "on" : ""}`}>{s.watching ? "live" : "paused"}</span>
+        {!s.error && (
+          <span class={`review-live ${s.watching ? "on" : ""}`} title={s.watching ? "Updates as the workspace changes" : "Not watching: nobody's looking"}>
+            {s.watching ? "live" : "paused"}
+          </span>
+        )}
       </div>
       {mayOpen && who && <Principals client={client} id={id} s={s} close={() => setWho(false)} />}
       {mayOpen && graphOn !== null && (
         <Graph client={client} id={id} s={s} member={graphOn} close={() => setGraphOn(null)} picked={picked} />
       )}
       {s.error ? (
-        <div class="browser-card" data-ws-error>
-          <p>Can't show this workspace</p>
-          <p class="dim">
-            {s.error}
-            {s.error_code && (
-              <>
-                {" "}
-                <code data-ws-reason>{s.error_code}</code>
-              </>
-            )}
-          </p>
-          {help && <p class="dim">{help}</p>}
-          {mayOpen && <button class="primary" onClick={refresh}>Try again</button>}
-        </div>
+        <BlockError data-ws-error title="Can't show this workspace" detail={s.error} retry={mayOpen ? refresh : undefined}>
+          {s.error_code && (
+            <p class="block-error-detail">
+              <code data-ws-reason>{s.error_code}</code>
+            </p>
+          )}
+          {help && <p class="block-error-detail">{help}</p>}
+        </BlockError>
       ) : (
         <div class="review-body ws-body">
           {s.gates.length > 0 && (

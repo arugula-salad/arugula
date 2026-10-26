@@ -22,8 +22,9 @@ import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Draft, Event as ForgeEvent, ForgeState, PaneId, Pr } from "../../shared/proto";
 import { Markdown } from "../../shared/ui/markdown";
-import { askText } from "../../shared/ui/menu";
+import { askText, type PromptChoice } from "../../shared/ui/menu";
 import { isNativeIssue, NativeIssueBlock, nativeIssueText, nativeIssueTitle, type NativeIssueState } from "./native-issue";
+import { BlockError, BlockLoading, OpenOutside } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
@@ -192,7 +193,7 @@ function Foot({ s, buttons }: { s: ForgeState; buttons: ComponentChildren }) {
     </p>
   ) : (
     <p class="dim ws-note forge-polls" data-forge-live-state title={s.live_why ?? undefined}>
-      {s.polls} polls, {s.reads} full reads · read {ago(s.updated_ms)}
+      {plural(s.polls, "poll")}, {plural(s.reads, "full read")} · read {ago(s.updated_ms)}
       {live}
     </p>
   );
@@ -244,6 +245,24 @@ function Chips({ pr }: { pr: Pr }) {
 
 const linkedState = (st: string) => <span class={`ws-tag forge-state ${st}`}>{st}</span>;
 
+/** How each forge merges, as the daemon names them, with a word each. */
+const MERGE_STYLES: Record<string, [string, string][]> = {
+  github: [["merge", "Merge commit"], ["squash", "Squash"], ["rebase", "Rebase"]],
+  gitlab: [["merge", "Merge commit"], ["squash", "Squash"]],
+  forgejo: [["merge", "Merge commit"], ["squash", "Squash"], ["rebase", "Rebase"], ["rebase-merge", "Rebase, then a merge commit"], ["fast-forward-only", "Fast-forward only"]],
+};
+
+/** Whether the block follows its item (UI audit #177: with a title, as
+ * the file and diff blocks' have; none while it can't read it). */
+function LiveTag({ s }: { s: ForgeState }) {
+  if (s.error) return null;
+  return (
+    <span class={`review-live ${s.watching ? "on" : ""}`} title={s.watching ? "Updates as it changes" : "Not watching: nobody's looking"}>
+      {s.watching ? "live" : "paused"}
+    </span>
+  );
+}
+
 /** M172: the bar's word that the block is the platform's item. */
 function PinTag({ s }: { s: ForgeState }) {
   if (!s.pin) return null;
@@ -287,7 +306,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
   if (s.loading && !s.updated_ms) {
     return (
       <div class="review ws forge">
-        <div class="browser-card dim">Reading the issue…</div>
+        <BlockLoading what="the issue" />
       </div>
     );
   }
@@ -308,22 +327,16 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
         </span>
         {it && <span class={`ws-tag forge-state ${it.state}`} data-issue-state={it.state}>{it.state}</span>}
         <PinTag s={s} />
-        {it && (
-          <a class="dim forge-link" href={it.url} target="_blank" rel="noopener">
-            open ↗
-          </a>
-        )}
         {mayWrite && (
           <button title="Read it again" aria-label="Read it again" disabled={busy !== null} onClick={refresh}>
             {busy === "refresh" ? "…" : "↻"}
           </button>
         )}
-        <span class={`review-live ${s.watching ? "on" : ""}`}>{s.watching ? "live" : "paused"}</span>
+        <LiveTag s={s} />
+        {it && <OpenOutside href={it.url} />}
       </div>
       {s.error && (
-        <div class="browser-card" data-forge-error>
-          <p>Can't read this issue</p>
-          <p class="dim">{s.error}</p>
+        <BlockError data-forge-error title="Can't read this issue" detail={s.error} retry={mayWrite ? refresh : undefined} inline={!!issue}>
           {mayOwn && s.logins.length > 0 && (
             <div class="ws-actions" data-forge-logins>
               {s.logins.map((x) => (
@@ -333,8 +346,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
               ))}
             </div>
           )}
-          {mayWrite && <button class="primary" onClick={refresh}>Try again</button>}
-        </div>
+        </BlockError>
       )}
       {issue && it && (
         <div class="review-body ws-body">
@@ -681,8 +693,12 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
     await call("review", { event, body: body || undefined }, "couldn't review");
   };
   const gitlab = s?.provider === "gitlab";
+  // UI audit #178: the forge's ways to merge, to pick from, rather than a
+  // word to type.
   const merge = async () => {
-    const style = await askText("Merge: how?", "merge", gitlab ? "merge or squash" : s?.provider === "github" ? "merge, squash or rebase" : "merge, rebase, rebase-merge, squash or fast-forward-only");
+    const styles = MERGE_STYLES[s?.provider ?? ""] ?? MERGE_STYLES.forgejo;
+    const choices: PromptChoice[] = styles.map(([value, label]) => ({ value, label }));
+    const style = await askText(`Merge #${s?.number ?? ""}`, "", "pick how, or type a method", Promise.resolve(choices));
     if (style?.trim()) await call("merge", { style: style.trim() }, "couldn't merge");
   };
   const refresh = () => void call("refresh", {}, "couldn't read the pull request");
@@ -691,7 +707,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
   if (!s || (s.loading && !s.updated_ms)) {
     return (
       <div class="review ws forge">
-        <div class="browser-card dim">Reading the pull request…</div>
+        <BlockLoading what="the pull request" />
       </div>
     );
   }
@@ -712,17 +728,13 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
         </span>
         {state && <span class={`ws-tag forge-state ${state}`} data-pr-state={state}>{state}</span>}
         <PinTag s={s} />
-        {it && (
-          <a class="dim forge-link" href={it.url} target="_blank" rel="noopener">
-            open ↗
-          </a>
-        )}
         {!viewer && (
           <button title="Read it again" aria-label="Read it again" disabled={busy !== null} onClick={refresh}>
             {busy === "refresh" ? "…" : "↻"}
           </button>
         )}
-        <span class={`review-live ${s.watching ? "on" : ""}`}>{s.watching ? "live" : "paused"}</span>
+        <LiveTag s={s} />
+        {it && <OpenOutside href={it.url} />}
       </div>
       {s.rate?.backoff && (
         <p class="dim ws-note" data-forge-rate>
@@ -730,9 +742,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
         </p>
       )}
       {s.error && (
-        <div class="browser-card" data-forge-error>
-          <p>Can't read this pull request</p>
-          <p class="dim">{s.error}</p>
+        <BlockError data-forge-error title="Can't read this pull request" detail={s.error} retry={viewer ? undefined : refresh} inline={!!pr}>
           {mayOwn && s.logins.length > 0 && (
             <div class="ws-actions" data-forge-logins>
               {s.logins.map((l) => (
@@ -742,8 +752,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
               ))}
             </div>
           )}
-          {!viewer && <button class="primary" onClick={refresh}>Try again</button>}
-        </div>
+        </BlockError>
       )}
       {s.read_only && (
         <p class="dim ws-note" data-forge-read-only>
@@ -791,7 +800,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
                     )}
                     {w.kind === "failed" && s.rerun?.api && mayWrite && (
                       <button class="primary small" data-rerun disabled={busy !== null} title={s.rerun.note} onClick={() => void call("rerun_checks", {}, "couldn't rerun the checks")}>
-                        {busy === "rerun_checks" ? "Retrying…" : "Rerun"}
+                        {busy === "rerun_checks" ? "Rerunning…" : "Rerun"}
                       </button>
                     )}
                     {w.kind === "failed" && s.rerun?.url && (

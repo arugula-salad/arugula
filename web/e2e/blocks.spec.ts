@@ -47,8 +47,9 @@ test("a browser block opens beside a terminal, frames its page, and closes", asy
   const input = paneEl(page, block).locator(".browser-url input");
   await input.fill(`${base}/no-frame`);
   await input.press("Enter");
-  await expect(paneEl(page, block).locator(".browser-card")).toContainText("doesn't allow being shown");
-  await expect(paneEl(page, block).getByRole("link", { name: "Open in new tab" })).toHaveAttribute("href", `${base}/no-frame`);
+  const refused = paneEl(page, block).locator("[data-browser-refused]");
+  await expect(refused).toContainText("doesn't allow being shown");
+  await expect(refused.getByRole("link", { name: "Open in a new tab" })).toHaveAttribute("href", `${base}/no-frame`);
   await paneEl(page, block).getByTitle("Back").click();
   await expect(frame.locator("#h")).toHaveText("hello from /one");
 

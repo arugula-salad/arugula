@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
+import { BlockError, BlockLoading } from "./block-states";
 import type { WorkspaceState } from "./workspace";
 
 export type GraphStatus =
@@ -92,10 +93,10 @@ export function Graph({ client, id, s, member, close, picked }: {
           <select class="ws-env" data-ws-graph-clicks value={clicks} onChange={(e) => setClicks(e.currentTarget.value as Clicks)}>
             <option value="shell">Shell</option>
             <option value="changes">Changes</option>
-            <option value="none">nothing</option>
+            <option value="none">Nothing</option>
           </select>
         </label>
-        <button title="Close the graph" onClick={close}>
+        <button title="Close the graph" aria-label="Close the graph" onClick={close}>
           ✕
         </button>
       </div>
@@ -111,13 +112,9 @@ export function Graph({ client, id, s, member, close, picked }: {
           referrerpolicy="no-referrer"
         />
       ) : g.is === "failed" ? (
-        <div class="browser-card" data-ws-graph-error>
-          <p>behold didn't start</p>
-          <p class="dim">{g.error}</p>
-          <button class="primary" onClick={() => void client.api(`/api/blocks/${id}/call/graph`, {}, "couldn't start behold")}>Try again</button>
-        </div>
+        <BlockError data-ws-graph-error title="behold didn't start" detail={g.error} retry={() => void client.api(`/api/blocks/${id}/call/graph`, {}, "couldn't start behold")} />
       ) : (
-        <div class="browser-card dim">Starting behold…</div>
+        <BlockLoading what="behold" />
       )}
     </section>
   );
