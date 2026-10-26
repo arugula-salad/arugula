@@ -30,6 +30,12 @@
      ids outside a terminal; terminals keep their own (terminal-view.ts).
      UI audit #152: var(--mono) was used but never defined. */
   --mono: "Arugula Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* The swarm's faces (shared/fonts.css): the swarm and the platform page
+     are set in them, and control's own pages take their display face for
+     a page's title (UI audit #198: once, here). */
+  --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-ui: "Instrument Sans", system-ui, sans-serif;
+  --f-mono: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
   /* How dark a floating thing's shadow is: 1 on a dark palette, lighter on
      a light one (below), where black at two-thirds is a smudge (as
      finish.css's --platform-shadow on the platform page). UI audit #152. */
@@ -2751,7 +2757,22 @@ button.att {
 
 .control-center h1 {
   margin: 0 0 8px;
-  font-size: 22px;
+}
+
+/* Control's own pages' titles (sign in, approve, no machines yet) are the
+   platform's page title (platform/swarm.css's .page-head h1): the display
+   face, in capitals. Theirs are sentences that wrap, so the lines get a
+   little more room, and a phone's are smaller (UI audit #198). */
+:is(.control-center, .control-page) h1 {
+  font: 800 32px/1 var(--f-display);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 700px) {
+  :is(.control-center, .control-page) h1 {
+    font-size: 28px;
+  }
 }
 
 /* The signed-out page's heading carries the mark (UI audit #179). */
@@ -3632,7 +3653,6 @@ button.att {
 
 .control-page h1 {
   margin: 8px 0;
-  font-size: 22px;
 }
 
 .control-account {
@@ -3785,9 +3805,6 @@ button.att {
   --s-fail: #ff5468;
   --s-done: #63e0a0;
   --s-wait: #ffc04d;
-  --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
-  --f-ui: "Instrument Sans", system-ui, sans-serif;
-  --f-mono: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
 }
 
 .swarm {
