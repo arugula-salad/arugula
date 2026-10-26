@@ -4743,6 +4743,18 @@ button.diff-why-run {
   white-space: nowrap;
 }
 
+/* A chip with an icon and its word (the Docs page's "shared"). */
+.ws-tag:has(svg) {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.ws-tag svg {
+  width: 11px;
+  height: 11px;
+}
+
 .ws-tag.waits {
   background: var(--accent);
   color: var(--on-color);
@@ -5949,6 +5961,15 @@ button.diff-why-run {
   border: 1px solid var(--divider);
 }
 
+/* What went wrong on the Agents and Docs pages, the same red. */
+.agents-error {
+  margin: 8px;
+}
+
+.agents-loading {
+  margin: 0 8px;
+}
+
 .agents-card.waiting {
   border-color: var(--accent);
 }
@@ -6025,40 +6046,15 @@ button.diff-why-run {
   margin: 4px 8px;
 }
 
+/* A secondary small button like the page's others (UI audit #173). */
 .agents-inline-new {
   flex: none;
   white-space: nowrap;
   margin-left: auto;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--raised);
-  font-size: 12px;
-}
-
-.agents-inline-new:hover:not(:disabled) {
-  background: var(--raised-hover);
 }
 
 .agents-inline-new + .agents-remove {
   margin-left: 8px;
-}
-
-/* The team's agents: a list, each row with its own buttons, so a row
-   isn't mistaken for one big button. */
-.agents-rows {
-  gap: 0;
-}
-
-.agents-rows .agents-card {
-  background: none;
-  border: 0;
-  border-radius: 0;
-  border-bottom: 1px solid var(--divider);
-  padding: 10px 4px;
-}
-
-.agents-rows .agents-card:last-child {
-  border-bottom: 0;
 }
 
 .agents-card-text {

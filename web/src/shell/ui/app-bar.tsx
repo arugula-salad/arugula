@@ -60,7 +60,7 @@ export function AppBar({
   children?: ComponentChildren;
   /** Before the account menu: the panes' people. */
   end?: ComponentChildren;
-  /** The place shows every machine (the swarm, chat, the team's agents):
+  /** The place shows every machine (the swarm):
    * the machine picker would read as a filter it isn't, so it says so. */
   all?: boolean;
 }) {
