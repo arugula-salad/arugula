@@ -525,7 +525,7 @@ impl Db {
         Ok(self.c().execute(
             "UPDATE hosted_workspaces SET setup_status = ?3, setup_step = ?4, setup_reason = ?5, setup_pane = ?6,
                  setup_at = ?7
-             WHERE id = ?1 AND deleted_at IS NULL AND state IN ('enrolling', 'ready', 'paused')
+             WHERE id = ?1 AND deleted_at IS NULL AND state IN ('enrolling', 'ready', 'waking', 'paused')
                  AND (machine IS NULL OR machine = ?2)",
             params![id, machine, r.status.as_str(), r.step, reason, r.pane, now],
         )? == 1)

@@ -12,6 +12,11 @@
 //! - **A box that may have paused itself.** A box pauses at its timeout
 //!   before the worker sees it, so a `ready` workspace is woken too: a
 //!   running box only has its timeout moved.
+//! - **Awake is the box running.** Once the provider has resumed it, the
+//!   workspace is `waking` and this answers awake: the hub waits for its
+//!   daemon to dial in. The worker waits too, and the workspace is `ready`
+//!   only once it has; one whose daemon doesn't is failed as needing a
+//!   rebuild (M258), and says so here as `silent` from then on.
 //! - **Why not.** A box that's gone, a provider that says no or doesn't
 //!   answer, a workspace being made or one that failed earlier: each is a
 //!   [`WakeCode`] and a sentence, and the page offers rebuild.
@@ -46,6 +51,12 @@ impl Wakes {
     /// For the worker: a wake was asked, so tick now.
     pub async fn kicked(&self) {
         self.kick.notified().await
+    }
+
+    /// A wake was asked: a worker here ticks now rather than at its next
+    /// second.
+    pub fn kick(&self) {
+        self.kick.notify_one()
     }
 
     /// For the worker: it took a step, so whoever waits looks again.
@@ -125,9 +136,15 @@ async fn wait(app: &Platform, project: &str, workspace: &str) -> anyhow::Result<
             }
             ("failed", None) => {
                 let why = error.unwrap_or("This workspace failed. Rebuild it to make its box again.");
-                let code = if why == worker::GONE { WakeCode::Gone } else { WakeCode::Failed };
+                let code = match why {
+                    worker::GONE => WakeCode::Gone,
+                    worker::NO_DAEMON => WakeCode::Silent,
+                    _ => WakeCode::Failed,
+                };
                 return Ok(failed(code, why));
             }
+            // Resumed, its daemon not yet back: the box runs.
+            ("waking", _) => return Ok(WakeAnswer::Awake),
             (_, Some("wake")) => {
                 asked = true;
                 if error == Some(worker::UNAVAILABLE) {
