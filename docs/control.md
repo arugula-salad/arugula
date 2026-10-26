@@ -156,7 +156,8 @@ changes; a failed one says why on the workspace and keeps the current
 snapshot. E2B won't delete a snapshot while a box made from it exists
 (paused included) or for a while after, so an old one is deleted later:
 each look at the workspace asks again until it goes, and a deleted
-workspace stays `deleting` until its snapshots are gone, for a day at most
+workspace stays `deleting` until its snapshots are gone (asking every 15
+seconds for an hour, then every 10 minutes), for a day at most
 (`ARUGULA_HOSTED_SNAPSHOT_HOLD_HOURS`). Past that it's deleted, the
 snapshots left are logged and kept as orphans (`hosted_snapshot_orphans`),
 and the worker asks the provider about each every 10 minutes until it goes. loam's E2B API has no snapshots, so there every box runs its

@@ -47,8 +47,9 @@
 //! workspace's box is made from it, and after that each look at the
 //! workspace asks again until it goes; a refusal is "still in use", never
 //! a build's error. Deleting the workspace deletes its builder and boxes,
-//! then its snapshots, and stays `deleting`, asking again, until every one
-//! is gone, or for a day at most (`ARUGULA_HOSTED_SNAPSHOT_HOLD_HOURS`).
+//! then its snapshots, and stays `deleting`, asking again (every 15 s for
+//! an hour, then every 10 minutes), until every one is gone, or for a day
+//! at most (`ARUGULA_HOSTED_SNAPSHOT_HOLD_HOURS`).
 //! Then it's deleted, and what's left goes on the platform's orphans
 //! ([`orphans`]), which the worker asks the provider about every
 //! [`ORPHAN_MS`] until each goes. A provider without snapshots (loam's E2B API) builds none, and
@@ -78,6 +79,12 @@ pub const EVERY: Duration = Duration::from_secs(24 * 3600);
 pub const HOLD: Duration = Duration::from_secs(24 * 3600);
 /// How often an orphaned snapshot is asked to be deleted again.
 pub const ORPHAN_MS: u64 = 10 * 60 * 1000;
+/// How often a deleted workspace asks the provider again to let go of its
+/// snapshots: often for the first hour (E2B lets go within a second or a
+/// minute of its last box, seen live), then seldom until [`HOLD`].
+pub const HELD_FAST_MS: u64 = 15_000;
+pub const HELD_FAST_FOR_MS: u64 = 60 * 60 * 1000;
+pub const HELD_SLOW_MS: u64 = 10 * 60 * 1000;
 /// How long a builder has from its create to its snapshot, and its box's
 /// timeout: setup runs within it.
 pub const BUILD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
@@ -222,13 +229,14 @@ async fn retire(app: &Platform, sub: &dyn Substrate, parent: &str, s: &Snapshots
 }
 
 /// A workspace that's being deleted, its boxes deleted already: its builder
-/// goes, and every snapshot it has is retired and asked to go. Whether it
-/// may be deleted now: every one went, or the provider held one past
-/// [`super::Config::snapshot_hold`], and those left are orphans. Until
-/// then the worker asks again.
-pub async fn forget(app: &Platform, sub: &dyn Substrate, job: &HostedJob, now: u64) -> Result<bool> {
+/// goes, and every snapshot it has is retired and asked to go. When to ask
+/// again, or `None` when it may be deleted now: every one went, or the
+/// provider held one past [`super::Config::snapshot_hold`], and those left
+/// are orphans. Asked every [`HELD_FAST_MS`] for the first
+/// [`HELD_FAST_FOR_MS`] it's held, then every [`HELD_SLOW_MS`].
+pub async fn forget(app: &Platform, sub: &dyn Substrate, job: &HostedJob, now: u64) -> Result<Option<u64>> {
     if job.w.purpose != PURPOSE_WORKSPACE {
-        return Ok(true);
+        return Ok(None);
     }
     if let Some(b) = app.db.snapshot_builder(&job.w.id)? {
         super::ask(app, &b.id, super::Ask::Delete)?;
@@ -236,15 +244,17 @@ pub async fn forget(app: &Platform, sub: &dyn Substrate, job: &HostedJob, now: u
     app.db.snapshots_retire_all(&job.w.id)?;
     let s = app.db.hosted_snapshots(&job.w.id)?;
     if retire(app, sub, &job.w.id, &s).await {
-        return Ok(true);
+        return Ok(None);
     }
     let since = app.db.snapshot_held(&job.w.id, now)?;
-    if now < since.saturating_add(app.hosted.snapshot_hold().as_millis() as u64) {
-        return Ok(false);
+    let until = since.saturating_add(app.hosted.snapshot_hold().as_millis() as u64);
+    if now < until {
+        let every = if now < since + HELD_FAST_FOR_MS { HELD_FAST_MS } else { HELD_SLOW_MS };
+        return Ok(Some((now + every).min(until)));
     }
     let left = app.db.orphan_snapshots(&job.w.id, &job.w.project, now)?;
     warn!(workspace = %job.w.id, project = %job.w.project, snapshots = ?left, "a deleted workspace's snapshots are still held by the provider: kept as orphans, asked again later");
-    Ok(true)
+    Ok(None)
 }
 
 /// Ask the provider again to delete one orphaned snapshot that's due:

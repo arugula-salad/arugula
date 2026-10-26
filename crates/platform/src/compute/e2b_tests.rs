@@ -922,8 +922,30 @@ mod lifecycle {
         s.lock().unwrap().linger = u32::MAX;
         assert_eq!(call(&base, "alice", "DELETE", &path, None).await.0, 200);
         let state = || app.db.hosted_any(&project, &ws).unwrap().map(|w| w.state).unwrap_or_default();
+        let asks = || {
+            s.lock().unwrap().calls.iter().filter(|(m, p, _)| m == "DELETE" && p == "/templates/snap1:default").count()
+        };
         let hour = 3600 * 1000;
-        for t in [now + 8_000, now + hour, now + 23 * hour] {
+        // Held from +8 s: asked every 15 s for an hour...
+        let held = now + 8_000;
+        let mut asked = Vec::new();
+        for t in [held, held + 5_000, held + 15_000, held + 25_000, held + 30_000] {
+            drive(&app, t).await;
+            asked.push(asks());
+        }
+        assert_eq!(asked, [1, 1, 2, 2, 3], "every 15 s");
+        drive(&app, held + hour - 1_000).await;
+        assert_eq!(asks(), 4);
+        // ...then every 10 minutes.
+        let mut asked = Vec::new();
+        for t in
+            [held + hour + 14_000, held + hour + 60_000, held + hour + 9 * 60_000, held + hour + 10 * 60_000 + 14_000]
+        {
+            drive(&app, t).await;
+            asked.push(asks());
+        }
+        assert_eq!(asked, [5, 5, 5, 6], "every 10 minutes after the first hour");
+        for t in [now + hour, now + 23 * hour] {
             drive(&app, t).await;
             assert_eq!(state(), "deleting", "at +{} ms", t - now);
         }
