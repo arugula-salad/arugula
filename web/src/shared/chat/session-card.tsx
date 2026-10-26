@@ -13,6 +13,12 @@
 // at once, against the platform's clock, before the platform marks it so.
 // What it asks is a question card (`../ask`), answered by any owner or
 // editor of its project; the platform passes the answer to the box.
+//
+// Its PR (M259): once a turn pushed its branch, its asker opens a draft of
+// the PR here, prefilled from the repo's PR template and what the turns
+// left, edits it and sends it as themselves ("agents draft, people
+// send"): GitHub's authorization in this browser, else one of their own
+// machines. Nobody else sends it. Once sent, the PR button is the PR.
 
 import "./session-card.css";
 import { useEffect, useState } from "preact/hooks";
@@ -20,7 +26,7 @@ import { AskCard, type Ask } from "../ask";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 import { usePlatformApi } from "../platform-api";
-import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionView } from "../proto";
+import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionPr, SessionPrSent, SessionView } from "../proto";
 
 /** How long a turn may go without its box saying anything (`QUIET_MS`). */
 export const QUIET_MS = 60_000;
@@ -168,6 +174,117 @@ function useNow(skew: number, on: boolean): number {
   return Date.now() + skew;
 }
 
+/** Its PR, as its asker drafts and sends it: the title and body (from
+ * the repo's template and the turns), the base, and whether it opens as a
+ * draft on GitHub. */
+export function PrEditor({ ses, onClose }: { ses: string; onClose: () => void }) {
+  const [pr, setPr] = useState<SessionPr | null>(null);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [base, setBase] = useState("");
+  const [draft, setDraft] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const take = (p: SessionPr) => {
+    setPr(p);
+    setTitle(p.title);
+    setBody(p.body);
+    setBase(p.base);
+    setDraft(p.draft);
+  };
+  useEffect(() => {
+    let live = true;
+    call<SessionPr>("GET", `/api/sessions/${enc(ses)}/pr`).then(
+      (p) => live && take(p),
+      (e: Error) => live && setSaid(e.message),
+    );
+    return () => void (live = false);
+  }, [ses]);
+  if (!pr) {
+    return (
+      <div class="session-pr" data-session-pr-editor="loading">
+        <p class={said ? "session-card-line bad" : "session-card-line dim"}>{said ?? "Reading its PR…"}</p>
+        {said && (
+          <div class="session-card-buttons">
+            <button type="button" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+  const edit = { title, body, base: base.trim() || undefined, draft };
+  const send = async () => {
+    setBusy(true);
+    setSaid(null);
+    try {
+      const back = location.pathname + location.search;
+      const v = await call<SessionPrSent>("POST", `/api/sessions/${enc(ses)}/pr/send`, { edit, via: "browser", back });
+      if (v.authorize) {
+        location.assign(v.authorize);
+        return;
+      }
+      take(v.pr);
+      if (v.pr.state === "sent") onClose();
+    } catch (e) {
+      setSaid((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = async () => {
+    setBusy(true);
+    setSaid(null);
+    try {
+      take(await call<SessionPr>("PUT", `/api/sessions/${enc(ses)}/pr`, edit));
+      setSaid("Kept: it waits here until you send it.");
+    } catch (e) {
+      setSaid((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      class="session-pr"
+      data-session-pr-editor={pr.state}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void send();
+      }}
+    >
+      <div class="session-pr-where">
+        {pr.repo}: <code>{pr.head}</code> into{" "}
+        <input class="session-pr-base" aria-label="Base branch" value={base} onInput={(e) => setBase(e.currentTarget.value)} data-session-pr-base />
+      </div>
+      <input class="session-pr-title" aria-label="Title" value={title} maxLength={256} required onInput={(e) => setTitle(e.currentTarget.value)} data-session-pr-title />
+      <textarea class="session-pr-body" aria-label="Description" rows={10} value={body} onInput={(e) => setBody(e.currentTarget.value)} data-session-pr-body />
+      <label class="session-pr-draft">
+        <input type="checkbox" checked={draft} onChange={(e) => setDraft(e.currentTarget.checked)} data-session-pr-draft /> Open it as a draft on GitHub
+      </label>
+      {pr.template && <p class="dim session-pr-note">Its description starts from the repo's {pr.template}.</p>}
+      {(said ?? pr.error) && (
+        <p class={said?.startsWith("Kept") ? "session-card-line dim" : "session-card-line bad"} role="alert" data-session-pr-said>
+          {said ?? pr.error}
+        </p>
+      )}
+      <div class="session-card-buttons">
+        <button type="submit" disabled={busy || !title.trim()} title="It goes out on GitHub as you" data-session-pr-send>
+          Send as you
+        </button>
+        <button type="button" disabled={busy} onClick={() => void save()} data-session-pr-save>
+          Keep
+        </button>
+        <span class="session-card-fill" />
+        <button type="button" onClick={onClose} data-session-pr-close>
+          Close
+        </button>
+      </div>
+    </form>
+  );
+}
+
 /** The card in a room's timeline or a thread, in place of its message. */
 export function SessionCardMessage({ m }: { room: ChatRoom; m: ChatMessage }) {
   const ses = sessionOf(m)!;
@@ -187,6 +304,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   const { view, error, skew, set } = useSession(ses);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
+  const [drafting, setDrafting] = useState(false);
   const c = view?.card;
   const going = !!c && (c.state === "queued" || c.state === "working" || c.state === "needs_input" || c.state === "unresponsive");
   const now = useNow(skew, going);
@@ -301,6 +419,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           {said}
         </p>
       )}
+      {drafting && !c.pr && <PrEditor ses={c.session} onClose={() => setDrafting(false)} />}
       <div class="session-card-buttons">
         {c.machine && block && (
           <button type="button" title="Its agent block, live on its box" data-session-open onClick={() => open(`pane=${c.machine}.${block}`, () => api.goToPane(c.machine!, block, null))}>
@@ -321,8 +440,17 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           <a class="button" href={c.pr} target="_blank" rel="noopener" data-session-pr>
             PR ↗
           </a>
+        ) : c.pushed && view.asked ? (
+          <button type="button" aria-pressed={drafting} title="Draft its PR, then send it as you" data-session-pr onClick={() => setDrafting((d) => !d)}>
+            PR…
+          </button>
         ) : (
-          <button type="button" disabled title="PR after the turn pushes" data-session-pr>
+          <button
+            type="button"
+            disabled
+            title={c.pushed ? `${c.asker_name || "Its asker"} sends its PR: it goes out as them` : "PR after a turn pushes its branch"}
+            data-session-pr
+          >
             PR
           </button>
         )}
