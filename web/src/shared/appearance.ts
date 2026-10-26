@@ -532,7 +532,6 @@ export function apply() {
   const p = palette();
   const root = document.documentElement;
   for (const [k, v] of Object.entries(legible(p))) root.style.setProperty(`--${k}`, v);
-  root.style.setProperty("--divider", p.ui.raised);
   root.style.colorScheme = p.light ? "light" : "dark";
   root.dataset.scheme = p.light ? "light" : "dark";
   root.dataset.finish = current.finish;

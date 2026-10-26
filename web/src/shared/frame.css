@@ -6,7 +6,8 @@
 .frame {
   /* The shell's `.app.ws` says the same in style.css. */
   --head-h: 44px;
-  --chrome-line: color-mix(in srgb, var(--muted) 55%, var(--surface));
+  /* style.css's --line-strong (UI audit #180). */
+  --chrome-line: var(--line-strong);
   --chrome-panel: color-mix(in srgb, var(--bg) 60%, var(--surface));
   --chrome-selected: color-mix(in srgb, var(--accent) 14%, var(--surface));
   --chrome-selected-line: color-mix(in srgb, var(--accent) 65%, var(--surface));

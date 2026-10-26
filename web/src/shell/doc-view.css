@@ -4,28 +4,15 @@
    column the Doc fills. */
 @import "../shared/style.css";
 
-/* `:root:root`, to win over style.css's `:root` whatever the order. */
+/* `:root:root`, to win over style.css's `:root` whatever the order. The
+   build writes Latte's colors in for the marker, from appearance.ts's
+   PALETTES (vite.config.ts's docPalette, UI audit #180). */
 @media (prefers-color-scheme: light) {
   :root:root {
-    --bg: #eff1f5;
-    --fg: #4c4f69;
-    --dim: #6c6f85;
-    --surface: #e6e9ef;
-    --letterbox: #eff1f5;
-    --raised: #ccd0da;
-    --raised-hover: #bcc0cc;
-    --accent: #8839ef;
-    --danger: #d20f39;
-    --divider: #ccd0da;
-    --ok: #40a02b;
-    --warn: #df8e1d;
-    --info: #1e66f5;
-    --peach: #fe640b;
-    --teal: #179299;
-    --pink: #ea76cb;
-    --muted: #9ca0b0;
-    --subtle: #5c5f77;
-    --on-color: #ffffff;
+    /* PALETTES: latte */
+    /* The page is the Doc's paper: no darker letterbox around it. */
+    --letterbox: var(--bg);
+    --shadow-k: 0.35;
     color-scheme: light;
   }
 }
@@ -45,6 +32,6 @@
 }
 
 .doc-notice h1 {
-  font-size: 1.2rem;
+  font-size: 16px;
   margin: 0 0 0.4rem;
 }

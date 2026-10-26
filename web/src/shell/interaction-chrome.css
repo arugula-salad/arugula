@@ -9,7 +9,7 @@
   padding: 0;
   gap: 0;
   border-radius: 8px 0 0 8px;
-  box-shadow: -12px 0 40px #0006;
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
   font-size: 13px;
 }
@@ -42,7 +42,7 @@
 .add-pane-preview-cell.new { border: 1px dashed var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg)); }
 .add-pane-dest { margin: 0; border: 0; padding: 0; line-height: 1.6; color: var(--subtle); }
 .add-pane-actions { flex: none; padding: 16px 22px; border-top: 1px solid var(--raised); background: var(--surface); }
-.picker.palette { width: min(760px, calc(100vw - 32px)); max-height: min(680px, 80dvh); border: 1px solid var(--raised-hover); border-radius: 10px; overflow: hidden; box-shadow: 0 24px 90px #0009; }
+.picker.palette { width: min(760px, calc(100vw - 32px)); max-height: min(680px, 80dvh); border: 1px solid var(--raised-hover); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-lg); }
 .palette-search { display: flex; align-items: center; padding: 6px 20px; gap: 12px; border-bottom: 1px solid var(--raised); color: var(--accent); }
 .palette-search .picker-filter { flex: 1; min-width: 0; padding: 16px 0; border: 0; margin: 0; background: transparent; font-size: 16px; box-shadow: none; }
 .palette-results-heading { display: flex; justify-content: space-between; gap: 12px; padding: 14px 20px 8px; color: var(--dim); font-size: 11px; }
@@ -60,7 +60,7 @@
 .palette-help kbd { display: inline-block; min-width: 14px; padding: 2px 4px; border: 1px solid var(--raised); border-radius: 4px; text-align: center; color: var(--subtle); font: inherit; }
 .ws-att { width: min(460px, 100vw); }
 .ws-att-head { padding: 20px; gap: 12px; }
-.ws-att-head h2 { font-size: 19px; font-weight: 600; }
+.ws-att-head h2 { font-size: 18px; font-weight: 600; }
 .ws-att-count { color: var(--warn); }
 .ws-att-list { padding: 10px 12px; border-bottom: 1px solid var(--raised); }
 .ws-att-item { padding: 12px; border: 1px solid transparent; border-radius: 6px; margin-bottom: 6px; }
