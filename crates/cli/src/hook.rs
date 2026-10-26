@@ -24,9 +24,9 @@
 //! On `SessionStart` (startup, resume, `/clear` and compaction alike),
 //! `arugula hook` adds context instead: where the daemon answers, it prints
 //! `flags::ISSUES_STEERING` as `additionalContext`, so Claude Code files a
-//! new issue in Arugula, not on GitHub, and where it has `docs` on,
-//! `flags::DOCS_STEERING` before it, so a report is a Doc, not an Artifact
-//! (#1486). It asks the daemon for at most [`FLAGS_WAIT`], because Claude
+//! new issue in Arugula, not on GitHub, and `flags::DOCS_STEERING` before
+//! it, so a report is a Doc, not an Artifact (#1486; everyone's since Docs
+//! left Labs, native #204, unless an older daemon still has them off). It asks the daemon for at most [`FLAGS_WAIT`], because Claude
 //! Code waits for SessionStart hooks before a headless session's first
 //! turn. A `PreToolUse` of Bash that runs `gh issue create` gets the issues
 //! sentence again as its context: it doesn't stop the command, which may
@@ -43,7 +43,7 @@ use serde_json::Value;
 
 use arugula_proto::{
     api::{Empty, InboxAnswer, PermitAnswer},
-    flags::{self, DOCS_STEERING, ISSUES_STEERING},
+    flags::{DOCS_STEERING, ISSUES_STEERING},
     op::ops::{FlagsList, PaneInbox, PanePermit},
 };
 
@@ -123,9 +123,9 @@ pub fn run(sock: Target) -> i32 {
 }
 
 /// What `SessionStart` prints, if the daemon answers within `wait`: Claude
-/// Code's `additionalContext`, the issues sentence, with the Doc one first
-/// where `docs` is on. Nothing when the daemon doesn't answer in time, or
-/// answers something else.
+/// Code's `additionalContext`, the issues sentence, with the Doc one first.
+/// Nothing when the daemon doesn't answer in time, or answers something
+/// else.
 fn session_start(sock: &Target, wait: Duration) -> Option<Value> {
     let context = match docs_on(sock, wait)? {
         true => format!("{DOCS_STEERING} {ISSUES_STEERING}"),
@@ -136,9 +136,10 @@ fn session_start(sock: &Target, wait: Duration) -> Option<Value> {
     }))
 }
 
-/// Whether the daemon has `docs` on, asked on a thread of its own so that a
+/// Whether the daemon has Docs, asked on a thread of its own so that a
 /// daemon that accepts and never answers still costs only `wait` (the thread
-/// ends with the process). `None`: it didn't answer.
+/// ends with the process). `None`: it didn't answer. Every daemon since
+/// native #204 has them; an older one has them where its `docs` flag is on.
 fn docs_on(sock: &Target, wait: Duration) -> Option<bool> {
     let (tx, rx) = std::sync::mpsc::channel();
     let sock = sock.clone();
@@ -146,7 +147,7 @@ fn docs_on(sock: &Target, wait: Duration) -> Option<bool> {
         let _ = tx.send(call::<FlagsList>(&sock, &(), &Empty {}));
     });
     match rx.recv_timeout(wait) {
-        Ok(Ok(all)) => Some(all.iter().any(|f| f.name == flags::DOCS && f.on)),
+        Ok(Ok(all)) => Some(!all.iter().any(|f| f.name == "docs" && !f.on)),
         _ => None,
     }
 }

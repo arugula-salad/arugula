@@ -2,7 +2,7 @@
 //! can plan its work around it without its person reading the docs first.
 //! The blocks and tools are what `tools/list` shows it (the Labs flags
 //! leave out the same ones); the forges are asked of the user's own CLIs
-//! (`gh`, and with the `forges` flag `tea` and `glab`) as a block would;
+//! (`gh`, and with the `additional-forges` flag `tea` and `glab`) as a block would;
 //! hooks are live in a pane when a Claude Code hook has reached the daemon
 //! from it ([`App::hooks_heard`](crate::server::App)), which, with the
 //! hooks installed, includes the `PreToolUse` of this very call.
@@ -90,7 +90,7 @@ impl Call<'_> {
                 Err(e) => e,
             },
         }];
-        if on.has(arugula_proto::flags::FORGES) {
+        if on.has(arugula_proto::flags::ADDITIONAL_FORGES) {
             out.extend(crate::labs::forge_logins(&runner, app.control.state_dir()).await);
         }
         out

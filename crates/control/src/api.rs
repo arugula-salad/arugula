@@ -996,19 +996,7 @@ pub async fn daemon_leave(State(app): State<Arc<App>>, d: DaemonAuth) -> R {
 
 // ---------------------------------------------------------------- directory
 
-/// Whether a machine said it brings its old threads into control's chat
-/// (M124): one that didn't is from before, and keeps them to itself.
-fn takes_chat_import(app: &App, daemon: &str) -> bool {
-    app.db
-        .daemon_features(daemon)
-        .is_ok_and(|f| crate::teams::has_feature(&f, arugula_control_wire::chat::CHAT_IMPORT_FEATURE))
-}
-
 pub async fn directory(State(app): State<Arc<App>>, s: crate::auth::Reacher) -> R {
-    // M124: with chat on, the owner's page says which of their machines are
-    // too old to bring their threads into it. The hub's own flags say
-    // (M140), so the directory never waits on the platform.
-    let chat = !s.daemon && crate::labs_flags::chat_on(&app, &s.account)?;
     let mut daemons: Vec<Value> = app
         .db
         .daemons(&s.account)?
@@ -1017,11 +1005,7 @@ pub async fn directory(State(app): State<Arc<App>>, s: crate::auth::Reacher) -> 
             let online = app.relay.online(&d.id);
             // One of my machines may be a team's (I joined it for them, M30).
             let team = app.db.daemon_team(&d.id).ok().flatten();
-            let mut v = json!({ "id": d.id, "name": d.name, "urls": d.urls, "last_seen": d.last_seen, "online": online, "team": team });
-            if chat && !takes_chat_import(&app, &d.id) {
-                v["chat_update"] = json!(true);
-            }
-            v
+            json!({ "id": d.id, "name": d.name, "urls": d.urls, "last_seen": d.last_seen, "online": online, "team": team })
         })
         .collect();
     // Teams' machines and those shared with me (M19), with their owner

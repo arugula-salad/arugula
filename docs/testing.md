@@ -1348,13 +1348,12 @@ Only what no test can do:
   and the permission prompts are Claude Code's own, so the proof that an
   agent can write a report without a prompt is a run. Before a PR that
   changes what an agent sees of Docs merges:
-  1. Start a daemon of the branch with `docs` on, with a state directory and
-     a port of its own, so it leaves the daily one alone:
+  1. Start a daemon of the branch, with a state directory and a port of
+     its own, so it leaves the daily one alone:
 
      ```sh
      just web && cargo build -p arugulad -p arugula
      S=~/.local/state/arugula-doc-hand
-     target/debug/arugulad flags docs on --state-dir $S
      target/debug/arugulad --listen 127.0.0.1:7690 --state-dir $S
      ```
 

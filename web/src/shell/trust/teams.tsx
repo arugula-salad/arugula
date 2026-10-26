@@ -1,7 +1,8 @@
 // Teams: making one, and for each its members and roles, its machines
 // (an owner takes a member's out, #332), invite links (#134, #762), locking
-// it, and the Labs flags control sets (#347). Roster admin stays in the
-// shell: a roster change is signed with this device's key.
+// it, whether it has chat (native #203), and the Labs flags control sets
+// (#347). Roster admin stays in the shell: a roster change is signed with
+// this device's key.
 
 import { useEffect, useState } from "preact/hooks";
 import { FLAGS } from "../../shared/proto.gen";
@@ -17,6 +18,29 @@ import { TeamJoin } from "./machines";
 /** The flags control may set: guest ssh and the agent catalog are each
  * machine's alone (`local_only`), set in its own Developer settings. */
 const PUSHED = FLAGS.filter((f) => !f.local_only);
+
+/** Chat's on/off for a team, as control keeps it (the platform's
+ * `chat::FLAG`). Not a Labs flag (native #203): every member sees it, and
+ * its owners turn it on and off. Off is unset: a team that never said is
+ * off too. */
+const CHAT = "chat";
+
+function TeamChat({ team, on, edit, set }: { team: Team; on: boolean; edit: boolean; set: (on: boolean) => void }) {
+  return (
+    <>
+      <h4 class="control-subgroup" data-team-chat-head>
+        Chat <span class="dim">· {on ? "on" : "off"}</span>
+      </h4>
+      <label class="control-check" data-team-chat={team.team} title={edit ? undefined : "Its owners turn it on and off"}>
+        <input type="checkbox" checked={on} disabled={!edit} aria-label={`Chat for ${team.roster.name}`} onChange={(e) => set((e.target as HTMLInputElement).checked)} />
+        <span>
+          Channels, direct messages, issues and the threads on its machines' panes, for its members.
+          {edit ? null : <span class="dim"> Its owners turn it on and off.</span>}
+        </span>
+      </label>
+    </>
+  );
+}
 
 /** Labs flags set on control (#347), for an account's machines or a team's:
  * each unset (a machine follows its default), on or off. A machine's own
@@ -68,24 +92,27 @@ export function Teams({ s, close }: { s: ControlSession; close: () => void }) {
   const [name, setName] = useState("");
   const [err, setErr] = useState("");
   const act = (f: () => Promise<unknown>) => f().catch((e: Error) => setErr(e.message));
-  // Labs flags (#347): the account's and each team's; null until loaded,
-  // left out by a control from before them, and for someone with no
-  // machine that has Developer settings (strangers never see Labs).
-  const [labs, setLabs] = useState<LabsFlags | null>(null);
+  // What control keeps for the account and each team (#347): null until
+  // loaded, and left out by a control from before them. Chat's on/off is
+  // one of them for everyone in a team (native #203); the Labs flags show
+  // only for someone with a machine that has Developer settings
+  // (strangers never see Labs).
+  const [kept, setKept] = useState<LabsFlags | null>(null);
   useEffect(() => {
     let live = true;
     s.labsFlags().then(
-      (l) => live && setLabs(l.dev ? l : null),
-      () => live && setLabs(null),
+      (l) => live && setKept(l),
+      () => live && setKept(null),
     );
     return () => {
       live = false;
     };
   }, [s]);
+  const labs = kept?.dev ? kept : null;
   const setFlag = (team: string | undefined) => (flag: string, on: boolean | null) =>
     act(async () => {
       const { flags } = await s.setLabsFlag(flag, on, team);
-      setLabs((l) => l && (team ? { ...l, teams: { ...l.teams, [team]: { ...l.teams[team], flags } } } : { ...l, account: flags }));
+      setKept((l) => l && (team ? { ...l, teams: { ...l.teams, [team]: { ...l.teams[team], flags } } } : { ...l, account: flags }));
     });
   return (
     <Modal close={close}>
@@ -107,7 +134,7 @@ export function Teams({ s, close }: { s: ControlSession; close: () => void }) {
         </a>
       </p>
       {s.teams.map((t) => (
-        <TeamSection key={t.team} s={s} t={t} act={act} labs={labs?.teams[t.team]} setFlag={setFlag(t.team)} />
+        <TeamSection key={t.team} s={s} t={t} act={act} kept={kept?.teams[t.team]} labs={labs?.teams[t.team]} setFlag={setFlag(t.team)} />
       ))}
       {labs ? (
         <section class="team" data-account-labs>
@@ -145,12 +172,16 @@ function TeamSection({
   s,
   t,
   act,
+  kept,
   labs,
   setFlag,
 }: {
   s: ControlSession;
   t: Team;
   act: (f: () => Promise<unknown>) => void;
+  /** What control keeps for the team, whoever looks (chat's on/off). */
+  kept?: { flags: Record<string, boolean>; owner: boolean };
+  /** The same, for someone shown Labs. */
   labs?: { flags: Record<string, boolean>; owner: boolean };
   setFlag: (name: string, on: boolean | null) => void;
 }) {
@@ -297,6 +328,7 @@ function TeamSection({
       ) : (
         <p class="dim">None yet.</p>
       )}
+      {kept ? <TeamChat team={t} on={kept.flags[CHAT] === true} edit={owner} set={(on) => setFlag(CHAT, on ? true : null)} /> : null}
       {labs ? (
         <LabsFlagList
           scope={t.roster.name}

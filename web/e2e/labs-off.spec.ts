@@ -1,6 +1,7 @@
 // The default, which is what a stranger gets: a machine without the `labs`
-// flag shows no chat or threads, no studio, VM or sandbox, no
-// "Invite over ssh", and one swarm theme. The rest of the suite
+// flag shows no chat or threads, no studio, VM or sandbox, and no
+// "Invite over ssh" (Guest SSH access is a sharing setting, off by default,
+// native #205). The rest of the suite
 // runs with labs on (e2e/labs.ts), so this is the only proof of the default,
 // and it is in the set that always runs (`E2E_SET=rest`).
 //
@@ -88,7 +89,10 @@ async function noLabsItems(page: Page, pane: number) {
 }
 
 test("the host says labs is off, and what follows it", async () => {
-  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, studio: false, block_channels: false, flags: [] });
+  expect(await features()).toEqual({
+    ...{ labs: false, dev: false, blocks: false, vms: false, studio: false, block_channels: false },
+    ...{ guest_ssh: false, flags: [] },
+  });
 });
 
 test("links to Forgejo and GitLab stay plain links; GitHub's still open as blocks", async ({ page }) => {
@@ -118,12 +122,11 @@ test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async 
   // The bar: Panes and Swarm, no Chat.
   await expect(page.locator("[data-open-swarm]")).toBeVisible();
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
-  // Nor a Docs page (#1494): not in the rail, and not at its address.
-  await expect(page.locator("[data-open-docs]")).toHaveCount(0);
+  // The Docs page (#1494) isn't Labs' (native #204): in the rail, and at
+  // its address.
+  await expect(page.locator(".ws-rail [data-open-docs]")).toBeVisible();
   await page.goto("/#docs");
-  await expect.poll(() => page.evaluate(() => window.__arugula?.client.features !== null)).toBe(true);
-  await page.waitForTimeout(300);
-  await expect(page.locator("[data-docs-page]")).toHaveCount(0);
+  await expect(page.locator("[data-docs-page]")).toBeVisible();
   await open(page);
   await ready(page, pane);
   await noLabsItems(page, pane);
@@ -136,7 +139,7 @@ test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async 
   await palette.getByRole("combobox", { name: "Command" }).fill("chat");
   await expect(palette.getByRole("option", { name: /chat/i }).filter({ hasNotText: "Start a chat" })).toHaveCount(0);
   await palette.getByRole("combobox", { name: "Command" }).fill("docs");
-  await expect(palette.getByRole("option", { name: /Go to Docs|Open Doc/ })).toHaveCount(0);
+  await expect(palette.getByRole("option", { name: /Go to Docs/ })).toBeVisible();
   await palette.getByRole("combobox", { name: "Command" }).fill("split");
   await expect(palette.getByRole("option").first()).toBeVisible();
   await page.keyboard.press("Escape");
@@ -157,27 +160,28 @@ test("without labs the page never requests the Labs chunk", async ({ page }) => 
   await noLabsItems(page, pane);
   await page.goto("/#swarm");
   await expect(page.locator(".swarm")).toBeVisible();
-  // And the Docs page's address (#1494): no page, and no chunk.
+  // And the Docs page (#1494): everyone's since native #204, a chunk of
+  // its own, not Labs'.
   await page.goto("/#docs");
-  await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
-  await page.waitForTimeout(300);
-  await expect(page.locator("[data-docs-page]")).toHaveCount(0);
+  await expect(page.locator("[data-docs-page]")).toBeVisible();
   // The page's own scripts did load, so the check looks at something.
   expect(asked.some((u) => /\/assets\/main-[\w-]+\.js/.test(u))).toBe(true);
   expect(asked.filter((u) => LABS_CHUNK.test(u))).toEqual([]);
 });
 
-test("the swarm has one theme and no picker, whatever this browser saved", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("arugula.swarm.theme", "city"));
+test("without labs the swarm still offers its four views, and keeps what this browser saved", async ({ page }) => {
+  // The views left Labs (the swarm-themes flag is retired): Theme is a
+  // setting of the swarm's for everyone, kept in the browser.
+  await page.addInitScript(() => localStorage.setItem("arugula.swarm.theme", "hive"));
   await open(page);
   await page.goto("/#swarm");
   await expect(page.locator(".swarm")).toBeVisible();
   await expect(page.locator(".swarm-bar")).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
+  await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
+  await expect(page.locator(".swarm")).toHaveAttribute("data-theme", "hive");
+  await page.locator('[data-theme-pick="blocks"]').click();
   await expect(page.locator(".swarm")).toHaveAttribute("data-theme", "blocks");
-  await expect(page.locator("[data-theme-pick]")).toHaveCount(0);
-  await expect(page.getByText("Theme", { exact: true })).toHaveCount(0);
-  await expect(page.locator("canvas.swarm-city")).toHaveCount(0);
   // Its tiles show no unread: chat is control's (M125), and there's none here.
   // (The fleet reads its panes after the swarm draws: wait for them.)
   await expect.poll(() => page.evaluate(() => window.__arugula.fleet.panes.length)).toBeGreaterThan(0);
@@ -240,36 +244,27 @@ test("a daemon from before labs, which says nothing of it, gets none of it eithe
   await noLabsItems(page, pane);
 });
 
-test("a Doc saved while the flag was on stays on the machine and shows as in Labs", async ({ page }) => {
-  expect(existsSync(join(state, "flags.json"))).toBe(false);
-  // Off: a new Doc is refused, saying how to turn it on (#347).
+test("a Doc needs no flag: made and shown with Labs off, and sharing still asks for control", async ({ page }) => {
+  // Docs left Labs (native #204): an old flags.json that turned `docs` off
+  // is ignored, as any retired name is.
+  writeFileSync(join(state, "flags.json"), JSON.stringify({ flags: { docs: false } }));
   const pane = ((await (await api("/api/panes")).json()) as { id: number }[])[0].id;
-  const refused = await api("/api/blocks", { type: "doc", config: { title: "Saved" }, split: pane, local: true });
-  expect(refused.status).toBe(400);
-  expect(((await refused.json()) as { error: string }).error).toContain("`arugulad flags docs on`");
-  // A Doc made while it was on...
-  writeFileSync(join(state, "flags.json"), JSON.stringify({ flags: { docs: true } }));
   const made = (await (await api("/api/blocks", { type: "doc", config: { title: "Saved" }, split: pane, local: true })).json()) as { block: number };
-  expect((await api(`/api/blocks/${made.block}/call/doc_outline`, { title: "Saved", sections: [{ heading: "One", intent: "the first" }] })).ok).toBe(true);
-  // ...with the flag off again, is still there, and the page says why it doesn't show it.
-  rmSync(join(state, "flags.json"));
   try {
+    expect((await api(`/api/blocks/${made.block}/call/doc_outline`, { title: "Saved", sections: [{ heading: "One", intent: "the first" }] })).ok).toBe(true);
     await open(page);
     await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
     await ready(page, pane);
-    await expect(paneEl(page, made.block)).toContainText("This block is in Labs");
-    await expect(page.locator(`[data-doc-block="${made.block}"]`)).toHaveCount(0);
-    expect((await api(`/api/blocks/${made.block}`)).ok).toBe(true);
-    // Sharing it with a link is Docs' too (#1066): refused, and not in its menu.
+    await expect(page.locator(`[data-doc-block="${made.block}"]`)).toBeVisible();
+    await expect(paneEl(page, made.block)).not.toContainText("This block is in Labs");
+    // Sharing is still an explicit act of the owner's, and it needs control
+    // (#1066): graduating published nothing.
     const shared = await api(`/api/blocks/${made.block}/call/doc_share`, {});
     expect(shared.status).toBe(400);
-    expect(await shared.text()).toContain("Labs feature that's off");
-    await paneEl(page, made.block).click({ button: "right", position: { x: 60, y: 60 } });
-    await expect(page.getByRole("menu")).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: /Share link|Copy link|Update shared copy|Unshare/ })).toHaveCount(0);
-    await page.keyboard.press("Escape");
+    expect(await shared.text()).toContain("hasn't joined control");
   } finally {
     await api(`/api/panes/${made.block}/close`, {});
+    rmSync(join(state, "flags.json"), { force: true });
   }
 });
 
@@ -280,8 +275,10 @@ test("setting the flag on the running daemon brings it all back, with no restart
   labs(state);
   expect(await features()).toEqual({
     ...{ labs: true, dev: true, blocks: false, vms: true, studio: true, block_channels: false },
-    // `labs`, the one switch from before, is every flag (#665).
-    flags: ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents", "docs", "boards"],
+    // `labs`, the one switch from before, is every flag (#665), and keeps guest ssh on as
+    // Guest SSH access, a sharing setting (native #205).
+    guest_ssh: true,
+    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation", "boards"],
   });
 
   await open(page);

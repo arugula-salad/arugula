@@ -410,6 +410,12 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE push_subs ADD COLUMN listen TEXT; ALTER TABLE push_subs ADD COLUMN listened INTEGER;",
         )?;
     }
+    // The renamed Labs flags (aru-117): a row under an old name moves to
+    // the new one, unless its owner set that too, whose word stays.
+    for (old, new) in arugula_control_wire::FLAG_ALIASES {
+        conn.execute("UPDATE OR IGNORE labs_flags SET name = ?2 WHERE name = ?1", params![old, new])?;
+        conn.execute("DELETE FROM labs_flags WHERE name = ?1", params![old])?;
+    }
     Ok(())
 }
 
@@ -2788,6 +2794,31 @@ mod tests {
             ["s1", "s2", "s3", "s4", "s5"].map(via),
             [Some("app".into()), Some("app".into()), None, Some("app".into()), None]
         );
+    }
+
+    /// aru-117: Labs flags kept under a renamed flag's old name move to the
+    /// new one at startup; where an owner has both, the new name's word
+    /// stays.
+    #[test]
+    fn renamed_labs_flags_move_to_their_new_names() {
+        let db = Db::memory();
+        for (owner, name, on) in [
+            ("account:a", "vms", true),
+            ("account:a", "chat", true),
+            ("team:t", "forges", true),
+            ("team:t", "additional-forges", false),
+        ] {
+            db.conn()
+                .execute(
+                    "INSERT INTO labs_flags (owner, name, turned_on) VALUES (?1, ?2, ?3)",
+                    params![owner, name, on],
+                )
+                .unwrap();
+        }
+        migrate(&db.conn()).unwrap();
+        let flags = |o: &str| db.labs_flags(o).unwrap().into_iter().collect::<Vec<_>>();
+        assert_eq!(flags("account:a"), [("chat".into(), true), ("sandbox-providers".into(), true)]);
+        assert_eq!(flags("team:t"), [("additional-forges".into(), false)]);
     }
 
     /// #102: a GitHub account goes by its login, a passkey one by the name

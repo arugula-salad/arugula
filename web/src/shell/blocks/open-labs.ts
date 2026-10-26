@@ -39,13 +39,13 @@ export function useWorkspaceDir(client: Client, pane: PaneId, dir: string | null
   const [yes, setYes] = useState(false);
   useEffect(() => {
     setYes(false);
-    if (!dir || client.state?.roles || !client.flag("workspaces")) return;
+    if (!dir || client.state?.roles || !client.flag("chant-workspaces")) return;
     let live = true;
     void isWorkspace(client, pane, dir).then((v) => live && setYes(v));
     return () => {
       live = false;
     };
-  }, [client, pane, dir, client.flag("workspaces")]);
+  }, [client, pane, dir, client.flag("chant-workspaces")]);
   return yes;
 }
 

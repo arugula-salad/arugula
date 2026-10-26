@@ -339,22 +339,22 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     let f = features();
     assert_eq!(f["labs"], false, "{f}");
     // #665: each feature has a flag of its own, and the owner's route turns
-    // chat on alone.
+    // workspaces on alone.
     assert_eq!(f["dev"], true, "the flags file is there: {f}");
-    let listed = d.put("/api/flags/chat", serde_json::json!({ "on": true }));
+    let listed = d.put("/api/flags/workspaces", serde_json::json!({ "on": true }));
     assert_eq!(
         (listed["name"].clone(), listed["title"].clone(), listed["on"].clone(), listed["built"].clone()),
-        ("chat".into(), "Chat".into(), true.into(), true.into())
+        ("chant-workspaces".into(), "Chant workspaces".into(), true.into(), true.into())
     );
     let f = features();
     assert_eq!(f["labs"], true, "{f}");
-    assert_eq!(f["flags"], serde_json::json!(["chat"]));
+    assert_eq!(f["flags"], serde_json::json!(["chant-workspaces"]));
     let all = d.get("/api/flags");
     assert_eq!(all.as_array().map(Vec::len), Some(arugula_proto::flags::FLAGS.len()), "{all}");
     for row in all.as_array().unwrap() {
         assert_eq!(
             (row["on"].clone(), row["default"].clone()),
-            ((row["name"] == "chat").into(), false.into()),
+            ((row["name"] == "chant-workspaces").into(), false.into()),
             "{row}"
         );
         assert!(row["about"].as_str().is_some_and(|a| !a.is_empty()), "{all}");
@@ -362,7 +362,10 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     // Managoat's flag is gone: setting it is refused, saying why.
     let (status, text) = d.raw("PUT", "/api/flags/fountain", Some(serde_json::json!({ "on": true })));
     assert!((400..500).contains(&status) && text.contains("isn't a flag any more"), "{status} {text}");
-    d.put("/api/flags/chat", serde_json::json!({ "on": false }));
+    // So is chat's (native #203): it's control's, by team.
+    let (status, text) = d.raw("PUT", "/api/flags/chat", Some(serde_json::json!({ "on": true })));
+    assert!((400..500).contains(&status) && text.contains("isn't a flag any more"), "{status} {text}");
+    d.put("/api/flags/workspaces", serde_json::json!({ "on": false }));
     let f = features();
     // Off again leaves Developer settings offered: the owner asked.
     assert_eq!(
@@ -394,7 +397,7 @@ fn the_flags_are_the_owners() {
         "/api/acl",
         serde_json::json!({ "session": session, "principal": "tailnet:friend@example.com", "role": "editor" }),
     );
-    for (method, path, body) in [("GET", "/api/flags", None), ("PUT", "/api/flags/chat", Some(r#"{"on":true}"#))] {
+    for (method, path, body) in [("GET", "/api/flags", None), ("PUT", "/api/flags/vms", Some(r#"{"on":true}"#))] {
         let headers = [("tailscale-user-login", "friend@example.com"), ("Content-Type", "application/json")];
         let (status, _, text) = d.tcp(method, path, &headers, body);
         assert_eq!(status, 403, "{method} {path}: {text}");
@@ -541,22 +544,24 @@ fn both_helps_follow_the_same_labs_file() {
 
     // Off: the commands, options and flags #342 hid stay hidden.
     let (cli_off, d_off) = (help(cli_bin(), &[], Some(&state)), help(daemon(), &[], Some(&state)));
-    for c in ["studio", "app", "workspace", "guests", "machines", "sandboxes"] {
+    for c in ["studio", "app", "workspace", "machines", "sandboxes"] {
         assert!(!listed(&cli_off, c), "{c} in `arugula --help` without labs");
     }
+    // Guest ssh left Labs for a sharing setting (native #205): listed.
+    assert!(listed(&cli_off, "guests") && d_off.contains("--guest-ssh-host"), "{cli_off}");
     assert!(listed(&cli_off, "run") && listed(&cli_off, "pr"), "{cli_off}");
     // Daemon-side Managoat was removed: no command, and its daemon option
     // only parses.
     assert!(!listed(&cli_off, "managoat") && !listed(&cli_off, "fountain"), "{cli_off}");
     assert!(!d_off.contains("--managoat-account-stream"), "{d_off}");
-    for f in ["--studio-file", "--guest-ssh", "--wisp-url"] {
+    for f in ["--studio-file", "--wisp-url"] {
         assert!(!d_off.contains(f), "{f} in `arugulad --help` without labs");
     }
 
     // On, through the environment, and for arugulad through its flag too.
     arugula_testkit::labs(&state, true);
     let cli_on = help(cli_bin(), &[], Some(&state));
-    for c in ["studio", "app", "workspace", "guests", "machines", "sandboxes"] {
+    for c in ["studio", "app", "workspace", "machines", "sandboxes"] {
         assert!(listed(&cli_on, c), "{c} isn't in `arugula --help` with labs");
     }
     assert!(!listed(&cli_on, "managoat"), "{cli_on}");
@@ -566,7 +571,7 @@ fn both_helps_follow_the_same_labs_file() {
     let by_env = help(daemon(), &[], Some(&state));
     let by_flag = help(daemon(), &["--state-dir", state.to_str().unwrap()], None);
     let flag_without = help(daemon(), &["--state-dir", elsewhere.to_str().unwrap()], Some(&state));
-    for f in ["--studio-file", "--guest-ssh", "--wisp-url"] {
+    for f in ["--studio-file", "--wisp-url"] {
         assert!(by_env.contains(f), "{f} isn't in `arugulad --help` with labs (environment)");
         assert!(by_flag.contains(f), "{f} isn't in `arugulad --help` with labs (--state-dir)");
         assert!(!flag_without.contains(f), "{f}: the flag's directory has no labs, whatever the environment's does");

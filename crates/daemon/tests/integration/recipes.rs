@@ -74,7 +74,7 @@ fn setup(dir: &Path) -> Setup {
 fn daemon(s: &Setup, agents: bool) -> Daemon {
     let env: Vec<(&str, &str)> = s.env.iter().map(|(k, v)| (*k, v.as_str())).collect();
     Daemon::child_in(&[], &env, |state| {
-        arugula_proto::flags::set(state, arugula_proto::flags::AGENTS, agents).unwrap();
+        arugula_proto::flags::set(state, arugula_proto::flags::AGENT_DELEGATION, agents).unwrap();
     })
 }
 
@@ -137,13 +137,13 @@ fn recipes_and_cards_need_the_agents_flag() {
     let d = daemon(&s, false);
     let config = json!({ "agent": "claude", "recipe": "fixer", "cwd": s.proj, "prompt": "hello" });
     let id = d.open_with(json!({ "type": "agent", "config": config }));
-    d.wait_for("it says why", || d.state(id)["error"].as_str().is_some_and(|e| e.contains("agents on")));
+    d.wait_for("it says why", || d.state(id)["error"].as_str().is_some_and(|e| e.contains("agent-delegation on")));
     assert!(d.state(id)["session_id"].is_null(), "no session opened");
     for path in ["/api/a2a/agents", "/api/a2a/offers", "/api/a2a/agents/fixer/card"] {
         assert_eq!(d.raw("GET", path, None).0, 404, "{path}");
     }
     // Turned on, read on the next request.
-    arugula_proto::flags::set(&d.state, arugula_proto::flags::AGENTS, true).unwrap();
+    arugula_proto::flags::set(&d.state, arugula_proto::flags::AGENT_DELEGATION, true).unwrap();
     assert_eq!(d.get("/api/a2a/agents")["agents"], json!([]));
 }
 

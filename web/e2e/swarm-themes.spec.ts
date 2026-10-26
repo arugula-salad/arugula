@@ -1,8 +1,7 @@
-// A machine with labs (the fake fleet's daemons have the file) offers all
-// four themes, and a theme saved in this browser is kept on a cold load,
-// before the machine's features have arrived. Without labs the swarm offers
-// one theme, the field of blocks: `labs-off.spec.ts`. Against the fake fleet
-// (e2e/fake-fleet.ts).
+// Every swarm offers all four themes (they left Labs: the swarm-themes
+// flag is retired), and a theme saved in this browser is kept on a cold
+// load. Without labs it's the same: `labs-off.spec.ts`. Against the fake
+// fleet (e2e/fake-fleet.ts).
 
 import { expect, test, type Page } from "@playwright/test";
 import { FakeFleet } from "./fake-fleet";

@@ -201,10 +201,10 @@ fn an_older_controls_trust_answer_parses() {
 fn the_trust_answer_carries_labs_flags() {
     let a = round::<TrustAnswer>(json!({
         "trust": null, "certs": [], "revocations": [], "moved": null,
-        "flags": { "account": { "vms": false }, "team": { "chat": true } },
+        "flags": { "account": { "sandbox-providers": false }, "team": { "chat": true } },
     }));
     let f = a.flags.unwrap();
-    assert_eq!((f.account.get("vms"), f.team.get("chat")), (Some(&false), Some(&true)));
+    assert_eq!((f.account.get("sandbox-providers"), f.team.get("chat")), (Some(&false), Some(&true)));
     round::<TrustAnswer>(json!({ "trust": null, "certs": [], "revocations": [], "moved": null }));
     // An empty side may be left out.
     let f: Flags = parse(&json!({ "team": { "chat": true } }));

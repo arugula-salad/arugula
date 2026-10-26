@@ -304,14 +304,6 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
               <p class="dim control-explain" data-place={team ?? ""}>
                 <b>{machinePlace(team)}</b>: {placeMeans(team)}
               </p>
-              {/* M124: chat lives in control now; an older machine keeps
-                  its pane and session threads to itself until it's updated. */}
-              {d?.chat_update ? (
-                <p class="dim control-explain" data-chat-update>
-                  <b>Update to bring its threads into chat.</b> It's from before chat moved here, so its pane and session threads and
-                  conversations stay on it until it runs the latest Arugula.
-                </p>
-              ) : null}
               <MoveMachine s={s} c={c} team={d?.team ?? null} online={!!d?.online} />
             </li>
           );

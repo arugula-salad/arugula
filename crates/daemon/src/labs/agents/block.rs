@@ -288,10 +288,11 @@ impl AgentsBlock {
                 return self.ctx.changed();
             }
         };
-        if !crate::labs::on(&self.ctx.state_dir, arugula_proto::flags::AGENTS) {
+        if !crate::labs::on(&self.ctx.state_dir, arugula_proto::flags::AGENT_DELEGATION) {
             let mut st = self.state.lock().unwrap();
             st.loading = false;
-            st.error = Some("The agent catalog is in Labs: turn on Agent catalog in Developer settings".into());
+            st.error =
+                Some("The agent catalog is in Labs: turn on Local agent delegation in Developer settings".into());
             drop(st);
             return self.ctx.changed();
         }

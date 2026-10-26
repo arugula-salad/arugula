@@ -25,6 +25,7 @@ push.key GET /api/push/key
 rules.list GET /api/rules
 sandboxes.list GET /api/sandboxes
 setup.get GET /api/setup
+sharing.get GET /api/sharing
 shell_env.get GET /api/hosts/self/shell-env
 studio.apps GET /api/studio/apps
 studio.get GET /api/studio

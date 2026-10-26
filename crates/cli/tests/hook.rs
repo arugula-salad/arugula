@@ -21,19 +21,23 @@ use serde_json::{Value, json};
 /// How the fake daemon treats a request.
 #[derive(Clone, Copy)]
 enum Daemon {
-    /// Answers `flags.list` with `docs` on or off.
-    Docs(bool),
+    /// Answers `flags.list`: with no `docs` row (a daemon since Docs left
+    /// Labs, native #204), or an older one's with it on or off.
+    Docs(Option<bool>),
     /// Accepts the connection and never answers.
     Silent,
     /// Nothing listens on the socket.
     Gone,
 }
 
-fn flags(docs: bool) -> Value {
-    json!([
-        { "name": "chat", "title": "Chat", "about": "", "on": false, "default": false },
-        { "name": "docs", "title": "Docs", "about": "", "on": docs, "default": false },
-    ])
+fn flags(docs: Option<bool>) -> Value {
+    let mut all = vec![
+        json!({ "name": "sandbox-providers", "title": "External sandbox providers", "about": "", "on": false, "default": false }),
+    ];
+    if let Some(on) = docs {
+        all.push(json!({ "name": "docs", "title": "Docs", "about": "", "on": on, "default": false }));
+    }
+    Value::Array(all)
 }
 
 /// What `arugula hook` printed and how long it took, for `event` (as Claude
@@ -96,9 +100,9 @@ fn start(source: &str) -> Value {
 }
 
 #[test]
-fn session_start_with_docs_on_adds_the_context_for_every_source() {
-    for source in ["startup", "resume", "clear", "compact"] {
-        let (out, _, code) = hook(&format!("on-{source}"), Daemon::Docs(true), Some("3"), start(source));
+fn session_start_adds_the_context_for_every_source() {
+    for (source, docs) in [("startup", None), ("resume", None), ("clear", Some(true)), ("compact", None)] {
+        let (out, _, code) = hook(&format!("on-{source}"), Daemon::Docs(docs), Some("3"), start(source));
         assert_eq!(code, 0);
         let said: Value = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{source}: {e}: {out:?}"));
         assert_eq!(
@@ -112,9 +116,10 @@ fn session_start_with_docs_on_adds_the_context_for_every_source() {
     }
 }
 
+/// An older daemon, from before Docs left Labs, with its `docs` flag off.
 #[test]
-fn session_start_with_docs_off_adds_only_the_issues_context() {
-    let (out, _, code) = hook("off", Daemon::Docs(false), Some("3"), start("startup"));
+fn session_start_with_an_older_daemons_docs_off_adds_only_the_issues_context() {
+    let (out, _, code) = hook("off", Daemon::Docs(Some(false)), Some("3"), start("startup"));
     assert_eq!(code, 0);
     let said: Value = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{e}: {out:?}"));
     assert_eq!(
@@ -125,7 +130,7 @@ fn session_start_with_docs_off_adds_only_the_issues_context() {
 
 #[test]
 fn session_start_prints_nothing_outside_a_pane() {
-    let (out, _, code) = hook("nopane", Daemon::Docs(true), None, start("startup"));
+    let (out, _, code) = hook("nopane", Daemon::Docs(None), None, start("startup"));
     assert_eq!((out.as_str(), code), ("", 0));
 }
 

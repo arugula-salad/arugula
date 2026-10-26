@@ -314,17 +314,16 @@ answer), follow-ups (arugula inbox) and attention on cards; without them your qu
 `arugula hooks install` adds them: ask your person first (capabilities says whether yours are live). \
 Run each `arugula ...` command on its own, not in a pipeline or an `&&` chain, so the allow rules match it.";
 
-/// The server's instructions: without the `docs` flag, they leave out the
-/// Doc sentence (`flags::DOCS_STEERING`, which `arugula hook` also gives on
-/// `SessionStart`, #1486). The issues sentence (`flags::ISSUES_STEERING`)
-/// is always there. Chat isn't an agent's (#1095): nothing of it is here.
-pub(crate) fn instructions(on: On) -> String {
+/// The server's instructions, with the Doc sentence (`flags::DOCS_STEERING`,
+/// which `arugula hook` also gives on `SessionStart`, #1486; everyone's since
+/// Docs left Labs, native #204) and the issues sentence
+/// (`flags::ISSUES_STEERING`). Chat isn't an agent's (#1095): nothing of it
+/// is here.
+pub(crate) fn instructions() -> String {
     let at = INSTRUCTIONS_BASE.find("Claude Code hooks put").expect("the instructions name the hooks");
     let mut out = INSTRUCTIONS_BASE[..at].to_owned();
-    if on.has(flags::DOCS) {
-        out.push_str(flags::DOCS_STEERING);
-        out.push(' ');
-    }
+    out.push_str(flags::DOCS_STEERING);
+    out.push(' ');
     out.push_str(flags::ISSUES_STEERING);
     out.push(' ');
     out.push_str(&INSTRUCTIONS_BASE[at..]);
@@ -340,7 +339,7 @@ impl ServerHandler for McpServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
             .with_server_info(Implementation::new("arugula", env!("CARGO_PKG_VERSION")))
-            .with_instructions(instructions(self.flags()))
+            .with_instructions(instructions())
     }
 
     async fn list_tools(
