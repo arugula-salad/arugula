@@ -240,7 +240,11 @@ async fn a_port_through_its_own_site() {
     // (A new connection: an old one may still reach the dying server.)
     let r = client(&host, d.block_port).get(&url).send().await.unwrap();
     assert_eq!(r.status(), 502);
-    d.wait_for("the error", || d.get(&format!("/api/blocks/{id}"))["state"]["error"].as_str().is_some_and(|e| e.contains("nothing is answering")));
+    d.wait_for("the error", || {
+        d.get(&format!("/api/blocks/{id}"))["state"]["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("nothing is answering"))
+    });
     assert_eq!(d.get(&format!("/api/blocks/{id}"))["info"]["attention"], "idle");
     // ...and lets go when it's back.
     let _server = dev_server(dev_port).await;
