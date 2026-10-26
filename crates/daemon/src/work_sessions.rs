@@ -42,10 +42,11 @@
 //! - **People's answers** ([`SessionAction`]: a question's answer, a
 //!   permission's approval or denial, cancelling the turn) are done once
 //!   each, as the person who asked, and named in the next report.
-//! - **Restarts.** The agent dies with the daemon (a hosted box keeps no
-//!   FD store). Its block comes back, starts it again as the same user, and
-//!   loads its session: a turn the restart cut off ends there, and what was
-//!   queued behind it goes next.
+//! - **Restarts.** The agent doesn't outlive the daemon (a hosted box keeps
+//!   no FD store, so its pipes go), and what it left running as its user is
+//!   killed ([`resume`]). Its block comes back, starts it again as the same
+//!   user, and loads its session: a turn the restart cut off ends there,
+//!   and what was queued behind it goes next.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -160,6 +161,12 @@ fn home_of(user: &str) -> Option<String> {
     let out = std::process::Command::new("getent").args(["passwd", user]).output().ok()?;
     let line = String::from_utf8_lossy(&out.stdout);
     line.trim_end().split(':').nth(5).filter(|h| h.starts_with('/') && *h != "/").map(str::to_owned)
+}
+
+/// Whether `u` is one of this box's session users, home and all: the only
+/// users an agent block runs its agent as (`agent::Config::run_as`).
+pub fn is_slot(u: &AsUser) -> bool {
+    slots().is_some_and(|s| s.users.contains(u))
 }
 
 /// Whether this box takes sessions: it has session users.
@@ -430,8 +437,16 @@ pub async fn pulled(app: &Arc<App>, sessions: Vec<SessionWork>) {
 /// unsent.
 pub async fn resume(app: &Arc<App>) {
     let dir = app.control.state_dir().to_owned();
+    let real = slots().is_some_and(|s| s.real);
     for l in live(&dir) {
         info!(session = l.session, "hosted: following a session from before the restart");
+        // A restart stops only the daemon (M258's `KillMode=process`): what
+        // the agent started (a build, a server) would run on as its user,
+        // unwatched. Killed: the block starts its agent again, and a turn
+        // the restart cut off ends there.
+        if real {
+            super::kill_user(&l.user.user).await;
+        }
         follow(app, &l.session);
     }
     send_all(app).await;
@@ -569,15 +584,13 @@ fn clone_of(dir: &Path, repo: &str) -> Option<PathBuf> {
 /// Run `argv` as `u` ([`AsUser::wrap`]): its output, or what it said.
 async fn as_user(u: &AsUser, argv: &[&str]) -> Result<String, String> {
     let argv: Vec<String> = argv.iter().map(|s| (*s).to_owned()).collect();
-    let argv = u.wrap(&[], &argv);
-    let out = tokio::process::Command::new(&argv[0])
-        .args(&argv[1..])
-        .current_dir("/")
+    let out = u
+        .command(&[], &argv)
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true)
         .output()
         .await
-        .map_err(|e| format!("can't run {}: {e}", argv[0]))?;
+        .map_err(|e| format!("can't run {} as {}: {e}", argv[0], u.user))?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     } else {
@@ -596,6 +609,7 @@ async fn here(argv: &[&str], root: bool) -> Result<String, String> {
         c.args(&argv[1..]);
         c
     };
+    crate::agent::hosted::unprotect_oom(&mut c);
     let out = c
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::null())

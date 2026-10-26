@@ -130,10 +130,8 @@ impl Runner {
                 Runner::As(u) => {
                     let mut argv = vec!["sh".to_owned(), "-c".into(), script.into(), "sh".into()];
                     argv.extend(args.iter().cloned());
-                    let argv = u.wrap(&[("GIT_OPTIONAL_LOCKS".into(), "0".into())], &argv);
-                    let out = tokio::process::Command::new(&argv[0])
-                        .args(&argv[1..])
-                        .current_dir("/")
+                    let out = u
+                        .command(&[("GIT_OPTIONAL_LOCKS".into(), "0".into())], &argv)
                         .stdin(std::process::Stdio::null())
                         .stderr(std::process::Stdio::null())
                         .kill_on_drop(true)
