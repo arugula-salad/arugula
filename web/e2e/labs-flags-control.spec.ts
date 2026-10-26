@@ -138,10 +138,12 @@ test("a team's and an account's flags reach the machine, each saying where it co
   await expect(row(page, "workspaces").locator("input")).not.toBeChecked();
   await expect(row(page, "workspaces").locator("[data-flag-source]")).toHaveText("Set for your account on control");
   await expect(row(page, "vms").locator("[data-flag-source]")).toHaveCount(0);
-  // Guest ssh and the agent catalog are the machine's alone: control won't
-  // take them, and the dialog says so.
+  // The agent catalog is the machine's alone: control won't take it, and
+  // the dialog says so. Nor guest ssh, a sharing setting now (native #205).
+  await expect(setOnControl("agents", true, team)).rejects.toThrow(/400/);
   await expect(setOnControl("guest-ssh", true, team)).rejects.toThrow(/400/);
-  await expect(row(page, "guest-ssh").locator("[data-flag-local-only]")).toBeVisible();
+  await expect(row(page, "agents").locator("[data-flag-local-only]")).toBeVisible();
+  await expect(row(page, "guest-ssh")).toHaveCount(0);
   await expect(row(page, "chat").locator("[data-flag-local-only]")).toHaveCount(0);
   // Control saying something is the machine asking: the menus offer them.
   await expect.poll(() => page.evaluate(() => window.__arugula.client.hasDev())).toBe(true);

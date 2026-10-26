@@ -2975,7 +2975,8 @@ button.att {
   white-space: pre;
 }
 
-.prompt .machine-telemetry-switch {
+.prompt .machine-telemetry-switch,
+.prompt .sharing-switch {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -2984,7 +2985,8 @@ button.att {
   cursor: pointer;
 }
 
-.prompt .machine-telemetry-switch input {
+.prompt .machine-telemetry-switch input,
+.prompt .sharing-switch input {
   width: auto;
   margin: 0;
   padding: 0;

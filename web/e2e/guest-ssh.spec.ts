@@ -2,13 +2,20 @@
 // system's own ssh client, run with it, sees the pane and can't type.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
 import { active, menu, open, paneEl, ready, run, text } from "./helpers";
 import { ANY, daemonPort } from "./ports";
-import { labs } from "./labs";
+
+/** Guest SSH access on, the machine's sharing setting (native #205; it
+ * was the `guest-ssh` Labs flag). */
+function guestSshOn(dir: string): string {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "sharing.json"), JSON.stringify({ guest_ssh: true }));
+  return dir;
+}
 
 let url = "";
 let daemon: ChildProcess | undefined;
@@ -22,7 +29,7 @@ test.beforeAll(async () => {
   daemon = spawn(
     "../target/debug/arugulad",
     [
-      ...["--listen", ANY, "--state-dir", labs(state)],
+      ...["--listen", ANY, "--state-dir", guestSshOn(state)],
       ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/tailscaled.sock"],
       ...["--guest-ssh", "127.0.0.1:0", "--guest-ssh-host", "127.0.0.1"],
     ],
@@ -89,7 +96,8 @@ async function watchesAndCantType(page: Page) {
   }
 }
 
-// That the invite isn't offered without labs is in labs-off.spec.ts.
+// That the invite isn't offered with the setting off is in labs-off.spec.ts
+// and developer-settings.spec.ts.
 test("a pane's menu makes an ssh invite a stock ssh client can watch with", async ({ page }) => {
   await watchesAndCantType(page);
 });

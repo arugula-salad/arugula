@@ -76,6 +76,8 @@ setup.tailscale POST /api/setup/tailscale Owner drives=false credential=false
 share.mint POST /api/shares Owner drives=false credential=false
 share.revoke DELETE /api/shares/{id} Owner drives=false credential=false
 shares.list GET /api/shares Owner drives=false credential=true
+sharing.get GET /api/sharing Owner drives=false credential=false
+sharing.set PUT /api/sharing Owner drives=false credential=false
 shell_env.get GET /api/hosts/self/shell-env Owner drives=false credential=false
 shell_env.refresh POST /api/hosts/self/shell-env/refresh Owner drives=false credential=false
 signin_link.get GET /api/signin-link Owner drives=false credential=true

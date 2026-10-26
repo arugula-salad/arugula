@@ -8,8 +8,9 @@
 //! - **Who wins.** The machine: its own `flags.json` beats anything here.
 //!   Then the account's, then the team's (`arugula_proto::flags` resolves
 //!   it; control only sends both).
-//! - **Some are the machine's alone.** `guest-ssh` and `agents`
-//!   (`wire::LOCAL_ONLY_FLAGS`) are refused here; a daemon ignores them
+//! - **Some are the machine's alone.** `agents`, and `guest-ssh` (a
+//!   machine's sharing setting now, native #205)
+//!   (`wire::LOCAL_ONLY_FLAGS`), are refused here; a daemon ignores them
 //!   from control anyway.
 //! - **Who sees them.** The page shows them only to someone with a machine
 //!   that has Developer settings (`wire::DEV_SETTINGS` in its features):

@@ -1700,6 +1700,13 @@ vms: boolean,
  */
 studio: boolean, 
 /**
+ * Guest SSH access is on here (a sharing setting, native #205), in a
+ * build that has it: the owner may invite a guest over ssh. Absent
+ * from a daemon before it, where the `guest-ssh` flag in `flags`
+ * says.
+ */
+guest_ssh?: boolean, 
+/**
  * The names of the Labs flags that are on, whatever else each needs
  * (a login, a provider). `None` from a daemon before #665: see `labs`.
  */
@@ -3379,6 +3386,28 @@ export type ShareRequest = { pane: number,
 ttl_secs?: number | null, };
 
 /**
+ * `GET /api/sharing` (the `sharing.get` operation), and what `sharing.set`
+ * answers: the machine's sharing settings.
+ */
+export type Sharing = { 
+/**
+ * Guest SSH access: its owner may invite a guest to a pane over plain
+ * ssh. Off by default.
+ */
+guest_ssh: boolean, 
+/**
+ * Whether this build has guest ssh. A build without Labs keeps the
+ * setting, and nothing follows. Absent: it has.
+ */
+built?: boolean, };
+
+/**
+ * `PUT /api/sharing` (the `sharing.set` operation): the settings to
+ * change; one left out stays as it is.
+ */
+export type SharingSetRequest = { guest_ssh?: boolean, };
+
+/**
  * A split's area and how long each child is along the split's direction,
  * so a client can turn a divider drag into new weights.
  */
@@ -3694,6 +3723,8 @@ export const OPS = {
   "share.mint": { method: "POST", path: "/api/shares" },
   "share.revoke": { method: "DELETE", path: "/api/shares/{id}" },
   "shares.list": { method: "GET", path: "/api/shares" },
+  "sharing.get": { method: "GET", path: "/api/sharing" },
+  "sharing.set": { method: "PUT", path: "/api/sharing" },
   "shell_env.get": { method: "GET", path: "/api/hosts/self/shell-env" },
   "shell_env.refresh": { method: "POST", path: "/api/hosts/self/shell-env/refresh" },
   "signin_link.get": { method: "GET", path: "/api/signin-link" },
@@ -3721,7 +3752,6 @@ export const FLAGS = [
   { name: "vms", title: "VMs and sandboxes", about: "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider.", default: false, local_only: false },
   { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
   { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false, local_only: false },
-  { name: "guest-ssh", title: "Guest ssh", about: "Invite a guest to a pane over plain ssh.", default: false, local_only: true },
   { name: "forges", title: "Forgejo and GitLab", about: "PR and issue blocks for Forgejo and GitLab, beside GitHub's.", default: false, local_only: false },
   { name: "agents", title: "Agent catalog", about: "Offer Claude Code subagents from this machine, and see the ones your team offers.", default: false, local_only: true },
   { name: "docs", title: "Docs", about: "Agents build documents in a block beside their pane.", default: false, local_only: false },

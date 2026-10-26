@@ -11,7 +11,8 @@
 //!
 //! `fountain` left the flags with #942's F5, and daemon-side Managoat went
 //! after it: a `fountain` the flags file still names, on or off, changes
-//! nothing.
+//! nothing. Guest ssh left them for a sharing setting (native #205), whose
+//! gate is the same and says so in its own words.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -53,7 +54,6 @@ fn requests() -> Vec<(&'static str, &'static str, String, Option<Value>)> {
         ("studio", "GET", "/api/studio/apps".into(), None),
         ("studio", "POST", "/api/blocks".into(), block("app", json!({ "app": "nothing-here" }))),
         ("workspaces", "POST", "/api/blocks".into(), block("workspace", json!({}))),
-        ("guest-ssh", "GET", "/api/guests".into(), None),
         ("agents", "GET", "/api/a2a/agents".into(), None),
         (
             "forges",
@@ -94,7 +94,43 @@ fn each_flag_gates_its_routes_and_blocks_both_ways() {
     assert_eq!(status, 200, "{text}");
     let (status, text) = d.raw("GET", "/api/guests", None);
     assert_eq!(status, 404, "{text}");
-    assert!(text.contains(&hint("guest-ssh")), "{text}");
+    assert!(text.contains("`arugulad sharing guest-ssh on`"), "{text}");
+}
+
+/// Guest ssh is a sharing setting (native #205): off by default, refused
+/// saying how to turn it on, past the gate once the owner does (the
+/// `sharing.set` operation), and refused again when it goes off. The old
+/// flag, set on, counts until the setting is.
+#[test]
+fn guest_ssh_follows_its_sharing_setting() {
+    let d = daemon("guest-ssh-setting");
+    let refused = |what: &str| {
+        for (method, path) in [("GET", "/api/guests"), ("POST", "/api/guests"), ("DELETE", "/api/guests/1")] {
+            let body = (method == "POST").then(|| json!({ "pane": 1 }));
+            let (status, text) = d.raw(method, path, body);
+            assert_eq!(status, 404, "{what}: {method} {path}: {text}");
+            assert!(text.contains("`arugulad sharing guest-ssh on`"), "{what}: {method} {path}: {text}");
+        }
+    };
+    refused("by default");
+    assert_eq!(d.get("/api/sharing")["guest_ssh"], false);
+    assert_eq!(d.get("/api/host")["features"]["guest_ssh"], false);
+    let (status, text) = d.raw("PUT", "/api/sharing", Some(json!({ "guest_ssh": true })));
+    assert_eq!(status, 200, "{text}");
+    let (status, text) = d.raw("GET", "/api/guests", None);
+    assert_eq!(status, 200, "{text}");
+    assert_eq!(d.get("/api/host")["features"]["guest_ssh"], true);
+    let (status, text) = d.raw("PUT", "/api/sharing", Some(json!({ "guest_ssh": false })));
+    assert_eq!(status, 200, "{text}");
+    refused("off again");
+
+    // A machine that had the flag: on, with no file of its own yet.
+    std::fs::remove_file(d.state.join(arugula_proto::sharing::FILE)).unwrap();
+    std::fs::write(d.state.join(arugula_proto::flags::FILE), r#"{"flags":{"guest-ssh":true}}"#).unwrap();
+    assert_eq!(d.raw("GET", "/api/guests", None).0, 200);
+    // And setting the old flag is refused, saying where it went.
+    let (status, text) = d.raw("PUT", "/api/flags/guest-ssh", Some(json!({ "on": true })));
+    assert!((400..500).contains(&status) && text.contains("sharing setting"), "{status} {text}");
 }
 
 /// Daemon-side Managoat's requests, removed with it: its routes are gone,
@@ -209,13 +245,9 @@ fn a_hidden_command_says_how_to_turn_its_flag_on() {
     let d = daemon("flag-gates-cli");
     let cli = cli_bin();
     let run = |args: &[&str]| arugula_testkit::command(&cli).arg("--socket").arg(d.sock()).args(args).output().unwrap();
-    for (flag, args) in [
-        ("vms", &["machines"][..]),
-        ("vms", &["sandboxes"][..]),
-        ("studio", &["studio"][..]),
-        ("studio", &["app"][..]),
-        ("guest-ssh", &["guests"][..]),
-    ] {
+    for (flag, args) in
+        [("vms", &["machines"][..]), ("vms", &["sandboxes"][..]), ("studio", &["studio"][..]), ("studio", &["app"][..])]
+    {
         let out = run(args);
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success(), "{args:?} succeeded with {flag} off");

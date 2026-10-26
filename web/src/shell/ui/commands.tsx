@@ -19,6 +19,7 @@ import { agentNotifyItems, notificationItems } from "./notify";
 import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
+import { openSharing } from "./sharing";
 import { openRules } from "./rules";
 import { openAppearance } from "../../shared/ui/appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../../shared/desktop";
@@ -143,8 +144,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
           } as MenuItem,
         ]),
     // An ssh command for a guest with only OpenSSH. The owner's. Only where
-    // this machine has turned guest ssh on.
-    ...(client.base.startsWith("/") || client.state?.roles || !client.flag("guest-ssh")
+    // they've turned on Guest SSH access, a sharing setting (native #205).
+    ...(client.base.startsWith("/") || client.state?.roles || !client.guestSsh()
       ? []
       : [
           {
@@ -304,6 +305,8 @@ export function machineSettingsItems(client: Client): MenuItem[] {
   return [
     { label: "Permission rules…", run: () => openRules(client) },
     { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
+    // Native #205: a sharing setting, which was the `guest-ssh` flag.
+    { label: "Guest SSH access…", run: () => openSharing(client) },
     ...(client.hasDev() ? [{ label: "Developer settings…", run: () => openDeveloper(client) } as MenuItem] : []),
   ];
 }
