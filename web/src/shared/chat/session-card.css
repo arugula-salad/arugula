@@ -31,7 +31,7 @@
   margin: 2px 0 4px;
   padding: 9px 12px 9px 15px;
   border: 1px solid color-mix(in srgb, var(--c) 45%, var(--divider));
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: color-mix(in srgb, var(--c) 7%, var(--surface));
   color: var(--fg);
   font-size: 13px;
@@ -175,7 +175,7 @@ a.session-card-id:hover {
 .session-card-turn pre {
   margin: 4px 0 0;
   padding: 6px 8px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   background: var(--letterbox);
   font: 12px/1.35 var(--f-mono, ui-monospace, Menlo, monospace);
   white-space: pre-wrap;
@@ -194,7 +194,7 @@ a.session-card-id:hover {
 .session-card-buttons :is(button, a.button) {
   padding: 3px 10px;
   border: 1px solid var(--divider);
-  border-radius: 5px;
+  border-radius: var(--btn-radius);
   background: var(--surface);
   color: var(--fg);
   font-size: 12px;

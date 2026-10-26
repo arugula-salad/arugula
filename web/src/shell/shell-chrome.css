@@ -29,7 +29,7 @@
   margin-inline: 4px;
   padding: 6px 0;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--btn-radius);
 }
 
 .ws-rail-button.here::before {
@@ -60,7 +60,7 @@
 .ws-search {
   margin: 0 12px 8px;
   border-color: var(--chrome-line);
-  border-radius: 5px;
+  border-radius: var(--field-radius);
 }
 
 .ws-session-list {
@@ -79,7 +79,7 @@
 }
 
 .ws-session {
-  border-radius: 5px;
+  border-radius: var(--field-radius);
   margin-bottom: 3px;
 }
 
@@ -135,7 +135,7 @@
 }
 
 .ws-tabs .tab {
-  border-radius: 5px 5px 0 0;
+  border-radius: var(--field-radius) var(--field-radius) 0 0;
   color: var(--subtle);
 }
 
@@ -154,7 +154,7 @@
 .pt-presets {
   gap: 0;
   border: 1px solid var(--chrome-line);
-  border-radius: 5px;
+  border-radius: var(--field-radius);
   overflow: hidden;
 }
 
@@ -170,7 +170,7 @@
 .pane-toolbar > .pt-focus,
 .pane-toolbar > .pt-add {
   border: 1px solid var(--chrome-selected-line);
-  border-radius: 5px;
+  border-radius: var(--btn-radius);
   color: var(--accent);
 }
 
@@ -185,7 +185,7 @@
 .ws-activity {
   margin: 0 8px 6px;
   border: 1px solid var(--chrome-line);
-  border-radius: 5px;
+  border-radius: var(--field-radius);
   overflow: visible;
 }
 

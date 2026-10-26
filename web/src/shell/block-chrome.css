@@ -192,13 +192,13 @@
 
 .agent-user {
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   padding: 10px 12px;
 }
 
 .agent-tool {
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   overflow: hidden;
 }
 
@@ -210,7 +210,7 @@
 .agent-composer textarea {
   background: var(--bg);
   border-color: var(--divider);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   line-height: 1.5;
 }
 
@@ -226,7 +226,7 @@
   background: var(--surface);
   color: var(--subtle);
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .agent-msg > .md,

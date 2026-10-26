@@ -53,7 +53,7 @@
 .frame-place {
   box-sizing: border-box;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--btn-radius);
 }
 
 /* The place you're in, the same on the shell's rail and in the platform

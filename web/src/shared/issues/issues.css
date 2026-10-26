@@ -282,7 +282,7 @@ details.issues-note > summary {
 .issue-text .md code,
 .issue-thread .md code {
   padding: 1px 4px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   border: 1px solid var(--divider);
   background: var(--letterbox);
   color: var(--peach);
@@ -439,7 +439,7 @@ details.issues-note > summary {
   margin: 8px 0 0;
   padding: 6px 10px;
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   color: var(--subtle);
   font-size: 12px;
 }
