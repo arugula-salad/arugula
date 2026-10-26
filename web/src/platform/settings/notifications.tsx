@@ -53,7 +53,9 @@ export function NotificationSettings() {
   const [err, setErr] = useState("");
   if (!p) return null;
   const mine = rows ?? rowsOf(p.quiet);
-  const zone = tz ?? p.tz;
+  // Until quiet hours are saved the zone is the platform's default (UTC);
+  // offer this device's instead (UI audit #200).
+  const zone = tz ?? (p.quiet.length === 0 && p.tz === "UTC" ? deviceZone() : p.tz);
   const run = (patch: Parameters<typeof setNotify>[0]) => setNotify(patch).then(() => setErr(""), (e: Error) => setErr(e.message));
   const level = (key: "channels" | "dms" | "threads", label: string) => (
     <li>
