@@ -88,6 +88,7 @@ path = "/auth/github"
 process = "hub"
 auth = "sign_in"
 clients = ["page", "app"]
+note = "With `link=1`, linking GitHub to the account signed in (#208): only with the session cookie, and its state `link.<nonce>` is kept for that sign-in alone."
 
 [[route]]
 method = "GET"
@@ -95,7 +96,7 @@ path = "/auth/github/callback"
 process = "hub"
 auth = "sign_in"
 clients = ["browser"]
-note = "GitHub sends the browser back here: the URL is set on the GitHub OAuth app, so the path never changes. A state `send.<nonce>` is a person's send (M168): its user token goes to the platform for one call, then is revoked."
+note = "GitHub sends the browser back here: the URL is set on the GitHub OAuth app, so the path never changes. A state `send.<nonce>` is a person's send (M168): its user token goes to the platform for one call, then is revoked. A state `link.<nonce>` is a link (#208): it attaches the GitHub id to the account of the sign-in that started it, in the same browser, or nothing, and its token is revoked."
 
 [[route]]
 method = "POST"
@@ -382,6 +383,14 @@ path = "/api/me/passkeys/{id}/remove"
 process = "hub"
 auth = "session"
 clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/me/github/unlink"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Unlinking the account's GitHub identity (#208): the cookie alone, never the desktop app's window, and refused (409) when it's the last way to sign in."
 
 [[route]]
 method = "GET"
