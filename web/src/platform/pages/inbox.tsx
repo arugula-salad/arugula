@@ -239,7 +239,7 @@ function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] })
           const issue = t.startsWith("iss_") ? issues.known(t) : undefined;
           const run = t.startsWith("run_") ? runs.known(t) : undefined;
           const ref = issue ? `${project}#${issue.number}` : run ? `${project}:` : project ? `${project} ·` : "";
-          const title = issue?.title ?? (run ? runTitle(run.op) : r.name);
+          const title = issue?.title ?? (run ? runTitle(run.op, null, run.deploy) : r.name);
           const n = counted(r);
           return (
             // As an entry's card: its bar is chat's colour for the room.

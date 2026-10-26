@@ -12,6 +12,9 @@ export interface Op {
   instruction: string | null;
   agent: string | null;
   directory: string | null;
+  /** A deploy's apply (M219): which deploy, by which driver, and the
+   * hash of the operation its approval signs. */
+  deploy: { deploy: string; driver: string; apply: string } | null;
 }
 
 function unb64(s: string): string | null {
@@ -29,7 +32,7 @@ export function decodeOp(op: string): Op | null {
   if (!op.endsWith("\n")) return null;
   const lines = op.slice(0, -1).split("\n");
   if (lines[0] !== "arugula op v1") return null;
-  const out: Op = { daemon: "", kind: "", argv: [], instruction: null, agent: null, directory: null };
+  const out: Op = { daemon: "", kind: "", argv: [], instruction: null, agent: null, directory: null, deploy: null };
   for (const line of lines.slice(1)) {
     const at = line.indexOf(" ");
     if (at < 0) return null;
@@ -49,8 +52,13 @@ export function decodeOp(op: string): Op | null {
       out.instruction = unb64(value);
       if (out.instruction === null) return null;
     } else if (name === "agent") out.agent = value === "-" ? null : value;
+    else if (name === "deploy") out.deploy = { deploy: value, driver: "", apply: "" };
+    else if (name === "driver" && out.deploy) out.deploy.driver = value;
+    else if (name === "apply" && out.deploy) out.deploy.apply = value;
     else return null;
   }
+  // A deploy's apply is that and nothing else (UI audit #145).
+  if (out.deploy) return out.argv.length || out.instruction !== null || out.directory !== null ? null : out;
   return out.argv.length || out.instruction !== null ? out : null;
 }
 
@@ -88,13 +96,41 @@ export function argvOf(line: string): string[] | null {
   return out;
 }
 
-/** What a run did, in a line: its spec's name, else its command or the
- * first line of its instruction. */
-export function runTitle(op: string, specName?: string | null): string {
+/** The deploy a deploy's run applies, as the platform names it
+ * (`RunView.deploy`). */
+export interface RunDeploy {
+  id: string;
+  environment: string;
+  source_kind: string;
+  reference: string;
+}
+
+/** A deploy's source, short: a commit's first 7, a digest's first 12 hex. */
+export function shortSource(reference: string): string {
+  const at = reference.indexOf(":");
+  return at >= 0 ? reference.slice(at + 1, at + 13) : reference.slice(0, 7);
+}
+
+/** A deploy's run, in a line: `Deploy production · 1a2b3c4`. */
+export const deployTitle = (d: RunDeploy) => `Deploy ${d.environment} · ${shortSource(d.reference)}`;
+
+/** What a run did, in a line: its spec's name, its deploy (UI audit #145),
+ * else its command or the first line of its instruction. */
+export function runTitle(op: string, specName?: string | null, deploy?: RunDeploy | null): string {
   if (specName) return specName;
+  if (deploy) return deployTitle(deploy);
   const o = decodeOp(op);
   if (!o) return "a run";
+  if (o.deploy) return `Deploy ${o.deploy.deploy}`;
   return o.instruction !== null ? (o.instruction.split("\n")[0] ?? "") : commandLine(o.argv);
+}
+
+/** A run's workspace as pages name it (UI audit #145): its name, a deploy's
+ * own box as that, or its id when the platform sent no name. */
+export function workspaceLabel(run: { workspace?: string | null; workspace_name?: string | null; deploy?: RunDeploy | null }): string | null {
+  if (!run.workspace) return null;
+  if (run.deploy) return "its deploy's box";
+  return run.workspace_name || run.workspace;
 }
 
 /** S37's eight states, as the page says them. */
