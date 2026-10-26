@@ -2005,6 +2005,22 @@ clients = ["page"]
 note = "Send an agent session's PR as its asker (M259): POST repos/{repo}/pulls with a one-use user token (via browser), else one of their machines with gh. A machine is refused (403, agents_draft); with no way it waits (409, no_way)."
 
 [[route]]
+method = "POST"
+path = "/api/sessions/{ses}/try"  # wire::sessions::SESSION_TRY
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Try 3 (M264): two siblings of an agent session re-run its first prompt beside it, each in a slot of its box, on the harnesses asked for (claude, codex). Owners and editors who may start work on hosted workspaces; once per session."
+
+[[route]]
+method = "POST"
+path = "/api/sessions/{ses}/pick"  # wire::sessions::SESSION_PICK
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Keep one of a Try 3's sessions (M264): the others stop, not picked. Owners and editors; once."
+
+[[route]]
 method = "GET"
 path = "/api/runs/{run}"  # wire::runs::RUN
 process = "platform"

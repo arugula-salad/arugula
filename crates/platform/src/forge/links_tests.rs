@@ -183,7 +183,18 @@ async fn ci_ref(State(h): State<Shared>, Path((_, _, kind, sha)): Path<(String, 
 
 /// `compare/{sha}...main`, as GitHub answered for real commits: `ahead`
 /// with `behind_by` 0 for one on main, `diverged` for a branch's.
-async fn compare(State(h): State<Shared>, Path((_, _, spec)): Path<(String, String, String)>) -> Response {
+async fn compare(
+    State(h): State<Shared>,
+    Path((o, r, spec)): Path<(String, String, String)>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    // A diff (M264's review): the file kept as `owner/name:compare:<spec>`.
+    if headers.get("accept").and_then(|v| v.to_str().ok()) == Some("application/vnd.github.diff") {
+        return match h.lock().unwrap().files.get(&format!("{o}/{r}:compare:{spec}")) {
+            Some(diff) => diff.clone().into_response(),
+            None => StatusCode::NOT_FOUND.into_response(),
+        };
+    }
     // A session's branch (M259): its commits, oldest first, as GitHub
     // lists them.
     if spec.contains("...arugula/") {

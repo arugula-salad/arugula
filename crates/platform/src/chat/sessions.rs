@@ -33,6 +33,9 @@
 //!   its first prompt the hydrated thread ([`crate::sessions::hydrate`]).
 //!   Its status card (M257, [`super::session_card::post_card`]) says
 //!   where it runs.
+//! - **`@codex review`** (M264, [`crate::sessions::review`]): in a thread
+//!   with a session going, a read-only review of what it pushed, posted in
+//!   the thread. It's never a prompt to the session.
 //! - **Replies.** In a thread with a session going, a reply from its asker
 //!   or any owner or editor is a prompt, credited to its author
 //!   (`session_prompts.author`), queued while a turn runs; the session's
@@ -117,6 +120,11 @@ pub(crate) fn asks(text: &str) -> bool {
 
 async fn handle(app: &Platform, room: &Room, author: &str, seq: i64, parent: Option<i64>, text: &str) -> Result<()> {
     let thread = thread_of(room, seq, parent);
+    // `@codex review` (M264): a review of the thread's session, never a
+    // prompt to it.
+    if crate::sessions::review::mentions(text) && works_in(room) {
+        return crate::sessions::review::asked(app, room, thread, author, text).await;
+    }
     if let Some(s) = app.db.session_on_thread(&room.id, thread)? {
         return reply(app, &s, author, text).await;
     }
@@ -171,7 +179,7 @@ pub(crate) fn say(app: &Platform, room: &Room, thread: u64, text: &str) -> Resul
 }
 
 /// Why `who` can't start a session, in a line.
-fn refusal(who: &str, why: Cannot) -> String {
+pub(crate) fn refusal(who: &str, why: Cannot) -> String {
     match why {
         Cannot::Viewer => format!("@arugula needs an owner or editor of this project to ask: {who} can only view it."),
         Cannot::Unlisted => {

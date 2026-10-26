@@ -153,32 +153,35 @@ fn good_branch(b: &str) -> bool {
         && b.bytes().all(|c| c.is_ascii_graphic() && !b"~^:?*[\\@{".contains(&c))
 }
 
-/// GET `path` on GitHub's API with the App's read token for `link`.
-async fn app_get(app: &Platform, link: &LinkedRepo, path: &str) -> Option<Value> {
+/// GET `path` on GitHub's API with the App's read token for `link`,
+/// accepting `accept`: GitHub's answer when it's a success.
+pub(crate) async fn app_read(app: &Platform, link: &LinkedRepo, path: &str, accept: &str) -> Option<reqwest::Response> {
     let gh = app.github.as_ref()?;
     let t = gh
         .read_token(&Caller::of(app, "platform"), link.installation_id, Repo::Id(link.repo_id), Purpose::Read)
         .await
-        .map_err(|e| warn!(repo = link.full_name, error = format!("{e:#}"), "no read token for a session's PR"))
+        .map_err(|e| warn!(repo = link.full_name, error = format!("{e:#}"), "no read token for a session's repo"))
         .ok()?;
     let r = app
         .http
         .get(format!("{}/{path}", gh.api.trim_end_matches('/')))
         .bearer_auth(t.secret())
-        .header("Accept", "application/vnd.github+json")
+        .header("Accept", accept)
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header("User-Agent", "arugula-control")
         .send()
         .await
         .ok()?;
-    if !r.status().is_success() {
-        return None;
-    }
-    r.json().await.ok()
+    r.status().is_success().then_some(r)
+}
+
+/// GET `path` on GitHub's API with the App's read token for `link`.
+async fn app_get(app: &Platform, link: &LinkedRepo, path: &str) -> Option<Value> {
+    app_read(app, link, path, "application/vnd.github+json").await?.json().await.ok()
 }
 
 /// The repo's default branch, as GitHub says (`main` when it doesn't).
-async fn default_branch(app: &Platform, link: &LinkedRepo) -> String {
+pub(crate) async fn default_branch(app: &Platform, link: &LinkedRepo) -> String {
     app_get(app, link, &format!("repos/{}", link.full_name))
         .await
         .and_then(|v| v["default_branch"].as_str().map(str::to_owned))

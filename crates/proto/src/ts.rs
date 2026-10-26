@@ -168,6 +168,9 @@ fn generate() -> String {
         c.visit::<SessionPrEdit>();
         c.visit::<SessionPrSend>();
         c.visit::<SessionPrSent>();
+        // Try 3 (M264).
+        c.visit::<SessionTryAsk>();
+        c.visit::<SessionPick>();
     }
     // Native issues (M195).
     {

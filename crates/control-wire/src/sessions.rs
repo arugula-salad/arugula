@@ -21,6 +21,17 @@
 //! | `GET` [`SESSION_PR`]: [`SessionPr`] | its asker |
 //! | `PUT` [`SESSION_PR`] [`SessionPrEdit`]: [`SessionPr`] | its asker |
 //! | `POST` [`SESSION_PR_SEND`] [`SessionPrSend`]: [`SessionPrSent`] | its asker, as a person |
+//! | `POST` [`SESSION_TRY`] [`SessionTryAsk`]: [`SessionView`] | owners and editors who may start one |
+//! | `POST` [`SESSION_PICK`] [`SessionPick`]: [`SessionView`] | owners and editors |
+//!
+//! **Try 3** (M264). From a session's card, two siblings of it start: new
+//! sessions under it (`parent_session`), on the same thread, box and repo,
+//! each re-running its first prompt in a slot of its own, on the harness
+//! asked for (`claude`, `codex`). The card's compare view lists the three,
+//! the session first ([`SessionCard::tries`]): each one's diffstat, how its
+//! turn finished, and its page. **Pick** keeps one: the others stop, "not
+//! picked". A picked sibling is the thread's session from then on, with
+//! its own card in the thread.
 //!
 //! **Its pull request** (M259). Once a turn pushed the session's branch,
 //! its asker drafts the PR from the card: the title and body come
@@ -45,6 +56,10 @@ pub const SESSION_ACTIONS: &str = "/api/sessions/{ses}/actions";
 pub const SESSION_PR: &str = "/api/sessions/{ses}/pr";
 /// `POST` [`SessionPrSend`]: send it, as its asker.
 pub const SESSION_PR_SEND: &str = "/api/sessions/{ses}/pr/send";
+/// `POST` [`SessionTryAsk`]: Try 3, two siblings beside it (M264).
+pub const SESSION_TRY: &str = "/api/sessions/{ses}/try";
+/// `POST` [`SessionPick`]: keep one of a Try 3's sessions; the others stop.
+pub const SESSION_PICK: &str = "/api/sessions/{ses}/pick";
 
 /// What a card's message has for `via`, before the session's id.
 pub const CARD_VIA: &str = "session:";
@@ -120,6 +135,59 @@ pub struct SessionCard {
     /// prompted it since: it needs a person.
     #[serde(default)]
     pub needs_person: bool,
+    /// What it is (M264): `thread` (the thread's own, `@arugula`), `try` (a
+    /// Try 3's sibling of `parent_session`) or `review` (`@codex review`
+    /// of `parent_session`).
+    pub role: String,
+    pub parent_session: Option<String>,
+    /// The agent asked for (`claude`, `codex`), and the one its box ran
+    /// it on, once it took it (`claude` when the other isn't there).
+    pub harness: String,
+    pub ran: Option<String>,
+    /// A Try 3's sessions, on its parent's card: the parent first, then its
+    /// siblings, oldest first. Empty for every other session.
+    pub tries: Vec<SessionTry>,
+    /// The one of [`SessionCard::tries`] kept, once one is picked; on a
+    /// sibling, its parent's pick.
+    pub picked: Option<String>,
+}
+
+/// One of a Try 3's sessions, as its parent's compare view shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionTry {
+    pub session: String,
+    pub state: String,
+    pub branch: String,
+    pub harness: String,
+    pub ran: Option<String>,
+    /// What its latest turn left: its diffstat and how its finish step went.
+    pub turn: Option<SessionTurn>,
+    pub pushed: bool,
+    /// Why it failed or stopped.
+    pub reason: Option<String>,
+    pub updated_at: u64,
+    /// Queued with no slot on its box for it yet (the box holds three
+    /// sessions, done ones too).
+    pub no_slot: bool,
+}
+
+/// [`SESSION_TRY`]'s body: the harnesses of the two siblings, `claude`
+/// or `codex` each (`["claude", "codex"]` when it's left out; a box
+/// without Codex runs Claude Code in its place).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionTryAsk {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub harnesses: Option<Vec<String>>,
+}
+
+/// [`SESSION_PICK`]'s body: the session kept, one of the Try 3's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionPick {
+    pub session: String,
 }
 
 /// What a session's turn left, as its box reported it.

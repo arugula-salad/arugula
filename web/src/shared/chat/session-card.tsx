@@ -25,6 +25,14 @@
 // left, edits it and sends it as themselves ("agents draft, people
 // send"): GitHub's authorization in this browser, else one of their own
 // machines. Nobody else sends it. Once sent, the PR button is the PR.
+//
+// Try 3 (M264): an owner or editor runs it two more ways at once (Claude
+// Code and Codex, or Claude Code twice), each in a slot of its own on the
+// box, re-running its first prompt. The card grows a compare view: the
+// three side by side, each with its diffstat, how its turn finished, its
+// page and its diff on GitHub, and how many run and wait for a slot.
+// Pick keeps one; the others stop, "not picked". A review (`@codex
+// review`) shows as a card in the thread, "reviewed" once it's posted.
 
 import "./session-card.css";
 import { useEffect, useState } from "preact/hooks";
@@ -32,7 +40,7 @@ import { AskCard, type Ask } from "../ask";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 import { usePlatformApi } from "../platform-api";
-import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionPr, SessionPrSent, SessionView } from "../proto";
+import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionPick, SessionPr, SessionPrSent, SessionTry, SessionTryAsk, SessionView } from "../proto";
 
 /** How long a turn may go without its box saying anything (`QUIET_MS`). */
 export const QUIET_MS = 60_000;
@@ -103,6 +111,38 @@ export function lastLines(text: string, n = 6): string {
 /** What an idle session's stop says (M261, the platform's `idle: …`). */
 export function idleOf(c: SessionCard): string | null {
   return c.state === "stopped" && c.reason?.startsWith("idle: ") ? c.reason.slice("idle: ".length) : null;
+}
+
+/** What a try's or a review's state says, past the plain states: a try
+ * that wasn't kept is "not picked", a queued one with no slot on its box
+ * "waiting for a slot", a posted review "reviewed". */
+export function triedAs(state: string, reason: string | null, noSlot = false): { label: string; tone: Tone } | null {
+  if (state === "stopped" && reason?.startsWith("not_picked")) return { label: "not picked", tone: "muted" };
+  if (state === "stopped" && reason?.startsWith("reviewed")) return { label: "reviewed", tone: "ok" };
+  if (state === "queued" && noSlot) return { label: "waiting for a slot", tone: "warn" };
+  return null;
+}
+
+/** "2 running, 1 waiting for a slot": a Try 3's sessions, counted. */
+export function triesLine(tries: SessionTry[]): string {
+  const n = (f: (t: SessionTry) => boolean) => tries.filter(f).length;
+  const parts: string[] = [];
+  const running = n((t) => t.state === "working" || t.state === "needs_input" || t.state === "unresponsive");
+  const starting = n((t) => t.state === "queued" && !t.no_slot);
+  const waiting = n((t) => t.state === "queued" && t.no_slot);
+  const done = n((t) => t.state === "done");
+  if (running) parts.push(`${running} running`);
+  if (starting) parts.push(`${starting} starting`);
+  if (waiting) parts.push(`${waiting} waiting for a slot`);
+  if (done) parts.push(`${done} done`);
+  return parts.join(", ");
+}
+
+/** The agent a try runs on, in words: "Codex", or "Claude Code (no Codex
+ * on its box)" when its box stood in. */
+export function harnessLabel(harness: string, ran: string | null): string {
+  const name = (h: string) => (h === "codex" ? "Codex" : "Claude Code");
+  return ran && ran !== harness ? `${name(ran)} (no ${name(harness)} on its box)` : name(ran ?? harness);
 }
 
 /** A permission's option id in words: `allow-once` is "Allow once". */
@@ -301,6 +341,76 @@ export function PrEditor({ ses, onClose }: { ses: string; onClose: () => void })
   );
 }
 
+/** A Try 3's three, side by side (M264): each one's harness, state,
+ * diffstat and finish, its page and its diff on GitHub, and Pick. */
+function TriesView({ c, may, busy, pick }: { c: SessionCard; may: boolean; busy: boolean; pick: (ses: string) => void }) {
+  const api = usePlatformApi();
+  return (
+    <div class="session-tries" data-session-tries={c.tries.length}>
+      <p class="session-card-line" data-session-tries-line>
+        <b>Tried 3 ways</b>
+        <span class="dim"> · {c.picked ? "one kept" : triesLine(c.tries)}</span>
+      </p>
+      <div class="session-tries-grid">
+        {c.tries.map((t, i) => {
+          const special = triedAs(t.state, t.reason, t.no_slot);
+          const { label, tone } = special ?? stateOf(t.state, false);
+          const kept = c.picked === t.session;
+          const page = api.sessionHref?.(c.project, t.session);
+          const diff = t.pushed && c.repo ? `https://github.com/${c.repo}/compare/${t.branch}` : null;
+          const short = t.session.replace(/^ses_/, "").slice(0, 8);
+          return (
+            <div key={t.session} class={`session-try tone-${kept ? "ok" : tone}${kept ? " kept" : ""}`} data-session-try={t.session} data-session-try-state={special?.label ?? t.state}>
+              <div class="session-try-top">
+                <span class="session-try-n">{i === 0 ? "this one" : `try ${i + 1}`}</span>
+                <span class="session-try-state" data-session-try-label>
+                  {kept ? "kept" : label}
+                </span>
+              </div>
+              <div class="session-try-harness" data-session-try-harness>
+                {harnessLabel(t.harness, t.ran)}
+              </div>
+              {t.turn?.diffstat ? <pre data-session-try-diffstat>{t.turn.diffstat}</pre> : <p class="dim session-try-none">{t.turn ? "No changes" : "No turn yet"}</p>}
+              {t.turn?.finish && (
+                <p class="session-try-finish" data-session-try-finish={t.turn.finish.ok ? "ok" : "failed"}>
+                  {t.turn.finish.ok ? (
+                    <>
+                      finish: <span class="ok">✓</span>
+                    </>
+                  ) : (
+                    <span class="bad">finish failed</span>
+                  )}{" "}
+                  <code>{t.turn.finish.command}</code>
+                </p>
+              )}
+              <div class="session-try-links">
+                {page ? (
+                  <a href={page} title="Its page: its card and history" data-session-try-page>
+                    {short}
+                  </a>
+                ) : (
+                  <span>{short}</span>
+                )}
+                {diff && (
+                  <a href={diff} target="_blank" rel="noopener" title={`What it pushed, against the repo's default branch, on GitHub`} data-session-try-diff>
+                    diff ↗
+                  </a>
+                )}
+                <span class="session-card-fill" />
+                {may && !c.picked && t.state !== "failed" && t.state !== "stopped" && (
+                  <button type="button" disabled={busy} title="Keep this one: the others stop, and what they didn't push goes" data-session-pick={t.session} onClick={() => pick(t.session)}>
+                    Pick
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** The card in a room's timeline or a thread, in place of its message. */
 export function SessionCardMessage({ m }: { room: ChatRoom; m: ChatMessage }) {
   const ses = sessionOf(m)!;
@@ -321,6 +431,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
+  const [tryWith, setTryWith] = useState("codex");
   const c = view?.card;
   const going = !!c && (c.state === "queued" || c.state === "working" || c.state === "needs_input" || c.state === "unresponsive");
   const now = useNow(skew, going);
@@ -333,11 +444,11 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
     );
   }
   const quiet = isQuiet(c, now);
-  const { label, tone } = stateOf(c.state, quiet);
+  const { label, tone } = triedAs(c.state, c.reason) ?? stateOf(c.state, quiet);
   const short = c.session.replace(/^ses_/, "").slice(0, 8);
   const ended = c.state === "done" || c.state === "failed" || c.state === "stopped";
   const took = elapsed((c.ended_at ?? now) - c.created_at);
-  const act = async (path: string, body?: SessionAct) => {
+  const act = async (path: string, body?: SessionAct | SessionTryAsk | SessionPick) => {
     setBusy(true);
     try {
       set(await call<SessionView>("POST", `/api/sessions/${enc(c.session)}/${path}`, body));
@@ -358,13 +469,17 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   const fixing = failed && (c.state === "working" || c.state === "needs_input");
   const port = c.ports[0];
   const page = api.sessionHref?.(c.project, c.session);
+  const parentPage = c.parent_session ? api.sessionHref?.(c.project, c.parent_session) : undefined;
+  const parentShort = c.parent_session?.replace(/^ses_/, "").slice(0, 8);
+  const review = c.role === "review";
+  const mayTry = view.may && c.role === "thread" && c.tries.length === 0 && c.state !== "failed" && c.state !== "stopped";
   return (
     <div class={`session-card tone-${tone}${large ? " large" : ""}`} data-session-card={c.session} data-session-state={quiet && c.state !== "unresponsive" ? "quiet" : c.state}>
       <div class="session-card-top">
         <span class="session-card-state" data-session-label>
           {label}
         </span>
-        <span class="session-card-what">agent session</span>
+        <span class="session-card-what">{review ? "review" : c.role === "try" ? "try" : "agent session"}</span>
         {page ? (
           <a class="session-card-id" href={page} title="This session's own page" data-session-page>
             {short}
@@ -383,7 +498,19 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           {c.branch}
         </span>
         {c.workspace_name && <span class="dim">on {c.workspace_name}</span>}
+        {c.harness !== "claude" || (c.ran && c.ran !== "claude") ? (
+          <span class="dim" data-session-harness>
+            · {harnessLabel(c.harness, c.ran)}
+          </span>
+        ) : null}
       </div>
+      {c.parent_session && (
+        <p class="session-card-line dim" data-session-parent>
+          {review ? "A read-only review of what " : "One of three tries of "}
+          {parentPage ? <a href={parentPage}>{parentShort}</a> : parentShort}
+          {review ? " pushed: it pushes nothing, and its review is posted in the thread." : c.picked === c.session ? ": kept." : "."}
+        </p>
+      )}
       {quiet || c.state === "unresponsive" ? (
         <p class="session-card-line bad" data-session-quiet>
           Its box hasn't said anything for {elapsed(now - (c.heard_at ?? c.updated_at))}: it may be down. It picks up where it was when it's back.
@@ -468,6 +595,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           {said}
         </p>
       )}
+      {c.tries.length > 0 && c.role === "thread" && <TriesView c={c} may={view.may} busy={busy} pick={(ses) => void act("pick", { session: ses })} />}
       {drafting && !c.pr && <PrEditor ses={c.session} onClose={() => setDrafting(false)} />}
       <div class="session-card-buttons">
         {c.machine && block && (
@@ -485,7 +613,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             Preview ↗
           </button>
         )}
-        {c.pr && /^https:\/\//.test(c.pr) ? (
+        {review ? null : c.pr && /^https:\/\//.test(c.pr) ? (
           <a class="button" href={c.pr} target="_blank" rel="noopener" data-session-pr>
             PR ↗
           </a>
@@ -510,6 +638,23 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           >
             PR
           </button>
+        )}
+        {mayTry && (
+          <span class="session-try3" data-session-try3>
+            <button
+              type="button"
+              disabled={busy}
+              title="Run it two more ways at once, each in a slot of its own on its box, re-running its first prompt; then keep the one you like"
+              data-session-try-go
+              onClick={() => void act("try", { harnesses: ["claude", tryWith] })}
+            >
+              Try 3
+            </button>
+            <select aria-label="The two more" title="The agents the two more run on" value={tryWith} disabled={busy} onChange={(e) => setTryWith(e.currentTarget.value)} data-session-try-with>
+              <option value="codex">+ Claude, Codex</option>
+              <option value="claude">+ Claude ×2</option>
+            </select>
+          </span>
         )}
         <span class="session-card-fill" />
         {view.may && (c.state === "working" || c.state === "needs_input") && !c.cancelling && (
