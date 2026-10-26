@@ -9,6 +9,11 @@
 //! | `enrolling` | wait for the hub to say its box enrolled, then `ready`; past the enrollment's end, delete the box (fail closed) |
 //! | `ready`, `paused` | a rebuild (which clears what the old box's setup said), wake or pause asked; else read its state (never waking it), and near the provider's runtime cap pause and resume it between turns ([`super::hold`]) |
 //! | `waking` | resumed (a wake, or the runtime cap's pause and resume): `ready` once its daemon dials in; past [`super::Config::dial_wait`], `failed` as needing a rebuild, its box paused, and the project's owners and editors pushed (M258) |
+//! | a snapshot's builder, enrolled | wait for its setup and wipe, snapshot it, delete it ([`super::snapshot`], M263) |
+//!
+//! A people's workspace's create starts from its snapshot when it has a
+//! current one, and each look at a `ready` or `paused` one may start a
+//! snapshot build ([`super::snapshot::tend`]).
 //!
 //! A step that fails for now (the provider or the hub didn't answer) is
 //! tried again in a few seconds, and what it was doing stays asked. A
@@ -42,7 +47,7 @@ use crate::{
 /// one past it.
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// How soon a step that failed for now is tried again.
-const RETRY_MS: u64 = 5_000;
+pub(super) const RETRY_MS: u64 = 5_000;
 /// How often an enrolling box is looked at.
 const ENROLLING_MS: u64 = 2_000;
 /// How often a running box's state is read (to see it pause itself), and
@@ -66,7 +71,7 @@ pub const DIAL_WAIT: Duration = Duration::from_secs(60);
 const DIAL_LOOK_MS: u64 = 1_000;
 /// How long after a create whose answer was lost the box is looked for
 /// by its metadata before it's taken as never made.
-const LOST_MS: u64 = 60_000;
+pub(super) const LOST_MS: u64 = 60_000;
 /// How long past its enrollment's end a box has to have enrolled (the
 /// hub's answer may lag the box's enroll).
 const ENROLL_GRACE_MS: u64 = 30_000;
@@ -131,11 +136,12 @@ pub(crate) async fn tick_at(app: &Platform, now: u64) -> Result<bool> {
 
 /// What a step carried out of what was asked, and when the workspace is
 /// due again.
-type Step = (Option<Ask>, u64);
+pub(super) type Step = (Option<Ask>, u64);
 
 async fn step(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step> {
     let asked = job.w.asked.clone();
     if asked.as_deref() == Some("delete") {
+        super::snapshot::forget(app, sub, job).await?;
         delete(app, sub, job).await?;
         job.w.state = "deleted".into();
         job.deleted_at = Some(now);
@@ -144,6 +150,7 @@ async fn step(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64
     match job.w.state.as_str() {
         "creating" => return create(app, sub, job, now).await,
         "enrolling" => return enrolling(app, sub, job, now).await,
+        _ if super::snapshot::is_builder(job) => return super::snapshot::build(app, sub, job, now).await,
         _ => {}
     }
     match asked.as_deref() {
@@ -166,6 +173,9 @@ async fn step(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64
     if job.w.state == "failed" {
         return Ok((None, u64::MAX / 2));
     }
+    if let Err(error) = super::snapshot::tend(app, sub, job, now).await {
+        tracing::warn!(workspace = %job.w.id, error = format!("{error:#}"), "a hosted workspace's snapshot wasn't seen to");
+    }
     refresh(app, sub, job, now).await
 }
 
@@ -181,7 +191,7 @@ fn fail(job: &mut HostedJob, why: &str, now: u64) -> Step {
 /// Delete every box the workspace has: the one it knows, and any its
 /// metadata finds (a create whose answer was lost). Its machine leaves
 /// the project.
-async fn delete(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob) -> Result<()> {
+pub(super) async fn delete(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob) -> Result<()> {
     let mut boxes: Vec<String> = sub
         .list(&[("arugula_workspace".to_owned(), job.w.id.clone())].into())
         .await?
@@ -228,20 +238,34 @@ async fn create(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u
             }
             // Whose key its agents run on (M185): the rules' digest is kept
             // beside the box (they can hold a project's key), so a turn's
-            // start sees what it was given.
-            let rules = super::inference::rules_for(app, &job.w.project, job.w.created_by.as_deref())?;
+            // start sees what it was given. A snapshot's builder runs no
+            // agents, so it has no key.
+            let builder = super::snapshot::is_builder(job);
+            let rules = if builder {
+                compute::Rules::new()
+            } else {
+                super::inference::rules_for(app, &job.w.project, job.w.created_by.as_deref())?
+            };
             app.db.set_hosted_rules(&job.w.id, &super::inference::digest(&rules))?;
+            // Its snapshot (M263), set up, when it has a current one.
+            let snapshot = super::snapshot::source(app, job)?;
+            app.db.set_box_snapshot(&job.w.id, snapshot.as_deref())?;
             job.stage = "sent".into();
             job.stage_at = Some(now);
             job.w.template = Some(template.clone());
             job.built_hash = Some(job.spec_hash.clone());
             app.db.save_hosted(job, now)?;
+            let mut metadata = super::metadata(&job.w.id, &job.w.project, &template);
+            if let Some(s) = &snapshot {
+                metadata.insert("arugula_snapshot".into(), s.clone());
+            }
             let made = sub
                 .create(&Create {
-                    template: template.clone(),
+                    template: snapshot.clone().unwrap_or_else(|| template.clone()),
                     env,
-                    metadata: super::metadata(&job.w.id, &job.w.project, &template),
-                    timeout: app.hosted.idle_timeout(),
+                    metadata,
+                    // A builder has its setup's time before it pauses.
+                    timeout: if builder { super::snapshot::BUILD_TIMEOUT } else { app.hosted.idle_timeout() },
                     rules,
                 })
                 .await;
@@ -250,6 +274,17 @@ async fn create(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u
                     job.sandbox = Some(c.id);
                     job.stage = "made".into();
                     job.stage_at = Some(now);
+                    Ok((None, now))
+                }
+                // The provider no longer has the snapshot: forgotten, and the
+                // box is made from the template next.
+                Err(compute::Error::Refused { .. } | compute::Error::NotFound) if snapshot.is_some() => {
+                    let snapshot = snapshot.unwrap_or_default();
+                    tracing::warn!(workspace = %job.w.id, error = %made.unwrap_err(), "a hosted workspace's snapshot is gone: its box is made from the template");
+                    app.db.snapshot_gone(&job.w.id, &snapshot, super::snapshot::SNAPSHOT_GONE)?;
+                    app.db.set_box_snapshot(&job.w.id, None)?;
+                    job.stage = String::new();
+                    job.stage_at = None;
                     Ok((None, now))
                 }
                 // This release's template isn't built yet (M177's release
@@ -345,8 +380,13 @@ fn enroll_ask(app: &Platform, job: &HostedJob, sandbox: Option<String>) -> Resul
         name: job.w.name.clone(),
         sandbox,
         // A deploy's box (M219): the hub routes nobody to it, and the box
-        // takes its one deploy run only.
-        purpose: (job.w.purpose == crate::db::hosted::DEPLOY).then(|| arugula_control_wire::hosted::DEPLOY.to_owned()),
+        // takes its one deploy run only. A snapshot's builder (M263): the
+        // same, and it takes nothing.
+        purpose: match job.w.purpose.as_str() {
+            crate::db::hosted::DEPLOY => Some(arugula_control_wire::hosted::DEPLOY.to_owned()),
+            crate::db::hosted::SNAPSHOT => Some(arugula_control_wire::hosted::SNAPSHOT.to_owned()),
+            _ => None,
+        },
     }))
 }
 

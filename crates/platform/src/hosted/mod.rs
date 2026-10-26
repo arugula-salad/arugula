@@ -49,6 +49,9 @@
 //!   to clone each repo with, and runs it in a pane; its daemon says how it
 //!   goes, kept on the workspace ([`setup`]). A spec changed since the box
 //!   was built shows as [`HostedWorkspace::rebuild_needed`].
+//! - **Snapshots** (M263): a workspace that set up all right has a box of
+//!   its own set up from its spec, wiped and snapshotted, and its new boxes
+//!   and rebuilds start from that snapshot, set up ([`snapshot`]).
 //! - **Public previews** ([`previews`], M187): a port an owner or editor
 //!   makes public is served to anyone at `<id>.<preview domain>`, through
 //!   the hub, for 7 days unless renewed.
@@ -76,6 +79,7 @@ pub mod routes;
 pub mod setup;
 #[cfg(test)]
 mod setup_tests;
+pub mod snapshot;
 #[cfg(test)]
 pub(crate) mod tests;
 pub mod transcripts;
@@ -117,6 +121,12 @@ pub struct Args {
     /// marked as needing a rebuild ([`worker::DIAL_WAIT`] unless set).
     #[arg(long, env = "ARUGULA_HOSTED_DIAL_WAIT")]
     pub hosted_dial_wait: Option<u64>,
+    /// Hours between a workspace's snapshot builds (M263; 24 unless set):
+    /// a box set up from its spec is snapshotted, and its new boxes and
+    /// rebuilds start from that, set up. A spec change builds one at once.
+    /// 0: no snapshots, and every box runs its setup.
+    #[arg(long, env = "ARUGULA_HOSTED_SNAPSHOT_HOURS")]
+    pub hosted_snapshot_hours: Option<u64>,
     /// Which providers the platform's own inference key covers (M185), for
     /// workspaces made by accounts on ARUGULA_CLOUD_ACCOUNTS: `anthropic`,
     /// `openai`, comma-separated. Each is a dedicated key with a hard
@@ -199,6 +209,7 @@ impl Args {
             idle_timeout: self.hosted_idle_timeout.filter(|s| *s > 0).map(Duration::from_secs),
             runtime_cap: self.hosted_runtime_cap.filter(|s| *s > 0).map(Duration::from_secs),
             dial_wait: self.hosted_dial_wait.filter(|s| *s > 0).map(Duration::from_secs),
+            snapshot_every: self.hosted_snapshot_hours.map(|h| Duration::from_secs(h * 3600)),
             preview_domain: previews::domain(self.preview_domain.as_deref().unwrap_or(""))?,
             broker: broker::Config::new(
                 self.inference_anthropic_key,
@@ -237,6 +248,8 @@ pub struct Config {
     pub runtime_cap: Option<Duration>,
     /// [`Args::hosted_dial_wait`], when set ([`Config::dial_wait`]).
     pub dial_wait: Option<Duration>,
+    /// [`Args::hosted_snapshot_hours`], when set ([`Config::snapshot_every`]).
+    pub snapshot_every: Option<Duration>,
     /// Whose key agents run on, and the caps on the platform's (M185).
     pub inference: inference::Settings,
     /// Public previews' domain (M187), when they're on.
@@ -254,6 +267,7 @@ impl std::fmt::Debug for Config {
             .field("idle_timeout", &self.idle_timeout)
             .field("runtime_cap", &self.runtime_cap)
             .field("dial_wait", &self.dial_wait)
+            .field("snapshot_every", &self.snapshot_every)
             .field("inference", &self.inference)
             .field("preview_domain", &self.preview_domain)
             .field("broker", &self.broker)
@@ -280,6 +294,16 @@ impl Config {
     /// How long a woken box's daemon has to dial in.
     pub fn dial_wait(&self) -> Duration {
         self.dial_wait.unwrap_or(worker::DIAL_WAIT)
+    }
+
+    /// How often a workspace's snapshot is built again (M263): `None` when
+    /// snapshots are off.
+    pub fn snapshot_every(&self) -> Option<Duration> {
+        match self.snapshot_every {
+            None => Some(snapshot::EVERY),
+            Some(d) if d.is_zero() => None,
+            d => d,
+        }
     }
 }
 

@@ -327,3 +327,159 @@ async fn resume_latency() {
         std::panic::resume_unwind(p);
     }
 }
+
+/// M263's snapshots, live: a running box snapshotted filesystem-only (and
+/// full, to see the team has both), its snapshot listed, a box made from
+/// it, and what deleting a snapshot does to a paused box made from it (the
+/// platform keeps a workspace's earlier snapshot while its box is made from
+/// it, in case that box needs it to wake: this says whether it does). A
+/// box from a deleted snapshot is refused, which the platform's fallback to
+/// the template counts on. Every box and snapshot it makes is deleted at
+/// the end whatever happened, and listed to show none is left. loam's E2B
+/// API has no snapshots: there it checks only that it says so.
+///
+/// ```sh
+/// ARUGULA_TEST_E2B_URL=https://api.e2b.dev ARUGULA_TEST_E2B_KEY=... \
+///   cargo test -p arugula-platform --lib compute::live_tests::live_snapshots -- --ignored --nocapture
+/// ```
+#[tokio::test]
+#[ignore = "makes real boxes and snapshots: set ARUGULA_TEST_E2B_URL and ARUGULA_TEST_E2B_KEY"]
+async fn live_snapshots() {
+    let (Ok(url), Ok(key)) = (std::env::var("ARUGULA_TEST_E2B_URL"), std::env::var("ARUGULA_TEST_E2B_KEY")) else {
+        panic!("set ARUGULA_TEST_E2B_URL and ARUGULA_TEST_E2B_KEY");
+    };
+    let template = std::env::var("ARUGULA_TEST_E2B_TEMPLATE").unwrap_or_else(|_| "base".into());
+    let e2b = E2b::new(&url, key).unwrap();
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let run_id = format!("m263-{nanos:x}{:x}", std::process::id());
+    let tag: BTreeMap<String, String> =
+        [("arugula_test".into(), "1".into()), ("arugula_run".into(), run_id.clone())].into();
+    println!("run {run_id} against {url}, template {template}");
+
+    let mut run = Run { checks: vec![], timings: vec![] };
+    let boxes = std::sync::Mutex::new(Vec::<String>::new());
+    let snaps = std::sync::Mutex::new(Vec::<String>::new());
+    let body = AssertUnwindSafe(snapshot_suite(&e2b, &template, &tag, &mut run, &boxes, &snaps)).catch_unwind().await;
+
+    // Clean up whatever happened: every snapshot of every box made, every
+    // snapshot made, then every box, and list both again.
+    let made = boxes.lock().unwrap().clone();
+    let mut left_snaps = snaps.lock().unwrap().clone();
+    for b in &made {
+        if let Ok(of) = e2b.list_snapshots(Some(b)).await {
+            left_snaps.extend(of);
+        }
+    }
+    left_snaps.sort();
+    left_snaps.dedup();
+    for s in &left_snaps {
+        println!("cleanup delete snapshot {s}: {:?}", e2b.delete_snapshot(s).await);
+    }
+    let mut left = made.clone();
+    if let Ok(found) = e2b.list(&tag).await {
+        left.extend(found.into_iter().map(|b| b.id));
+    }
+    left.sort();
+    left.dedup();
+    for id in &left {
+        println!("cleanup delete {id}: {:?}", e2b.delete(id).await);
+    }
+    let after = e2b.list(&tag).await;
+    println!("cleanup list: {after:?}");
+    let mut snaps_after = Vec::new();
+    for b in &made {
+        snaps_after.extend(e2b.list_snapshots(Some(b)).await.unwrap_or_default());
+    }
+    if let Ok(all) = e2b.list_snapshots(None).await {
+        snaps_after.extend(all.into_iter().filter(|s| left_snaps.contains(s)));
+    }
+    println!("cleanup snapshots left: {snaps_after:?}");
+    assert!(after.as_ref().is_ok_and(Vec::is_empty), "boxes left behind: {after:?}");
+    assert!(snaps_after.is_empty(), "snapshots left behind: {snaps_after:?}");
+
+    println!("\ntimings:");
+    for (name, took) in &run.timings {
+        println!("  {name}: {} ms", took.as_millis());
+    }
+    let failed: Vec<_> = run.checks.iter().filter(|c| !c.1).collect();
+    println!("{} checks, {} failed", run.checks.len(), failed.len());
+    if let Err(panic) = body {
+        std::panic::resume_unwind(panic);
+    }
+    assert!(failed.is_empty(), "failed: {failed:#?}");
+}
+
+async fn snapshot_suite(
+    e2b: &E2b,
+    template: &str,
+    tag: &BTreeMap<String, String>,
+    run: &mut Run,
+    boxes: &std::sync::Mutex<Vec<String>>,
+    snaps: &std::sync::Mutex<Vec<String>>,
+) {
+    let has = e2b.snapshots().await;
+    println!("the provider takes snapshots: {has:?}");
+    let create = |template: String, name: &str| {
+        let mut metadata = tag.clone();
+        metadata.insert("arugula_workspace".into(), name.into());
+        Create { template, env: BTreeMap::new(), metadata, timeout: Duration::from_secs(300), rules: Rules::new() }
+    };
+    let source = e2b.create(&create(template.into(), "hw_source")).await;
+    run.check("create the source", source.is_ok(), &source);
+    let source = source.expect("create").id;
+    boxes.lock().unwrap().push(source.clone());
+    if has != Ok(true) {
+        let s = e2b.snapshot(&source, Mode::Filesystem).await;
+        run.check("no snapshots here: a snapshot is unsupported", s == Err(Error::Unsupported), &s);
+        return;
+    }
+
+    let fs = run.time("snapshot (filesystem)", e2b.snapshot(&source, Mode::Filesystem)).await;
+    run.check("snapshot (filesystem)", fs.as_ref().is_ok_and(|s| !s.is_empty()), &fs);
+    let fs = fs.expect("a filesystem snapshot");
+    snaps.lock().unwrap().push(fs.clone());
+    let full = run.time("snapshot (full)", e2b.snapshot(&source, Mode::Full)).await;
+    run.check("snapshot (full)", full.is_ok(), &full);
+    if let Ok(f) = &full {
+        snaps.lock().unwrap().push(f.clone());
+    }
+    let s = e2b.status(&source).await;
+    run.check("the source runs on", matches!(&s, Ok(Some(b)) if b.state == State::Running), &s);
+    let of = e2b.list_snapshots(Some(&source)).await;
+    run.check("its snapshots are listed", of.as_ref().is_ok_and(|l| l.contains(&fs)), &of);
+
+    let child = run.time("create from the snapshot", e2b.create(&create(fs.clone(), "hw_child"))).await;
+    run.check("create from the snapshot", child.is_ok(), &child);
+    let child = child.expect("a box from the snapshot");
+    boxes.lock().unwrap().push(child.id.clone());
+    println!("the child's template, as E2B answers it: {}", child.template);
+    let s = e2b.status(&child.id).await;
+    run.check("the child runs", matches!(&s, Ok(Some(b)) if b.state == State::Running), &s);
+    let snapped_child = e2b.list_snapshots(Some(&child.id)).await;
+    run.check("the child has no snapshots of its own", snapped_child.as_ref().is_ok_and(Vec::is_empty), &snapped_child);
+
+    // A paused box from a snapshot, its snapshot deleted: does it wake?
+    let paused = e2b.pause(&child.id).await;
+    run.check("pause the child", paused == Ok(Paused::Paused), &paused);
+    let gone = run.time("delete the snapshot", e2b.delete_snapshot(&fs)).await;
+    run.check("delete the snapshot", gone.is_ok(), &gone);
+    if gone.is_ok() {
+        snaps.lock().unwrap().retain(|s| *s != fs);
+    }
+    let woke = run.time("resume the child, its snapshot gone", e2b.resume(&child.id, Duration::from_secs(120))).await;
+    println!(
+        "ANSWER: a paused box whose snapshot was deleted {}: {woke:?}",
+        if woke == Ok(Resumed::Woke) { "wakes" } else { "doesn't wake" }
+    );
+    let again = e2b.delete_snapshot(&fs).await;
+    run.check("delete the snapshot again: fine", again.is_ok(), &again);
+    let refused = e2b.create(&create(fs.clone(), "hw_late")).await;
+    if let Ok(c) = &refused {
+        boxes.lock().unwrap().push(c.id.clone());
+    }
+    run.check(
+        "a box from a deleted snapshot is refused (the platform falls back to the template)",
+        matches!(refused, Err(Error::Refused { .. } | Error::NotFound)),
+        &refused,
+    );
+}

@@ -43,6 +43,7 @@ pub mod deploy_runs;
 pub mod deploys;
 pub mod forge;
 pub mod hosted;
+pub mod hosted_snapshots;
 pub mod hosted_transcripts;
 pub mod hosted_usage;
 pub mod inbox;
