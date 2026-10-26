@@ -36,6 +36,16 @@ interface HostedWorkspace {
   error: string | null;
   rebuild_needed: boolean;
   created_at: number;
+  /** Its snapshot (M263): what its new boxes start from, set up. */
+  snapshot?: Snapshot;
+}
+
+/** A workspace's snapshot: the latest build's status, when the current one
+ * was made (null: there's none), and the latest build's error. */
+interface Snapshot {
+  status: "building" | "ready" | "failed";
+  built_at: number | null;
+  error?: string;
 }
 
 /** A closed agent's transcript, without its text. */
@@ -88,6 +98,21 @@ const shortMachine = (m: string) => (m.length > 8 ? `${m.slice(0, 8)}…` : m);
 const SETTLED = new Set(["ready", "failed"]);
 
 const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KiB` : `${(n / 1024 / 1024).toFixed(1)} MiB`);
+
+/** What its new boxes start from (M263): a snapshot made from its spec,
+ * set up, or the template, and why the latest build failed. */
+function SnapshotLine({ s }: { s: Snapshot }) {
+  const made = s.built_at ? `New boxes start from a snapshot made ${when(s.built_at)}, set up.` : "New boxes run their setup.";
+  return (
+    <div data-hosted-snapshot={s.status}>
+      <p class="dim">
+        {made}
+        {s.status === "building" ? " Making a new snapshot…" : ""}
+      </p>
+      {s.status === "failed" && s.error && <p class="control-error">The latest snapshot wasn't made: {s.error}</p>}
+    </div>
+  );
+}
 
 /** A project's hosted workspaces: null until they're read, and none where
  * the platform has none. */
@@ -285,6 +310,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
           <CopyText text={`arugula cloud rebuild ${w.name} --project ${id}`} />
         </div>
       )}
+      {w.snapshot && <SnapshotLine s={w.snapshot} />}
       <div class="hosted-ws-view">
         <section data-hosted-live>
           <h2>Panes and agents</h2>

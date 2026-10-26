@@ -136,6 +136,26 @@ daemon), and stops unless `--download FILE` saves them first (a tarball of
 those repos' files that aren't ignored and their `.git`, `GET
 /api/hosted/setup/archive`) or `--force`.
 
+**Snapshots (M263, Arugula #140).** Once a workspace's box has set up all
+right, the platform builds the workspace a snapshot, and its new boxes and
+rebuilds start from it, set up, instead of running setup again. One per
+workspace, since setup runs with the workspace's own secrets. A builder box
+of its own (nobody is routed to it, and it takes no runs) runs the
+workspace's setup, then wipes itself as root: processes holding a secret in
+their environment, the daemon's whole state directory, every file holding a
+secret, shell histories, and the journal (sudo logs its command lines
+there). It writes its sandbox id to `/etc/arugula/snapshot-of`, looks again
+and refuses on any secret left, then stops. The platform takes a
+filesystem-only snapshot (a full one would keep every process's memory,
+the enrolled daemon's among them) and deletes the builder. A box from it
+boots from disk, `arugulad.service` starts the daemon, and the daemon takes
+any sandbox id but the builder's as its own box: it makes its own key and
+enrolls as a new machine. A build runs again a day after the last
+(`ARUGULA_HOSTED_SNAPSHOT_HOURS`, `0` for none) and at once when the spec
+changes; a failed one says why on the workspace and keeps the current
+snapshot. loam's E2B API has no snapshots, so there every box runs its
+setup (`crates/platform/src/hosted/snapshot.rs`).
+
 ```
 arugula cloud create dev --repo https://github.com/acme/app --setup setup.sh
 arugula cloud ls                          # every project's; --project <id or name>
