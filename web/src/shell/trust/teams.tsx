@@ -167,7 +167,10 @@ function TeamSection({
   const owner = t.role === "owner";
   // A member's machine an owner is taking out of the team (#332).
   const [takingOut, setTakingOut] = useState<string | null>(null);
-  const machines = s.daemons.filter((d) => d.team === t.team);
+  // Online first, then by name, as the machine picker (UI audit #175).
+  const machines = s.daemons
+    .filter((d) => d.team === t.team)
+    .sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
   // One-click links not used yet (#134), each with Cancel.
   const [unused, setUnused] = useState<PresignedInvite[]>([]);
   const [reload, setReload] = useState(0);

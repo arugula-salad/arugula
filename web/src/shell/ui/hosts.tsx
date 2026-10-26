@@ -3,12 +3,12 @@
 // that host's layout, connected straight to it.
 
 import { Fragment } from "preact";
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { directory } from "../hosts";
 import { blockRoutesLabel } from "../blocks/block-route";
 import type { Fleet } from "../fleet";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { openMenu, type MenuItem } from "../../shared/ui/menu";
+import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
 import { openSwarm } from "../swarm/route";
 import { controlMenuItems, controlState, subscribeControlState } from "./control-state";
 import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
@@ -152,40 +152,62 @@ function hostGroups(): { label: string; names: string[] }[] {
   return [...groups.values()];
 }
 
+/** The machine picker's row (UI audit #175): the name, then, dim, what
+ * its group's header doesn't say (its panes, how it is, whose it is in a
+ * team, hosted). Its place and what that means are its tooltip. The shown
+ * one has the ● the account menu uses; an offline one is dim. */
+function pickerItem(name: string): MenuItem {
+  const h = fleet?.host(name);
+  const n = h?.summary?.panes.length;
+  const state = machineState(name);
+  const at = placeIn(name);
+  const detail = [n === undefined ? "" : `${n} pane${n === 1 ? "" : "s"}`, state, h?.team && h.owner ? `${h.owner}'s` : "", h?.hosted ? "hosted" : ""];
+  return {
+    label: `${name}${name === directory.home ? " (home)" : ""}`,
+    detail: detail.filter(Boolean).join(" · "),
+    current: name === directory.current,
+    faded: dotOf(state) === "off",
+    hint: at ? `${at.place}: ${at.means}` : undefined,
+    run: () => directory.select(name),
+  };
+}
+
+/** Online first, then by name whatever its case (UI audit #175). */
+export function byOnlineThenName(names: string[]): string[] {
+  const on = (n: string) => Number(dotOf(machineState(n)) === "on");
+  return [...names].sort((a, b) => on(b) - on(a) || a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
 /** Desktop: the shown host, opening a menu of the others. */
 export function HostButton({ path = true }: { path?: boolean } = {}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const expanded = useMenuOpenFrom(ref);
   if (!useHosts()) return null;
   const open = (e: MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const item = (name: string): MenuItem => ({
-      label: `${name === directory.current ? "✓ " : "    "}${name}${name === directory.home ? " (home)" : ""}  · ${fleetLabel(name)}`,
-      run: () => directory.select(name),
-    });
     const groups = hostGroups();
     const items: MenuItem[] =
       groups.length > 1
-        ? groups.flatMap((g) => [{ header: g.label } as MenuItem, ...g.names.map(item)])
-        : directory.names.map(item);
+        ? groups.flatMap((g) => [{ header: g.label } as MenuItem, ...byOnlineThenName(g.names).map(pickerItem)])
+        : byOnlineThenName(directory.names).map(pickerItem);
     // M51: boxes reached over ssh, which only a terminal can open.
     if (directory.sshOnly.length) {
       items.push("separator", { header: "From a terminal (ssh)" } as MenuItem);
       for (const h of directory.sshOnly) {
-        items.push({ label: `    ${h.name}  · arugula --host ${h.name} ls`, disabled: true, run: () => {} });
+        items.push({ label: h.name, detail: `arugula --host ${h.name} ls`, current: false, disabled: true, run: () => {} });
       }
     }
     items.push("separator", { label: "Swarm: every pane at once", run: openSwarm });
     // The shown machine's own settings: here, not in the account menu.
     const mine = machineItems();
-    // #778: what the shown machine's place means, before someone joins or
-    // shares from it.
-    const at = placeIn(directory.current);
-    const means: MenuItem[] = at ? [{ label: `${at.place}: ${at.means}`, disabled: true, run: () => {} }] : [];
-    // M50: which way its blocks through control went, as the button says
-    // for the machine's own connection.
+    // #778: what its place means is its row's tooltip (UI audit #175: the
+    // paragraph here was the menu's longest line). M50: which way its
+    // blocks through control went, as the button says for the machine's
+    // own connection.
     const blocks = blockRoutesLabel();
-    if (blocks) means.push({ label: blocks, disabled: true, run: () => {} });
+    const means: MenuItem[] = blocks ? [{ label: blocks, hint: blocks, disabled: true, run: () => {} }] : [];
     if (mine.length || means.length) items.push("separator", { header: `This machine: ${directory.current}` } as MenuItem, ...means, ...mine);
-    if (fleet?.notice) items.push("separator", { label: fleet.notice, disabled: true, run: () => {} });
+    if (fleet?.notice) items.push("separator", { label: fleet.notice, hint: fleet.notice, disabled: true, run: () => {} });
     if (directory.stale) {
       const what = directory.control ? "Control unreachable: saved list" : "Home daemon unreachable: saved list";
       items.push("separator", { label: what, disabled: true, run: () => {} });
@@ -195,10 +217,10 @@ export function HostButton({ path = true }: { path?: boolean } = {}) {
     // #325: whether and where this machine is joined to control.
     if (directory.shown === null && !directory.control) items.push(...controlMenuItems());
     items.push(...extras());
-    openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items);
+    openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
   return (
-    <button class="host-button" title="Hosts" data-host={directory.current} onClick={open} onContextMenu={open}>
+    <button ref={ref} class="host-button" title="Hosts" aria-haspopup="menu" aria-expanded={expanded} data-host={directory.current} onClick={open} onContextMenu={open}>
       {directory.current}
       {path && directory.path ? (
         <span class={`host-path ${directory.path}`} data-path={directory.path} title={directory.path === "relayed" ? "Through Arugula control's relay (end to end encrypted)" : "Straight to the machine"}>
@@ -210,19 +232,38 @@ export function HostButton({ path = true }: { path?: boolean } = {}) {
   );
 }
 
-/** While a host hasn't answered yet (it may be down): the way to another. */
+/** How long "Connecting to …" waits before offering the others: a fresh
+ * load takes 5–15 s through control, and the list read like an error page
+ * (UI audit #175). */
+const OFFER_OTHERS_MS = 3000;
+
+/** While a host hasn't answered yet (it may be down): after a while, the
+ * way to another, the ones online first and the offline ones marked. */
 export function HostPicker() {
+  const [others, setOthers] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setOthers(true), OFFER_OTHERS_MS);
+    return () => clearTimeout(t);
+  }, [directory.current]);
   if (!useHosts()) return null;
+  const names = byOnlineThenName(directory.names.filter((n) => n !== directory.current));
   return (
     <div class="empty host-picker">
       <p>Connecting to {directory.current}…</p>
-      {directory.names
-        .filter((n) => n !== directory.current)
-        .map((name) => (
-          <button key={name} data-host={name} onClick={() => directory.select(name)}>
-            Switch to {name}
-          </button>
-        ))}
+      {others && names.length > 0 && (
+        <>
+          <p class="dim">Taking a while? Open another machine:</p>
+          {names.map((name) => {
+            const off = dotOf(machineState(name)) === "off";
+            return (
+              <button key={name} class={off ? "faded" : undefined} data-host={name} onClick={() => directory.select(name)}>
+                Switch to {name}
+                {off && <span class="dim"> · {tagOf(machineState(name))}</span>}
+              </button>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

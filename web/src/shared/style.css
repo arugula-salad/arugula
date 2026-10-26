@@ -596,6 +596,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
      there would sit under them. */
   z-index: 90;
   min-width: 190px;
+  max-width: min(460px, calc(100vw - 8px));
   padding: 4px;
   background: var(--raised);
   border-radius: 8px;
@@ -616,6 +617,21 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 6px 10px;
   border-radius: 5px;
   white-space: pre;
+  /* Cut short in a narrow window rather than run off it (UI audit #175). */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A row's dim second part (a machine's panes and state), and a row shown
+ * dim (an offline machine): UI audit #175. */
+.menu-detail,
+.menu-item.faded {
+  color: var(--dim);
+}
+
+.menu-detail {
+  margin-left: 4px;
+  font-size: 12px;
 }
 
 .menu-item:hover:not(:disabled) {
@@ -1476,6 +1492,10 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--raised);
 }
 
+.host-picker button.faded {
+  color: var(--dim);
+}
+
 /* ---- agent blocks (M6b) */
 
 .agent {
@@ -1782,29 +1802,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 /* #166: the standing rules dialog. */
-.rules {
-  display: grid;
-  gap: 10px;
-  max-height: 75vh;
-  overflow-y: auto;
-}
-
-.rules h2 {
-  margin: 0;
-}
-
-/* Its × (UI audit #158) shares the heading's row: the dialog is a grid,
-   where Modal's float doesn't apply. */
-.rules > .modal-close {
-  grid-area: 1 / 1;
-  justify-self: end;
-  margin: -6px -6px 0 0;
-}
-
-.rules > .modal-close + h2 {
-  grid-area: 1 / 1;
-  padding-right: 32px;
-}
 
 .rules .hint {
   margin: 0;
@@ -1830,6 +1827,19 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .rules-list .rule-text {
   font: 12px ui-monospace, monospace;
   overflow-wrap: anywhere;
+}
+
+/* Permission rules, Developer settings, Usage and crash reports: Modals
+ * now (UI audit #175), so the ×, the title bar and the scrolling are
+ * Modal's; 10px between what's in them (the title bar's rule wins). */
+.rules.control-prompt > * + * {
+  margin-top: 10px;
+}
+
+/* Where a rule applies, dim under it (UI audit #175). */
+.rule-where {
+  display: block;
+  font-size: 11px;
 }
 
 /* Shared Docs: a Doc's title over a dim sans line, its buttons on one

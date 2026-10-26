@@ -4,9 +4,9 @@
 // Opened from the account menu; each can be forgotten here.
 
 import { OPS, opPath } from "../ops";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
-import { CloseX, useModal } from "../../shared/ui/modal";
+import { Modal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 
 interface Rule {
@@ -50,10 +50,19 @@ export function RulesLayer() {
   );
 }
 
+/** `~/x` for `/home/me/x`: the daemon's home, guessed from the path (UI
+ * audit #175: full paths ran long). */
+const tilde = (p: string) => p.replace(/^(\/home\/[^/]+|\/Users\/[^/]+|\/root)(?=\/|$)/, "~");
+
+/** What it allows, in words: the tool, and the commands it starts with. */
+const allows = (r: Rule) => (r.prefix ? `${r.tool} commands starting “${r.prefix}”` : `Any ${r.tool}`);
+
+/** Where: a folder (on a VM), or everywhere. */
+const where = (r: Rule) => (r.cwd ? `in ${tilde(r.cwd)}${r.sprite ? ` on ${r.sprite}` : ""}` : "everywhere");
+
+// A Modal like control's dialogs (UI audit #175): Escape, the ×, the
+// focus and the title's size are its.
 function Rules({ client, close }: { client: Client; close: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // UI audit #150: takes the focus, keeps it, and Escape closes it.
-  useModal(ref, close);
   const [rules, setRules] = useState<Rule[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [forgetting, setForgetting] = useState(false);
@@ -79,9 +88,8 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
   };
 
   return (
-    <div class="prompt-backdrop" role="dialog" aria-modal="true" aria-label="Permission rules" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div ref={ref} class="prompt rules">
-        <CloseX close={close} />
+    <>
+      <Modal close={close} label="Permission rules" class="rules">
         <h2>Permission rules</h2>
         <p class="hint">
           Agent blocks on this machine allow these without asking. An approval card's <b>From now on…</b> makes one; a block's own{" "}
@@ -92,8 +100,8 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
         <ul class="rules-list">
           {(rules ?? []).map((r) => (
             <li key={`${r.index}-${r.at_ms}`} data-rule={r.index}>
-              <span class="rule-text" title={r.from ? `Made when allowing ${r.from}` : undefined}>
-                {r.text}
+              <span class="rule-text" title={r.from ? `Made when allowing ${r.from}` : r.text}>
+                {allows(r)} <span class="dim rule-where">{where(r)}</span>
               </span>
               <button class="secondary small" onClick={() => void forget(r.index)}>
                 Forget
@@ -111,7 +119,7 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
             Done
           </button>
         </div>
-      </div>
+      </Modal>
       {forgetting && (
         <ConfirmRemove
           title={`Forget all ${rules?.length ?? ""} rules?`}
@@ -125,6 +133,6 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
           <p>Agent blocks on this machine ask again before each of these.</p>
         </ConfirmRemove>
       )}
-    </div>
+    </>
   );
 }

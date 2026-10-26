@@ -15,6 +15,14 @@ export type MenuItem =
       checked?: boolean;
       /** Its chord, shown beside it here and in the command palette. */
       shortcut?: string;
+      /** What follows its name, dim, cut short when the menu is narrow: a
+       * machine's panes and state (UI audit #175). */
+      detail?: string;
+      /** Shown dim (an offline machine), though it can still be chosen. */
+      faded?: boolean;
+      /** In a list with one current (the machine shown): its ●, the same
+       * mark as a checked item's, with aria-current. */
+      current?: boolean;
     }
   | { header: string }
   | "separator";
@@ -150,8 +158,9 @@ export function MenuLayer() {
             key={i}
             role={item.checked === undefined ? "menuitem" : "menuitemradio"}
             aria-checked={item.checked}
+            aria-current={item.current || undefined}
             aria-keyshortcuts={item.shortcut?.replace("Ctrl", "Control")}
-            class={item.danger ? "menu-item danger" : "menu-item"}
+            class={`menu-item${item.danger ? " danger" : ""}${item.faded ? " faded" : ""}`}
             disabled={item.disabled}
             title={item.hint}
             onClick={() => {
@@ -161,8 +170,18 @@ export function MenuLayer() {
               item.run();
             }}
           >
-            {item.checked !== undefined && <span class="menu-check">{item.checked ? "●" : ""}</span>}
+            {(item.checked ?? item.current) !== undefined && (
+              <span class="menu-check" aria-hidden="true">
+                {item.checked || item.current ? "●" : ""}
+              </span>
+            )}
             {item.label}
+            {item.detail && (
+              <>
+                {" "}
+                <span class="menu-detail">{item.detail}</span>
+              </>
+            )}
             {item.shortcut && (
               <kbd class="menu-key" aria-hidden="true">
                 {item.shortcut}

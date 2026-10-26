@@ -133,10 +133,10 @@ test("a team's and an account's flags reach the machine, each saying where it co
 
   await reopen(page);
   await expect(row(page, "chat").locator("input")).toBeChecked();
-  await expect(row(page, "chat").locator("[data-flag-source]")).toHaveText("From your team on control");
+  await expect(row(page, "chat").locator("[data-flag-source]")).toHaveText("Set for your team on control");
   // The account's word beats the team's.
   await expect(row(page, "workspaces").locator("input")).not.toBeChecked();
-  await expect(row(page, "workspaces").locator("[data-flag-source]")).toHaveText("From your account on control");
+  await expect(row(page, "workspaces").locator("[data-flag-source]")).toHaveText("Set for your account on control");
   await expect(row(page, "vms").locator("[data-flag-source]")).toHaveCount(0);
   // Guest ssh and the agent catalog are the machine's alone: control won't
   // take them, and the dialog says so.
@@ -153,16 +153,16 @@ test("a team's and an account's flags reach the machine, each saying where it co
   await setOnControl("studio", null);
 });
 
-test("the machine overrides control, and Follow control takes its word back", async ({ page }) => {
+test("the machine overrides control, and Use control's takes its word back", async ({ page }) => {
   await reopen(page);
   await row(page, "chat").locator("input").uncheck();
-  await expect(row(page, "chat").locator("[data-flag-source]")).toHaveText("Set on this machine; control says on for your team");
+  await expect(row(page, "chat").locator("[data-flag-source]")).toHaveText("Set on this machine; control has it on for your team");
   expect(JSON.parse(readFileSync(join(state, "flags.json"), "utf8"))).toEqual({ flags: { chat: false } });
   await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("chat"))).toBe(false);
 
-  await row(page, "chat").getByRole("button", { name: "Follow control for Chat" }).click();
+  await row(page, "chat").getByRole("button", { name: "Use control's for Chat" }).click();
   await expect(row(page, "chat").locator("input")).toBeChecked();
-  await expect(row(page, "chat").locator("[data-flag-source]")).toHaveText("From your team on control");
+  await expect(row(page, "chat").locator("[data-flag-source]")).toHaveText("Set for your team on control");
   await expect(row(page, "chat").getByRole("button")).toHaveCount(0);
   expect(JSON.parse(readFileSync(join(state, "flags.json"), "utf8"))).toEqual({ flags: {} });
 });

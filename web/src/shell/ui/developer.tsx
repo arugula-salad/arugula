@@ -5,8 +5,8 @@
 // (`arugulad flags`); the desktop app's Daemon menu and `#developer` open it
 // either way.
 
-import { useEffect, useRef, useState } from "preact/hooks";
-import { CloseX, useModal } from "../../shared/ui/modal";
+import { useEffect, useState } from "preact/hooks";
+import { Modal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import type { FlagInfo } from "../../shared/proto.gen";
 
@@ -45,20 +45,23 @@ const onOff = (on: boolean) => (on ? "on" : "off");
 /** Whether control has a word on it for this machine (#347). */
 const controlSays = (f: FlagInfo) => f.account !== undefined || f.team !== undefined;
 
-const followLabel = (f: FlagInfo) => (controlSays(f) ? "Follow control" : "Reset");
+/** Taking this machine's word back: one action, named by what it leaves
+ * (UI audit #175: "Follow control" and "Reset" were the same). */
+const followLabel = (f: FlagInfo) => (controlSays(f) ? "Use control's" : "Use the default");
 
 /** Where a flag's state comes from (#347): this machine, the account or
  * the team on control, or its default. A daemon from before says nothing. */
 function FlagSource({ f }: { f: FlagInfo }) {
   if (!f.source) return null;
   const control = f.account !== undefined ? `${onOff(f.account)} for your account` : f.team !== undefined ? `${onOff(f.team)} for your team` : null;
+  // One pattern, as the Teams dialog's folds say it: "Set for … on control".
   const text =
     f.source === "machine"
-      ? `Set on this machine${control ? `; control says ${control}` : ""}`
+      ? `Set on this machine${control ? `; control has it ${control}` : ""}`
       : f.source === "account"
-        ? "From your account on control"
+        ? "Set for your account on control"
         : f.source === "team"
-          ? "From your team on control"
+          ? "Set for your team on control"
           : null;
   return text ? (
     <span class="hint flag-source" data-flag-source={f.source}>
@@ -67,10 +70,8 @@ function FlagSource({ f }: { f: FlagInfo }) {
   ) : null;
 }
 
+// A Modal like control's dialogs (UI audit #175).
 function Developer({ client, close }: { client: Client; close: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // UI audit #150: takes the focus, keeps it, and Escape closes it.
-  useModal(ref, close);
   const [flags, setFlags] = useState<FlagInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,9 +99,7 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
   };
 
   return (
-    <div class="prompt-backdrop" role="dialog" aria-modal="true" aria-label="Developer settings" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div ref={ref} class="prompt rules developer">
-        <CloseX close={close} />
+    <Modal close={close} label="Developer settings" class="rules developer">
         <h2>Developer settings</h2>
         <p class="hint">
           Features that aren't ready for everyone, on this machine. Each takes effect at once; <code>arugulad flags</code> shows the same
@@ -138,7 +137,6 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
             Done
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
