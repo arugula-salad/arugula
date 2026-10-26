@@ -295,6 +295,19 @@ async fn try_3_runs_three_and_a_pick_keeps_one() {
     post_in(&w.base, "ch_general", "a", "now the docs", Some(p)).await;
     let texts: Vec<String> = w.app.db.session_prompts(&ids[2]).unwrap().into_iter().map(|p| p.text).collect();
     assert_eq!(texts.last().map(String::as_str), Some("now the docs"));
+
+    // M265: the kept one's PR merges, and the thread is done, though the
+    // other tries are newer than the session itself; the project's
+    // numbers count the ask once, merged.
+    assert!(w.app.db.done_threads(&["ch_general"]).unwrap().is_empty());
+    let kept = w.session(&ids[2]);
+    let (marked, _) = w.app.db.session_merged(77, &kept.branch, 5, now_ms()).unwrap();
+    assert_eq!(marked, [ids[2].clone()]);
+    assert!(w.app.db.done_threads(&["ch_general"]).unwrap().contains(&("ch_general".to_owned(), p as u64)));
+    let counted = w.app.db.session_numbers(&w.project, 0).unwrap();
+    let asks: Vec<&str> = counted.iter().map(|c| c.session.as_str()).collect();
+    assert_eq!(asks, [s.id.as_str(), other.id.as_str()], "{counted:?}");
+    assert!(counted[0].merged_at.is_some() && counted[1].merged_at.is_none(), "{counted:?}");
     let _ = &w.hub;
 }
 
@@ -386,4 +399,11 @@ async fn codex_review_reviews_what_was_pushed() {
     // A turn with a reply is a review's only.
     let d = json!({ "branch": s.branch, "pushed": false, "reply": "hi" });
     assert!(matches!(w.says(&s.id, Kind::Turn, None, d).await, Reported::Refused { .. }));
+
+    // M265: the session's PR merges and its thread is done, though the
+    // review on it is newer; the numbers count one ask, not the review.
+    w.app.db.session_merged(77, &s.branch, 5, now_ms()).unwrap();
+    assert!(w.app.db.done_threads(&["ch_general"]).unwrap().contains(&("ch_general".to_owned(), p as u64)));
+    let counted = w.app.db.session_numbers(&w.project, 0).unwrap();
+    assert_eq!(counted.iter().map(|c| c.session.as_str()).collect::<Vec<_>>(), [s.id.as_str()], "{counted:?}");
 }

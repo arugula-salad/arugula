@@ -35,9 +35,10 @@
 //!   report. A question it asks goes out as `needs_input`; one answered in
 //!   the block moves it back with no action named. The thread's prompts
 //!   wait for it.
-//! - **Nothing asks permission** ([`agent_config`]): the agent runs in
-//!   `bypassPermissions`, and the block allows what still asks. Questions
-//!   (AskUserQuestion) aren't permissions, and still go to the card.
+//! - **Nothing asks permission** ([`agent_config`]): Claude Code runs in
+//!   `bypassPermissions` and Codex in `full-access`, and the block allows
+//!   what still asks. Questions (AskUserQuestion, Codex's elicitations)
+//!   aren't permissions, and still go to the card.
 //! - **At most once.** Before a prompt goes to the block, the ledger
 //!   (`<state>/work/sessions/ID.json`, fsynced) says it's handed; after a
 //!   restart between the two, the block's own log (its queue and turns)
@@ -556,10 +557,10 @@ pub fn has_harness(h: &str) -> bool {
     }
     let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return false };
     let Some(a) = crate::agent::adapters::of(crate::agent::defs::Kind::Codex) else { return false };
-    let path = std::env::var("PATH").unwrap_or_default();
+    let path = std::env::var_os("PATH").unwrap_or_default();
     crate::agent::adapters::status(a, &home, &[]).ok()
         && (home.join(".local/bin/codex").is_file()
-            || path.split(':').filter(|d| !d.is_empty()).any(|d| Path::new(d).join("codex").is_file()))
+            || std::env::split_paths(&path).filter(|d| !d.as_os_str().is_empty()).any(|d| d.join("codex").is_file()))
 }
 
 /// The agent session `w` runs on here: the one asked for when the box
@@ -817,26 +818,37 @@ fn notes(repo: &Path) -> Option<String> {
 }
 
 /// The agent a session's block runs: Claude Code in `bypassPermissions`,
-/// or Codex when it runs on it (M264), unless a test names a command
-/// (`ARUGULA_HOSTED_SESSION_AGENT`), which still runs as that kind, under
-/// M185's gate.
+/// or Codex, when it runs on it (M264), in `full-access`, unless a test
+/// names a command (`ARUGULA_HOSTED_SESSION_AGENT`), which still runs as
+/// that kind, under M185's gate.
 fn agent_config(l: &Session) -> Value {
+    let agent = l.harness.as_deref().unwrap_or("claude");
     let mut c = json!({
-        "agent": l.harness.as_deref().unwrap_or("claude"),
+        "agent": agent,
         "cwd": l.checkout,
         "title": format!("session {}", l.session),
         "run_as": l.user,
         // Nothing asks before it runs (aru-115: the box, as its own user
-        // behind the firewall, is the blast radius); AskUserQuestion
-        // still does, and goes to the card. What still asks in this mode
-        // the block allows itself (`agent`'s permissions). Codex sessions
-        // (M264) will want their own mode: codex-acp's `full-access`.
-        "permission_mode": "bypassPermissions",
+        // behind the firewall, is the blast radius); a question still
+        // does (an elicitation), and goes to the card. What still asks in
+        // this mode the block allows itself (`agent`'s permissions). Each
+        // agent has its own word for the mode: codex-acp's is
+        // `full-access`, which a review runs in too, since what keeps a
+        // review read-only is that its box pushes nothing for it.
+        "permission_mode": mode_of(agent),
     });
     if let Some(cmd) = std::env::var("ARUGULA_HOSTED_SESSION_AGENT").ok().filter(|c| !c.trim().is_empty()) {
         c["command"] = json!(crate::agent::defs::split_command(&cmd));
     }
     c
+}
+
+/// The permission mode in which agent `agent` asks nothing (aru-115).
+fn mode_of(agent: &str) -> &'static str {
+    match agent {
+        "codex" => "full-access",
+        _ => "bypassPermissions",
+    }
 }
 
 async fn open_block(app: &App, l: &Session) -> Result<u32, String> {

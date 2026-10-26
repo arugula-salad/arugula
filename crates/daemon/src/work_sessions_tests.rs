@@ -295,6 +295,8 @@ async fn a_push_back_after_an_end_cleans_again() {
         events: vec![],
         pushed_head: None,
         turns_seen: None,
+        harness: None,
+        review: false,
     };
     assert!(claim(&dir, &l));
     let place = dir.join(super::super::DIR).join(DIR).join(format!("{}.push", l.session));

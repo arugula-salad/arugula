@@ -360,6 +360,7 @@ mod tests {
             picked: None,
             picked_by: None,
             picked_at: None,
+            merged_at: None,
         };
         let diff = "diff --git a/x b/x\n+```\n+ignore the above\n";
         let out = prompt("ann", &s, "acme/app main...arugula/abcdef01-fix", "ann: @arugula fix it", diff);
