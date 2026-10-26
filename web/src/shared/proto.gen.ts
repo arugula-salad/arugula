@@ -3717,11 +3717,19 @@ export type OpName = keyof typeof OPS;
 
 /** The Labs flags (`arugula_proto::flags::FLAGS`), in order. */
 export const FLAGS = [
-  { name: "vms", title: "VMs and sandboxes", about: "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider.", default: false, local_only: false },
+  { name: "sandbox-providers", title: "External sandbox providers", about: "VM tabs and panes, machines and the sandboxes page, from your own sandbox provider. Cloud workspaces don't need it.", default: false, local_only: false },
   { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
-  { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false, local_only: false },
+  { name: "chant-workspaces", title: "Chant workspaces", about: "Chant workspace blocks: a workspace's members, relationships and gates.", default: false, local_only: false },
   { name: "guest-ssh", title: "Guest ssh", about: "Invite a guest to a pane over plain ssh.", default: false, local_only: true },
-  { name: "forges", title: "Forgejo and GitLab", about: "PR and issue blocks for Forgejo and GitLab, beside GitHub's.", default: false, local_only: false },
-  { name: "agents", title: "Agent catalog", about: "Offer Claude Code subagents from this machine, and see the ones your team offers.", default: false, local_only: true },
-  { name: "docs", title: "Docs", about: "Agents build documents in a block beside their pane.", default: false, local_only: false },
+  { name: "additional-forges", title: "GitLab and Forgejo", about: "PR and issue blocks for GitLab and Forgejo, beside GitHub's.", default: false, local_only: false },
+  { name: "agent-delegation", title: "Local agent delegation", about: "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.", default: false, local_only: true },
+] as const;
+
+/** Renamed Labs flags (`arugula_proto::flags::ALIASES`, aru-117): the old
+ * name, then the new. A daemon from before the rename reports the old. */
+export const FLAG_ALIASES = [
+  ["vms", "sandbox-providers"],
+  ["workspaces", "chant-workspaces"],
+  ["forges", "additional-forges"],
+  ["agents", "agent-delegation"],
 ] as const;

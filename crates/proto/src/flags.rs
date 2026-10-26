@@ -618,17 +618,17 @@ mod tests {
     #[test]
     fn a_flag_is_at_its_default_until_set_and_then_follows_the_file() {
         let d = dir("set");
-        assert!(!get(&d, FORGES) && !on(&d).any() && !unlocked(&d));
-        set(&d, FORGES, true).unwrap();
-        assert!(get(&d, FORGES) && unlocked(&d));
+        assert!(!get(&d, ADDITIONAL_FORGES) && !on(&d).any() && !unlocked(&d));
+        set(&d, ADDITIONAL_FORGES, true).unwrap();
+        assert!(get(&d, ADDITIONAL_FORGES) && unlocked(&d));
         assert_eq!(
             fs::read_to_string(d.join(FILE)).unwrap().replace(char::is_whitespace, ""),
-            r#"{"flags":{"forges":true}}"#
+            r#"{"flags":{"additional-forges":true}}"#
         );
         // One flag turns on alone.
-        assert_eq!(names(&d), [FORGES]);
+        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
         set(&d, GUEST_SSH, true).unwrap();
-        set(&d, FORGES, false).unwrap();
+        set(&d, ADDITIONAL_FORGES, false).unwrap();
         assert_eq!(names(&d), [GUEST_SSH]);
         assert_eq!(all(&d).iter().filter(|(_, on)| *on).map(|(f, _)| f.name).collect::<Vec<_>>(), [GUEST_SSH]);
         assert_eq!(all(&d).len(), FLAGS.len());
@@ -643,7 +643,7 @@ mod tests {
         let d = dir("unlock");
         unlock(&d).unwrap();
         assert!(unlocked(&d) && !on(&d).any());
-        set(&d, FORGES, true).unwrap();
+        set(&d, ADDITIONAL_FORGES, true).unwrap();
         let before = fs::read_to_string(d.join(FILE)).unwrap();
         unlock(&d).unwrap();
         assert_eq!(fs::read_to_string(d.join(FILE)).unwrap(), before);
@@ -667,7 +667,7 @@ mod tests {
         assert!(!get(&d, "nope"));
         let e = set(&d, "nope", true).unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
-        assert!(e.to_string().contains("vms"), "{e}");
+        assert!(e.to_string().contains("sandbox-providers"), "{e}");
         assert!(!d.join(FILE).exists());
         // `labs` was a flag once (#464); it isn't one to set now.
         assert_eq!(set(&d, LABS, true).unwrap_err().kind(), io::ErrorKind::InvalidInput);
@@ -680,10 +680,10 @@ mod tests {
     #[test]
     fn a_write_keeps_the_keys_and_flags_it_doesnt_know() {
         let d = dir("keeps");
-        fs::write(d.join(FILE), r#"{"other":{"a":1},"flags":{"future":true,"forges":false}}"#).unwrap();
-        set(&d, FORGES, true).unwrap();
+        fs::write(d.join(FILE), r#"{"other":{"a":1},"flags":{"future":true,"additional-forges":false}}"#).unwrap();
+        set(&d, ADDITIONAL_FORGES, true).unwrap();
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
-        assert_eq!(v, serde_json::json!({"other":{"a":1},"flags":{"future":true,"forges":true}}));
+        assert_eq!(v, serde_json::json!({"other":{"a":1},"flags":{"future":true,"additional-forges":true}}));
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -692,12 +692,12 @@ mod tests {
         let d = dir("bad");
         for bad in ["{not json", "[]", r#"{"flags":3}"#] {
             fs::write(d.join(FILE), bad).unwrap();
-            assert!(!get(&d, FORGES), "{bad}");
+            assert!(!get(&d, ADDITIONAL_FORGES), "{bad}");
             assert_eq!(fs::read_to_string(d.join(FILE)).unwrap(), bad, "a read left it alone");
         }
         fs::write(d.join(FILE), "{not json").unwrap();
-        set(&d, FORGES, true).unwrap();
-        assert!(get(&d, FORGES));
+        set(&d, ADDITIONAL_FORGES, true).unwrap();
+        assert!(get(&d, ADDITIONAL_FORGES));
         assert_eq!(fs::read_to_string(d.join(format!("{FILE}.bad"))).unwrap(), "{not json");
         fs::remove_dir_all(&d).unwrap();
     }
@@ -717,9 +717,9 @@ mod tests {
 
         // On is all of them, off none.
         fs::write(d.join(FILE), r#"{"flags":{"labs":true,"studio":false}}"#).unwrap();
-        assert!(get(&d, FORGES) && !get(&d, STUDIO));
+        assert!(get(&d, ADDITIONAL_FORGES) && !get(&d, STUDIO));
         fs::write(d.join(FILE), r#"{"flags":{"labs":false,"forges":true}}"#).unwrap();
-        assert_eq!(names(&d), [FORGES]);
+        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
         fs::remove_dir_all(&d).unwrap();
 
         // The marker file alone is neither Labs nor Developer settings.
@@ -748,8 +748,11 @@ mod tests {
 
         // `vms` is the flag's old name, and speaks for it (aru-117).
         assert!(
-            write_control(&d, &pushed(&[("vms", false)], &[(ADDITIONAL_FORGES, true), (SANDBOX_PROVIDERS, true), ("future", true)]))
-                .unwrap()
+            write_control(
+                &d,
+                &pushed(&[("vms", false)], &[(ADDITIONAL_FORGES, true), (SANDBOX_PROVIDERS, true), ("future", true)])
+            )
+            .unwrap()
         );
         assert!(
             !write_control(
@@ -760,9 +763,9 @@ mod tests {
         );
         // Control saying something offers Developer settings, to see it.
         assert!(unlocked(&d) && !d.join(FILE).exists());
-        assert_eq!(names(&d), [FORGES]);
+        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
         assert_eq!(
-            state_of(&d, FORGES),
+            state_of(&d, ADDITIONAL_FORGES),
             State { on: true, source: Source::Team, local: None, account: None, team: Some(true) }
         );
         assert_eq!(state_of(&d, SANDBOX_PROVIDERS).source, Source::Account);
@@ -775,7 +778,7 @@ mod tests {
         set(&d, SANDBOX_PROVIDERS, true).unwrap();
         assert_eq!(names(&d), [SANDBOX_PROVIDERS]);
         assert_eq!(
-            state_of(&d, FORGES),
+            state_of(&d, ADDITIONAL_FORGES),
             State { on: false, source: Source::Machine, local: Some(false), account: None, team: Some(true) }
         );
         unset(&d, ADDITIONAL_FORGES).unwrap();
@@ -788,10 +791,10 @@ mod tests {
         assert!(forget_control(&d).unwrap());
         assert!(!on(&d).any() && !forget_control(&d).unwrap());
         // And a control that pushes nothing any more takes the file away.
-        write_control(&d, &pushed(&[(FORGES, true)], &[])).unwrap();
-        assert!(get(&d, FORGES));
+        write_control(&d, &pushed(&[(ADDITIONAL_FORGES, true)], &[])).unwrap();
+        assert!(get(&d, ADDITIONAL_FORGES));
         assert!(write_control(&d, &Pushed::default()).unwrap());
-        assert!(!d.join(CONTROL_FILE).exists() && !get(&d, FORGES));
+        assert!(!d.join(CONTROL_FILE).exists() && !get(&d, ADDITIONAL_FORGES));
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -808,7 +811,7 @@ mod tests {
         assert!(!get(&d, ADDITIONAL_FORGES) && get(&d, SANDBOX_PROVIDERS) && !get(&d, STUDIO));
         assert_eq!(names(&d).len(), FLAGS.len() - 2);
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
-        assert!(v["flags"].get(LABS).is_none() && v["flags"].get(FORGES).is_none());
+        assert!(v["flags"].get(LABS).is_none() && v["flags"].get(ADDITIONAL_FORGES).is_none());
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -819,7 +822,8 @@ mod tests {
         let local: Vec<_> = FLAGS.iter().filter(|f| f.local_only).map(|f| f.name).collect();
         assert_eq!(local, [GUEST_SSH, AGENT_DELEGATION]);
         let d = dir("local-only");
-        write_control(&d, &pushed(&[(GUEST_SSH, true)], &[(AGENT_DELEGATION, true), (ADDITIONAL_FORGES, true)])).unwrap();
+        write_control(&d, &pushed(&[(GUEST_SSH, true)], &[(AGENT_DELEGATION, true), (ADDITIONAL_FORGES, true)]))
+            .unwrap();
         assert_eq!(names(&d), [ADDITIONAL_FORGES]);
         assert_eq!(
             state_of(&d, GUEST_SSH),
@@ -841,7 +845,7 @@ mod tests {
         assert!(FLAGS.iter().all(|f| RETIRED.iter().all(|(n, _)| *n != f.name)));
         let d = dir("retired");
         fs::write(d.join(FILE), r#"{"flags":{"fountain":true,"forges":true}}"#).unwrap();
-        assert_eq!(names(&d), [FORGES]);
+        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
         assert!(!get(&d, "fountain"));
         assert_eq!(all(&d).len(), FLAGS.len());
         fs::write(d.join(FILE), r#"{"flags":{"fountain":false}}"#).unwrap();
@@ -870,7 +874,7 @@ mod tests {
     fn huddles_on_from_before_loads_and_means_nothing() {
         let d = dir("huddles");
         fs::write(d.join(FILE), r#"{"flags":{"huddles":true,"forges":true}}"#).unwrap();
-        assert_eq!(names(&d), [FORGES]);
+        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
         assert!(!get(&d, "huddles"));
         write_control(&d, &pushed(&[("huddles", true)], &[("huddles", true)])).unwrap();
         assert_eq!(names(&d), [ADDITIONAL_FORGES]);
@@ -972,8 +976,8 @@ mod tests {
         let d = dir("pushed-bad");
         fs::write(d.join(CONTROL_FILE), "{not json").unwrap();
         assert!(!on(&d).any() && !unlocked(&d));
-        assert!(write_control(&d, &pushed(&[(FORGES, true)], &[])).unwrap());
-        assert!(get(&d, FORGES));
+        assert!(write_control(&d, &pushed(&[(ADDITIONAL_FORGES, true)], &[])).unwrap());
+        assert!(get(&d, ADDITIONAL_FORGES));
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -982,7 +986,7 @@ mod tests {
     fn the_file_is_private_to_the_owner() {
         use std::os::unix::fs::PermissionsExt;
         let d = dir("mode");
-        set(&d, FORGES, true).unwrap();
+        set(&d, ADDITIONAL_FORGES, true).unwrap();
         assert_eq!(fs::metadata(d.join(FILE)).unwrap().permissions().mode() & 0o777, 0o600);
         let tmps = fs::read_dir(&d)
             .unwrap()

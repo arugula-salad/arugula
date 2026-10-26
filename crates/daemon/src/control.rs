@@ -3672,7 +3672,11 @@ pub(crate) mod tests {
         r.fake.lock().unwrap().flags =
             Some(serde_json::json!({ "account": { "vms": false }, "team": { "forges": true, "vms": true } }));
         let c = r.daemon().await;
-        assert!(flags::get(&r.dir, ADDITIONAL_FORGES) && !flags::get(&r.dir, SANDBOX_PROVIDERS) && !flags::get(&r.dir, STUDIO));
+        assert!(
+            flags::get(&r.dir, ADDITIONAL_FORGES)
+                && !flags::get(&r.dir, SANDBOX_PROVIDERS)
+                && !flags::get(&r.dir, STUDIO)
+        );
         let source = |name| flags::explain(&r.dir).into_iter().find(|(f, _)| f.name == name).unwrap().1.source;
         assert_eq!((source(ADDITIONAL_FORGES), source(SANDBOX_PROVIDERS)), (Source::Team, Source::Account));
 
@@ -3696,7 +3700,11 @@ pub(crate) mod tests {
         while r.dir.join(flags::CONTROL_FILE).exists() && t.elapsed() < Duration::from_secs(10) {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        assert!(!flags::get(&r.dir, STUDIO) && !flags::get(&r.dir, SANDBOX_PROVIDERS) && !flags::get(&r.dir, ADDITIONAL_FORGES));
+        assert!(
+            !flags::get(&r.dir, STUDIO)
+                && !flags::get(&r.dir, SANDBOX_PROVIDERS)
+                && !flags::get(&r.dir, ADDITIONAL_FORGES)
+        );
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 
