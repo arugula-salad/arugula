@@ -263,6 +263,74 @@ async fn a_push_from_a_bundle_moves_one_ref() {
     assert!(found.is_empty(), "{found:?}");
 }
 
+/// A session that began before main changed CI (the v0.63.0 live test):
+/// GitHub compares a new branch's tree with the default branch's, so the
+/// branch's older workflow file reads as an edit, and a token without
+/// `workflows` is refused. The remote's hook stands in for GitHub's rule,
+/// knowing the token by the environment git hands it. With the token the
+/// platform mints now (`workflows: write`, aru-115 amended), it goes
+/// through.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_branch_behind_a_main_that_changed_ci_pushes_with_workflows() {
+    let dir = crate::hosted::scratch("session-push-ci");
+    let remote = dir.join("remote.git");
+    git_in(&dir, &["init", "-q", "--bare", "-b", "main", remote.to_str().unwrap()]);
+    let work = dir.join("work");
+    git_in(&dir, &["clone", "-q", remote.to_str().unwrap(), work.to_str().unwrap()]);
+    for (k, v) in [("user.email", "s@example.invalid"), ("user.name", "s")] {
+        git_in(&work, &["config", k, v]);
+    }
+    std::fs::create_dir_all(work.join(".github/workflows")).unwrap();
+    std::fs::write(work.join(".github/workflows/test.yml"), "on: push\n").unwrap();
+    git_in(&work, &["add", "."]);
+    git_in(&work, &["commit", "-qm", "init"]);
+    git_in(&work, &["push", "-q", "origin", "main"]);
+    // The session branches here; then main changes CI.
+    let id = format!("ses_{}", "c".repeat(32));
+    let own = format!("arugula/{}-fix", &id[4..12]);
+    git_in(&work, &["switch", "-q", "-c", &own]);
+    std::fs::write(work.join("NOTES.md"), "notes\n").unwrap();
+    git_in(&work, &["add", "."]);
+    git_in(&work, &["commit", "-qm", "add notes"]);
+    let head = git_in(&work, &["rev-parse", "HEAD"]);
+    git_in(&work, &["switch", "-q", "main"]);
+    std::fs::write(work.join(".github/workflows/test.yml"), "on: [push, pull_request]\n").unwrap();
+    git_in(&work, &["commit", "-qam", "test on PRs too"]);
+    git_in(&work, &["push", "-q", "origin", "main"]);
+    // GitHub's rule, from here on.
+    let hook = remote.join("hooks/pre-receive");
+    std::fs::write(
+        &hook,
+        "#!/bin/sh\n\
+         while read old new ref; do\n\
+         \x20 if [ -n \"$(git diff --name-only refs/heads/main \"$new\" -- .github/workflows)\" ] \
+         && [ \"$ARUGULA_PUSH_TOKEN\" != ghs_with_workflows ]; then\n\
+         \x20   echo \"refusing to allow a GitHub App to create or update workflow .github/workflows/test.yml \
+         without \\`workflows\\` permission\" >&2; exit 1\n\
+         \x20 fi\n\
+         done\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let b = dir.join("own.bundle");
+    git_in(&work, &["bundle", "create", "-q", b.to_str().unwrap(), &format!("refs/heads/{own}")]);
+    let mirror = dir.join("mirror.git");
+    let url = remote.display().to_string();
+
+    // As before: contents only, refused, and nothing moved.
+    let e = push::push_bundle(&mirror, &b, &id, &own, &own, &url, Some("ghs_contents_only")).await.unwrap_err();
+    assert!(e.contains("without `workflows` permission"), "{e}");
+    assert_eq!(git_in(&remote, &["for-each-ref", "--format=%(refname)"]), "refs/heads/main");
+    // With workflows: through, and main is as it was.
+    let main = git_in(&remote, &["rev-parse", "refs/heads/main"]);
+    assert_eq!(push::push_bundle(&mirror, &b, &id, &own, &own, &url, Some("ghs_with_workflows")).await.unwrap(), head);
+    assert_eq!(
+        git_in(&remote, &["for-each-ref", "--format=%(refname) %(objectname)"]),
+        format!("refs/heads/{own} {head}\nrefs/heads/main {main}")
+    );
+}
+
 /// A stop while a push ran cleaned the slot under it, and the push made
 /// its place again: once the push is back, an ended session's place goes,
 /// and a session that goes on keeps its. Unix's: cleaning runs `rm` as

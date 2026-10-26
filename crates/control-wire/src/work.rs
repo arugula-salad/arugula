@@ -363,6 +363,11 @@ pub struct SessionAction {
     pub id: String,
     /// The account that asked.
     pub by: String,
+    /// Its login (or the name the platform has for it), for the
+    /// transcript's "Answered by" note: empty from a platform that doesn't
+    /// send it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub by_name: String,
     /// `answer`, `approve`, `deny` or `cancel`.
     pub kind: String,
     /// The open request it answers ([`SessionDetail::request`]); `None`:
@@ -380,6 +385,13 @@ pub struct SessionAction {
     pub reason: Option<String>,
     /// When it was asked (ms).
     pub at: u64,
+}
+
+impl SessionAction {
+    /// Who asked, as people read it: their login, else the account id.
+    pub fn who(&self) -> &str {
+        if self.by_name.is_empty() { &self.by } else { &self.by_name }
+    }
 }
 
 /// A prompt queued in a session's thread.
@@ -550,8 +562,8 @@ pub struct PushAsk {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PushGiven {
     /// An installation token for the session's repo alone, with
-    /// `contents: write` and nothing else (no `workflows`), minted for this
-    /// push: the box hands it to git in one process's environment, never
+    /// `contents: write` and `workflows: write` (aru-115, amended), minted
+    /// for this push: the box hands it to git in one process's environment, never
     /// to a file, then revokes it at `revoke` (`DELETE`, the token as its
     /// bearer). `expires_at` is GitHub's.
     Given { token: String, expires_at: String, revoke: String },
@@ -645,6 +657,11 @@ mod tests {
                 .unwrap();
         assert_eq!((a.request.as_deref(), a.option.as_deref()), (None, None));
         assert!(!serde_json::to_string(&a).unwrap().contains("option"));
+        assert_eq!((a.by_name.as_str(), a.who()), ("", "a"), "a platform without names");
+        assert!(!serde_json::to_string(&a).unwrap().contains("by_name"));
+        let named = SessionAction { by_name: "jhgaylor".into(), ..a };
+        assert_eq!(named.who(), "jhgaylor");
+        assert!(serde_json::to_string(&named).unwrap().contains(r#""by_name":"jhgaylor""#));
     }
 
     /// Members' text goes in plain; GitHub's fenced as quoted data, in a

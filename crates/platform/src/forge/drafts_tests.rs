@@ -429,7 +429,7 @@ async fn a_sessions_pr_is_drafted_by_its_asker() {
     assert!(body.contains("NOTES.md | 1 +") && body.contains("\n```\n\n## Why\n\n---\n\n"), "{body}");
     assert!(
         body.contains(&format!(
-            "Opened from Arugula agent session [`{}`](https://control.example/p/{team}/sessions/{ses})",
+            "Opened from Arugula agent session [`{}`](https://app.example/p/{team}/sessions/{ses})",
             &ses[4..12]
         )),
         "{body}"
@@ -502,12 +502,39 @@ async fn a_sessions_pr_reads_its_commits_from_github_when_its_turns_name_none() 
     let (_, v) = call(&base, "alice", "GET", &format!("/api/sessions/{ses}/pr"), None).await;
     assert_eq!(v["title"], "Add a farewell function", "{v}");
     let body = v["body"].as_str().unwrap();
-    assert!(body.ends_with(&format!(" in [its thread](https://control.example/issues/{}).\n", issue.id)), "{body}");
+    assert!(body.ends_with(&format!(" in [its thread](https://app.example/issues/{}).\n", issue.id)), "{body}");
+}
+
+/// A session's branch that changes a CI workflow (which its push token
+/// may, aru-115 amended) gets a warning at the top of its PR's summary,
+/// from GitHub's compare of the branch; one that doesn't, none.
+#[tokio::test]
+async fn a_sessions_pr_says_when_it_changes_ci() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    let (team, _) = world(&hub, &gh, &app).await;
+    let ses = pushed_session(&app, &gh, &team).await;
+    let path = format!("/api/sessions/{ses}/pr");
+    gh.lock().unwrap().files.insert("acme/app:compare-files".into(), "NOTES.md".into());
+    let (s, v) = call(&base, "alice", "GET", &path, None).await;
+    assert_eq!(s, 200, "{v}");
+    assert!(!v["body"].as_str().unwrap().contains("CI workflows"), "{v}");
+    gh.lock().unwrap().files.insert("acme/app:compare-files".into(), "NOTES.md\n.github/workflows/test.yml".into());
+    let (_, v) = call(&base, "alice", "GET", &path, None).await;
+    let body = v["body"].as_str().unwrap();
+    assert!(
+        body.starts_with(
+            "## Summary\n\n**⚠ This PR changes CI workflows** (`.github/workflows/`): check them before merging.\n\n- Add notes\n"
+        ),
+        "{body}"
+    );
 }
 
 /// The push token (M259, S42 q2): the platform mints one only for the
 /// session's own box, for exactly the session's branch, on its linked repo,
-/// with `contents: write` and no `workflows`; a push outside `arugula/*`
+/// with `contents: write` and `workflows: write` (aru-115, amended
+/// 2026-10-26: a branch that began before main changed CI needs it); a
+/// push outside `arugula/*`
 /// (`main`), another session's branch, another machine, or a session that
 /// ended gets none.
 #[tokio::test]
@@ -540,7 +567,11 @@ async fn a_push_outside_its_branch_is_refused() {
     assert_eq!(token, "ghs_fake");
     assert!(revoke.ends_with("/installation/token"), "{revoke}");
     assert!(!format!("{got:?}").contains("ghs_fake"), "never printed");
-    assert_eq!(gh.lock().unwrap().minted, [json!({ "metadata": "read", "contents": "write" })], "no workflows");
+    assert_eq!(
+        gh.lock().unwrap().minted,
+        [json!({ "metadata": "read", "contents": "write", "workflows": "write" })],
+        "with workflows"
+    );
     let logged: Vec<(String, String, String)> = app
         .db
         .c()
@@ -552,7 +583,7 @@ async fn a_push_outside_its_branch_is_refused() {
         .unwrap();
     assert_eq!(logged.len(), 1, "{logged:?}");
     assert_eq!((logged[0].0.as_str(), logged[0].1.as_str()), ("alice", "session:push"));
-    assert!(!logged[0].2.contains("workflows"), "{logged:?}");
+    assert!(logged[0].2.contains(r#""workflows":"write""#), "{logged:?}");
 
     // Once it ended, no more.
     app.db.c().execute("UPDATE agent_sessions SET state = 'stopped' WHERE id = ?1", params![ses]).unwrap();

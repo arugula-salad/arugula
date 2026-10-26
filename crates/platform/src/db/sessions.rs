@@ -478,6 +478,7 @@ impl Action {
         SessionAction {
             id: self.id.clone(),
             by: self.by.clone(),
+            by_name: String::new(),
             kind: self.kind.as_str().into(),
             request: self.request.clone(),
             answer: self.answer.as_deref().and_then(|a| serde_json::from_str(a).ok()),

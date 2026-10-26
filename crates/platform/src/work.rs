@@ -212,15 +212,23 @@ impl Handler for Dispatch {
     }
 }
 
-/// Each member's prompt's `author_name`: its author's login, else the
-/// name they chose.
+/// Each member's prompt's `author_name`, and each action's `by_name`: its
+/// account's login, else the name they chose.
 fn name_authors(
     sessions: &mut [arugula_control_wire::work::SessionWork],
     accounts: &std::collections::HashMap<String, crate::hub::Account>,
 ) {
-    for p in sessions.iter_mut().flat_map(|s| s.prompts.iter_mut()).filter(|p| p.source == "member") {
-        if let Some(a) = accounts.get(&p.author) {
-            p.author_name = if a.login.is_empty() { a.name.clone() } else { a.login.clone() };
+    let name = |id: &str| accounts.get(id).map(|a| if a.login.is_empty() { a.name.clone() } else { a.login.clone() });
+    for s in sessions.iter_mut() {
+        for p in s.prompts.iter_mut().filter(|p| p.source == "member") {
+            if let Some(n) = name(&p.author) {
+                p.author_name = n;
+            }
+        }
+        for a in s.actions.iter_mut() {
+            if let Some(n) = name(&a.by) {
+                a.by_name = n;
+            }
         }
     }
 }
@@ -234,9 +242,15 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
     let mut sessions =
         if takes.iter().any(|t| t == TAKES_SESSION) { app.db.session_work(&m.workspace)? } else { vec![] };
     // Each prompt with its author's login, for the transcript's "from"
-    // note. Without the hub the box says the account id.
-    let authors: Vec<String> =
-        sessions.iter().flat_map(|s| &s.prompts).filter(|p| p.source == "member").map(|p| p.author.clone()).collect();
+    // note, and each action with its asker's, for "Answered by". Without
+    // the hub the box says the account id.
+    let mut authors: Vec<String> = sessions
+        .iter()
+        .flat_map(|s| s.prompts.iter().filter(|p| p.source == "member").map(|p| p.author.clone()))
+        .chain(sessions.iter().flat_map(|s| s.actions.iter().map(|a| a.by.clone())))
+        .collect();
+    authors.sort();
+    authors.dedup();
     if !authors.is_empty() {
         match app.cache.accounts(&*app.hub, &authors).await {
             Ok(accounts) => name_authors(&mut sessions, &accounts),

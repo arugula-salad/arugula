@@ -402,6 +402,7 @@ fn action(n: u32, by: &str, kind: &str) -> SessionAction {
     SessionAction {
         id: format!("sac_{n:032}"),
         by: by.into(),
+        by_name: String::new(),
         kind: kind.into(),
         request: None,
         answer: None,
@@ -640,13 +641,15 @@ fn a_hosted_machine_runs_sessions() {
     let (_, asked_d) = f.of(&a).into_iter().rfind(|(r, _)| r.to == "needs_input").unwrap();
     assert_eq!(asked_d.ask.as_deref(), Some("question"));
     assert!(asked_d.question.as_deref().is_some_and(|q| q.contains("colour")), "{asked_d:?}");
+    // As its asker's login, which the platform sends (else the account id).
     let mut answer = action(2, "acct2", "answer");
+    answer.by_name = "ann".into();
     answer.request = asked_d.request.clone();
     answer.answer = Some(json!({ "question_0": "Blue" }));
     f.ask(&a, answer);
     wait(&marks, &f, "the answered turn", || f.state(&a) == "done" && f.turns(&a).len() == 4);
     let lines = transcript(&d, block);
-    assert!(lines.iter().any(|l| l.starts_with("note: Answered by acct2")), "{lines:#?}");
+    assert!(lines.iter().any(|l| l.starts_with("note: Answered by ann")), "{lines:#?}");
     assert!(lines.iter().any(|l| l.starts_with("agent: ") && l.contains("Blue")), "{lines:#?}");
 
     // A permission: nobody's asked (aru-115). The agent runs in

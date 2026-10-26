@@ -112,6 +112,7 @@ pub(crate) async fn split_github(
         arugula_platform::Config {
             public_url: "http://control.test".into(),
             sites: vec!["http://control.test".into()],
+            page_url: String::new(),
             relay_free_bytes: 0,
         },
         db,

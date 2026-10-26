@@ -193,16 +193,24 @@ that still asks. The box is the blast radius (its own user, the firewall,
 no secrets; aru-115). Questions are another thing: the agent asks with
 AskUserQuestion (Codex with its own form), and the question goes to the
 session's card in the thread. The agent commits on the session's branch
-and doesn't push: the box runs the finish step and pushes.
+and doesn't push: the box runs the finish step and pushes. The push's token
+is minted for that push alone, on the session's repo, and writes its
+contents and its workflows (aru-115, amended 2026-10-26): GitHub refuses a
+new branch whose workflow files differ from the default branch's without
+`workflows`, as a session's do once main changed CI after it began. So a
+session's branch can change `.github/workflows/`, and whoever reviews its
+PR checks those changes.
 A turn someone types in the session's block (the card's **Open**) is the
 session's too: the card shows it working, and it ends the same way, with
 the finish step, the push and the turn's report. On an Arugula issue's
-thread the agent names the issue by its link, never `#N`: on GitHub that's
+thread the agent names the issue by its link on the platform page
+(`https://app.arugula.io/issues/iss_…`), never `#N`: on GitHub that's
 another issue. The asker's draft PR is titled after the issue (else the
 newest pushed commit, else the ask's first line). Its body puts the
 commits, the last turn's diffstat and the finish step's result under the
-template's `## Summary` (or its first section), and its footer links the
-session and its thread.
+template's `## Summary` (or its first section), led by a warning when the
+branch changes anything under `.github/workflows/`, and its footer links
+the session and its thread on the platform page.
 
 **Sizes** (M266, Arugula #201). A workspace is `small` (2 vCPU, 2 GiB, the
 default) or `large` (8 vCPU, 8 GiB, enough for a Rust build): the spec's

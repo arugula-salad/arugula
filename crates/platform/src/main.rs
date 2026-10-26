@@ -61,6 +61,13 @@ struct Args {
     #[arg(long, value_delimiter = ',', env = "ARUGULA_CONTROL_ALSO_URLS")]
     also_url: Vec<String>,
 
+    /// The platform page's host (M151), as the hub's `--platform-host`:
+    /// `app.arugula.io`. Links to the page (an issue's, a session's, a
+    /// thread's, in prompts and PR bodies) are on it, with the public URL's
+    /// scheme and port. Unset, they're on the public URL.
+    #[arg(long, env = "ARUGULA_PLATFORM_HOST")]
+    platform_host: Option<String>,
+
     /// Free relay traffic per account per month, in MB (with billing on):
     /// the same as the hub's.
     #[arg(long, default_value_t = 10_000, env = "ARUGULA_RELAY_FREE_MB")]
@@ -167,6 +174,18 @@ fn main() -> anyhow::Result<()> {
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
 }
 
+/// The platform page's origin on `host`, with `public_url`'s scheme and
+/// port (as the hub's `platform_host::parse` makes it); "" for no host.
+fn page_origin(public_url: &str, host: &str) -> anyhow::Result<String> {
+    let host = host.trim().trim_end_matches('.');
+    if host.is_empty() {
+        return Ok(String::new());
+    }
+    let mut u = url::Url::parse(public_url).context("ARUGULA_CONTROL_URL")?;
+    u.set_host(Some(host)).map_err(|e| anyhow::anyhow!("ARUGULA_PLATFORM_HOST {host:?}: {e}"))?;
+    Ok(u.origin().ascii_serialization())
+}
+
 async fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -177,10 +196,14 @@ async fn run() -> anyhow::Result<()> {
     let key = PrincipalKey::from_hex(&a.key).context("ARUGULA_PLATFORM_KEY")?;
     let l = tokio::net::TcpListener::bind(a.listen).await.with_context(|| format!("listening on {}", a.listen))?;
     let public_url = a.public_url.trim_end_matches('/').to_owned();
+    let page_url = page_origin(&public_url, a.platform_host.as_deref().unwrap_or(""))?;
+    // The page's origin is one of ours too (chat's previews, #108), as in
+    // process.
     let sites = std::iter::once(public_url.clone())
         .chain(a.also_url.iter().filter(|u| !u.is_empty()).map(|u| u.trim_end_matches('/').to_owned()))
+        .chain(Some(page_url.clone()).filter(|u| !u.is_empty()))
         .collect();
-    let cfg = Config { public_url, sites, relay_free_bytes: a.relay_free_mb * 1_000_000 };
+    let cfg = Config { public_url, sites, page_url, relay_free_bytes: a.relay_free_mb * 1_000_000 };
     let http = arugula_control_common::roots::client(std::time::Duration::from_secs(15))?;
     let analytics = match a.posthog_api_key.clone().filter(|k| !k.is_empty()) {
         Some(k) => Analytics::start(k, &a.posthog_host, http.clone()),
@@ -327,6 +350,23 @@ mod tests {
     fn args() {
         use clap::CommandFactory;
         super::Args::command().debug_assert();
+    }
+
+    /// The page's origin is the platform host with control's scheme and
+    /// port, as the hub makes it: `https://app.arugula.io`.
+    #[test]
+    fn the_page_is_on_its_host() {
+        let o = |public: &str, host: &str| super::page_origin(public, host).unwrap();
+        assert_eq!(o("https://control.arugula.io", "app.arugula.io"), "https://app.arugula.io");
+        assert_eq!(o("http://10.0.0.10:8080", "app.control.test."), "http://app.control.test:8080");
+        assert_eq!(o("https://control.arugula.io", ""), "", "none: links stay on control's URL");
+        let cfg = |page: &str| arugula_platform::Config {
+            public_url: "https://control.arugula.io".into(),
+            page_url: page.into(),
+            ..Default::default()
+        };
+        assert_eq!(cfg("https://app.arugula.io").page(), "https://app.arugula.io");
+        assert_eq!(cfg("").page(), "https://control.arugula.io");
     }
 
     /// `ARUGULA_PLATFORM_PAUSED=1`, as the runbook and production's staged

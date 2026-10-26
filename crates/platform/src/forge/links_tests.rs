@@ -196,12 +196,20 @@ async fn compare(
         };
     }
     // A session's branch (M259): its commits, oldest first, as GitHub
-    // lists them.
+    // lists them, and the files it changes (one a line, kept as
+    // `owner/name:compare-files`).
     if spec.contains("...arugula/") {
+        let files: Vec<Value> = h
+            .lock()
+            .unwrap()
+            .files
+            .get(&format!("{o}/{r}:compare-files"))
+            .map(|f| f.lines().map(|f| json!({ "filename": f, "status": "modified" })).collect())
+            .unwrap_or_default();
         return Json(json!({ "status": "ahead", "ahead_by": 2, "commits": [
             { "sha": "a1a1a1a1a1", "commit": { "message": "Add farewell(name)\n\nNext to greet." } },
             { "sha": "b2b2b2b2b2", "commit": { "message": "Add a test for farewell" } },
-        ] }))
+        ], "files": files }))
         .into_response();
     }
     let sha = spec.split("...").next().unwrap_or_default();
@@ -308,7 +316,11 @@ pub(crate) fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
 pub(super) async fn serve(hub: &Arc<TestHub>) -> (Shared, Arc<Platform>, String) {
     let gh: Shared = Arc::default();
     let api = fake_github(gh.clone()).await;
-    let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
+    let cfg = crate::Config {
+        public_url: "https://control.example".into(),
+        page_url: "https://app.example".into(),
+        ..Default::default()
+    };
     let mut p = Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
     p.github = Some(GithubApp::new("1".into(), "arugula-test".into(), SECRET.into(), &api, throwaway_key()));
     let app = Arc::new(p);

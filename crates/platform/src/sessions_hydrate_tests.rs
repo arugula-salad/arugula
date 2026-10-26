@@ -31,7 +31,11 @@ pub(crate) async fn platform(repos: &[&str]) -> (Arc<TestHub>, Arc<Platform>, St
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer), ("y", TeamRole::Editor)]);
     hub.team("u", &[("c", TeamRole::Owner)]);
     hub.flag("team:t", true);
-    let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
+    let cfg = crate::Config {
+        public_url: "https://control.example".into(),
+        page_url: "https://app.example".into(),
+        ..Default::default()
+    };
     let mut p = Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
     p.hosted = crate::hosted::Config { accounts: vec!["a".into(), "b".into(), "x".into()], ..Default::default() };
     let app = Arc::new(p);
@@ -178,7 +182,7 @@ async fn the_first_prompt_is_the_thread_hydrated() {
     };
     let ours = issue(&t, "the canary fails");
     let theirs = issue(&u, "a secret of u's");
-    let link = |id: &str| format!("https://control.example/issues/{id}");
+    let link = |id: &str| format!("https://app.example/issues/{id}");
     let first = format!("the canary fails on deploy: {} (and {})", link(&ours.id), link(&theirs.id));
     let p = post_in(&base, "ch_general", "a", &first, None).await["seq"].as_i64().unwrap();
     post_in(&base, "ch_general", "x", "me too, log at https://example.com/log", Some(p)).await;
@@ -550,7 +554,7 @@ async fn an_issues_thread_names_the_issue_by_its_link() {
 
     let s = sessions(&app, &t).pop().expect("a session");
     let text = &app.db.session_prompts(&s.id).unwrap()[0].text;
-    let link = format!("https://control.example/issues/{}", issue.id);
+    let link = format!("https://app.example/issues/{}", issue.id);
     assert!(
         text.contains(&format!(
             "- This thread is on Arugula issue #2, not a GitHub one: refer to it by its link, {link}, never as #2 in \

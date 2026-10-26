@@ -10,7 +10,7 @@ mostly by adding steps the plan didn't have:
 | q | answer | verdict |
 |---|---|---|
 | 1. sessions on the box | Yes. An ACP agent block's agent runs as `ses1` (not the daemon's `user`) in its own checkout, through relay, permission, question, commit, Stop and a daemon restart, on a hosted loam box. | **Changes M255 like so** (q1 below): fixed session users in the template; a checkout that is a clone, not a `git worktree`; all of the daemon's git in it runs as the session user; the firewall covers session users; no secrets on sudo's command line. |
-| 2. pushing | `arugula-io` has `contents: write`, and also `workflows: write`. Installation tokens can't be scoped to refs. The box enforces the ref: the daemon pushes from a repo of its own, with a bundle from the session, one refspec, and a token minted per push without `workflows`. | **Changes M259 like so** (q2 below). |
+| 2. pushing | `arugula-io` has `contents: write`, and also `workflows: write`. Installation tokens can't be scoped to refs. The box enforces the ref: the daemon pushes from a repo of its own, with a bundle from the session, one refspec, and a token minted per push without `workflows` (since 2026-10-26, with `workflows`: q2's note). | **Changes M259 like so** (q2 below). |
 | 3. snapshots | E2B: yes. A box made from a wiped snapshot started clean, and its daemon made its own key (after one leak was fixed: the journal). loam's E2B API has no snapshots (404). Its own API has checkpoints and forks, and the same test passes there. | **Changes M263 like so** (q3 below): the wipe has a list, the journal included; full-memory snapshots, or a boot-time start. |
 | 4. #124 | Reproduced on loam with the start command's service stopped. Root cause: on E2B nothing restarts `arugulad --hosted` once it exits. A pause keeps it dead. The platform takes "the provider says running" for "ready". The hub's "woke, but didn't dial in" is told to the opener and to nobody else. | **Changes M258 like so** (q4 below). |
 
@@ -169,6 +169,11 @@ builds is that same command, made by the daemon, plus the eight points below.
   nothing else. GitHub then refuses a push that touches a workflow file, because the token lacks
   `workflows`. Even so, any `arugula/*` push runs the repo's existing push workflows on code the
   agent wrote, which is no different from a member pushing a branch. aru-115 should say so.
+  - **Changed since (Jake, 2026-10-26; aru-115, amended):** the token has `workflows: write`
+    too. GitHub compares a new branch's tree with the default branch's, so once main changed a
+    workflow file after a session began, the branch's older file read as an edit, and every push
+    of it was refused (the v0.63.0 live test). A session's branch can now change CI files, and
+    the PR's reviewer checks them.
 
 **How the box enforces it** ([push-proto.sh](push-proto.sh),
 [q2-push-docker.txt](results/q2-push-docker.txt); a local bare repo stood in for GitHub, and the
@@ -182,7 +187,7 @@ token was fake):
    It runs under `env -i`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null` and
    `core.hooksPath=/dev/null`.
 4. It pushes `refs/heads/R:refs/heads/R` with `--no-follow-tags`, where R is checked against
-   `arugula/<ses>-` first. The token is minted for this push, for this repo, with contents only.
+   `arugula/<ses>-` first. The token is minted for this push, for this repo, with contents only (and workflows since 2026-10-26: q2's note).
    It reaches git through `credential.helper` reading an environment variable of that one process:
    never a file, never argv. Then the token is revoked.
 

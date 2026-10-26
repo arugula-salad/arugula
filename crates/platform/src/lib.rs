@@ -140,11 +140,23 @@ pub struct Config {
     /// Every URL control answers at, `public_url` first (#507), without a
     /// trailing slash.
     pub sites: Vec<String>,
+    /// The platform page's origin (`https://app.arugula.io`, M151), where
+    /// its issues, threads and sessions are: empty when it has none, and
+    /// links to the page are on `public_url` then ([`Config::page`]).
+    pub page_url: String,
     /// Free relay traffic per account per month, with billing on.
     pub relay_free_bytes: u64,
 }
 
 impl Config {
+    /// Where a link to the platform page starts (`https://app.arugula.io`
+    /// for `/issues/iss_…`), without a trailing slash: its own origin, else
+    /// control's public URL.
+    pub fn page(&self) -> &str {
+        let page = self.page_url.trim_end_matches('/');
+        if page.is_empty() { self.public_url.trim_end_matches('/') } else { page }
+    }
+
     /// The site a request came in on, by its Host header; the first when
     /// it's none of them.
     pub fn site(&self, headers: &axum::http::HeaderMap) -> &str {

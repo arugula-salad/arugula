@@ -327,13 +327,13 @@ async fn item(app: &Platform, room: &Room, asker: &str) -> Result<Option<Item>> 
 }
 
 /// The Arugula issue `room` is the thread of, if it's one's: its number,
-/// and its link on the platform page (`<public>/issues/iss_…`).
+/// and its link on the platform page (`<page>/issues/iss_…`).
 pub fn issue_of(app: &Platform, room: &Room) -> Result<Option<(u64, String)>> {
     let Some(target) = room.target.as_deref().filter(|t| room.kind == "object" && t.starts_with("iss_")) else {
         return Ok(None);
     };
     let Some(i) = app.db.issue(target)? else { return Ok(None) };
-    Ok(Some((i.number, format!("{}/issues/{}", app.cfg.public_url.trim_end_matches('/'), i.id))))
+    Ok(Some((i.number, format!("{}/issues/{}", app.cfg.page(), i.id))))
 }
 
 /// Where the thread is, for the header.
