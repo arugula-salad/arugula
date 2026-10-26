@@ -1,4 +1,4 @@
--- 0051: what people ask of an agent session that only its box can do
+-- 0052: what people ask of an agent session that only its box can do
 -- (M257, thread = session, Arugula #129): answer its open question,
 -- approve or deny its open permission, or cancel the turn under way. Times
 -- are milliseconds since the epoch. `db::sessions` has the rules, and

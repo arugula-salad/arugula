@@ -403,9 +403,9 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 51,
+        version: 52,
         name: "session_actions",
-        sql: include_str!("../../migrations/sqlite/0051_session_actions.sql"),
+        sql: include_str!("../../migrations/sqlite/0052_session_actions.sql"),
         additive: true,
     },
 ];
@@ -721,9 +721,9 @@ const POSTGRES: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 51,
+        version: 52,
         name: "session_actions",
-        sql: include_str!("../../migrations/postgres/0051_session_actions.sql"),
+        sql: include_str!("../../migrations/postgres/0052_session_actions.sql"),
         additive: true,
     },
 ];
