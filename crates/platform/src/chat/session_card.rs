@@ -39,7 +39,7 @@ use crate::{
 /// Whether a room of `kind` takes replies in a thread (as the page's
 /// `threads()` says): a team's people talk in these; an object's comments
 /// are one list.
-fn threaded(kind: &str) -> bool {
+pub(crate) fn threaded(kind: &str) -> bool {
     matches!(kind, "channel" | "dm" | "pane" | "session")
 }
 

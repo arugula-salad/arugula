@@ -121,9 +121,13 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &SessionReport) -> any
     match record(app, &r.session, &Move::Daemon { report: &checked, now: now_ms() })? {
         Ok((s, events)) => {
             info!(session = s.id, machine = m.machine, kind = %kind, to = %s.state, "a hosted machine reported on its session");
-            // A review's reply goes in its thread (M264).
+            // A review's reply goes in its thread (M264), and so does any
+            // other turn's answer.
             if let Err(e) = crate::sessions::review::reported(app, &s, &events).await {
                 warn!(session = s.id, error = %format!("{e:#}"), "a review's report");
+            }
+            if let Err(e) = crate::sessions::answer::reported(app, &s, &events) {
+                warn!(session = s.id, error = %format!("{e:#}"), "a turn's answer");
             }
             Ok(Reported::Taken)
         }
