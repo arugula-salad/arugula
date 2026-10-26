@@ -95,7 +95,7 @@ export function TeamJoin({ s, t, here }: { s: ControlSession; t: Team; here?: bo
   return (
     <>
       <span class="dim">
-        To add a machine to <b>{t.roster.name}</b>, run this on it, or move one you have with <i>Team …</i> in <i>Devices and machines…</i>:
+        To add a machine to <b>{t.roster.name}</b>, run this on it, or move one you have with <i>Team …</i> in <i>Devices and machines</i>:
       </span>
       <CopyText text={`arugulad join ${s.info.url} --team ${t.team}`} {...(here ? { "data-team-join": true } : { "data-team-join-step": t.team })} />
     </>

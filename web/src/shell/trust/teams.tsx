@@ -26,7 +26,7 @@ function LabsFlagList({ scope, what, flags, edit, set }: { scope: string; what: 
   return (
     <details class="labs-flags" data-labs-flags={scope}>
       <summary>
-        Labs flags <span class="dim">· {named ? `${named} set` : "none set"}</span>
+        Developer settings <span class="dim">· {named ? `${named} set` : "none set"}</span>
       </summary>
       <p class="dim">{what}</p>
       <ul class="control-devices">
@@ -302,7 +302,7 @@ function TeamSection({
           scope={t.roster.name}
           what={
             labs.owner
-              ? "For the team's machines. A machine's own Developer settings win over these, and so do its owner's flags for their machines."
+              ? "For the team's machines. A machine's own Developer settings win over these, and so do its owner's settings for their machines."
               : "For the team's machines, set by its owners. A machine's own Developer settings win over these."
           }
           flags={labs.flags}
