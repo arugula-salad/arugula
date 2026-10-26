@@ -838,6 +838,7 @@ mod tests {
             picked: None,
             picked_by: None,
             picked_at: None,
+            merged_at: None,
         }
     }
 
