@@ -5916,6 +5916,13 @@ button.diff-why-run {
   border-radius: var(--field-radius);
   shape-rendering: crispEdges;
 }
+/* The swarm's own ink and void, from the page (UI audit #198). */
+.start-qr rect {
+  fill: var(--ink);
+}
+.start-qr path {
+  fill: var(--void);
+}
 
 .start-code {
   margin: 16px 0;
