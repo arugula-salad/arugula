@@ -179,7 +179,8 @@ test("the swarm has one theme and no picker, whatever this browser saved", async
   await expect(page.getByText("Theme", { exact: true })).toHaveCount(0);
   await expect(page.locator("canvas.swarm-city")).toHaveCount(0);
   // Its tiles show no unread: chat is control's (M125), and there's none here.
-  expect(await page.evaluate(() => window.__arugula.fleet.panes.map((p) => [p.unread, p.mention]))).not.toEqual([]);
+  // (The fleet reads its panes after the swarm draws: wait for them.)
+  await expect.poll(() => page.evaluate(() => window.__arugula.fleet.panes.length)).toBeGreaterThan(0);
   expect(await page.evaluate(() => window.__arugula.fleet.panes.every((p) => !p.unread && !p.mention))).toBe(true);
   // The rest of the bar is still there.
   await expect(page.locator('[data-g="machine"]')).toBeVisible();
