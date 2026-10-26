@@ -81,6 +81,9 @@ export function useMenuOpenFrom(el: { current: HTMLElement | null }): boolean {
   return !!current && !!from && from === el.current;
 }
 
+/** The same, by the name the platform bar knows it (UI audit #185). */
+export const useMenuFrom = useMenuOpenFrom;
+
 /** Close it, and put the focus back where it was when it opened. */
 function closeAndReturn() {
   const to = opener;

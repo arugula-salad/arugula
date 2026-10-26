@@ -20,6 +20,7 @@ import { countView } from "../../shared/telemetry";
 import { AccountPicture } from "../../shared/chat/avatar";
 import { presenceItems } from "../../shared/chat/presence";
 import { SearchIcon } from "./shell/icons";
+import { openPlatform, platformHref } from "../platform-links";
 
 /** Who is signed in, through control: their name and their account's
  * items. A daemon's own page has none, and its menu is settings only. */
@@ -88,6 +89,7 @@ export function AppBar({
       {client.state && <CommandsButton client={client} />}
       <UpdateChip client={client} />
       {end}
+      <ProjectsLink />
       <AccountButton client={client} />
       <WindowButtons />
     </header>
@@ -101,7 +103,9 @@ export function CommandsButton({ client, search }: { client: Client; search?: bo
     <button
       class={search ? "commands-button ws-search-button" : "commands-button"}
       data-open-palette
-      title={search ? `Search every command for this pane, tab and session (${keyHint("palette")})` : "Every command for this pane, tab and session"}
+      // One label and title in every bar (UI audit #170); the panes' head
+      // draws it as a search field.
+      title={`Every command for this pane, tab and session (${keyHint("palette")})`}
       // Its name is "Commands": the chord beside it is for the eye, and
       // would otherwise make it a button named "…+Shift+P".
       aria-label="Commands"
@@ -109,9 +113,34 @@ export function CommandsButton({ client, search }: { client: Client; search?: bo
       onClick={() => openPalette(client)}
     >
       {search && <SearchIcon />}
-      <span>{search ? "Search commands" : "Commands"}</span>
+      <span>Commands</span>
       <kbd aria-hidden="true">{keyHint("palette")}</kbd>
     </button>
+  );
+}
+
+/** The way to the platform page, as its bar's "Machines ↗" comes here
+ * (UI audit #170): only where control has one. */
+export function ProjectsLink() {
+  const href = platformHref("/");
+  if (!href) return null;
+  return (
+    <a
+      class="place ws-cross"
+      href={href}
+      target="arugula-platform"
+      title="Your projects, their issues, runs and chat, on the platform page"
+      data-open-projects
+      onClick={(e) => {
+        // Its own tab, or this window in the app (openPlatform); a modified
+        // click is the browser's.
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        openPlatform("/");
+      }}
+    >
+      Projects ↗
+    </a>
   );
 }
 

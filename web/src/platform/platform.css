@@ -24,13 +24,14 @@
   box-sizing: border-box;
 }
 
-/* The project, as the shell's head names the machine. */
+/* The project, as the shell's head names the machine: the head's full
+   height, as the wordmark and the account beside it are (UI audit #185). */
 .platform-bar .platform-project {
+  align-self: stretch;
   gap: 4px;
-  height: 28px;
-  padding: 0 8px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 0;
   background: none;
   color: var(--fg);
   font-weight: 600;

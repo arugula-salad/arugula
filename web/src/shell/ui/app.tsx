@@ -44,6 +44,8 @@ import { SessionOverview, useOverview } from "./shell/overview";
 import { TabArea } from "./panes/tab-area";
 import { DragGhost } from "./panes/drop-overlay";
 import { useHoverToSwitchTabs } from "./panes/drop";
+import { currentPlace } from "./places";
+import { shellTitle } from "./titles";
 
 /** How long a hidden page keeps its connection to a sandbox host. */
 const HIDDEN_GRACE_MS = 10_000;
@@ -90,6 +92,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   useReportFocus(client, phone);
   useWorkspaceKeys(client, phone);
   useFirstRun(client);
+  useTabTitle(client);
   // M113 (#1028): a computer draws the workspace once a machine is shown;
   // a phone keeps its own header.
   const ws = !phone && !!client.state;
@@ -253,6 +256,22 @@ function NoSessions({ client, phone }: { client: Client; phone: boolean }) {
 }
 
 // ---------------------------------------------------------------- attention
+
+/** The tab's title says what's shown (UI audit #170): the session and the
+ * machine, or the place. */
+function useTabTitle(client: Client) {
+  useSubscribe((fn) => directory.subscribe(fn));
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((t) => t + 1);
+    window.addEventListener("hashchange", fn);
+    return () => window.removeEventListener("hashchange", fn);
+  }, []);
+  const state = client.state;
+  const session = state ? (state.sessions.find((s) => s.id === client.session) ?? state.sessions[0])?.name : null;
+  const title = shellTitle(currentPlace(), directory.current || null, session);
+  useEffect(() => void (document.title = title), [title]);
+}
 
 /** Tell the daemon which pane this window is looking at, so it doesn't
  * notify you about the pane in front of you. */

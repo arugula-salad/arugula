@@ -26,6 +26,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip, type Tone } from "../../shared/ui/state-chip";
 import { DraftList, useMyDrafts } from "../drafts";
+import { noteInbox } from "../inbox-count";
 import { WaitingDeploys, useWaitingDeploys } from "./deploy";
 import { names, roomPath } from "../links";
 import { follow, pathOf } from "../router";
@@ -107,6 +108,8 @@ export function InboxPage() {
     call<Inbox>("GET", "/api/inbox").then(
       (v) => {
         setEntries(v.entries);
+        // The bar's count says the same (UI audit #170).
+        noteInbox(v.entries);
         setError("");
       },
       (e: Error) => setError(e.message),

@@ -39,6 +39,8 @@ export interface ChatNav {
   openChatView(view: "activity" | "saved" | "search" | "threads", q?: string): void;
   /** A message's link, to copy; a reply's names its thread. */
   roomLink(room: string, seq: number, thread?: number): string;
+  /** A room's address, for its row's `href` (UI audit #185). */
+  roomHref(room: string): string;
   /** Where the reader gives their machines' agents access to rooms (a
    * room's agents chip links here); a host with no such page omits it. */
   openGrants?(): void;
@@ -92,7 +94,7 @@ export const PlatformApiContext = createContext<PlatformApi>({
   teams: () => [],
   subscribe: none,
   toast: () => {},
-  nav: { openChat() {}, closeChat() {}, openRoom() {}, openChatView() {}, roomLink: () => "" },
+  nav: { openChat() {}, closeChat() {}, openRoom() {}, openChatView() {}, roomLink: () => "", roomHref: () => "" },
   ...noMachines,
   Bar: ({ children }) => <>{children}</>,
 });

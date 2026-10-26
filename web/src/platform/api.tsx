@@ -41,6 +41,7 @@ export const platformApi: PlatformApi = {
       go(pathOf(r, names), view === "search" && now.page === "chat" && now.view === "search");
     },
     roomLink: (room, seq, thread) => `${location.origin}${roomPath(room, seq, thread)}`,
+    roomHref: (room) => roomPath(room),
     openGrants: () => go("/settings"),
   },
   ...noMachines,
