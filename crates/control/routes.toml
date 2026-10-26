@@ -2022,6 +2022,22 @@ note = "Keep one of a Try 3's sessions (M264): the others stop, not picked. Owne
 
 [[route]]
 method = "GET"
+path = "/api/projects/{project}/sessions/stats"  # wire::sessions::PROJECT_SESSION_STATS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's agent sessions in numbers (M265): of those asked for in the last 30 days, how many led to a PR and how many merged, and the median time from the @ to the PR. Any member."
+
+[[route]]
+method = "POST"
+path = "/api/issues/{issue}/agent"  # wire::sessions::ISSUE_AGENT
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Agent on this (M265): @arugula written in a native issue's thread as the caller, starting a session there. Owners and editors on the hosted beta; refused while a session is going on the issue."
+
+[[route]]
+method = "GET"
 path = "/api/runs/{run}"  # wire::runs::RUN
 process = "platform"
 auth = "session"

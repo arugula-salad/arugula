@@ -1,9 +1,9 @@
 // `/p/:project`: a project's home (M150): its channels and direct
-// messages, its issues, its last runs, its cloud workspaces, its drafts
-// waiting on linked repos (M170), and who's in its team. Membership shows
-// read only: rosters change in the shell, signed by a device ("The
-// platform page is on app.arugula.io, not on the keys' origin"), so the
-// link goes there.
+// messages, its issues, its last runs, its cloud workspaces and its agent
+// sessions in numbers (M265), its drafts waiting on linked repos (M170),
+// and who's in its team. Membership shows read only: rosters change in the
+// shell, signed by a device ("The platform page is on app.arugula.io, not
+// on the keys' origin"), so the link goes there.
 
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
@@ -21,6 +21,7 @@ import { controlOrigin, session, type PlatformProject } from "../session";
 import { roomTone, runTone, toneClass } from "../swarm";
 import { HostedWorkspaceList, NoWorkspaces, useHostedWorkspaces } from "./hosted-workspace";
 import { ProjectIssues } from "./issues";
+import { SessionNumbers } from "../session-stats";
 
 const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
@@ -80,6 +81,7 @@ export function ProjectHome({ id }: { id: string }) {
             <>
               <SectionHead title="Cloud workspaces" all={workspacesPath} />
               {workspaces === null ? null : workspaces.length ? <HostedWorkspaceList project={p.id} list={workspaces} /> : <NoWorkspaces project={p.id} />}
+              {!!workspaces?.length && <SessionNumbers project={p.id} />}
             </>
           )}
         </div>

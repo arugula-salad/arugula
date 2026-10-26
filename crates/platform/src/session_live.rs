@@ -46,9 +46,12 @@ use tracing::{info, warn};
 use crate::{
     Platform,
     auth::Person,
-    db::sessions::{
-        ActionKind, DaemonReport, Event, Kind, Move, NOT_PICKED, NewAction, Refused, Role, Session, SessionDetail,
-        State,
+    db::{
+        session_merged::MERGED,
+        sessions::{
+            ActionKind, DaemonReport, Event, Kind, Move, NOT_PICKED, NewAction, Refused, Role, Session, SessionDetail,
+            State,
+        },
     },
     forge::links::membership,
     sessions::review::REVIEWED,
@@ -200,6 +203,9 @@ fn line(e: &Event, name: &dyn Fn(&str) -> String) -> String {
         },
         (Kind::State, _, State::Done) => "The turn finished".into(),
         (Kind::State, _, State::Unresponsive) => "Its box stopped responding".into(),
+        (Kind::State, _, State::Stopped) if d.reason.as_deref() == Some(MERGED) => {
+            "Its pull request merged: done".into()
+        }
         (Kind::State, _, State::Stopped) if d.reason.as_deref() == Some(NOT_PICKED) => {
             "Stopped: another try was kept".into()
         }
@@ -367,6 +373,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         block: s.block.clone(),
         ports,
         pr: s.pr.clone(),
+        merged_at: s.merged_at,
         pushed,
         ci_rounds: s.ci_rounds,
         ci_max: crate::db::session_feedback::MAX_CI_ROUNDS,

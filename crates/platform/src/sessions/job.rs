@@ -18,6 +18,8 @@
 //! - **Gone quiet:** a turn under way whose box hasn't reported for
 //!   [`QUIET_MS`] is marked `unresponsive` (`Db::mark_unresponsive`'s
 //!   rule, for this one session).
+//! - **Merged** (M265): a `done` session whose PR merged while its turn
+//!   ran is `stopped`, saying so (`db::session_merged::MERGED`).
 //! - **Idle:** a `done` session with nothing queued and no prompt for
 //!   [`idle_end_ms`] (a day, `ARUGULA_SESSION_IDLE_END` seconds) is
 //!   `stopped`, saying so ([`IDLE`]): a done session holds a slot on its
@@ -46,6 +48,7 @@ use crate::{
     db::{
         Db,
         jobs::{JobKind, LeasedJob},
+        session_merged::MERGED,
         session_threads::WORKSPACE_GONE,
         sessions::{MAX_SESSIONS_PER_BOX, Move, PromptState, QUIET_MS, State},
     },
@@ -139,6 +142,15 @@ impl Follow {
             if control(&self.app, &s.id, state, State::Unresponsive, heard, now)? {
                 info!(session = s.id, "a session's box went quiet");
                 state = State::Unresponsive;
+            }
+        }
+        // Its PR merged during the turn (M265): done now, it ends, and its
+        // slot on the box frees.
+        if state == State::Done && s.merged_at.is_some() {
+            let why = json!({ "reason": MERGED });
+            if control(&self.app, &s.id, State::Done, State::Stopped, why, now)? {
+                info!(session = s.id, "a session whose PR merged ended");
+                return Ok(Step::Done);
             }
         }
         let prompts = db.session_prompts(&s.id)?;

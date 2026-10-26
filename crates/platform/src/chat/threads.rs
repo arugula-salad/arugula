@@ -12,7 +12,8 @@
 //! - **Following** ([`crate::db::chat_threads`]): the parent's author, whoever
 //!   replies and whoever a reply mentions follow it; anyone can follow or
 //!   stop. A thread has its own read mark and unread count, apart from the
-//!   room's, and the Threads view ([`followed`]) lists them.
+//!   room's, and the Threads view ([`followed`]) lists them, but for the
+//!   done ones: a thread whose agent session's PR merged (M265).
 //! - **Push** ([`super::push`]): a follower gets each reply at their level
 //!   for followed threads (`notify_prefs.threads`), unless the room is set
 //!   to nothing for them. A mention in a reply is pushed as anywhere.
@@ -157,6 +158,15 @@ async fn followed_stats(app: &Platform, account: &str, seen: &[(Room, u64)]) -> 
             let from = from_of.get(&(s.room.clone(), s.parent)).copied().unwrap_or(0);
             out.push((s, from));
         }
+    }
+    // A thread whose session's PR merged is done (M265): it leaves the
+    // list, and its unread the badge.
+    let mut rooms: Vec<&str> = out.iter().map(|(s, _)| s.room.as_str()).collect();
+    rooms.sort_unstable();
+    rooms.dedup();
+    let done = app.db.done_threads(&rooms)?;
+    if !done.is_empty() {
+        out.retain(|(s, _)| u64::try_from(s.parent).map_or(true, |p| !done.contains(&(s.room.clone(), p))));
     }
     Ok(out)
 }
