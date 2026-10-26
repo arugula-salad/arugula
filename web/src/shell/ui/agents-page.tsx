@@ -599,11 +599,12 @@ function TeamTab({ client }: { client: Client }) {
             {quiet.map((q) => (
               <li key={q.machine} data-quiet={q.name} title={q.note ?? undefined}>
                 {q.name}
+                {/* The row's gap is its space: no second one before the "·". */}
                 <span class="dim">
-                  {q.here ? " · this machine" : ""}
-                  {q.owner ? ` · ${q.owner}'s` : ""}
-                  {" · "}
-                  {q.online ? "offers no agents" : q.note?.startsWith("offline") ? "offline" : "didn't answer"}
+                  {[q.here ? "this machine" : "", q.owner ? `${q.owner}'s` : "", q.online ? "offers no agents" : q.note?.startsWith("offline") ? "offline" : "didn't answer"]
+                    .filter(Boolean)
+                    .map((x) => `· ${x}`)
+                    .join(" ")}
                 </span>
               </li>
             ))}
