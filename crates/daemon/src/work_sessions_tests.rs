@@ -109,6 +109,75 @@ fn each_report_is_the_sessions_next_signed() {
     );
 }
 
+/// Every turn's report carries the agent's last message as its reply
+/// (not a review's only): trimmed, none when it said nothing, cut to
+/// [`REPLY_MAX`], and cut further when the detail's JSON would be past
+/// what control takes.
+#[test]
+fn a_turns_report_carries_its_last_message() {
+    let said = |m: &str| arugula_proto::api::TurnResult { message: m.into(), work: None };
+    assert_eq!(reply_of(Some(&said("  The README is up to date.\n"))).as_deref(), Some("The README is up to date."));
+    assert_eq!(reply_of(Some(&said(" \n "))), None, "nothing said, nothing to post");
+    assert_eq!(reply_of(None), None);
+    let long = reply_of(Some(&said(&format!("{}é{}", "a".repeat(REPLY_MAX - 1), "b".repeat(100))))).unwrap();
+    assert!(long.len() <= REPLY_MAX + "…".len() && long.ends_with('…') && long.starts_with("aaa"), "{}", long.len());
+
+    let keys = arugula_e2e::DeviceKeys::generate();
+    let me = keys.id();
+    let mut l = Session {
+        session: format!("ses_{}", "e".repeat(32)),
+        project: "prj_1".into(),
+        workspace: "hw_1".into(),
+        asker: "acct1".into(),
+        repo: None,
+        branch: "arugula/x".into(),
+        user: AsUser { user: "ses1".into(), home: "/home/ses1".into() },
+        checkout: "/home/ses1/work/x".into(),
+        block: Some(3),
+        taken_at: 1,
+        n: 0,
+        state: "working".into(),
+        ended: None,
+        handed: vec![],
+        turn: None,
+        notes: None,
+        acted: vec![],
+        unnamed: vec![],
+        error: None,
+        last_at: 0,
+        events: vec![],
+        pushed_head: None,
+        turns_seen: Some(0),
+        harness: None,
+        review: false,
+    };
+    // Quotes and newlines double in JSON: a full reply beside a full
+    // diffstat would be past 16 KiB.
+    let reply = "\"\n".repeat(REPLY_MAX / 2);
+    let turn = |reply: &str| SessionDetail {
+        branch: Some("arugula/x".into()),
+        pushed: Some(false),
+        diffstat: Some("d".repeat(8 * 1024)),
+        commits: vec!["abc1234 fix it".into()],
+        reply: Some(reply.into()),
+        ..Default::default()
+    };
+    l.push(&keys, &me, Kind::Turn, State::Working, turn(&reply));
+    l.push(&keys, &me, Kind::Turn, State::Working, turn("Done: nothing to change."));
+    let d: Vec<SessionDetail> = l
+        .events
+        .iter()
+        .map(|k| {
+            assert!(k.report.detail.len() <= SESSION_DETAIL_MAX, "{}", k.report.detail.len());
+            serde_json::from_str(&k.report.detail).unwrap()
+        })
+        .collect();
+    let cut_reply = d[0].reply.as_deref().unwrap();
+    assert!(cut_reply.ends_with('…') && reply.starts_with(cut_reply.trim_end_matches('…')), "{cut_reply}");
+    assert!(cut_reply.len() < reply.len() && cut_reply.len() > 1024, "cut, not dropped: {}", cut_reply.len());
+    assert_eq!(d[1].reply.as_deref(), Some("Done: nothing to change."), "a short one goes as it is");
+}
+
 /// The first prompt's notes: the repo's CLAUDE.md and AGENTS.md, as text.
 #[test]
 fn the_repos_notes_are_text() {

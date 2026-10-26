@@ -49,8 +49,11 @@
 //!   `needs_input` with what it asks, back, to `done`), a heartbeat every
 //!   [`HEARTBEAT`] while a turn is under way with the tool running now, the
 //!   agent's errors, and each turn's result (`turnwork`'s: branch, commits,
-//!   diffstat, and `pushed`). Each is kept in the ledger before it's sent,
-//!   and sent in order until control takes it.
+//!   diffstat, and `pushed`, with the agent's last message as its `reply`,
+//!   which control posts in the session's thread). Each is kept in the
+//!   ledger before it's sent, and sent in order until control takes it. A
+//!   detail stays within what control takes ([`SESSION_DETAIL_MAX`]): the
+//!   reply is cut further when the rest needs the room.
 //! - **The finish step** ([`finish_turn`], M261): when the workspace's spec
 //!   has one (`just check`), it runs after each turn, before the push, as
 //!   the session's user in its checkout, with that user's environment
@@ -69,8 +72,8 @@
 //!   first report says which ran (`harness`). A Try 3's three sessions are
 //!   three sessions here, each in its slot.
 //! - **A review** (M264, `@codex review`) is read-only: no finish step and
-//!   no push, and its turn's report carries the agent's reply, which
-//!   control posts in its thread.
+//!   no push. Its turn's reply is the review, which control posts in its
+//!   thread.
 //! - **A slot is left clean** ([`clean_slot`]): when a session ends (or
 //!   fails), what its pushes left, its checkout and its user's `~/.claude`
 //!   go, so the next session in that slot starts with nothing of it.
@@ -92,8 +95,8 @@ use std::{
 };
 
 use arugula_control_wire::work::{
-    FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, REPLY_MAX, Reported, SessionAction,
-    SessionDetail, SessionPrompt, SessionReport, SessionWork, WORK_SESSION_REPORT,
+    FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, REPLY_MAX, Reported, SESSION_DETAIL_MAX,
+    SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork, WORK_SESSION_REPORT,
 };
 use arugula_e2e::{
     now_ms,
@@ -324,7 +327,7 @@ pub struct Session {
     /// The agent it runs (M264): `codex`, or Claude Code when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
-    /// A review (M264): no finish step, no push, and its reply reported.
+    /// A review (M264): no finish step and no push.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub review: bool,
 }
@@ -351,7 +354,7 @@ impl Session {
         if let Some(t) = &mut d.tool {
             cut(t, TOOL_MAX);
         }
-        let detail = serde_json::to_string(&d).unwrap_or_else(|_| "{}".into());
+        let detail = fit(&mut d);
         self.n += 1;
         let at = now_ms();
         let ev = Event { session: &self.session, n: self.n, kind, from, to, at, detail: &detail, daemon: me };
@@ -373,6 +376,34 @@ impl Session {
 }
 
 /// `s` cut to `max` bytes, on a character's edge, and marked.
+/// `d` as the report's detail, within [`SESSION_DETAIL_MAX`]: a turn's
+/// reply (whose quotes and newlines grow in JSON) is cut until it fits,
+/// and left out when even none of it would.
+fn fit(d: &mut SessionDetail) -> String {
+    loop {
+        let detail = serde_json::to_string(&*d).unwrap_or_else(|_| "{}".into());
+        let over = detail.len().saturating_sub(SESSION_DETAIL_MAX);
+        let Some(r) = d.reply.as_mut().filter(|_| over > 0) else { return detail };
+        let keep = r.len().saturating_sub(over + "…".len());
+        if keep == 0 {
+            d.reply = None;
+        } else {
+            cut(r, keep);
+        }
+    }
+}
+
+/// The agent's last message of a turn, as its report's reply: trimmed,
+/// at most [`REPLY_MAX`] bytes, and none when it said nothing.
+fn reply_of(r: Option<&arugula_proto::api::TurnResult>) -> Option<String> {
+    let mut m = r?.message.trim().to_owned();
+    if m.is_empty() {
+        return None;
+    }
+    cut(&mut m, REPLY_MAX);
+    Some(m)
+}
+
 fn cut(s: &mut String, max: usize) {
     if s.len() > max {
         let mut at = max;
@@ -1051,6 +1082,7 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 // none) and no fix is owed: the commit now on GitHub, nothing
                 // to push, or why it didn't.
                 // A review pushes nothing (M264): its reply is what it made.
+                // Every turn's reply goes in its report, for its thread.
                 let may_push = fix.is_none() && finished.may_push() && !l.review;
                 info!(session = id, may_push, fix = fix.is_some(), "hosted: a session's turn ended");
                 let pushed = if may_push { push::push_turn(app, &l).await } else { Ok(None) };
@@ -1058,11 +1090,7 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 if may_push && push::clean_if_ended(&dir, &l).await {
                     return false;
                 }
-                let reply = r.as_ref().filter(|_| l.review).map(|r| {
-                    let mut m = r.message.trim().to_owned();
-                    cut(&mut m, REPLY_MAX);
-                    m
-                });
+                let reply = reply_of(r.as_ref());
                 let branch = l.branch.clone();
                 let (k, m, base, again) = (keys.clone(), me.clone(), s.turns, fix.clone());
                 say(Box::new(move |now| {

@@ -321,8 +321,12 @@ pub struct SessionWork {
 /// their ACP adapters.
 pub const HARNESSES: &[&str] = &["claude", "codex"];
 
-/// The most of a review's reply a turn's report carries, in bytes.
+/// The most of the agent's reply a turn's report carries, in bytes.
 pub const REPLY_MAX: usize = 10 * 1024;
+
+/// The most a session report's detail (its JSON) may hold, in bytes: the
+/// platform refuses a longer one.
+pub const SESSION_DETAIL_MAX: usize = 16 * 1024;
 
 /// A workspace's finish step (M261): a command (`just check`) the box runs
 /// as the session's user, in its checkout, after each turn and before the
@@ -543,8 +547,11 @@ pub struct SessionDetail {
     /// `claude` when the one asked for isn't on the box.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
-    /// A review's turn (M264): the agent's reply, at most [`REPLY_MAX`]
-    /// bytes.
+    /// A turn's: the agent's last message, at most [`REPLY_MAX`] bytes
+    /// (less when the rest of the detail needs the room). The platform
+    /// posts it in the session's thread: a review's as the review (M264),
+    /// any other's as the turn's answer. A box from before every turn sent
+    /// it sends it for reviews only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply: Option<String>,
 }
