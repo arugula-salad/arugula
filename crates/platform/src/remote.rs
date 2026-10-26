@@ -289,6 +289,9 @@ struct TurnArgs {
     agent: String,
     #[serde(default)]
     turn: String,
+    /// The thread session a turn is for (M254), if it's one's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    session: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -820,12 +823,14 @@ impl PlatformPort for HttpPlatform {
         workspace: &'a str,
         machine: &'a str,
         agent: &'a str,
+        session: Option<&'a str>,
     ) -> BoxFuture<'a, anyhow::Result<crate::port::TurnAnswer>> {
         let a = TurnArgs {
             workspace: workspace.to_owned(),
             machine: machine.to_owned(),
             agent: agent.to_owned(),
             turn: String::new(),
+            session: session.map(Into::into),
         };
         Box::pin(self.0.call("hosted_turn", a))
     }
@@ -841,6 +846,7 @@ impl PlatformPort for HttpPlatform {
             machine: machine.to_owned(),
             agent: String::new(),
             turn: turn.to_owned(),
+            session: None,
         };
         Box::pin(self.0.call("hosted_turn_end", a))
     }
@@ -999,7 +1005,7 @@ async fn platform_call(
             }
             "hosted_turn" => {
                 let a: TurnArgs = args(&body)?;
-                answer(p.hosted_turn(&a.workspace, &a.machine, &a.agent).await?)?
+                answer(p.hosted_turn(&a.workspace, &a.machine, &a.agent, a.session.as_deref()).await?)?
             }
             "hosted_turn_end" => {
                 let a: TurnArgs = args(&body)?;
@@ -1247,6 +1253,7 @@ mod tests {
                 w: &'a str,
                 m: &'a str,
                 agent: &'a str,
+                _: Option<&'a str>,
             ) -> BoxFuture<'a, anyhow::Result<crate::TurnAnswer>> {
                 let error = format!("{w} {m} {agent}");
                 Box::pin(
@@ -1289,7 +1296,7 @@ mod tests {
         assert_eq!(p.delete_blockers("a", true).await.unwrap(), vec!["wait".to_owned()]);
         // M185: a hosted box's turn, and its end.
         assert_eq!(
-            p.hosted_turn("hw_1", "m1", "claude").await.unwrap(),
+            p.hosted_turn("hw_1", "m1", "claude", None).await.unwrap(),
             crate::TurnAnswer::Refused { status: 403, reason: Some("no_key".into()), error: "hw_1 m1 claude".into() }
         );
         assert!(p.hosted_turn_end("hw_1", "m1", "ht_1").await.unwrap());

@@ -115,12 +115,26 @@ pub(crate) fn sessions(app: &Platform, project: &str) -> Vec<Session> {
     app.db.project_sessions(project, 50).unwrap()
 }
 
-/// The box's signed report `n` on session `s`, `from` to `to`.
-pub(crate) fn box_says(app: &Platform, keys: &DeviceKeys, s: &str, n: u64, from: State, to: State, detail: &str) {
+/// The box's signed report `n` on session `s`, `from` to `to`: whether
+/// the platform took it.
+pub(crate) fn box_report(
+    app: &Platform,
+    keys: &DeviceKeys,
+    s: &str,
+    n: u64,
+    from: State,
+    to: State,
+    detail: &str,
+) -> Result<(), crate::db::sessions::Refused> {
     let id = keys.id();
     let ev = arugula_e2e::session::Event { session: s, n, kind: Kind::State, from, to, at: 5, detail, daemon: &id };
     let r = DaemonReport::verify(&ev, &hex::encode(keys.sign_public()), &ev.sign(keys)).unwrap();
-    app.db.move_session(s, &Move::Daemon { report: &r, now: arugula_e2e::now_ms() }).unwrap().unwrap();
+    app.db.move_session(s, &Move::Daemon { report: &r, now: arugula_e2e::now_ms() }).unwrap().map(|_| ())
+}
+
+/// [`box_report`], taken.
+pub(crate) fn box_says(app: &Platform, keys: &DeviceKeys, s: &str, n: u64, from: State, to: State, detail: &str) {
+    box_report(app, keys, s, n, from, to, detail).unwrap();
 }
 
 /// The box takes `s`, starting its first turn with its queued prompts, as
@@ -388,4 +402,87 @@ async fn a_done_session_holds_its_slot_so_a_fourth_waits() {
     assert_eq!(app.db.session(&fourth.id).unwrap().unwrap().state, State::Queued, "room only just made");
     run(late + crate::work::TAKE_MS + crate::work::WAITING_MS).await;
     assert_eq!(app.db.session(&fourth.id).unwrap().unwrap().state, State::Failed, "not taken with room");
+}
+
+/// A rebuilt box (M258): a session it had taken is queued again on the new
+/// machine, its old block and queued reply gone, and its next turn starts
+/// from the thread hydrated again plus the old box's archived transcript.
+/// Its card says why. The old box's reports are refused, the new box takes
+/// it numbering on, and a session no box took only follows the machine.
+#[tokio::test]
+async fn a_rebuilt_boxs_sessions_start_again_from_the_thread() {
+    use crate::db::{
+        hosted_transcripts::NewTranscript,
+        sessions::{BOX_REBUILT, Refused},
+    };
+    let (_hub, app, base, t, _u, old) = platform(&["https://github.com/o/app"]).await;
+    let p = post_in(&base, "ch_general", "b", "@arugula fix the canary", None).await["seq"].as_i64().unwrap();
+    let s = sessions(&app, &t).pop().unwrap();
+    let first = app.db.session_prompts(&s.id).unwrap()[0].id.clone();
+    box_says(
+        &app,
+        &old,
+        &s.id,
+        1,
+        State::Queued,
+        State::Working,
+        &json!({ "prompts": [first], "block": "7" }).to_string(),
+    );
+    box_says(&app, &old, &s.id, 2, State::Working, State::Done, "{}");
+    post_in(&base, "ch_general", "b", "also the docs, please", Some(p)).await;
+    let body = "b: fix the canary\nagent: I changed canary.rs";
+    let archived = NewTranscript {
+        project: &t,
+        workspace: "hw_dev",
+        machine: &old.id(),
+        block: 7,
+        agent: "claude",
+        title: "fix the canary",
+        cwd: None,
+        started_at: 1,
+        closed_at: 2,
+        cut: false,
+        body,
+    };
+    app.db.add_hosted_transcript(&crate::hosted::transcripts::new_id(), &archived, 10, 3).unwrap();
+    post_in(&base, "ch_general", "b", "@arugula two", None).await;
+    let two = sessions(&app, &t).into_iter().find(|x| x.state == State::Queued).unwrap();
+
+    let new = DeviceKeys::generate();
+    crate::hosted::sessions_on_box_changed(&app, "hw_dev", &new.id()).await.unwrap();
+    let after = app.db.session(&s.id).unwrap().unwrap();
+    assert_eq!(
+        (after.state, after.machine.as_deref(), after.block.as_deref(), after.daemon_n),
+        (State::Queued, Some(new.id().as_str()), None, 2)
+    );
+    let prompts = app.db.session_prompts(&s.id).unwrap();
+    let states: Vec<_> = prompts.iter().map(|p| p.state).collect();
+    assert_eq!(states, [PromptState::Sent, PromptState::Dropped, PromptState::Queued]);
+    let again = &prompts[2];
+    assert_eq!(again.author, "b", "the asker's");
+    assert!(again.text.starts_with("This session's box was rebuilt"), "{}", again.text);
+    assert!(again.text.contains("\nb (editor): also the docs, please\n"), "the thread holds the reply: {}", again.text);
+    assert!(again.text.ends_with(&format!("```text\n{body}\n```")), "the transcript: {}", again.text);
+    let last = app.db.session_events(&s.id).unwrap().pop().unwrap();
+    assert_eq!((last.from, last.to, last.sig.is_none()), (Some(State::Done), State::Queued, true));
+    let (st, view) = call(&base, "b", "GET", &format!("/api/sessions/{}", s.id), None).await;
+    assert_eq!(st, 200, "{view}");
+    assert_eq!(view["card"]["reason"], BOX_REBUILT);
+    assert_eq!(view["card"]["state"], "queued");
+    let work = app.db.session_work("hw_dev").unwrap();
+    let w = work.iter().find(|w| w.session == s.id).unwrap();
+    assert_eq!((w.state.as_str(), w.n, w.prompts.len()), ("queued", 2, 1));
+
+    // The old box is refused; the new one takes it, numbering on.
+    let late = box_report(&app, &old, &s.id, 3, State::Done, State::Working, "{}");
+    assert_eq!(late.unwrap_err(), Refused::OtherDaemon);
+    let take = json!({ "prompts": [again.id], "block": "1" }).to_string();
+    box_says(&app, &new, &s.id, 3, State::Queued, State::Working, &take);
+    // The one no box took only follows the machine.
+    let two = app.db.session(&two.id).unwrap().unwrap();
+    assert_eq!((two.state, two.machine.as_deref()), (State::Queued, Some(new.id().as_str())));
+    assert_eq!(app.db.session_prompts(&two.id).unwrap().len(), 1);
+    // Again for the same enrollment: nothing moves.
+    crate::hosted::sessions_on_box_changed(&app, "hw_dev", &new.id()).await.unwrap();
+    assert_eq!(app.db.session(&s.id).unwrap().unwrap().state, State::Working);
 }

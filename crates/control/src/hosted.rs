@@ -425,10 +425,11 @@ pub async fn trust(State(app): State<Arc<App>>, h: HostedAuth) -> R {
 /// `POST /api/hosted/turns` (M185): the machine's box starts an agent
 /// turn. Whose inference key pays is the platform's to say
 /// (`PlatformPort::hosted_turn`), for the workspace and machine its
-/// certificate names.
+/// certificate names, and the thread session (`session`) it's for, if any.
 pub async fn turn(State(app): State<Arc<App>>, h: HostedAuth, Json(b): Json<Value>) -> R {
     let agent = b["agent"].as_str().unwrap_or_default();
-    match app.platform.hosted_turn(&h.0.cert.workspace, &h.0.cert.device, agent).await? {
+    let session = b["session"].as_str();
+    match app.platform.hosted_turn(&h.0.cert.workspace, &h.0.cert.device, agent, session).await? {
         arugula_platform::TurnAnswer::Given { turn, pays, auth } => {
             Ok(Json(json!({ "turn": turn, "pays": pays, "auth": auth.as_deref().unwrap_or("key") })))
         }

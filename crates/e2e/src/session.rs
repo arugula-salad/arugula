@@ -20,10 +20,13 @@
 //!
 //!   working, needs_input ── no heartbeat for 60 s ──► unresponsive
 //!   unresponsive ── the box is heard from again ──► the state it was in
+//!   any taken one ── its box was rebuilt ──► queued (on the new box)
 //!   any but failed, stopped ──► failed | stopped
 //! ```
 //!
-//! - `queued`: made, with its first prompt, and no box has taken it.
+//! - `queued`: made, with its first prompt, and no box has taken it. Or
+//!   its box was rebuilt (M258): the box's checkout and conversation went
+//!   with the old one, so the new box takes it again, from the thread.
 //! - `working`: a turn is under way on the box.
 //! - `needs_input`: the turn waits for a person (a question, a permission).
 //! - `done`: the turn finished; the session waits for its next prompt. Not
@@ -38,7 +41,7 @@
 //! daemon reports what it knows (it took the session, a turn started,
 //! asked, finished, failed, it stopped the agent); control records the
 //! rest (a session nobody took fails, a person stops it, the box went
-//! quiet, the box was heard from again).
+//! quiet, the box was heard from again, the box was rebuilt).
 //!
 //! **The signed event.** A fixed line format, as run events are, so the
 //! daemon and anyone checking later sign and verify the same bytes:
@@ -146,26 +149,29 @@ impl State {
                 | (NeedsInput, Working | Failed | Stopped | Unresponsive)
                 | (Done, Working | Failed | Stopped)
                 | (Unresponsive, Working | NeedsInput | Failed | Stopped)
+                | (Working | NeedsInput | Done | Unresponsive, Queued)
         )
     }
 
     /// The moves the session's daemon reports: every one it knows of, and
-    /// none into or out of `unresponsive` (it never sees that state).
+    /// none into or out of `unresponsive` (it never sees that state), nor
+    /// back to `queued`.
     pub fn daemon_may(self, to: State) -> bool {
-        self.may_become(to) && self != State::Unresponsive && to != State::Unresponsive
+        self.may_become(to) && self != State::Unresponsive && to != State::Unresponsive && to != State::Queued
     }
 
     /// The moves control records: a session nobody took or whose box is
     /// gone fails (with a reason), a person stops it, the box goes quiet
     /// (`unresponsive`) and is heard from again (back to the state it was
-    /// in). Never the moves only the box knows: taking it, a turn's start,
-    /// question or end.
+    /// in), its box is rebuilt (back to `queued`, for the new box). Never
+    /// the moves only the box knows: taking it, a turn's start, question
+    /// or end.
     pub fn control_may(self, to: State) -> bool {
         self.may_become(to)
             && match to {
-                State::Failed | State::Stopped | State::Unresponsive => true,
+                State::Failed | State::Stopped | State::Unresponsive | State::Queued => true,
                 State::Working | State::NeedsInput => self == State::Unresponsive,
-                State::Queued | State::Done => false,
+                State::Done => false,
             }
     }
 }
@@ -276,7 +282,8 @@ mod tests {
         for s in State::ALL {
             assert_eq!(State::parse(s.as_str()), Some(s));
             assert!(!s.may_become(s), "{s} to itself");
-            assert!(!s.may_become(State::Queued), "nothing goes back to queued");
+            assert!(!s.daemon_may(State::Queued), "only control sends one back to queued");
+            assert_eq!(s.control_may(State::Queued), !s.terminal() && s != State::Queued, "{s}: its box rebuilt");
             if s.terminal() {
                 assert!(State::ALL.iter().all(|t| !s.may_become(*t)), "{s} is an end");
             }

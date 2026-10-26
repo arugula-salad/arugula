@@ -416,14 +416,55 @@ pub fn ask(app: &Platform, workspace: &str, what: Ask) -> anyhow::Result<bool> {
 /// sessions yet.
 ///
 /// A thread's session (M254) that ran on the workspace's earlier box can't
-/// `--resume` there: that conversation's files went with the box. It comes
-/// back from a fresh hydration of the thread plus its archived transcript
-/// ([`transcripts`]) on `new_machine`. Empty until M254's session rows
-/// (which keep `machine`) are on main: M256 or M257 fills it in, moving each
-/// live session on `workspace` to `new_machine` and marking its next turn
-/// as a fresh start.
+/// `--resume` there: that conversation's files went with the box. Each
+/// live session on `workspace` moves to `new_machine`. One no box took yet
+/// only follows it. One that was taken is queued again (control's move,
+/// `db::sessions::rebuilt_in`), its next turn starting from a fresh
+/// hydration of the thread plus its archived transcript ([`transcripts`],
+/// `sessions::hydrate::after_rebuild`) as its asker's prompt: the new box
+/// takes it as it takes any queued session. Its card says the box was
+/// rebuilt. A session already on `new_machine` is left as it is, so this
+/// may run again for the same enrollment.
 pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machine: &str) -> anyhow::Result<()> {
-    let _ = (app, workspace, new_machine);
+    use crate::db::sessions::{NewPrompt, Source, State};
+    for s in app.db.live_sessions_on(workspace)? {
+        if s.machine.as_deref() == Some(new_machine) {
+            continue;
+        }
+        let text = match s.state {
+            State::Queued => String::new(),
+            _ => match crate::sessions::hydrate::after_rebuild(app, &s).await {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!(
+                        session = s.id,
+                        workspace,
+                        error = format!("{e:#}"),
+                        "can't hydrate a session's thread for its new box"
+                    );
+                    continue;
+                }
+            },
+        };
+        let prompt = NewPrompt { author: &s.asker, source: Source::Member, association: None, text: &text };
+        let now = arugula_e2e::now_ms();
+        match app.db.session_rebuilt(&s.id, s.state, new_machine, &prompt, now)? {
+            Ok(_) => {
+                tracing::info!(
+                    session = s.id,
+                    workspace,
+                    machine = new_machine,
+                    "a session moved to its workspace's new box"
+                );
+                crate::session_live::told(app, std::slice::from_ref(&s.id))?;
+                app.db.nudge_session(&s.id, now)?;
+            }
+            // It moved meanwhile (it ended, say): its job sees to it.
+            Err(e) => {
+                tracing::warn!(session = s.id, workspace, refused = %e, "a session didn't move to its workspace's new box")
+            }
+        }
+    }
     Ok(())
 }
 

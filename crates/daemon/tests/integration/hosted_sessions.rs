@@ -66,6 +66,8 @@ struct Fake {
     /// Reports refused, and why.
     refused: Arc<Mutex<Vec<String>>>,
     pulls: Arc<Mutex<u32>>,
+    /// Every turn the box asked M185's gate for, as it asked.
+    asked: Arc<Mutex<Vec<Value>>>,
 }
 
 impl Fake {
@@ -94,6 +96,7 @@ impl Fake {
             reports: Default::default(),
             refused: Default::default(),
             pulls: Default::default(),
+            asked: Default::default(),
         }
     }
 
@@ -256,7 +259,8 @@ async fn report(Axum(f): Axum<Fake>, Json(r): Json<SessionReport>) -> Json<Value
 }
 
 /// M185's gate: every turn may run.
-async fn turn(Json(_): Json<Value>) -> Json<Value> {
+async fn turn(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
+    f.asked.lock().unwrap().push(b);
     Json(json!({ "turn": "trn_1", "pays": "project", "auth": "key" }))
 }
 
@@ -452,6 +456,8 @@ fn a_hosted_machine_runs_sessions() {
     let (_, turn) = of.iter().find(|(r, _)| r.kind == "turn").unwrap();
     assert_eq!(turn.branch.as_deref(), Some(branch.as_str()), "{turn:?}");
     assert_eq!(turn.pushed, Some(false), "M259 pushes");
+    let gated = f.asked.lock().unwrap().clone();
+    assert_eq!(gated, [json!({ "agent": "claude", "session": a })], "its turns are its asker's");
     let checkout = homes.join("ses1").join("work").join(&a);
     assert_eq!(git(&checkout, &["rev-parse", "--abbrev-ref", "HEAD"]), branch);
     assert_eq!(git(&checkout, &["remote", "get-url", "origin"]), "https://github.com/acme/app.git");

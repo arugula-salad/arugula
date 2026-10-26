@@ -167,8 +167,9 @@ impl PlatformPort for PlatformAt {
         workspace: &'a str,
         machine: &'a str,
         agent: &'a str,
+        session: Option<&'a str>,
     ) -> BoxFuture<'a, anyhow::Result<arugula_platform::TurnAnswer>> {
-        self.port().hosted_turn(workspace, machine, agent)
+        self.port().hosted_turn(workspace, machine, agent, session)
     }
 
     fn hosted_turn_end<'a>(

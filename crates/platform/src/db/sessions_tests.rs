@@ -163,8 +163,10 @@ fn every_move_the_states_allow_and_none_they_dont() {
                 let now = T0 + 100;
                 let moved = if by_box { b.report(&db, &s.id, to, now) } else { control(&db, &s.id, from, to, now) };
                 let theirs = if by_box { from.daemon_may(to) } else { from.control_may(to) };
-                // Out of unresponsive, control goes back only where it was.
-                let may = theirs && (from != State::Unresponsive || to.terminal() || Some(to) == s.was);
+                // Out of unresponsive, control goes back only where it was
+                // (or to queued: its box was rebuilt).
+                let may = theirs
+                    && (from != State::Unresponsive || to.terminal() || to == State::Queued || Some(to) == s.was);
                 expected += usize::from(may);
                 let after = db.session(&s.id).unwrap().unwrap();
                 let who = if by_box { "the box" } else { "control" };
