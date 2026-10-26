@@ -112,7 +112,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
                       </button>{" "}
                     </>
                   ) : null}
-                  <label class="dim">
+                  <label class="control-check dim">
                     <input type="checkbox" data-stop-running checked={!!stop[r.id]} onChange={(e) => setStop({ ...stop, [r.id]: (e.target as HTMLInputElement).checked })} /> also
                     stop the runs going
                   </label>{" "}

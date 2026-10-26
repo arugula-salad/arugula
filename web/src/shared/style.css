@@ -295,13 +295,16 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-weight: 700;
 }
 
-/* The swarm under the shared bar. */
+/* The swarm under the shared bar: as wide as left and right leave it
+   (beside the rail), not .bar's 100%, which ran it 56px off the right
+   edge and hid half the account button (UI audit #153). */
 .swarm-shell > .bar {
   position: fixed;
   z-index: 21;
   top: 0;
   left: 0;
   right: 0;
+  width: auto;
 }
 
 .swarm-shell > .swarm {
@@ -2702,10 +2705,18 @@ html[data-native-tabs][data-desktop="macos"] .bar {
    under a long deploy plan can be reached. */
 .control-prompt {
   position: relative;
-  max-height: calc(100vh - 15vh - 24px);
-  max-height: calc(100dvh - 15vh - 24px);
+  /* Less its own padding (16px top and bottom), else it ran 8px past the
+     window's bottom (UI audit #150). */
+  max-height: calc(100vh - 15vh - 24px - 32px);
+  max-height: calc(100dvh - 15vh - 24px - 32px);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* A dialog holds the focus itself until Tab moves it to a control
+   (UI audit #150): no ring round the whole of it. */
+.prompt:focus {
+  outline: none;
 }
 
 .modal-close {
@@ -3035,6 +3046,35 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   }
 }
 
+/* UI audit #151: rows of three, name | what | action (a team's members and
+   machines, where you're signed in, passkeys, unused invite links), the
+   action a small button at the right end, never a row of its own. */
+.control-devices.control-rows li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.control-devices li > .control-revoke {
+  justify-self: end;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  /* On a phone what it is goes under its name, the action beside both. */
+  .control-devices.control-rows li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .control-devices.control-rows li > :nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+  }
+  .control-devices.control-rows li > :nth-child(3) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
 /* Devices and machines (#106): two groups, a team badge, what Remove does. */
 .control-prompt h3.control-group {
   margin: 14px 0 0;
@@ -3126,6 +3166,13 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .prompt .control-check input {
   padding: 0;
   accent-color: var(--accent);
+}
+
+/* A checkbox in a list's row, beside its buttons (UI audit #151). */
+.prompt li label.control-check {
+  display: inline-flex;
+  margin: 0;
+  font-weight: 400;
 }
 
 .prompt-buttons button:disabled {

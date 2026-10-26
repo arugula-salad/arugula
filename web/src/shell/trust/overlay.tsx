@@ -106,6 +106,10 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
       <Modal close={() => setPanel(null)}>
         <h2>Add a machine</h2>
         <AddMachine s={s} />
+        {/* UI audit #150: every dialog ends the same way. */}
+        <div class="prompt-buttons">
+          <button onClick={() => setPanel(null)}>Done</button>
+        </div>
       </Modal>
     );
   // M104: asked once, when nothing else is.

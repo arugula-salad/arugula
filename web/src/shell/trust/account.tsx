@@ -89,7 +89,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
       </p>
       <RecoveryAndName s={s} />
       <h3 class="control-group">Where you're signed in</h3>
-      <ul class="control-devices" data-sessions>
+      <ul class="control-devices control-rows" data-sessions>
         {(sessions ?? []).map((x) => (
           <li key={x.id} data-session={x.id}>
             <span>
@@ -101,7 +101,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
               <span />
             ) : (
               <button
-                class={confirming === x.id ? "control-revoke danger" : "control-revoke"}
+                class={confirming === x.id ? "control-revoke danger" : "control-revoke quiet-danger"}
                 data-end-session={x.id}
                 onClick={() => (confirming === x.id ? act(() => api(`/api/me/sessions/${x.id}/end`, {})) : setConfirming(x.id))}
               >
@@ -132,7 +132,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         <>
           <h3 class="control-group">Passkeys</h3>
           {keys && keys.passkeys.length === 0 ? <p class="dim">None.</p> : null}
-          <ul class="control-devices" data-passkeys>
+          <ul class="control-devices control-rows" data-passkeys>
             {(keys?.passkeys ?? []).map((k, i) => (
               <li key={k.id} data-passkey={k.id}>
                 <span data-passkey-name>{passkeyName(k, i)}</span>
@@ -297,7 +297,7 @@ function LendDevice({ s }: { s: ControlSession }) {
         Agents on your machines may ask to use this device: its location, camera, microphone, clipboard, or you. You allow or
         deny each request here, while this page is open.
       </p>
-      <label class="control-confirm">
+      <label class="control-check">
         <input
           type="checkbox"
           data-lend-device

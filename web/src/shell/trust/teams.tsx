@@ -202,7 +202,7 @@ function TeamSection({
       <h4 class="control-subgroup" data-team-members-head>
         Members <span class="dim">· {t.roster.members.length}</span>
       </h4>
-      <ul class="control-devices" data-team-members={t.team}>
+      <ul class="control-devices control-rows" data-team-members={t.team}>
         {t.roster.members.map((m) => (
           <li key={m.account} data-member={m.account}>
             <span data-member-name>
@@ -250,7 +250,7 @@ function TeamSection({
         Machines <span class="dim">· {machines.length}</span>
       </h4>
       {machines.length ? (
-        <ul class="control-devices" data-team-machines={t.team}>
+        <ul class="control-devices control-rows" data-team-machines={t.team}>
           {machines.map((d) => {
             const mine = !d.account || d.account === s.account;
             return (
@@ -355,7 +355,7 @@ function TeamSection({
           {unused.length ? (
             <>
               <p class="dim">One-click links nobody has used yet:</p>
-              <ul class="control-devices" data-presigned-list>
+              <ul class="control-devices control-rows" data-presigned-list>
                 {unused.map((i) => (
                   <li key={i.key} data-presigned={i.key}>
                     <span>

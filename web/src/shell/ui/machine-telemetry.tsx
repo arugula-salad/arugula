@@ -16,7 +16,8 @@
 //   machine's answer is yes. Control's page sends its own to control (M104),
 //   never here, so no view counts twice.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { useModal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { desktopApp } from "../../shared/desktop";
 import { OPS, opPath } from "../ops";
@@ -187,6 +188,9 @@ const KEPT_OFF: Partial<Record<TelemetryInfo["why"], string>> = {
 };
 
 function MachineTelemetrySettings({ client, close }: { client: Client; close: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // UI audit #150: takes the focus, keeps it, and Escape closes it.
+  useModal(ref, close);
   const [t, setT] = useState<TelemetryInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -201,10 +205,11 @@ function MachineTelemetrySettings({ client, close }: { client: Client; close: ()
     <div
       class="prompt-backdrop"
       role="dialog"
+      aria-modal="true"
       aria-label="Usage and crash reports"
       onPointerDown={(e) => e.target === e.currentTarget && close()}
     >
-      <div class="prompt rules machine-telemetry" onKeyDown={(e) => e.key === "Escape" && close()}>
+      <div ref={ref} class="prompt rules machine-telemetry">
         <h2>Usage and crash reports</h2>
         <p class="hint">{ABOUT}</p>
         {error && <p class="error">{error}</p>}
@@ -227,7 +232,7 @@ function MachineTelemetrySettings({ client, close }: { client: Client; close: ()
         )}
         <div class="prompt-buttons">
           <button type="button" onClick={close}>
-            Close
+            Done
           </button>
         </div>
       </div>
