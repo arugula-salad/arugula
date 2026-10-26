@@ -397,9 +397,9 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 54,
+        version: 51,
         name: "forge_content_association",
-        sql: include_str!("../../migrations/sqlite/0054_forge_content_association.sql"),
+        sql: include_str!("../../migrations/sqlite/0051_forge_content_association.sql"),
         additive: true,
     },
 ];
@@ -709,9 +709,9 @@ const POSTGRES: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 54,
+        version: 51,
         name: "forge_content_association",
-        sql: include_str!("../../migrations/postgres/0054_forge_content_association.sql"),
+        sql: include_str!("../../migrations/postgres/0051_forge_content_association.sql"),
         additive: true,
     },
 ];
