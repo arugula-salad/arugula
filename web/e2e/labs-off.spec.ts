@@ -1,11 +1,11 @@
 // The default, which is what a stranger gets: a machine without the `labs`
-// flag shows no chat or threads, no studio, VM or sandbox, no
+// flag shows no chat or threads, no VM or sandbox, no
 // "Invite over ssh", and one swarm theme. The rest of the suite
 // runs with labs on (e2e/labs.ts), so this is the only proof of the default,
 // and it is in the set that always runs (`E2E_SET=rest`).
 //
-// The daemon here is set up for every one of those (a linked studio, a
-// sandbox provider and guest ssh), so only the missing
+// The daemon here is set up for every one of those (a sandbox provider
+// and guest ssh), so only the missing
 // file hides them: and the last test sets the flag, on the running daemon, and
 // loads the page again to see them all. (developer-settings.spec.ts turns
 // them on one at a time, from the page.)
@@ -30,7 +30,6 @@ test.afterAll(closeContexts);
 
 test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "arugula-e2e-labs-off-"));
-  writeFileSync(join(state, "studio.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "e2e-studio-token" }));
   writeFileSync(join(state, "wisp-token"), "e2e-wisp-token");
   daemon = spawn(
     "../target/debug/arugulad",
@@ -60,7 +59,7 @@ const api = (path: string, body?: unknown, as?: string) =>
 const features = async () => ((await (await api("/api/host")).json()) as { features: Record<string, boolean | string[]> }).features;
 
 /** What this page shows to a stranger's eye, wherever labs would put it. */
-const MENU_HIDDEN = [/^Thread\b/, /^Session thread/, /\bVM\b/, /^Sandboxes/, /studio app/i, /^Invite over ssh/, /^Developer settings/];
+const MENU_HIDDEN = [/^Thread\b/, /^Session thread/, /\bVM\b/, /^Sandboxes/, /^Invite over ssh/, /^Developer settings/];
 
 async function menuItems(page: Page) {
   const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
@@ -74,6 +73,8 @@ async function noLabsItems(page: Page, pane: number) {
   await expect(page.getByRole("menuitem", { name: "Share read-only link…" })).toBeVisible();
   for (const item of await menuItems(page)) for (const h of MENU_HIDDEN) expect(item, `pane menu: ${item}`).not.toMatch(h);
   await expect(page.getByRole("menuitem", { name: "Invite over ssh…" })).toHaveCount(0);
+  // An app's box, by its address, is everyone's (native #206).
+  await expect(page.getByRole("menuitem", { name: "Open an app…" })).toBeVisible();
   await page.keyboard.press("Escape");
   // The session menu and the + button's.
   for (const [where, button] of [
@@ -88,7 +89,7 @@ async function noLabsItems(page: Page, pane: number) {
 }
 
 test("the host says labs is off, and what follows it", async () => {
-  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, studio: false, block_channels: false, flags: [] });
+  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, block_channels: false, flags: [] });
 });
 
 test("links to Forgejo and GitLab stay plain links; GitHub's still open as blocks", async ({ page }) => {
@@ -108,7 +109,7 @@ test("links to Forgejo and GitLab stay plain links; GitHub's still open as block
   ).toEqual([null, null, null, null, "pr", "issue"]);
 });
 
-test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async ({ page }) => {
+test("on a desktop: no chat or threads, no VMs, no ssh invite", async ({ page }) => {
   await open(page);
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, pane);
@@ -204,18 +205,19 @@ test("an older daemon's mention notification opens only the pane", async ({ page
 
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 760 }, isMobile: true, hasTouch: true });
-  test("the sheet has no chat, studio or VM entries", async ({ page }) => {
+  test("the sheet has no chat or VM entries", async ({ page }) => {
     await open(page);
     await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
     await page.locator(".sheet-button").tap();
     await sheetTab(page, "More");
-    // Here has chat when there is any, else New chat; studio is More's.
+    // Here has chat when there is any, else New chat; apps are More's.
     await expect(page.locator("[data-open-chat]")).toHaveCount(0);
     await sheetTab(page, "More");
     // What it does have.
     await expect(page.locator("[data-open-swarm]")).toBeVisible();
     await expect(page.locator("[data-open-pr]")).toBeVisible();
-    for (const gone of ["[data-open-chat]", "[data-studio-apps]"]) await expect(page.locator(gone)).toHaveCount(0);
+    await expect(page.locator("[data-open-app]")).toBeVisible();
+    await expect(page.locator("[data-open-chat]")).toHaveCount(0);
     for (const name of ["New VM tab", "Sandboxes"]) await expect(page.getByRole("button", { name })).toHaveCount(0);
     await expect(page.locator(".session-unread, .thread-badge")).toHaveCount(0);
   });
@@ -223,7 +225,8 @@ test.describe("on a phone", () => {
 
 test("a daemon from before labs, which says nothing of it, gets none of it either", async ({ page }) => {
   // What `GET /api/host` says on an older daemon: every feature on (huddles'
-  // `calls` and Managoat's `fountain` too, from before they were removed),
+  // `calls`, Managoat's `fountain` and the studio login's `studio` too, from
+  // before they were removed),
   // and no `labs`. Control serves this page to such daemons too.
   await page.route("**/api/host", async (r) => {
     const res = await r.fetch();
@@ -236,7 +239,7 @@ test("a daemon from before labs, which says nothing of it, gets none of it eithe
   await ready(page, pane);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features?.vms)).toBe(true);
   expect(await page.evaluate(() => window.__arugula.client.hasLabs())).toBe(false);
-  expect(await page.evaluate(() => (["vms", "studio"] as const).map((f) => window.__arugula.client.has(f)))).toEqual([false, false]);
+  expect(await page.evaluate(() => window.__arugula.client.has("vms"))).toBe(false);
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   await expect(page.locator(".thread-badge, .session-unread")).toHaveCount(0);
   await noLabsItems(page, pane);
@@ -281,9 +284,9 @@ test("setting the flag on the running daemon brings it all back, with no restart
   page.on("request", (r) => asked.push(r.url()));
   labs(state);
   expect(await features()).toEqual({
-    ...{ labs: true, dev: true, blocks: false, vms: true, studio: true, block_channels: false },
+    ...{ labs: true, dev: true, blocks: false, vms: true, block_channels: false },
     // `labs`, the one switch from before, is every flag (#665).
-    flags: ["chat", "vms", "studio", "workspaces", "guest-ssh", "forges", "agents", "docs"],
+    flags: ["chat", "vms", "workspaces", "guest-ssh", "forges", "agents", "docs"],
   });
 
   await open(page);
@@ -299,7 +302,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   // Now the Labs chunk was fetched, since this machine has them.
   expect(asked.filter((u) => LABS_CHUNK.test(u)).length).toBeGreaterThan(0);
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
-  for (const name of ["Invite over ssh…", "New VM pane on the right", "Open a studio app…"]) {
+  for (const name of ["Invite over ssh…", "New VM pane on the right", "Open an app…"]) {
     await expect(page.getByRole("menuitem", { name })).toBeVisible();
   }
   await page.keyboard.press("Escape");

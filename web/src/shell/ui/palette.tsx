@@ -7,7 +7,7 @@
 //
 // The menus' items come from ./commands, so anything added to a menu shows
 // up here too. Blocks drawn in an iframe on another origin (web pages,
-// editors, studio apps) keep their keys: the chord works once focus is
+// editors, apps) keep their keys: the chord works once focus is
 // back on the page.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";

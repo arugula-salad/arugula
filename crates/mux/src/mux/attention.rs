@@ -257,7 +257,7 @@ impl Daemon {
             let what = if a.ask.kind == AskKind::Permission { AskWhat::Approve } else { AskWhat::Question };
             let (agent, project) = match self.blocks.get(&pane) {
                 // Raised on a block (M35): who asks is the ask's, and the
-                // project the block's (a studio box's app), not a cwd.
+                // project the block's (an app's box), not a cwd.
                 Some(b) => {
                     let s = b.summary();
                     let project = match s.project {
@@ -505,7 +505,7 @@ impl Daemon {
     /// Show a terminal's question on every client, and ask for you.
     pub(super) fn ask(&mut self, pane: PaneId, ask: Ask) -> Result<(u64, oneshot::Receiver<Replied>), String> {
         // A terminal, or a block that doesn't ask through its own methods
-        // (a web page, a studio box: M35). An agent block's questions are
+        // (a web page, an app's box: M35). An agent block's questions are
         // its own.
         let block = self.blocks.get(&pane).map(|b| b.kind());
         match block {
@@ -615,7 +615,7 @@ impl Daemon {
     /// client.
     pub(super) fn after_ask(&mut self, pane: PaneId) {
         if self.attention.get(&pane) == Some(&Attention::NeedsInput) {
-            // A block still waiting for something else (a studio box's
+            // A block still waiting for something else (a workspace's
             // gate) keeps wanting you, for that.
             if self.blocks.contains_key(&pane)
                 && self.reasons.get(&pane).is_some_and(|r| !matches!(r.kind, ReasonKind::Ask | ReasonKind::Input))
@@ -628,7 +628,7 @@ impl Daemon {
                 return;
             }
             // A terminal's program goes on; a block that was asked for
-            // someone else (a studio box) is just a page again.
+            // someone else (an app's box) is just a page again.
             let next = if self.blocks.contains_key(&pane) { Attention::Idle } else { Attention::Working };
             self.set_attention(pane, next, "answered");
         } else {

@@ -3673,28 +3673,28 @@ pub(crate) mod tests {
     /// control says nothing of them, and go when the machine leaves.
     #[tokio::test]
     async fn control_pushes_labs_flags_and_the_machine_overrides() {
-        use arugula_proto::flags::{self, CHAT, STUDIO, Source, VMS};
+        use arugula_proto::flags::{self, CHAT, Source, VMS, WORKSPACES};
         let r = rig("flags").await;
         r.fake.lock().unwrap().flags =
             Some(serde_json::json!({ "account": { "vms": false }, "team": { "chat": true, "vms": true } }));
         let c = r.daemon().await;
-        assert!(flags::get(&r.dir, CHAT) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, STUDIO));
+        assert!(flags::get(&r.dir, CHAT) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, WORKSPACES));
         let source = |name| flags::explain(&r.dir).into_iter().find(|(f, _)| f.name == name).unwrap().1.source;
         assert_eq!((source(CHAT), source(VMS)), (Source::Team, Source::Account));
 
         // The machine forces one off; a team change doesn't move it.
         flags::set(&r.dir, CHAT, false).unwrap();
         r.fake.lock().unwrap().flags =
-            Some(serde_json::json!({ "team": { "chat": true, "studio": true, "vms": true } }));
+            Some(serde_json::json!({ "team": { "chat": true, "workspaces": true, "vms": true } }));
         assert!(c.refresh_now(REFRESH_WAIT).await);
-        assert!(!flags::get(&r.dir, CHAT) && flags::get(&r.dir, STUDIO));
+        assert!(!flags::get(&r.dir, CHAT) && flags::get(&r.dir, WORKSPACES));
         // VMs follow the account's word going away: the team's says on.
         assert!(flags::get(&r.dir, VMS) && source(VMS) == Source::Team);
 
         // A control from before flags says nothing: what was sent stays.
         r.fake.lock().unwrap().flags = None;
         assert!(c.refresh_now(REFRESH_WAIT).await);
-        assert!(flags::get(&r.dir, STUDIO));
+        assert!(flags::get(&r.dir, WORKSPACES));
 
         // Leaving control: only the machine's own word is left.
         std::fs::remove_file(r.dir.join(FILE)).unwrap();
@@ -3702,7 +3702,7 @@ pub(crate) mod tests {
         while r.dir.join(flags::CONTROL_FILE).exists() && t.elapsed() < Duration::from_secs(10) {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        assert!(!flags::get(&r.dir, STUDIO) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, CHAT));
+        assert!(!flags::get(&r.dir, WORKSPACES) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, CHAT));
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 

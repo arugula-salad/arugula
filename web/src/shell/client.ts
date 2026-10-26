@@ -219,7 +219,7 @@ class E2ELink implements Link {
 }
 
 /** The host features that follow `labs`: also off without it. */
-const LABS_FEATURES: Exclude<keyof HostFeatures, "flags">[] = ["vms", "studio"];
+const LABS_FEATURES: Exclude<keyof HostFeatures, "flags">[] = ["vms"];
 
 export class Client {
   /** The daemon's origin (`https://box.….ts.net`), or "" for the one this
@@ -698,7 +698,7 @@ export class Client {
   }
 
   /** Read what this daemon is set up for again (#180). Menus show what
-   * was last read; a change (a studio linked, say) shows next time. */
+   * was last read; a change (a sandbox provider set up, say) shows next time. */
   async loadFeatures() {
     try {
       const res = await this.request(OPS["host.get"].method, opPath("host.get"));
@@ -741,14 +741,14 @@ export class Client {
   }
 
   /** Is `f` set up here? Yes when the daemon didn't say, except for what
-   * labs turns on (VMs, studio): those need `hasLabs()` as well. */
+   * labs turns on (VMs): those need `hasLabs()` as well. */
   has(f: Exclude<keyof HostFeatures, "flags">): boolean {
     if (LABS_FEATURES.includes(f) && !this.hasLabs()) return false;
     return this.features?.[f] ?? true;
   }
 
   /** Whether this machine has any Labs flag on: something a stranger
-   * doesn't get (chat, studio, VMs, guest ssh, the
+   * doesn't get (chat, VMs, guest ssh, the
    * swarm's extra views). `flag` says which. Unlike `has`, unknown means no:
    * control serves this page to older daemons too, which never say. */
   hasLabs(): boolean {
@@ -756,7 +756,7 @@ export class Client {
   }
 
   /** Whether the Labs flag `name` is on here, whatever else its feature
-   * needs (`has` says that for VMs and studio). A daemon from
+   * needs (`has` says that for VMs). A daemon from
    * before flags says only `labs`, which was all of them. */
   flag(name: string): boolean {
     const f = this.features;

@@ -686,11 +686,8 @@ impl Workspace {
             chant: &chant,
             by: self.chant_by(&args, by.as_deref(), version),
         };
-        let result = if expire {
-            crate::gate::expire(&gate, &via).await
-        } else {
-            crate::gate::approve(&gate, by.as_deref(), &via).await
-        };
+        let result =
+            if expire { crate::gate::expire(&gate, &via).await } else { crate::gate::approve(&gate, &via).await };
         let (ok, said) = match &result {
             Ok(s) | Err(s) => (result.is_ok(), s.clone()),
         };
@@ -704,7 +701,6 @@ impl Workspace {
             let at = l.end();
             let dir = match &gate.source {
                 GateSource::Chant { dir, .. } => dir,
-                GateSource::Hud { box_url, .. } => box_url,
                 GateSource::Forge { url, .. } => url,
                 GateSource::Point { root, .. } => root,
             };

@@ -1,4 +1,4 @@
-// The studio app, workspace and agents blocks have their code in the
+// The workspace and agents blocks have their code in the
 // Labs chunk. Here, in the main bundle, is what stands in their slot: a
 // "Loading…" while the chunk arrives, then the real block inside it. A
 // machine without the block's flag gets a plain note instead (an old saved
@@ -10,15 +10,15 @@ import type { BlockType, PaneId } from "../../shared/proto";
 import { showLabsOff } from "./labs-off";
 import { registerBlock, type BlockView } from "./view";
 
-const LABS_BLOCKS = ["app", "workspace", "agents"] as const;
+const LABS_BLOCKS = ["workspace", "agents"] as const;
 type LabsBlock = (typeof LABS_BLOCKS)[number];
 
 /** The Labs flag each needs. */
-const FLAGS: Record<LabsBlock, string> = { app: "studio", workspace: "workspaces", agents: "agents" };
-const TITLES: Record<LabsBlock, string> = { app: "App", workspace: "Workspace", agents: "Team agents" };
+const FLAGS: Record<LabsBlock, string> = { workspace: "workspaces", agents: "agents" };
+const TITLES: Record<LabsBlock, string> = { workspace: "Workspace", agents: "Team agents" };
 
 function rendererOf(labs: Labs, type: LabsBlock) {
-  const of = { app: labs.appBlock, workspace: labs.workspaceBlock, agents: labs.agentsBlock };
+  const of = { workspace: labs.workspaceBlock, agents: labs.agentsBlock };
   return of[type];
 }
 

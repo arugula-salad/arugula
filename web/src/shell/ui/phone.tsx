@@ -15,7 +15,8 @@ import { hasChat, openChat } from "./places";
 import { ChatTabBadge, openChanges, openIssue, openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
-import { pickApp, openSandboxes } from "../labs-load";
+import { openSandboxes } from "../labs-load";
+import { pickApp } from "./apps";
 import { openPicker } from "./picker";
 import { NotifySection } from "./notify";
 import { openDeveloper } from "./developer";
@@ -287,9 +288,9 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                   <button data-open-palette onClick={act(() => openPalette(client, true))}>
                     Commands
                   </button>
-                  {owner && client.has("studio") && (
-                    <button data-studio-apps onClick={act(() => pickApp(client, { session: where }, true))}>
-                      Studio apps
+                  {owner && (
+                    <button data-open-app onClick={act(() => void pickApp(client, { session: where }))}>
+                      App
                     </button>
                   )}
                   {owner && (

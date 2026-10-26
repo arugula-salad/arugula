@@ -79,8 +79,6 @@ pub const LABS: &str = "labs";
 pub const CHAT: &str = "chat";
 /// VM tabs and panes, machines and the sandboxes page.
 pub const VMS: &str = "vms";
-/// Studio app blocks.
-pub const STUDIO: &str = "studio";
 /// Chant workspace blocks.
 pub const WORKSPACES: &str = "workspaces";
 /// Inviting a guest to a pane over plain ssh.
@@ -136,7 +134,6 @@ const fn local_row(name: &'static str, title: &'static str, about: &'static str)
 pub const FLAGS: &[Flag] = &[
     row(CHAT, "Chat", "The chat page, which needs control. Brings this machine's old threads into it."),
     row(VMS, "VMs and sandboxes", "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider."),
-    row(STUDIO, "Studio apps", "Studio app blocks. Needs a linked studio."),
     row(WORKSPACES, "Chant workspaces", "Chant workspace blocks."),
     local_row(GUEST_SSH, "Guest ssh", "Invite a guest to a pane over plain ssh."),
     row(FORGES, "Forgejo and GitLab", "PR and issue blocks for Forgejo and GitLab, beside GitHub's."),
@@ -158,6 +155,12 @@ pub const RETIRED: &[(&str, &str)] = &[
         "Direct Managoat execution is retired: agents in the cloud run on Cloud workspaces in your Arugula projects",
     ),
     ("huddles", "Huddles (voice calls on a session) were removed from Arugula"),
+    // The daemon's own studio login (a token, follower links) is gone; an
+    // app's box signs you in itself through the hub (native #206).
+    (
+        "studio",
+        "The studio login is retired: open an app beside a terminal by its address, and it signs you in with your Arugula account",
+    ),
     // Graduated, not removed: every swarm offers its four views now.
     ("swarm-themes", "The swarm's views are no longer in Labs: every swarm offers them under Theme"),
     // Never a flag, but the name it would have now.
@@ -652,8 +655,8 @@ mod tests {
         assert_eq!(names(&d).len(), FLAGS.len() - 1);
 
         // On is all of them, off none.
-        fs::write(d.join(FILE), r#"{"flags":{"labs":true,"studio":false}}"#).unwrap();
-        assert!(get(&d, CHAT) && !get(&d, STUDIO));
+        fs::write(d.join(FILE), r#"{"flags":{"labs":true,"workspaces":false}}"#).unwrap();
+        assert!(get(&d, CHAT) && !get(&d, WORKSPACES));
         fs::write(d.join(FILE), r#"{"flags":{"labs":false,"chat":true}}"#).unwrap();
         assert_eq!(names(&d), [CHAT]);
         fs::remove_dir_all(&d).unwrap();
@@ -695,7 +698,7 @@ mod tests {
         );
         assert_eq!(state_of(&d, VMS).source, Source::Account);
         assert!(!state_of(&d, VMS).on);
-        assert_eq!(state_of(&d, STUDIO).source, Source::Default);
+        assert_eq!(state_of(&d, WORKSPACES).source, Source::Default);
 
         // The machine forces either way, and taking its word back follows
         // control again.
@@ -728,12 +731,12 @@ mod tests {
     #[test]
     fn taking_one_back_from_labs_keeps_the_rest() {
         let d = dir("unset-labs");
-        fs::write(d.join(FILE), r#"{"flags":{"labs":true,"studio":false}}"#).unwrap();
+        fs::write(d.join(FILE), r#"{"flags":{"labs":true,"workspaces":false}}"#).unwrap();
         write_control(&d, &pushed(&[], &[(CHAT, false)])).unwrap();
         assert!(get(&d, CHAT) && state_of(&d, CHAT).source == Source::Machine);
         unset(&d, CHAT).unwrap();
         assert_eq!(state_of(&d, CHAT).source, Source::Team);
-        assert!(!get(&d, CHAT) && get(&d, VMS) && !get(&d, STUDIO));
+        assert!(!get(&d, CHAT) && get(&d, VMS) && !get(&d, WORKSPACES));
         assert_eq!(names(&d).len(), FLAGS.len() - 2);
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
         assert!(v["flags"].get(LABS).is_none() && v["flags"].get(CHAT).is_none());
@@ -777,10 +780,10 @@ mod tests {
         write_control(&d, &pushed(&[("fountain", true)], &[("fountain", false)])).unwrap();
         assert!(!on(&d).any());
         // A write keeps it, for an older daemon reading the same file.
-        set(&d, STUDIO, true).unwrap();
+        set(&d, WORKSPACES, true).unwrap();
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
         assert_eq!(v["flags"]["fountain"], false);
-        assert_eq!(names(&d), [STUDIO]);
+        assert_eq!(names(&d), [WORKSPACES]);
         for e in [set(&d, "fountain", true).unwrap_err(), unset(&d, "fountain").unwrap_err()] {
             assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
             assert!(

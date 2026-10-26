@@ -31,7 +31,7 @@ export const KINDS: Record<WorkKind, [number, number, number]> = {
   server: [80, 205, 200],
   logs: [100, 125, 165],
   editor: [240, 130, 165],
-  // M35: a studio box.
+  // M35: an app's box.
   app: [130, 200, 90],
   // M36: a pull request.
   pr: [235, 150, 110],
@@ -50,7 +50,7 @@ export const KIND_LABEL: Record<WorkKind, string> = {
   server: "Server",
   logs: "Logs",
   editor: "Editor",
-  app: "Studio app",
+  app: "App",
   pr: "Pull request",
   issue: "Issue",
   managoat: "Managoat",

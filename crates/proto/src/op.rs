@@ -161,10 +161,6 @@ impl Request for crate::api::Subscription {}
 
 impl Request for crate::api::NotifyRequest {}
 
-impl Request for crate::api::StudioLoginRequest {}
-
-impl Request for crate::api::FollowerLinkRequest {}
-
 /// A promote's body may be left off (`Content-Type` and all).
 impl Request for crate::hosts::PromoteRequest {
     fn absent() -> Option<Self> {
@@ -331,19 +327,13 @@ macro_rules! every_op {
         $m!($crate::op::ops::McpTokenMint);
         $m!($crate::op::ops::McpTokenRevoke);
         $m!($crate::op::ops::SigninLinkGet);
-        // #578 part c: synced history, sandboxes, studio.
+        // #578 part c: synced history, sandboxes.
         $m!($crate::op::ops::SyncedList);
         $m!($crate::op::ops::SyncedRotate);
         $m!($crate::op::ops::SyncedForget);
         $m!($crate::op::ops::SandboxesList);
         $m!($crate::op::ops::SandboxPromote);
         $m!($crate::op::ops::SandboxDemote);
-        $m!($crate::op::ops::StudioGet);
-        $m!($crate::op::ops::StudioLogin);
-        $m!($crate::op::ops::StudioLogout);
-        $m!($crate::op::ops::StudioAppsList);
-        $m!($crate::op::ops::StudioFollow);
-        $m!($crate::op::ops::StudioUnfollow);
         // A hosted workspace's setup (M183).
         $m!($crate::op::ops::HostedSetupGet);
     };
@@ -357,14 +347,13 @@ pub mod ops {
         api::{
             AclSetRequest, Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConversationList,
             ConversationsQuery, DetectionAnswer, DocLinkUrl, DocOpenRequest, DocOpened, DocRow, DriverEntry, Empty,
-            FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs,
-            IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
-            InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest,
-            OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest,
-            Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse,
-            SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest,
-            StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest,
-            WaitResult, WithdrawRequest,
+            FollowUpRequest, FollowedUp, GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo,
+            IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest,
+            LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest, OpenConversationRequest,
+            OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process,
+            PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse, SendRequest, Share,
+            ShareRequest, ShellEnv, SigninLink, Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest,
+            TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -1537,7 +1526,7 @@ pub mod ops {
         type Res = SigninLink;
     }
 
-    // #578 part c: the home daemon's synced history and sandboxes, and studio.
+    // #578 part c: the home daemon's synced history and sandboxes.
 
     /// `GET /api/synced`: the hosts whose history this daemon keeps
     /// (`arugula synced`).
@@ -1620,91 +1609,6 @@ pub mod ops {
         type Path = String;
         type Req = Empty;
         type Res = Demoted;
-    }
-
-    /// `GET /api/studio` (M35): which studio, and whether there's a token.
-    /// Labs. A way into a studio box is the owner's.
-    pub struct StudioGet;
-
-    impl Op for StudioGet {
-        const NAME: &'static str = "studio.get";
-        const METHOD: Method = Method::Get;
-        const PATH: &'static str = "/api/studio";
-        const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
-        type Path = ();
-        type Req = Empty;
-        type Res = StudioStatus;
-    }
-
-    /// `POST /api/studio`: keep a studio token (`arugula studio login`).
-    pub struct StudioLogin;
-
-    impl Op for StudioLogin {
-        const NAME: &'static str = "studio.login";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/studio";
-        const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
-        type Path = ();
-        type Req = StudioLoginRequest;
-        type Res = StudioLoggedIn;
-    }
-
-    /// `DELETE /api/studio`: forget the token and every follower link.
-    pub struct StudioLogout;
-
-    impl Op for StudioLogout {
-        const NAME: &'static str = "studio.logout";
-        const METHOD: Method = Method::Delete;
-        const PATH: &'static str = "/api/studio";
-        const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
-        type Path = ();
-        type Req = Empty;
-        type Res = Empty;
-    }
-
-    /// `GET /api/studio/apps`: the person's apps, with the blocks that show them.
-    pub struct StudioAppsList;
-
-    impl Op for StudioAppsList {
-        const NAME: &'static str = "studio.apps";
-        const METHOD: Method = Method::Get;
-        const PATH: &'static str = "/api/studio/apps";
-        const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
-        type Path = ();
-        type Req = Empty;
-        type Res = StudioApps;
-    }
-
-    /// `PUT /api/studio/followers/APP`: keep an app's hud follower link.
-    pub struct StudioFollow;
-
-    impl Op for StudioFollow {
-        const NAME: &'static str = "studio.follow";
-        const METHOD: Method = Method::Put;
-        const PATH: &'static str = "/api/studio/followers/{app}";
-        const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
-        type Path = String;
-        type Req = FollowerLinkRequest;
-        type Res = Empty;
-    }
-
-    /// `DELETE /api/studio/followers/APP`: drop it.
-    pub struct StudioUnfollow;
-
-    impl Op for StudioUnfollow {
-        const NAME: &'static str = "studio.unfollow";
-        const METHOD: Method = Method::Delete;
-        const PATH: &'static str = "/api/studio/followers/{app}";
-        const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
-        type Path = String;
-        type Req = Empty;
-        type Res = Empty;
     }
 
     /// `GET /api/hosted/setup` (M183): a hosted machine's setup, and where

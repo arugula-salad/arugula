@@ -102,11 +102,10 @@ nothing marked `mux:` names the edge or the block kinds.
   process info (`procinfo.rs`), history (`history.rs`), resuming an agent's
   conversation (`resume.rs`), named keys (`keys.rs`).
 - **Blocks:** what every block provides and the registry of kinds (`mux:block.rs`), agents (`agent/`),
-  browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`,
+  browsers (`browser.rs`), app boxes (`apps.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`,
   and `block_channel.rs` for control's block origins),
   editors (`editor/`), review (`review/`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`),
-  workspaces (`labs/workspace/`), studio apps
-  (`labs/apps/`),
+  workspaces (`labs/workspace/`),
   conversations (`conversations/`), the IDE bridge (`ide/`, with the mux's half in `mux:ide/`), invites
   (`invite/`), remote blocks (`remote.rs`), configured agent harnesses
   (`mux:inventory.rs`).
@@ -155,13 +154,14 @@ removed").
 ## Labs
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
-`chat`, `vms`, `studio`, `workspaces`, `guest-ssh`,
+`chat`, `vms`, `workspaces`, `guest-ssh`,
 `forges`, `agents`, `docs`. A feature that leaves takes its row out
 of `FLAGS` and puts its name in `flags::RETIRED`, so an old file naming it
 is ignored: `fountain` (daemon-side Managoat, removed: DECISIONS.md
 "Daemon-side Managoat is removed"), `huddles` (DECISIONS.md "Huddles are
-removed") and `swarm-themes` (the swarm's views, graduated: every swarm
-offers them under Theme). They're named flags in `flags.json` in the state
+removed"), `swarm-themes` (the swarm's views, graduated: every swarm
+offers them under Theme) and `studio` (the daemon's studio login, retired:
+an app's box opens by its address and signs you in through the hub). They're named flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
 read on every call, never cached), set by `arugulad flags chat on` or the
 owner's *Developer settings…* in the web client (`flags.list` and `flag.set`
@@ -175,7 +175,7 @@ says how to turn it on. `labs` in the file, or the old empty `labs`
 file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it
-only through the surface in `labs/mod.rs`, which explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
+only through the surface in `labs/mod.rs`, which explains the pattern. Chant workspaces, and VMs (the Sprites adapter, machines, resident
 daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
 (`labs/guest_ssh.rs`; `russh` is an optional dependency, and a build without
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges

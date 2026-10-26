@@ -1,8 +1,8 @@
 # Labs
 
 What a machine offers only when the owner turns its flag on.
-These features work, but a stranger doesn't have what they need (the
-studio, a sandbox provider, our own chant setup), so the public docs at
+These features work, but a stranger doesn't have what they need (a
+sandbox provider, our own chant setup), so the public docs at
 [docs.arugula.io](https://docs.arugula.io/) don't describe them at all.
 This page is the team's description of them. It was the *Labs* sections
 of the public features, teams, advanced and control pages until those
@@ -13,7 +13,13 @@ removed on 2026-10-18 and control's on 2026-10-23; agents in the cloud run
 on hosted workspaces now ([managoat.md](managoat.md)). Huddles,
 voice calls on a session, were here until they were removed (2026-10-18,
 DECISIONS.md "Huddles are removed"); a `huddles` flag left in `flags.json`
-does nothing.
+does nothing. The `studio` flag, studio app blocks through a studio login
+the daemon kept (a personal access token and hud follower links in
+`studio.json`), was retired on 2026-10-26 (native #206): an app's box now
+opens beside a terminal by its address (*Open an app…*, `arugula app URL`,
+MCP `show` kind `app`) for anyone, and signs you in with your Arugula
+account through the hub. A `studio` flag left in `flags.json` does nothing,
+and the daemon removes the old `studio.json` when it starts.
 
 ## Turning a feature on
 
@@ -23,7 +29,6 @@ Each feature has a flag, off on a new install:
 | --- | --- |
 | `chat` | The chat page (chat itself is control's), and bringing old threads into control |
 | `vms` | VM tabs and panes, machines and the sandboxes page |
-| `studio` | Studio app blocks |
 | `workspaces` | Chant workspace blocks |
 | `guest-ssh` | *Invite over ssh…* for a guest with only OpenSSH |
 | `forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on) |
@@ -44,7 +49,6 @@ one isn't made.
 | --- | --- |
 | `chat` | Nothing on the machine: it shows the Chat page, and, joined to control, brings old threads into it (see [Threads and chat](#threads-and-chat)) |
 | `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
-| `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `workspaces` | chant workspace blocks |
 | `guest-ssh` | `/api/guests` (list, invite, revoke) |
 | `forges` | Forgejo and GitLab blocks and webhooks |
@@ -79,36 +83,36 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
 
 - **Per machine.** They're read by the machine that serves the page, so every
   machine you want a feature on needs its own. Someone you share a session
-  with sees VMs or studio apps on your machine if it has them on, and not
+  with sees VMs on your machine if it has them on, and not
   otherwise. Chat is control's and follows control's flag.
 - **No restart.** The daemon reads the flags whenever it's asked.
-- **Each feature still needs its own setup.** Studio needs a link, VMs a
-  sandbox provider, guest ssh its listener; a flag lets its
+- **Each feature still needs its own setup.** VMs need a sandbox
+  provider, guest ssh its listener; a flag lets its
   feature be shown and used, and sets nothing up.
 
 ## What labs unhides
 
-- **CLI (`arugula --help`):** `studio`, `app`, `workspace`,
+- **CLI (`arugula --help`):** `workspace`,
   `agents`, `guests`, `machines`, `sandboxes`;
   `agent --vm/--machine/--as`,
   `run --vm/--vm-tab/--image/--sandbox`, and
   `share --guest/--rw/--reusable/--relay/--addr/--name`
   (`LABS_COMMANDS`, `LABS_OPTIONS` in `crates/cli/src/main.rs`).
 - **Daemon (`arugulad --help`):** `--guest-ssh`, `--guest-ssh-host`,
-  `--studio-file`, `--wisp-url`,
+  `--wisp-url`,
   `--wisp-token-file`, `--loam-url`,
   `--loam-key-file`
   (`LABS_OPTIONS` in `crates/daemon/src/args.rs`).
-- **MCP:** the kinds `show:app`, `show:workspace` and `list:agents`, and
+- **MCP:** the kinds `show:workspace` and `list:agents`, and
   `start_agent`'s `recipe` and `vm` (`UNLISTED` and `UNLISTED_ARGS` in
   `crates/daemon/src/mcp/tools.rs`). Unlisted tools called by name are
   refused without their flag. Chat's MCP tools (`read_thread`, `post_thread`)
   aren't labs: they follow the grants in control (see
   [Threads and chat](#threads-and-chat)).
-- **Web client:** `Client.has("vms" | "studio")` and
+- **Web client:** `Client.has("vms")` and
   `hasLabs()` and `flag(name)` in `web/src/shell/client.ts`: VM panes and tabs,
-  *Sandboxes…*, *Split (local)* and a VM tab's *Machine* items, studio
-  apps, *Open as workspace*, *Invite over ssh…*, threads and chat.
+  *Sandboxes…*, *Split (local)* and a VM tab's *Machine* items,
+  *Open as workspace*, *Invite over ssh…*, threads and chat.
   The swarm's city, hive and timeline views left Labs (2026-10-26): every
   swarm offers them under *Theme*, and `swarm-themes` is a retired flag.
 - **Machines (VMs).** A *machine* (`--machine mN`, `mN:PATH`, `--machine
@@ -464,7 +468,7 @@ the op: run it again to walk through the gate.
 *Expire* turns a gate down: `chant approve <op> <gate> [--env E] --expire`
 clears the waiting gate without approving it, so the next run of the op
 stops there again. It's on the block's gate card, the phone's sheet
-and the push, for chant gates only (hud has no route for it).
+and the push, for chant gates only.
 
 ### Who chant records
 

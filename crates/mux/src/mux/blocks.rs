@@ -175,7 +175,7 @@ impl Daemon {
             self.config.kinds.check(BlockType::Remote, &req.config)?;
             (req.vm, req.host, req.local) = (false, None, true);
         }
-        // A studio box (M35) is its own site: nothing of it runs here or on
+        // An app's box (M35) is its own site: nothing of it runs here or on
         // a machine of ours.
         if req.kind == BlockType::App {
             (req.vm, req.host, req.local) = (false, None, true);

@@ -26,9 +26,6 @@
 //! | POST | `/api/conversations/open` | `OpenConversationRequest` | `OpenConversationResponse`: a Claude Code conversation as an agent block (M33) |
 //! | GET | `/api/blocks/N` | | `Described`: `{info, state}`, `describe` |
 //! | POST | `/api/blocks/N/call/METHOD` | JSON args | the method's answer |
-//! | GET, POST, DELETE | `/api/studio` | POST `StudioLoginRequest` | `StudioStatus`: the studio and whether there's a token (never the token); POST logs in (`StudioLoggedIn`), DELETE forgets it (`Empty`, M35) |
-//! | GET | `/api/studio/apps` | | `StudioApps`: `{studio, apps: [{name, title, url, status, blocks}]}` |
-//! | PUT, DELETE | `/api/studio/followers/APP` | PUT `FollowerLinkRequest` | `Empty`: a hud follower link for the app's box |
 //! | GET | `/api/machines` | | `[Machine]` |
 //! | POST | `/api/machines/N/reset` | | `Empty`: delete and recreate it; its panes restart by policy |
 //! | POST | `/api/panes/N/share-machine` | | `Empty`: the pane's machine now belongs to its tab |
@@ -1194,8 +1191,8 @@ pub struct AskRequest {
     /// same question.
     #[serde(default)]
     pub id: Option<String>,
-    /// What raised it, when that isn't Claude Code's hook (M35: `hud`, for
-    /// a studio box's agent asking on a browser or app block).
+    /// What raised it, when that isn't Claude Code's hook (an agent asking
+    /// on a browser or app block through `/ask`).
     #[serde(default)]
     pub source: Option<String>,
     /// Who asks, as the card names it ("hud asks").
@@ -1694,72 +1691,6 @@ pub struct NoDetection {
     pub command: Option<String>,
 }
 
-/// `GET /api/studio` (M35): which studio, whether there's a token, and which
-/// apps have a follower link. Never the token or a link.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct StudioStatus {
-    pub url: Option<String>,
-    #[serde(default)]
-    pub logged_in: bool,
-    #[serde(default)]
-    pub followers: Vec<String>,
-}
-
-/// `POST /api/studio` (`arugula studio login`): keep a studio token, once
-/// studio takes it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct StudioLoginRequest {
-    pub url: String,
-    pub token: String,
-}
-
-/// What a studio login answers: the person's apps.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct StudioLoggedIn {
-    pub apps: Vec<StudioApp>,
-}
-
-/// One of the person's apps, as studio lists it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct StudioApp {
-    #[serde(default)]
-    pub name: String,
-    pub title: Option<String>,
-    /// The box's origin (`https://name.studio.example`).
-    #[serde(default)]
-    pub url: String,
-    pub status: Option<String>,
-}
-
-/// `GET /api/studio/apps`: the person's apps, from studio, with the app
-/// blocks that show them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct StudioApps {
-    pub studio: Option<String>,
-    pub apps: Vec<StudioAppRow>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct StudioAppRow {
-    #[serde(flatten)]
-    pub app: StudioApp,
-    #[serde(default)]
-    pub blocks: Vec<PaneId>,
-}
-
-/// `PUT /api/studio/followers/APP`: a hud follower link for the app's box.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct FollowerLinkRequest {
-    pub link: String,
-}
-
 /// `GET /api/push/key`: the daemon's public VAPID key, which a browser
 /// subscribes with. It is not a credential.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1948,9 +1879,9 @@ mod wire {
                 // `dev` came with flags (#665); `flags` is left out when unsaid;
                 // `block_channels` came with blocks through control (#150);
                 // `calls` went with huddles, `fountain` with daemon-side Managoat,
-                // `threads` with the daemon's chat (M125).
-                "features": { "labs": true, "dev": false, "blocks": true, "vms": false, "studio": false,
-                              "block_channels": false },
+                // `threads` with the daemon's chat (M125), `studio` with the
+                // studio connector (native #206).
+                "features": { "labs": true, "dev": false, "blocks": true, "vms": false, "block_channels": false },
             })
         );
     }
@@ -2289,52 +2220,6 @@ mod wire {
         );
         let list = vec![json!({ "kind": "claude", "state": "ready" })];
         same(&Adapters { adapters: list.clone() }, json!({ "adapters": list }));
-    }
-
-    /// `studio`, `studio/apps` and the follower link.
-    #[test]
-    fn studio_answers_as_it_did() {
-        same(
-            &StudioStatus {
-                url: Some("https://s.example".into()),
-                logged_in: true,
-                followers: vec!["pinboard".into()],
-            },
-            json!({ "url": "https://s.example", "logged_in": true, "followers": ["pinboard"] }),
-        );
-        same(
-            &StudioStatus { url: None, logged_in: false, followers: vec![] },
-            json!({ "url": null, "logged_in": false, "followers": [] }),
-        );
-        let login: StudioLoginRequest = serde_json::from_value(json!({ "url": "u", "token": "t" })).unwrap();
-        assert_eq!((login.url.as_str(), login.token.as_str()), ("u", "t"));
-        assert!(serde_json::from_value::<StudioLoginRequest>(json!({ "url": "u" })).is_err());
-        let a = StudioApp {
-            name: "pinboard".into(),
-            title: Some("Pinboard".into()),
-            url: "https://p.example".into(),
-            status: None,
-        };
-        let old_a = json!({ "name": "pinboard", "title": "Pinboard", "url": "https://p.example", "status": null });
-        let bare = StudioApp { name: "b".into(), title: None, url: "u".into(), status: Some("running".into()) };
-        let old_bare = json!({ "name": "b", "title": null, "url": "u", "status": "running" });
-        same(&StudioLoggedIn { apps: vec![a.clone(), bare.clone()] }, json!({ "apps": [old_a, old_bare] }));
-        same(&StudioLoggedIn { apps: vec![] }, json!({ "apps": [] }));
-        // Each app, as the old code made it: its record and its `blocks`.
-        let row = |mut v: Value, blocks: Vec<PaneId>| {
-            v["blocks"] = json!(blocks);
-            v
-        };
-        same(
-            &StudioApps {
-                studio: Some("https://studio.example".into()),
-                apps: vec![StudioAppRow { app: a, blocks: vec![3, 4] }, StudioAppRow { app: bare, blocks: vec![] }],
-            },
-            json!({ "studio": "https://studio.example", "apps": [row(old_a, vec![3, 4]), row(old_bare, vec![])] }),
-        );
-        same(&StudioApps { studio: None, apps: vec![] }, json!({ "studio": null, "apps": [] }));
-        let link: FollowerLinkRequest = serde_json::from_value(json!({ "link": "https://p.example/join" })).unwrap();
-        assert_eq!(link.link, "https://p.example/join");
     }
 
     /// `push/subscribe` and `push/test`.

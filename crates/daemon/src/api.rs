@@ -462,9 +462,9 @@ pub(crate) async fn may_drive(app: &App, who: &crate::acl::Principal, id: PaneId
 }
 
 /// Whether answering for `id` doesn't drive anything here (#959): a
-/// workspace's or a studio box's gate, decision or question, a forge's
-/// review or checks, or a page's question (a bridge's ask). Their answers
-/// go to chant, the box, the forge or the page, not to a shell or an agent
+/// workspace's gate, decision or question, a forge's review or checks, or
+/// a page's question (a bridge's ask, on a browser or app block). Their
+/// answers go to chant, the forge or the page, not to a shell or an agent
 /// on this machine.
 async fn is_review(app: &App, id: PaneId) -> bool {
     use arugula_proto::BlockType;
@@ -676,13 +676,13 @@ async fn open_block(
         return Err(ApiError(StatusCode::FORBIDDEN, "invite blocks are made by MCP's invite_person".into()));
     }
     // A Labs block whose flag is off here (#347): refused before anything
-    // else is asked (an app block's box, of the studio).
+    // else is asked.
     if let Some(flag) = crate::labs::block_flag(req.kind) {
         crate::labs::flag(app.control.state_dir(), flag).map_err(bad)?;
     }
-    // A studio box (M35), by its app's name: where it is, from studio.
+    // An app's box (M35), by its address: checked before it's made.
     if req.kind == arugula_proto::BlockType::App {
-        req.config = crate::labs::app_config(&req.config).await.map_err(bad)?;
+        req.config = crate::apps::config(&req.config).map_err(bad)?;
     }
     // Someone else's block is an agent's on a VM (the mux's `guest_block`):
     // refused before a forge's config is worked out, which asks Arugula
@@ -977,7 +977,7 @@ async fn call(
             o.insert("agent".into(), true.into());
         }
         // A question raised on the block (M35) is answered where it waits.
-        // (A studio box's gate is approved by the block: `{key}`.)
+        // (A workspace's gate is approved by the block: `{key}`.)
         let gate = method == "approve" && ["key", "member"].iter().any(|k| args.get(*k).is_some());
         let answering = !gate && matches!(method.as_str(), "answer" | "decline" | "terminal" | "approve" | "deny");
         if !(answering && app.mux.api(|r| Api::Holds(id, r)).await.unwrap_or(false)) {

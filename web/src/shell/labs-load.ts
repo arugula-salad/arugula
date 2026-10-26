@@ -5,7 +5,6 @@
 // arrived, for code that has to answer at once (a menu being built).
 
 import type { Client } from "./client";
-import type { AppsWhere } from "./ui/apps";
 
 export type Labs = typeof import("./labs");
 
@@ -45,11 +44,6 @@ function failed(what: string, client: Client | null) {
     console.error(`${what} didn't load`, e);
     client?.toast(`Couldn't load ${what}`);
   };
-}
-
-/** The studio apps picker (a Labs menu item). */
-export function pickApp(client: Client, where: AppsWhere, phone = false) {
-  void loadLabs().then((l) => l.pickApp(client, where, phone), failed("studio apps", client));
 }
 
 /** The sandboxes page (a Labs menu item). */

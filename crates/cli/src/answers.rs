@@ -122,16 +122,6 @@ fn shares_and_guest_invites_without_times_or_flags() {
 }
 
 #[test]
-fn studio_without_names_followers_or_blocks() {
-    let st: StudioStatus = old(json!({ "url": "https://studio.example" }));
-    assert_eq!((st.logged_in, st.followers.len()), (false, 0));
-    let apps: StudioApps = old(json!({ "studio": null, "apps": [{ "title": null, "status": null }] }));
-    assert_eq!((apps.apps[0].app.name.as_str(), apps.apps[0].blocks.len()), ("", 0));
-    let l: StudioLoggedIn = old(json!({ "apps": [{}] }));
-    assert_eq!(l.apps.len(), 1);
-}
-
-#[test]
 fn ide_rules_and_shell_env_with_nothing_but_their_basics() {
     let ide: IdeInfo = old(json!({}));
     assert!(!ide.on, "no `on` is off");
@@ -334,12 +324,6 @@ fn request_bodies_are_what_the_json_was() {
     );
     body(WithdrawRequest { id: None }, json!({ "id": null }), &[]);
     body(IdeDiffsRequest { diffs: "arugula".into() }, json!({ "diffs": "arugula" }), &[]);
-    body(
-        StudioLoginRequest { url: "https://s".into(), token: "t".into() },
-        json!({ "url": "https://s", "token": "t" }),
-        &[],
-    );
-    body(FollowerLinkRequest { link: "l".into() }, json!({ "link": "l" }), &[]);
     body(
         ActRequest {
             action: arugula_proto::Action::Rerun,

@@ -1,4 +1,4 @@
-//! Labs: the features that are not part of the core (studio apps with hud, chant workspaces, VMs with their sandboxes, guest ssh and chat,
+//! Labs: the features that are not part of the core (chant workspaces, VMs with their sandboxes, guest ssh and chat,
 //! and the Forgejo and GitLab forges: everything listed in
 //! #452 to #457 is here), behind the cargo feature `labs`. The feature is on by default, so a release build has all of it;
 //! `--no-default-features` leaves it out, for fast local builds, for agents
@@ -48,8 +48,6 @@ use crate::{block::BlockKinds, provider::Provider, server::App};
 // Agent recipes and their A2A cards (M76): the `agents` flag.
 #[cfg(feature = "labs")]
 pub mod agents;
-#[cfg(feature = "labs")]
-pub mod apps;
 // Forgejo and GitLab as forges (#457): their adapters, the `tea` logins
 // Forgejo reads with, and the webhooks they send. GitHub is core's. The
 // parts of a forge block that connect to them are `forge/labs_forges.rs`,
@@ -139,7 +137,7 @@ pub fn resume_tasks(_app: &Arc<App>) {}
 /// Adds Labs' HTTP routes to the API's.
 #[cfg(feature = "labs")]
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    agents::routes(apps::routes::routes(r))
+    agents::routes(r)
 }
 
 #[cfg(not(feature = "labs"))]
@@ -153,9 +151,8 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
 #[cfg(feature = "labs")]
 pub fn kinds(kinds: &mut BlockKinds, invite: &crate::invite::Hook) {
     use crate::block::Make;
-    use arugula_proto::flags::{AGENTS, STUDIO, WORKSPACES};
+    use arugula_proto::flags::{AGENTS, WORKSPACES};
     kinds.add(BlockType::Agents, Flagged { flag: AGENTS, kind: agents::block::AgentsKind(invite.clone()) });
-    kinds.add(BlockType::App, Flagged { flag: STUDIO, kind: Make(apps::AppBlock::create) });
     kinds.add(BlockType::Workspace, Flagged { flag: WORKSPACES, kind: Make(workspace::Workspace::create) });
 }
 
@@ -192,13 +189,11 @@ impl<K: crate::block::BlockKind> crate::block::BlockKind for Flagged<K> {
 }
 
 /// The flag a new block of `kind` needs (#347), for a route to refuse it
-/// before it does anything else (an app block asks the studio where its box
-/// is first). The block types check it again when made.
+/// before it does anything else. The block types check it again when made.
 pub fn block_flag(kind: BlockType) -> Option<&'static str> {
     use arugula_proto::flags;
     match kind {
         BlockType::Agents => Some(flags::AGENTS),
-        BlockType::App => Some(flags::STUDIO),
         BlockType::Workspace => Some(flags::WORKSPACES),
         BlockType::Doc => Some(flags::DOCS),
         _ => None,
@@ -219,7 +214,6 @@ impl BlockKind for NotBuilt {
 #[cfg(not(feature = "labs"))]
 pub fn kinds(kinds: &mut BlockKinds, _invite: &crate::invite::Hook) {
     kinds.add(BlockType::Agents, NotBuilt("The agent catalog"));
-    kinds.add(BlockType::App, NotBuilt("An app block"));
     kinds.add(BlockType::Workspace, NotBuilt("A chant workspace"));
 }
 
@@ -395,52 +389,14 @@ fn guests_absent() -> crate::api::ApiError {
     crate::api::ApiError(axum::http::StatusCode::NOT_IMPLEMENTED, not_built("Guest ssh"))
 }
 
-/// Studio's and the sandboxes' operations (#578): each calls its Labs
-/// function here. The routes are Labs' (`apps/routes.rs`, `resident.rs`), so a
+/// The sandboxes' operations (#578): each calls its Labs
+/// function here. The routes are Labs' (`resident.rs`), so a
 /// build without Labs has none: its twins are never reached over HTTP, where a
 /// path no router has is the 404 it always was, and say the same if they were.
-#[cfg(feature = "labs")]
-pub use apps::routes::{studio_apps, studio_follow, studio_login, studio_logout, studio_status};
 #[cfg(feature = "labs")]
 pub use resident::{
     Failed as SandboxFailed, demote as sandbox_demote, list as sandboxes, make_resident as sandbox_promote,
 };
-
-#[cfg(not(feature = "labs"))]
-mod studio_off {
-    use arugula_proto::api::{Empty, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus};
-    use axum::http::StatusCode;
-
-    use super::not_built;
-    use crate::{api::ApiError, server::App};
-
-    fn gone<T>() -> Result<T, ApiError> {
-        Err(ApiError(StatusCode::NOT_FOUND, not_built("Studio")))
-    }
-
-    pub async fn studio_status() -> Result<StudioStatus, ApiError> {
-        gone()
-    }
-
-    pub async fn studio_login(_: StudioLoginRequest) -> Result<StudioLoggedIn, ApiError> {
-        gone()
-    }
-
-    pub async fn studio_logout() -> Result<Empty, ApiError> {
-        gone()
-    }
-
-    pub async fn studio_apps(_: &App) -> Result<StudioApps, ApiError> {
-        gone()
-    }
-
-    pub async fn studio_follow(_: &str, _: Option<&str>) -> Result<Empty, ApiError> {
-        gone()
-    }
-}
-
-#[cfg(not(feature = "labs"))]
-pub use studio_off::{studio_apps, studio_follow, studio_login, studio_logout, studio_status};
 
 #[cfg(not(feature = "labs"))]
 mod sandboxes_off {
@@ -471,42 +427,6 @@ mod sandboxes_off {
 
 #[cfg(not(feature = "labs"))]
 pub use sandboxes_off::{SandboxFailed, sandbox_demote, sandbox_promote, sandboxes};
-
-/// Sets up the studio token store (M35) at start-up. A build without Labs
-/// has no studio: a file given with `--studio` is ignored, with a warning.
-#[cfg(feature = "labs")]
-pub fn install_studio(file: PathBuf, _given: bool) {
-    apps::studio::install(file);
-}
-
-#[cfg(not(feature = "labs"))]
-pub fn install_studio(file: PathBuf, given: bool) {
-    if given {
-        tracing::warn!(file = %file.display(), "{}", not_built("Studio"));
-    }
-}
-
-/// Whether the user is logged in to a studio: `GET /api/host`'s
-/// `features.studio`.
-#[cfg(feature = "labs")]
-pub fn studio_here() -> bool {
-    apps::studio::get().and_then(|s| s.url()).is_some()
-}
-
-#[cfg(not(feature = "labs"))]
-pub fn studio_here() -> bool {
-    false
-}
-
-/// A studio app block's config (M35) from `{app}`: the box and studio filled
-/// in from studio's list when not given.
-#[cfg(feature = "labs")]
-pub use apps::routes::app_config;
-
-#[cfg(not(feature = "labs"))]
-pub async fn app_config(_c: &Value) -> Result<Value, String> {
-    Err(not_built("An app block"))
-}
 
 /// #619: which decision and run made each hunk of a file in a workspace
 /// member's *Changes*, from the workspace's chant: [`file_why`] reads it,

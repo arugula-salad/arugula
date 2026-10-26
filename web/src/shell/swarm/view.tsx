@@ -598,7 +598,7 @@ const KEYS: Record<Exclude<Theme, "blocks">, [string, string][]> = {
   hive: [
     ["Comb", "A cluster. Cells spiral out from the middle by machine, in pane order. Only a regroup moves them."],
     ["Fill", "How long its command has run (log scale, full at an hour). Bright while running, faded once done."],
-    ["Hatched", "Runs until stopped: a server, log tail, studio app or editor (or a pull request or issue)."],
+    ["Hatched", "Runs until stopped: a server, log tail, app or editor (or a pull request or issue)."],
     ["Edge", "Pulsing: printing now, faster for more. Faint: printed lately. Dark: quiet."],
     ["Red rim", "Its last command failed."],
     ["Overflow", "Needs you. The cell takes the reason's colour and says how long; its glow spills wider the longer it waits."],
@@ -611,7 +611,7 @@ const KEYS: Record<Exclude<Theme, "blocks">, [string, string][]> = {
     ["Stripes", "What it printed: denser stripes, more bytes a second."],
     ["Lit edge", "Still running: the bar is still growing. Its last four minutes are shaded by its output."],
     ["Red cap", "That command failed."],
-    ["Thin line", "Runs until stopped: a server, log tail, studio app or editor."],
+    ["Thin line", "Runs until stopped: a server, log tail, app or editor."],
     ["Band", "Needs you: from when it started waiting until now, with how long past the now edge."],
     ["Dot", "A teammate has it open; ringed while they type, faintly while they drive it. A grey lane: its machine isn't connected."],
   ],

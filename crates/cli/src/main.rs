@@ -185,19 +185,10 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::claude::ClaudeCmd,
     },
-    /// Your studio.
+    /// Open an app's box beside your terminals, by its address; prints its
+    /// block.
     ///
-    /// `login URL` keeps a studio token in the daemon (read from stdin), `logout`
-    /// forgets it, and `follower APP` keeps a hud follower link for an app's box.
-    #[command(hide = true)]
-    Studio {
-        #[command(subcommand)]
-        cmd: Option<cmd::studio::StudioCmd>,
-    },
-    /// Open a studio app's box as a block; prints its block.
-    ///
-    /// With no name, lists your apps.
-    #[command(hide = true)]
+    /// The box signs you in with your Arugula account.
     App(cmd::app::Args),
     /// Editors in the swarm: VS Code, Cursor or nvim that joined.
     ///
@@ -590,8 +581,6 @@ fn state_dir() -> Option<PathBuf> {
 /// has turned their Labs flag on: they're for what a stranger doesn't have.
 /// Others that are `hide = true` are internals, and stay hidden.
 const LABS_COMMANDS: &[(&str, &str)] = &[
-    ("studio", flags::STUDIO),
-    ("app", flags::STUDIO),
     ("workspace", flags::WORKSPACES),
     ("agents", flags::AGENTS),
     ("guests", flags::GUEST_SSH),
@@ -878,7 +867,6 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Rerun(args) => cmd::rerun::run(args, ctx),
         Command::Agent(args) => cmd::agent::run(*args, ctx),
         Command::Claude { cmd } => cmd::claude::run(cmd, ctx),
-        Command::Studio { cmd } => cmd::studio::run(cmd, ctx),
         Command::App(args) => cmd::app::run(args, ctx),
         Command::Editors { cmd } => cmd::editors::run(cmd, ctx),
         Command::Rules(args) => cmd::rules::run(args, ctx),

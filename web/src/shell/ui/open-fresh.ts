@@ -2,7 +2,7 @@ import type { Client } from "../client";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 
 /** A menu whose items depend on what the daemon is set up for: read that
- * again first (briefly), so a studio linked a moment ago shows (#180). */
+ * again first (briefly), so a sandbox provider set up a moment ago shows (#180). */
 export function openFresh(
   client: Client,
   e: { clientX: number; clientY: number; preventDefault(): void },

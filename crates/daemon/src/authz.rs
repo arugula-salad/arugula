@@ -67,8 +67,6 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "panes", id, "hook" | "upload" | "paste"] if !get => {
             pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor))
         }
-        // M35: a way into a studio box is the owner's (it signs in as them).
-        ["api", "blocks", _, "call", "enter"] => Policy::Owner,
         // M36: a forge block's login, and fetching its code into the
         // owner's clone and opening panes there, are the owner's. Writes
         // (comment, review, merge) are the owner's and editors'.
@@ -336,7 +334,6 @@ mod tests {
         assert_eq!(policy(&g, "/api/editors/vsix"), Policy::Owner);
         assert_eq!(policy(&g, "/api/hosts/self/shell-env"), Policy::Owner);
         assert_eq!(policy(&p, "/api/hosts/self/shell-env/refresh"), Policy::Owner);
-        assert_eq!(policy(&p, "/api/blocks/7/call/enter"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/checkout"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/live"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/agent"), Policy::Owner);
@@ -366,17 +363,14 @@ mod tests {
         assert_eq!(policy(&g, "/api/blocks/7"), Policy::On(7, Role::Viewer));
         assert_eq!(policy(&p, "/api/blocks/7/call/comment"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/answer"), Policy::On(7, Role::Editor));
-        assert_eq!(policy(&p, "/api/studio"), Policy::Owner);
-        assert_eq!(policy(&g, "/api/studio/apps"), Policy::Owner);
     }
 
-    /// #578 part c: synced history, sandboxes and studio were the owner's by
-    /// the default arm; as operations they say so, and an editor, a viewer or
-    /// a guest is refused all of them (studio's login is a way into a box as
-    /// the owner).
+    /// #578 part c: synced history and sandboxes were the owner's by the
+    /// default arm; as operations they say so, and an editor, a viewer or a
+    /// guest is refused all of them.
     #[test]
-    fn synced_sandboxes_and_studio_stay_the_owners() {
-        let (g, p, u, d) = (Method::GET, Method::POST, Method::PUT, Method::DELETE);
+    fn synced_and_sandboxes_stay_the_owners() {
+        let (g, p, d) = (Method::GET, Method::POST, Method::DELETE);
         for (m, path) in [
             (&g, "/api/synced"),
             (&p, "/api/synced/rotate-key"),
@@ -385,16 +379,9 @@ mod tests {
             (&d, "/api/synced/7"),
             (&p, "/api/sandboxes/7/promote"),
             (&d, "/api/sandboxes/7/resident"),
-            (&u, "/api/studio/followers/7"),
             (&g, "/api/sandboxes"),
             (&p, "/api/sandboxes/box/promote"),
             (&d, "/api/sandboxes/box/resident"),
-            (&g, "/api/studio"),
-            (&p, "/api/studio"),
-            (&d, "/api/studio"),
-            (&g, "/api/studio/apps"),
-            (&u, "/api/studio/followers/pinboard"),
-            (&d, "/api/studio/followers/pinboard"),
         ] {
             assert_eq!(policy(m, path), Policy::Owner, "{m} {path}");
         }

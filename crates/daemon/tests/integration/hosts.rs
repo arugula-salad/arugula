@@ -301,10 +301,11 @@ fn a_remote_pane_runs_there_and_has_its_place_here() {
 
 /// What a stranger doesn't get follows the flags in the state dir's
 /// `flags.json`, one to a feature: `GET /api/host` says so, with Labs
-/// (and studio and VMs, where set up) each following its own, and
+/// (and VMs, where set up) each following its own, and
 /// setting one on a running daemon, from outside it or through
 /// `PUT /api/flags/{name}`, flips it with no restart. Daemon-side Managoat
-/// was removed: no `fountain` feature, whatever login is here.
+/// was removed: no `fountain` feature, whatever login is here; nor
+/// `studio`, the studio login retired (native #206).
 #[cfg(feature = "labs")]
 #[test]
 fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
@@ -320,10 +321,9 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     let features = || d.get("/api/host")["features"].clone();
     let f = features();
     assert_eq!(f["labs"], false, "{f}");
-    for key in ["studio", "vms"] {
-        assert_eq!(f[key], false, "{key} without labs: {f}");
-    }
+    assert_eq!(f["vms"], false, "vms without labs: {f}");
     assert!(f.get("fountain").is_none(), "daemon-side Managoat was removed: {f}");
+    assert!(f.get("studio").is_none(), "the studio login was retired: {f}");
     assert!(f.get("threads").is_none(), "chat is control's (M125): {f}");
 
     arugula_testkit::labs(&d.state, true);
@@ -331,8 +331,8 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     assert_eq!(f["labs"], true, "{f}");
     // Huddles were removed (2026-10-18): no `calls` for an older page to read.
     assert!(f.get("calls").is_none(), "{f}");
-    // Studio and VMs are not set up.
-    assert_eq!((f["studio"].clone(), f["vms"].clone()), (false.into(), false.into()));
+    // VMs are not set up.
+    assert_eq!(f["vms"], false, "{f}");
 
     // Off again, and on through the owner's route.
     arugula_testkit::labs(&d.state, false);
@@ -483,7 +483,7 @@ fn a_build_without_labs_ignores_the_labs_file() {
         .start();
     arugula_testkit::labs(&d.state, true);
     let host = d.get("/api/host");
-    for key in ["labs", "studio", "vms"] {
+    for key in ["labs", "vms"] {
         assert_eq!(host["features"][key], false, "{key}: {host}");
     }
 }
@@ -541,24 +541,28 @@ fn both_helps_follow_the_same_labs_file() {
 
     // Off: the commands, options and flags #342 hid stay hidden.
     let (cli_off, d_off) = (help(cli_bin(), &[], Some(&state)), help(daemon(), &[], Some(&state)));
-    for c in ["studio", "app", "workspace", "guests", "machines", "sandboxes"] {
+    for c in ["workspace", "guests", "machines", "sandboxes"] {
         assert!(!listed(&cli_off, c), "{c} in `arugula --help` without labs");
     }
+    // An app's box by its address is everyone's (native #206); the studio
+    // login is gone.
+    assert!(listed(&cli_off, "app") && !listed(&cli_off, "studio"), "{cli_off}");
     assert!(listed(&cli_off, "run") && listed(&cli_off, "pr"), "{cli_off}");
     // Daemon-side Managoat was removed: no command, and its daemon option
     // only parses.
     assert!(!listed(&cli_off, "managoat") && !listed(&cli_off, "fountain"), "{cli_off}");
     assert!(!d_off.contains("--managoat-account-stream"), "{d_off}");
-    for f in ["--studio-file", "--guest-ssh", "--wisp-url"] {
+    for f in ["--guest-ssh", "--wisp-url"] {
         assert!(!d_off.contains(f), "{f} in `arugulad --help` without labs");
     }
 
     // On, through the environment, and for arugulad through its flag too.
     arugula_testkit::labs(&state, true);
     let cli_on = help(cli_bin(), &[], Some(&state));
-    for c in ["studio", "app", "workspace", "guests", "machines", "sandboxes"] {
+    for c in ["workspace", "guests", "machines", "sandboxes"] {
         assert!(listed(&cli_on, c), "{c} isn't in `arugula --help` with labs");
     }
+    assert!(!listed(&cli_on, "studio"), "{cli_on}");
     assert!(!listed(&cli_on, "managoat"), "{cli_on}");
     assert!(!listed(&cli_on, "bridge"), "an internal is in the help with labs");
     let elsewhere = dir.join("elsewhere");
@@ -566,7 +570,7 @@ fn both_helps_follow_the_same_labs_file() {
     let by_env = help(daemon(), &[], Some(&state));
     let by_flag = help(daemon(), &["--state-dir", state.to_str().unwrap()], None);
     let flag_without = help(daemon(), &["--state-dir", elsewhere.to_str().unwrap()], Some(&state));
-    for f in ["--studio-file", "--guest-ssh", "--wisp-url"] {
+    for f in ["--guest-ssh", "--wisp-url"] {
         assert!(by_env.contains(f), "{f} isn't in `arugulad --help` with labs (environment)");
         assert!(by_flag.contains(f), "{f} isn't in `arugulad --help` with labs (--state-dir)");
         assert!(!flag_without.contains(f), "{f}: the flag's directory has no labs, whatever the environment's does");

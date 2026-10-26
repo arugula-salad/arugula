@@ -143,7 +143,7 @@ async fn tools_through_the_stdio_bridge() {
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
     assert_eq!(tools.len(), 32 - NO_FORGE);
-    // Studio apps and chant workspaces aren't listed without their flags,
+    // Chant workspaces aren't listed without their flag,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
     // kinds aren't listed, and a caller who names one is told where cloud
@@ -152,9 +152,9 @@ async fn tools_through_the_stdio_bridge() {
     for name in ["read_thread", "search_threads", "post_thread"] {
         assert!(tools.iter().any(|t| t.name == name), "{name} isn't listed");
     }
-    for (tool, kind) in [("show", "app"), ("show", "workspace")] {
-        assert!(!kinds(&tools, tool).contains(&kind.to_owned()), "{tool} kind {kind} is listed");
-    }
+    assert!(!kinds(&tools, "show").contains(&"workspace".to_owned()), "show kind workspace is listed");
+    // An app's box, by its address, is everyone's (native #206).
+    assert!(kinds(&tools, "show").contains(&"app".to_owned()), "show kind app isn't listed");
     for (tool, kind) in [("show", "managoat"), ("list", "managoat_agents"), ("list", "managoat_agent")] {
         assert!(!kinds(&tools, tool).contains(&kind.to_owned()), "{tool} kind {kind}");
     }
@@ -1083,7 +1083,7 @@ async fn labs_lists_all_the_tools() {
         arugula_proto::flags::set(&d.state, "chat", true).unwrap();
         let chat = s.list_all_tools().await.unwrap();
         assert_eq!(chat.len(), 32, "{:?}", names(&chat));
-        assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
+        assert!(!kinds(&chat, "show").contains(&"workspace".to_owned()), "show lists workspace with only chat on");
         arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();

@@ -1,8 +1,8 @@
 //! Gates waiting for a person (M34), whoever read them: the `gate` reason
 //! the swarm's rail, push and the phone show, and approving one through
-//! where it came from. The workspace block reads chant's; a studio app
-//! block (M35) reads hud's; a forge block (M36) raises one for a review
-//! asked of you. Neither the reason nor the card knows which. A workspace
+//! where it came from. The workspace block reads chant's; a forge block
+//! (M36) raises one for a review asked of you. Neither the reason nor the
+//! card knows which. A workspace
 //! decision point's open question (#621) rides the same way, answered with
 //! one of its choices rather than approved.
 
@@ -14,9 +14,8 @@ use crate::store::now_ms;
 
 /// Why a block with these gates waiting wants you: the first gate, with
 /// how many more, bundled by its workspace. `allow` approves it; `expire`
-/// turns a chant gate down (#310). hud has no route for that, and a review
-/// asked of you is turned down on its forge block (request changes), so
-/// theirs don't offer it. A decision point's question is answered
+/// turns a chant gate down (#310). A review asked of you is turned down on
+/// its forge block (request changes), so it doesn't offer that. A decision point's question is answered
 /// (`answer`, with one of its choices).
 pub fn reason(gates: &[Gate]) -> Option<Reason> {
     let g = gates.first()?;
@@ -52,10 +51,8 @@ pub async fn expire(gate: &Gate, via: &Via<'_>) -> Result<String, String> {
             args.extend(expire_args(gate));
             run_chant(runner, chant, dir, args).await
         }
-        (GateSource::Hud { .. }, _) => Err("hud has no way to expire a gate: dismiss it here".into()),
         (GateSource::Forge { .. }, _) => Err("a review is turned down on its forge block (request changes)".into()),
         (GateSource::Point { .. }, _) => Err(POINT_NOT_GATE.into()),
-        (GateSource::Chant { .. }, Via::Hud { .. }) => Err("this gate isn't this block's to expire".into()),
     }
 }
 
@@ -71,10 +68,10 @@ pub fn expire_args(gate: &Gate) -> Vec<String> {
     args
 }
 
-/// Approve `gate` as `approver` (#75: the owner or an editor, by their
-/// Arugula name), through its source. What the source said, on success.
+/// Approve `gate` through its source, as the person `via` names (#75: the
+/// owner or an editor). What the source said, on success.
 #[cfg(feature = "labs")]
-pub async fn approve(gate: &Gate, approver: Option<&str>, via: &Via<'_>) -> Result<String, String> {
+pub async fn approve(gate: &Gate, via: &Via<'_>) -> Result<String, String> {
     match (&gate.source, via) {
         (GateSource::Chant { dir, .. }, Via::Chant { runner, chant, by }) => {
             // Status's own `chant approve` line (#302), as the principal
@@ -84,25 +81,10 @@ pub async fn approve(gate: &Gate, approver: Option<&str>, via: &Via<'_>) -> Resu
             args.extend(chant_args(gate, by)?);
             run_chant(runner, chant, dir, args).await
         }
-        (GateSource::Hud { .. }, Via::Hud { session, follower }) => {
-            // hud re-reads `workspace status` and approves only a gate
-            // pending there, with `--actor` its roster name, or with a
-            // follower credential, the person named here.
-            let mut body = serde_json::json!({
-                "member": gate.member, "component": gate.op, "gate": gate.gate, "env": gate.env,
-            });
-            if *follower && let Some(name) = approver.and_then(crate::labs::apps::hud::hud_name) {
-                body["onBehalfOf"] = serde_json::json!({ "name": name, "via": "arugula" });
-            }
-            session.approve_gate(&body).await
-        }
         // M36: a review asked of you is approved as a review, by the forge
         // block itself (`act` calls its `review` method).
         (GateSource::Forge { .. }, _) => Err("a review is approved through its forge block".into()),
         (GateSource::Point { .. }, _) => Err(POINT_NOT_GATE.into()),
-        (GateSource::Chant { .. }, Via::Hud { .. }) | (GateSource::Hud { .. }, Via::Chant { .. }) => {
-            Err("this gate isn't this block's to approve".into())
-        }
     }
 }
 
@@ -123,7 +105,6 @@ pub async fn answer(gate: &Gate, value: &str, via: &Via<'_>) -> Result<String, S
             let said = run_chant(runner, chant, root, args).await?;
             Ok(points_said(&said).unwrap_or(said))
         }
-        (GateSource::Point { .. }, Via::Hud { .. }) => Err("this question isn't this block's to answer".into()),
         _ => Err("a gate is approved, not answered".into()),
     }
 }
@@ -248,9 +229,6 @@ pub enum Via<'a> {
     /// The workspace's chant, run on the block's host with the user's
     /// shell environment, as `by`.
     Chant { runner: &'a Runner, chant: &'a str, by: ChantBy },
-    /// The app block's session with hud in its box (M35); `follower`:
-    /// it's a follower credential, so hud is told who approves.
-    Hud { session: &'a crate::labs::apps::hud::Session, follower: bool },
 }
 
 /// Text without terminal colours, trimmed.
@@ -329,10 +307,14 @@ mod tests {
         assert_eq!(r.since_ms, 1_790_975_391_548);
         assert_eq!(r.gate.unwrap().key(), "delivery/ship/approve-ship");
         assert_eq!(r.actions, [Action::Allow, Action::Expire, Action::Dismiss]);
-        // hud's and a forge's: no expire.
-        let mut hud = gate("delivery");
-        hud.source = GateSource::Hud { box_url: "https://box".into(), app: "a".into() };
-        assert_eq!(reason(&[hud]).unwrap().actions, [Action::Allow, Action::Dismiss]);
+        // A forge's: no expire.
+        let mut review = gate("delivery");
+        review.source = GateSource::Forge {
+            api: "https://git.example/api/v1".into(),
+            url: "https://git.example/pr/1".into(),
+            number: 1,
+        };
+        assert_eq!(reason(&[review]).unwrap().actions, [Action::Allow, Action::Dismiss]);
         let one = reason(&[gate("delivery")]).unwrap();
         assert_eq!(one.headline, "delivery: ship waits at gate approve-ship");
     }

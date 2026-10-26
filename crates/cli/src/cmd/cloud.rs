@@ -377,7 +377,7 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
                         "anthropic" => "Anthropic API key, or a token from `claude setup-token`: ".to_owned(),
                         p => format!("{p} API key: "),
                     };
-                    let value = super::studio::secret_input(&ask)?;
+                    let value = secret_input(&ask)?;
                     let body = json!({ "value": value });
                     e.api("PUT", &format!("/api/projects/{project}/inference-keys/{provider}"), Some(&body))?
                 }
@@ -676,6 +676,28 @@ fn with_tail(mut w: Value) -> Value {
         Err(e) => eprintln!("arugula: couldn't read the setup's pane from its box: {e:#}"),
     }
     w
+}
+
+/// A secret from stdin: piped, the first line; on a terminal, asked for
+/// without echo.
+fn secret_input(prompt: &str) -> anyhow::Result<String> {
+    use std::io::{IsTerminal, Write};
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    if stdin.is_terminal() {
+        eprint!("{prompt}");
+        let _ = std::io::stderr().flush();
+        let read = crate::term::read_hidden(&mut line);
+        eprintln!();
+        read?;
+    } else {
+        stdin.read_line(&mut line)?;
+    }
+    let v = line.trim().to_owned();
+    if v.is_empty() {
+        bail!("nothing given on stdin");
+    }
+    Ok(v)
 }
 
 #[cfg(test)]

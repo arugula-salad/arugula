@@ -300,9 +300,8 @@ pub(crate) struct RunArgs {
     /// ~/.config/arugula/claude-oauth-token].
     #[arg(long, env = "ARUGULA_CLAUDE_TOKEN_FILE", hide = true)]
     pub(crate) claude_token_file: Option<PathBuf>,
-    /// Where the studio token is kept (`arugula studio login`),
-    /// mode 0600, never sent to a client [default: studio.json in the
-    /// state directory].
+    /// Retired with the studio login (native #206): still parsed, so an old
+    /// service file starts, and does nothing but say so.
     #[arg(long, env = "ARUGULA_STUDIO_FILE", hide = true)]
     pub(crate) studio_file: Option<PathBuf>,
     /// Removed with daemon-side Managoat: still parsed, so an old service
@@ -435,12 +434,11 @@ pub(crate) struct BlockArgs {
 pub(crate) const DEFAULT_WISP_URL: &str = "http://127.0.0.1:7788";
 
 /// Options that work but stay out of `--help` unless the machine has turned
-/// their Labs flag on: guest ssh, the studio file and the sandbox provider.
+/// their Labs flag on: guest ssh and the sandbox provider.
 /// The others that are `hide = true` are internals, and stay hidden.
-const LABS_OPTIONS: [(&str, &str); 7] = [
+const LABS_OPTIONS: [(&str, &str); 6] = [
     ("guest_ssh", flags::GUEST_SSH),
     ("guest_ssh_host", flags::GUEST_SSH),
-    ("studio_file", flags::STUDIO),
     ("wisp_url", flags::VMS),
     ("wisp_token_file", flags::VMS),
     ("loam_url", flags::VMS),
@@ -485,8 +483,8 @@ mod tests {
     use clap::CommandFactory;
 
     /// `arugulad --help` is for strangers: no milestone or issue numbers, no
-    /// names of our own machines, and what needs a wispd, the studio or guest
-    /// ssh isn't listed.
+    /// names of our own machines, and what needs a wispd or guest ssh isn't
+    /// listed.
     #[test]
     fn help_has_no_internal_numbers_or_names_and_hides_what_a_stranger_cant_use() {
         let mut cmd = super::Args::command();
@@ -528,26 +526,25 @@ mod tests {
         // Its name before the rename to Managoat still parses too.
         let old = <super::Args as clap::Parser>::try_parse_from(["arugulad", "--fountain-account-stream"]).unwrap();
         assert!(old.run.managoat_account_stream);
-        // Still there for whoever knows them.
+        // The studio login's file too (native #206).
         assert!(super::Args::command().get_arguments().any(|a| a.get_long() == Some("studio-file")));
     }
 
-    /// With the `labs` file `arugulad --help` lists the sandbox provider,
-    /// the studio file and guest ssh, and no other hidden option. The test
+    /// With the `labs` file `arugulad --help` lists the sandbox provider
+    /// and guest ssh, and no other hidden option. The test
     /// passes the bool; it reads neither the filesystem nor the environment.
     #[test]
     fn labs_unhides_its_options_and_only_those() {
-        let labs = [
-            "--wisp-url",
-            "--wisp-token-file",
-            "--loam-url",
-            "--loam-key-file",
+        let labs =
+            ["--wisp-url", "--wisp-token-file", "--loam-url", "--loam-key-file", "--guest-ssh", "--guest-ssh-host"];
+        let hidden_internals = [
+            "--guest-machines",
+            "--static-dir",
+            "--log-file",
+            "--no-relay",
+            "--provider-token-sha256",
             "--studio-file",
-            "--guest-ssh",
-            "--guest-ssh-host",
         ];
-        let hidden_internals =
-            ["--guest-machines", "--static-dir", "--log-file", "--no-relay", "--provider-token-sha256"];
         let help = |on: bool| labs_command(on).render_long_help().to_string();
         let (off, on) = (help(false), help(true));
         for flag in labs {

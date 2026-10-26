@@ -1528,11 +1528,7 @@ root: string, dir: string,
 /**
  * The machine (sprite) it's on; none for this host.
  */
-machine?: string, } | { "kind": "hud", 
-/**
- * The box's origin, and the app's name in studio.
- */
-box_url: string, app: string, } | { "kind": "forge", 
+machine?: string, } | { "kind": "forge", 
 /**
  * The forge's API base (`https://git.example/api/v1`) and its web
  * address for the PR.
@@ -1695,10 +1691,6 @@ block_channels?: boolean,
  * VM tabs and panes and *Sandboxes…*: a sandbox provider (wisp).
  */
 vms: boolean, 
-/**
- * A studio is linked (`arugula studio login`).
- */
-studio: boolean, 
 /**
  * The names of the Labs flags that are on, whatever else each needs
  * (a login, a provider). `None` from a daemon before #665: see `labs`.
@@ -3697,12 +3689,6 @@ export const OPS = {
   "shell_env.get": { method: "GET", path: "/api/hosts/self/shell-env" },
   "shell_env.refresh": { method: "POST", path: "/api/hosts/self/shell-env/refresh" },
   "signin_link.get": { method: "GET", path: "/api/signin-link" },
-  "studio.apps": { method: "GET", path: "/api/studio/apps" },
-  "studio.follow": { method: "PUT", path: "/api/studio/followers/{app}" },
-  "studio.get": { method: "GET", path: "/api/studio" },
-  "studio.login": { method: "POST", path: "/api/studio" },
-  "studio.logout": { method: "DELETE", path: "/api/studio" },
-  "studio.unfollow": { method: "DELETE", path: "/api/studio/followers/{app}" },
   "synced.forget": { method: "DELETE", path: "/api/synced/{host}" },
   "synced.list": { method: "GET", path: "/api/synced" },
   "synced.rotate": { method: "POST", path: "/api/synced/rotate-key" },
@@ -3719,7 +3705,6 @@ export type OpName = keyof typeof OPS;
 export const FLAGS = [
   { name: "chat", title: "Chat", about: "The chat page, which needs control. Brings this machine's old threads into it.", default: false, local_only: false },
   { name: "vms", title: "VMs and sandboxes", about: "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider.", default: false, local_only: false },
-  { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
   { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false, local_only: false },
   { name: "guest-ssh", title: "Guest ssh", about: "Invite a guest to a pane over plain ssh.", default: false, local_only: true },
   { name: "forges", title: "Forgejo and GitLab", about: "PR and issue blocks for Forgejo and GitLab, beside GitHub's.", default: false, local_only: false },

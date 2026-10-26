@@ -148,9 +148,9 @@ test("a team's and an account's flags reach the machine, each saying where it co
   await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("chat"))).toBe(true);
   // And it tells control so on its next refresh (a change nudges one), so
   // control's page now offers the flags.
-  await setOnControl("studio", true);
+  await setOnControl("workspaces", true);
   await expect.poll(async () => (await me.api<{ dev: boolean }>("/api/flags")).dev, { timeout: 20_000 }).toBe(true);
-  await setOnControl("studio", null);
+  await setOnControl("workspaces", null);
 });
 
 test("the machine overrides control, and Use control's takes its word back", async ({ page }) => {

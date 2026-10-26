@@ -342,14 +342,13 @@ pub struct DocShareArgs {
     pub block: PaneArg,
 }
 
-// Read only by the handler, which a build without Labs lacks.
-#[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
 pub struct OpenAppArgs {
-    /// The app's name in the user's studio. Leave it out to list their
-    /// apps instead.
+    /// The app's address: its box's origin (`https://…`).
+    pub url: String,
+    /// What to call the block (default: the box's host).
     #[serde(default)]
-    pub app: Option<String>,
+    pub title: Option<String>,
     /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
@@ -897,7 +896,7 @@ pub(crate) enum Args {
 }
 
 /// One job of a grouped tool, like `show {kind: "port", port: 3000}`. Each
-/// is a row, so the kinds that belong to one feature (the studio's) can be left out of their group, and their arguments with them,
+/// is a row, so the kinds that belong to one feature (chant's) can be left out of their group, and their arguments with them,
 /// by filtering its table ([`defs`]).
 pub(crate) struct Kind {
     pub(crate) name: &'static str,
@@ -949,7 +948,7 @@ const SHOW: &[Kind] = &[
     },
     Kind {
         name: "app",
-        description: "One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.",
+        description: "An app's box as an app block beside a pane, by its address (url): the app's own page in a frame, on its own origin. The box signs the user in with their Arugula account, so nothing is shared with it from here.",
         schema: schema_for_type::<OpenAppArgs>,
         flag: None,
     },
@@ -1058,13 +1057,12 @@ const LIST: &[Kind] = &[
 ];
 
 /// The jobs that work but aren't listed without their Labs flag: they're for
-/// setups a stranger doesn't have (the studio, chant workspaces).
+/// setups a stranger doesn't have (chant workspaces, the agent catalog).
 /// Each is a kind of a grouped tool, so without its flag it's filtered out
 /// of its group's table, and its arguments and its line in the description
 /// go with it. A caller who names one is refused, saying how to turn the
 /// flag on (#347: the handler or `ops::flagged` asks).
-const UNLISTED: [(&str, &str, &str); 3] =
-    [("list", "agents", flags::AGENTS), ("show", "app", flags::STUDIO), ("show", "workspace", flags::WORKSPACES)];
+const UNLISTED: [(&str, &str, &str); 2] = [("list", "agents", flags::AGENTS), ("show", "workspace", flags::WORKSPACES)];
 
 /// Arguments of listed tools that aren't listed without their flag, by
 /// tool: throwaway VMs and sandboxes, and recipes. A caller who gives one
@@ -3391,16 +3389,10 @@ impl<'a> Call<'a> {
     }
 }
 
-#[cfg(feature = "labs")]
 impl Call<'_> {
+    /// An app's box beside a pane (M35), by its address: the box signs the
+    /// user in itself (native #206).
     async fn open_app(&self, a: OpenAppArgs) -> Out {
-        crate::labs::flag(self.app.control.state_dir(), flags::STUDIO)?;
-        let studio = crate::labs::apps::studio::get().ok_or("no studio here")?;
-        let Some(name) = a.app else {
-            let apps = studio.apps().await?;
-            let names: Vec<&str> = apps.iter().map(|a| a.name.as_str()).collect();
-            return done(format!("{} apps: {}", apps.len(), names.join(", ")), results::Apps { apps });
-        };
         let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(b), _) => Some(b),
             (None, own) => own,
@@ -3408,7 +3400,8 @@ impl Call<'_> {
         if let Some(b) = beside {
             self.readable(b).await?;
         }
-        let config = crate::labs::app_config(&json!({ "app": name })).await?;
+        let config = crate::apps::config(&json!({ "box_url": a.url, "title": a.title }))?;
+        let url = config["box_url"].as_str().unwrap_or_default().to_owned();
         let req = OpenRequest {
             kind: BlockType::App,
             config,
@@ -3421,9 +3414,12 @@ impl Call<'_> {
             local: true,
         };
         let block = self.open(req).await?;
-        done(format!("Opened app {name} in block %{block}"), results::AppOpened { block, app: name })
+        done(format!("Opened {url} in block %{block}"), results::AppOpened { block, url })
     }
+}
 
+#[cfg(feature = "labs")]
+impl Call<'_> {
     async fn open_workspace(&self, a: OpenWorkspaceArgs) -> Out {
         let (beside, host) = self.beside(a.beside.as_ref()).await?;
         let dir = a.dir.trim_end_matches('/').to_owned();
@@ -3597,10 +3593,6 @@ impl Call<'_> {
 
 #[cfg(not(feature = "labs"))]
 impl Call<'_> {
-    async fn open_app(&self, _: OpenAppArgs) -> Out {
-        Err(crate::labs::not_built("An app block"))
-    }
-
     async fn open_workspace(&self, _: OpenWorkspaceArgs) -> Out {
         Err(crate::labs::not_built("A chant workspace"))
     }
@@ -4670,7 +4662,7 @@ mod tests {
         assert!(with >= 8, "only {with} tools list an outputSchema");
     }
 
-    /// A build without Labs lists nothing of Managoat (removed), studio apps or chant
+    /// A build without Labs lists nothing of Managoat (removed), the studio login (retired) or chant
     /// workspaces, whatever the `labs` flag says: no kind, no argument, no
     /// value, no word in a description.
     #[cfg(not(feature = "labs"))]
@@ -4694,7 +4686,8 @@ mod tests {
             assert!(!tools.contains("workspace"), "the tool list mentions workspaces");
         }
         let shown = kinds_of(labs, "show");
-        assert!(!shown.contains(&"app") && !shown.contains(&"workspace"), "{shown:?}");
+        // An app's box is everyone's (native #206); chant's workspaces are Labs'.
+        assert!(shown.contains(&"app") && !shown.contains(&"workspace"), "{shown:?}");
     }
 
     /// What `pr_write` hands the forge block's `call_by`: the keys the old
@@ -4811,8 +4804,8 @@ mod tests {
             .unwrap_or_default()
     }
 
-    /// Studio apps and chant workspaces are for what a stranger doesn't
-    /// have: without `labs` their kinds (and the `delegate` and `doc` tools)
+    /// Chant workspaces and the agent catalog are for what a stranger
+    /// doesn't have: without `labs` their kinds (and the `delegate` and `doc` tools)
     /// aren't listed, with it all are, and a caller who names one reaches it
     /// either way.
     #[test]
@@ -4843,9 +4836,7 @@ mod tests {
             assert!(!t.description.as_deref().unwrap().contains(&format!("\n- {kind}")), "{tool}: {kind}");
         }
         let show = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "show").unwrap();
-        for arg in ["app", "env"] {
-            assert!(show.input_schema["properties"].get(arg).is_none(), "show takes {arg} without labs");
-        }
+        assert!(show.input_schema["properties"].get("env").is_none(), "show takes env without labs");
         // Daemon-side Managoat was removed: its kinds, by either name, and
         // its old tools say where cloud agents went; none is listed.
         let list_tool = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "list").unwrap();

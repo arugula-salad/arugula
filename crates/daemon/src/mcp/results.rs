@@ -6,7 +6,7 @@
 //! `JsonSchema` where a tool lists them as its `outputSchema` (#580: the
 //! tools that always answer with one of them; see `tools::output_schema`).
 //! Where a result is an API type already (`PromptResult`,
-//! `ForgeWant`, `Draft`, `Ask`, `AppInfo`…) it is that type, so the tool and
+//! `ForgeWant`, `Draft`, `Ask`…) it is that type, so the tool and
 //! the API can't drift. The JSON of each is what the old `json!` literal
 //! wrote: a field is skipped only where the old code left the key out, and an
 //! absent value is `null`, as before. Each is tested against that literal.
@@ -24,9 +24,6 @@ use arugula_proto::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-#[cfg(feature = "labs")]
-use crate::labs::apps::studio::AppInfo;
 
 /// Only the pane: closed, answered, or sent a prompt.
 #[derive(Debug, Serialize, JsonSchema)]
@@ -238,19 +235,11 @@ pub struct PortOpened {
     pub port: u16,
 }
 
-/// A studio app opened in a block.
-#[cfg(feature = "labs")]
+/// An app's box opened in a block, at its origin (native #206).
 #[derive(Debug, Serialize)]
 pub struct AppOpened {
     pub block: PaneId,
-    pub app: String,
-}
-
-/// The studio's apps.
-#[cfg(feature = "labs")]
-#[derive(Debug, Serialize)]
-pub struct Apps {
-    pub apps: Vec<AppInfo>,
+    pub url: String,
 }
 
 /// A block opened, with nothing more to say: a file, a started agent.
@@ -578,8 +567,10 @@ mod tests {
         );
         shaped(BlockOnly { block: 9 }, json!({ "block": 9 }));
         same(PortOpened { block: 9, port: 3000 }, json!({ "block": 9, "port": 3000 }));
-        #[cfg(feature = "labs")]
-        same(AppOpened { block: 9, app: "notes".into() }, json!({ "block": 9, "app": "notes" }));
+        same(
+            AppOpened { block: 9, url: "https://notes.example".into() },
+            json!({ "block": 9, "url": "https://notes.example" }),
+        );
         same(Screen { pane: 7, text: "hi".into() }, json!({ "pane": 7, "text": "hi" }));
         shaped(
             FileRead { path: "/a".into(), size: 10, offset: 0, next_offset: 10, more: false, text: "x".into() },
@@ -785,8 +776,6 @@ mod tests {
             json!({ "block": 4, "root": "/w", "members": [{ "name": "m", "dir": "/w/m", "kind": "rust",
                 "errors": 0, "gates": [] }], "gates": [] }),
         );
-        #[cfg(feature = "labs")]
-        same(Apps { apps: vec![] }, json!({ "apps": [] }));
     }
 
     #[test]

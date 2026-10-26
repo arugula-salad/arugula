@@ -198,8 +198,8 @@ pub enum Api {
     /// Delete and recreate a machine; its panes restart by policy.
     ResetMachine(MachineId, oneshot::Sender<Result<(), String>>),
     /// A question asked in a terminal (`arugula ask`, from Claude Code's
-    /// hook), or on a block (M35: a studio box's agent, through its
-    /// follower): shown beside it until answered. The reply carries a
+    /// hook), or on a block (M35: a page's, through `/ask`): shown beside
+    /// it until answered. The reply carries a
     /// token (for withdrawing exactly this one) and where the answer will
     /// come, with who gave it.
     Ask(PaneId, Box<Ask>, oneshot::Sender<Result<(u64, oneshot::Receiver<Replied>), String>>),

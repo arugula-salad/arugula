@@ -128,7 +128,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {state && <AgentsPageLayer client={client} />}
       {state && <DocsPageLayer client={client} />}
       <ConversationsLayer />
-      <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
       <RulesLayer />
       <DocShareLayer />
@@ -212,7 +211,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {state && <AgentsPageLayer client={client} />}
       {state && <DocsPageLayer client={client} />}
       <ConversationsLayer />
-      <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
       <RulesLayer />
       <DocShareLayer />

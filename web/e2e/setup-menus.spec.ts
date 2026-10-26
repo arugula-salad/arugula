@@ -1,6 +1,7 @@
 // #171, #180: a machine set up for nothing optional (no --block-listen, no
-// wisp, no studio) offers nothing that would fail for setup nobody
-// mentioned. VM, sandbox and studio items aren't in its menus; Open a
+// wisp) offers nothing that would fail for setup nobody mentioned. VM and
+// sandbox items aren't in its menus (Open an app… is: the app signs you in
+// itself, native #206); Open a
 // port… and Open in editor say how to turn block sites on, with a link,
 // instead of failing.
 
@@ -47,14 +48,13 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     dev: true,
     blocks: false,
     vms: false,
-    studio: false,
     // Not joined to a control with a block domain (#150).
     block_channels: false,
     // `labs` in flags.json is every flag (#665).
-    flags: ["chat", "vms", "studio", "workspaces", "guest-ssh", "forges", "agents", "docs"],
+    flags: ["chat", "vms", "workspaces", "guest-ssh", "forges", "agents", "docs"],
   });
   const [term] = await panes(page);
-  const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Open a studio app…"];
+  const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…"];
 
   // A pane's menu.
   await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
@@ -63,6 +63,7 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
   for (const h of hidden) expect(got).not.toContain(h);
   expect(got).toContain("Open a port…");
   expect(got).toContain("Open in editor");
+  expect(got).toContain("Open an app…");
   await page.keyboard.press("Escape");
 
   // The session menu, a tab's and the + button's.

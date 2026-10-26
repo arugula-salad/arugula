@@ -869,10 +869,10 @@ mod tests {
     /// Part c's routes (#578): the paths as the commands wrote them by hand
     /// (`enc` of the name in the path), and the bodies as the types serialize.
     #[test]
-    fn a_synced_sandbox_or_studio_call_goes_out_as_it_was_written_by_hand() {
+    fn a_synced_or_sandbox_call_goes_out_as_it_was_written_by_hand() {
         use super::{enc, route};
         use arugula_proto::{
-            api::{Empty, FollowerLinkRequest, StudioLoginRequest},
+            api::Empty,
             hosts::PromoteRequest,
             op::{Op, Request, ops::*},
         };
@@ -885,19 +885,9 @@ mod tests {
         assert_eq!(route::<SandboxesList>(&(), &Empty {}).unwrap(), "/api/sandboxes");
         assert_eq!(SandboxPromote::path(&encoded), "/api/sandboxes/a%20b%2F%C3%A9/promote");
         assert_eq!(SandboxDemote::path(&encoded), "/api/sandboxes/a%20b%2F%C3%A9/resident");
-        assert_eq!(route::<StudioGet>(&(), &Empty {}).unwrap(), "/api/studio");
-        assert_eq!(StudioLogin::path(&()), "/api/studio");
-        assert_eq!(StudioLogout::path(&()), "/api/studio");
-        assert_eq!(route::<StudioAppsList>(&(), &Empty {}).unwrap(), "/api/studio/apps");
-        assert_eq!(StudioFollow::path(&encoded), "/api/studio/followers/a%20b%2F%C3%A9");
-        assert_eq!(StudioUnfollow::path(&encoded), "/api/studio/followers/a%20b%2F%C3%A9");
         assert!(Empty::without_body().is_some());
         let promote = PromoteRequest { host: Some("h".into()), port: None };
         assert_eq!(serde_json::to_value(promote).unwrap().to_string(), r#"{"host":"h","port":null}"#);
-        let login = StudioLoginRequest { url: "u".into(), token: "t".into() };
-        assert_eq!(serde_json::to_value(login).unwrap().to_string(), r#"{"token":"t","url":"u"}"#);
-        let link = serde_json::to_value(FollowerLinkRequest { link: "l".into() }).unwrap();
-        assert_eq!(link.to_string(), r#"{"link":"l"}"#);
     }
 
     #[test]

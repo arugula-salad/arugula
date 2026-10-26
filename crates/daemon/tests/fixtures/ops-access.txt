@@ -79,12 +79,6 @@ shares.list GET /api/shares Owner drives=false credential=true
 shell_env.get GET /api/hosts/self/shell-env Owner drives=false credential=false
 shell_env.refresh POST /api/hosts/self/shell-env/refresh Owner drives=false credential=false
 signin_link.get GET /api/signin-link Owner drives=false credential=true
-studio.apps GET /api/studio/apps Owner drives=false credential=false
-studio.follow PUT /api/studio/followers/{app} Owner drives=false credential=false
-studio.get GET /api/studio Owner drives=false credential=false
-studio.login POST /api/studio Owner drives=false credential=false
-studio.logout DELETE /api/studio Owner drives=false credential=false
-studio.unfollow DELETE /api/studio/followers/{app} Owner drives=false credential=false
 synced.forget DELETE /api/synced/{host} Owner drives=false credential=false
 synced.list GET /api/synced Owner drives=false credential=false
 synced.rotate POST /api/synced/rotate-key Owner drives=false credential=false

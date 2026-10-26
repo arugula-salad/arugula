@@ -9,6 +9,7 @@ mod acl_api;
 mod agent;
 use arugula_mux::agentenv;
 mod api;
+mod apps;
 mod args;
 mod authz;
 use arugula_mux::block;
@@ -262,6 +263,24 @@ fn start_reach(r: &ReachArgs, app: &std::sync::Arc<server::App>, name: String) -
 
 /// A random name for this daemon's state directory, kept in it: the
 /// machines it creates carry it, so it never sweeps away another daemon's.
+/// The studio login is retired (native #206): the token and follower links
+/// it kept in `studio.json` (mode 0600) are removed, once. A file named by
+/// `--studio-file` is left where it is, and the option is still parsed, so
+/// an old service file starts and says so.
+fn forget_studio(state_dir: &std::path::Path, given: Option<&std::path::Path>) {
+    if let Some(f) = given {
+        tracing::warn!(file = %f.display(), "--studio-file does nothing: the studio login was retired; apps sign you in themselves");
+    }
+    let file = state_dir.join("studio.json");
+    match std::fs::remove_file(&file) {
+        Ok(()) => tracing::info!(file = %file.display(), "removed the retired studio login's token"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            tracing::warn!(file = %file.display(), error = %e, "couldn't remove the retired studio login's token")
+        }
+    }
+}
+
 fn daemon_id(store: &store::StateDir) -> String {
     let path = store.root().join("daemon-id");
     if let Ok(id) = std::fs::read_to_string(&path)
@@ -728,6 +747,7 @@ fn kinds(
     use block::Make;
     let mut kinds = block::BlockKinds::default();
     kinds.add(BlockType::Browser, Make(browser::Browser::create));
+    kinds.add(BlockType::App, Make(apps::AppBlock::create));
     kinds.add(BlockType::Agent, agent::AgentKind { mcp, secrets, rules: rules.clone() });
     kinds.add(BlockType::Chat, agent::ChatKind { rules });
     editors::kinds(&mut kinds);
@@ -948,16 +968,14 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
             claude_token: args.claude_token_file.clone().unwrap_or_else(|| config.join("claude-oauth-token")),
         }
     };
-    // Studio apps (M35): the token that lists them and mints ways in.
-    let studio_file = args.studio_file.clone().unwrap_or_else(|| state_dir.join("studio.json"));
-    labs::install_studio(studio_file.clone(), args.studio_file.is_some());
+    // The studio login (M35) is retired (native #206): its token goes.
+    forget_studio(&state_dir, args.studio_file.as_deref());
     // What `fs` never serves, besides the state directory.
     let private = vec![
         token_file.clone(),
         loam_key_file,
         secrets.anthropic_key.clone(),
         secrets.claude_token.clone(),
-        studio_file.clone(),
         local_token_file,
     ];
     let acl = std::sync::Arc::new(acl::Acl::open(&state_dir));

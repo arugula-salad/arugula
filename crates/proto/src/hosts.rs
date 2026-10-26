@@ -300,8 +300,6 @@ pub struct HostFeatures {
     pub block_channels: bool,
     /// VM tabs and panes and *Sandboxes…*: a sandbox provider (wisp).
     pub vms: bool,
-    /// A studio is linked (`arugula studio login`).
-    pub studio: bool,
     /// The names of the Labs flags that are on, whatever else each needs
     /// (a login, a provider). `None` from a daemon before #665: see `labs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

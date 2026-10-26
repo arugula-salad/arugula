@@ -42,8 +42,7 @@ pub struct Ask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
     /// `agent` (an agent block), `hook` (Claude Code in a terminal), or
-    /// whatever raised it on a block through `/ask` (M35: `hud`, a studio
-    /// box's agent).
+    /// whatever raised it on a block through `/ask`.
     pub source: String,
     /// Who asks, as the card and the swarm's rail name it ("hud asks"),
     /// when that isn't the terminal's own agent (M35).

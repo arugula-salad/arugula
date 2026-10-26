@@ -363,14 +363,6 @@ pub enum GateSource {
         #[cfg_attr(feature = "ts", ts(optional))]
         machine: Option<String>,
     },
-    /// hud in a studio box (M35), from its work board: approved through
-    /// hud's `POST /__hud/api/work/gates/approve`, naming the person who
-    /// approves when the daemon holds a follower credential.
-    Hud {
-        /// The box's origin, and the app's name in studio.
-        box_url: String,
-        app: String,
-    },
     /// A review asked of you on a forge's pull request (M36): approved as
     /// a review (`review {event: approve}`) through the forge block, with
     /// the person's own CLI login. `member` is the repository, `op` the
@@ -438,7 +430,6 @@ impl Gate {
             GateSource::Chant { root, machine: Some(m), .. } | GateSource::Point { root, machine: Some(m), .. } => {
                 format!("gate:{m}:{root}")
             }
-            GateSource::Hud { box_url, .. } => format!("gate:{box_url}"),
             // M36: bundled by repository, with the PR's other reasons.
             GateSource::Forge { api, .. } => format!("forge:{}/{}", host_of(api), self.member),
         }
@@ -765,7 +756,7 @@ pub enum WorkKind {
     Server,
     Logs,
     Editor,
-    /// A studio box (M35).
+    /// An app's box (M35; native #206: opened by its address).
     App,
     /// A pull request on a forge (M36).
     Pr,
@@ -932,8 +923,9 @@ pub enum BlockType {
     /// A chant workspace (M34): its members, records and the gates waiting
     /// in it, read through chant's read contract. Config `{root, env}`.
     Workspace,
-    /// A studio box (M35): a web page that knows it's a hud box. It frames
-    /// the box, and its agent's questions are asks on it.
+    /// An app's box (M35), framed on its own origin, which signs the
+    /// person in itself through the hub (native #206). Config `{box_url,
+    /// title?}`.
     App,
     /// A pull request on a git forge (M36: Forgejo): its reviews, checks
     /// and timeline, and what it waits on you for. Config `{provider, api?,

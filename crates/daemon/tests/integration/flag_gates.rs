@@ -5,13 +5,13 @@
 //! when it goes off. No restart: the flags are read on each request. The
 //! CLI's hidden commands, run against such a daemon, say the same.
 //!
-//! "Past the gate" is all the on side asks: this daemon has no studio and
-//! no sandbox provider, so most of them fail next for that, in their own
-//! words.
+//! "Past the gate" is all the on side asks: this daemon has no sandbox
+//! provider, so most of them fail next for that, in their own words.
 //!
 //! `fountain` left the flags with #942's F5, and daemon-side Managoat went
 //! after it: a `fountain` the flags file still names, on or off, changes
-//! nothing.
+//! nothing. `studio` (the daemon's studio login) is retired the same way
+//! (native #206): an app block is anyone's, by its address.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -49,9 +49,6 @@ fn requests() -> Vec<(&'static str, &'static str, String, Option<Value>)> {
         ("vms", "POST", "/api/run".into(), Some(json!({ "sandbox": "someone-elses" }))),
         // Configs that don't parse: on, they fail past the gate, in the
         // block type's own words, and nothing starts.
-        ("studio", "GET", "/api/studio".into(), None),
-        ("studio", "GET", "/api/studio/apps".into(), None),
-        ("studio", "POST", "/api/blocks".into(), block("app", json!({ "app": "nothing-here" }))),
         ("workspaces", "POST", "/api/blocks".into(), block("workspace", json!({}))),
         ("guest-ssh", "GET", "/api/guests".into(), None),
         ("agents", "GET", "/api/a2a/agents".into(), None),
@@ -89,8 +86,8 @@ fn each_flag_gates_its_routes_and_blocks_both_ways() {
     assert_eq!(panes.as_array().unwrap().len(), 1, "{panes}");
 
     // One flag on turns on its feature and no other.
-    set(&d.state, "studio", true);
-    let (status, text) = d.raw("GET", "/api/studio", None);
+    set(&d.state, "agents", true);
+    let (status, text) = d.raw("GET", "/api/a2a/agents", None);
     assert_eq!(status, 200, "{text}");
     let (status, text) = d.raw("GET", "/api/guests", None);
     assert_eq!(status, 404, "{text}");
@@ -152,6 +149,40 @@ fn managoat_is_gone_and_an_old_flag_changes_nothing() {
     }
 }
 
+/// The studio login is retired (native #206): its routes are gone, an app
+/// block is made by its address whatever the flags file says of `studio`,
+/// a name alone is refused for want of one, and `arugulad flags` doesn't
+/// list it.
+#[test]
+fn the_studio_login_is_gone_and_an_old_flag_changes_nothing() {
+    let d = daemon("flag-gates-studio");
+    for file in [None, Some(r#"{"flags":{"studio":false}}"#), Some(r#"{"flags":{"studio":true}}"#)] {
+        if let Some(text) = file {
+            std::fs::write(d.state.join("flags.json"), text).unwrap();
+        }
+        for path in ["/api/studio", "/api/studio/apps"] {
+            let (status, text) = d.raw("GET", path, None);
+            assert_eq!(status, 404, "{file:?}: {path}: {text}");
+        }
+        let block = |config: Value| Some(json!({ "type": "app", "config": config, "local": true }));
+        let (status, text) = d.raw("POST", "/api/blocks", block(json!({ "app": "nothing-here" })));
+        assert_eq!(status, 400, "{file:?}: {text}");
+        assert!(text.contains("address") && !text.contains("arugulad flags"), "{file:?}: {text}");
+        let (status, text) = d.raw("POST", "/api/blocks", block(json!({ "box_url": "https://pinboard.example/x" })));
+        assert_eq!(status, 200, "{file:?}: {text}");
+        let id = serde_json::from_str::<Value>(&text).unwrap()["block"].as_u64().unwrap();
+        assert_eq!(d.get(&format!("/api/blocks/{id}"))["state"]["box_url"], "https://pinboard.example");
+        assert!(d.get("/api/flags").as_array().unwrap().iter().all(|f| f["name"] != "studio"));
+    }
+    let out = arugula_testkit::command(Path::new(env!("CARGO_BIN_EXE_arugulad")))
+        .args(["flags", "studio", "on", "--state-dir"])
+        .arg(&d.state)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success() && err.contains("isn't a flag any more"), "{err}");
+}
+
 type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// The next message, as JSON.
@@ -209,13 +240,7 @@ fn a_hidden_command_says_how_to_turn_its_flag_on() {
     let d = daemon("flag-gates-cli");
     let cli = cli_bin();
     let run = |args: &[&str]| arugula_testkit::command(&cli).arg("--socket").arg(d.sock()).args(args).output().unwrap();
-    for (flag, args) in [
-        ("vms", &["machines"][..]),
-        ("vms", &["sandboxes"][..]),
-        ("studio", &["studio"][..]),
-        ("studio", &["app"][..]),
-        ("guest-ssh", &["guests"][..]),
-    ] {
+    for (flag, args) in [("vms", &["machines"][..]), ("vms", &["sandboxes"][..]), ("guest-ssh", &["guests"][..])] {
         let out = run(args);
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success(), "{args:?} succeeded with {flag} off");

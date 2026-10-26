@@ -1,5 +1,6 @@
 // Every block type's renderer, registered on import.
 import "./browser";
+import "./app";
 import "./agent";
 import "./chat";
 import "./editor";

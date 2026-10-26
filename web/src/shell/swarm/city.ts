@@ -12,7 +12,7 @@
 // - the windows are its output: scrolling while it prints (faster for more
 //   bytes), still when it printed lately, dark when it's quiet;
 // - colour is kind (the field's palette); shape is lifecycle: a box
-//   finishes, a drum runs until stopped (servers, logs, studio apps), a
+//   finishes, a drum runs until stopped (servers, logs, apps), a
 //   hexagon is an agent, a pentagon an editor, a flat slab a pull request
 //   or issue (a document, not a process);
 // - a red roof: its last command failed; a beam: it needs you, in the

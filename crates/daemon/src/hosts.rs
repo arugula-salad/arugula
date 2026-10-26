@@ -542,9 +542,8 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
 /// What this machine is set up for, so the menus offer only that (#180)
 /// or say how to turn it on (#171). Cheap: nothing here asks anyone.
 ///
-/// What a stranger doesn't get follows the machine's Labs flags: threads
-/// are a flag, and studio and VMs need theirs as well as
-/// their own setup.
+/// What a stranger doesn't get follows the machine's Labs flags: VMs need
+/// theirs as well as their own setup.
 pub(crate) fn features(app: &App) -> HostFeatures {
     let dir = app.control.state_dir();
     let on = crate::labs::flags(dir);
@@ -554,7 +553,6 @@ pub(crate) fn features(app: &App) -> HostFeatures {
         blocks: crate::sites::get().is_some_and(|s| s.listens()),
         block_channels: crate::sites::control_blocks(),
         vms: on.has(flags::VMS) && app.mux.provider.is_some(),
-        studio: on.has(flags::STUDIO) && crate::labs::studio_here(),
         flags: Some(on.names().map(str::to_owned).collect()),
     }
 }

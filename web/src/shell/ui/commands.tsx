@@ -7,7 +7,8 @@ import { opPath } from "../ops";
 import { paneIds, type Client } from "../client";
 import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from "../../shared/proto";
 import { askText, type MenuItem } from "../../shared/ui/menu";
-import { openSandboxes, pickApp } from "../labs-load";
+import { openSandboxes } from "../labs-load";
+import { pickApp } from "./apps";
 import { driveItems, shareSession } from "./people";
 import { hasChat } from "./places";
 import { newRemote, openChanges, openEditor, openIssue, openPort, openPr, openWorkspace, pinChatRoom, openTeamChat, remoteHosts } from "../blocks";
@@ -106,8 +107,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(!client.state?.roles
       ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem]
       : []),
-    // M35: a studio app's box beside this pane.
-    ...(!client.state?.roles && client.has("studio") ? [{ label: "Open a studio app…", run: () => pickApp(client, { split: id }) } as MenuItem] : []),
+    // M35: an app's box beside this pane, by its address (native #206).
+    ...(!client.state?.roles ? [{ label: "Open an app…", run: () => void pickApp(client, { split: id }) } as MenuItem] : []),
     // M36: a pull request beside it (N: in its repository).
     ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { split: id, dir: cwd }) } as MenuItem] : []),
     // M37: an issue beside it (N: in its repository).
@@ -213,8 +214,8 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
     { id: "new-tab", label: "New tab", run: () => client.intent({ op: "new_tab", session, from_pane: client.active() ?? null }) },
     ...(client.has("vms") ? [{ id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem] : []),
     { label: "New tab in a directory…", shortcut: keyHint("picker"), disabled: client.active() === undefined, run: () => openPicker(client, client.active()) },
-    // M35: a studio app's box, in a tab of its own. The owner's.
-    ...(!client.state?.roles && client.has("studio") ? [{ label: "Open a studio app…", run: () => pickApp(client, { session }) } as MenuItem] : []),
+    // M35: an app's box, in a tab of its own. The owner's.
+    ...(!client.state?.roles ? [{ label: "Open an app…", run: () => void pickApp(client, { session }) } as MenuItem] : []),
     // #123: the team's chat, in a tab of its own.
     ...(!client.state?.roles && hasChat() ? [{ label: "Open team chat", run: () => void openTeamChat(client, { session }) } as MenuItem] : []),
     // M36: a pull request, in a tab of its own.

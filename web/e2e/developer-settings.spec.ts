@@ -27,7 +27,6 @@ test.afterAll(closeContexts);
 
 test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "arugula-e2e-developer-"));
-  writeFileSync(join(state, "studio.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "e2e-studio-token" }));
   writeFileSync(join(state, "wisp-token"), "e2e-wisp-token");
   daemon = spawn(
     "../target/debug/arugulad",
@@ -47,7 +46,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["chat", "vms", "studio", "workspaces", "guest-ssh", "forges", "agents", "docs"] as const;
+const FLAGS = ["chat", "vms", "workspaces", "guest-ssh", "forges", "agents", "docs"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -71,7 +70,6 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
   const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
   await page.keyboard.press("Escape");
   if (items.includes("New VM pane on the right")) out.push("vms");
-  if (items.includes("Open a studio app…")) out.push("studio");
   if (items.includes("Invite over ssh…")) out.push("guest-ssh");
   const page_says = await page.evaluate(() => {
     const c = window.__arugula.client as unknown as { flag(n: string): boolean; forgeLink(u: string): string | null };
@@ -175,8 +173,6 @@ test("each flag turns on its own feature and no other", async ({ page }) => {
 const GATED: [Flag, string, string, unknown][] = [
   ["vms", "GET", "/api/machines", undefined],
   ["vms", "GET", "/api/sandboxes", undefined],
-  ["studio", "GET", "/api/studio", undefined],
-  ["studio", "POST", "/api/blocks", { type: "app", config: { app: "nothing-here" }, local: true }],
   ["workspaces", "POST", "/api/blocks", { type: "workspace", config: {}, local: true }],
   ["guest-ssh", "GET", "/api/guests", undefined],
   ["forges", "POST", "/api/blocks", { type: "forge", config: { repo: "o/r", number: 0, provider: "forgejo" }, local: true }],

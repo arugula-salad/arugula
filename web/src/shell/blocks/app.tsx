@@ -1,57 +1,34 @@
-// Studio app blocks (M35): a studio box in a frame, on its own origin.
+// App blocks (M35): an app's box in a frame, on its own origin.
 //
-// Getting in: the frame asks the daemon for a way in (the block's `enter`
-// method), which mints a fresh ten-minute entry link from studio, and
-// navigates the frame to it. The link lives only in this call: it isn't
-// the frame's `src` (that's the box itself, so a frame that reloads, or is
-// moved, comes back through the cookie the door set), and it's never kept.
-// A cross-site frame's 401 can't be seen from here, so a client enters each
-// time it draws the block anew, and ↻ enters again. Only the owner may
-// enter; anyone else sees a card.
+// Getting in is the box's: it signs whoever looks with their Arugula
+// account, through the hub, so nothing is minted or kept here and a
+// teammate who views the block sees the app as themselves (native #206
+// retired the studio login that minted the owner's way in). ↻ draws the
+// frame again here; the block's `reload` does it for every client.
 //
-// The frame shows once a page has loaded in it after entering. A box that
-// takes the connection and never answers (asleep, or hung) leaves a frame
-// loading forever, which draws as a blank white page: after `STUCK_AFTER`
-// the card says so instead, and the frame comes in if the box answers late.
+// The frame shows once a page has loaded in it. A box that takes the
+// connection and never answers (asleep, or hung) leaves a frame loading
+// forever, which draws as a blank white page: after `STUCK_AFTER` the card
+// says so instead, and the frame comes in if the box answers late.
 
 import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
-import { gateKey, type Gate, type PaneId } from "../../shared/proto";
-import { openMenu } from "../../shared/ui/menu";
-import type { BlockRenderer, BlockView } from "./view";
-import { BlockEmpty, BlockError, BlockLoading, OpenOutside } from "./block-states";
+import type { PaneId } from "../../shared/proto";
+import { registerBlock, type BlockView } from "./view";
+import { BlockError, BlockLoading, OpenOutside } from "./block-states";
 
 export interface AppState {
-  app: string;
-  title: string | null;
   box_url: string;
-  studio: string;
-  follower_credential: boolean;
-  follower: {
-    state: string;
-    error: string | null;
-    tabs: number;
-    questions: number;
-    last_answer: { ok: boolean; error?: string } | null;
-  };
+  title: string | null;
+  /** Its name where it came from, if it was given one. */
+  app: string | null;
+  /** Bumped by the block's `reload`: every client draws the frame again. */
   reloads: number;
-  /** Gates waiting in the box, from hud's work board. */
-  gates: Gate[];
-  /** The last approve that failed: the gate's key, and why. */
-  gate_error: [string, string] | null;
 }
 
-/** How long entering may take before the card says the box isn't answering. */
+/** How long the box may take before the card says it isn't answering. */
 const STUCK_AFTER = 15_000;
-
-/** hud's own pages, for the frame. */
-const PAGES: [string, string][] = [
-  ["Decisions", "/__hud/decisions"],
-  ["Work", "/__hud/work"],
-  ["Intent", "/__hud/intent"],
-  ["Sessions", "/__hud/sessions"],
-];
 
 function hostOf(url: string): string {
   try {
@@ -61,182 +38,79 @@ function hostOf(url: string): string {
   }
 }
 
-function followerLine(s: AppState): string {
-  const f = s.follower;
-  if (f.state === "error") return `hud: ${f.error ?? "can't follow"}`;
-  if (f.state !== "following") return "hud: getting in…";
-  const q = f.questions === 1 ? "1 question" : `${f.questions} questions`;
-  return `hud: ${f.tabs} tab${f.tabs === 1 ? "" : "s"}, ${q}`;
-}
+const nameOf = (s: AppState) => s.title ?? s.app ?? hostOf(s.box_url);
 
-function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState | null }) {
-  const frame = useRef<HTMLIFrameElement>(null);
-  // A way in waiting for the frame's own first load (the box's page), so
-  // that load can't land on top of it.
-  const pending = useRef<string | null>(null);
-  const loaded = useRef(false);
-  // Whether a load in the frame is from entering, not the box's first page.
-  const sent = useRef(false);
-  const go = (url: string) => {
-    const f = frame.current;
-    if (!f || !loaded.current) {
-      pending.current = url;
-      return;
-    }
-    pending.current = null;
-    sent.current = true;
-    try {
-      f.contentWindow!.location.replace(url);
-    } catch {
-      f.src = url;
-    }
-  };
-  const [error, setError] = useState<string | null>(null);
-  // opening: no page from entering yet; in: one loaded; stuck: none came in
-  // time.
+function AppBlock({ s }: { s: AppState | null }) {
+  // ↻ here: a frame of its own, keyed with the block's reloads.
+  const [mine, setMine] = useState(0);
+  // opening: no page yet; in: one loaded; stuck: none came in time.
   const [phase, setPhase] = useState<"opening" | "in" | "stuck">("opening");
   const stuck = useRef<number | null>(null);
-  // Bumped to enter again (↻, or another client's `reload`).
-  const [want, setWant] = useState<{ n: number; to?: string }>({ n: 0 });
-  const owner = !client.state?.roles;
-  const [busy, setBusy] = useState<string | null>(null);
-  const may = client.role(client.sessionOfTab(client.tabOfPane(id)?.id ?? -1) ?? null) !== "viewer";
-  const approve = async (g: Gate) => {
-    setBusy(gateKey(g));
-    // The card goes when hud's board no longer lists the gate; a failure
-    // comes back on it (and as a toast).
-    await client.act({ action: "allow", pane: id, id: gateKey(g) });
-    setBusy(null);
-  };
-
-  const enter = async (to?: string) => {
-    setError(null);
-    setPhase((p) => (p === "stuck" ? "opening" : p));
-    try {
-      const res = await client.request("POST", `/api/blocks/${id}/call/enter`, to ? { to } : {});
-      const v = await res.json<{ url?: string; error?: string }>();
-      if (!res.ok || !v.url) throw new Error(v.error ?? `couldn't get in (${res.status})`);
-      // Into the frame, and nowhere else: not its src, not the URL bar.
-      go(v.url);
-      // Entering again over a page that's in keeps it showing until then.
-      if (stuck.current !== null) clearTimeout(stuck.current);
-      stuck.current = window.setTimeout(() => {
-        stuck.current = null;
-        setPhase("stuck");
-      }, STUCK_AFTER);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
+  const key = `${s?.reloads ?? 0}:${mine}`;
   useEffect(() => {
-    if (s && owner) void enter(want.to);
-  }, [!!s, owner, want.n, s?.reloads]);
-  useEffect(
-    () => () => {
+    if (!s) return;
+    setPhase((p) => (p === "in" ? p : "opening"));
+    stuck.current = window.setTimeout(() => {
+      stuck.current = null;
+      setPhase((p) => (p === "in" ? p : "stuck"));
+    }, STUCK_AFTER);
+    return () => {
       if (stuck.current !== null) clearTimeout(stuck.current);
-    },
-    [],
-  );
+      stuck.current = null;
+    };
+  }, [!!s, key]);
 
   if (!s) return <BlockLoading what="the app" />;
-  const name = s.title ?? s.app;
+  const name = nameOf(s);
+  const again = () => {
+    setPhase("opening");
+    setMine((n) => n + 1);
+  };
   return (
-    <div class="browser app-block" data-app={s.app}>
+    <div class="browser app-block" data-app={s.app ?? hostOf(s.box_url)}>
       <div class="browser-bar">
-        <button title="Enter again (a fresh way in from the studio)" disabled={!owner} onClick={() => setWant((w) => ({ n: w.n + 1 }))}>
+        <button title="Reload" aria-label="Reload" onClick={again}>
           ↻
         </button>
         <span class="app-name" title={s.box_url}>
           {name}
         </span>
-        <span class="dim app-host">{hostOf(s.box_url)}</span>
-        <span class={`app-follower ${s.follower.state}`} data-follower={s.follower.state} title={s.follower.error ?? undefined}>
-          {followerLine(s)}
-        </span>
-        <button
-          class="link"
-          disabled={!owner}
-          title="hud's pages for this box"
-          onClick={(e) =>
-            openMenu(
-              e,
-              PAGES.map(([label, to]) => ({ label, run: () => setWant((w) => ({ n: w.n + 1, to })) })),
-            )
-          }
-        >
-          Records ▾
-        </button>
+        {name !== hostOf(s.box_url) && <span class="dim app-host">{hostOf(s.box_url)}</span>}
         <OpenOutside href={s.box_url} />
       </div>
-      {s.gates.length > 0 && (
-        <div class="app-gates" data-app-gates>
-          {s.gates.map((g) => (
-            <div class="app-gate" key={gateKey(g)} data-gate={gateKey(g)}>
-              <span>
-                <b>{g.member}</b>: {g.op} waits at gate <b>{g.gate}</b>
-                {g.env ? ` in ${g.env}` : ""}
-                {g.needed > 1 ? ` (${g.approvals} of ${g.needed})` : ""}
-              </span>
-              {s.gate_error?.[0] === gateKey(g) && <span class="error app-gate-error">{s.gate_error[1]}</span>}
-              {may && (
-                <button class="primary" disabled={busy === gateKey(g)} onClick={() => void approve(g)}>
-                  {busy === gateKey(g) ? "Approving…" : "Approve"}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
+      {phase === "opening" && <BlockLoading what={name} />}
+      {phase === "stuck" && (
+        <BlockError
+          data-app-stuck
+          title={`${name} isn't answering`}
+          detail={`${hostOf(s.box_url)} hasn't sent a page in ${STUCK_AFTER / 1000} seconds. It shows here if it answers.`}
+          retry={again}
+        />
       )}
-      {!owner ? (
-        <BlockEmpty>
-          <p>{name} is a studio app of this machine's owner.</p>
-          <p>Only they can open it here; its questions still come to you if you may answer them.</p>
-        </BlockEmpty>
-      ) : error ? (
-        <BlockError title={`Couldn't get into ${name}`} detail={error} retry={() => setWant((w) => ({ n: w.n + 1 }))} />
-      ) : (
-        <>
-          {phase === "opening" && <BlockLoading what={name} />}
-          {phase === "stuck" && (
-            <BlockError
-              data-app-stuck
-              title={`${name} isn't answering`}
-              detail={`${hostOf(s.box_url)} hasn't sent a page in ${STUCK_AFTER / 1000} seconds${s.follower.state === "error" && s.follower.error ? ` (${s.follower.error})` : ""}. It shows here if it answers.`}
-              retry={() => setWant((w) => ({ n: w.n + 1 }))}
-            />
-          )}
-          {/* The box's own origin, never the app's. */}
-          <iframe
-            ref={frame}
-            class="browser-frame"
-            style={phase === "in" ? undefined : { display: "none" }}
-            src={s.box_url + "/"}
-            title={name}
-            sandbox="allow-scripts allow-forms allow-same-origin allow-popups"
-            referrerpolicy="no-referrer"
-            onLoad={() => {
-              loaded.current = true;
-              if (pending.current) go(pending.current);
-              else if (sent.current) {
-                if (stuck.current !== null) clearTimeout(stuck.current);
-                stuck.current = null;
-                setPhase("in");
-              }
-            }}
-          />
-        </>
-      )}
+      {/* The box's own origin: it signs the person in itself. */}
+      <iframe
+        key={key}
+        class="browser-frame"
+        style={phase === "in" ? undefined : { display: "none" }}
+        src={s.box_url + "/"}
+        title={name}
+        sandbox="allow-scripts allow-forms allow-same-origin allow-popups"
+        referrerpolicy="no-referrer"
+        onLoad={() => {
+          if (stuck.current !== null) clearTimeout(stuck.current);
+          stuck.current = null;
+          setPhase("in");
+        }}
+      />
     </div>
   );
 }
 
-/** How to draw a studio app block: the Labs entry hands it to the page. */
-export const appBlock: BlockRenderer = (client, id): BlockView => {
+registerBlock("app", (_client: Client, _id: PaneId): BlockView => {
   const host = document.createElement("div");
   host.className = "block block-browser block-app";
   let state: AppState | null = null;
-  const draw = () => render(<AppBlock client={client} id={id} s={state} />, host);
+  const draw = () => render(<AppBlock s={state} />, host);
   draw();
   return {
     host,
@@ -245,12 +119,12 @@ export const appBlock: BlockRenderer = (client, id): BlockView => {
       state = s as AppState;
       draw();
     },
-    title: () => state?.title ?? state?.app ?? "app",
-    text: () => (state ? `${state.title ?? state.app}\n${state.box_url}` : ""),
+    title: () => (state ? nameOf(state) : "app"),
+    text: () => (state ? `${nameOf(state)}\n${state.box_url}` : ""),
     focus: () => host.querySelector<HTMLElement>("iframe")?.focus(),
     dispose: () => {
       render(null, host);
       host.remove();
     },
   };
-};
+});
