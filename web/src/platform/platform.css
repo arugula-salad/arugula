@@ -250,7 +250,8 @@ html[data-corners="square"] .platform-section {
   box-shadow: 0 12px 40px var(--platform-shadow);
 }
 
-@media (max-width: 600px) {
+/* One phone width for every column (UI audit #186): the bar's, usePhone's. */
+@media (max-width: 700px) {
   .platform-columns {
     grid-template-columns: 1fr;
   }
@@ -324,7 +325,7 @@ html[data-corners="square"] .platform-section {
   border-color: var(--ok, var(--divider));
 }
 
-@media (max-width: 520px) {
+@media (max-width: 700px) {
   .platform-drafts li {
     grid-template-columns: 1fr;
   }
@@ -398,6 +399,9 @@ html[data-corners="square"] .platform-section {
      places hides it once the last (or first) is in view. */
   .platform-bar .places {
     --edge: color-mix(in srgb, var(--accent) 55%, transparent);
+    /* Holds the unread counts' hidden words, which would otherwise widen
+       the page past the places' scroll (UI audit #186). */
+    position: relative;
     align-self: stretch;
     min-width: 0;
     overflow-x: auto;
@@ -423,6 +427,21 @@ html[data-corners="square"] .platform-section {
   .platform-bar {
     gap: 4px;
     padding-left: 4px;
+  }
+
+  /* A long project name gives way to the places, not the page's width
+     (UI audit #186). */
+  .platform-bar .platform-project {
+    flex: none;
+    max-width: 40vw;
+    min-width: 0;
+  }
+
+  .platform-bar .platform-project-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .platform-main {
@@ -574,8 +593,8 @@ html[data-corners="square"] .platform-section {
   font-size: 12px;
 }
 
-/* The inbox's width (UI audit #167). */
-@media (max-width: 600px) {
+/* The phone width every column here folds at (UI audit #167, #186). */
+@media (max-width: 700px) {
   .deploy-facts {
     grid-template-columns: 1fr;
   }
