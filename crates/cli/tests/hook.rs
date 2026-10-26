@@ -31,7 +31,7 @@ enum Daemon {
 }
 
 fn flags(docs: Option<bool>) -> Value {
-    let mut all = vec![json!({ "name": "chat", "title": "Chat", "about": "", "on": false, "default": false })];
+    let mut all = vec![json!({ "name": "sandbox-providers", "title": "External sandbox providers", "about": "", "on": false, "default": false })];
     if let Some(on) = docs {
         all.push(json!({ "name": "docs", "title": "Docs", "about": "", "on": on, "default": false }));
     }

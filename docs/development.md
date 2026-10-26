@@ -28,8 +28,8 @@ the web client don't.
 
 ## Working on it
 
-What a new install hides until its flag is on (`arugulad flags chat on`, one
-to a feature: chat, studio, workspaces, VMs, guest ssh, agents) is described
+What a new install hides until its flag is on (`arugulad flags vms on`, one
+to a feature: studio, workspaces, VMs, guest ssh, agents) is described
 in [labs.md](labs.md); the public docs leave it out. Running control
 yourself, operating the hosted one and testing it are in
 [control-ops.md](control-ops.md).
@@ -70,7 +70,7 @@ passkeys, in a state directory of its own
 `DEV_CONTROL_CHAT=1` turns on control's chat (M123): team *Acme*, with
 `$DEV_CONTROL_LOGIN` its owner and everyone in `DEV_CONTROL_LOGINS` a
 member (each with a headless device of their own that approves their
-browsers), the team's `chat` flag on, and on the first run *#general* and
+browsers), the team's chat on (control's setting, under Teams), and on the first run *#general* and
 a DM with a few messages.
 
 `just dev-browser [--passkey] [--login NAME] [--profile DIR] URL [STEPS]`

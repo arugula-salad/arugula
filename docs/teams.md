@@ -2,8 +2,9 @@
 
 This page moved to **[docs.arugula.io/teams](https://docs.arugula.io/teams/)**;
 signing in and joining machines are on [control](https://docs.arugula.io/control/),
-and sharing a session on [sharing](https://docs.arugula.io/sharing/). Threads
-are a labs feature: [labs.md](labs.md).
+and sharing a session on [sharing](https://docs.arugula.io/sharing/). Chat
+and threads are on for a team when its owners turn them on (*Chat* under
+*Teams* on control's page, native #203): [labs.md](labs.md#threads-and-chat).
 
 A machine is in one place: *Just me*, or one team. The host menu and
 *Devices and machines…* say which on each machine's line, with what it

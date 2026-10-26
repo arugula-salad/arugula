@@ -4,7 +4,7 @@
 //! They live in one file in the state dir, `flags.json`:
 //!
 //! ```json
-//! { "flags": { "chat": true } }
+//! { "flags": { "vms": true } }
 //! ```
 //!
 //! - **The registry is [`FLAGS`].** A flag is a row there: its name, a
@@ -81,9 +81,6 @@ pub const CONTROL_FILE: &str = "flags.control.json";
 /// flag in [`FLAGS`].
 pub const LABS: &str = "labs";
 
-/// The chat page, which is control's (M125): and, joined to control, this
-/// machine's old threads brought into it (M124).
-pub const CHAT: &str = "chat";
 /// VM tabs and panes, machines and the sandboxes page, through the
 /// machine's own sandbox provider. Was `vms`.
 pub const SANDBOX_PROVIDERS: &str = "sandbox-providers";
@@ -142,7 +139,6 @@ const fn local_row(name: &'static str, title: &'static str, about: &'static str)
 
 /// Every flag there is. A new one is a row here.
 pub const FLAGS: &[Flag] = &[
-    row(CHAT, "Chat", "The chat page, which needs control. Brings this machine's old threads into it."),
     row(
         SANDBOX_PROVIDERS,
         "External sandbox providers",
@@ -173,6 +169,9 @@ pub const RETIRED: &[(&str, &str)] = &[
         "Direct Managoat execution is retired: agents in the cloud run on Cloud workspaces in your Arugula projects",
     ),
     ("huddles", "Huddles (voice calls on a session) were removed from Arugula"),
+    // Graduated (native #203): chat is control's, on where a team's owners
+    // turn it on there; a machine's old threads are no longer brought in.
+    ("chat", "Chat is no longer in Labs: it's on wherever a team's owners turn it on in control (Teams)"),
     // Graduated, not removed: every swarm offers its four views now.
     ("swarm-themes", "The swarm's views are no longer in Labs: every swarm offers them under Theme"),
     // Graduated (native #204): Doc blocks, the doc tool and the Docs page.
@@ -312,6 +311,15 @@ pub fn explain(state_dir: &Path) -> Vec<(Flag, State)> {
 /// (it's the daemon's alone, and the next refresh writes it again).
 fn read_control(dir: &Path) -> Pushed {
     fs::read_to_string(dir.join(CONTROL_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+/// What control last said of `name` for this machine, flag or not: its
+/// account's word, else its team's. For control's own settings that ride
+/// along with the flags, as chat's on/off does (native #203); a machine's
+/// `flags.json` has no say in them.
+pub fn control_says(state_dir: &Path, name: &str) -> Option<bool> {
+    let pushed = read_control(state_dir);
+    pushed.account.get(name).or_else(|| pushed.team.get(name)).copied()
 }
 
 /// Keeps what control says for this machine (#347); `true` if it changed.
@@ -610,17 +618,17 @@ mod tests {
     #[test]
     fn a_flag_is_at_its_default_until_set_and_then_follows_the_file() {
         let d = dir("set");
-        assert!(!get(&d, CHAT) && !on(&d).any() && !unlocked(&d));
-        set(&d, CHAT, true).unwrap();
-        assert!(get(&d, CHAT) && unlocked(&d));
+        assert!(!get(&d, FORGES) && !on(&d).any() && !unlocked(&d));
+        set(&d, FORGES, true).unwrap();
+        assert!(get(&d, FORGES) && unlocked(&d));
         assert_eq!(
             fs::read_to_string(d.join(FILE)).unwrap().replace(char::is_whitespace, ""),
-            r#"{"flags":{"chat":true}}"#
+            r#"{"flags":{"forges":true}}"#
         );
         // One flag turns on alone.
-        assert_eq!(names(&d), [CHAT]);
+        assert_eq!(names(&d), [FORGES]);
         set(&d, GUEST_SSH, true).unwrap();
-        set(&d, CHAT, false).unwrap();
+        set(&d, FORGES, false).unwrap();
         assert_eq!(names(&d), [GUEST_SSH]);
         assert_eq!(all(&d).iter().filter(|(_, on)| *on).map(|(f, _)| f.name).collect::<Vec<_>>(), [GUEST_SSH]);
         assert_eq!(all(&d).len(), FLAGS.len());
@@ -635,7 +643,7 @@ mod tests {
         let d = dir("unlock");
         unlock(&d).unwrap();
         assert!(unlocked(&d) && !on(&d).any());
-        set(&d, CHAT, true).unwrap();
+        set(&d, FORGES, true).unwrap();
         let before = fs::read_to_string(d.join(FILE)).unwrap();
         unlock(&d).unwrap();
         assert_eq!(fs::read_to_string(d.join(FILE)).unwrap(), before);
@@ -659,7 +667,7 @@ mod tests {
         assert!(!get(&d, "nope"));
         let e = set(&d, "nope", true).unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
-        assert!(e.to_string().contains("chat"), "{e}");
+        assert!(e.to_string().contains("vms"), "{e}");
         assert!(!d.join(FILE).exists());
         // `labs` was a flag once (#464); it isn't one to set now.
         assert_eq!(set(&d, LABS, true).unwrap_err().kind(), io::ErrorKind::InvalidInput);
@@ -672,10 +680,10 @@ mod tests {
     #[test]
     fn a_write_keeps_the_keys_and_flags_it_doesnt_know() {
         let d = dir("keeps");
-        fs::write(d.join(FILE), r#"{"other":{"a":1},"flags":{"future":true,"chat":false}}"#).unwrap();
-        set(&d, CHAT, true).unwrap();
+        fs::write(d.join(FILE), r#"{"other":{"a":1},"flags":{"future":true,"forges":false}}"#).unwrap();
+        set(&d, FORGES, true).unwrap();
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
-        assert_eq!(v, serde_json::json!({"other":{"a":1},"flags":{"future":true,"chat":true}}));
+        assert_eq!(v, serde_json::json!({"other":{"a":1},"flags":{"future":true,"forges":true}}));
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -684,12 +692,12 @@ mod tests {
         let d = dir("bad");
         for bad in ["{not json", "[]", r#"{"flags":3}"#] {
             fs::write(d.join(FILE), bad).unwrap();
-            assert!(!get(&d, CHAT), "{bad}");
+            assert!(!get(&d, FORGES), "{bad}");
             assert_eq!(fs::read_to_string(d.join(FILE)).unwrap(), bad, "a read left it alone");
         }
         fs::write(d.join(FILE), "{not json").unwrap();
-        set(&d, CHAT, true).unwrap();
-        assert!(get(&d, CHAT));
+        set(&d, FORGES, true).unwrap();
+        assert!(get(&d, FORGES));
         assert_eq!(fs::read_to_string(d.join(format!("{FILE}.bad"))).unwrap(), "{not json");
         fs::remove_dir_all(&d).unwrap();
     }
@@ -704,14 +712,14 @@ mod tests {
         assert_eq!(on(&d), On::all());
         // One turned off there leaves the rest.
         set(&d, SANDBOX_PROVIDERS, false).unwrap();
-        assert!(!get(&d, SANDBOX_PROVIDERS) && get(&d, CHAT));
+        assert!(!get(&d, SANDBOX_PROVIDERS) && get(&d, ADDITIONAL_FORGES));
         assert_eq!(names(&d).len(), FLAGS.len() - 1);
 
         // On is all of them, off none.
         fs::write(d.join(FILE), r#"{"flags":{"labs":true,"studio":false}}"#).unwrap();
-        assert!(get(&d, CHAT) && !get(&d, STUDIO));
-        fs::write(d.join(FILE), r#"{"flags":{"labs":false,"chat":true}}"#).unwrap();
-        assert_eq!(names(&d), [CHAT]);
+        assert!(get(&d, FORGES) && !get(&d, STUDIO));
+        fs::write(d.join(FILE), r#"{"flags":{"labs":false,"forges":true}}"#).unwrap();
+        assert_eq!(names(&d), [FORGES]);
         fs::remove_dir_all(&d).unwrap();
 
         // The marker file alone is neither Labs nor Developer settings.
@@ -740,21 +748,21 @@ mod tests {
 
         // `vms` is the flag's old name, and speaks for it (aru-117).
         assert!(
-            write_control(&d, &pushed(&[("vms", false)], &[(CHAT, true), (SANDBOX_PROVIDERS, true), ("future", true)]))
+            write_control(&d, &pushed(&[("vms", false)], &[(ADDITIONAL_FORGES, true), (SANDBOX_PROVIDERS, true), ("future", true)]))
                 .unwrap()
         );
         assert!(
             !write_control(
                 &d,
-                &pushed(&[("vms", false)], &[(CHAT, true), (SANDBOX_PROVIDERS, true), ("future", true)])
+                &pushed(&[("vms", false)], &[(ADDITIONAL_FORGES, true), (SANDBOX_PROVIDERS, true), ("future", true)])
             )
             .unwrap()
         );
         // Control saying something offers Developer settings, to see it.
         assert!(unlocked(&d) && !d.join(FILE).exists());
-        assert_eq!(names(&d), [CHAT]);
+        assert_eq!(names(&d), [FORGES]);
         assert_eq!(
-            state_of(&d, CHAT),
+            state_of(&d, FORGES),
             State { on: true, source: Source::Team, local: None, account: None, team: Some(true) }
         );
         assert_eq!(state_of(&d, SANDBOX_PROVIDERS).source, Source::Account);
@@ -763,16 +771,16 @@ mod tests {
 
         // The machine forces either way, and taking its word back follows
         // control again.
-        set(&d, CHAT, false).unwrap();
+        set(&d, ADDITIONAL_FORGES, false).unwrap();
         set(&d, SANDBOX_PROVIDERS, true).unwrap();
         assert_eq!(names(&d), [SANDBOX_PROVIDERS]);
         assert_eq!(
-            state_of(&d, CHAT),
+            state_of(&d, FORGES),
             State { on: false, source: Source::Machine, local: Some(false), account: None, team: Some(true) }
         );
-        unset(&d, CHAT).unwrap();
+        unset(&d, ADDITIONAL_FORGES).unwrap();
         unset(&d, SANDBOX_PROVIDERS).unwrap();
-        assert_eq!(names(&d), [CHAT]);
+        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
         assert_eq!(fs::read_to_string(d.join(FILE)).unwrap().replace(char::is_whitespace, ""), r#"{"flags":{}}"#);
         assert_eq!(unset(&d, "nope").unwrap_err().kind(), io::ErrorKind::InvalidInput);
 
@@ -780,10 +788,10 @@ mod tests {
         assert!(forget_control(&d).unwrap());
         assert!(!on(&d).any() && !forget_control(&d).unwrap());
         // And a control that pushes nothing any more takes the file away.
-        write_control(&d, &pushed(&[(CHAT, true)], &[])).unwrap();
-        assert!(get(&d, CHAT));
+        write_control(&d, &pushed(&[(FORGES, true)], &[])).unwrap();
+        assert!(get(&d, FORGES));
         assert!(write_control(&d, &Pushed::default()).unwrap());
-        assert!(!d.join(CONTROL_FILE).exists() && !get(&d, CHAT));
+        assert!(!d.join(CONTROL_FILE).exists() && !get(&d, FORGES));
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -793,14 +801,14 @@ mod tests {
     fn taking_one_back_from_labs_keeps_the_rest() {
         let d = dir("unset-labs");
         fs::write(d.join(FILE), r#"{"flags":{"labs":true,"studio":false}}"#).unwrap();
-        write_control(&d, &pushed(&[], &[(CHAT, false)])).unwrap();
-        assert!(get(&d, CHAT) && state_of(&d, CHAT).source == Source::Machine);
-        unset(&d, CHAT).unwrap();
-        assert_eq!(state_of(&d, CHAT).source, Source::Team);
-        assert!(!get(&d, CHAT) && get(&d, SANDBOX_PROVIDERS) && !get(&d, STUDIO));
+        write_control(&d, &pushed(&[], &[(ADDITIONAL_FORGES, false)])).unwrap();
+        assert!(get(&d, ADDITIONAL_FORGES) && state_of(&d, ADDITIONAL_FORGES).source == Source::Machine);
+        unset(&d, ADDITIONAL_FORGES).unwrap();
+        assert_eq!(state_of(&d, ADDITIONAL_FORGES).source, Source::Team);
+        assert!(!get(&d, ADDITIONAL_FORGES) && get(&d, SANDBOX_PROVIDERS) && !get(&d, STUDIO));
         assert_eq!(names(&d).len(), FLAGS.len() - 2);
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
-        assert!(v["flags"].get(LABS).is_none() && v["flags"].get(CHAT).is_none());
+        assert!(v["flags"].get(LABS).is_none() && v["flags"].get(FORGES).is_none());
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -811,8 +819,8 @@ mod tests {
         let local: Vec<_> = FLAGS.iter().filter(|f| f.local_only).map(|f| f.name).collect();
         assert_eq!(local, [GUEST_SSH, AGENT_DELEGATION]);
         let d = dir("local-only");
-        write_control(&d, &pushed(&[(GUEST_SSH, true)], &[(AGENT_DELEGATION, true), (CHAT, true)])).unwrap();
-        assert_eq!(names(&d), [CHAT]);
+        write_control(&d, &pushed(&[(GUEST_SSH, true)], &[(AGENT_DELEGATION, true), (ADDITIONAL_FORGES, true)])).unwrap();
+        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
         assert_eq!(
             state_of(&d, GUEST_SSH),
             State { on: false, source: Source::Default, local: None, account: None, team: None }
@@ -832,8 +840,8 @@ mod tests {
     fn a_retired_flag_in_the_file_is_ignored_and_kept() {
         assert!(FLAGS.iter().all(|f| RETIRED.iter().all(|(n, _)| *n != f.name)));
         let d = dir("retired");
-        fs::write(d.join(FILE), r#"{"flags":{"fountain":true,"chat":true}}"#).unwrap();
-        assert_eq!(names(&d), [CHAT]);
+        fs::write(d.join(FILE), r#"{"flags":{"fountain":true,"forges":true}}"#).unwrap();
+        assert_eq!(names(&d), [FORGES]);
         assert!(!get(&d, "fountain"));
         assert_eq!(all(&d).len(), FLAGS.len());
         fs::write(d.join(FILE), r#"{"flags":{"fountain":false}}"#).unwrap();
@@ -861,11 +869,11 @@ mod tests {
     #[test]
     fn huddles_on_from_before_loads_and_means_nothing() {
         let d = dir("huddles");
-        fs::write(d.join(FILE), r#"{"flags":{"huddles":true,"chat":true}}"#).unwrap();
-        assert_eq!(names(&d), [CHAT]);
+        fs::write(d.join(FILE), r#"{"flags":{"huddles":true,"forges":true}}"#).unwrap();
+        assert_eq!(names(&d), [FORGES]);
         assert!(!get(&d, "huddles"));
         write_control(&d, &pushed(&[("huddles", true)], &[("huddles", true)])).unwrap();
-        assert_eq!(names(&d), [CHAT]);
+        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
         set(&d, SANDBOX_PROVIDERS, true).unwrap();
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
         assert_eq!(v["flags"]["huddles"], true, "kept for an older daemon");
@@ -964,8 +972,8 @@ mod tests {
         let d = dir("pushed-bad");
         fs::write(d.join(CONTROL_FILE), "{not json").unwrap();
         assert!(!on(&d).any() && !unlocked(&d));
-        assert!(write_control(&d, &pushed(&[(CHAT, true)], &[])).unwrap());
-        assert!(get(&d, CHAT));
+        assert!(write_control(&d, &pushed(&[(FORGES, true)], &[])).unwrap());
+        assert!(get(&d, FORGES));
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -974,7 +982,7 @@ mod tests {
     fn the_file_is_private_to_the_owner() {
         use std::os::unix::fs::PermissionsExt;
         let d = dir("mode");
-        set(&d, CHAT, true).unwrap();
+        set(&d, FORGES, true).unwrap();
         assert_eq!(fs::metadata(d.join(FILE)).unwrap().permissions().mode() & 0o777, 0o600);
         let tmps = fs::read_dir(&d)
             .unwrap()

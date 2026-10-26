@@ -11,7 +11,7 @@
 //! - no one deletes a single issue (deleting the project takes them);
 //! - anyone else gets 404, as if the project or issue weren't there.
 //!
-//! Native issues come with chat, so they're behind its Labs flag
+//! Native issues come with chat, so they're behind control's chat setting
 //! (`chat_on`), as their threads are.
 //!
 //! **Who acts** is an [`Actor`]: a person (the routes here, from a browser
@@ -119,7 +119,7 @@ pub async fn place(app: &Platform, by: Actor<'_>, asked: &str, write: bool) -> R
         return Err(refusal(
             StatusCode::FORBIDDEN,
             CHAT_OFF,
-            "native issues come with chat, which isn't on for you: it's a Labs feature (the chat flag)",
+            "native issues come with chat, which isn't on for you: a team's owners turn it on in control (Teams)",
         ));
     }
     let id = if asked == PERSONAL {

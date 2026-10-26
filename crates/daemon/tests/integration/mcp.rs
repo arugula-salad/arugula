@@ -1078,13 +1078,6 @@ async fn labs_lists_all_the_tools() {
         s2.cancel().await.unwrap();
 
         arugula_testkit::labs(&d.state, false);
-        // #665: chat's flag alone lists no tool of its own (#1095), and none
-        // of the others' kinds.
-        arugula_proto::flags::set(&d.state, "chat", true).unwrap();
-        let chat = s.list_all_tools().await.unwrap();
-        assert_eq!(chat.len(), 32, "{:?}", names(&chat));
-        assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
-        arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();

@@ -15,7 +15,7 @@ use arugula_mux::block;
 mod block_channel;
 mod browser;
 mod callers;
-mod chat_import;
+mod chat_readers;
 use arugula_mux::classify;
 mod control;
 // Windows panes on a pseudoconsole (M56).

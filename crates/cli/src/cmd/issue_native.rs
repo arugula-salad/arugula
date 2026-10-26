@@ -42,7 +42,8 @@ use serde_json::{Value, json};
 use crate::{control::Enrolled, http, util::print_json};
 
 const LOGIN: &str = "this CLI isn't logged in to Arugula control: `arugula login` first";
-const CHAT_OFF: &str = "native issues come with chat, which isn't on for you: it's a Labs feature (the chat flag)";
+const CHAT_OFF: &str =
+    "native issues come with chat, which isn't on for you: a team's owners turn it on in control (Teams)";
 
 /// Where an issue command goes. The rule's in `arugula issue --help`.
 #[derive(clap::Args, Clone, Debug, Default)]

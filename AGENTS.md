@@ -165,7 +165,7 @@ leaves takes its row out of `FLAGS` and puts its name in `flags::RETIRED`,
 so an old file naming it is ignored: `fountain` (daemon-side Managoat,
 removed: DECISIONS.md "Daemon-side Managoat is removed"), `huddles`
 (DECISIONS.md "Huddles are removed"), and, graduated or retired in the same
-rethink, `chat`, `docs`, `guest-ssh` (now a sharing setting), `swarm-themes`
+rethink, `chat` (control's, on by team; the import of a machine's old threads went with it), `docs`, `guest-ssh` (now a sharing setting), `swarm-themes`
 (the swarm's views, under Theme) and `studio` (its connector). They're named
 flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;

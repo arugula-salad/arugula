@@ -46,24 +46,6 @@ pub fn team_owner(team: &str) -> String {
     format!("team:{team}")
 }
 
-/// Whether chat is on for an account, from the hub's own flags (M140): its
-/// own `chat` flag if it set one, else on when any team it's in turned it
-/// on. The same rule as the platform's `chat::chat_on`, worked out here so
-/// `/api/directory` never waits on an out-of-process platform.
-pub fn chat_on(app: &App, account: &str) -> anyhow::Result<bool> {
-    let flag = arugula_platform::chat::FLAG;
-    if let Some(on) = app.db.labs_flags(&account_owner(account))?.get(flag) {
-        return Ok(*on);
-    }
-    for body in app.db.teams_of(account)? {
-        let team = crate::teams::parse(&body)?.team;
-        if app.db.labs_flags(&team_owner(&team))?.get(flag) == Some(&true) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 /// What a machine is sent: its account's flags, and its team's if it's
 /// in one.
 pub fn for_daemon(app: &App, account: &str, device: &str) -> anyhow::Result<wire::Flags> {

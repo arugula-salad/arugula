@@ -339,22 +339,22 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     let f = features();
     assert_eq!(f["labs"], false, "{f}");
     // #665: each feature has a flag of its own, and the owner's route turns
-    // chat on alone.
+    // workspaces on alone.
     assert_eq!(f["dev"], true, "the flags file is there: {f}");
-    let listed = d.put("/api/flags/chat", serde_json::json!({ "on": true }));
+    let listed = d.put("/api/flags/workspaces", serde_json::json!({ "on": true }));
     assert_eq!(
         (listed["name"].clone(), listed["title"].clone(), listed["on"].clone(), listed["built"].clone()),
-        ("chat".into(), "Chat".into(), true.into(), true.into())
+        ("workspaces".into(), "Chant workspaces".into(), true.into(), true.into())
     );
     let f = features();
     assert_eq!(f["labs"], true, "{f}");
-    assert_eq!(f["flags"], serde_json::json!(["chat"]));
+    assert_eq!(f["flags"], serde_json::json!(["workspaces"]));
     let all = d.get("/api/flags");
     assert_eq!(all.as_array().map(Vec::len), Some(arugula_proto::flags::FLAGS.len()), "{all}");
     for row in all.as_array().unwrap() {
         assert_eq!(
             (row["on"].clone(), row["default"].clone()),
-            ((row["name"] == "chat").into(), false.into()),
+            ((row["name"] == "workspaces").into(), false.into()),
             "{row}"
         );
         assert!(row["about"].as_str().is_some_and(|a| !a.is_empty()), "{all}");
@@ -362,7 +362,10 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     // Managoat's flag is gone: setting it is refused, saying why.
     let (status, text) = d.raw("PUT", "/api/flags/fountain", Some(serde_json::json!({ "on": true })));
     assert!((400..500).contains(&status) && text.contains("isn't a flag any more"), "{status} {text}");
-    d.put("/api/flags/chat", serde_json::json!({ "on": false }));
+    // So is chat's (native #203): it's control's, by team.
+    let (status, text) = d.raw("PUT", "/api/flags/chat", Some(serde_json::json!({ "on": true })));
+    assert!((400..500).contains(&status) && text.contains("isn't a flag any more"), "{status} {text}");
+    d.put("/api/flags/workspaces", serde_json::json!({ "on": false }));
     let f = features();
     // Off again leaves Developer settings offered: the owner asked.
     assert_eq!(
@@ -394,7 +397,7 @@ fn the_flags_are_the_owners() {
         "/api/acl",
         serde_json::json!({ "session": session, "principal": "tailnet:friend@example.com", "role": "editor" }),
     );
-    for (method, path, body) in [("GET", "/api/flags", None), ("PUT", "/api/flags/chat", Some(r#"{"on":true}"#))] {
+    for (method, path, body) in [("GET", "/api/flags", None), ("PUT", "/api/flags/vms", Some(r#"{"on":true}"#))] {
         let headers = [("tailscale-user-login", "friend@example.com"), ("Content-Type", "application/json")];
         let (status, _, text) = d.tcp(method, path, &headers, body);
         assert_eq!(status, 403, "{method} {path}: {text}");
