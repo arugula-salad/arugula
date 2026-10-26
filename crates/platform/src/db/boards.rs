@@ -560,6 +560,77 @@ impl Db {
 
     /// The boards with these ids (`brd_…`): each one's id, project and
     /// title. One statement; an id that isn't there isn't in the list.
+    /// The `fi_` and `iss_` ids that the rows of `board` point at, by kind
+    /// (forge items, then issues): what a read resolves in one query each.
+    pub fn board_targets(&self, board: &str) -> Result<(Vec<String>, Vec<String>)> {
+        let rows: Vec<(String, String)> = self.c().query_map(
+            "SELECT target_kind, target FROM board_entries
+             WHERE board_id = ?1 AND target_kind IN ('forge_item', 'issue')",
+            params![board],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let (mut items, mut issues) = (vec![], vec![]);
+        for (k, t) in rows {
+            if k == "issue" { issues.push(t) } else { items.push(t) }
+        }
+        Ok((items, issues))
+    }
+
+    /// The boards (id, project) with a row that points at an item of `repo`
+    /// with one of these `numbers`, or whose head is one of these `shas`
+    /// (a check landed): who to tell that an item changed.
+    pub fn boards_on_items(&self, repo: u64, numbers: &[u64], shas: &[String]) -> Result<Vec<(String, String)>> {
+        if numbers.is_empty() && shas.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        // Numbers are the platform's own: written into the statement, as the
+        // mirror's reads write repo ids.
+        let nums = if numbers.is_empty() {
+            "FALSE".to_owned()
+        } else {
+            format!("i.number IN ({})", numbers.iter().map(u64::to_string).collect::<Vec<_>>().join(", "))
+        };
+        let heads = in_json(&c, "i.head_sha", 2);
+        c.query_map(
+            &format!(
+                "SELECT DISTINCT b.id, b.project_id FROM board_entries e
+                 JOIN boards b ON b.id = e.board_id
+                 JOIN forge_items i ON i.id = e.target
+                 WHERE e.target_kind = 'forge_item' AND i.repo_id = ?1 AND ({nums} OR {heads})"
+            ),
+            params![repo, json_list(shas)?],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
+    /// The native issues among `ids` in `project`, as (id, number, title,
+    /// closed): one read for any number (a board's rows).
+    pub fn issue_states(&self, project: &str, ids: &[&str]) -> Result<Vec<(String, u64, String, bool)>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT id, number, title, closed_at IS NOT NULL FROM issues WHERE project_id = ?1 AND {}",
+                in_json(&c, "id", 2)
+            ),
+            params![project, json_list(ids)?],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+    }
+
+    /// The boards (id, project) with a row that points at native issue `id`.
+    pub fn boards_on_issue(&self, id: &str) -> Result<Vec<(String, String)>> {
+        self.c().query_map(
+            "SELECT DISTINCT b.id, b.project_id FROM board_entries e JOIN boards b ON b.id = e.board_id
+             WHERE e.target_kind = 'issue' AND e.target = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
     pub fn board_places(&self, ids: &[&str]) -> Result<Vec<(String, String, String)>> {
         if ids.is_empty() {
             return Ok(vec![]);

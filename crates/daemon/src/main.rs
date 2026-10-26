@@ -74,6 +74,7 @@ mod ports;
 mod public_preview;
 use arugula_mux::procinfo;
 use arugula_mux::provider;
+mod board_block;
 mod push;
 mod remote;
 mod review;
@@ -738,6 +739,7 @@ fn kinds(
     kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
     kinds.add(BlockType::Doc, docs::DocKind);
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
+    kinds.add(BlockType::Board, board_block::BoardKind);
     labs::kinds(&mut kinds, invite);
     kinds
 }
@@ -1218,6 +1220,7 @@ mod tests {
             BlockType::Doc,
             BlockType::Chat,
             BlockType::TeamChat,
+            BlockType::Board,
             BlockType::Unknown,
         ];
         // A new type is a compile error here until it is listed above.
@@ -1238,6 +1241,7 @@ mod tests {
                 | BlockType::Doc
                 | BlockType::Chat
                 | BlockType::TeamChat
+                | BlockType::Board
                 | BlockType::Unknown => {}
             }
             let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);

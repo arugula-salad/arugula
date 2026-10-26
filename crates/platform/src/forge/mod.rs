@@ -56,6 +56,8 @@ use tracing::info;
 use crate::Platform;
 
 mod app;
+#[cfg(test)]
+mod boards_live_tests;
 pub mod content;
 #[cfg(test)]
 mod content_tests;

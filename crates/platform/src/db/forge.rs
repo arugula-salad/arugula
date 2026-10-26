@@ -505,6 +505,15 @@ pub struct ForgeCheck {
     pub updated_at: u64,
 }
 
+/// A check's state alone, on a head commit of a repo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckState {
+    pub repo_id: u64,
+    pub head_sha: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+}
+
 /// What happened to an item, as metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForgeEvent {
@@ -667,6 +676,42 @@ impl Db {
                 item_row,
             )
             .optional()
+    }
+
+    /// The items among `ids` that are in a readable repo: one read for any
+    /// number (a board's rows).
+    pub fn forge_items_among(&self, r: &Readable, ids: &[&str]) -> anyhow::Result<Vec<ForgeItem>> {
+        if r.repos().is_empty() || ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT {ITEM_COLUMNS} FROM forge_items i WHERE i.repo_id IN ({}) AND {}",
+                repos_in(r),
+                super::chat::in_json(&c, "i.id", 1)
+            ),
+            params![super::chat::json_list(ids)?],
+            item_row,
+        )
+    }
+
+    /// The state of every check on the given heads of the readable repos:
+    /// one read for any number of heads.
+    pub fn forge_checks_on_heads(&self, r: &Readable, heads: &[&str]) -> anyhow::Result<Vec<CheckState>> {
+        if r.repos().is_empty() || heads.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT repo_id, head_sha, status, conclusion FROM forge_checks WHERE repo_id IN ({}) AND {}",
+                repos_in(r),
+                super::chat::in_json(&c, "head_sha", 1)
+            ),
+            params![super::chat::json_list(heads)?],
+            |r| Ok(CheckState { repo_id: r.get(0)?, head_sha: r.get(1)?, status: r.get(2)?, conclusion: r.get(3)? }),
+        )
     }
 
     /// A readable repo's checks on a head commit, by name.
