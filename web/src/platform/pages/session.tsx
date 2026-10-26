@@ -11,8 +11,7 @@ import { follow } from "../router";
 import { session as platform } from "../session";
 import { Missing } from "./project";
 import { PageHeader } from "../../shared/ui/page-header";
-
-const when = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+import { Time } from "../../shared/ui/time";
 
 export function SessionPage({ project, session }: { project: string; session: string }) {
   const [view, setView] = useState<SessionView | null>(null);
@@ -32,7 +31,8 @@ export function SessionPage({ project, session }: { project: string; session: st
           <ol class="session-history" data-session-history>
             {view.events.map((e) => (
               <li key={e.seq} data-session-event={e.seq}>
-                <time title={new Date(e.at).toLocaleString()}>{when(e.at)}</time>
+                {/* Seconds, since its events land seconds apart (UI audit #200). */}
+                <Time at={e.at} seconds />
                 <span>{e.text}</span>
                 <span class="signed" title={e.signed ? "Its box reported it, signed" : "The platform recorded it"}>
                   {e.signed ? "box, signed" : "platform"}
