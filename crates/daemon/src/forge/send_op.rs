@@ -4,6 +4,9 @@
 //! to their machine"). It goes out with the owner's own `gh` login, never
 //! control's App, so it's theirs on GitHub, as a block's send is.
 //!
+//! A session's PR (M259, kind `pr`) goes the same way: opened from the
+//! session's pushed branch, as the person, never by the session's box.
+//!
 //! Only the machine's owner's draft: another person's is refused, for
 //! control to ask one of theirs. No `gh` login (or none here) is
 //! [`OpAnswer::Cant`], so control asks the next machine; GitHub refusing it
@@ -69,6 +72,14 @@ pub async fn forge_send(app: &Arc<crate::server::App>, s: ForgeSend) -> OpAnswer
             gh.review(repo, n, review_event(s.event.as_deref()), body).await
         }
         ("issue", None) => gh.new_issue(repo, s.title.as_deref().unwrap_or(""), &s.body).await.map(|(_, sent)| sent),
+        // An agent session's PR (M259), from its pushed branch.
+        ("pr", None) => match (s.head.as_deref(), s.base.as_deref()) {
+            (Some(head), Some(base)) if !head.is_empty() && !base.is_empty() => gh
+                .new_pr(repo, s.title.as_deref().unwrap_or(""), &s.body, head, base, s.draft_pr)
+                .await
+                .map(|(_, sent)| sent),
+            _ => return OpAnswer::Failed { error: "a PR needs its branch and its base".into() },
+        },
         _ => return OpAnswer::Failed { error: format!("can't send a {} draft like that", s.kind) },
     };
     if let (Some(w), Some(b)) = (write_of(&s), live::block_on(repo, n)) {

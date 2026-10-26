@@ -5,6 +5,8 @@
 //! - [`hydrate`]: its first prompt, the thread it was asked in.
 //! - [`job`]: its `session` job, which wakes its box while it waits and
 //!   ends what nothing will take.
+//! - [`push`]: the token its box pushes the session's branch with (M259).
+//! - [`pr`]: its pull request, which its asker drafts and sends (M259).
 //!
 //! **How sessions end besides** (each `stopped` by control, with a
 //! `reason` in its event's detail):
@@ -17,3 +19,5 @@
 
 pub mod hydrate;
 pub mod job;
+pub mod pr;
+pub mod push;
