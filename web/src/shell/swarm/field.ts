@@ -879,6 +879,7 @@ export class Field implements SwarmScene {
   private placeLabels(z: number): Label[] {
     const { cx, W } = this;
     const big = clamp(14 + z * 10, 14, 30);
+    const right = W - this.hooks.railW();
     const placed: Label[] = [];
     // A little air between names, so two never read as one.
     const PAD = 4;
@@ -902,7 +903,10 @@ export class Field implements SwarmScene {
     const order = [...this.groups].sort(([, a], [, b]) => b.need - a.need || b.n - a.n);
     for (const [name, g] of order) {
       const s = this.toScreen(g.x, g.y - g.r);
-      const title = name.toUpperCase();
+      // As named, not in capitals: a cluster is a path, a repo, a host or a
+      // session, and capitals garble them ("~/ALECRASO", 0 for O) (UI
+      // audit #172).
+      const title = name;
       cx.font = META_FONT;
       const panes = `${g.n} pane${g.n === 1 ? "" : "s"}`;
       const needText = g.need ? `${g.need} need you` : "";
@@ -921,9 +925,13 @@ export class Field implements SwarmScene {
         cx.font = `800 ${size}px "Big Shoulders Display", "Arial Narrow", sans-serif`;
         const w = Math.max(cx.measureText(title).width, metaW) + 8;
         const y = s.y + dy;
+        // A cluster on screen keeps its whole name on the canvas, not cut
+        // at its edge or under the rail (UI audit #172).
+        const half = w / 2 + 6;
+        const x = s.x >= 0 && s.x <= right && right > 2 * half ? clamp(s.x, half, right - half) : s.x;
         return {
-          name, title, meta, needText: need, need: g.need, big: size, metaW, x: s.x, y,
-          box: { x0: s.x - w / 2, x1: s.x + w / 2, y0: y - 12 - size * 0.85, y1: lines ? y + 6 : y - 8 },
+          name, title, meta, needText: need, need: g.need, big: size, metaW, x, y,
+          box: { x0: x - w / 2, x1: x + w / 2, y0: y - 12 - size * 0.85, y1: lines ? y + 6 : y - 8 },
         };
       };
       let chosen: Label | null = null;

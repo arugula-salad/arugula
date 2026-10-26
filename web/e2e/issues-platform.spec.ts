@@ -154,7 +154,7 @@ test("the owner closes it as not planned, and the timeline and the lists say so"
   await expect(view.locator('[data-issue-event="reopened"]')).toBeVisible();
 });
 
-test("what's new in its thread is in the inbox, and Done there reads it", async () => {
+test("what's new in its thread is in the inbox, and Dismiss there reads it", async () => {
   test.setTimeout(90_000);
   await alice.locator("[data-issue-back]").click();
   await expect(alice.locator("[data-issue-row]")).toHaveCount(1);

@@ -449,7 +449,8 @@ export class Timeline extends Flat {
       cx.textBaseline = "alphabetic";
       cx.font = FONT.display(800, 19);
       cx.fillStyle = need ? "#ffd5da" : C.ink;
-      const name = h.name.toUpperCase();
+      // As named: a path, repo or host keeps its case (UI audit #172).
+      const name = h.name;
       cx.fillText(name, 10, y + HEAD * s - 9);
       const nx = 10 + cx.measureText(name).width + 12;
       cx.font = FONT.mono(500, 11);

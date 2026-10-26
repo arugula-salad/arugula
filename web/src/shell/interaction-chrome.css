@@ -60,19 +60,21 @@
 .palette-help kbd { display: inline-block; min-width: 14px; padding: 2px 4px; border: 1px solid var(--raised); border-radius: 4px; text-align: center; color: var(--subtle); font: inherit; }
 .ws-att { width: min(460px, 100vw); }
 .ws-att-head { padding: 20px; gap: 12px; }
-.ws-att-head h2 { font-size: 19px; font-weight: 600; }
+/* The display heading, as the swarm's rail and the app set theirs; the
+   detail's heading under it is the lighter one (UI audit #172). */
+.ws-att-head h2 { font: 800 24px/1 var(--f-display, "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif); text-transform: uppercase; letter-spacing: 0.01em; }
 .ws-att-count { color: var(--warn); }
 .ws-att-list { padding: 10px 12px; border-bottom: 1px solid var(--raised); }
 .ws-att-item { padding: 12px; border: 1px solid transparent; border-radius: 6px; margin-bottom: 6px; }
 .ws-att-item.selected { border-color: color-mix(in srgb, var(--warn) 50%, var(--raised)); background: color-mix(in srgb, var(--warn) 7%, var(--surface)); }
-.ws-att-item-title { font-size: 13px; font-weight: 500; }
+.ws-att-item-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-att-item-sub { margin-top: 6px; line-height: 1.5; }
 .ws-att-detail { padding: 20px; }
-.ws-att-detail h3 { font-size: 16px; line-height: 1.5; }
+.ws-att-detail h3 { font-size: 14px; font-weight: 600; line-height: 1.5; }
 .ws-att-facts { padding: 12px; border: 1px solid var(--raised); border-radius: 6px; background: var(--bg); }
 .ws-att-facts > div { padding: 6px 0; }
 .ws-att-facts dd { line-height: 1.5; }
-.ws-att-go { padding-top: 14px; }
+.ws-att-go { margin-top: 10px; padding-top: 0; border-top: 0; }
 .ws-att-foot { padding: 14px 20px; }
 @media (max-width: 600px) {
   .add-pane { top: 0; bottom: 0; border-radius: 0; }

@@ -5,12 +5,13 @@
 // on native issues, and mentions in a mirrored item's thread, are entries
 // too (M202), and runs that failed (M215). Each entry opens the item (on
 // GitHub; a native issue or a run on its page; a thread's mention in the
-// thread), and can be marked seen or done.
+// thread), and can be marked seen or dismissed (Dismiss, as control's
+// cards say it: UI audit #172).
 // New in threads: the threads on issues, runs and the other objects (M196)
 // with posts the reader hasn't read, which chat doesn't list and its button
 // doesn't count (shared/chat/unread). They're chat's read marks, not
 // entries: the page makes them from chat's rooms, live over its stream, and
-// Done reads the thread, so the issue's or run's row in its list agrees.
+// Dismiss reads the thread, so the issue's or run's row in its list agrees.
 // Read through the viewer check: a private repo's items show only to those
 // GitHub lets read it, and a native issue's to its project's members.
 // Deploys waiting for the reader's approval (M218) come first, as cards.
@@ -90,7 +91,7 @@ export function InboxPage() {
     setBusy(`${e.item} ${e.reason}`);
     try {
       await call("POST", `/api/inbox/${encodeURIComponent(e.item)}`, { reason: e.reason, ...what });
-      if (what.done) toast("Done");
+      if (what.done) toast("Dismissed");
       await load();
     } catch (err) {
       toast((err as Error).message);
@@ -175,7 +176,7 @@ export function InboxPage() {
                         </button>
                       )}
                       <button class="secondary small" data-inbox-done={e.item} disabled={busy === key} onClick={() => void mark(e, { done: true })}>
-                        Done
+                        Dismiss
                       </button>
                     </div>
                   </li>
@@ -214,7 +215,7 @@ const asked = new Set<string>();
 
 /** New in threads: a card per object whose thread has something unread,
  * opening the object (an issue or a run on its page, anything else in
- * chat), whose page reads the thread. Done reads it from here. */
+ * chat), whose page reads the thread. Dismiss reads it from here. */
 function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] }) {
   useSubscribe((fn) => issues.subscribe(fn));
   useSubscribe((fn) => runs.subscribe(fn));
@@ -258,7 +259,7 @@ function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] })
               </div>
               <div class="platform-inbox-actions">
                 <button class="secondary small" title="Mark its thread read" data-inbox-thread-done={r.id} onClick={() => void chat.read(r.id, r.last)}>
-                  Done
+                  Dismiss
                 </button>
               </div>
             </li>

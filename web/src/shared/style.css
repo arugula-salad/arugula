@@ -3631,12 +3631,14 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--panel);
   padding: 3px;
 }
+/* Words, in sentence case like every other segmented control (UI audit
+   #172). */
 .swarm-seg button {
   border: 0;
   background: none;
   padding: 6px 12px;
   border-radius: 999px;
-  font: 500 12px/1 var(--f-mono);
+  font: 500 12px/1 var(--f-ui);
   color: var(--mute);
 }
 .swarm-seg button[aria-pressed="true"] {
@@ -3694,7 +3696,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
-  font: 500 11px/1 var(--f-mono);
+  font: 500 11px/1 var(--f-ui);
   color: var(--mute);
 }
 .swarm-legend i {
@@ -3726,14 +3728,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 .swarm-tip span {
   flex: 1;
-}
-.swarm-tip button {
-  border: 0;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--void);
-  font: 600 12px/1 var(--f-ui);
 }
 /* M41: how to read the city. */
 .swarm-key {
@@ -3813,7 +3807,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .swarm-waiting {
   padding: 10px 18px 16px;
   border-top: 1px solid var(--line);
-  font: 500 11.5px/1.4 var(--f-mono);
+  font: 500 12px/1.4 var(--f-ui);
   color: var(--mute);
 }
 .swarm-waiting b {
@@ -3853,10 +3847,22 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   align-items: baseline;
   gap: 8px;
 }
-.swarm-card .ch b {
+.swarm-card .ch b,
+.swarm-card .ch .ct {
   font: 700 19px/1.05 var(--f-display);
   text-transform: uppercase;
   color: var(--c);
+}
+/* The title finds the card's pane in the swarm: a button, drawn as the
+   heading it is (UI audit #172). */
+.swarm-card .ch .ct {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+.swarm-card .ch .ct:hover {
+  text-decoration: underline;
 }
 .swarm-card .ch .n {
   margin-left: auto;
@@ -9306,6 +9312,11 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-dot.done {
   background: var(--info);
+}
+
+/* Something failed (UI audit #172): not "offline", which is a link's. */
+.ws-dot.failed {
+  background: var(--danger);
 }
 
 .ws-crumb-sep {

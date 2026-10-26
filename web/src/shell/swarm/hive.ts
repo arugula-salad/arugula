@@ -190,7 +190,8 @@ export class Hive extends Flat {
       const need = ps.filter(needs).length;
       cx.font = FONT.display(800, Math.max(26, 15 / s));
       cx.fillStyle = need ? "#ffd5da" : C.ink;
-      cx.fillText(c.name.toUpperCase(), c.x, c.y + 24);
+      // As named: a path, repo or host keeps its case (UI audit #172).
+      cx.fillText(c.name, c.x, c.y + 24);
       if (s < 0.6) continue;
       cx.font = FONT.mono(500, 11);
       const meta = `${ps.length} pane${ps.length === 1 ? "" : "s"} · ${busy} running`;

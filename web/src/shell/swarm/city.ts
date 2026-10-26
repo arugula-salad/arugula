@@ -519,7 +519,8 @@ export class City implements SwarmScene {
       const running = b.bs.filter((x) => x.started != null && LONG[x.kind] === undefined).length;
       const meta = `${b.bs.length} pane${b.bs.length === 1 ? "" : "s"} · ${running} running`;
       const lines: [string, string, string, number, number][] = [
-        [b.name.toUpperCase(), `800 112px ${DISPLAY}`, "#e6ebf4", 8, 112],
+        // As named: a path, repo or host keeps its case (UI audit #172).
+        [b.name, `800 112px ${DISPLAY}`, "#e6ebf4", 8, 112],
         [meta, `500 34px ${MONO}`, "#7c8698", 8, 170],
       ];
       if (need) lines.push([`· ${need} need you`, `500 34px ${MONO}`, "#ff5468", 8 + meta.length * 20.6 + 20, 170]);
