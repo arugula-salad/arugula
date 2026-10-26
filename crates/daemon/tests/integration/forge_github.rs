@@ -219,7 +219,9 @@ async fn repo(State(f): State<Fake>, h: HeaderMap) -> Response {
         &f,
         "repo",
         &h,
-        json!({ "full_name": REPO, "ssh_url": "git@github.com:cli/cli.git", "clone_url": "https://github.com/cli/cli.git" }),
+        // Squash only, as GitHub tells a login that can push (UI audit #196).
+        json!({ "full_name": REPO, "ssh_url": "git@github.com:cli/cli.git", "clone_url": "https://github.com/cli/cli.git",
+            "allow_merge_commit": false, "allow_squash_merge": true, "allow_rebase_merge": false }),
         None,
     )
 }
@@ -491,6 +493,7 @@ fn a_second_poll_is_304s_and_rereads_nothing() {
     assert_eq!(it["head"]["repo"], "happysnaker/cli", "from a fork");
     assert_eq!(st["pr"]["rollup"], "failure");
     assert_eq!(st["pr"]["checks"].as_array().unwrap().len(), 11, "check runs, and no statuses");
+    assert_eq!(st["merge_styles"], json!(["squash"]), "only the repo's merge methods");
     assert_eq!(st["rate"]["remaining"].as_u64().map(|r| r > 4800), Some(true), "{}", st["rate"]);
 
     // Polls (every 250 ms here) with nothing changed: the item, check

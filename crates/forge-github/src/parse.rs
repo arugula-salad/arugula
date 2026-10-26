@@ -399,6 +399,17 @@ pub fn events(list: &Value, repo: &str) -> Vec<Event> {
         .collect()
 }
 
+/// `GET repos/{repo}`: the merge methods the repository allows, in
+/// `merge_method`'s words (UI audit #196). GitHub says them only to a
+/// login that can push; to anyone else they're absent, and so is this.
+pub fn merge_styles(repo: &Value) -> Option<Vec<String>> {
+    let allows = [("allow_merge_commit", "merge"), ("allow_squash_merge", "squash"), ("allow_rebase_merge", "rebase")];
+    if allows.iter().all(|(k, _)| !repo[*k].is_boolean()) {
+        return None;
+    }
+    Some(allows.iter().filter(|(k, _)| repo[*k] == true).map(|(_, m)| (*m).to_owned()).collect())
+}
+
 /// `GET user` and `GET user/teams`: teams as `org/slug`.
 pub fn me(user: &Value, teams: &Value) -> Me {
     let mut t = Vec::new();
@@ -677,6 +688,18 @@ mod tests {
         let issue = Issue { item: it, events: ev, linked: l };
         let w = issue_attention(&issue, &me_as("me", &[]), 0);
         assert!(w.iter().any(|w| matches!(w, Want::Assigned { why } if why == "assigned to you by sam")), "{w:?}");
+    }
+
+    #[test]
+    fn a_repos_merge_methods() {
+        let squash_only =
+            serde_json::json!({ "allow_merge_commit": false, "allow_squash_merge": true, "allow_rebase_merge": false });
+        assert_eq!(merge_styles(&squash_only), Some(vec!["squash".to_owned()]));
+        let all =
+            serde_json::json!({ "allow_merge_commit": true, "allow_squash_merge": true, "allow_rebase_merge": true });
+        assert_eq!(merge_styles(&all), Some(vec!["merge".into(), "squash".into(), "rebase".into()]));
+        // A login that can't push isn't told.
+        assert_eq!(merge_styles(&serde_json::json!({ "full_name": "cli/cli", "allow_squash_merge": null })), None);
     }
 
     #[test]

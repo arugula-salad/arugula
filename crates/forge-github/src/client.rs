@@ -444,6 +444,13 @@ impl<T: TokenSource> Github<T> {
         Ok(["ssh_url", "clone_url", "html_url"].iter().filter_map(|k| v[*k].as_str().map(str::to_owned)).collect())
     }
 
+    /// The ways the repository lets a pull request be merged (UI audit
+    /// #196), when GitHub says: [`merge_styles`](crate::parse::merge_styles).
+    pub async fn merge_styles(&self, repo: &str) -> Result<Option<Vec<String>>, Error> {
+        let v = self.get(repo, &format!("repos/{repo}")).await?;
+        Ok(crate::parse::merge_styles(&v))
+    }
+
     /// The branch work starts from.
     pub async fn default_branch(&self, repo: &str) -> Result<String, Error> {
         let v = self.get(repo, &format!("repos/{repo}")).await?;
