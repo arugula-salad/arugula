@@ -957,13 +957,13 @@ button.att {
   color: var(--accent);
 }
 
-/* Add to Home Screen, once (#96). */
+/* Add to Home Screen, once (#96). A row of the phone's column above the
+   key bar, not over it (UI audit #199): fixed, it covered the terminal's
+   last lines and the swarm's Needs you cards. The swarm, a layer, lies
+   over it instead. */
 .install-hint {
-  position: fixed;
-  left: 8px;
-  right: 8px;
-  bottom: calc(56px + env(safe-area-inset-bottom));
-  z-index: 30;
+  flex: none;
+  margin: 0 8px 8px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -978,10 +978,15 @@ button.att {
   flex: 1;
 }
 
+/* With no key bar under it, it keeps clear of the home indicator. */
+.install-hint:not(:has(+ .keybar)) {
+  margin-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+
 .install-hint-close {
   flex: none;
-  min-width: 32px;
-  min-height: 32px;
+  min-width: 40px;
+  min-height: 40px;
   font-size: 18px;
   color: var(--dim);
 }
