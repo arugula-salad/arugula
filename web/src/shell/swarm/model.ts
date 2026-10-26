@@ -6,6 +6,7 @@
 import { cleanTitle } from "../../shared/titles";
 import type { FleetPane } from "../fleet";
 import type { Reason, WorkKind } from "../../shared/proto";
+import { NEEDS_YOU } from "../../shared/needs-you";
 
 export type GroupBy = "project" | "machine" | "kind" | "session" | "person";
 export const GROUPINGS: GroupBy[] = ["project", "machine", "kind", "session", "person"];
@@ -143,7 +144,8 @@ export function cardTitle(r: Reason, n: number, machines: string[], agent?: stri
     case "done":
       return n > 1 ? `${n} finished` : "Finished";
     case "input":
-      return "Waiting for you";
+      // One label for it everywhere (UI audit #154).
+      return NEEDS_YOU;
     case "paused":
       return n > 1 ? `${n} debuggers paused` : "Debugger paused";
     case "errors":

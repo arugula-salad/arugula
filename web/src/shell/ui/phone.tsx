@@ -27,6 +27,7 @@ import { PointChoices, pointOf } from "./point-choices";
 import { shareSession } from "./people";
 import { accountHeader, useAccount } from "./app-bar";
 import { docShareItems } from "./doc-share";
+import { needsYou } from "../../shared/needs-you";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -38,7 +39,7 @@ export function PhoneHeader({ client }: { client: Client }) {
     <>
       <header class="bar phone-bar">
         <button class="sheet-button" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {client.state?.panes.some((p) => p.attention === "needs_input") ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
+          {client.state?.panes.some(needsYou) ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
           {session && (
             <>
               <span class="crumb">{session.name}</span> ›{" "}
@@ -79,8 +80,10 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
   };
   // Gates first (M34): a release waiting for a person is the most likely
   // reason to have opened this on a phone.
+  // What needs you, as the bell counts it: not what only finished (UI
+  // audit #154).
   const wanting = state.panes
-    .filter((p) => p.attention === "needs_input" || p.attention === "done")
+    .filter(needsYou)
     .sort((a, b) => Number(b.reason?.kind === "gate") - Number(a.reason?.kind === "gate"));
   const act = (fn: () => void) => () => {
     fn();

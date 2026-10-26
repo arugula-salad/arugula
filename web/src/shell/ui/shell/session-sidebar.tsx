@@ -9,6 +9,7 @@ import { paneIds, type Client } from "../../client";
 import { directory } from "../../hosts";
 import type { Attention, PaneInfo, Session, SessionId, TabId } from "../../../shared/proto";
 import { AttentionBadge } from "../attention";
+import { needsYou, NEEDS_YOU } from "../../../shared/needs-you";
 import { sessionItems } from "../commands";
 import { openFresh } from "../open-fresh";
 import { closePlace, currentPlace, openOverview } from "../places";
@@ -23,7 +24,7 @@ import { RenameInput, type Renaming } from "./rename-input";
 
 type Group = "needs" | "working" | "idle";
 const GROUPS: { id: Group; label: string }[] = [
-  { id: "needs", label: "Needs you" },
+  { id: "needs", label: NEEDS_YOU },
   { id: "working", label: "Working" },
   { id: "idle", label: "Idle" },
 ];
@@ -54,7 +55,10 @@ export function summarize(client: Client, session: Session): SessionSummary {
     return i ? [i] : [];
   });
   const pick = (s: Attention) => infos.find((i) => i.attention === s);
-  const top = pick("needs_input") ?? pick("working") ?? pick("done");
+  // What needs you, as the bell counts it: an ask first, then a failure
+  // (a PR's failed checks are `done`, but need you: UI audit #154).
+  const needs = infos.filter(needsYou);
+  const top = needs.find((i) => i.attention === "needs_input") ?? needs[0] ?? pick("working") ?? pick("done");
   const attention = top?.attention ?? "idle";
   const repos = [...new Set(infos.flatMap((i) => (i.project ? [i.project.name] : [])))];
   const branches = [...new Set(infos.flatMap((i) => (i.branch ? [i.branch] : [])))];
@@ -69,7 +73,7 @@ export function summarize(client: Client, session: Session): SessionSummary {
     attention,
     pane: top?.id,
     reason: top?.reason,
-    group: attention === "needs_input" ? "needs" : attention === "working" ? "working" : "idle",
+    group: needs.length ? "needs" : attention === "working" ? "working" : "idle",
     context,
     last: Math.max(0, ...infos.map((i) => i.activity?.last_ms ?? 0)),
   };

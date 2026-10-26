@@ -1,6 +1,7 @@
 // The footer under the workspace (M108, #1023): the machine, the focused
-// pane's repo and branch when known, the agents running and what needs you
-// on this machine, with the shortcuts from ui/keys.ts. And the status
+// pane's repo and branch when known, the agents running on this machine
+// and what needs you on every machine (the bell's count, UI audit #154),
+// with the shortcuts from ui/keys.ts. And the status
 // pill: the phone's connection, errors everywhere, and a hosted machine's
 // box waking (M182).
 
@@ -9,33 +10,30 @@ import type { Client } from "../../client";
 import { api } from "../../control";
 import { platformFetch } from "../../../shared/maintenance";
 import { directory } from "../../hosts";
-import type { PaneInfo } from "../../../shared/proto";
-import { useSubscribe } from "../../../shared/ui/hooks";
+import { agentRunning, needYouText } from "../../../shared/needs-you";
 import { keyHint } from "../keys";
 import { ActivityToggle } from "./activity";
-import { openAttention } from "./attention-drawer";
+import { attentionItems, openAttention, useAttentionTick } from "./attention-drawer";
 import { connection } from "./context-header";
 import { BranchIcon } from "./icons";
 
-/** Agents: agent blocks, and terminals running one. */
-const isAgent = (p: PaneInfo) => p.type === "agent" || p.kind === "agent";
-
 export function StatusFooter({ client }: { client: Client }) {
-  useSubscribe((fn) => directory.subscribe(fn));
+  useAttentionTick(client);
   const panes = client.state?.panes ?? [];
   const active = client.active();
   const focused = active === undefined ? undefined : client.info(active);
   const repo = focused?.project?.name ?? null;
   const branch = focused?.branch ?? null;
   // Not while the link is down: it may not be so any more (M113).
-  const agents = client.connected ? panes.filter((p) => isAgent(p) && p.running).length : 0;
+  // A stopped agent isn't running (UI audit #154).
+  const agents = client.connected ? panes.filter(agentRunning).length : 0;
   const shown = client.tabView();
-  const needs = panes.filter((p) => p.attention === "needs_input");
+  const needs = attentionItems(client);
   const { state } = connection(client);
   const host = directory.current || "This machine";
   // M111: the attention drawer, at this machine's first; seeing it never
   // answers it.
-  const next = () => openAttention(`${directory.current}:${(needs.find((p) => p.id !== active) ?? needs[0]).id}`);
+  const next = () => openAttention((needs.find((i) => !(i.here && i.p.id === active)) ?? needs[0]).p.key);
   // The panes' only with a tab of them to act on.
   const hints: [string, string | undefined][] = [
     ["Commands", keyHint("palette")],
@@ -70,7 +68,7 @@ export function StatusFooter({ client }: { client: Client }) {
           onClick={next}
         >
           <span class="ws-dot needs_input" aria-hidden="true" />
-          {needs.length} needs input
+          {needYouText(needs.length)}
         </button>
       )}
       <span class="ws-foot-fill" />
