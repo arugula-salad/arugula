@@ -1,21 +1,24 @@
 //! An agent session's live side (M257, thread = session, Arugula #129):
-//! recording its moves so the pages showing its card hear of them, the
-//! ticker that marks a quiet box's sessions `unresponsive`, and the
-//! routes its card and its page use (`arugula_control_wire::sessions`).
+//! recording its moves so the pages showing its card hear of them, its
+//! box's signed reports, and the routes its card and its page use
+//! (`arugula_control_wire::sessions`).
 //!
 //! - **Record, then tell** ([`record`]). Every move of a session goes
 //!   through [`Db::move_session`](crate::db::Db::move_session); [`record`]
 //!   is that and the push: `ChatLive::Session` to its card's room through
 //!   `chat_events`, so a page on either of the platform's machines reads
 //!   the card again. A heartbeat tells only when the tool it names
-//!   changed. The report route (the box's half, M255) and dispatch (M256)
-//!   move sessions through it.
-//! - **Quiet boxes** ([`start`]). The leader looks every [`TICK`] for
-//!   sessions whose turn is under way and whose box said nothing for
-//!   `QUIET_MS` (60 s), marks them `unresponsive` and tells their cards.
-//!   The card also works it out from `heard_at` against the platform's
-//!   clock, so it never says "working" of a box that's gone quiet between
-//!   ticks.
+//!   changed. The box's reports and the session's job move sessions
+//!   through it; moves made in a transaction of their own are told with
+//!   [`told`].
+//! - **The box's reports** ([`report`]): the hub's `POST
+//!   /api/hosted/work/session` (`WORK_SESSION_REPORT`), signed by the
+//!   hosted machine, checked and kept through [`record`].
+//! - **Quiet boxes.** A session's job (`sessions::job`, M256) marks a turn
+//!   whose box said nothing for `QUIET_MS` (60 s) `unresponsive`, through
+//!   [`record`]. The card also works it out from `heard_at` against the
+//!   platform's clock, so it never says "working" of a box that's gone
+//!   quiet before its job looks.
 //! - **The routes**: reading a session is for its project's members;
 //!   stopping it and asking its box to answer, approve, deny or cancel are
 //!   for owners and editors (a team's viewers read only). Stop is
@@ -24,29 +27,28 @@
 //!   the agent. The rest are actions (`db::sessions::Action`) the box
 //!   picks up on its next pull.
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::sessions::{
     SessionAct, SessionAnswered, SessionCard, SessionLine, SessionOpen, SessionPort, SessionTurn, SessionView,
 };
+use arugula_control_wire::work::{Reported, SessionReport};
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
     Json,
     extract::{Path, State as AxState},
     http::StatusCode,
 };
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{
     Platform,
     auth::Person,
-    db::sessions::{ActionKind, Event, Kind, Move, NewAction, Refused, Session, SessionDetail, State},
+    db::sessions::{ActionKind, DaemonReport, Event, Kind, Move, NewAction, Refused, Session, SessionDetail, State},
     forge::links::membership,
+    work::HostedMachine,
 };
-
-/// How often the leader looks for quiet boxes.
-pub const TICK: Duration = Duration::from_secs(15);
 
 /// Move session `id` and tell the pages showing its card. What
 /// [`Db::move_session`](crate::db::Db::move_session) answers, as it
@@ -65,29 +67,68 @@ pub fn record(app: &Platform, id: &str, m: &Move) -> anyhow::Result<Result<(Sess
     Ok(moved)
 }
 
-/// Mark the quiet boxes' sessions `unresponsive` and tell their cards.
-pub fn tick(app: &Platform, now: u64) -> anyhow::Result<()> {
-    for id in app.db.mark_unresponsive(now)? {
-        if let Some(s) = app.db.session(&id)? {
+/// Tell the cards of the sessions `ids` that they changed (moved by a
+/// transaction of their own: a workspace that went, an asker who left).
+pub fn told(app: &Platform, ids: &[String]) -> anyhow::Result<()> {
+    for id in ids {
+        if let Some(s) = app.db.session(id)? {
             app.chat.session(&app.db, &s);
         }
     }
     Ok(())
 }
 
-/// The leader's [`tick`], every [`TICK`].
-pub fn start(app: Arc<Platform>) {
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(TICK).await;
-            if app.is_paused() || app.is_stopping() || !app.is_leader() {
-                continue;
-            }
-            if let Err(e) = tick(&app, now_ms()) {
-                warn!(error = format!("{e:#}"), "marking quiet sessions unresponsive failed");
-            }
+fn refused_report(why: impl Into<String>) -> Reported {
+    Reported::Refused { why: why.into(), now: None, next: None }
+}
+
+/// `POST /api/hosted/work/session` from `m`: something its box says of one
+/// of its sessions, signed (`arugula session event v1`). Kept through
+/// [`record`] when the signature is `m`'s, the session is on `m`'s
+/// workspace and the move is one the box may make; the actions it names
+/// are done then. A report kept before, sent again after its answer was
+/// lost, is [`Reported::Already`].
+pub async fn report(app: &Platform, m: &HostedMachine, r: &SessionReport) -> anyhow::Result<Reported> {
+    let (Some(kind), Some(from), Some(to)) = (Kind::parse(&r.kind), State::parse(&r.from), State::parse(&r.to)) else {
+        return Ok(refused_report("not a session's kind or state"));
+    };
+    let ev = arugula_e2e::session::Event {
+        session: &r.session,
+        n: r.n,
+        kind,
+        from,
+        to,
+        at: r.at,
+        detail: &r.detail,
+        daemon: &m.machine,
+    };
+    let Some(checked) = DaemonReport::verify(&ev, &m.sign, &r.sig) else {
+        warn!(session = r.session, machine = m.machine, "a hosted machine's session report isn't signed by it");
+        return Ok(refused_report("the report isn't signed by this machine"));
+    };
+    let Some(s) = app.db.session(&r.session)? else { return Ok(refused_report(Refused::NoSession.to_string())) };
+    if s.project != m.project || s.workspace != m.workspace {
+        return Ok(refused_report(Refused::OtherDaemon.to_string()));
+    }
+    match record(app, &r.session, &Move::Daemon { report: &checked, now: now_ms() })? {
+        Ok((s, _)) => {
+            info!(session = s.id, machine = m.machine, kind = %kind, to = %s.state, "a hosted machine reported on its session");
+            Ok(Reported::Taken)
         }
-    });
+        Err(why) => {
+            let kept = app.db.session_events(&r.session)?.into_iter().find(|e| e.daemon_n == Some(r.n));
+            if kept.is_some_and(|e| e.sig.as_deref() == Some(r.sig.as_str())) {
+                return Ok(Reported::Already);
+            }
+            info!(session = r.session, machine = m.machine, refused = %why, "refused a hosted machine's session report");
+            let (now, next) = match &why {
+                Refused::Moved { now } => (Some(now.as_str().to_owned()), None),
+                Refused::Seq { next } => (None, Some(*next)),
+                _ => (None, None),
+            };
+            Ok(Reported::Refused { why: why.to_string(), now, next })
+        }
+    }
 }
 
 fn no_session() -> ApiError {
@@ -221,6 +262,8 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<Sessi
         was: s.was.map(|w| w.as_str().into()),
         asker: s.asker.clone(),
         asker_name: name(&s.asker),
+        workspace: s.workspace.clone(),
+        workspace_name: app.db.hosted_any(&s.project, &s.workspace)?.map(|w| w.name).unwrap_or_default(),
         repo: s.repo.clone(),
         branch: s.branch.clone(),
         created_at: s.created_at,

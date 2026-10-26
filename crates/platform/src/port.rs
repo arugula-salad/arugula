@@ -16,7 +16,7 @@ use arugula_control_wire::{
     hosted::{SetupPlan, SetupReport},
     run_logs::{Upload, UploadGiven, Uploaded},
     transcripts::TranscriptPost,
-    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, Work},
+    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionReport, Work},
 };
 
 pub use crate::hosted::{inference::TurnAnswer, previews::PublicPreview, transcripts::Archived};
@@ -156,6 +156,18 @@ pub trait PlatformPort: Send + Sync {
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         let _ = (machine, report);
         Box::pin(async { anyhow::bail!("this platform doesn't take runs' reports") })
+    }
+
+    /// A hosted machine's signed report on one of its agent sessions
+    /// (M257), for the hub's `POST /api/hosted/work/session`. A platform
+    /// from before M257 can't take it.
+    fn hosted_session_report<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        report: &'a SessionReport,
+    ) -> BoxFuture<'a, anyhow::Result<Reported>> {
+        let _ = (machine, report);
+        Box::pin(async { anyhow::bail!("this platform doesn't take sessions' reports") })
     }
 
     /// A hosted machine's deploy run's secrets (M219), for the hub's `POST
@@ -445,6 +457,14 @@ impl PlatformPort for Platform {
         report: &'a Report,
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         Box::pin(crate::work::report(self, machine, report))
+    }
+
+    fn hosted_session_report<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        report: &'a SessionReport,
+    ) -> BoxFuture<'a, anyhow::Result<Reported>> {
+        Box::pin(crate::session_live::report(self, machine, report))
     }
 
     fn hosted_secrets<'a>(

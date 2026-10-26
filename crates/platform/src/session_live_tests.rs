@@ -2,7 +2,8 @@
 //! test hub: the card's one message in its thread, the card read by the
 //! project's members only, every move told through `chat_events`, an
 //! answer from a second member (the first wins, viewers can't), a cancel,
-//! Stop, and the ticker marking a quiet box's session.
+//! Stop, the box's reports through the hub's route, and a quiet box's
+//! session marked by its job.
 
 use std::sync::Arc;
 
@@ -13,11 +14,14 @@ use super::*;
 use crate::{
     chat::session_card::post_card,
     chat_tests::{TestHub, call, serve},
+    db::jobs::JobKind,
     db::{
         Db,
-        sessions::{DaemonReport, NewPrompt, NewSession, Source},
+        sessions::{NewPrompt, NewSession, Source},
         sql::{Sql as _, params},
     },
+    jobs::{Clock, Handler as _},
+    work::HostedMachine,
 };
 
 /// Team t: a owns it, b edits, v views; c is in no team of it. A channel
@@ -78,24 +82,68 @@ struct HostedBox {
 }
 
 impl HostedBox {
-    /// Report on `s` as its box, through [`record`].
-    fn say(&self, app: &Platform, s: &str, kind: Kind, to: Option<State>, detail: Value) -> Session {
+    fn new() -> Self {
+        let keys = DeviceKeys::generate();
+        Self { id: keys.id(), keys }
+    }
+
+    /// The machine as the hub vouches for it on `s`'s workspace.
+    fn machine(&self, s: &Session) -> HostedMachine {
+        HostedMachine {
+            project: s.project.clone(),
+            workspace: s.workspace.clone(),
+            machine: self.id.clone(),
+            sign: hex::encode(self.keys.sign_public()),
+        }
+    }
+
+    /// Its next report on `s`, signed.
+    fn signed(&self, app: &Platform, s: &str, kind: Kind, to: Option<State>, detail: Value) -> SessionReport {
+        self.signed_skipping(app, s, kind, to, detail, 0)
+    }
+
+    /// [`Self::signed`], numbered `skip` past its next.
+    fn signed_skipping(
+        &self,
+        app: &Platform,
+        s: &str,
+        kind: Kind,
+        to: Option<State>,
+        detail: Value,
+        skip: u64,
+    ) -> SessionReport {
         let now = app.db.session(s).unwrap().unwrap();
         let from = now.seen_as();
+        let to = to.unwrap_or(from);
         let detail = detail.to_string();
         let ev = arugula_e2e::session::Event {
             session: s,
-            n: now.daemon_n + 1,
+            n: now.daemon_n + 1 + skip,
             kind,
             from,
-            to: to.unwrap_or(from),
+            to,
             at: now_ms(),
             detail: &detail,
             daemon: &self.id,
         };
-        let key = hex::encode(self.keys.sign_public());
-        let r = DaemonReport::verify(&ev, &key, &ev.sign(&self.keys)).unwrap();
-        record(app, s, &Move::Daemon { report: &r, now: now_ms() }).unwrap().unwrap().0
+        SessionReport {
+            session: s.into(),
+            n: ev.n,
+            kind: kind.as_str().into(),
+            from: from.as_str().into(),
+            to: to.as_str().into(),
+            at: ev.at,
+            sig: ev.sign(&self.keys),
+            detail,
+        }
+    }
+
+    /// Report on `s` through the hub's route, and see it taken.
+    async fn say(&self, app: &Platform, s: &str, kind: Kind, to: Option<State>, detail: Value) -> Session {
+        let session = app.db.session(s).unwrap().unwrap();
+        let r = self.signed(app, s, kind, to, detail);
+        assert_eq!(report(app, &self.machine(&session), &r).await.unwrap(), Reported::Taken);
+        app.db.session(s).unwrap().unwrap()
     }
 }
 
@@ -103,8 +151,7 @@ impl HostedBox {
 async fn a_sessions_card_lives_in_its_thread_and_its_people_answer_it() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let keys = DeviceKeys::generate();
-    let b0x = HostedBox { id: keys.id(), keys };
+    let b0x = HostedBox::new();
     let (s, room, card) = seed(&app, &hub, &base, &b0x.id).await;
     let path = format!("/api/sessions/{}", s.id);
 
@@ -126,12 +173,30 @@ async fn a_sessions_card_lives_in_its_thread_and_its_people_answer_it() {
     // The box takes it, works and asks: each move is told.
     let before = told(&app.db, &s.id);
     let prompt = app.db.session_prompts(&s.id).unwrap()[0].id.clone();
-    b0x.say(&app, &s.id, Kind::State, Some(State::Working), json!({ "prompts": [prompt], "block": "4" }));
-    b0x.say(&app, &s.id, Kind::Heartbeat, None, json!({ "tool": "Bash" }));
-    b0x.say(&app, &s.id, Kind::Heartbeat, None, json!({ "tool": "Bash" }));
+    b0x.say(&app, &s.id, Kind::State, Some(State::Working), json!({ "prompts": [prompt], "block": "4" })).await;
+    // A report sent again after its answer was lost; one another machine
+    // signed; one not the next.
+    let s_now = app.db.session(&s.id).unwrap().unwrap();
+    let mut again = b0x.signed(&app, &s.id, Kind::State, Some(State::Working), json!({}));
+    again.n -= 1;
+    let kept = app.db.session_events(&s.id).unwrap().pop().unwrap();
+    again.sig = kept.sig.clone().unwrap();
+    (again.from, again.to, again.at, again.detail) =
+        (kept.from.unwrap().as_str().into(), kept.to.as_str().into(), kept.at, kept.detail.clone());
+    assert_eq!(report(&app, &b0x.machine(&s_now), &again).await.unwrap(), Reported::Already);
+    let other = HostedBox::new();
+    let forged = other.signed(&app, &s.id, Kind::Heartbeat, None, json!({}));
+    assert!(matches!(report(&app, &b0x.machine(&s_now), &forged).await.unwrap(), Reported::Refused { .. }));
+    let skipped = b0x.signed_skipping(&app, &s.id, Kind::Heartbeat, None, json!({}), 1);
+    let Reported::Refused { next, .. } = report(&app, &b0x.machine(&s_now), &skipped).await.unwrap() else {
+        panic!("not refused")
+    };
+    assert_eq!(next, Some(s_now.daemon_n + 1));
+    b0x.say(&app, &s.id, Kind::Heartbeat, None, json!({ "tool": "Bash" })).await;
+    b0x.say(&app, &s.id, Kind::Heartbeat, None, json!({ "tool": "Bash" })).await;
     assert_eq!(told(&app.db, &s.id), before + 2, "a heartbeat that changes nothing isn't told");
     let asks = json!({ "question": "Which page?", "request": "req_1", "ask": "question" });
-    b0x.say(&app, &s.id, Kind::State, Some(State::NeedsInput), asks);
+    b0x.say(&app, &s.id, Kind::State, Some(State::NeedsInput), asks).await;
     let (_, v) = call(&base, "b", "GET", &path, None).await;
     let c = &v["card"];
     assert_eq!(
@@ -154,11 +219,11 @@ async fn a_sessions_card_lives_in_its_thread_and_its_people_answer_it() {
     assert_eq!((action.kind.as_str(), action.by.as_str()), ("answer", "b"));
 
     // The box takes the answer and finishes the turn.
-    b0x.say(&app, &s.id, Kind::State, Some(State::Working), json!({ "actions": [action.id] }));
+    b0x.say(&app, &s.id, Kind::State, Some(State::Working), json!({ "actions": [action.id] })).await;
     let turn =
         json!({ "branch": s.branch, "pushed": true, "commits": ["abc fix login"], "diffstat": "1 file changed" });
-    b0x.say(&app, &s.id, Kind::Turn, None, turn);
-    b0x.say(&app, &s.id, Kind::State, Some(State::Done), json!({}));
+    b0x.say(&app, &s.id, Kind::Turn, None, turn).await;
+    b0x.say(&app, &s.id, Kind::State, Some(State::Done), json!({})).await;
     let (_, v) = call(&base, "a", "GET", &path, None).await;
     let c = &v["card"];
     assert_eq!(
@@ -194,26 +259,29 @@ async fn a_sessions_card_lives_in_its_thread_and_its_people_answer_it() {
 }
 
 #[tokio::test]
-async fn a_quiet_boxs_session_stops_responding_on_the_tick() {
+async fn a_quiet_boxs_session_stops_responding_when_its_job_looks() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let keys = DeviceKeys::generate();
-    let b0x = HostedBox { id: keys.id(), keys };
+    let b0x = HostedBox::new();
     let (s, _, _) = seed(&app, &hub, &base, &b0x.id).await;
     let prompt = app.db.session_prompts(&s.id).unwrap()[0].id.clone();
-    b0x.say(&app, &s.id, Kind::State, Some(State::Working), json!({ "prompts": [prompt], "block": "4" }));
+    b0x.say(&app, &s.id, Kind::State, Some(State::Working), json!({ "prompts": [prompt], "block": "4" })).await;
     let path = format!("/api/sessions/{}", s.id);
     // A cancel while it works waits for the box.
     let (st, v) = call(&base, "a", "POST", &format!("{path}/actions"), Some(json!({ "kind": "cancel" }))).await;
     assert_eq!((st, &v["card"]["cancelling"]), (200, &json!(true)), "{v}");
-    tick(&app, now_ms()).unwrap();
-    assert_eq!(app.db.session(&s.id).unwrap().unwrap().state, State::Working, "not quiet yet");
+    // Its job looks after the box went quiet: unresponsive, told.
+    crate::db::sessions::dispatch(&app.db.c(), &s.id, now_ms()).unwrap();
+    let heard = app.db.session(&s.id).unwrap().unwrap().heard_at.unwrap();
+    let quiet = heard + crate::db::sessions::QUIET_MS + 1;
     let before = told(&app.db, &s.id);
-    tick(&app, now_ms() + crate::db::sessions::QUIET_MS + 1).unwrap();
+    let follow = crate::sessions::job::Follow { app: app.clone() };
+    let mut job = app.db.claim_job(&[JobKind::Session], quiet).unwrap().expect("its job");
+    follow.step(&app.db, &mut job, &Clock::new(move || quiet)).await.unwrap();
     assert_eq!(told(&app.db, &s.id), before + 1);
     let (_, v) = call(&base, "a", "GET", &path, None).await;
     assert_eq!((&v["card"]["state"], &v["card"]["was"]), (&json!("unresponsive"), &json!("working")), "{v}");
     // Heard from again: back to working, told.
-    b0x.say(&app, &s.id, Kind::Heartbeat, None, json!({}));
+    b0x.say(&app, &s.id, Kind::Heartbeat, None, json!({})).await;
     assert_eq!(call(&base, "a", "GET", &path, None).await.1["card"]["state"], json!("working"));
 }

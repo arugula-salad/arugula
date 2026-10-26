@@ -3055,7 +3055,11 @@ was: string | null,
 /**
  * Who asked, and their name now ("" once they're gone).
  */
-asker: string, asker_name: string, repo: string | null, branch: string, created_at: number, updated_at: number, 
+asker: string, asker_name: string, 
+/**
+ * The hosted workspace it runs on, and its name ("" once it's gone).
+ */
+workspace: string, workspace_name: string, repo: string | null, branch: string, created_at: number, updated_at: number, 
 /**
  * When the platform last heard from its box.
  */

@@ -333,8 +333,6 @@ pub fn start(app: &Arc<Platform>) {
     let ticks = crate::triggers::schedule::Ticks { gate: Arc::new(crate::triggers::Members(app.clone())) };
     let deploys = crate::deploys::apply::Apply { app: app.clone() };
     crate::deploys::apply::start_reaper(app.clone());
-    // Sessions whose box went quiet (M257).
-    crate::session_live::start(app.clone());
     crate::jobs::start(
         app.clone(),
         crate::jobs::Worker::new()
