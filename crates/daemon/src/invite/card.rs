@@ -98,6 +98,9 @@ pub struct Draft {
     pub session_name: String,
     /// Where it opens.
     pub pane: PaneId,
+    /// Their window follows the owner's, to watch (#1473).
+    #[serde(default)]
+    pub follow: bool,
     pub at_ms: u64,
     #[serde(default)]
     pub status: Status,
@@ -187,6 +190,7 @@ impl InviteBlock {
             "from": args["from"], "who": args["who"], "person": args["person"], "name": args["name"],
             "role": args["role"], "note": args["note"], "session": args["session"],
             "session_name": args["session_name"], "pane": args["pane"], "started": args["started"],
+            "follow": args["follow"].as_bool().unwrap_or(false),
         }))
         .map_err(|e| format!("draft: {e}"))?;
         if d.role == Role::Owner {
@@ -332,6 +336,7 @@ impl InviteBlock {
             history: false,
             drive_minutes: drive,
             root: None,
+            follow: d.follow,
         };
         let drafted = super::Drafted { by: d.by.clone(), pane: d.from, approved_by: by.name.clone() };
         let app = self.hook.get().and_then(Weak::upgrade);

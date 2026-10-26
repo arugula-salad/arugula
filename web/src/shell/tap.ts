@@ -29,10 +29,12 @@ export function withShare<A extends { action: string; title: string }>(actions: 
   return n.pane && n.reason && actions.length < 2 ? [{ action: "share", title: "Share" }, ...actions] : actions;
 }
 
-export function tapUrl(n: { pane?: number; daemon?: string; reason?: unknown }): string {
+export function tapUrl(n: { pane?: number; daemon?: string; reason?: unknown; follow?: unknown }): string {
   if (!n.pane) return "/";
   const where = n.reason ? "swarm" : "pane";
-  return n.daemon ? `/#${where}=${n.daemon}.${n.pane}` : `/#${where}=${n.pane}`;
+  const at = n.daemon ? `/#${where}=${n.daemon}.${n.pane}` : `/#${where}=${n.pane}`;
+  // A follow invite (#1473): whom to follow once the pane is up.
+  return where === "pane" && typeof n.follow === "string" && n.follow ? `${at}&follow=${encodeURIComponent(n.follow)}` : at;
 }
 
 /** M156: where a chat push opens on the platform page (an id-only path,

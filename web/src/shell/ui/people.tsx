@@ -303,15 +303,20 @@ interface Callers {
   tagged: { device: string; tags: string[]; at: number }[];
 }
 
-let openShare: ((s: SessionId) => void) | null = null;
+/** Opened for one pane (#1473): the invite opens there, and "Watch me" is on. */
+interface ShareAt {
+  pane?: PaneId;
+}
+
+let openShare: ((s: SessionId, at?: ShareAt) => void) | null = null;
 // Asked for before the dialog was there to open (#237: a card or a push
 // that switched machines first): it opens once it is.
-let pendingShare: SessionId | null = null;
+let pendingShare: { session: SessionId; at?: ShareAt } | null = null;
 
-export function shareSession(session: SessionId) {
+export function shareSession(session: SessionId, at?: ShareAt) {
   countView("share");
-  if (openShare) openShare(session);
-  else pendingShare = session;
+  if (openShare) openShare(session, at);
+  else pendingShare = { session, at };
 }
 
 /** Share a session (M13): who has access, add someone, revoke. */
@@ -335,6 +340,9 @@ export function ShareDialog({ client }: { client: Client }) {
   const [verifying, setVerifying] = useState<{ p: Person; then?: () => void } | null>(null);
   // An invite (#233): what the notification says, and how it went.
   const [note, setNote] = useState("");
+  // Where it opens, and whether their window follows ours (#1473).
+  const [pane, setPane] = useState<PaneId | null>(null);
+  const [watch, setWatch] = useState(false);
   const [told, setTold] = useState<{ delivery: string; text: string } | null>(null);
   const [link, setLink] = useState<string | null>(null);
   // After a share with someone outside your teams: what they see next.
@@ -356,17 +364,19 @@ export function ShareDialog({ client }: { client: Client }) {
     }
   };
   useEffect(() => {
-    const open = (s: SessionId) => {
+    const open = (s: SessionId, at?: ShareAt) => {
       setSession(s);
+      setPane(at?.pane ?? null);
+      setWatch(at?.pane !== undefined);
       setErr("");
       setAsked(null);
       void load(s);
     };
     openShare = open;
     if (pendingShare !== null) {
-      const s = pendingShare;
+      const { session: s, at } = pendingShare;
       pendingShare = null;
-      open(s);
+      open(s, at);
     }
     // Only its own: when the page goes from its first, bare tree to the
     // workspace (M113), the dialog there opens before this one closes.
@@ -423,7 +433,7 @@ export function ShareDialog({ client }: { client: Client }) {
   const invite = async (whom: string, extra: Record<string, string> = {}) => {
     setErr("");
     setTold(null);
-    const res = await client.request(OPS["invite.send"].method, opPath("invite.send"), { session, who: whom, role, history, note, ...extra } satisfies InviteRequest);
+    const res = await client.request(OPS["invite.send"].method, opPath("invite.send"), { session, who: whom, role, history, note, pane, follow: watch, ...extra } satisfies InviteRequest);
     const body = await res.json<Partial<Invited> & { error?: string }>().catch(() => null);
     if (res.status === 404 && control && client.e2e && !extra.root) {
       control.person(whom).then((p) => offer(p, whom, true), (x: Error) => setErr(x.message));
@@ -675,6 +685,9 @@ export function ShareDialog({ client }: { client: Client }) {
             aria-label="Note"
             data-invite-note
           />
+          <label class="share-history" title="Their window follows yours when they open the invite">
+            <input type="checkbox" data-invite-watch checked={watch} onChange={(e) => setWatch((e.target as HTMLInputElement).checked)} /> Watch me
+          </label>
           <button
             type="button"
             class="secondary"
