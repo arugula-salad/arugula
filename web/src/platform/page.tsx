@@ -26,6 +26,7 @@ import { Installed, ProjectSettings } from "./pages/project-settings";
 import { SettingsPage } from "./pages/settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
+import { SessionPage } from "./pages/session";
 import { runs } from "./runs";
 import { runTitle } from "./runs-text";
 import { titleOf } from "./titles";
@@ -69,6 +70,8 @@ function body(r: Route, lost: string | null) {
       return <RunsPage project={r.project} filter={{ state: r.state, trigger: r.trigger, spec: r.spec }} />;
     case "run":
       return <RunPage project={r.project} run={r.run} msg={r.msg} />;
+    case "session":
+      return <SessionPage project={r.project} session={r.session} />;
     case "workspaces":
       return <HostedWorkspaces project={r.project} />;
     case "project-settings":

@@ -8,6 +8,7 @@
 //! | `creating` | the create's journal: ask the hub for a ticket (ticket mode), note `sent`, make the box; `sent` with no answer kept: find it by its metadata, never make it again; `made`: record its enrollment by sandbox id |
 //! | `enrolling` | wait for the hub to say its box enrolled, then `ready`; past the enrollment's end, delete the box (fail closed) |
 //! | `ready`, `paused` | a rebuild (which clears what the old box's setup said), wake or pause asked; else read its state (never waking it), and near the provider's runtime cap pause and resume it between turns ([`super::hold`]) |
+//! | `waking` | resumed (a wake, or the runtime cap's pause and resume): `ready` once its daemon dials in; past [`super::Config::dial_wait`], `failed` as needing a rebuild, its box paused, and the project's owners and editors pushed (M258) |
 //!
 //! A step that fails for now (the provider or the hub didn't answer) is
 //! tried again in a few seconds, and what it was doing stays asked. A
@@ -22,6 +23,7 @@ use std::{
 };
 
 use anyhow::Result;
+use arugula_e2e::team::TeamRole;
 
 use super::{
     Ask,
@@ -54,6 +56,14 @@ const CAP_LOOK_MS: u64 = 15_000;
 /// How recently a box that ran to the cap has to have paused to be woken
 /// as one paused mid-turn.
 const CAP_WAKE_MS: u64 = 120_000;
+/// How long a woken box's daemon has to dial in again before the workspace
+/// fails as needing a rebuild, unless `ARUGULA_HOSTED_DIAL_WAIT` sets
+/// another ([`super::Config::dial_wait`]). It dials in within a second or
+/// two of a resume when it's alive (M180), and its supervisor starts it
+/// again within half a minute when it isn't (M258).
+pub const DIAL_WAIT: Duration = Duration::from_secs(60);
+/// How often a waking box's machine is looked for on the relay.
+const DIAL_LOOK_MS: u64 = 1_000;
 /// How long after a create whose answer was lost the box is looked for
 /// by its metadata before it's taken as never made.
 const LOST_MS: u64 = 60_000;
@@ -65,6 +75,8 @@ pub(crate) const GONE: &str = "The box is gone at the provider. Rebuild the work
 /// A wake the provider didn't answer: it's tried again, and still asked.
 pub(crate) const UNAVAILABLE: &str = "The compute provider isn't answering. Arugula keeps trying to wake the box.";
 const NOT_MADE: &str = "The provider didn't make the box. Rebuild the workspace to try again.";
+/// A woken box whose daemon didn't dial in (M258, Arugula #124).
+pub(crate) const NO_DAEMON: &str = "The box woke, but Arugula in it didn't connect. Rebuild the workspace to make its box again: work in it that wasn't pushed is lost.";
 
 /// Two workers on each of the platform's machines, as the cloud worker
 /// runs: a claim leases its workspace, so two machines never take the
@@ -145,6 +157,8 @@ async fn step(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64
             job.new_box = true;
             return Ok((Some(Ask::Rebuild), now));
         }
+        // Nothing but a rebuild or a delete is taken while it wakes.
+        _ if job.w.state == "waking" => return dialing(app, sub, job, now).await,
         Some("wake") => return wake(app, sub, job, now).await,
         Some("pause") => return pause(app, sub, job, now).await,
         _ => {}
@@ -348,6 +362,9 @@ async fn enrolling(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now
                     delete(app, sub, job).await?;
                     return Ok(fail(job, TAKEN, now));
                 }
+                if let Err(error) = super::sessions_on_box_changed(app, &job.w.id, &e.machine).await {
+                    tracing::warn!(workspace = %job.w.id, error = format!("{error:#}"), "a hosted workspace's sessions didn't move to its new box");
+                }
                 job.w.machine = Some(e.machine);
                 job.w.state = "ready".into();
                 job.w.error = None;
@@ -367,7 +384,7 @@ async fn enrolling(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now
 /// Resume a paused box, or one that may have paused itself since the
 /// worker last looked (M182's wake on connect asks for that), and bring its
 /// egress rules up to date: a project's key may have changed while it
-/// slept (M185).
+/// slept (M185). It's `waking` until its daemon dials in ([`dialing`]).
 async fn wake(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step> {
     let Some(sandbox) = job.sandbox.clone() else { return Ok(with(fail(job, GONE, now), Ask::Wake)) };
     match sub.resume(&sandbox, app.hosted.idle_timeout()).await {
@@ -377,9 +394,8 @@ async fn wake(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64
             {
                 tracing::warn!(workspace = %job.w.id, "a woken box's key will catch up at its next turn");
             }
-            job.w.state = "ready".into();
             job.w.error = None;
-            Ok((Some(Ask::Wake), now + READY_MS))
+            Ok((Some(Ask::Wake), woke(job, now)))
         }
         Err(compute::Error::NotFound) => Ok(with(fail(job, GONE, now), Ask::Wake)),
         Err(e @ compute::Error::Refused { .. }) => {
@@ -421,6 +437,109 @@ async fn pause(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u6
 
 fn with((_, next): Step, done: Ask) -> Step {
     (Some(done), next)
+}
+
+/// The box was just resumed: it's `waking` from `now` (kept in `stage_at`)
+/// until its daemon dials in, looked at once. When it's next due.
+fn woke(job: &mut HostedJob, now: u64) -> u64 {
+    job.w.state = "waking".into();
+    job.stage = String::new();
+    job.stage_at = Some(now);
+    now
+}
+
+/// A woken box (M258, Arugula #124): `ready` once its machine is on the relay
+/// again, never before. A daemon that's alive redials within a second or
+/// two of the resume (M180), and one that exited is started again by the
+/// template's supervisor. Past [`super::Config::dial_wait`] without it, the
+/// workspace fails as needing a rebuild: its box is paused (it would only
+/// run on, unheld, until its timeout), and the project's owners and editors
+/// are pushed ([`push_no_daemon`]), as anyone who opens it reads it. The
+/// platform holds no way into the box to start the daemon itself. While
+/// the hub can't say, it stays `waking`.
+async fn dialing(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step> {
+    let since = job.stage_at.unwrap_or(now);
+    // A box that enrolled has its machine; without one, nothing can dial in.
+    let machine = job.w.machine.clone().unwrap_or_default();
+    if !machine.is_empty() {
+        match app.hub.machines_online(std::slice::from_ref(&machine)).await {
+            Ok(on) if on.contains(&machine) => {
+                job.w.state = "ready".into();
+                job.stage_at = None;
+                return Ok((Some(Ask::Wake), now + READY_MS));
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(workspace = %job.w.id, error = %e, "the hub didn't say whether a woken hosted box dialed in");
+                return Ok((None, now + RETRY_MS));
+            }
+        }
+    }
+    let wait = app.hosted.dial_wait().as_millis() as u64;
+    if now < since + wait {
+        return Ok((None, (now + DIAL_LOOK_MS).min(since + wait)));
+    }
+    tracing::warn!(workspace = %job.w.id, project = %job.w.project, %machine, waited_ms = now - since, "a hosted box woke, but its daemon didn't dial in: it needs a rebuild");
+    if let Some(sandbox) = job.sandbox.clone() {
+        match sub.pause(&sandbox).await {
+            Ok(_) | Err(compute::Error::NotFound) => {}
+            Err(e) => {
+                tracing::warn!(workspace = %job.w.id, error = %e, "a hosted box whose daemon didn't dial in wasn't paused")
+            }
+        }
+    }
+    let step = fail(job, NO_DAEMON, now);
+    if job.w.purpose != crate::db::hosted::DEPLOY {
+        push_no_daemon(app, job).await;
+    }
+    Ok(step)
+}
+
+/// Push the project's owners and editors that the workspace's box woke
+/// without its daemon and needs a rebuild: a tap opens the workspace. Not
+/// only whoever opened it (the hub tells them), since any of them can
+/// rebuild it. A push that doesn't go is only logged.
+async fn push_no_daemon(app: &Platform, job: &HostedJob) {
+    let to = match owners_and_editors(app, &job.w.project).await {
+        Ok(to) => to,
+        Err(e) => {
+            return tracing::warn!(workspace = %job.w.id, error = format!("{e:#}"), "whom to push about a box without its daemon");
+        }
+    };
+    let msg = serde_json::json!({
+        "hosted": { "project": job.w.project, "workspace": job.w.id },
+        "title": format!("{}: Arugula in its box didn't come back", job.w.name),
+        "body": "The box woke, but its daemon didn't connect. Rebuild the workspace to make its box again.",
+        "tag": format!("hosted-no-daemon-{}", job.w.id),
+        "control": true,
+    });
+    for account in to {
+        if let Err(e) = app.hub.push_with(&account, &msg, PushOptions::default()).await {
+            tracing::warn!(workspace = %job.w.id, %account, error = %e, "the push about a box without its daemon didn't go");
+        }
+    }
+}
+
+/// Who may rebuild a project's workspaces: its account, or its team's
+/// owners and editors (not its viewers).
+async fn owners_and_editors(app: &Platform, project: &str) -> Result<Vec<String>> {
+    let Some(p) = app.db.issue_project(project)? else { return Ok(vec![]) };
+    Ok(match (&p.account, &p.team) {
+        (Some(a), _) => vec![a.clone()],
+        (None, Some(t)) => app
+            .cache
+            .team_now(&*app.hub, t)
+            .await?
+            .map(|t| {
+                t.members
+                    .iter()
+                    .filter(|m| matches!(t.role(&m.account), Some(TeamRole::Owner | TeamRole::Editor)))
+                    .map(|m| m.account.clone())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        (None, None) => vec![],
+    })
 }
 
 /// Read the box's state, never waking it: a running box that pauses
@@ -500,7 +619,7 @@ async fn near_cap(
         Ok(_) => {
             tracing::info!(workspace = %job.w.id, ran_ms = now.saturating_sub(started), "paused and resumed a hosted box between turns, before the provider's runtime cap");
             job.seen.started_at = Some(now);
-            Ok((None, now + READY_MS))
+            Ok((None, woke(job, now)))
         }
         Err(compute::Error::NotFound) => Ok(fail(job, GONE, now)),
         // Paused, memory kept: opening the workspace wakes it.
@@ -543,14 +662,13 @@ async fn paused_at_cap(
     tracing::warn!(workspace = %job.w.id, project = %job.w.project, cap_hours = hours, "a turn ran past the provider's runtime cap: its hosted box paused mid-turn; waking it");
     match sub.resume(&s.id, app.hosted.idle_timeout()).await {
         Ok(_) => {
-            job.w.state = "ready".into();
             job.w.error = Some(format!(
                 "A turn ran past the provider's {hours}-hour limit on running without a pause: the box paused mid-turn and was woken. The turn may have lost its network connections."
             ));
             job.seen.started_at = Some(now);
             job.seen.paused_at = None;
             push_past_cap(app, job, hours).await;
-            Ok((None, now + READY_MS))
+            Ok((None, woke(job, now)))
         }
         Err(compute::Error::NotFound) => Ok(fail(job, GONE, now)),
         Err(e) => {

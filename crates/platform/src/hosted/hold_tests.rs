@@ -2,8 +2,10 @@
 //! and the worker against a fake substrate and the test hub's activity:
 //! busy keeps a box held, idle and silent let it go, a pause is never
 //! made mid-turn, and the provider's runtime cap is met between turns (or
-//! said, when a turn runs to it). Runs on SQLite and, with
-//! `ARUGULA_TEST_POSTGRES_URL`, Postgres.
+//! said, when a turn runs to it). A box woken by the hold or at the cap is
+//! `ready` only once its daemon dials in again, and one whose daemon never
+//! does needs a rebuild, its project's owners and editors told (M258). Runs
+//! on SQLite and, with `ARUGULA_TEST_POSTGRES_URL`, Postgres.
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
@@ -115,9 +117,10 @@ fn set_box(fake: &Fake, state: State, started_at: u64, end_at: u64) {
 /// it's idle, silent, or the hub can't say. A hold that finds the box just
 /// paused under a busy daemon (the race at its timeout) wakes it; one that
 /// paused a while ago, or at the runtime cap (the worker's), isn't woken.
+/// The hold asks the worker for the wake, as an open does.
 #[tokio::test]
 async fn holds_while_busy_and_lets_go_when_idle_or_silent() {
-    let (hub, fake, app, _project, _id, t) = ready().await;
+    let (hub, fake, app, project, id, t) = ready().await;
     let mut holds = Holds::default();
     assert_eq!(tick_at(&app, &mut holds, t).await.unwrap(), 0, "nobody said: silent is idle");
     assert!(fake.calls().is_empty());
@@ -140,13 +143,18 @@ async fn holds_while_busy_and_lets_go_when_idle_or_silent() {
     assert_eq!(tick_at(&app, &mut holds, t + 805_000).await.unwrap(), 0, "the hub can't say: nothing held");
     assert_eq!(fake.calls(), ["hold sbx0 600s"]);
 
-    // It paused itself as a turn started: woken.
+    // It paused itself as a turn started: woken by the worker, and ready
+    // once its daemon is back on the relay (it never left, here).
     hub.say_busy("m1", Some(true));
     let t = t + HOUR;
     set_box(&fake, State::Paused, t - 600_000, t - 2_000);
     tick_at(&app, &mut holds, t).await.unwrap();
-    assert_eq!(fake.calls(), ["hold sbx0 600s", "resume sbx0"]);
+    assert_eq!(fake.calls(), ["hold sbx0 600s"]);
+    assert_eq!(app.db.hosted_workspace(&project, &id).unwrap().unwrap().asked.as_deref(), Some("wake"));
+    drive(&app, t).await;
+    assert_eq!(fake.calls(), ["resume sbx0"]);
     assert_eq!(fake.boxes()[0].state, State::Running);
+    assert_eq!(app.db.hosted_workspace(&project, &id).unwrap().unwrap().state, "ready");
 
     // It paused a while ago (what the hub has is stale): left paused.
     let mut holds = Holds::default();
@@ -160,6 +168,44 @@ async fn holds_while_busy_and_lets_go_when_idle_or_silent() {
     set_box(&fake, State::Paused, t - 24 * HOUR, t - 2_000);
     tick_at(&app, &mut holds, t).await.unwrap();
     assert_eq!(fake.calls(), ["hold sbx0 600s"]);
+}
+
+/// The pushes about `id`'s box waking without its daemon, by whom to.
+fn told(hub: &TestHub, id: &str) -> Vec<String> {
+    let tag = serde_json::json!(format!("hosted-no-daemon-{id}"));
+    let mut to: Vec<String> =
+        hub.pushes().into_iter().filter(|(_, m, _)| m["tag"] == tag).map(|(to, _, _)| to).collect();
+    to.sort();
+    to
+}
+
+/// Arugula #124 by the hold: the box paused as a turn started, and its daemon died
+/// with it. The worker wakes it; it's `waking` and never held (nothing on
+/// the relay says busy, and only `ready` boxes are), and past the dial wait
+/// it fails as needing a rebuild, paused again, with the team's owner and
+/// editor pushed.
+#[tokio::test]
+async fn a_box_woken_mid_turn_whose_daemon_never_dials_in_needs_a_rebuild() {
+    let (hub, fake, app, project, id, t) = ready().await;
+    hub.say_busy("m1", Some(true));
+    set_box(&fake, State::Paused, t - 600_000, t - 2_000);
+    hub.set_online("m1", false);
+    let mut holds = Holds::default();
+    tick_at(&app, &mut holds, t).await.unwrap();
+    drive(&app, t).await;
+    assert_eq!(fake.calls(), ["hold sbx0 600s", "resume sbx0"]);
+    let w = app.db.hosted_workspace(&project, &id).unwrap().unwrap();
+    assert_eq!((w.state.as_str(), w.asked.as_deref()), ("waking", None));
+    assert!(app.db.hosted_running().unwrap().is_empty(), "a waking box isn't one the leader holds");
+    assert_eq!(tick_at(&app, &mut holds, t + 30_000).await.unwrap(), 0);
+    assert!(fake.calls().is_empty());
+
+    drive(&app, t + 60_000).await;
+    let w = app.db.hosted_workspace(&project, &id).unwrap().unwrap();
+    assert_eq!((w.state.as_str(), w.error.as_deref()), ("failed", Some(crate::hosted::worker::NO_DAEMON)));
+    assert_eq!(fake.calls(), ["pause sbx0"]);
+    assert_eq!(told(&hub, &id), ["alice", "bob"]);
+    assert_eq!(tick_at(&app, &mut holds, t + 61_000).await.unwrap(), 0, "a failed box isn't held");
 }
 
 /// A pause asked while the daemon says busy, or while the hub can't say,

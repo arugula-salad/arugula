@@ -56,6 +56,9 @@
 //! - **Busy while it runs** ([`running`]): the machine says it's working
 //!   (M180's activity), so the platform holds its box (M181) and it doesn't
 //!   pause mid-run.
+//! - **Agent sessions** ride the same pull (M255, [`sessions`]): a box
+//!   with session users takes up to three at once, beside its one run at a
+//!   time, each an ACP agent block run as its own session user.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -70,7 +73,7 @@ use std::{
 
 use arugula_control_wire::{
     run_logs::ARTIFACTS_ENV,
-    work::{Report, Reported, TAKES_DEPLOY, TAKES_RUN, WORK_REPORT, Work, WorkItem, WorkQuery},
+    work::{Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkItem, WorkQuery},
 };
 use arugula_e2e::{
     now_ms,
@@ -95,6 +98,9 @@ pub mod arugula_release;
 
 #[path = "work_planter.rs"]
 pub mod planter;
+
+#[path = "work_sessions.rs"]
+pub mod sessions;
 
 /// The ledger's directory, in the state directory.
 pub const DIR: &str = "work";
@@ -131,8 +137,14 @@ pub fn nudge() {
     NUDGE.notify_one();
 }
 
-/// Whether a run is going on this machine ([`crate::hosted::activity`]).
+/// Whether a run, or a session's turn (M255), is going on this machine
+/// ([`crate::hosted::activity`]).
 pub fn running() -> bool {
+    RUNNING.load(Ordering::SeqCst) > 0 || sessions::busy()
+}
+
+/// Whether a run is going (one at a time).
+fn run_going() -> bool {
     RUNNING.load(Ordering::SeqCst) > 0
 }
 
@@ -573,7 +585,7 @@ pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
 
 /// Who this machine is: its keys, device id, project and workspace, while
 /// it's a hosted machine in control.
-fn me(app: &App) -> Option<(Arc<arugula_e2e::DeviceKeys>, String, String, String)> {
+pub(crate) fn me(app: &App) -> Option<(Arc<arugula_e2e::DeviceKeys>, String, String, String)> {
     let e = app.control.enrolled()?;
     let pin = e.saved.hosted.as_ref()?;
     Some((e.keys.clone(), pin.cert.device.clone(), pin.cert.project.clone(), pin.cert.workspace.clone()))
@@ -611,25 +623,26 @@ pub fn check(
     Ok((op, src))
 }
 
-/// Keep loopback from `as_`'s processes to the daemon's ports, the box
-/// provider's and the privileged ones, through this daemon's sudo: a run
-/// can't drive the daemon or start processes through the provider's agent.
+/// Keep loopback from `users`' processes (the run user's, and the session
+/// users', M255) to the daemon's ports, the box provider's and the
+/// privileged ones, through this daemon's sudo: a run or a session can't
+/// drive the daemon or start processes through the provider's agent.
 /// nftables (`meta skuid`) first: E2B's kernel has nf_tables but not
 /// iptables' owner match, so `-m owner` fails there; else `iptables` and
-/// `ip6tables`. Once a daemon; until the rules are in, nothing runs (fail
-/// closed).
-pub fn firewall(state: &Path, as_: &RunAs) -> Result<(), Refused> {
+/// `ip6tables`. Once a daemon, for every user it keeps off at once; until
+/// the rules are in, nothing runs (fail closed).
+pub fn firewall(state: &Path, users: &[String]) -> Result<(), Refused> {
     static DONE: Mutex<bool> = Mutex::new(false);
     let mut done = DONE.lock().unwrap_or_else(|e| e.into_inner());
-    if *done {
+    if *done || users.is_empty() {
         return Ok(());
     }
-    if firewall_nft(state, &as_.user) {
-        info!(user = as_.user, "hosted: runs can't reach the daemon's or the provider's ports (nftables)");
+    if firewall_nft(state, users) {
+        info!(?users, "hosted: runs and sessions can't reach the daemon's or the provider's ports (nftables)");
         *done = true;
         return Ok(());
     }
-    for (bin, rule) in firewall_rules(state, &as_.user) {
+    for (bin, rule) in users.iter().flat_map(|u| firewall_rules(state, u)) {
         let run = |verb: &str| {
             std::process::Command::new("sudo")
                 .args(["-n", bin, "-w", verb, "OUTPUT"])
@@ -644,19 +657,31 @@ pub fn firewall(state: &Path, as_: &RunAs) -> Result<(), Refused> {
             return Err(Refused("firewall", format!("can't keep runs off the daemon's ports ({bin}): nothing runs")));
         }
     }
-    info!(user = as_.user, "hosted: runs can't reach the daemon's or the provider's ports");
+    info!(?users, "hosted: runs and sessions can't reach the daemon's or the provider's ports");
     *done = true;
     Ok(())
 }
 
-/// [`firewall`] through nftables: [`firewall_script`] for `user`'s uid,
+/// Everyone [`firewall`] keeps off: the run user, and the template's
+/// session users.
+pub fn fenced(as_: Option<&RunAs>) -> Vec<String> {
+    let mut users: Vec<String> = as_.map(|a| a.user.clone()).into_iter().collect();
+    users.extend(sessions::fenced());
+    users
+}
+
+/// [`firewall`] through nftables: [`firewall_script`] for `users`' uids,
 /// loaded whole (`nft -f -`, which replaces the table each time). Whether it
 /// took.
 #[cfg(unix)]
-fn firewall_nft(state: &Path, user: &str) -> bool {
+fn firewall_nft(state: &Path, users: &[String]) -> bool {
     use std::io::Write as _;
-    let Some(uid) = nix::unistd::User::from_name(user).ok().flatten().map(|u| u.uid.as_raw()) else { return false };
-    let script = firewall_script(state, uid);
+    let mut uids = vec![];
+    for user in users {
+        let Some(uid) = nix::unistd::User::from_name(user).ok().flatten().map(|u| u.uid.as_raw()) else { return false };
+        uids.push(uid);
+    }
+    let script = firewall_script(state, &uids);
     let child = std::process::Command::new("sudo")
         .args(["-n", "nft", "-f", "-"])
         .stdin(std::process::Stdio::piped())
@@ -669,16 +694,20 @@ fn firewall_nft(state: &Path, user: &str) -> bool {
 }
 
 #[cfg(not(unix))]
-fn firewall_nft(_: &Path, _: &str) -> bool {
+fn firewall_nft(_: &Path, _: &[String]) -> bool {
     false
 }
 
-/// The nftables table [`firewall_nft`] loads: TCP on loopback from `uid`
+/// The nftables table [`firewall_nft`] loads: TCP on loopback from `uids`
 /// to the ports [`firewall_ports`] lists is reset. Declaring the table and
 /// deleting it first makes loading it again replace it.
 #[cfg_attr(not(unix), allow(dead_code))]
-pub fn firewall_script(state: &Path, uid: u32) -> String {
+pub fn firewall_script(state: &Path, uids: &[u32]) -> String {
     let ports = firewall_ports(state).iter().map(|p| p.replace(':', "-")).collect::<Vec<_>>().join(", ");
+    let uid = match uids {
+        [one] => one.to_string(),
+        many => format!("{{ {} }}", many.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")),
+    };
     format!(
         "table inet arugula_runs\ndelete table inet arugula_runs\ntable inet arugula_runs {{\n  chain out {{\n    \
          type filter hook output priority 0; policy accept;\n    \
@@ -727,14 +756,20 @@ pub fn firewall_rules(state: &Path, user: &str) -> Vec<(&'static str, Vec<String
 /// is stopped, and before one starts, so nothing a run left carries into
 /// the next.
 pub async fn kill_all(as_: &RunAs) {
+    kill_user(&as_.user).await;
+}
+
+/// Kill everything `user` runs (`kill -KILL -1` as it): a run user's, or a
+/// session user's when its session ends (M255).
+pub async fn kill_user(user: &str) {
     let r = tokio::process::Command::new("sudo")
-        .args(["-n", "-u", &as_.user, "--", "kill", "-KILL", "-1"])
+        .args(["-n", "-u", user, "--", "kill", "-KILL", "-1"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
         .await;
     if let Err(e) = r {
-        warn!(user = as_.user, error = %e, "hosted: can't kill what a run left");
+        warn!(user, error = %e, "hosted: can't kill what a run or session left");
     }
 }
 
@@ -834,7 +869,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
             deploy::deploy_box_user(as_.as_ref(), deploy::tests_unsafe())?;
         }
         if let Some(as_) = &as_ {
-            firewall(&dir, as_)?;
+            firewall(&dir, &fenced(Some(as_)))?;
             if deploy::deploy_box(app) {
                 deploy::harden_sudo(as_)?;
             }
@@ -852,7 +887,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
     // (M185): whose key pays, or why it can't run.
     let checked = match checked {
         Ok((op, src, as_, login)) if op.instruction.is_some() => match crate::agent::hosted::gate() {
-            Some(g) => match g.start("claude").await {
+            Some(g) => match g.start("claude", None).await {
                 Ok(given) => {
                     l.turn = Some(given.turn);
                     let env = crate::agent::hosted::env_here(crate::agent::defs::Kind::Claude, given.auth);
@@ -1197,6 +1232,13 @@ pub fn start(app: Arc<App>) {
             tokio::time::sleep(every.min(Duration::from_secs(1))).await;
         }
         resume(&app).await;
+        // Session users are kept off loopback before any session runs.
+        if sessions::takes()
+            && let Err(Refused(_, why)) = firewall(&dir, &fenced(run_as().ok().flatten().as_ref()))
+        {
+            warn!(why, "hosted: sessions and runs can't be kept off the daemon's ports yet");
+        }
+        sessions::resume(&app).await;
         let mut open: BTreeSet<String> = all(&dir)
             .into_iter()
             .filter(|l| l.state == State::Running.as_str() || l.events.iter().any(|k| !k.answered))
@@ -1205,15 +1247,22 @@ pub fn start(app: Arc<App>) {
         loop {
             send_all(&app, &mut open).await;
             if me(&app).is_some() {
-                // Only a deploy's own box (M219) takes deploys.
-                let takes: &[&str] = if deploy::deploy_box(&app) { &[TAKES_RUN, TAKES_DEPLOY] } else { &[TAKES_RUN] };
+                // Only a deploy's own box (M219) takes deploys; a box with
+                // session users takes sessions (M255).
+                let takes: &[&str] = if deploy::deploy_box(&app) {
+                    &[TAKES_RUN, TAKES_DEPLOY]
+                } else if sessions::takes() {
+                    &[TAKES_RUN, TAKES_SESSION]
+                } else {
+                    &[TAKES_RUN]
+                };
                 match app.control.get_signed::<Work>(&WorkQuery::path(takes)).await {
                     Ok(w) => {
                         // The project's revokes come with every pull: kept,
                         // then checked against the runs going.
                         crate::hosted::runs::keep_revokes(&app, &w.revokes);
                         for item in w.items {
-                            if running() {
+                            if run_going() {
                                 break;
                             }
                             let run = item.run.clone();
@@ -1221,6 +1270,10 @@ pub fn start(app: Arc<App>) {
                             if !matches!(read(&dir, &run), Ok(None)) {
                                 open.insert(run);
                             }
+                        }
+                        // A deploy's box never says it takes sessions.
+                        if sessions::takes() && !deploy::deploy_box(&app) {
+                            sessions::pulled(&app, w.sessions).await;
                         }
                     }
                     Err(e) => info!(error = %format!("{e:#}"), "hosted: can't ask control for work yet"),
@@ -1380,7 +1433,7 @@ mod tests {
         assert_eq!(rules.len(), 8, "and the same for IPv6");
         assert_eq!(rules[0].1.join(" "), "-o lo -p tcp -m owner --uid-owner runner --dport 1:1023 -j REJECT");
         // nftables, as E2B takes it (checked live on arugula-workspace:v0.60.3).
-        let script = firewall_script(&dir, 1002);
+        let script = firewall_script(&dir, &[1002]);
         assert!(script.starts_with("table inet arugula_runs\ndelete table inet arugula_runs\n"), "{script}");
         assert!(
             script.contains(
@@ -1388,6 +1441,9 @@ mod tests {
             ),
             "{script}"
         );
+        // The run user and the session users (M255), in one rule.
+        let script = firewall_script(&dir, &[1002, 1003, 1004]);
+        assert!(script.contains("oif \"lo\" meta skuid { 1002, 1003, 1004 } meta l4proto tcp"), "{script}");
         // A daemon port inside a range already kept isn't listed twice.
         std::fs::write(dir.join("listen"), "127.0.0.1:443").unwrap();
         std::fs::write(dir.join("block-listen"), "127.0.0.1:49983").unwrap();

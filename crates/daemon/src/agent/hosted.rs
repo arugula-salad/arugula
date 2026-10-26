@@ -75,16 +75,20 @@ pub struct Given {
 /// The platform, as a hosted box's agent turns ask it.
 pub trait Gate: Send + Sync {
     /// May a turn of `agent` (`claude`, `codex`) start: its turn, or what
-    /// to tell the person.
-    fn start(&self, agent: &'static str) -> BoxFuture<'_, Result<Given, String>>;
+    /// to tell the person. `session` is the thread session (M254) whose
+    /// agent it is, if it's one's: its turns are its asker's (aru-115).
+    fn start(&self, agent: &'static str, session: Option<String>) -> BoxFuture<'_, Result<Given, String>>;
     /// The turn ended.
     fn end(&self, turn: String) -> BoxFuture<'_, ()>;
 }
 
 impl Gate for crate::control::Control {
-    fn start(&self, agent: &'static str) -> BoxFuture<'_, Result<Given, String>> {
+    fn start(&self, agent: &'static str, session: Option<String>) -> BoxFuture<'_, Result<Given, String>> {
         Box::pin(async move {
-            let body = serde_json::json!({ "agent": agent });
+            let mut body = serde_json::json!({ "agent": agent });
+            if let Some(s) = session {
+                body["session"] = s.into();
+            }
             let path = arugula_control_wire::hosted::HOSTED_TURNS;
             match self.cloud_now(reqwest::Method::POST, path, Some(&body)).await {
                 Ok(v) => {
@@ -182,6 +186,103 @@ pub fn env_here(kind: Kind, auth: Auth) -> Vec<(String, String)> {
     env(kind, auth, std::path::Path::new(PROXY_CA).exists())
 }
 
+/// Give up the daemon's protection from the OOM killer in what `c` starts:
+/// a hosted box's supervisor gives the daemon an `oom_score_adj` of -1000
+/// (M258), which everything it starts inherits; a session's git (and what
+/// a planted config runs) is as killable as any. It runs
+/// [`arugula_mux::shim::unprotect_oom`], which the shim calls for agents
+/// and panes, between fork and exec.
+pub fn unprotect_oom(c: &mut tokio::process::Command) {
+    #[cfg(target_os = "linux")]
+    // SAFETY: unprotect_oom is async-signal-safe.
+    unsafe {
+        c.pre_exec(|| {
+            arugula_mux::shim::unprotect_oom();
+            Ok(())
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = c;
+}
+
+/// The `PATH` a session user's processes get.
+pub const SESSION_PATH: &str = "/usr/local/bin:/usr/bin:/bin";
+
+/// One of a hosted box's session users (M255, S42 q1): a hosted session's
+/// agent runs as it, and so does all of the daemon's git in the session's
+/// checkout, never as the daemon's user or root (an agent's planted
+/// `core.fsmonitor` would run as them). The template makes them (`ses1` to
+/// `ses3`): no sudo, not in `user`'s group, homes 0700.
+///
+/// Through `sudo -n -u USER -- env -i …`: an empty environment but for
+/// what's named, and nothing secret on that command line, which sudo logs
+/// and other users can read in `/proc`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AsUser {
+    pub user: String,
+    pub home: String,
+}
+
+impl AsUser {
+    /// `sudo`, or what a test stands in for it (`ARUGULA_HOSTED_SUDO`):
+    /// the integration tests can't make Unix users.
+    pub fn sudo() -> String {
+        std::env::var("ARUGULA_HOSTED_SUDO").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "sudo".into())
+    }
+
+    /// Whether `user` can go on sudo's command line as a user's name.
+    pub fn plain(user: &str) -> bool {
+        !user.is_empty()
+            && !user.starts_with('-')
+            && user.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+    }
+
+    /// The command line that runs `argv` as this user, with `env` (nothing
+    /// secret: [`env`]'s placeholder and the proxy's CA are fine) and the
+    /// user's own `HOME`, `USER`, `LOGNAME` and [`SESSION_PATH`].
+    pub fn wrap(&self, env: &[(String, String)], argv: &[String]) -> Vec<String> {
+        let mut out = vec![Self::sudo(), "-n".into(), "-u".into(), self.user.clone(), "--".into(), "env".into()];
+        out.push("-i".into());
+        out.push(format!("HOME={}", self.home));
+        out.push(format!("USER={}", self.user));
+        out.push(format!("LOGNAME={}", self.user));
+        out.push(format!("PATH={SESSION_PATH}"));
+        out.push("LANG=C.UTF-8".into());
+        for (k, v) in
+            env.iter().filter(|(k, _)| !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+        {
+            out.push(format!("{k}={v}"));
+        }
+        out.extend(argv.iter().cloned());
+        out
+    }
+
+    /// `argv` as this user ([`AsUser::wrap`]), without the daemon's
+    /// protection from the OOM killer ([`unprotect_oom`]).
+    pub fn command(&self, env: &[(String, String)], argv: &[String]) -> tokio::process::Command {
+        let argv = self.wrap(env, argv);
+        let mut c = tokio::process::Command::new(&argv[0]);
+        c.args(&argv[1..]).current_dir("/");
+        unprotect_oom(&mut c);
+        c
+    }
+
+    /// The agent's own program as a session user can reach it: a path
+    /// through a link (the adapters' place under the daemon's home, which
+    /// is `/opt/arugula/agents` in the template) resolved, since the
+    /// daemon's home is closed to session users.
+    pub fn reachable(argv: &[String]) -> Vec<String> {
+        let mut out = argv.to_vec();
+        if let Some(first) = out.first_mut()
+            && first.starts_with('/')
+            && let Ok(real) = std::fs::canonicalize(&*first)
+        {
+            *first = real.display().to_string();
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,6 +319,24 @@ mod tests {
         for key in [None, Some("key"), Some("other")] {
             assert_eq!(Auth::parse(key), Auth::Key, "{key:?}");
         }
+    }
+
+    /// M255: a session's agent runs as its user with an empty environment
+    /// but for what's named: the placeholder, never a key.
+    #[test]
+    fn a_session_user_runs_with_only_what_is_named() {
+        let u = AsUser { user: "ses1".into(), home: "/home/ses1".into() };
+        let env = [("ANTHROPIC_API_KEY".to_owned(), PLACEHOLDER.to_owned()), ("BAD KEY".to_owned(), "x".to_owned())];
+        let argv = u.wrap(&env, &["/opt/arugula/agents/claude/acp".into()]);
+        assert_eq!(
+            argv[1..].join(" "),
+            "-n -u ses1 -- env -i HOME=/home/ses1 USER=ses1 LOGNAME=ses1 PATH=/usr/local/bin:/usr/bin:/bin \
+             LANG=C.UTF-8 ANTHROPIC_API_KEY=arugula-brokered /opt/arugula/agents/claude/acp"
+        );
+        for bad in ["", "-u", "ses 1", "ses1;id", "../x"] {
+            assert!(!AsUser::plain(bad), "{bad}");
+        }
+        assert!(AsUser::plain("ses1"));
     }
 
     #[test]

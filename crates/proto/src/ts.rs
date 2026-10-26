@@ -158,6 +158,12 @@ fn generate() -> String {
         c.visit::<RunView>();
         c.visit::<RunLogPage>();
     }
+    // An agent session's card (M257).
+    {
+        use arugula_control_wire::sessions::*;
+        c.visit::<SessionView>();
+        c.visit::<SessionAct>();
+    }
     // Native issues (M195).
     {
         use arugula_control_wire::issues::*;

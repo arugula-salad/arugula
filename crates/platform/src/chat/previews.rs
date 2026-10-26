@@ -1,8 +1,8 @@
 //! Link previews (#108): a link in a message unfurls into a card under
 //! it, drawn when it's read, for the reader.
 //!
-//! - **Our own objects.** A link to an issue, run, deploy or hosted
-//!   workspace, in any path form the platform page has (`web/src/platform/
+//! - **Our own objects.** A link to an issue, run, deploy, hosted
+//!   workspace or agent session (M254), in any path form the platform page has (`web/src/platform/
 //!   paths.ts`), on one of control's own hosts ([`own_host`]), becomes a
 //!   card of title, state, who and when, read from the platform's tables
 //!   *as the reader*: only a member of the object's project gets one (the
@@ -119,6 +119,7 @@ pub struct PreviewsQuery {
 enum Link {
     Issue(String),
     Run(String),
+    Session(String),
     Deploy(String),
     Workspace(String),
     /// `OWNER/NAME`, number.
@@ -166,6 +167,7 @@ fn classify(app: &Platform, u: &Url) -> Link {
         let found = match rest {
             ["issues", s] => id_of(s, "iss_").map(Link::Issue),
             ["runs", s] => id_of(s, "run_").map(Link::Run),
+            ["sessions", s] => id_of(s, "ses_").map(Link::Session),
             ["workspaces", s] => id_of(s, "hw_").map(Link::Workspace),
             ["deploys", s] => s.starts_with("dep_").then(|| Link::Deploy((*s).to_owned())),
             _ => None,
@@ -256,6 +258,19 @@ fn run_state(s: arugula_e2e::run::State) -> (String, Tone) {
         S::Denied => ("denied".into(), Tone::Bad),
         S::Expired => ("expired".into(), Tone::Off),
         S::Canceled => ("canceled".into(), Tone::Off),
+    }
+}
+
+fn session_state(s: arugula_e2e::session::State) -> (String, Tone) {
+    use arugula_e2e::session::State as S;
+    match s {
+        S::Queued => ("queued".into(), Tone::Wait),
+        S::Working => ("working".into(), Tone::Open),
+        S::NeedsInput => ("needs input".into(), Tone::Wait),
+        S::Done => ("done".into(), Tone::Done),
+        S::Failed => ("failed".into(), Tone::Bad),
+        S::Unresponsive => ("not responding".into(), Tone::Bad),
+        S::Stopped => ("stopped".into(), Tone::Off),
     }
 }
 
@@ -361,6 +376,21 @@ async fn object_cards(
                     });
                 }
             }
+            Link::Session(id) => {
+                if let Some(s) = app.db.session(id)? {
+                    let short: String = id.trim_start_matches("ses_").chars().take(8).collect();
+                    seen.push(Seen {
+                        url: url.clone(),
+                        project: s.project.clone(),
+                        what: "session",
+                        title: format!("session {short} on {}", s.branch),
+                        state: session_state(s.state),
+                        who: Some(s.asker.clone()).filter(|a| !a.is_empty()),
+                        at: s.updated_at,
+                        private: None,
+                    });
+                }
+            }
             Link::Deploy(id) => {
                 if let Some(d) = app.db.deploy(id)?
                     && let Some(env) = app.db.environment(&d.environment)?
@@ -461,6 +491,27 @@ async fn object_cards(
             )
         })
         .collect())
+}
+
+/// The object cards for `urls` as `account` sees them, in order, each
+/// once: our own objects and linked GitHub items only. A link that names
+/// nothing of ours, or something they can't see, has none. A thread
+/// session's first prompt (M256) reads its thread's links so.
+pub(crate) async fn object_cards_for(
+    app: &Platform,
+    account: &str,
+    urls: &[Url],
+) -> anyhow::Result<Vec<(String, Preview)>> {
+    let links: Vec<(String, Link)> =
+        urls.iter().map(|u| (u.to_string(), classify(app, u))).filter(|(_, l)| *l != Link::Web).collect();
+    let mut cards = object_cards(app, account, &links).await?;
+    let mut out = Vec::new();
+    for (url, _) in &links {
+        if let Some(card) = cards.remove(url) {
+            out.push((url.clone(), card));
+        }
+    }
+    Ok(out)
 }
 
 /// A web link's card: from the cache, or by fetching. `None` when there's

@@ -153,7 +153,7 @@ export class ChatStore {
   }
 
   /** Who wants to hear that what an object's thread is on changed (M203:
-   * a native issue), by its id. */
+   * a native issue), or that an agent session changed (M257), by its id. */
   private objects = new Map<string, Set<() => void>>();
 
   /** Call `fn` when what `target`'s thread is on changes, or the stream
@@ -323,6 +323,10 @@ export class ChatStore {
         return;
       case "object":
         this.objectChanged(ev.target);
+        return;
+      case "session":
+        // M257: a session's card reads it again (`onObject(ses)`).
+        this.objectChanged(ev.ses);
         return;
       case "message":
         this.roomsSoon();

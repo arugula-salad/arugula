@@ -44,6 +44,8 @@ export function titleOf(r: Route, k: Known): string {
       return parts("Runs", p);
     case "run":
       return parts(k.run(r.run) ?? "Run", p);
+    case "session":
+      return parts("Agent session", p);
     case "chat":
       if (r.view) return parts(CHAT_VIEWS[r.view], "Chat", p);
       return parts(r.room ? (k.room(r.room) ?? "Chat") : "Chat", p);

@@ -384,6 +384,30 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0048_chat_channel_members.sql"),
         additive: false,
     },
+    Migration {
+        version: 49,
+        name: "hosted_waking",
+        sql: include_str!("../../migrations/sqlite/0049_hosted_waking.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 50,
+        name: "agent_sessions",
+        sql: include_str!("../../migrations/sqlite/0050_agent_sessions.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 51,
+        name: "forge_content_association",
+        sql: include_str!("../../migrations/sqlite/0051_forge_content_association.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 52,
+        name: "session_actions",
+        sql: include_str!("../../migrations/sqlite/0052_session_actions.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -677,6 +701,30 @@ const POSTGRES: &[Migration] = &[
         name: "chat_channel_members",
         sql: include_str!("../../migrations/postgres/0048_chat_channel_members.sql"),
         additive: false,
+    },
+    Migration {
+        version: 49,
+        name: "hosted_waking",
+        sql: include_str!("../../migrations/postgres/0049_hosted_waking.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 50,
+        name: "agent_sessions",
+        sql: include_str!("../../migrations/postgres/0050_agent_sessions.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 51,
+        name: "forge_content_association",
+        sql: include_str!("../../migrations/postgres/0051_forge_content_association.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 52,
+        name: "session_actions",
+        sql: include_str!("../../migrations/postgres/0052_session_actions.sql"),
+        additive: true,
     },
 ];
 

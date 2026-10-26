@@ -284,7 +284,8 @@ impl Db {
 /// author and whom it mentions follow too, with this reply unread, unless
 /// they unfollowed.
 pub(super) fn replied(tx: &impl Sql, room: &str, parent: i64, seq: i64, m: &NewMessage) -> Result<()> {
-    if m.agent.is_none() {
+    // A system line (no author, M256's in a session's thread) follows nothing.
+    if m.agent.is_none() && !m.author.is_empty() {
         tx.execute(
             "INSERT INTO chat_thread_reads (room, parent, account, following, seq) VALUES (?1, ?2, ?3, TRUE, ?4)
              ON CONFLICT (room, parent, account) DO UPDATE SET following = TRUE,

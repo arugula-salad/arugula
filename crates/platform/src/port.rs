@@ -16,7 +16,7 @@ use arugula_control_wire::{
     hosted::{SetupPlan, SetupReport},
     run_logs::{Upload, UploadGiven, Uploaded},
     transcripts::TranscriptPost,
-    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, Work},
+    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionReport, Work},
 };
 
 pub use crate::hosted::{inference::TurnAnswer, previews::PublicPreview, transcripts::Archived};
@@ -110,15 +110,17 @@ pub trait PlatformPort: Send + Sync {
 
     /// A hosted box asks to start an agent turn of `agent` (M185), signed
     /// as its hosted machine, whose certificate names its workspace: whose
-    /// inference key pays, or why it can't run. A platform from before
+    /// inference key pays, or why it can't run. `session` is the thread
+    /// session (M254) the turn is for, if it's one's. A platform from before
     /// M185 doesn't have it.
     fn hosted_turn<'a>(
         &'a self,
         workspace: &'a str,
         machine: &'a str,
         agent: &'a str,
+        session: Option<&'a str>,
     ) -> BoxFuture<'a, anyhow::Result<TurnAnswer>> {
-        let _ = (workspace, machine, agent);
+        let _ = (workspace, machine, agent, session);
         Box::pin(async { anyhow::bail!("this platform doesn't run hosted agents") })
     }
 
@@ -156,6 +158,18 @@ pub trait PlatformPort: Send + Sync {
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         let _ = (machine, report);
         Box::pin(async { anyhow::bail!("this platform doesn't take runs' reports") })
+    }
+
+    /// A hosted machine's signed report on one of its agent sessions
+    /// (M257), for the hub's `POST /api/hosted/work/session`. A platform
+    /// from before M257 can't take it.
+    fn hosted_session_report<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        report: &'a SessionReport,
+    ) -> BoxFuture<'a, anyhow::Result<Reported>> {
+        let _ = (machine, report);
+        Box::pin(async { anyhow::bail!("this platform doesn't take sessions' reports") })
     }
 
     /// A hosted machine's deploy run's secrets (M219), for the hub's `POST
@@ -336,6 +350,7 @@ impl PlatformPort for Platform {
                 // Before the runs go: their files in the run-log bucket.
                 let run_files = db::run_logs::erase_account(&tx)?;
                 db::runs::erase_account(&tx, deleted)?;
+                db::sessions::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
                 db::deploys::erase_account(&tx, deleted)?;
                 db::redone::erase_account(&tx, deleted)?;
                 db::triggers::erase_account(&tx, deleted)?;
@@ -417,8 +432,9 @@ impl PlatformPort for Platform {
         workspace: &'a str,
         machine: &'a str,
         agent: &'a str,
+        session: Option<&'a str>,
     ) -> BoxFuture<'a, anyhow::Result<TurnAnswer>> {
-        Box::pin(crate::hosted::inference::turn(self, workspace, machine, agent))
+        Box::pin(crate::hosted::inference::turn(self, workspace, machine, agent, session))
     }
 
     fn hosted_turn_end<'a>(
@@ -444,6 +460,14 @@ impl PlatformPort for Platform {
         report: &'a Report,
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         Box::pin(crate::work::report(self, machine, report))
+    }
+
+    fn hosted_session_report<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        report: &'a SessionReport,
+    ) -> BoxFuture<'a, anyhow::Result<Reported>> {
+        Box::pin(crate::session_live::report(self, machine, report))
     }
 
     fn hosted_secrets<'a>(

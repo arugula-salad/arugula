@@ -1,0 +1,214 @@
+//! An agent session's status card (M257, thread = session, Arugula #129):
+//! what control's page draws for a session, live, in the thread it was
+//! asked in and on its own page (`/p/:project/sessions/:ses`), and what
+//! people do from it.
+//!
+//! - **The card's message.** When a session is made the platform posts one
+//!   message for it in its thread, with no author and `via`
+//!   `session:<ses>` ([`card_via`]): the one card a chat timeline shows
+//!   (aru-115). The message stays one row; the card is drawn from the
+//!   session as it is now ([`SESSION`]), and read again whenever the
+//!   session changes ([`crate::chat::ChatLive::Session`]).
+//! - **Who:** any member of the session's project reads it; its owners and
+//!   editors stop it, cancel its turn and answer what it asks
+//!   ([`SessionView::may`]).
+//!
+//! | Route | Who |
+//! |---|---|
+//! | `GET` [`SESSION`]: [`SessionView`] | its project's members |
+//! | `POST` [`SESSION_STOP`]: [`SessionView`] | owners and editors |
+//! | `POST` [`SESSION_ACTIONS`] [`SessionAct`]: [`SessionView`] | owners and editors |
+
+use serde::{Deserialize, Serialize};
+
+/// `GET`: a session's card and history.
+pub const SESSION: &str = "/api/sessions/{ses}";
+/// `POST`: stop it (control's `stopped`; its box stops the agent).
+pub const SESSION_STOP: &str = "/api/sessions/{ses}/stop";
+/// `POST` [`SessionAct`]: ask its box to answer, approve, deny or cancel
+/// (`arugula_control_wire::work::SessionAction`).
+pub const SESSION_ACTIONS: &str = "/api/sessions/{ses}/actions";
+
+/// What a card's message has for `via`, before the session's id.
+pub const CARD_VIA: &str = "session:";
+
+/// The `via` of session `ses`'s card message.
+pub fn card_via(ses: &str) -> String {
+    format!("{CARD_VIA}{ses}")
+}
+
+/// The session a message's `via` is the card of, if it's one.
+pub fn card_of(via: &str) -> Option<&str> {
+    via.strip_prefix(CARD_VIA).filter(|s| s.starts_with("ses_"))
+}
+
+/// A session as its card shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionCard {
+    pub session: String,
+    pub project: String,
+    /// Its thread: the room and the message it hangs off.
+    pub room: String,
+    pub parent: u64,
+    /// `queued`, `working`, `needs_input`, `done`, `failed`,
+    /// `unresponsive` or `stopped`.
+    pub state: String,
+    /// An `unresponsive` one's state before its box went quiet.
+    pub was: Option<String>,
+    /// Who asked, and their name now ("" once they're gone).
+    pub asker: String,
+    pub asker_name: String,
+    /// The hosted workspace it runs on, and its name ("" once it's gone).
+    pub workspace: String,
+    pub workspace_name: String,
+    pub repo: Option<String>,
+    pub branch: String,
+    pub created_at: u64,
+    pub updated_at: u64,
+    /// When the platform last heard from its box.
+    pub heard_at: Option<u64>,
+    /// When it last stopped running (done, failed, stopped): the clock
+    /// stops there. `None` while a turn is under way or queued.
+    pub ended_at: Option<u64>,
+    pub last_tool: Option<String>,
+    pub last_error: Option<String>,
+    /// Why it failed or stopped, or why it's queued again (its box was
+    /// rebuilt).
+    pub reason: Option<String>,
+    /// What its latest turn left.
+    pub turn: Option<SessionTurn>,
+    /// What it asks, while it waits on a person.
+    pub open: Option<SessionOpen>,
+    /// The answer to it that its box hasn't taken yet.
+    pub answered: Option<SessionAnswered>,
+    /// Someone asked its box to cancel the turn, and it hasn't yet.
+    pub cancelling: bool,
+    /// Its box and agent block there, once the box took it: Open goes there.
+    pub machine: Option<String>,
+    pub block: Option<String>,
+    /// Its workspace's dev servers (Preview), the public ones with their
+    /// URL.
+    pub ports: Vec<SessionPort>,
+    /// The draft PR its asker sent (M259).
+    pub pr: Option<String>,
+}
+
+/// What a session's turn left, as its box reported it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionTurn {
+    pub at: u64,
+    pub pushed: bool,
+    pub head: Option<String>,
+    /// `"SHA subject"`, newest first.
+    pub commits: Vec<String>,
+    /// `git diff --stat`, shortened.
+    pub diffstat: Option<String>,
+    pub uncommitted: Option<u32>,
+}
+
+/// What a session waits on a person for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionOpen {
+    /// The request's id, as its box named it.
+    pub request: Option<String>,
+    /// `permission` or `question` (`None`: the box didn't say).
+    pub ask: Option<String>,
+    /// The words shown.
+    pub question: Option<String>,
+    /// A permission's option ids.
+    pub options: Vec<String>,
+    pub at: u64,
+}
+
+/// An answer to what's open, on its way to the box.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionAnswered {
+    pub by: String,
+    pub name: String,
+    /// `answer`, `approve` or `deny`.
+    pub kind: String,
+    pub at: u64,
+}
+
+/// One of a workspace's dev servers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionPort {
+    pub port: u16,
+    pub label: String,
+    /// Its public preview's URL, while it's public.
+    pub url: Option<String>,
+}
+
+/// One entry of a session's history, in words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionLine {
+    pub seq: u64,
+    /// `state`, `error` or `turn`.
+    pub kind: String,
+    pub from: Option<String>,
+    pub to: String,
+    pub at: u64,
+    /// Its box reported it, signed (else control recorded it).
+    pub signed: bool,
+    /// What it says, in a line.
+    pub text: String,
+}
+
+/// [`SESSION`]'s answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionView {
+    pub card: SessionCard,
+    /// The reader may stop it and answer it: an owner or editor of its
+    /// project.
+    pub may: bool,
+    /// The platform's clock when it answered, so the page can tell a box
+    /// that went quiet whatever its own clock says.
+    pub now: u64,
+    /// Its history, oldest first.
+    pub events: Vec<SessionLine>,
+}
+
+/// [`SESSION_ACTIONS`]'s body: what to ask of the session's box.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionAct {
+    /// `answer`, `approve`, `deny` or `cancel`.
+    pub kind: String,
+    /// The open request it answers (the card's `open.request`).
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub request: Option<String>,
+    /// `answer`'s: the question card's answer (`question_<n>`).
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional, type = "Record<string, unknown>"))]
+    pub answer: Option<serde_json::Value>,
+    /// `approve`'s: one of the permission's options.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub option: Option<String>,
+    /// `deny`'s: why.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub reason: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_card_message_names_its_session() {
+        assert_eq!(card_via("ses_ab"), "session:ses_ab");
+        assert_eq!(card_of("session:ses_ab"), Some("ses_ab"));
+        for not in ["system", "hud box", "session:", "session:run_1"] {
+            assert_eq!(card_of(not), None, "{not}");
+        }
+    }
+}

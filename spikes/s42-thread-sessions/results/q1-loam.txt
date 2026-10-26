@@ -1,0 +1,550 @@
+
+== the box: who, and the session users
+$ id
+uid=1000(user) gid=1000(user) groups=1000(user)
+(exit 0)
+$ getent passwd ses1 ses2 ses3
+ses1:x:1002:1002::/home/ses1:/bin/bash
+ses2:x:1003:1003::/home/ses2:/bin/bash
+ses3:x:1004:1004::/home/ses3:/bin/bash
+(exit 0)
+$ ls -ld /home/user /home/ses1 /home/user/.local/state/arugula
+drwx------ 2 ses1 ses1 4096 Oct 25 23:34 /home/ses1
+drwxr-x--- 4 user user 4096 Oct 25 23:35 /home/user
+drwx------ 9 user user 4096 Oct 25 23:35 /home/user/.local/state/arugula
+(exit 0)
+$ sudo -n -l -U ses1
+User ses1 is not allowed to run sudo on olive-badger-9019.
+(exit 0)
+
+== a repo standing in for the workspace's clone (setup's)
+$ git log --oneline
+45feb45 init
+(exit 0)
+
+== 1a. a git worktree of it for ses1: refused
+$ git worktree add -b arugula/ses_s42demo-fix-readme-wt /tmp/s42-wt
+Preparing worktree (new branch 'arugula/ses_s42demo-fix-readme-wt')
+HEAD is now at 45feb45 init
+(exit 0)
+$ sudo -n chown -R ses1:ses1 /tmp/s42-wt
+(exit 0)
+$ sudo -n -u ses1 git -C /tmp/s42-wt commit --allow-empty -qm as ses1 in a worktree
+fatal: not a git repository: /home/user/s42-repo/.git/worktrees/s42-wt
+(exit 128)
+
+== 1b. a checkout of its own: cloned by user, handed to ses1
+$ git clone -q --no-hardlinks /home/user/s42-repo /tmp/s42-stage.PrqBqk/repo
+(exit 0)
+$ sudo -n chown -R ses1:ses1 /tmp/s42-stage.PrqBqk/repo
+(exit 0)
+$ sudo -n mv /tmp/s42-stage.PrqBqk/repo /home/ses1/work/ses_s42demo
+(exit 0)
+$ sudo -n -u ses1 git -C /home/ses1/work/ses_s42demo config user.email ses_s42demo@sessions.invalid
+(exit 0)
+$ sudo -n -u ses1 git -C /home/ses1/work/ses_s42demo config user.name Arugula session
+(exit 0)
+$ sudo -n -u ses1 git -C /home/ses1/work/ses_s42demo switch -q -c arugula/ses_s42demo-fix-readme
+(exit 0)
+$ sudo -n -u ses1 git -C /home/ses1/work/ses_s42demo status -sb
+## arugula/ses_s42demo-fix-readme
+(exit 0)
+$ ls -ld /home/ses1/work/ses_s42demo
+ls: cannot access '/home/ses1/work/ses_s42demo': Permission denied
+(exit 2)
+
+== 2. an agent block whose agent runs as ses1
+%4
+$ arugula wait %4 --idle --timeout 30
+done
+(exit 0)
+$ arugula tail %4
+# session ses_s42demo in /home/ses1/work/ses_s42demo
+
+## You
+
+hello
+
+Hello! I am fake.
+
+(exit 0)
+
+== who the agent runs as, from the daemon's side
+ 4214  4068 user      4067 /usr/local/bin/arugulad _shim --record /home/user/.local/state/arugula/blocks/4/process -- sudo -n -u ses1 -- env -i HOME=/home/ses1 USER=ses1 LOGNAME=ses1 PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 FAKE_ACP_DIR=/home/ses1/.fake-acp /usr/bin/python3 /opt/s42/fake_acp.py
+ 4215  4214 root      4215 sudo -n -u ses1 -- env -i HOME=/home/ses1 USER=ses1 LOGNAME=ses1 PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 FAKE_ACP_DIR=/home/ses1/.fake-acp /usr/bin/python3 /opt/s42/fake_acp.py
+ 4219  4215 ses1      4215 /usr/bin/python3 /opt/s42/fake_acp.py
+$ ps -o pid,ppid,user,pgid,cmd --ppid 4214 --no-headers
+ 4215  4214 root      4215 sudo -n -u ses1 -- env -i HOME=/home/ses1 USER=ses1 LOGNAME=ses1 PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 FAKE_ACP_DIR=/home/ses1/.fake-acp /usr/bin/python3 /opt/s42/fake_acp.py
+(exit 0)
+
+== 3a. a permission: run a command
+$ arugula call %4 send {"text": "run touch /home/ses1/ran-it"}
+{
+  "queued": 0,
+  "status": "working"
+}
+(exit 0)
+$ arugula call %4 state
+{
+  "adapter": null,
+  "agent": "acp",
+  "allow": [],
+  "as_fountain": null,
+  "asks": [],
+  "attention": "needs_input",
+  "background": [],
+  "cost": {
+    "currency": "USD",
+    "last_turn": null,
+    "total": 0.01
+  },
+  "current_tool": {
+    "id": "tool4",
+    "kind": "execute",
+    "title": "touch /home/ses1/ran-it"
+  },
+  "cwd": "/home/ses1/work/ses_s42demo",
+  "entries": [
+    {
+      "at_ms": 1792971319659,
+      "text": "hello",
+      "type": "user"
+    },
+    {
+      "id": "m1",
+      "text": "Hello! I am fake.",
+      "type": "agent"
+    },
+    {
+      "at_ms": 1792971319861,
+      "text": "run touch /home/ses1/ran-it",
+      "type": "user"
+    },
+    {
+      "command": "touch /home/ses1/ran-it",
+      "id": "tool4",
+      "kind": "execute",
+      "locations": [],
+      "output": "",
+      "started_ms": 1792971319862,
+      "status": "pending",
+      "text": "",
+      "title": "touch /home/ses1/ran-it",
+      "type": "tool"
+    }
+  ],
+  "entries_from": 0,
+  "error": null,
+  "held": false,
+  "import": null,
+  "label": "sudo",
+  "last_stop": null,
+  "model": null,
+  "models": [],
+  "pending": [
+    {
+      "at_ms": 1792971319862,
+      "command": "touch /home/ses1/ran-it",
+      "id": "0",
+      "kind": "execute",
+      "options": [
+        {
+          "id": "allow-once",
+          "kind": "allow_once",
+          "name": "Yes"
+        },
+        {
+          "id": "allow-with-updates",
+          "kind": "allow_always",
+          "name": "Yes, always"
+        },
+        {
+          "id": "reject",
+          "kind": "reject_once",
+          "name": "No"
+        }
+      ],
+      "title": "touch /home/ses1/ran-it",
+      "tool": "Bash",
+      "tool_call_id": "tool4"
+    }
+  ],
+  "permission_mode": null,
+  "pid": 4215,
+  "queued": [],
+  "recent_turns": [
+    {
+      "prompt": "run touch /home/ses1/ran-it",
+      "started_ms": 1792971319861
+    },
+    {
+      "cost": 0.01,
+      "ended_ms": 1792971319662,
+      "prompt": "hello",
+      "started_ms": 1792971319659,
+      "stop": "end_turn",
+      "tokens": {
+        "inputTokens": 1,
+        "outputTokens": 2,
+        "totalTokens": 3
+      }
+    }
+  ],
+  "recipe": null,
+  "server": {
+    "name": "fake-acp",
+    "version": "1"
+  },
+  "session_id": "fake-4219-1792971319658",
+  "status": "working",
+  "title": "session ses_s42demo",
+  "tokens": {
+    "last_turn": null,
+    "total": 3
+  },
+  "turns": 2,
+  "user_settings": false,
+  "vm": false,
+  "wearing": false,
+  "worn": null
+}
+(exit 0)
+$ arugula call %4 approve {}
+{
+  "approved": "0",
+  "option": "allow-once"
+}
+(exit 0)
+$ arugula wait %4 --idle --timeout 30
+done
+(exit 0)
+$ sudo -n ls -l /home/ses1/ran-it
+ls: cannot access '/home/ses1/ran-it': No such file or directory
+(exit 2)
+
+== 3b. a question
+$ arugula call %4 send {"text": "ask one"}
+{
+  "queued": 0,
+  "status": "working"
+}
+(exit 0)
+$ arugula call %4 state
+{
+  "adapter": null,
+  "agent": "acp",
+  "allow": [],
+  "as_fountain": null,
+  "asks": [
+    {
+      "at_ms": 1792971321884,
+      "id": "1",
+      "kind": "questions",
+      "message": "Which colour do you prefer?",
+      "questions": [
+        {
+          "header": "Colour",
+          "multiSelect": false,
+          "options": [
+            {
+              "description": "A warm, bold colour",
+              "label": "Red"
+            },
+            {
+              "description": "A cool, calming colour",
+              "label": "Blue"
+            }
+          ],
+          "question": "Which colour do you prefer?"
+        }
+      ],
+      "schema": {
+        "properties": {
+          "question_0": {
+            "oneOf": [
+              {
+                "const": "Red",
+                "description": "A warm, bold colour",
+                "title": "Red"
+              },
+              {
+                "const": "Blue",
+                "description": "A cool, calming colour",
+                "title": "Blue"
+              }
+            ],
+            "title": "Colour",
+            "type": "string"
+          },
+          "question_0_custom": {
+            "_meta": {
+              "_askUserQuestionCustomAnswer": {
+                "isCustomAnswer": true,
+                "questionId": "question_0"
+              }
+            },
+            "description": "Type your own answer, or add a note to the option you chose above (optional).",
+            "title": "Other",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "source": "agent",
+      "tool_call_id": "toolu_12"
+    }
+  ],
+  "attention": "needs_input",
+  "background": [],
+  "cost": {
+    "currency": "USD",
+    "last_turn": null,
+    "total": 0.02
+  },
+  "current_tool": {
+    "id": "toolu_12",
+    "kind": "other",
+    "title": "Asking for your input"
+  },
+  "cwd": "/home/ses1/work/ses_s42demo",
+  "entries": [
+    {
+      "at_ms": 1792971319659,
+      "text": "hello",
+      "type": "user"
+    },
+    {
+      "id": "m1",
+      "text": "Hello! I am fake.",
+      "type": "agent"
+    },
+    {
+      "at_ms": 1792971319861,
+      "text": "run touch /home/ses1/ran-it",
+      "type": "user"
+    },
+    {
+      "command": "touch /home/ses1/ran-it",
+      "ended_ms": 1792971321875,
+      "exit": 0,
+      "id": "tool4",
+      "kind": "execute",
+      "locations": [],
+      "output": "\u001b[32mran: touch /home/ses1/ran-it\u001b[0m\r\n",
+      "started_ms": 1792971319862,
+      "status": "completed",
+      "text": "",
+      "title": "touch /home/ses1/ran-it",
+      "type": "tool"
+    },
+    {
+      "at_ms": 1792971321874,
+      "text": "Allowed touch /home/ses1/ran-it",
+      "type": "note"
+    },
+    {
+      "id": "m4",
+      "text": "Ran it.",
+      "type": "agent"
+    },
+    {
+      "at_ms": 1792971321883,
+      "text": "ask one",
+      "type": "user"
+    },
+    {
+      "id": "toolu_12",
+      "kind": "other",
+      "locations": [],
+      "name": "AskUserQuestion",
+      "output": "",
+      "questions": [
+        {
+          "header": "Colour",
+          "multiSelect": false,
+          "options": [
+            {
+              "description": "A warm, bold colour",
+              "label": "Red"
+            },
+            {
+              "description": "A cool, calming colour",
+              "label": "Blue"
+            }
+          ],
+          "question": "Which colour do you prefer?"
+        }
+      ],
+      "started_ms": 1792971321883,
+      "status": "pending",
+      "text": "Which colour do you prefer?",
+      "title": "Asking for your input",
+      "type": "tool"
+    }
+  ],
+  "entries_from": 0,
+  "error": null,
+  "held": false,
+  "import": null,
+  "label": "sudo",
+  "last_stop": null,
+  "model": null,
+  "models": [],
+  "pending": [],
+  "permission_mode": null,
+  "pid": 4215,
+  "queued": [],
+  "recent_turns": [
+    {
+      "prompt": "ask one",
+      "started_ms": 1792971321883
+    },
+    {
+      "cost": 0.01,
+      "ended_ms": 1792971321876,
+      "prompt": "run touch /home/ses1/ran-it",
+      "started_ms": 1792971319861,
+      "stop": "end_turn",
+      "tokens": {
+        "inputTokens": 1,
+        "outputTokens": 2,
+        "totalTokens": 3
+      }
+    },
+    {
+      "cost": 0.01,
+      "ended_ms": 1792971319662,
+      "prompt": "hello",
+      "started_ms": 1792971319659,
+      "stop": "end_turn",
+      "tokens": {
+        "inputTokens": 1,
+        "outputTokens": 2,
+        "totalTokens": 3
+      }
+    }
+  ],
+  "recipe": null,
+  "server": {
+    "name": "fake-acp",
+    "version": "1"
+  },
+  "session_id": "fake-4219-1792971319658",
+  "status": "working",
+  "title": "session ses_s42demo",
+  "tokens": {
+    "last_turn": null,
+    "total": 6
+  },
+  "turns": 3,
+  "user_settings": false,
+  "vm": false,
+  "wearing": false,
+  "worn": null
+}
+(exit 0)
+$ arugula call %4 answer {"question_0": "Blue"}
+{
+  "answered": "1"
+}
+(exit 0)
+$ arugula wait %4 --idle --timeout 30
+done
+(exit 0)
+
+== 3c. work that commits, and turn_result
+$ arugula call %4 send {"text": "work README.md NOTES.md"}
+{
+  "queued": 0,
+  "status": "working"
+}
+(exit 0)
+$ arugula wait %4 --idle --timeout 30
+done
+(exit 0)
+$ arugula call %4 turn_result
+{
+  "message": "done"
+}
+(exit 0)
+$ sudo -n -u ses1 git -C /home/ses1/work/ses_s42demo log --oneline -3
+35b95db add NOTES.md
+45feb45 init
+(exit 0)
+$ sudo -n -u ses1 git -C /home/ses1/work/ses_s42demo status --porcelain
+ M README.md
+(exit 0)
+
+== 3d. Stop: a slow turn, cancelled, then the block closed
+$ arugula call %4 send {"text": "slow"}
+{
+  "queued": 0,
+  "status": "working"
+}
+(exit 0)
+$ arugula call %4 cancel {}
+{
+  "cancelled": true
+}
+(exit 0)
+$ arugula wait %4 --idle --timeout 30
+idle
+(exit 0)
+$ arugula close %4
+(exit 0)
+$ pgrep -u ses1 -a
+(exit 1)
+
+== what's left as ses1 after Stop (kill_all would take it)
+$ sudo -n -u ses1 pkill -KILL -u ses1
+(exit 1)
+
+== 4a. git as user in the session's checkout: can't even get in (0700)
+$ git -C /home/ses1/work/ses_s42demo status --porcelain
+fatal: cannot change to '/home/ses1/work/ses_s42demo': Permission denied
+(exit 128)
+
+== 4b. as root (sudo git, the easy fix): refused, dubious ownership
+$ sudo -n git -C /home/ses1/work/ses_s42demo status --porcelain
+fatal: detected dubious ownership in repository at '/home/ses1/work/ses_s42demo'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /home/ses1/work/ses_s42demo
+(exit 128)
+
+== 4b'. ...and with safe.directory, the agent's config runs as root
+$ sudo -n git -c safe.directory=/home/ses1/work/ses_s42demo -C /home/ses1/work/ses_s42demo status --porcelain
+ M README.md
+(exit 0)
+$ cat /tmp/s42-fsmonitor-ran-as
+root
+(exit 0)
+
+== 4c. the same git as ses1: harmless to user
+$ sudo -n -u ses1 git -C /home/ses1/work/ses_s42demo status --porcelain
+ M README.md
+(exit 0)
+$ cat /tmp/s42-fsmonitor-ran-as
+ses1
+(exit 0)
+
+== 4d. a secret on sudo's command line: another session user reads it
+$ sudo -n -u ses2 sh -c for p in $(pgrep -x sudo); do tr "\0" " " < /proc/$p/cmdline; echo; done
+sudo -n -u ses1 -- env -i S42_TOKEN=not-a-real-token sleep 30 
+sudo -n -u ses1 -- env -i S42_TOKEN=not-a-real-token sleep 30 
+sudo -n -u ses2 sh -c for p in $(pgrep -x sudo); do tr "\0" " " < /proc/$p/cmdline; echo; done 
+sudo -n -u ses2 sh -c for p in $(pgrep -x sudo); do tr "\0" " " < /proc/$p/cmdline; echo; done 
+(exit 0)
+
+== 4e. loopback from ses1: the daemon's port and the provider's
+$ sudo -n -u ses1 bash -c for p in 7681 49983; do (exec 3<>/dev/tcp/127.0.0.1/$p) 2>/dev/null && echo "port $p open" || echo "port $p closed"; done
+port 7681 open
+port 49983 open
+(exit 0)
+$ sudo -n -u ses1 ls /home/user/.local/state/arugula
+ls: cannot access '/home/user/.local/state/arugula': Permission denied
+(exit 2)
+$ sudo -n nft list ruleset
+(exit 0)
+
+== done

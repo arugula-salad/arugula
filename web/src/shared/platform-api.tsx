@@ -69,6 +69,12 @@ export interface PlatformApi {
   /** Activity's "Needs you": what wants the reader on every machine, where
    * the page sees machines. `count` says whether it shows anything. */
   needsYou?: { count(): number; View: ComponentType };
+  /** Where control's page opens `hash` (`pane=<machine>.<pane>`,
+   * `machine=<id>`), for a page that isn't control's own; the shell omits
+   * it and opens panes itself (`goToPane`). */
+  controlHref?(hash: string): string;
+  /** An agent session's own page (M257), where the page has one. */
+  sessionHref?(project: string, ses: string): string;
 }
 
 const none = () => () => {};

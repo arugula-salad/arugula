@@ -133,6 +133,53 @@ async fn a_card_is_drawn_for_the_reader_and_nobody_else_gets_one() {
     assert_eq!(v["previews"][m.to_string()][0]["tone"], json!("off"));
 }
 
+/// A link to an agent session (M254) is a card of its state for its
+/// project's members, and nothing for anyone else.
+#[tokio::test]
+async fn a_sessions_link_is_a_card_of_its_state() {
+    use crate::db::sessions::{NewPrompt, NewSession, Source, State as SessionState};
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let (_, room) = seed(&app, &hub, &base).await;
+    let (st, _) = call(&base, "c", "PUT", "/api/chat/teams/u/previews", Some(json!({ "web": false }))).await;
+    assert_eq!(st, 200);
+    let project = app.db.team_project("t", "t", 1).unwrap();
+    let spec = crate::hosted::Spec::default();
+    let crate::db::hosted::Added::Made(ws) =
+        app.db.add_hosted_workspace("hw_dev", &project, "dev", &spec, "a", 10, 1).unwrap()
+    else {
+        panic!("no workspace");
+    };
+    let new = NewSession {
+        project: &project,
+        room: &room,
+        parent_seq: 1,
+        asker: "a",
+        workspace: &ws.id,
+        repo: None,
+        slug: "previews",
+        prompt: NewPrompt { author: "a", source: Source::Member, association: None, text: "make previews" },
+    };
+    let (s, _) = app.db.create_session(&new, 10).unwrap().unwrap();
+    let m = say(&base, "a", &room, &format!("https://app.arugula.io/p/{project}/sessions/{}", s.id)).await;
+    let v = previews(&base, "a", &room, &[m]).await;
+    let card = &v["previews"][m.to_string()][0];
+    assert_eq!(
+        (&card["what"], &card["state"], &card["tone"], &card["who"]),
+        (&json!("session"), &json!("queued"), &json!("wait"), &json!("a")),
+        "{v}"
+    );
+    assert!(card["title"].as_str().unwrap().ends_with(&s.branch), "{v}");
+    assert_eq!(previews(&base, "c", &room, &[m]).await["previews"], json!({}));
+
+    let detail = r#"{"reason":"stopped by a"}"#;
+    let to =
+        crate::db::sessions::Move::Control { from: SessionState::Queued, to: SessionState::Stopped, at: 20, detail };
+    app.db.move_session(&s.id, &to).unwrap().unwrap();
+    let v = previews(&base, "a", &room, &[m]).await;
+    assert_eq!(v["previews"][m.to_string()][0]["state"], json!("stopped"), "{v}");
+}
+
 #[tokio::test]
 async fn private_addresses_are_never_fetched_and_the_switches_work() {
     let hub = Arc::new(TestHub::default());

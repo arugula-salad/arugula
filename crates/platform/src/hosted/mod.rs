@@ -33,7 +33,11 @@
 //!   ([`usage`]).
 //! - **Waking on connect** (M182): when someone opens a workspace's machine
 //!   and its daemon isn't connected, the hub asks the platform to wake its
-//!   box, and the worker resumes it ([`wake`]).
+//!   box, and the worker resumes it ([`wake`]). A woken box is `waking`
+//!   until its daemon dials in again, and `ready` only then; one whose
+//!   daemon doesn't within [`Config::dial_wait`] is failed as needing a
+//!   rebuild, and the project's owners and editors are told (M258, Arugula #124).
+//!   The template supervises the daemon; the platform never reaches in.
 //! - **Pausing only between turns** (M181, "Hosted machines pause only
 //!   between turns", aru-094): the leader [`hold`]s a box while its daemon
 //!   says it's busy, and lets it pause itself when it's idle or silent.
@@ -109,6 +113,10 @@ pub struct Args {
     /// ([`hold::E2B_PRO_RUNTIME`] unless set; E2B's Hobby plan is 3600).
     #[arg(long, env = "ARUGULA_HOSTED_RUNTIME_CAP")]
     pub hosted_runtime_cap: Option<u64>,
+    /// Seconds a woken box's daemon has to dial in before the workspace is
+    /// marked as needing a rebuild ([`worker::DIAL_WAIT`] unless set).
+    #[arg(long, env = "ARUGULA_HOSTED_DIAL_WAIT")]
+    pub hosted_dial_wait: Option<u64>,
     /// Which providers the platform's own inference key covers (M185), for
     /// workspaces made by accounts on ARUGULA_CLOUD_ACCOUNTS: `anthropic`,
     /// `openai`, comma-separated. Each is a dedicated key with a hard
@@ -190,6 +198,7 @@ impl Args {
             cipher: cloud.master_key()?.map(std::sync::Arc::new),
             idle_timeout: self.hosted_idle_timeout.filter(|s| *s > 0).map(Duration::from_secs),
             runtime_cap: self.hosted_runtime_cap.filter(|s| *s > 0).map(Duration::from_secs),
+            dial_wait: self.hosted_dial_wait.filter(|s| *s > 0).map(Duration::from_secs),
             preview_domain: previews::domain(self.preview_domain.as_deref().unwrap_or(""))?,
             broker: broker::Config::new(
                 self.inference_anthropic_key,
@@ -226,6 +235,8 @@ pub struct Config {
     /// holds.
     pub idle_timeout: Option<Duration>,
     pub runtime_cap: Option<Duration>,
+    /// [`Args::hosted_dial_wait`], when set ([`Config::dial_wait`]).
+    pub dial_wait: Option<Duration>,
     /// Whose key agents run on, and the caps on the platform's (M185).
     pub inference: inference::Settings,
     /// Public previews' domain (M187), when they're on.
@@ -242,6 +253,7 @@ impl std::fmt::Debug for Config {
             .field("accounts", &self.accounts)
             .field("idle_timeout", &self.idle_timeout)
             .field("runtime_cap", &self.runtime_cap)
+            .field("dial_wait", &self.dial_wait)
             .field("inference", &self.inference)
             .field("preview_domain", &self.preview_domain)
             .field("broker", &self.broker)
@@ -263,6 +275,11 @@ impl Config {
     /// How long the provider lets a box run without a pause.
     pub fn runtime_cap(&self) -> Duration {
         self.runtime_cap.unwrap_or(hold::E2B_PRO_RUNTIME)
+    }
+
+    /// How long a woken box's daemon has to dial in.
+    pub fn dial_wait(&self) -> Duration {
+        self.dial_wait.unwrap_or(worker::DIAL_WAIT)
     }
 }
 
@@ -391,6 +408,64 @@ impl Ask {
 /// nothing else asked.
 pub fn ask(app: &Platform, workspace: &str, what: Ask) -> anyhow::Result<bool> {
     app.db.ask_hosted(workspace, what, arugula_e2e::now_ms())
+}
+
+/// A workspace's box changed (M258): it's a new box, with a new sandbox id
+/// and a new machine (`new_machine`), as after a rebuild. Called each time
+/// a box enrolls, so also for a workspace's first box, which has no
+/// sessions yet.
+///
+/// A thread's session (M254) that ran on the workspace's earlier box can't
+/// `--resume` there: that conversation's files went with the box. Each
+/// live session on `workspace` moves to `new_machine`. One no box took yet
+/// only follows it. One that was taken is queued again (control's move,
+/// `db::sessions::rebuilt_in`), its next turn starting from a fresh
+/// hydration of the thread plus its archived transcript ([`transcripts`],
+/// `sessions::hydrate::after_rebuild`) as its asker's prompt: the new box
+/// takes it as it takes any queued session. Its card says the box was
+/// rebuilt. A session already on `new_machine` is left as it is, so this
+/// may run again for the same enrollment.
+pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machine: &str) -> anyhow::Result<()> {
+    use crate::db::sessions::{NewPrompt, Source, State};
+    for s in app.db.live_sessions_on(workspace)? {
+        if s.machine.as_deref() == Some(new_machine) {
+            continue;
+        }
+        let text = match s.state {
+            State::Queued => String::new(),
+            _ => match crate::sessions::hydrate::after_rebuild(app, &s).await {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!(
+                        session = s.id,
+                        workspace,
+                        error = format!("{e:#}"),
+                        "can't hydrate a session's thread for its new box"
+                    );
+                    continue;
+                }
+            },
+        };
+        let prompt = NewPrompt { author: &s.asker, source: Source::Member, association: None, text: &text };
+        let now = arugula_e2e::now_ms();
+        match app.db.session_rebuilt(&s.id, s.state, new_machine, &prompt, now)? {
+            Ok(_) => {
+                tracing::info!(
+                    session = s.id,
+                    workspace,
+                    machine = new_machine,
+                    "a session moved to its workspace's new box"
+                );
+                crate::session_live::told(app, std::slice::from_ref(&s.id))?;
+                app.db.nudge_session(&s.id, now)?;
+            }
+            // It moved meanwhile (it ended, say): its job sees to it.
+            Err(e) => {
+                tracing::warn!(session = s.id, workspace, refused = %e, "a session didn't move to its workspace's new box")
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The lifecycle's background work, when this platform has a compute

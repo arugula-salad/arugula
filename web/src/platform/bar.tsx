@@ -35,6 +35,7 @@ function sectionOf(r: Route): Section | null {
       return "issues";
     case "runs":
     case "run":
+    case "session":
       return "runs";
     case "chat":
     case "dm":

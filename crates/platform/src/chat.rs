@@ -54,7 +54,9 @@
 //! agent grant reaches says whose agents, to everyone in it
 //! ([`room_agents`]). Nothing here wakes an agent. MCP's thread tools
 //! reach them through [`agent_threads`] (M198), and `@<machine>` mentions
-//! a machine's agents there ([`agent_mentions`]).
+//! a machine's agents there ([`agent_mentions`]). The one mention that
+//! starts work is `@arugula`, on the project's hosted box ([`sessions`],
+//! M256).
 //!
 //! [`Cache`]: crate::cache::Cache
 
@@ -114,6 +116,8 @@ pub(crate) mod pins;
 pub mod previews;
 pub(crate) mod reactions;
 pub(crate) mod saved;
+pub mod session_card;
+pub(crate) mod sessions;
 pub(crate) mod sidebar;
 pub(crate) mod threads;
 pub(crate) mod typing;
@@ -928,7 +932,8 @@ pub(crate) async fn mentions(
     audience: &[String],
     author: &str,
 ) -> anyhow::Result<(Vec<String>, Vec<String>)> {
-    let words = at_words(text);
+    // `@arugula` is reserved (M256): it names nobody, and starts work.
+    let words: Vec<String> = at_words(text).into_iter().filter(|w| w != sessions::MENTION).collect();
     if words.is_empty() {
         return Ok((vec![], vec![]));
     }
@@ -1315,7 +1320,8 @@ impl Live {
             | ChatLive::Reply { room, .. }
             | ChatLive::ThreadRead { room, .. }
             | ChatLive::Read { room, .. }
-            | ChatLive::Object { room, .. } => self.rooms.contains(room),
+            | ChatLive::Object { room, .. }
+            | ChatLive::Session { room, .. } => self.rooms.contains(room),
             // Sidebar and Saved are told to their account only (`out.to`).
             ChatLive::Hello { .. }
             | ChatLive::Sidebar {}
@@ -2138,6 +2144,7 @@ pub(crate) async fn post_full(
         b.notify_anyway.unwrap_or(false),
     )
     .await?;
+    sessions::posted(app, &room, &s.account, agent.is_some() || via.is_some(), seq, b.parent, text).await;
     Ok(ChatPosted { seq, mentions: stored, unreached, pushed })
 }
 

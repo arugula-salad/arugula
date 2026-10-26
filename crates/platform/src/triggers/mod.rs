@@ -77,14 +77,37 @@ impl Gate for Members {
     ) -> BoxFuture<'a, anyhow::Result<Option<&'static str>>> {
         Box::pin(async move {
             let Some(maker) = maker else { return Ok(Some("its maker's account is gone")) };
-            match crate::forge::links::membership(&self.0, maker, project, true).await {
-                Ok((_, TeamRole::Viewer)) => Ok(Some("its maker can only view the project now")),
-                Ok(_) if !self.0.hosted.allows(maker) => Ok(Some("its maker isn't on the hosted beta's list")),
-                Ok(_) => Ok(None),
-                Err(e) if e.0 == StatusCode::NOT_FOUND => Ok(Some("its maker isn't in the project any more")),
-                Err(e) => anyhow::bail!("asking the hub who's in the project: {}", e.1),
-            }
+            Ok(may_start(&self.0, project, maker).await?.map(|why| match why {
+                Cannot::Viewer => "its maker can only view the project now",
+                Cannot::Unlisted => "its maker isn't on the hosted beta's list",
+                Cannot::Outside => "its maker isn't in the project any more",
+            }))
         })
+    }
+}
+
+/// Why an account may not start work on a project's hosted workspaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cannot {
+    /// They can only view the project.
+    Viewer,
+    /// They aren't on the hosted beta's list (`ARUGULA_HOSTED_ACCOUNTS`).
+    Unlisted,
+    /// They aren't in the project.
+    Outside,
+}
+
+/// [`Members`]'s rule for one account, as the hub says now: `None` when
+/// they may start work on `project`'s hosted workspaces (an owner or
+/// editor, on the hosted beta's list). Thread sessions (M256) ask it too.
+/// An error is the hub's, not an answer.
+pub async fn may_start(app: &Platform, project: &str, account: &str) -> anyhow::Result<Option<Cannot>> {
+    match crate::forge::links::membership(app, account, project, true).await {
+        Ok((_, TeamRole::Viewer)) => Ok(Some(Cannot::Viewer)),
+        Ok(_) if !app.hosted.allows(account) => Ok(Some(Cannot::Unlisted)),
+        Ok(_) => Ok(None),
+        Err(e) if e.0 == StatusCode::NOT_FOUND => Ok(Some(Cannot::Outside)),
+        Err(e) => anyhow::bail!("asking the hub who's in the project: {}", e.1),
     }
 }
 

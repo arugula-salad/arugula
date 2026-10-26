@@ -268,7 +268,7 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
 
 /**
  * A message as the reader sees it.
@@ -3035,6 +3035,188 @@ back: string | null, };
 export type ServerMsg = { "type": "hello", version: string, client: number, state: State, } | { "type": "state", state: State, } | { "type": "size", pane: number, cols: number, rows: number, } | { "type": "resync", pane: number, } | { "type": "error", id: number | null, message: string, } | { "type": "block", block: number, state: unknown, } | { "type": "pong", id: number, } | { "type": "notice", message: string, } | { "type": "control_request", pane: number, who: string, name: string, } | { "type": "trust_request", pane: number, who: string, name: string, } | { "type": "delta", delta: Delta, } | { "type": "follow", pane: number, msg: FollowMsg, } | { "type": "hand_call", id: number, tool: string, args: Record<string, unknown>, from: string, };
 
 export type Session = { id: number, name: string, tabs: Array<number>, };
+
+/**
+ * [`SESSION_ACTIONS`]'s body: what to ask of the session's box.
+ */
+export type SessionAct = { 
+/**
+ * `answer`, `approve`, `deny` or `cancel`.
+ */
+kind: string, 
+/**
+ * The open request it answers (the card's `open.request`).
+ */
+request?: string, 
+/**
+ * `answer`'s: the question card's answer (`question_<n>`).
+ */
+answer?: Record<string, unknown>, 
+/**
+ * `approve`'s: one of the permission's options.
+ */
+option?: string, 
+/**
+ * `deny`'s: why.
+ */
+reason?: string, };
+
+/**
+ * An answer to what's open, on its way to the box.
+ */
+export type SessionAnswered = { by: string, name: string, 
+/**
+ * `answer`, `approve` or `deny`.
+ */
+kind: string, at: number, };
+
+/**
+ * A session as its card shows it.
+ */
+export type SessionCard = { session: string, project: string, 
+/**
+ * Its thread: the room and the message it hangs off.
+ */
+room: string, parent: number, 
+/**
+ * `queued`, `working`, `needs_input`, `done`, `failed`,
+ * `unresponsive` or `stopped`.
+ */
+state: string, 
+/**
+ * An `unresponsive` one's state before its box went quiet.
+ */
+was: string | null, 
+/**
+ * Who asked, and their name now ("" once they're gone).
+ */
+asker: string, asker_name: string, 
+/**
+ * The hosted workspace it runs on, and its name ("" once it's gone).
+ */
+workspace: string, workspace_name: string, repo: string | null, branch: string, created_at: number, updated_at: number, 
+/**
+ * When the platform last heard from its box.
+ */
+heard_at: number | null, 
+/**
+ * When it last stopped running (done, failed, stopped): the clock
+ * stops there. `None` while a turn is under way or queued.
+ */
+ended_at: number | null, last_tool: string | null, last_error: string | null, 
+/**
+ * Why it failed or stopped, or why it's queued again (its box was
+ * rebuilt).
+ */
+reason: string | null, 
+/**
+ * What its latest turn left.
+ */
+turn: SessionTurn | null, 
+/**
+ * What it asks, while it waits on a person.
+ */
+open: SessionOpen | null, 
+/**
+ * The answer to it that its box hasn't taken yet.
+ */
+answered: SessionAnswered | null, 
+/**
+ * Someone asked its box to cancel the turn, and it hasn't yet.
+ */
+cancelling: boolean, 
+/**
+ * Its box and agent block there, once the box took it: Open goes there.
+ */
+machine: string | null, block: string | null, 
+/**
+ * Its workspace's dev servers (Preview), the public ones with their
+ * URL.
+ */
+ports: Array<SessionPort>, 
+/**
+ * The draft PR its asker sent (M259).
+ */
+pr: string | null, };
+
+/**
+ * One entry of a session's history, in words.
+ */
+export type SessionLine = { seq: number, 
+/**
+ * `state`, `error` or `turn`.
+ */
+kind: string, from: string | null, to: string, at: number, 
+/**
+ * Its box reported it, signed (else control recorded it).
+ */
+signed: boolean, 
+/**
+ * What it says, in a line.
+ */
+text: string, };
+
+/**
+ * What a session waits on a person for.
+ */
+export type SessionOpen = { 
+/**
+ * The request's id, as its box named it.
+ */
+request: string | null, 
+/**
+ * `permission` or `question` (`None`: the box didn't say).
+ */
+ask: string | null, 
+/**
+ * The words shown.
+ */
+question: string | null, 
+/**
+ * A permission's option ids.
+ */
+options: Array<string>, at: number, };
+
+/**
+ * One of a workspace's dev servers.
+ */
+export type SessionPort = { port: number, label: string, 
+/**
+ * Its public preview's URL, while it's public.
+ */
+url: string | null, };
+
+/**
+ * What a session's turn left, as its box reported it.
+ */
+export type SessionTurn = { at: number, pushed: boolean, head: string | null, 
+/**
+ * `"SHA subject"`, newest first.
+ */
+commits: Array<string>, 
+/**
+ * `git diff --stat`, shortened.
+ */
+diffstat: string | null, uncommitted: number | null, };
+
+/**
+ * [`SESSION`]'s answer.
+ */
+export type SessionView = { card: SessionCard, 
+/**
+ * The reader may stop it and answer it: an owner or editor of its
+ * project.
+ */
+may: boolean, 
+/**
+ * The platform's clock when it answered, so the page can tell a box
+ * that went quiet whatever its own clock says.
+ */
+now: number, 
+/**
+ * Its history, oldest first.
+ */
+events: Array<SessionLine>, };
 
 /**
  * A read-only share of one pane. `token`, `path` and `url` are only in the

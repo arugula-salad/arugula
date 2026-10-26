@@ -788,7 +788,7 @@ name = "projects"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A project: its id, the team or account it belongs to, its name, whether it's the default one, the last number it gave a native issue, and its issue home (native or GitHub) if someone chose one."
+what = "A project: its id, the team or account it belongs to, its name, whether it's the default one, the last number it gave a native issue, its issue home (native or GitHub) if someone chose one, and the hosted workspace its agents run on, if someone chose one (M254)."
 why_asleep = "Cloud workspaces, team channels, native issues and secrets belong to one, and they exist with every machine asleep."
 with_account = "partly"
 note = "Its personal project goes, and the default projects of teams that go with it; other teams' stay."
@@ -949,7 +949,7 @@ name = "forge_content"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A linked repo's PR and issue bodies, comments, reviews' text and review comments (with their file, line and the comment they answer), with author and times. Only for a repo whose project turned on content mirroring (M166); turning it off deletes them at once, and an unlink or an uninstall purges them within a day."
+what = "A linked repo's PR and issue bodies, comments, reviews' text and review comments (with their file, line and the comment they answer), with author, what GitHub says the author is to the repo (author_association, M256), and times. Only for a repo whose project turned on content mirroring (M166); turning it off deletes them at once, and an unlink or an uninstall purges them within a day."
 why_asleep = "A project that opted in searches PR text with every machine asleep."
 with_account = "none"
 seen_by = ["litestream", "github"]
@@ -1152,6 +1152,50 @@ note = "Those of runs that go with their projects, go, and their files with them
 seen_by = ["litestream"]
 
 [[table]]
+name = "agent_sessions"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A thread's agent session (M254): its project, the thread it was asked in (a room and a message number), whose mention started it (it runs as them, on the project's key), the hosted workspace it runs on and that box's machine (the only one whose reports move it), its agent block, repo and the one branch it may push, its state (queued, working, needs input, done, failed, unresponsive or stopped), when the platform last heard from the box, the last tool it ran and the last error it hit (as the agent said it), the draft PR its asker sent, how many times CI sent it back, and its times."
+why_asleep = "A session is asked for, followed and shown in its thread with every person's machine asleep; the box it runs on is the project's, not theirs."
+with_account = "partly"
+note = "The sessions of projects that go with it go. The rest stay, naming no one who asked."
+seen_by = ["litestream", "e2b"]
+
+[[table]]
+name = "session_events"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "An agent session's history, append-only (never changed, and never deleted while its session is there): each change of state, error and turn's result, numbered in the session, when, a small detail (the prompts a turn started with, the question it asked, why it failed, the error, the branch it pushed with its commits and diffstat), and, when the box's machine reported it, that machine's id, its report number and its signature over it."
+why_asleep = "A session's history shows, and is checked, with every person's machine asleep."
+with_account = "partly"
+note = "Those of sessions that go, go. The rest stay as written: they name machines, not people, and a signature names its signer."
+seen_by = ["litestream"]
+
+[[table]]
+name = "session_prompts"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "What starts an agent session's turns: each prompt's text as written, who wrote it (an account, or a GitHub login for text from GitHub, with its author_association), and whether it's queued, sent to the box or dropped, and when."
+why_asleep = "A prompt queued in a thread waits for the session's box with every person's machine asleep."
+with_account = "partly"
+note = "Those of sessions that go, go. On the rest its prompts stay blank, with no author, and those still queued are dropped."
+seen_by = ["litestream", "e2b", "anthropic"]
+
+[[table]]
+name = "session_actions"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "What people asked of an agent session that only its box can do (M257): answer its open question (the answer as given), approve or deny its open permission (the option, or why not), or cancel the turn; who asked, when, and whether the box did it (with the number of the report that said so) or the session ended first."
+why_asleep = "A teammate answers a session's question from their phone, and the box picks it up, with every person's machine asleep."
+with_account = "partly"
+note = "Those of sessions that go, go. On the rest they stay, naming no one who asked, an answer's text blanked."
+seen_by = ["litestream", "e2b", "anthropic"]
+
+[[table]]
 name = "deploy_approvals"
 plane = "platform"
 process = "platform"
@@ -1344,7 +1388,7 @@ name = "hosted_turns"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "An agent turn on a hosted workspace's box (M185): the workspace, the provider, whose key paid (the project's or the platform's), the account whose caps a platform turn counts against, and when it started and ended. Kept 30 days."
+what = "An agent turn on a hosted workspace's box (M185): the workspace, the provider, whose key paid (the project's or the platform's), the account it's for (whose caps a platform turn counts against, or a thread session's asker, M254), and when it started and ended. Kept 30 days."
 why_asleep = "Caps on the platform's key are checked when a hosted box starts a turn, with every other machine asleep."
 with_account = "partly"
 note = "It stops naming the account; the turns stay until they're 30 days old."

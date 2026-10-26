@@ -44,7 +44,8 @@ const TOKEN_USER: &str = "x-access-token";
 /// Whether `machine` may act for workspace `w` now: the machine it
 /// enrolled as, or any while the worker hasn't seen it enroll yet.
 fn its_box(w: &super::HostedWorkspace, machine: &str) -> bool {
-    matches!(w.state.as_str(), "enrolling" | "ready" | "paused") && w.machine.as_deref().is_none_or(|m| m == machine)
+    matches!(w.state.as_str(), "enrolling" | "ready" | "waking" | "paused")
+        && w.machine.as_deref().is_none_or(|m| m == machine)
 }
 
 /// A secret's value, when it's sealed here: with the workspace's project's

@@ -1,0 +1,38 @@
+2026-10-25T23:35:01.752029Z  INFO arugula_control::hosted: a project delegated to control project="prj_65821843d9a6839b8226e0e0faf55eb0" owner="team:8e050dae74b16306"
+2026-10-25T23:35:04.128775Z  INFO arugula_platform::hosted::routes: made a hosted workspace account=79e9a37ae501829c project=prj_65821843d9a6839b8226e0e0faf55eb0 workspace=hw_b4bb8b365609171c72fb0143c9623d2c
+2026-10-25T23:35:04.637891Z  INFO arugula_platform::hosted::hold: holding busy hosted boxes idle_timeout=600s
+2026-10-25T23:35:05.279225Z  INFO arugula_control::hosted: a hosted enrollment recorded project="prj_65821843d9a6839b8226e0e0faf55eb0" workspace="hw_b4bb8b365609171c72fb0143c9623d2c" via="sandbox" purpose=None
+2026-10-25T23:35:11.934673Z  INFO arugula_control::hosted: a hosted machine enrolled project="prj_65821843d9a6839b8226e0e0faf55eb0" workspace="hw_b4bb8b365609171c72fb0143c9623d2c" device="4645a41321d3f681" purpose=None
+2026-10-25T23:35:12.483205Z  INFO arugula_platform::hosted::setup: a hosted box read its setup project="prj_65821843d9a6839b8226e0e0faf55eb0" workspace="hw_b4bb8b365609171c72fb0143c9623d2c" machine="4645a41321d3f681" via=[] env=0
+2026-10-25T23:35:12.620860Z  INFO arugula_platform::hosted::setup: a hosted box's setup project="prj_65821843d9a6839b8226e0e0faf55eb0" workspace="hw_b4bb8b365609171c72fb0143c9623d2c" status="setting_up" step="start"
+2026-10-25T23:35:13.147266Z  INFO arugula_platform::hosted::setup: a hosted box's setup project="prj_65821843d9a6839b8226e0e0faf55eb0" workspace="hw_b4bb8b365609171c72fb0143c9623d2c" status="ready" step="start"
+2026-10-25T23:35:14.949106Z  INFO arugula_platform::hosted::wake: a hosted workspace's wake answered workspace=hw_b4bb8b365609171c72fb0143c9623d2c answer=Awake
+2026-10-25T23:35:14.949126Z  INFO arugula_control::wake: a hosted workspace's wake answered workspace=hw_b4bb8b365609171c72fb0143c9623d2c answer=Awake ms=7
+2026-10-25T23:35:19.079277Z  INFO arugula_control::wake: a hosted machine woke and dialed in machine=4645a41321d3f681 workspace=hw_b4bb8b365609171c72fb0143c9623d2c ms=4137
+2026-10-25T23:35:26.438104Z  INFO arugula_platform::hosted::transcripts: archived a hosted agent's transcript project=prj_65821843d9a6839b8226e0e0faf55eb0 workspace=hw_b4bb8b365609171c72fb0143c9623d2c transcript=htx_10b7ef287b1659874eec3e8cd4054c8a bytes=729
+2026-10-25T23:35:32.343574Z  INFO arugula_platform::hosted::wake: a hosted workspace's wake answered workspace=hw_b4bb8b365609171c72fb0143c9623d2c answer=Awake
+2026-10-25T23:35:32.343594Z  INFO arugula_control::wake: a hosted workspace's wake answered workspace=hw_b4bb8b365609171c72fb0143c9623d2c answer=Awake ms=9
+2026-10-25T23:35:38.705119Z  INFO arugula_control::wake: a hosted machine woke and dialed in machine=4645a41321d3f681 workspace=hw_b4bb8b365609171c72fb0143c9623d2c ms=6370
+2026-10-25T23:36:37.322054Z  INFO arugula_platform::hosted::wake: a hosted workspace's wake answered workspace=hw_b4bb8b365609171c72fb0143c9623d2c answer=Awake
+2026-10-25T23:36:37.322071Z  INFO arugula_control::wake: a hosted workspace's wake answered workspace=hw_b4bb8b365609171c72fb0143c9623d2c answer=Awake ms=5
+2026-10-25T23:36:39.351883Z  INFO arugula_control::wake: a hosted machine woke and dialed in machine=4645a41321d3f681 workspace=hw_b4bb8b365609171c72fb0143c9623d2c ms=2035
+2026-10-25T23:37:00.179222Z  INFO arugula_platform::hosted::routes: asked to delete a hosted workspace account=79e9a37ae501829c project=prj_65821843d9a6839b8226e0e0faf55eb0 workspace=hw_b4bb8b365609171c72fb0143c9623d2c
+2026-10-25T23:37:18.330651Z  INFO arugula_control::hosted: a project delegated to control project="prj_f58668503013e50223719b7762251e9a" owner="team:37ccf2e7dc01c6e5"
+2026-10-25T23:37:20.617361Z  INFO arugula_platform::hosted::routes: made a hosted workspace account=29021fc4dacf1897 project=prj_f58668503013e50223719b7762251e9a workspace=hw_d3620bf29ba90496821fb99b8965209b
+2026-10-25T23:37:21.746927Z  INFO arugula_control::hosted: a hosted enrollment recorded project="prj_f58668503013e50223719b7762251e9a" workspace="hw_d3620bf29ba90496821fb99b8965209b" via="sandbox" purpose=None
+2026-10-25T23:37:25.214031Z  INFO arugula_control::hosted: a hosted machine enrolled project="prj_f58668503013e50223719b7762251e9a" workspace="hw_d3620bf29ba90496821fb99b8965209b" device="9f41123afa63a633" purpose=None
+2026-10-25T23:37:29.156301Z  INFO arugula_platform::hosted::setup: a hosted box read its setup project="prj_f58668503013e50223719b7762251e9a" workspace="hw_d3620bf29ba90496821fb99b8965209b" machine="9f41123afa63a633" via=[] env=0
+2026-10-25T23:37:29.274487Z  INFO arugula_platform::hosted::setup: a hosted box's setup project="prj_f58668503013e50223719b7762251e9a" workspace="hw_d3620bf29ba90496821fb99b8965209b" status="setting_up" step="start"
+2026-10-25T23:37:29.792985Z  INFO arugula_platform::hosted::setup: a hosted box's setup project="prj_f58668503013e50223719b7762251e9a" workspace="hw_d3620bf29ba90496821fb99b8965209b" status="ready" step="start"
+2026-10-25T23:37:31.405799Z  INFO arugula_platform::hosted::wake: a hosted workspace's wake answered workspace=hw_d3620bf29ba90496821fb99b8965209b answer=Awake
+2026-10-25T23:37:31.405818Z  INFO arugula_control::wake: a hosted workspace's wake answered workspace=hw_d3620bf29ba90496821fb99b8965209b answer=Awake ms=6
+2026-10-25T23:37:35.664630Z  INFO arugula_control::wake: a hosted machine woke and dialed in machine=9f41123afa63a633 workspace=hw_d3620bf29ba90496821fb99b8965209b ms=4265
+2026-10-25T23:37:37.959844Z  INFO arugula_platform::hosted::wake: a hosted workspace's wake answered workspace=hw_d3620bf29ba90496821fb99b8965209b answer=Awake
+2026-10-25T23:37:37.959862Z  INFO arugula_control::wake: a hosted workspace's wake answered workspace=hw_d3620bf29ba90496821fb99b8965209b answer=Awake ms=5
+2026-10-25T23:37:42.357349Z  INFO arugula_control::wake: a hosted machine woke and dialed in machine=9f41123afa63a633 workspace=hw_d3620bf29ba90496821fb99b8965209b ms=4403
+2026-10-25T23:38:41.966105Z  INFO arugula_platform::hosted::wake: a hosted workspace's wake answered workspace=hw_d3620bf29ba90496821fb99b8965209b answer=Awake
+2026-10-25T23:38:41.966122Z  INFO arugula_control::wake: a hosted workspace's wake answered workspace=hw_d3620bf29ba90496821fb99b8965209b answer=Awake ms=5
+2026-10-25T23:38:56.967526Z  WARN arugula_control::wake: a hosted machine's box woke, but it didn't dial in machine=9f41123afa63a633 workspace=hw_d3620bf29ba90496821fb99b8965209b
+2026-10-25T23:39:17.533187Z  INFO arugula_platform::hosted::wake: a hosted workspace's wake answered workspace=hw_d3620bf29ba90496821fb99b8965209b answer=Awake
+2026-10-25T23:39:17.533207Z  INFO arugula_control::wake: a hosted workspace's wake answered workspace=hw_d3620bf29ba90496821fb99b8965209b answer=Awake ms=8
+2026-10-25T23:39:24.471569Z  INFO arugula_control::wake: a hosted machine woke and dialed in machine=9f41123afa63a633 workspace=hw_d3620bf29ba90496821fb99b8965209b ms=6947

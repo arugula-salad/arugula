@@ -711,7 +711,8 @@ macos cmd="tools" *args:
 # everywhere (release.yml, scripts/release, Homebrew, install.sh, the site);
 # `just notices` keeping THIRD_PARTY.md when cargo-about fails;
 # `scripts/release check-green` refusing a tag on a commit CI didn't pass;
-# and a release deploying the hub only when what it's built from changed.
+# a release deploying the hub only when what it's built from changed; and
+# the hosted template's supervision of arugulad (M258).
 test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/install.sh
@@ -721,6 +722,7 @@ test-scripts:
     scripts/tests/suite-lock.sh
     scripts/tests/release-bump.sh
     scripts/tests/hub-changed.sh
+    scripts/tests/hosted-supervisor.sh
 
 # arugula-mux names no integration (DECISIONS.md, "The mux names no
 # integration"): none of these crates may be in its dependency tree, with or
