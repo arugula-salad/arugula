@@ -460,7 +460,10 @@ fn a_queued_prompt_is_credited_to_its_author_as_it_is_sent() {
         again.rebuild_line(l);
     }
     for (text, by) in [("first", "Ada"), ("second", "Bo")] {
-        again.rebuild_line(&frame("note", json!({ "e": "queue", "text": text, "images": [], "front": false, "by": by })));
+        again.rebuild_line(&frame(
+            "note",
+            json!({ "e": "queue", "text": text, "images": [], "front": false, "by": by }),
+        ));
     }
     assert_eq!(again.queue, g.queue);
     // An old queue note names nobody.

@@ -74,6 +74,8 @@ mod fs;
 mod guest_ssh;
 mod hand;
 #[cfg(unix)]
+mod hosted_sessions;
+#[cfg(unix)]
 mod hosted_work;
 mod hosts;
 #[cfg(feature = "editor")]

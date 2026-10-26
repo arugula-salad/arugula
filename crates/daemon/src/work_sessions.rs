@@ -1,0 +1,1116 @@
+//! Agent sessions on a hosted machine (M255, thread = session, Arugula
+//! #129): the box's half of `arugula_control_wire::work`'s sessions, as S42
+//! (`spikes/s42-thread-sessions`) found they must run.
+//!
+//! - **Pulled with runs.** A box whose template has session users says it
+//!   takes sessions ([`takes`]); each pull's [`SessionWork`]s are kept as
+//!   the latest word on each ([`pulled`]). One this box runs that's no
+//!   longer listed has ended (a person stopped it): its agent is stopped.
+//! - **A slot each, at most three** ([`Slots`]). A session runs as one of
+//!   the box's session users (`ses1` to `ses3`, the template's), which it
+//!   keeps for life: its checkout and its agent's own state (`~/.claude`,
+//!   the ACP session a restart loads) live in that user's home. With every
+//!   slot taken a queued session waits, listed, until one ends. Runs keep
+//!   their one at a time beside them.
+//! - **Its checkout is a clone, not a worktree** ([`checkout`]): the
+//!   daemon's user clones the workspace's clone of the session's repo,
+//!   hands it to the session user, and everything the daemon does in it
+//!   after that (switching to the session's branch, the turn's work) runs
+//!   as the session user, never as `user` (who can't get in) or root
+//!   (whose git would run the agent's planted repo config).
+//! - **Its agent is an ACP agent block** of kind `claude` (so M185's turn
+//!   gate and placeholder key hold), whose agent runs as the session user
+//!   (`agent::Config::run_as`): `sudo -n -u sesN -- env -i …`, with no
+//!   Arugula MCP server and nothing secret on its command line.
+//! - **One prompt per turn, with its author** ([`hand`]). The box hands
+//!   the block a queued prompt only when no turn is under way, oldest first,
+//!   as its author's (the block's transcript says whose). The first also
+//!   carries the repo's `CLAUDE.md` and `AGENTS.md` as text: Claude Code's
+//!   `settingSources: ["project"]` would load the repo's hooks too.
+//! - **At most once.** Before a prompt goes to the block, the ledger
+//!   (`<state>/work/sessions/ID.json`, fsynced) says it's handed; after a
+//!   restart between the two, the block's own log (its queue and turns)
+//!   says whether it got there. A prompt is never handed twice, and one in
+//!   the ledger is never handed again, whatever control lists.
+//! - **Reported, signed** ([`Session::push`]): the moves it makes
+//!   (`queued`/`done` to `working` with the turn's prompts, to
+//!   `needs_input` with what it asks, back, to `done`), a heartbeat every
+//!   [`HEARTBEAT`] while a turn is under way with the tool running now, the
+//!   agent's errors, and each turn's result (`turnwork`'s: branch, commits,
+//!   diffstat; `pushed` stays false until M259 pushes). Each is kept in the
+//!   ledger before it's sent, and sent in order until control takes it.
+//! - **People's answers** ([`SessionAction`]: a question's answer, a
+//!   permission's approval or denial, cancelling the turn) are done once
+//!   each, as the person who asked, and named in the next report.
+//! - **Restarts.** The agent dies with the daemon (a hosted box keeps no
+//!   FD store). Its block comes back, starts it again as the same user, and
+//!   loads its session: a turn the restart cut off ends there, and what was
+//!   queued behind it goes next.
+
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io::Write as _,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock},
+    time::Duration,
+};
+
+use arugula_control_wire::work::{
+    MAX_SESSIONS_PER_BOX, Reported, SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork,
+    WORK_SESSION_REPORT,
+};
+use arugula_e2e::{
+    now_ms,
+    session::{Event, Kind, State},
+};
+use arugula_proto::{BlockType, api::OpenRequest};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use tracing::{info, warn};
+
+use crate::{agent::hosted::AsUser, mux::Api, server::App};
+
+/// Sessions' ledgers, in the run ledger's directory.
+pub const DIR: &str = "sessions";
+/// The mux session sessions' blocks open in.
+pub const BLOCKS: &str = "sessions";
+/// How often a session's block is looked at.
+const FOLLOW: Duration = Duration::from_millis(250);
+/// How often a turn under way says it's alive, with nothing else to say
+/// (the platform marks it unresponsive after `session::QUIET_MS`).
+pub const HEARTBEAT: Duration = Duration::from_secs(15);
+/// How long a session's block may be missing (a restart restores it)
+/// before the session fails.
+const BLOCK_GRACE: Duration = Duration::from_secs(30);
+/// The most of one of the repo's notes (`CLAUDE.md`) the first prompt
+/// carries.
+const NOTES_MAX: usize = 32 * 1024;
+/// The most of any one text a report's detail carries: the whole detail is
+/// at most 16 KiB.
+const TEXT_MAX: usize = 4 * 1024;
+/// What a session whose block went away fails with.
+pub const BLOCK_GONE: &str = "its agent block is gone";
+
+/// The latest pull's sessions, by id: `None` before the first.
+static LATEST: Mutex<Option<BTreeMap<String, SessionWork>>> = Mutex::new(None);
+/// Sessions followed now.
+static FOLLOWING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+/// Sessions with a turn under way: the box is busy.
+static BUSY: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+/// One writer at a time for the ledgers.
+static LEDGER: Mutex<()> = Mutex::new(());
+
+fn heartbeat_every() -> Duration {
+    std::env::var("ARUGULA_SESSION_HEARTBEAT_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .map_or(HEARTBEAT, Duration::from_millis)
+}
+
+/// Whether a session has a turn under way on this box.
+pub fn busy() -> bool {
+    !BUSY.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+}
+
+/// The box's session users, one per slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Slots {
+    pub users: Vec<AsUser>,
+    /// The template's real Unix users, not a test's stand-ins: only then
+    /// are they kept off loopback, handed checkouts with `chown` and have
+    /// what they left killed.
+    pub real: bool,
+}
+
+/// The box's session users: `ARUGULA_HOSTED_SESSION_USERS` (`ses1,ses2,ses3`
+/// by default), each the template's, at most [`MAX_SESSIONS_PER_BOX`]. A
+/// box without them runs no sessions (an older template). Tests name a
+/// directory of homes instead (`ARUGULA_HOSTED_SESSION_HOMES`): the users
+/// aren't made, and `ARUGULA_HOSTED_SUDO` stands in for sudo.
+pub fn slots() -> Option<Slots> {
+    static SLOTS: OnceLock<Option<Slots>> = OnceLock::new();
+    SLOTS
+        .get_or_init(|| {
+            let names = std::env::var("ARUGULA_HOSTED_SESSION_USERS").unwrap_or_else(|_| "ses1,ses2,ses3".into());
+            let names: Vec<String> =
+                names.split(',').map(str::trim).filter(|n| !n.is_empty()).map(str::to_owned).collect();
+            if names.is_empty() || !names.iter().all(|n| AsUser::plain(n)) {
+                return None;
+            }
+            let names = names.into_iter().take(MAX_SESSIONS_PER_BOX);
+            if let Some(homes) = std::env::var_os("ARUGULA_HOSTED_SESSION_HOMES").filter(|h| !h.is_empty()) {
+                let homes = PathBuf::from(homes);
+                let users = names.map(|user| AsUser { home: homes.join(&user).display().to_string(), user }).collect();
+                return Some(Slots { users, real: false });
+            }
+            let mut users = vec![];
+            for user in names {
+                let Some(home) = home_of(&user) else {
+                    info!(user, "hosted: no session user here (an older template): this box takes no sessions");
+                    return None;
+                };
+                users.push(AsUser { user, home });
+            }
+            Some(Slots { users, real: true })
+        })
+        .clone()
+}
+
+fn home_of(user: &str) -> Option<String> {
+    let out = std::process::Command::new("getent").args(["passwd", user]).output().ok()?;
+    let line = String::from_utf8_lossy(&out.stdout);
+    line.trim_end().split(':').nth(5).filter(|h| h.starts_with('/') && *h != "/").map(str::to_owned)
+}
+
+/// Whether this box takes sessions: it has session users.
+pub fn takes() -> bool {
+    slots().is_some()
+}
+
+/// The session users kept off loopback ([`super::firewall`]): real ones
+/// only.
+pub fn fenced() -> Vec<String> {
+    slots().filter(|s| s.real).map(|s| s.users.into_iter().map(|u| u.user).collect()).unwrap_or_default()
+}
+
+/// A report, as signed and sent, and whether control has answered it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Kept {
+    pub report: SessionReport,
+    #[serde(default)]
+    pub answered: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
+}
+
+/// The turn under way.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Turn {
+    /// The prompts it started with.
+    pub prompts: Vec<String>,
+    /// The block's turns before it.
+    pub base: u64,
+    /// The block has its prompt (else a restart came between the ledger
+    /// and the block).
+    pub sent: bool,
+    pub at: u64,
+}
+
+/// A session this box took, in `<state>/work/sessions/ID.json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Session {
+    pub session: String,
+    pub project: String,
+    pub workspace: String,
+    pub asker: String,
+    #[serde(default)]
+    pub repo: Option<String>,
+    pub branch: String,
+    /// Its slot's user, which it keeps for life.
+    pub user: AsUser,
+    pub checkout: String,
+    #[serde(default)]
+    pub block: Option<u32>,
+    pub taken_at: u64,
+    /// This box's latest report number in it.
+    pub n: u64,
+    /// Its state by this box's own reports.
+    pub state: String,
+    /// It ended, and why: this box stops following it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended: Option<String>,
+    /// Every prompt handed to its agent: none is handed again.
+    #[serde(default)]
+    pub handed: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<Turn>,
+    /// The repo's notes for the first prompt, until it's sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    /// Every action done: none is done again.
+    #[serde(default)]
+    pub acted: Vec<String>,
+    /// Actions done that no report has named yet.
+    #[serde(default)]
+    pub unnamed: Vec<String>,
+    /// The agent's latest error, as reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// When it last reported (ms).
+    #[serde(default)]
+    pub last_at: u64,
+    #[serde(default)]
+    pub events: Vec<Kept>,
+}
+
+impl Session {
+    fn now(&self) -> State {
+        State::parse(&self.state).unwrap_or(State::Queued)
+    }
+
+    /// Sign its next report and keep it, to be sent: a move to `to` (for
+    /// [`Kind::State`]; the others stay where it is), naming the actions
+    /// done since the last.
+    pub fn push(&mut self, keys: &arugula_e2e::DeviceKeys, me: &str, kind: Kind, to: State, mut d: SessionDetail) {
+        let from = self.now();
+        let to = if kind == Kind::State { to } else { from };
+        if kind == Kind::State && !from.daemon_may(to) {
+            warn!(session = self.session, %from, %to, "hosted: a session move this box may not make; not reported");
+            return;
+        }
+        d.actions.append(&mut self.unnamed);
+        for t in [&mut d.question, &mut d.error, &mut d.reason, &mut d.tool, &mut d.diffstat].into_iter().flatten() {
+            cut(t, TEXT_MAX);
+        }
+        let detail = serde_json::to_string(&d).unwrap_or_else(|_| "{}".into());
+        self.n += 1;
+        let at = now_ms();
+        let ev = Event { session: &self.session, n: self.n, kind, from, to, at, detail: &detail, daemon: me };
+        let sig = ev.sign(keys);
+        let report = SessionReport {
+            session: self.session.clone(),
+            n: self.n,
+            kind: kind.as_str().into(),
+            from: from.as_str().into(),
+            to: to.as_str().into(),
+            at,
+            detail,
+            sig,
+        };
+        self.events.push(Kept { report, answered: false, refused: None });
+        self.state = to.as_str().into();
+        self.last_at = at;
+    }
+}
+
+/// `s` cut to `max` bytes, on a character's edge, and marked.
+fn cut(s: &mut String, max: usize) {
+    if s.len() > max {
+        let mut at = max;
+        while !s.is_char_boundary(at) {
+            at -= 1;
+        }
+        s.truncate(at);
+        s.push('…');
+    }
+}
+
+/// Whether `id` is a session's (`ses_` and 32 hex): control's word goes in
+/// a file name only once it's that.
+pub fn good_id(id: &str) -> bool {
+    id.strip_prefix("ses_").is_some_and(|h| h.len() == 32 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+}
+
+/// Whether `branch` is session `id`'s own (`arugula/<id>-<slug>`), and a
+/// ref git takes as it is.
+pub fn good_branch(id: &str, branch: &str) -> bool {
+    let Some(rest) = branch.strip_prefix("arugula/").and_then(|r| r.strip_prefix(id)) else { return false };
+    let slug = rest.strip_prefix('-').unwrap_or(rest);
+    (rest.is_empty() || (rest.starts_with('-') && !slug.is_empty()))
+        && slug.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+        && !slug.ends_with('-')
+        && branch.len() <= 200
+}
+
+fn path(dir: &Path, id: &str) -> Option<PathBuf> {
+    good_id(id).then(|| dir.join(super::DIR).join(DIR).join(format!("{id}.json")))
+}
+
+/// Session `id`'s ledger: `Ok(None)` only when there's none.
+pub fn read(dir: &Path, id: &str) -> std::io::Result<Option<Session>> {
+    let Some(p) = path(dir, id) else { return Err(std::io::Error::other("not a session's id")) };
+    match std::fs::read(p) {
+        Ok(b) => serde_json::from_slice(&b).map(Some).map_err(std::io::Error::other),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// Make session `l.session`'s ledger, once: `true` only for the call that
+/// made it (fsynced).
+pub fn claim(dir: &Path, l: &Session) -> bool {
+    let Some(p) = path(dir, &l.session) else { return false };
+    let _held = LEDGER.lock().unwrap_or_else(|e| e.into_inner());
+    let made = (|| -> std::io::Result<()> {
+        crate::store::private_dir(&dir.join(super::DIR))?;
+        crate::store::private_dir(&dir.join(super::DIR).join(DIR))?;
+        let mut o = std::fs::OpenOptions::new();
+        o.write(true).create_new(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+        let mut f = o.open(&p)?;
+        f.write_all(&serde_json::to_vec_pretty(l).map_err(std::io::Error::other)?)?;
+        f.sync_all()?;
+        #[cfg(unix)]
+        std::fs::File::open(dir.join(super::DIR).join(DIR))?.sync_all()?;
+        Ok(())
+    })();
+    match made {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
+        Err(e) => {
+            warn!(session = l.session, error = %e, "hosted: can't make a session's ledger; it isn't taken");
+            false
+        }
+    }
+}
+
+/// Change session `id`'s ledger with `f`, written and fsynced, if it's
+/// there: one writer at a time.
+pub fn update<T>(dir: &Path, id: &str, f: impl FnOnce(&mut Session) -> T) -> Option<(Session, T)> {
+    let p = path(dir, id)?;
+    let _held = LEDGER.lock().unwrap_or_else(|e| e.into_inner());
+    let mut l = match read(dir, id) {
+        Ok(Some(l)) => l,
+        Ok(None) => return None,
+        Err(e) => {
+            warn!(session = id, error = %e, "hosted: a session's ledger doesn't read");
+            return None;
+        }
+    };
+    let t = f(&mut l);
+    // Heartbeats control has taken are of no more use.
+    l.events.retain(|k| !(k.answered && k.report.kind == Kind::Heartbeat.as_str()));
+    match serde_json::to_vec_pretty(&l)
+        .map_err(anyhow::Error::from)
+        .and_then(|b| crate::store::write_atomic(&p, &b).map_err(anyhow::Error::from))
+    {
+        Ok(()) => Some((l, t)),
+        Err(e) => {
+            warn!(session = id, error = %format!("{e:#}"), "hosted: can't write a session's ledger");
+            None
+        }
+    }
+}
+
+/// Every session in the ledger that reads.
+pub fn all(dir: &Path) -> Vec<Session> {
+    let Ok(entries) = std::fs::read_dir(dir.join(super::DIR).join(DIR)) else { return vec![] };
+    let mut out: Vec<Session> = entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let id = name.strip_suffix(".json")?.to_owned();
+            read(dir, &id).ok().flatten()
+        })
+        .collect();
+    out.sort_by_key(|l| l.taken_at);
+    out
+}
+
+/// The sessions this box runs now (taken, not ended).
+fn live(dir: &Path) -> Vec<Session> {
+    all(dir).into_iter().filter(|l| l.ended.is_none()).collect()
+}
+
+/// A pull's sessions: kept as the latest word on each; the ones this box
+/// runs that aren't listed any more are stopped; queued ones are taken
+/// while there's a slot; and each one it runs is followed.
+pub async fn pulled(app: &Arc<App>, sessions: Vec<SessionWork>) {
+    let dir = app.control.state_dir().to_owned();
+    let listed: BTreeMap<String, SessionWork> = sessions.into_iter().map(|s| (s.session.clone(), s)).collect();
+    *LATEST.lock().unwrap_or_else(|e| e.into_inner()) = Some(listed.clone());
+    for l in live(&dir) {
+        if !listed.contains_key(&l.session) {
+            end(app, &l.session, "control says it ended").await;
+        }
+    }
+    for (id, w) in &listed {
+        if w.state == State::Queued.as_str() && matches!(read(&dir, id), Ok(None)) {
+            take(app, w).await;
+        }
+    }
+    for l in live(&dir) {
+        follow(app, &l.session);
+    }
+    send_all(app).await;
+}
+
+/// After a restart: follow every session this box runs, and send what's
+/// unsent.
+pub async fn resume(app: &Arc<App>) {
+    let dir = app.control.state_dir().to_owned();
+    for l in live(&dir) {
+        info!(session = l.session, "hosted: following a session from before the restart");
+        follow(app, &l.session);
+    }
+    send_all(app).await;
+}
+
+/// Who this machine is: its keys and device id.
+fn me(app: &App) -> Option<(Arc<arugula_e2e::DeviceKeys>, String, String, String)> {
+    super::me(app)
+}
+
+/// A free slot: a session user no session this box runs holds.
+fn free_slot(dir: &Path) -> Option<(AsUser, bool)> {
+    let slots = slots()?;
+    let held: BTreeSet<String> = live(dir).into_iter().map(|l| l.user.user).collect();
+    slots.users.iter().find(|u| !held.contains(&u.user)).cloned().map(|u| (u, slots.real))
+}
+
+/// Take queued session `w` if there's a slot: its ledger, its checkout,
+/// its block, then its first turn. One that can't be set up fails, saying
+/// why.
+async fn take(app: &Arc<App>, w: &SessionWork) {
+    let dir = app.control.state_dir().to_owned();
+    let Some((keys, me, project, workspace)) = me(app) else { return };
+    if !good_id(&w.session) {
+        warn!(session = w.session, "hosted: control sent a session that isn't a session's id");
+        return;
+    }
+    if w.project != project || w.workspace != workspace {
+        warn!(session = w.session, "hosted: control sent another workspace's session");
+        return;
+    }
+    if w.prompts.is_empty() {
+        return;
+    }
+    let Some((user, real)) = free_slot(&dir) else {
+        // Every slot is taken: it waits, listed, until one ends.
+        return;
+    };
+    let dest = Path::new(&user.home).join("work").join(&w.session).display().to_string();
+    let mut l = Session {
+        session: w.session.clone(),
+        project: w.project.clone(),
+        workspace: w.workspace.clone(),
+        asker: w.asker.clone(),
+        repo: w.repo.clone(),
+        branch: w.branch.clone(),
+        user,
+        checkout: dest,
+        block: None,
+        taken_at: now_ms(),
+        n: w.n,
+        state: State::Queued.as_str().into(),
+        ended: None,
+        handed: vec![],
+        turn: None,
+        notes: None,
+        acted: vec![],
+        unnamed: vec![],
+        error: None,
+        last_at: 0,
+        events: vec![],
+    };
+    let fail = |mut l: Session, why: String| {
+        info!(session = l.session, why, "hosted: a session can't start here");
+        l.push(
+            &keys,
+            &me,
+            Kind::State,
+            State::Failed,
+            SessionDetail { reason: Some(why.clone()), ..Default::default() },
+        );
+        l.ended = Some(why);
+        if !claim(&dir, &l) {
+            let _ = update(&dir, &l.session, |now| *now = l.clone());
+        }
+    };
+    if !good_branch(&w.session, &w.branch) {
+        return fail(l, format!("its branch isn't the session's own: {}", super::printable(&w.branch)));
+    }
+    if real
+        && let Err(super::Refused(_, why)) =
+            super::firewall(&dir, &super::fenced(super::run_as().ok().flatten().as_ref()))
+    {
+        return fail(l, why);
+    }
+    if !claim(&dir, &l) {
+        return;
+    }
+    info!(session = l.session, user = l.user.user, "hosted: took a session");
+    let src = match l.repo.clone() {
+        Some(repo) => match clone_of(&dir, &repo) {
+            Some(p) => Some(p),
+            None => return fail(l, format!("this box has no clone of {repo}: its setup didn't clone it")),
+        },
+        None => None,
+    };
+    if real {
+        super::kill_user(&l.user.user).await;
+    }
+    match checkout(&dir, &l, src.as_deref(), real).await {
+        Ok(notes) => l.notes = notes,
+        Err(why) => return fail(l, format!("its checkout: {why}")),
+    }
+    let block = match open_block(app, &l).await {
+        Ok(b) => b,
+        Err(why) => return fail(l, format!("its agent block: {why}")),
+    };
+    l.block = Some(block);
+    let notes = l.notes.clone();
+    if update(&dir, &l.session, |now| {
+        now.block = Some(block);
+        now.notes = notes;
+    })
+    .is_none()
+    {
+        return;
+    }
+    follow(app, &l.session);
+}
+
+/// The workspace's clone of `repo` (`owner/name`), as its setup made it.
+fn clone_of(dir: &Path, repo: &str) -> Option<PathBuf> {
+    let want = repo.trim().trim_end_matches(".git").to_ascii_lowercase();
+    crate::hosted::setup::Saved::load(dir)
+        .repos
+        .into_iter()
+        .find(|c| {
+            let url = c.url.trim_end_matches('/').trim_end_matches(".git").to_ascii_lowercase();
+            url.ends_with(&format!("/{want}")) || url.ends_with(&format!(":{want}"))
+        })
+        .map(|c| c.dir)
+        .filter(|d| d.join(".git").exists())
+}
+
+/// Run `argv` as `u` ([`AsUser::wrap`]): its output, or what it said.
+async fn as_user(u: &AsUser, argv: &[&str]) -> Result<String, String> {
+    let argv: Vec<String> = argv.iter().map(|s| (*s).to_owned()).collect();
+    let argv = u.wrap(&[], &argv);
+    let out = tokio::process::Command::new(&argv[0])
+        .args(&argv[1..])
+        .current_dir("/")
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .map_err(|e| format!("can't run {}: {e}", argv[0]))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().chars().take(400).collect())
+    }
+}
+
+/// Run `argv` as this daemon's user, as root through sudo when `root`.
+async fn here(argv: &[&str], root: bool) -> Result<String, String> {
+    let mut c = if root {
+        let mut c = tokio::process::Command::new("sudo");
+        c.arg("-n").args(argv);
+        c
+    } else {
+        let mut c = tokio::process::Command::new(argv[0]);
+        c.args(&argv[1..]);
+        c
+    };
+    let out = c
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .map_err(|e| format!("can't run {}: {e}", argv[0]))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    } else {
+        Err(format!(
+            "{}: {}",
+            argv.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim().chars().take(400).collect::<String>()
+        ))
+    }
+}
+
+/// The session's checkout, `~sesN/work/ID`: a clone of `src` (the
+/// workspace's clone; an empty repo with none) made by this daemon's user
+/// in a staging directory, its origin the workspace clone's, handed to the
+/// session user (`chown`, then moved into its home), and switched to the
+/// session's branch as the session user. Never a `git worktree`: its
+/// metadata would stay in the workspace's clone, which the session user
+/// can't write. The repo's `CLAUDE.md` and `AGENTS.md`, read before it's
+/// handed over, are the first prompt's notes.
+async fn checkout(dir: &Path, l: &Session, src: Option<&Path>, real: bool) -> Result<Option<String>, String> {
+    let stage = dir.join(super::DIR).join(DIR).join(format!("{}.stage", l.session));
+    let dest = PathBuf::from(&l.checkout);
+    let s = stage.display().to_string();
+    let _ = std::fs::remove_dir_all(&stage);
+    match src {
+        Some(src) => {
+            let from = src.display().to_string();
+            here(&["git", "clone", "-q", "--no-hardlinks", "--", &from, &s], false).await?;
+            // Its origin is the workspace clone's (no credentials in it).
+            if let Ok(url) = here(&["git", "-C", &from, "remote", "get-url", "origin"], false).await {
+                here(&["git", "-C", &s, "remote", "set-url", "origin", url.trim()], false).await?;
+            }
+        }
+        None => here(&["git", "init", "-q", &s], false).await.map(|_| ())?,
+    }
+    let notes = notes(&stage);
+    let work = Path::new(&l.user.home).join("work");
+    let w = work.display().to_string();
+    let d = dest.display().to_string();
+    let owner = format!("{u}:{u}", u = l.user.user);
+    if real {
+        here(&["mkdir", "-p", "--", &w], true).await?;
+        here(&["chown", &owner, "--", &w], true).await?;
+        here(&["chmod", "0700", "--", &w], true).await?;
+        here(&["chown", "-R", &owner, "--", &s], true).await?;
+        here(&["rm", "-rf", "--", &d], true).await?;
+        here(&["mv", "--", &s, &d], true).await?;
+    } else {
+        std::fs::create_dir_all(&work).map_err(|e| format!("{w}: {e}"))?;
+        let _ = std::fs::remove_dir_all(&dest);
+        std::fs::rename(&stage, &dest).map_err(|e| format!("{d}: {e}"))?;
+    }
+    // From here on, its own user's.
+    as_user(&l.user, &["git", "-C", &d, "config", "user.name", "Arugula session"]).await?;
+    let email = format!("{}@sessions.arugula.invalid", l.session);
+    as_user(&l.user, &["git", "-C", &d, "config", "user.email", &email]).await?;
+    as_user(&l.user, &["git", "-C", &d, "switch", "-q", "-c", &l.branch]).await?;
+    Ok(notes)
+}
+
+/// The repo's `CLAUDE.md` and `AGENTS.md` (at its top), as the first
+/// prompt's text.
+fn notes(repo: &Path) -> Option<String> {
+    let mut out = String::new();
+    for name in ["CLAUDE.md", "AGENTS.md"] {
+        let Ok(mut text) = std::fs::read_to_string(repo.join(name)) else { continue };
+        if text.trim().is_empty() {
+            continue;
+        }
+        cut(&mut text, NOTES_MAX);
+        out.push_str(&format!("\n\nThe repository's {name}, as text:\n\n{}", text.trim_end()));
+    }
+    (!out.is_empty()).then(|| {
+        format!(
+            "\n\n---\nWhat the repository says about working in it (only as text: its settings and hooks aren't \
+             loaded).{out}"
+        )
+    })
+}
+
+/// The agent a session's block runs: Claude Code, unless a test names a
+/// command (`ARUGULA_HOSTED_SESSION_AGENT`), which still runs as kind
+/// `claude`, under M185's gate.
+fn agent_config(l: &Session) -> Value {
+    let mut c = json!({
+        "agent": "claude",
+        "cwd": l.checkout,
+        "title": format!("session {}", l.session),
+        "run_as": l.user,
+    });
+    if let Some(cmd) = std::env::var("ARUGULA_HOSTED_SESSION_AGENT").ok().filter(|c| !c.trim().is_empty()) {
+        c["command"] = json!(crate::agent::defs::split_command(&cmd));
+    }
+    c
+}
+
+async fn open_block(app: &App, l: &Session) -> Result<u32, String> {
+    let req = OpenRequest {
+        kind: BlockType::Agent,
+        config: agent_config(l),
+        session: Some(BLOCKS.into()),
+        local: true,
+        ..Default::default()
+    };
+    match app.mux.api(|r| Api::Open(req, None, r)).await {
+        Some(Ok(b)) => Ok(b),
+        Some(Err(e)) => Err(e),
+        None => Err("the daemon is stopping".into()),
+    }
+}
+
+/// Follow session `id` (once: a second call while it's followed does
+/// nothing) until it ends.
+fn follow(app: &Arc<App>, id: &str) {
+    if !FOLLOWING.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_owned()) {
+        return;
+    }
+    let app = app.clone();
+    let id = id.to_owned();
+    tokio::spawn(async move {
+        let mut missing: Option<std::time::Instant> = None;
+        while step(&app, &id, &mut missing).await {
+            tokio::time::sleep(FOLLOW).await;
+        }
+        BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        FOLLOWING.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        send(&app, &id).await;
+    });
+}
+
+/// The latest pull's word on session `id`: `None` when it wasn't listed,
+/// or before the first pull.
+fn latest(id: &str) -> Option<SessionWork> {
+    LATEST.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(id).cloned())
+}
+
+/// What the block's state says of its turn.
+struct Seen {
+    status: String,
+    turns: u64,
+    queued: usize,
+    /// An open permission request or question: kind, id, what it asks,
+    /// and a permission's options.
+    open: Option<(&'static str, String, String, Vec<String>)>,
+    tool: Option<String>,
+    error: Option<String>,
+}
+
+fn seen(s: &Value) -> Seen {
+    let perm = s["pending"].as_array().and_then(|p| p.first()).map(|p| {
+        let options = p["options"].as_array().into_iter().flatten().filter_map(|o| o["id"].as_str()).map(str::to_owned);
+        (
+            "permission",
+            p["id"].as_str().unwrap_or_default().to_owned(),
+            p["title"].as_str().unwrap_or("a permission").to_owned(),
+            options.collect(),
+        )
+    });
+    let ask = || {
+        s["asks"].as_array().into_iter().flatten().find(|a| a["accepted"] != true).map(|a| {
+            let q = a["questions"][0]["question"].as_str().or(a["message"].as_str()).unwrap_or("a question");
+            ("question", a["id"].as_str().unwrap_or_default().to_owned(), q.to_owned(), vec![])
+        })
+    };
+    Seen {
+        status: s["status"].as_str().unwrap_or_default().to_owned(),
+        turns: s["turns"].as_u64().unwrap_or(0),
+        queued: s["queued"].as_array().map_or(0, Vec::len),
+        open: perm.or_else(ask),
+        tool: s["current_tool"]["title"].as_str().map(str::to_owned),
+        error: s["error"].as_str().map(str::to_owned),
+    }
+}
+
+/// One look at session `id`'s block, and what it calls for. `false` once
+/// it ended.
+async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>) -> bool {
+    let dir = app.control.state_dir().to_owned();
+    let Ok(Some(l)) = read(&dir, id) else { return false };
+    if l.ended.is_some() {
+        return false;
+    }
+    let Some((keys, me, ..)) = me(app) else { return true };
+    let Some(block) = l.block else { return true };
+    let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten() else {
+        // A restart restores it: give it a while.
+        let since = *missing.get_or_insert_with(std::time::Instant::now);
+        if since.elapsed() > BLOCK_GRACE {
+            fail(app, id, BLOCK_GONE).await;
+            return false;
+        }
+        return true;
+    };
+    *missing = None;
+    let work = latest(id);
+    // People's answers, each once, as whoever asked.
+    if let Some(w) = &work {
+        for a in w.actions.iter().filter(|a| !l.acted.contains(&a.id)) {
+            act(&b, a).await;
+            let _ = update(&dir, id, |now| {
+                now.acted.push(a.id.clone());
+                now.unnamed.push(a.id.clone());
+            });
+        }
+    }
+    let Ok(Some(l)) = read(&dir, id) else { return false };
+    let s = seen(&b.state());
+    let say = |f: Box<dyn FnOnce(&mut Session) + Send>| {
+        update(&dir, id, f);
+    };
+    match l.turn.clone() {
+        // A restart came between the ledger and the block: the block's own
+        // log says whether it got the prompt.
+        Some(t) if !t.sent => {
+            if s.turns > t.base || s.queued > 0 {
+                let (k, m) = (keys.clone(), me.clone());
+                say(Box::new(move |now| started(now, &k, &m)));
+            } else if let Some(p) = work.as_ref().and_then(|w| w.prompts.iter().find(|p| t.prompts.contains(&p.id))) {
+                give(app, &b, id, p.clone(), &keys, &me).await;
+            } else {
+                // Control no longer lists it: it went with a turn before.
+                say(Box::new(|now| now.turn = None));
+            }
+        }
+        Some(t) => {
+            BUSY.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_owned());
+            let idle = s.status != "working" && s.status != "starting" && s.queued == 0 && s.open.is_none();
+            if let Some(e) = s.error.clone().filter(|e| l.error.as_ref() != Some(e)) {
+                let (k, m) = (keys.clone(), me.clone());
+                say(Box::new(move |now| {
+                    now.push(
+                        &k,
+                        &m,
+                        Kind::Error,
+                        State::Working,
+                        SessionDetail { error: Some(e.clone()), ..Default::default() },
+                    );
+                    now.error = Some(e);
+                }));
+            }
+            if idle && (s.turns > t.base || s.error.is_some() || s.status == "exited" || s.status == "stopped") {
+                // The turn ended (or never began: the gate said no, or the
+                // agent went away).
+                let result = b.call("turn_result", json!({})).await.ok().filter(|v| !v.is_null());
+                let r: Option<arugula_proto::api::TurnResult> = result.and_then(|v| serde_json::from_value(v).ok());
+                let branch = l.branch.clone();
+                let (k, m) = (keys.clone(), me.clone());
+                say(Box::new(move |now| {
+                    if now.now() == State::NeedsInput {
+                        now.push(&k, &m, Kind::State, State::Working, SessionDetail::default());
+                    }
+                    let w = r.and_then(|r| r.work);
+                    let d = SessionDetail {
+                        branch: Some(w.as_ref().map_or(branch, |w| w.branch.clone())),
+                        head: w.as_ref().map(|w| w.head.clone()).filter(|h| !h.is_empty()),
+                        // M259 pushes, and says so.
+                        pushed: Some(false),
+                        commits: w.as_ref().and_then(|w| w.commits.clone()).unwrap_or_default(),
+                        diffstat: w.as_ref().and_then(|w| w.diffstat.clone()),
+                        uncommitted: w.as_ref().map(|w| w.uncommitted_total),
+                        ..Default::default()
+                    };
+                    now.push(&k, &m, Kind::Turn, State::Working, d);
+                    now.push(&k, &m, Kind::State, State::Done, SessionDetail::default());
+                    now.turn = None;
+                }));
+                BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+            } else if let Some((ask, request, question, options)) = s.open.clone().filter(|_| l.now() == State::Working)
+            {
+                let (k, m) = (keys.clone(), me.clone());
+                say(Box::new(move |now| {
+                    let d = SessionDetail {
+                        question: Some(question),
+                        request: Some(request),
+                        ask: Some(ask.into()),
+                        options,
+                        ..Default::default()
+                    };
+                    now.push(&k, &m, Kind::State, State::NeedsInput, d);
+                }));
+            } else if s.open.is_none() && l.now() == State::NeedsInput {
+                let (k, m) = (keys.clone(), me.clone());
+                say(Box::new(move |now| now.push(&k, &m, Kind::State, State::Working, SessionDetail::default())));
+            } else if now_ms().saturating_sub(l.last_at) >= heartbeat_every().as_millis() as u64
+                || !l.unnamed.is_empty()
+            {
+                let (k, m, tool) = (keys.clone(), me.clone(), s.tool.clone());
+                say(Box::new(move |now| {
+                    let to = now.now();
+                    now.push(&k, &m, Kind::Heartbeat, to, SessionDetail { tool, ..Default::default() })
+                }));
+            }
+        }
+        None => {
+            BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+            let next = work.as_ref().and_then(|w| w.prompts.iter().find(|p| !l.handed.contains(&p.id)).cloned());
+            if let Some(p) = next {
+                hand(app, &b, id, p, &keys, &me, s.turns).await;
+            } else if !l.unnamed.is_empty() {
+                // An action with no turn to do it to (a cancel too late):
+                // named, so it leaves control's list.
+                let (k, m) = (keys.clone(), me.clone());
+                say(Box::new(move |now| {
+                    let to = now.now();
+                    now.push(&k, &m, Kind::Heartbeat, to, SessionDetail::default())
+                }));
+            }
+        }
+    }
+    send(app, id).await;
+    true
+}
+
+/// Start a turn with prompt `p`: the ledger says it's handed (fsynced)
+/// before the block gets it, so a restart can't hand it twice.
+async fn hand(
+    app: &App,
+    b: &Arc<dyn crate::block::Block>,
+    id: &str,
+    p: SessionPrompt,
+    keys: &Arc<arugula_e2e::DeviceKeys>,
+    me: &str,
+    base: u64,
+) {
+    let dir = app.control.state_dir();
+    let pid = p.id.clone();
+    let Some(_) = update(dir, id, |now| {
+        now.handed.push(pid.clone());
+        now.turn = Some(Turn { prompts: vec![pid], base, sent: false, at: now_ms() });
+    }) else {
+        return;
+    };
+    give(app, b, id, p, keys, me).await;
+}
+
+/// Give the block prompt `p` (the turn's, handed), as its author's, and say
+/// the turn started. The first prompt carries the repo's notes.
+async fn give(
+    app: &App,
+    b: &Arc<dyn crate::block::Block>,
+    id: &str,
+    p: SessionPrompt,
+    keys: &Arc<arugula_e2e::DeviceKeys>,
+    me: &str,
+) {
+    let dir = app.control.state_dir();
+    let Ok(Some(l)) = read(dir, id) else { return };
+    let mut text = p.for_agent();
+    if let Some(n) = &l.notes {
+        text.push_str(n);
+    }
+    match b.call_by("send", json!({ "text": text }), Some(&p.author)).await {
+        Ok(_) => {
+            update(dir, id, |now| started(now, keys, me));
+        }
+        Err(e) => {
+            warn!(session = id, error = e, "hosted: a session's agent didn't take its prompt");
+            let why = format!("couldn't give the agent its prompt: {e}");
+            update(dir, id, |now| {
+                // Not handed after all: it goes again at the next look.
+                now.handed.retain(|h| *h != p.id);
+                now.turn = None;
+                if now.error.as_deref() != Some(why.as_str()) {
+                    now.push(
+                        keys,
+                        me,
+                        Kind::Error,
+                        State::Working,
+                        SessionDetail { error: Some(why.clone()), ..Default::default() },
+                    );
+                    now.error = Some(why);
+                }
+            });
+        }
+    }
+}
+
+/// The block has the turn's prompt: say the turn started (with the agent's
+/// block, on the first), once.
+fn started(now: &mut Session, keys: &arugula_e2e::DeviceKeys, me: &str) {
+    let Some(t) = now.turn.as_mut() else { return };
+    t.sent = true;
+    let prompts = t.prompts.clone();
+    now.notes = None;
+    now.error = None;
+    if matches!(now.now(), State::Queued | State::Done) {
+        let first = now.now() == State::Queued;
+        let d = SessionDetail {
+            prompts,
+            block: first.then(|| now.block.map(|b| b.to_string())).flatten(),
+            ..Default::default()
+        };
+        now.push(keys, me, Kind::State, State::Working, d);
+    }
+}
+
+/// Do action `a` to the block, as the person who asked.
+async fn act(b: &Arc<dyn crate::block::Block>, a: &SessionAction) {
+    let id = a.request.clone().map_or(Value::Null, Value::String);
+    let (method, args) = match a.kind.as_str() {
+        "answer" => ("answer", json!({ "id": id, "content": a.answer.clone().unwrap_or_else(|| json!({})) })),
+        "approve" => ("approve", json!({ "id": id, "option": a.option.as_deref().unwrap_or("allow-once") })),
+        "deny" => ("deny", json!({ "id": id, "reason": a.reason.as_deref().unwrap_or("") })),
+        "cancel" => ("cancel", json!({})),
+        other => {
+            warn!(action = a.id, kind = other, "hosted: a session action this box doesn't know; skipped");
+            return;
+        }
+    };
+    if let Err(e) = b.call_by(method, args, Some(&a.by)).await {
+        // Answered meanwhile, or nothing to cancel: it's done all the same.
+        info!(action = a.id, method, error = e, "hosted: a session action didn't apply");
+    }
+}
+
+/// Session `id` ended without this box (control stopped it): stop its
+/// agent, close its block, kill what its user left, and free its slot.
+async fn end(app: &Arc<App>, id: &str, why: &str) {
+    let dir = app.control.state_dir().to_owned();
+    let Some((l, _)) = update(&dir, id, |now| now.ended = Some(why.to_owned())) else { return };
+    info!(session = id, why, "hosted: a session ended; stopping its agent");
+    stop_agent(app, &l).await;
+}
+
+/// Session `id` fails here, saying `why`, and its agent is stopped.
+async fn fail(app: &Arc<App>, id: &str, why: &str) {
+    let dir = app.control.state_dir().to_owned();
+    let Some((keys, me, ..)) = me(app) else { return };
+    let Some((l, _)) = update(&dir, id, |now| {
+        now.push(
+            &keys,
+            &me,
+            Kind::State,
+            State::Failed,
+            SessionDetail { reason: Some(why.to_owned()), ..Default::default() },
+        );
+        now.ended = Some(why.to_owned());
+    }) else {
+        return;
+    };
+    warn!(session = id, why, "hosted: a session failed");
+    stop_agent(app, &l).await;
+    send(app, id).await;
+}
+
+async fn stop_agent(app: &App, l: &Session) {
+    BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&l.session);
+    if let Some(block) = l.block {
+        if let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten() {
+            let _ = b.call("cancel", json!({})).await;
+        }
+        app.mux.api(|r| Api::Close(block, r)).await;
+    }
+    if slots().is_some_and(|s| s.real) {
+        super::kill_user(&l.user.user).await;
+    }
+}
+
+/// Send session `id`'s reports control hasn't answered, in order, until
+/// one doesn't get through.
+async fn send(app: &Arc<App>, id: &str) {
+    static SENDING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _one = SENDING.lock().await;
+    let dir = app.control.state_dir().to_owned();
+    loop {
+        let Ok(Some(l)) = read(&dir, id) else { return };
+        let Some(i) = l.events.iter().position(|k| !k.answered) else { return };
+        let r = l.events[i].report.clone();
+        let got: anyhow::Result<Reported> = app.control.post_signed(WORK_SESSION_REPORT, &r).await;
+        let (refused, ended) = match got {
+            Ok(Reported::Taken | Reported::Already) => (None, None),
+            Ok(Reported::Refused { why, now, next }) => {
+                warn!(session = id, n = r.n, kind = r.kind, %why, ?next, "hosted: control refused a session's report");
+                // It moved on without this box (a person stopped it).
+                let ended = now.as_deref().and_then(State::parse).filter(|s| s.terminal());
+                (Some(why), ended)
+            }
+            Err(e) => {
+                info!(session = id, error = %format!("{e:#}"), "hosted: a session's report didn't get through; trying again");
+                return;
+            }
+        };
+        update(&dir, id, |now| {
+            if let Some(k) = now.events.iter_mut().find(|k| k.report.n == r.n) {
+                k.answered = true;
+                k.refused = refused.clone();
+            }
+        });
+        if let Some(s) = ended
+            && l.ended.is_none()
+        {
+            let app = app.clone();
+            let id = id.to_owned();
+            // Not under the sender's lock: stopping sends nothing.
+            tokio::spawn(async move { end(&app, &id, &format!("control says it's {s}")).await });
+            return;
+        }
+    }
+}
+
+/// Send every session's unsent reports.
+async fn send_all(app: &Arc<App>) {
+    let dir = app.control.state_dir().to_owned();
+    for l in all(&dir).into_iter().filter(|l| l.events.iter().any(|k| !k.answered)) {
+        send(app, &l.session).await;
+    }
+}
+
+#[cfg(test)]
+#[path = "work_sessions_tests.rs"]
+mod tests;

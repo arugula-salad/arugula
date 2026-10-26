@@ -167,6 +167,11 @@ pub struct Config {
     /// removes it only if nothing would be lost.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<crate::worktree::Owned>,
+    /// A hosted session's agent (M255): it runs as this session user, never
+    /// as the daemon's, and so does the daemon's git in its directory. It
+    /// gets no Arugula MCP server: the daemon's port is closed to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_as: Option<hosted::AsUser>,
 }
 
 /// Where an opened conversation came from (M33). Until it's continued the
@@ -675,7 +680,7 @@ impl Inner {
                 w.servers().iter().filter(|s| !list.iter().any(|o| o["name"] == s["name"])).cloned().collect();
             list.extend(extra);
         }
-        let Some(link) = &ctx.mcp else { return list };
+        let Some(link) = ctx.mcp.as_ref().filter(|_| self.cfg.run_as.is_none()) else { return list };
         if list.iter().any(|s| s["name"] == crate::mcp::SERVER_NAME) {
             return list;
         }
@@ -1791,6 +1796,7 @@ impl Agent {
                 }
                 let marker = self.ctx.dir.join(TOKEN_IN_ENV);
                 if by_reference(&inner.cfg.def, &self.ctx)
+                    && inner.cfg.run_as.is_none()
                     && let Some(link) = &self.ctx.mcp
                 {
                     let token = link.tokens.block_token(self.ctx.id);
@@ -1814,10 +1820,24 @@ impl Agent {
                 if says_login(&inner.cfg.def) {
                     inner.note(json!({ "e": "login", "login": local_login(&env, &remove) }));
                 }
+                // M255: a hosted session's agent, as its session user, with
+                // an empty environment but for the adapter's own and the
+                // placeholder (nothing secret: it's on sudo's command line).
+                let argv = match &inner.cfg.run_as {
+                    Some(u) => {
+                        let mut theirs = launch.env.clone();
+                        if hosted::gate().is_some() {
+                            let auth = inner.hosted_auth.unwrap_or_else(hosted::claude_auth);
+                            theirs.extend(hosted::env_here(inner.cfg.def.agent, auth));
+                        }
+                        u.wrap(&theirs, &hosted::AsUser::reachable(&launch.argv))
+                    }
+                    None => launch.argv.clone(),
+                };
                 let spawn = link::LocalSpawn {
                     id: self.ctx.id,
                     dir: &self.ctx.dir,
-                    argv: &launch.argv,
+                    argv: &argv,
                     cwd: &cwd,
                     env: &env,
                     remove: &remove,
@@ -2966,10 +2986,15 @@ impl Agent {
             (message, g.turns.last().map(|t| t.started_ms), work_dir(&self.ctx, &g))
         };
         let block = self.ctx.block.clone();
+        let run_as = self.inner.lock().unwrap().cfg.run_as.clone();
         Box::pin(async move {
             let Some(message) = message else { return Ok(Value::Null) };
-            // Git trouble is no work to report, not an error.
-            let runner = crate::review::Runner::user(&block).await;
+            // Git trouble is no work to report, not an error. A hosted
+            // session's checkout is its session user's (M255).
+            let runner = match run_as {
+                Some(u) => Ok(crate::review::Runner::As(u)),
+                None => crate::review::Runner::user(&block).await,
+            };
             let r = match runner {
                 Ok(runner) => turnwork::result(&runner, &cwd, started_ms, message).await,
                 Err(_) => arugula_proto::api::TurnResult { message, work: None },

@@ -115,9 +115,33 @@ RUN chmod 0755 /usr/local/bin/arugula-hosted-start && chmod 0644 /etc/systemd/sy
  && ln -sf /etc/systemd/system/arugulad.service /etc/systemd/system/multi-user.target.wants/arugulad.service
 # ---- end M258 ------------------------------------------------------------
 
-# The adapters where the daemon looks first (agent/adapters.rs).
+# --- M255 (thread = session): session users. ---------------------------
+# A hosted session's agent runs as one of ses1..ses3, one per session the
+# box runs at once (the daemon's cap), each kept by its session for life:
+# `sudo -n -u sesN -- env -i …` from arugulad, for the agent and for all of
+# the daemon's git in the session's checkout (a clone in ~sesN/work).
+# - no sudo of its own, and env_reset;
+# - not in `user`'s group, unlike `runner`: /home/user (0750), setup's
+#   files there and the daemon's state are closed to it;
+# - its home 0700, closed to the other sessions;
+# - kept off loopback (the daemon's and the provider's ports) with runner,
+#   by arugulad's nftables table, before the first session runs.
+# The adapters live in /opt/arugula/agents (below), which they can read.
+RUN for n in 1 2 3; do { id -u "ses$n" >/dev/null 2>&1 || useradd -m -s /bin/bash "ses$n"; } \
+      && chmod 0700 "/home/ses$n"; done \
+ && printf 'Defaults>ses1 env_reset\nDefaults>ses2 env_reset\nDefaults>ses3 env_reset\n' > /etc/sudoers.d/sessions \
+ && chmod 0440 /etc/sudoers.d/sessions \
+ && install -d -o user -g user -m 0755 /opt/arugula /opt/arugula/agents
+# --- end M255 -----------------------------------------------------------
+
+# The adapters: in /opt/arugula/agents (M255: owned by `user`, who updates
+# them, and readable by the session users, who can't reach /home/user),
+# linked from where the daemon looks first (agent/adapters.rs). A session's
+# agent is started by the link's target.
 USER user
 WORKDIR /home/user
-RUN npm install --no-fund --no-audit --prefix /home/user/.local/share/arugula/agents/claude "$CLAUDE_ACP" \
- && npm install --no-fund --no-audit --omit=optional --prefix /home/user/.local/share/arugula/agents/codex "$CODEX_ACP" \
- && npm cache clean --force
+RUN npm install --no-fund --no-audit --prefix /opt/arugula/agents/claude "$CLAUDE_ACP" \
+ && npm install --no-fund --no-audit --omit=optional --prefix /opt/arugula/agents/codex "$CODEX_ACP" \
+ && npm cache clean --force \
+ && mkdir -p /home/user/.local/share/arugula \
+ && ln -s /opt/arugula/agents /home/user/.local/share/arugula/agents

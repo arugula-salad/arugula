@@ -68,6 +68,10 @@ pub(crate) enum Runner {
         sprite: String,
         env: Vec<(String, String)>,
     },
+    /// On this host as a hosted session's user (M255): the daemon's git in
+    /// a session's checkout runs as the session, never as `user` (who can't
+    /// get in) or root (whose git would run the agent's repo config).
+    As(crate::agent::hosted::AsUser),
 }
 
 impl Runner {
@@ -93,11 +97,12 @@ impl Runner {
                 let env = ctx.shell_env.machine(&provider, &sprite).await.vars.clone();
                 Runner::Machine { provider, sprite, env }
             }
+            r @ Runner::As(_) => r,
         })
     }
 
     pub fn local(&self) -> bool {
-        matches!(self, Runner::Local { .. })
+        matches!(self, Runner::Local { .. } | Runner::As(_))
     }
 
     /// `sh -c SCRIPT sh ARGS…` on the host: its stdout and exit code
@@ -120,6 +125,21 @@ impl Runner {
                         .output()
                         .await
                         .map_err(|e| format!("can't run sh: {e}"))?;
+                    Ok((out.stdout, out.status.code()))
+                }
+                Runner::As(u) => {
+                    let mut argv = vec!["sh".to_owned(), "-c".into(), script.into(), "sh".into()];
+                    argv.extend(args.iter().cloned());
+                    let argv = u.wrap(&[("GIT_OPTIONAL_LOCKS".into(), "0".into())], &argv);
+                    let out = tokio::process::Command::new(&argv[0])
+                        .args(&argv[1..])
+                        .current_dir("/")
+                        .stdin(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .kill_on_drop(true)
+                        .output()
+                        .await
+                        .map_err(|e| format!("can't run sh as {}: {e}", u.user))?;
                     Ok((out.stdout, out.status.code()))
                 }
                 Runner::Machine { provider, sprite, env } => {
