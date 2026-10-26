@@ -1064,7 +1064,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 34, "{:?}", names(&with));
+        assert_eq!(with.len(), 36, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
@@ -2756,4 +2756,164 @@ async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
     assert!(!asked.iter().any(|(p, _)| p.contains("approve") || p.contains("deny")), "{asked:?}");
     s.cancel().await.unwrap();
     drop(d);
+}
+
+/// A fake control's platform for the status board's tools: project `prj_1`
+/// with one board (`brd_1`: zone `zon_1` "Now" with a row `row_1` at rev 2),
+/// answering a write to the row's note at another rev with 409, and a
+/// write to a zone with 403 as the platform does. Every call as it came:
+/// method and path, its body.
+#[cfg(feature = "labs")]
+#[derive(Clone, Default)]
+struct FakeBoards {
+    calls: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
+}
+
+#[cfg(feature = "labs")]
+async fn fake_boards(f: FakeBoards) -> String {
+    use axum::{
+        Json, Router,
+        extract::{Request, State},
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::{get, post},
+    };
+    fn view() -> Value {
+        json!({
+            "board": { "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a1",
+                       "created_at": 1, "updated_at": 1 },
+            "zones": [{ "id": "zon_1", "rev": 1, "title": "Now", "rows": [{
+                "id": "row_1", "rev": 2, "pointer": { "kind": "issue", "id": "iss_0123456789abcdef" },
+                "note": "fix login", "status": "working", "created_at": 1, "updated_at": 1 }] }],
+        })
+    }
+    async fn any(State(f): State<FakeBoards>, req: Request) -> Response {
+        let (method, at) = (req.method().to_string(), req.uri().to_string());
+        let bytes = axum::body::to_bytes(req.into_body(), 1 << 20).await.unwrap();
+        let b: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+        f.calls.lock().unwrap().push((format!("{method} {at}"), b.clone()));
+        let said = |status: StatusCode, said: &str, reason: &str| {
+            (status, Json(json!({ "error": said, "reason": reason }))).into_response()
+        };
+        match (method.as_str(), at.split('?').next().unwrap_or_default()) {
+            ("GET", "/api/daemon/issue-home") => Json(json!({ "project": "prj_1", "home": "native" })).into_response(),
+            ("GET", "/api/daemon/projects/prj_1/boards") => Json(json!({ "project": "prj_1", "boards": [
+                { "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a1", "created_at": 1,
+                  "updated_at": 1 }] }))
+            .into_response(),
+            ("GET", "/api/daemon/boards/brd_1") => Json(view()).into_response(),
+            ("PUT", "/api/daemon/boards/brd_1/entries") => {
+                if b["entry"] == "zone" || b["id"] == "zon_1" {
+                    return said(StatusCode::FORBIDDEN, "an agent doesn't make zones", "forbidden");
+                }
+                if b["id"].is_string() && b["note"].is_string() && b["rev"] != 2 {
+                    return said(StatusCode::CONFLICT, "this entry is at rev 2 now: read the board again", "stale_rev");
+                }
+                let mut v = view();
+                if b["entry"] == "row" {
+                    v["zones"][0]["rows"].as_array_mut().unwrap().push(json!({
+                        "id": "row_2", "rev": 1, "pointer": { "kind": "none" }, "note": b["note"],
+                        "status": b["status"], "agent": { "machine": "m1", "machine_name": "geek" },
+                        "created_at": 2, "updated_at": 2 }));
+                }
+                Json(v).into_response()
+            }
+            ("DELETE", "/api/daemon/boards/brd_1/entries/row_1") => {
+                said(StatusCode::FORBIDDEN, "an agent removes only the rows its own machine added", "forbidden")
+            }
+            _ => said(StatusCode::NOT_FOUND, &format!("no route {method} {at}"), "not_found"),
+        }
+    }
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .fallback(any)
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// The board tools (boards, step 3) are listed and work only with the
+/// `boards` flag on; board_read lists a project's boards and reads one as
+/// zones, rows and 72-column text; board_write adds a row, sets a status
+/// with no rev, says to read again on a 409, needs a rev for a note, and
+/// passes the platform's refusal of a zone through.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
+    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let fake = FakeBoards::default();
+    let url = fake_boards(fake.clone()).await;
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    let s = bridge(&d, Client::named("claude-code")).await;
+
+    // Off: neither tool is listed, and a call is refused saying why.
+    arugula_proto::flags::set(&d.state, "boards", false).unwrap();
+    let names = |tools: Vec<rmcp::model::Tool>| tools.into_iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
+    let off = names(s.list_all_tools().await.unwrap());
+    assert!(!off.iter().any(|n| n.starts_with("board_")), "{off:?}");
+    assert!(refused(&s, "board_read", json!({ "project": "prj_1" })).await.contains("boards"));
+
+    arugula_proto::flags::set(&d.state, "boards", true).unwrap();
+    // The daemon takes a moment to join the fake control.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while call_raw(&s, "board_read", json!({ "project": "prj_1" })).await.is_error == Some(true) {
+        assert!(std::time::Instant::now() < deadline, "never joined");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let tools = s.list_all_tools().await.unwrap();
+    assert!(names(tools.clone()).iter().any(|n| n == "board_read"));
+    assert_eq!(kinds(&tools, "board_write"), ["add_row", "set", "move", "remove_row"]);
+
+    let listed = call(&s, "board_read", json!({ "project": "prj_1" })).await;
+    assert_eq!(listed["boards"][0]["id"], "brd_1", "{listed}");
+    assert!(listed["summary"].as_str().unwrap().contains("Launch (brd_1)"), "{listed}");
+
+    let read = call(&s, "board_read", json!({ "board": "brd_1" })).await;
+    assert_eq!(read["zones"][0]["rows"][0]["rev"], 2, "{read}");
+    let text = read["text"].as_str().unwrap();
+    assert!(text.starts_with("Launch\nNow") && text.contains("◐ iss_01234567"), "{text}");
+    assert!(text.lines().all(|l| l.chars().count() <= 72), "{text}");
+
+    let added = call(
+        &s,
+        "board_write",
+        json!({ "kind": "add_row", "board": "brd_1", "zone": "zon_1", "note": "agent row", "status": "working" }),
+    )
+    .await;
+    assert_eq!(added["zones"][0]["rows"][1]["agent"]["machine_name"], "geek", "{added}");
+    assert!(added["summary"].as_str().unwrap().contains("as your person's agent"), "{added}");
+    call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "status": "done" })).await;
+    call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "note": "ok", "rev": 2 })).await;
+
+    let stale = refused(
+        &s,
+        "board_write",
+        json!({ "kind": "set", "board": "brd_1", "row": "row_1", "note": "late", "rev": 1 }),
+    )
+    .await;
+    assert!(stale.contains("board_read again") && stale.contains("rev 2"), "{stale}");
+    let norev =
+        refused(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "note": "x" })).await;
+    assert!(norev.contains("rev"), "{norev}");
+    let zone =
+        refused(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "zon_1", "status": "done" })).await;
+    assert!(zone.contains("an agent doesn't make zones"), "the platform's refusal, as it said it: {zone}");
+    let no = refused(&s, "board_write", json!({ "kind": "remove_row", "board": "brd_1", "row": "row_1" })).await;
+    assert!(no.contains("its own machine added"), "{no}");
+
+    let calls = fake.calls.lock().unwrap().clone();
+    let status = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["status"] == "done").unwrap();
+    assert_eq!(status.1, json!({ "id": "row_1", "status": "done" }), "a status names no rev: {status:?}");
+    let add = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["entry"] == "row").unwrap();
+    assert_eq!(add.1, json!({ "entry": "row", "zone": "zon_1", "note": "agent row", "status": "working" }), "{add:?}");
+    s.cancel().await.unwrap();
 }

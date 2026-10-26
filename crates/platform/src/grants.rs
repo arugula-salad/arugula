@@ -54,8 +54,8 @@ use crate::{
     auth::{Machine, Person},
     chat,
     db::projects::{
-        AGENT_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, Grant, ISSUES_WRITE, RUN_POWERS, SECRETS_WRITE, THREADS_POST,
-        THREADS_READ, subject_kind,
+        AGENT_POWERS, BOARD_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, Grant, ISSUES_WRITE, RUN_POWERS, SECRETS_WRITE,
+        THREADS_POST, THREADS_READ, subject_kind,
     },
     hub::{Daemon, HubResult},
 };
@@ -121,13 +121,17 @@ pub(crate) async fn owner_reads(
 /// Whether `power` is an agent's (M197's in conversations, M216's over
 /// runs).
 pub fn is_agent_power(power: &str) -> bool {
-    AGENT_POWERS.contains(&power) || RUN_POWERS.contains(&power)
+    AGENT_POWERS.contains(&power) || RUN_POWERS.contains(&power) || BOARD_POWERS.contains(&power)
 }
 
 /// Whether an agent's `power` is over a project only, never the owner's
 /// DMs.
 fn project_only(power: &str) -> bool {
-    power == ISSUES_WRITE || power == DEPLOYS_PLAN || power == SECRETS_WRITE || RUN_POWERS.contains(&power)
+    power == ISSUES_WRITE
+        || power == DEPLOYS_PLAN
+        || power == SECRETS_WRITE
+        || RUN_POWERS.contains(&power)
+        || BOARD_POWERS.contains(&power)
 }
 
 /// Whether `power` is one an agent grant token may hold (M230): the agent
@@ -184,6 +188,10 @@ fn how_to_grant(machine_name: &str, power: &str, scope: &AgentScope, scope_name:
         AgentScope::Project(p) => format!("--project {p}"),
         AgentScope::Account(_) => "--dms".to_owned(),
     };
+    if BOARD_POWERS.contains(&power) {
+        // The page has no switch for boards yet.
+        return format!("its owner gives it with `arugula grants add {machine_name} {power} {flag}`");
+    }
     let switch = if RUN_POWERS.contains(&power) { "Agents and runs" } else { "Agents in conversations" };
     format!(
         "its owner gives it with `arugula grants add {machine_name} {power} {flag}`, or turns on {machine_name} for \
@@ -412,7 +420,7 @@ pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Giv
             return Err(err(
                 StatusCode::BAD_REQUEST,
                 "the powers there are to give are cloud.drive, threads.read, threads.post, issues.write, deploys.plan, \
-                 runs.read, runs.start and runs.command",
+                 runs.read, runs.start, runs.command, boards.read and boards.write",
             ));
         }
     };

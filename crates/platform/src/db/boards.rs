@@ -68,6 +68,8 @@ pub struct Entry {
     pub note: String,
     pub status: Status,
     pub pointer: Pointer,
+    /// The machine whose agent added a row (`boards.write`); none: a person.
+    pub agent: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -93,6 +95,8 @@ pub struct Put<'a> {
     pub pointer: Option<&'a Pointer>,
     pub note: Option<&'a str>,
     pub status: Option<Status>,
+    /// The machine whose agent makes a new row; none: a person.
+    pub agent: Option<&'a str>,
 }
 
 /// Where [`Db::move_entry`] puts an entry.
@@ -108,7 +112,7 @@ pub struct Move<'a> {
 
 const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at";
 const ENTRY_COLS: &str = "id, kind, zone_id, rev, title, zone_kind, note, status, target_kind, target, pane, \
-                          created_at, updated_at";
+                          created_at, updated_at, agent";
 
 fn board_row(r: &Row) -> Result<Board> {
     Ok(Board {
@@ -191,6 +195,7 @@ fn entry_row(r: &Row) -> Result<Entry> {
         pointer: pointer_of(r.get(8)?, r.get(9)?, r.get(10)?)?,
         created_at: r.get(11)?,
         updated_at: r.get(12)?,
+        agent: r.get(13)?,
     })
 }
 
@@ -283,6 +288,11 @@ impl Db {
         Ok(Some(board))
     }
 
+    /// One entry of a board (a zone or a row), as stored.
+    pub fn board_entry(&self, board: &str, id: &str) -> Result<Option<Entry>> {
+        entry(&self.c(), board, id)
+    }
+
     pub fn board(&self, id: &str) -> Result<Option<Board>> {
         self.c().query_row(&format!("SELECT {BOARD_COLS} FROM boards WHERE id = ?1"), params![id], board_row).optional()
     }
@@ -308,7 +318,7 @@ impl Db {
         let all = c.query_map(
             &format!("SELECT {ENTRY_COLS}, position FROM board_entries WHERE board_id = ?1"),
             params![id],
-            |r| Ok((entry_row(r)?, r.get::<u64>(13)?)),
+            |r| Ok((entry_row(r)?, r.get::<u64>(14)?)),
         )?;
         let (mut zones, mut rows): (Vec<_>, Vec<_>) = all.into_iter().partition(|(e, _)| e.kind == EntryKind::Zone);
         zones.sort_by(|a, b| (a.1, &a.0.id).cmp(&(b.1, &b.0.id)));
@@ -422,8 +432,8 @@ impl Db {
                     let (kind, target, pane) = p.pointer.map(pointer_cols).unwrap_or((None, None, None));
                     tx.execute(
                         "INSERT INTO board_entries (id, board_id, kind, zone_id, position, note, status, target_kind, target,
-                             pane, created_at, updated_at)
-                         VALUES (?1, ?2, 'row', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+                             pane, created_at, updated_at, agent)
+                         VALUES (?1, ?2, 'row', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11)",
                         params![
                             new_entry_id(EntryKind::Row),
                             board,
@@ -434,7 +444,8 @@ impl Db {
                             kind,
                             target,
                             pane,
-                            at
+                            at,
+                            p.agent
                         ],
                     )?;
                 }

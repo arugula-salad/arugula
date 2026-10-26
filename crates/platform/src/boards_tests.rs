@@ -201,3 +201,180 @@ async fn with_the_flag_off_there_are_no_boards() {
     }
     assert_eq!(app.db.boards(&p).unwrap().len(), 1, "nothing was made");
 }
+
+// ---------------------------------------------------------------- agents
+
+/// A call signed by `who`'s machine, as the hub's gate vouches for it.
+async fn signed(base: &str, by: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+    let mut req =
+        reqwest::Client::new().request(method.parse().unwrap(), format!("{base}{path}")).header("x-test-daemon", by);
+    if let Some(b) = body {
+        req = req.json(&b);
+    }
+    let r = req.send().await.unwrap();
+    (r.status().as_u16(), r.json().await.unwrap_or_default())
+}
+
+async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+    signed(base, "a geek", method, path, body).await
+}
+
+/// A machine with `boards.write` adds rows, sets notes and statuses (a
+/// PROOFS row's too) and moves rows, labelled as its agent's; it can't
+/// make, change or delete a zone, repoint a row, delete a row a person
+/// added or make a board. Without the grant it is refused, saying how to
+/// give it.
+#[tokio::test]
+async fn an_agent_with_boards_write_works_the_rows_and_never_the_zones() {
+    use crate::{agents_tests::give, grants::AGENT_UNGRANTED};
+    use arugula_control_wire::boards::{
+        agent_board, agent_board_entries, agent_board_entry, agent_board_entry_move, agent_project_boards,
+    };
+
+    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.flag_named("team:t", FLAG, true);
+
+    // A person's board: zones Now and PROOFS, a row in each.
+    let (_, b) =
+        call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    put(&base, "a", &id, json!({ "entry": "zone", "title": "PROOFS", "kind": "proofs" })).await;
+    let (_, v) = put(&base, "a", &id, json!({ "entry": "zone", "title": "Now" })).await;
+    let (now, proofs) =
+        (v["zones"][0]["id"].as_str().unwrap().to_owned(), v["zones"][1]["id"].as_str().unwrap().to_owned());
+    put(&base, "a", &id, json!({ "entry": "row", "zone": now, "note": "the plan" })).await;
+    let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "zone": proofs, "note": "tests green" })).await;
+    let (plan, green) = (
+        v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned(),
+        v["zones"][1]["rows"][0]["id"].as_str().unwrap().to_owned(),
+    );
+
+    // No grant: refused, with how to give it. Read or write alike.
+    let (st, v) = geek(&base, "GET", &agent_board(&id), None).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(AGENT_UNGRANTED)), "{v}");
+    assert!(
+        v["error"].as_str().unwrap().contains(&format!("arugula grants add geek-box boards.read --project {t}")),
+        "{v}"
+    );
+    let add = json!({ "entry": "row", "zone": now, "note": "sneaky" });
+    let (st, v) = geek(&base, "PUT", &agent_board_entries(&id), Some(add.clone())).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(AGENT_UNGRANTED)), "{v}");
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(shape(&v), [zone("Now", &["the plan"]), zone("PROOFS", &["tests green"])], "nothing was written");
+
+    // boards.read alone reads and doesn't write.
+    let (st, g) =
+        call(&base, "a", "POST", "/api/grants", give("geek", "boards.read", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{g}");
+    let (st, v) = geek(&base, "GET", &agent_project_boards(&t), None).await;
+    assert_eq!((st, &v["boards"][0]["id"]), (200, &json!(id)), "{v}");
+    assert_eq!(geek(&base, "GET", &agent_board(&id), None).await.0, 200);
+    let (st, v) = geek(&base, "PUT", &agent_board_entries(&id), Some(add.clone())).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(AGENT_UNGRANTED)), "{v}");
+    assert!(v["error"].as_str().unwrap().contains("boards.write"), "{v}");
+
+    // boards.write: add a row (labelled), set its note and status.
+    let (st, g) =
+        call(&base, "a", "POST", "/api/grants", give("geek", "boards.write", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{g}");
+    let (st, v) = geek(
+        &base,
+        "PUT",
+        &agent_board_entries(&id),
+        Some(json!({ "entry": "row", "zone": now, "note": "agent row", "status": "working" })),
+    )
+    .await;
+    assert_eq!(st, 200, "{v}");
+    let mine = v["zones"][0]["rows"][1].clone();
+    assert_eq!(mine["agent"], json!({ "machine": "geek", "machine_name": "geek-box" }), "{v}");
+    assert_eq!(v["zones"][0]["rows"][0]["agent"], Value::Null, "a person's row has none: {v}");
+    let mine_id = mine["id"].as_str().unwrap().to_owned();
+
+    let (st, v) = geek(
+        &base,
+        "PUT",
+        &agent_board_entries(&id),
+        Some(json!({ "id": plan, "rev": 1, "note": "the plan, revised" })),
+    )
+    .await;
+    assert_eq!(st, 200, "a note on a person's row: {v}");
+    let (st, v) =
+        geek(&base, "PUT", &agent_board_entries(&id), Some(json!({ "id": plan, "rev": 1, "note": "stale" }))).await;
+    assert_eq!((st, v["reason"].as_str()), (409, Some(super::STALE_REV)), "{v}");
+    let (st, v) = geek(&base, "PUT", &agent_board_entries(&id), Some(json!({ "id": green, "status": "done" }))).await;
+    assert_eq!((st, &v["zones"][1]["rows"][0]["status"]), (200, &json!("done")), "a PROOFS row's status: {v}");
+    assert_eq!(v["zones"][1]["rows"][0]["rev"], json!(1), "a status leaves the rev");
+
+    // Move a row, to another zone and back.
+    let (st, v) = geek(&base, "POST", &agent_board_entry_move(&id, &mine_id), Some(json!({ "zone": proofs }))).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(shape(&v), [zone("Now", &["the plan, revised"]), zone("PROOFS", &["tests green", "agent row"])]);
+    let (st, _) = geek(&base, "POST", &agent_board_entry_move(&id, &mine_id), Some(json!({ "zone": now }))).await;
+    assert_eq!(st, 200);
+
+    // What it may never do.
+    let no = |what: &str, r: (u16, Value)| assert_eq!(r.0, 403, "{what}: {}", r.1);
+    no(
+        "make a zone",
+        geek(&base, "PUT", &agent_board_entries(&id), Some(json!({ "entry": "zone", "title": "Mine" }))).await,
+    );
+    no(
+        "make a proofs zone",
+        geek(&base, "PUT", &agent_board_entries(&id), Some(json!({ "entry": "zone", "title": "P", "kind": "proofs" })))
+            .await,
+    );
+    no(
+        "rename a zone",
+        geek(&base, "PUT", &agent_board_entries(&id), Some(json!({ "id": now, "rev": 1, "title": "Nope" }))).await,
+    );
+    no("move a zone", geek(&base, "POST", &agent_board_entry_move(&id, &now), Some(json!({}))).await);
+    no("delete a zone", geek(&base, "DELETE", &agent_board_entry(&id, &now), None).await);
+    no("delete the proofs zone", geek(&base, "DELETE", &agent_board_entry(&id, &proofs), None).await);
+    no(
+        "repoint a row",
+        geek(
+            &base,
+            "PUT",
+            &agent_board_entries(&id),
+            Some(json!({ "id": mine_id, "rev": 1, "pointer": { "kind": "run", "id": "run_ab12" } })),
+        )
+        .await,
+    );
+    no("delete a person's row", geek(&base, "DELETE", &agent_board_entry(&id, &plan), None).await);
+    let (st, _) = geek(&base, "POST", &agent_project_boards(&t), Some(json!({ "title": "Mine" }))).await;
+    assert!(st == 404 || st == 405, "no route makes a board for an agent: {st}");
+
+    // A row it added, it may delete; another machine's agents may not.
+    hub.daemon("other", "a", Some("t"));
+    let (st, _) =
+        call(&base, "a", "POST", "/api/grants", give("other", "boards.write", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200);
+    let (st, v) = signed(&base, "a other", "DELETE", &agent_board_entry(&id, &mine_id), None).await;
+    assert_eq!(st, 403, "another machine's row: {v}");
+    let (st, v) = geek(&base, "DELETE", &agent_board_entry(&id, &mine_id), None).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(shape(&v), [zone("Now", &["the plan, revised"]), zone("PROOFS", &["tests green"])]);
+
+    // A person sees the zones as they were, and still deletes anything.
+    let (st, v) = call(&base, "a", "DELETE", &format!("/api/boards/{id}/entries/{plan}"), None).await;
+    assert_eq!(st, 200, "{v}");
+}
+
+/// With the `boards` flag off for the owner, an agent's routes are 404
+/// whatever it was granted.
+#[tokio::test]
+async fn an_agent_finds_no_boards_with_the_flag_off() {
+    use crate::agents_tests::give;
+    use arugula_control_wire::boards::agent_project_boards;
+
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
+    let (st, _) =
+        call(&base, "a", "POST", "/api/grants", give("geek", "boards.read", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200);
+    let (st, v) = geek(&base, "GET", &agent_project_boards(&t), None).await;
+    assert_eq!(st, 404, "{v}");
+}

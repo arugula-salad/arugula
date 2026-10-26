@@ -221,7 +221,12 @@ export type BoardRow = { id: string, rev: number, pointer: BoardPointer, note: s
  * A `fi_` or `iss_` pointer's state now, when the reader may see the
  * item ([`BoardView`] is read with it; a write's answer has it too).
  */
-live?: BoardLive | null, created_at: number, updated_at: number, };
+live?: BoardLive | null, 
+/**
+ * The machine whose agent added the row, if one did (it may remove
+ * it; nobody else's agent may).
+ */
+agent?: ChatAgent | null, created_at: number, updated_at: number, };
 
 /**
  * Where a row stands. `None` says nothing.
