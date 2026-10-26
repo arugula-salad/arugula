@@ -104,10 +104,11 @@ test("both phones hold the team's swarm, by person, with the cards along the bot
 
   await swarm(alice, ["buildbox:1", "a1:1"]);
   await swarm(bob, ["buildbox:1", "a1:1", "b1:1"]);
-  // Safari's once-only hint to add it to the Home Screen (#96) sits over the
-  // card strip until it's dismissed, as a person would the first time.
-  await bob.locator("[data-install-hint] .install-hint-close").tap();
-  await expect(bob.locator("[data-install-hint]")).toHaveCount(0);
+  // Safari's once-only hint to add it to the Home Screen (#96) waits under
+  // the swarm, off its card strip (UI audit #199).
+  const hint = await bob.locator("[data-install-hint]").boundingBox();
+  const at = [hint!.x + hint!.width / 2, hint!.y + hint!.height / 2] as const;
+  expect(await bob.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest(".swarm"), at)).toBe(true);
   // What they share is the same on both phones.
   const shared = (ks: string[]) => ks.filter((k) => k.startsWith("buildbox:") || k === "a1:1");
   expect(shared(await keys(bob))).toEqual(shared(await keys(alice)));

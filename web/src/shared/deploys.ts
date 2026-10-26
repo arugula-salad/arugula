@@ -2,6 +2,8 @@
 // (UI audit #183, #167): its state in words, and its source or digest
 // short. Control's page can't reach platform/, so they're here.
 
+import { agentLabel } from "./agent-label.ts";
+
 const DEPLOY: Record<string, string> = {
   planned: "Planned",
   pending: "Waiting for approval",
@@ -38,10 +40,5 @@ export const shortRef = (ref: string) => ref.replace(/^sha256:/, "").slice(0, 12
  * <machine>"; or an agent token's (M230, `agt_…`), whose name isn't a
  * machine's: "<owner>'s agent token “<its name>”" (UI audit #167). */
 export function plannerText(who: string, agent: { machine: string; machine_name?: string } | null): string {
-  if (!agent) return who;
-  const name = agent.machine_name || agent.machine;
-  // The platform names a token as a machine, "<name> (MCP)" (grants.rs's
-  // token_label).
-  if (agent.machine.startsWith("agt_")) return `${who}'s agent token “${name.replace(/ \(MCP\)$/, "")}”`;
-  return `${who}'s agent on ${name}`;
+  return agent ? agentLabel(who, agent) : who;
 }

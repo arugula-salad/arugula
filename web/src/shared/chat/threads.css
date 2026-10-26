@@ -139,7 +139,8 @@
     inset: 0 0 0 auto;
     z-index: 3;
     width: min(420px, 100%);
-    box-shadow: -4px 0 12px rgb(0 0 0 / 0.25);
+    /* UI audit #198: the shared shadow, lighter on a light palette. */
+    box-shadow: var(--shadow-md);
   }
 }
 

@@ -43,11 +43,13 @@ interface DeletePreview {
 export function describeAgent(ua: string): string {
   if (!ua) return "An earlier sign-in";
   const name = agentName(ua);
-  // UI audit #179: which program, by its own word ("curl", "node"): the
-  // CLI signs its calls with its device key and keeps no sign-in, so a
-  // sign-in from a program is a script's.
-  const program = name === "A program" ? /\b(node|undici|curl|reqwest)\b/i.exec(ua)?.[1] : null;
-  return program ? `A program (${program.toLowerCase()})` : name;
+  // UI audit #195: a sign-in from no browser, named by what it is. The CLI
+  // keeps none (it signs each call with its device key), and the desktop
+  // app's window names its device once its page loads (sessionName), so
+  // what's left signed in without a browser is a headless device (the
+  // tests' and dev-control's) or a script: named by its runtime's word.
+  const runtime = name === "A program" ? /\b(node|undici|curl|reqwest)\b/i.exec(ua)?.[1] : null;
+  return runtime ? `A headless device (${runtime.toLowerCase()})` : name;
 }
 
 /** A sign-in's name: its device's, once its page said which it is, so

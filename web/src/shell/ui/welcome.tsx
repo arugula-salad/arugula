@@ -465,8 +465,8 @@ function Qr({ text }: { text: string }) {
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
   return (
     <svg class="start-qr" viewBox={`-2 -2 ${n + 4} ${n + 4}`} role="img" aria-label={`QR code for ${text}`} data-start-qr>
-      <rect x="-2" y="-2" width={n + 4} height={n + 4} fill="#fff" />
-      <path d={d} fill="#06080d" />
+      <rect x="-2" y="-2" width={n + 4} height={n + 4} />
+      <path d={d} />
     </svg>
   );
 }
@@ -668,7 +668,7 @@ function Cloud({
             {c.confirm.account}
           </div>
           <p class="start-dim">
-            The device you approved on shows your account's fingerprint in the approval and under Devices and machines… Check they're the same before this
+            The device you approved on shows your account's fingerprint in the approval and under Devices and machines. Check they're the same before this
             machine trusts the account.
           </p>
           <div class="start-confirm">

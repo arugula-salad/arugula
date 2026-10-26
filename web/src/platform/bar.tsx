@@ -18,7 +18,7 @@ import { names } from "./links";
 import { chat } from "../shared/chat-store";
 import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
-import { PlaceUnread } from "./thread-unread";
+import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { InboxCount } from "./inbox-count";
 
@@ -164,6 +164,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         )}
         <Place to={chatTo} here={here === "chat"} data="chat">
           Chat
+          {/* An id that's none of the reader's counts nothing. */}
+          {!unknown && (!project || p) && <ChatPlaceUnread team={p ? (p.team?.id ?? null) : undefined} />}
         </Place>
         <Place to="/inbox" here={here === "inbox"} data="inbox">
           Inbox

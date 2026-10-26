@@ -16,6 +16,10 @@ import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import type { MenuItem } from "../../shared/ui/menu";
 import { useModal } from "../../shared/ui/modal";
+import { useSubscribe } from "../../shared/ui/hooks";
+import { ago, when } from "../../shared/time";
+import { OpenOutside } from "../blocks/block-states";
+import { LinkIcon } from "./shell/icons";
 
 /** What `doc_shares` said for a Doc that isn't shared. */
 interface Can {
@@ -24,6 +28,15 @@ interface Can {
 }
 
 const can = new Map<PaneId, Can>();
+
+/** A shared Doc's link, for its bar's ↗ (UI audit #196), as `doc_shares`
+ * last said it; and who to tell when it changes. */
+const links = new Map<PaneId, string>();
+const linkWatchers = new Set<() => void>();
+const onLinks = (fn: () => void) => {
+  linkWatchers.add(fn);
+  return () => void linkWatchers.delete(fn);
+};
 
 interface Shares {
   url?: string;
@@ -50,7 +63,32 @@ async function refresh(client: Client, id: PaneId) {
   const { ok, body } = await call(client, id, "doc_shares");
   if (ok && body.shared === null) can.set(id, { can: body.can !== false, why: body.why });
   else can.delete(id);
+  const url = ok ? body.url : undefined;
+  if (url !== links.get(id)) {
+    if (url) links.set(id, url);
+    else links.delete(id);
+    linkWatchers.forEach((fn) => fn());
+  }
 }
+
+/** In the Doc's bar (UI audit #196): "shared" once it has a link, with
+ * when its copy was last updated, and ↗ to open the link; nothing while
+ * it's only the owner's. */
+function ShareState({ id, s }: { id: PaneId; s: DocState }) {
+  useSubscribe(onLinks);
+  if (!s.shared) return null;
+  const url = links.get(id);
+  return (
+    <>
+      <span class="ws-tag doc-bar-shared" data-doc-bar-shared title={`Shared with a link; the link shows it as it was ${ago(s.shared.updated, Date.now(), "long")} (${when(s.shared.updated)})`}>
+        <LinkIcon /> shared
+      </span>
+      {url && <OpenOutside href={url} data-doc-bar-open />}
+    </>
+  );
+}
+
+docHooks.bar = (_client, id, s) => <ShareState id={id} s={s} />;
 
 docHooks.state = (client, id, s: DocState) => {
   // When it arrives, and each time it becomes shared or isn't.

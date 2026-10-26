@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { CopyText } from "../../shared/ui/copy";
+import { Time } from "../../shared/ui/time";
 import { cameToRecover, DEVICE_HASH, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, signInNext, wholeJoinInHash, type ControlSession } from "../control";
 import { fingerprint } from "../e2e/cert.ts";
 import { AddedAt, Center, QrCode, useControl, WaitingLine } from "./common";
@@ -125,7 +126,15 @@ export function ControlGate({ s }: { s: ControlSession }) {
       <Center>
         <h1>This browser was turned down</h1>
         <p data-turned-down>
-          <TurnedDownBy name={s.turnedDownBy} /> turned this browser down. If that was a mistake, ask again and approve it there.
+          {/* When, too (UI audit #197): "… turned this browser down 2m ago". */}
+          <TurnedDownBy name={s.turnedDownBy} /> turned this browser down
+          {s.turnedDownAt ? (
+            <>
+              {" "}
+              <TurnedDownAt at={s.turnedDownAt} />
+            </>
+          ) : null}
+          . If that was a mistake, ask again and approve it there.
         </p>
         {/* One row (UI audit #179): they stacked with a 4px gap. */}
         <div class="control-actions">
@@ -152,6 +161,17 @@ function TurnedDownBy({ name }: { name: string }) {
       {same ? " of yours" : ","}
     </>
   );
+}
+
+/** When it was turned down, kept current while the screen waits: "just
+ * now", then "2m ago". */
+function TurnedDownAt({ at }: { at: number }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  return <Time at={at} now={now} on data-turned-down-at />;
 }
 
 /** Sign out, keeping this browser's key for next time, or forgetting it
@@ -334,7 +354,9 @@ function Unvouched({ s }: { s: ControlSession }) {
       <p class="fingerprint" data-unvouched-account={v.root}>
         {fingerprint(v.root)}
       </p>
-      <div class="prompt-buttons">
+      {/* The screen's row, not a dialog's (UI audit #199): there the
+          primary's margin stretched "It isn't" 12px taller. */}
+      <div class="control-actions">
         <button class="secondary" data-enroll-again onClick={() => void s.enrollAgain()}>
           It isn't: forget this browser
         </button>

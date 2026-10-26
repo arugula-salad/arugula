@@ -139,6 +139,28 @@ a.secondary.danger:hover {
   .secondary.small {
     min-height: 34px;
   }
+
+  /* A box to tick (UI audit #199) was the browser's 13px: 20px, and the
+     label it's in (the target, as a tap on it ticks the box) a row as tall
+     as a button. :root outranks a prompt's `input { width: auto }`; a
+     switch (settings.css) keeps its pill. */
+  :root input:is([type="checkbox"], [type="radio"]):not(.sw-switch) {
+    width: 20px;
+    height: 20px;
+  }
+
+  label:has(> input:is([type="checkbox"], [type="radio"])) {
+    min-height: 40px;
+  }
+
+  /* A field is as tall as the buttons beside it (UI audit #198). */
+  .field {
+    min-height: 40px;
+  }
+
+  .field.small {
+    min-height: 34px;
+  }
 }
 
 .primary:disabled,
@@ -242,7 +264,7 @@ html[data-finish="glass"] .primary {
   box-sizing: border-box;
   min-height: 32px;
   padding: 6px 8px;
-  border: 1px solid var(--raised-hover);
+  border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);

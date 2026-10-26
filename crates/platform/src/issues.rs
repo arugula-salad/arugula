@@ -713,9 +713,11 @@ pub fn markdown(x: &wire::IssueExport) -> String {
             _ => account.to_owned(),
         };
         line(&match agent {
-            Some(a) => {
-                format!("{who}'s agent on {}", if a.machine_name.is_empty() { &a.machine } else { &a.machine_name })
-            }
+            Some(a) => crate::grants::agent_label(
+                &who,
+                &a.machine,
+                if a.machine_name.is_empty() { &a.machine } else { &a.machine_name },
+            ),
             None => who,
         })
     };

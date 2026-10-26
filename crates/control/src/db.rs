@@ -1225,14 +1225,15 @@ impl Db {
         Ok(())
     }
 
-    /// Who turned this device down (a device's name, maybe empty), if it was.
-    pub fn turned_down(&self, account: &str, id: &str) -> anyhow::Result<Option<String>> {
+    /// Who turned this device down (a device's name, maybe empty) and when
+    /// (ms), if it was.
+    pub fn turned_down(&self, account: &str, id: &str) -> anyhow::Result<Option<(String, u64)>> {
         Ok(self
             .c()
             .query_row(
-                "SELECT by_name FROM turned_down WHERE account = ?1 AND device = ?2",
+                "SELECT by_name, at FROM turned_down WHERE account = ?1 AND device = ?2",
                 params![account, id],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? as u64)),
             )
             .optional()?)
     }
@@ -2785,7 +2786,7 @@ mod tests {
         db.put_device(&pending("d1"), false, 1).unwrap();
         db.turn_down("a1", "d1", "Chrome on Mac", 2).unwrap();
         assert!(db.device("a1", "d1").unwrap().is_none());
-        assert_eq!(db.turned_down("a1", "d1").unwrap().as_deref(), Some("Chrome on Mac"));
+        assert_eq!(db.turned_down("a1", "d1").unwrap(), Some(("Chrome on Mac".to_owned(), 2)));
         // Nothing pending: nothing to turn down, nothing remembered.
         db.turn_down("a1", "d2", "x", 3).unwrap();
         assert_eq!(db.turned_down("a1", "d2").unwrap(), None);

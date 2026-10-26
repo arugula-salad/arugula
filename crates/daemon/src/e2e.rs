@@ -189,7 +189,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
     let ch = out.ch.clone();
 
     // An owner here through control has a name of their own (M30).
-    let name = principal.is_owner().then(|| app.control.name_of_account(&device.account)).flatten();
+    let name = caller.owner_name(&app, &principal);
     let client = app.new_client_id();
     info!(
         device = device.device,
@@ -280,6 +280,16 @@ pub struct Caller {
     pub account: String,
     pub device: String,
     pub name: String,
+}
+
+impl Caller {
+    /// What an owner here through control goes by (M30): their account's
+    /// login, or a team box's owner by name. Its channel's client and its
+    /// requests both say it, so an answer and a typed command name one
+    /// person the same way (UI audit #194). None for anyone else.
+    pub fn owner_name(&self, app: &App, who: &crate::acl::Principal) -> Option<String> {
+        who.is_owner().then(|| app.control.name_of_account(&self.account)).flatten()
+    }
 }
 
 /// The request headers a channel carries besides `Content-Type` (#400).

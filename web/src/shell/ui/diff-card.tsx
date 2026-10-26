@@ -3,6 +3,7 @@
 // change it first, or reject it. The terminal's own prompt still works;
 // when it answers first, the card goes by itself.
 
+import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import type { DiffInfo } from "../../shared/proto";
 import { VIEWER_NOTE } from "./answer-card";
@@ -27,12 +28,15 @@ export function DiffCard({
   can,
   act,
   full,
+  more,
 }: {
   diff: DiffInfo;
   can: boolean;
   act: DiffAct;
   /** The proposal whole, for changing it before accepting. */
   full: () => Promise<string | null>;
+  /** The place's own buttons, at the end of the row (UI audit #194). */
+  more?: ComponentChildren;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -78,6 +82,7 @@ export function DiffCard({
           <button disabled={busy} data-reject onClick={() => void run("reject")}>
             Reject
           </button>
+          {more}
         </div>
       ) : (
         <div class="agent-perm-buttons">
@@ -87,6 +92,7 @@ export function DiffCard({
           <button disabled={busy} onClick={() => setEditing(null)}>
             Back
           </button>
+          {more}
         </div>
       )}
     </div>

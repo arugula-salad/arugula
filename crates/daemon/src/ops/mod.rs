@@ -115,8 +115,15 @@ pub enum Via<'a> {
     /// An HTTP request, past `authz::check`: who asks (and whether that's
     /// the owner), and whether the owner's CLI says an agent runs it.
     /// `acting`: a team's other owner (#935), who is `Owner` here but not
-    /// this machine's own account (the Doc links' gate, #1066).
-    Http { who: Principal, owner: bool, agent: bool, acting: Option<Principal> },
+    /// this machine's own account (the Doc links' gate, #1066). `caller`:
+    /// the device, through control.
+    Http {
+        who: Principal,
+        owner: bool,
+        agent: bool,
+        acting: Option<Principal>,
+        caller: Option<Box<crate::e2e::Caller>>,
+    },
     /// An MCP tool call, with its caller's scope.
     Mcp(&'a Call<'a>),
 }
@@ -148,6 +155,16 @@ impl Cx<'_> {
             Via::Http { who, .. } => Ok(who.clone()),
             Via::Mcp(_) => Err(OpError::Unreachable("that is for a person, not an agent's token".into())),
         }
+    }
+
+    /// Who asks, as what they did is recorded: `api::who_is`.
+    pub async fn driver(&self) -> Result<Option<arugula_proto::Driver>, OpError> {
+        let who = self.principal()?;
+        let caller = match &self.via {
+            Via::Http { caller, .. } => caller.as_deref(),
+            Via::Mcp(_) => None,
+        };
+        Ok(crate::api::who_is(self.app, who, caller).await)
     }
 
     /// A team's other owner (#935): `Owner` here, but not this machine's own
@@ -235,11 +252,8 @@ where
     let who = parts.extensions.get::<Principal>().cloned().unwrap_or(Principal::Owner);
     let owner = who.is_owner();
     let agent = crate::invite::agent(&parts.headers);
-    let acting = parts
-        .extensions
-        .get::<crate::e2e::Caller>()
-        .filter(|_| owner)
-        .and_then(|c| app.control.co_owner_of(&c.account));
+    let caller = parts.extensions.get::<crate::e2e::Caller>().cloned().map(Box::new);
+    let acting = caller.as_ref().filter(|_| owner).and_then(|c| app.control.co_owner_of(&c.account));
     let body = match <O::Req as Request>::without_body() {
         Some(none) => none,
         // A GET's request is its query string.
@@ -265,7 +279,7 @@ where
     if O::ACCESS == Access::Owner && !owner {
         return ApiError(StatusCode::FORBIDDEN, "only the owner can".into()).into_response();
     }
-    let cx = Cx { app: &app, via: Via::Http { who, owner, agent, acting } };
+    let cx = Cx { app: &app, via: Via::Http { who, owner, agent, acting, caller } };
     match O::handle(&cx, path, body).await {
         Ok(res) => Json(res).into_response(),
         Err(OpError::Text(code, why)) => (code, why).into_response(),

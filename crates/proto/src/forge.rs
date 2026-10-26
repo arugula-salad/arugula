@@ -623,6 +623,13 @@ pub struct ForgeState {
     /// M172: it's the platform's item, read through Arugula control.
     #[serde(default)]
     pub pin: Option<ForgePin>,
+    /// The ways this repository lets a pull request be merged, as the
+    /// `merge` method names them (UI audit #196: GitHub's `allow_*`), so
+    /// Merge offers only those. None when it isn't known: the forge
+    /// doesn't say, or says only to someone who can push.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub merge_styles: Option<Vec<String>>,
 }
 
 // ------------------------------------------------------------- the methods

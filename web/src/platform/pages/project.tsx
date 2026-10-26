@@ -57,7 +57,7 @@ export function ProjectHome({ id }: { id: string }) {
           <ProjectDrafts project={p.id} nameOf={nameOf} />
           <SectionHead title="Chat" all={chatPath} />
           {chat.on === false && chat.signedOut && <p class="dim">You're signed out of Arugula control: reload the page to sign in again.</p>}
-          {chat.on === false && !chat.signedOut && <p class="dim">Chat is off for you. A team owner turns it on in the team's Labs, on Control.</p>}
+          {chat.on === false && !chat.signedOut && <p class="dim">Chat is off for you. A team owner turns it on in the team's Developer settings, on Control.</p>}
           {chat.on && rooms.length === 0 && <p class="dim">No channels yet.</p>}
           <ul class="platform-list sw-rows" data-project-rooms>
             {rooms

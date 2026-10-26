@@ -24,6 +24,10 @@ export type MenuItem =
       /** In a list with one current (the machine shown): its ●, the same
        * mark as a checked item's, with aria-current. */
       current?: boolean;
+      /** The action it is, when two menus offer the same one (the pane's
+       * and the tab's Go to directory…): the command palette lists it
+       * once (UI audit #195). */
+      id?: string;
     }
   /** `name`: the header holds a name (a channel's, a login), shown as
    * written rather than in capitals (UI audit #169). `note`: a line under

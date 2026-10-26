@@ -352,8 +352,9 @@ function paneName(client: Client, pane: PaneId): string {
 }
 
 /** Who did it, as one name (UI audit #171): history says a person by the
- * name they came with, which is a login through control and a tailnet
- * login (`jake@github`, `jake@example.com`) over the tailnet. The part
+ * name they came with, which is a login through control (their answers
+ * too since UI audit #194) and a tailnet login (`jake@github`,
+ * `jake@example.com`) over the tailnet or in older history. The part
  * before the @ is that login; the whole of it is the tooltip. */
 export function byName(by: string): string {
   const at = by.indexOf("@");

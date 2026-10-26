@@ -8,15 +8,17 @@ import { ago, iso, when } from "../time";
  * "Oct 23, 2026, 1:24 PM".
  * - `on`: "on Oct 23" past a week, for a sentence.
  * - `long`: that, and the units spelled out ("3 days ago"), as an issue's.
+ * - `seconds`: the last minute counted ("12s ago"), and seconds in the
+ *   hover, for events that land seconds apart (an agent session's history).
  * - `title`: what the hover says before the time ("Updated").
  * - Anything else (`class`, `data-*`) lands on the `<time>`.
  * Nothing when there's no time (null, 0): a "never".
  */
-export function Time({ at, on, long, title, now, ...attrs }: { at: number | null | undefined; on?: boolean; long?: boolean; title?: string; now?: number; class?: string; [data: `data-${string}`]: unknown }) {
+export function Time({ at, on, long, seconds, title, now, ...attrs }: { at: number | null | undefined; on?: boolean; long?: boolean; seconds?: boolean; title?: string; now?: number; class?: string; [data: `data-${string}`]: unknown }) {
   if (!at) return null;
   return (
-    <time dateTime={iso(at)} title={title ? `${title} ${when(at)}` : when(at)} {...attrs}>
-      {ago(at, now, long ? "long" : on ? "on" : "short")}
+    <time dateTime={iso(at)} title={title ? `${title} ${when(at, seconds)}` : when(at, seconds)} {...attrs}>
+      {ago(at, now, long ? "long" : on ? "on" : "short", seconds)}
     </time>
   );
 }

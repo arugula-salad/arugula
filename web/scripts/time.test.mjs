@@ -3,7 +3,7 @@
 // with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ago, day } from "../src/shared/time.ts";
+import { ago, day, when } from "../src/shared/time.ts";
 
 const now = new Date(2026, 9, 26, 12).getTime();
 const MIN = 60_000;
@@ -37,4 +37,15 @@ test("in a sentence, units spelled out", () => {
   assert.equal(ago(now - 3 * DAY, now, "long"), "3 days ago");
   assert.equal(ago(now + 2 * HOUR, now, "long"), "in 2 hours");
   assert.match(ago(now - 90 * DAY, now, "long"), /^on /);
+});
+
+test("with seconds, the last minute counts them; nothing else changes", () => {
+  assert.equal(ago(now - 12_000, now, "short", true), "12s ago");
+  assert.equal(ago(now - 1_000, now, "long", true), "1 second ago");
+  assert.equal(ago(now - 500, now, "short", true), "just now");
+  assert.equal(ago(now + 30_000, now, "short", true), "just now");
+  assert.equal(ago(now - 3 * MIN, now, "short", true), "3m ago");
+  assert.equal(ago(now - 50_000, now), "1m ago");
+  assert.notEqual(when(now + 5_000, true), when(now + 9_000, true));
+  assert.equal(when(now + 5_000), when(now + 9_000));
 });

@@ -80,7 +80,7 @@ export function IssuesOff() {
   return (
     <section class="platform-section sw-page" data-issues-off>
       <PageHeader title="Issues" />
-      <p class="dim">Issues come with chat, which is off for you. A team owner turns it on in the team's Labs, on Control.</p>
+      <p class="dim">Issues come with chat, which is off for you. A team owner turns it on in the team's Developer settings, on Control.</p>
     </section>
   );
 }

@@ -33,7 +33,7 @@
   width: 100%;
   max-width: 560px;
   margin: 2px 0 4px;
-  padding: 9px 12px 9px 15px;
+  padding: var(--space-2) 12px var(--space-2) 15px;
   border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line));
   border-radius: var(--field-radius);
   background: color-mix(in srgb, var(--c) 7%, var(--surface));
@@ -255,7 +255,7 @@ a.session-card-id:hover {
 .session-pr :is(input:not([type="checkbox"]), textarea) {
   box-sizing: border-box;
   width: 100%;
-  padding: 5px 8px;
+  padding: var(--space-1) 8px;
   border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--surface);
@@ -300,9 +300,9 @@ a.session-card-id:hover {
 
 .session-history li {
   display: grid;
-  grid-template-columns: 9ch 1fr auto;
+  grid-template-columns: 12ch 1fr auto;
   gap: 10px;
-  padding: 5px 0;
+  padding: var(--space-1) 0;
   border-bottom: 1px solid var(--line);
 }
 
