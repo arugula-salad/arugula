@@ -2130,7 +2130,7 @@ pub async fn open_config(c: &Value, state_dir: &Path) -> Result<Value, String> {
     if let Some(out) = native::open_config(c).await? {
         return Ok(out);
     }
-    let out = resolve_for(c, crate::labs::on(state_dir, arugula_proto::flags::FORGES)).await?;
+    let out = resolve_for(c, crate::labs::on(state_dir, arugula_proto::flags::ADDITIONAL_FORGES)).await?;
     let provider = serde_json::from_value::<Provider>(out["provider"].clone()).unwrap_or_default();
     crate::labs::forge_allowed(provider, state_dir)?;
     Ok(out)

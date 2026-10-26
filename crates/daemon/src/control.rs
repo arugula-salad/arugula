@@ -3673,14 +3673,16 @@ pub(crate) mod tests {
     /// control says nothing of them, and go when the machine leaves.
     #[tokio::test]
     async fn control_pushes_labs_flags_and_the_machine_overrides() {
-        use arugula_proto::flags::{self, CHAT, STUDIO, Source, VMS};
+        use arugula_proto::flags::{self, CHAT, SANDBOX_PROVIDERS, STUDIO, Source};
         let r = rig("flags").await;
+        // `vms`, the flag's old name (aru-117), as a control from before
+        // the rename pushes it.
         r.fake.lock().unwrap().flags =
             Some(serde_json::json!({ "account": { "vms": false }, "team": { "chat": true, "vms": true } }));
         let c = r.daemon().await;
-        assert!(flags::get(&r.dir, CHAT) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, STUDIO));
+        assert!(flags::get(&r.dir, CHAT) && !flags::get(&r.dir, SANDBOX_PROVIDERS) && !flags::get(&r.dir, STUDIO));
         let source = |name| flags::explain(&r.dir).into_iter().find(|(f, _)| f.name == name).unwrap().1.source;
-        assert_eq!((source(CHAT), source(VMS)), (Source::Team, Source::Account));
+        assert_eq!((source(CHAT), source(SANDBOX_PROVIDERS)), (Source::Team, Source::Account));
 
         // The machine forces one off; a team change doesn't move it.
         flags::set(&r.dir, CHAT, false).unwrap();
@@ -3689,7 +3691,7 @@ pub(crate) mod tests {
         assert!(c.refresh_now(REFRESH_WAIT).await);
         assert!(!flags::get(&r.dir, CHAT) && flags::get(&r.dir, STUDIO));
         // VMs follow the account's word going away: the team's says on.
-        assert!(flags::get(&r.dir, VMS) && source(VMS) == Source::Team);
+        assert!(flags::get(&r.dir, SANDBOX_PROVIDERS) && source(SANDBOX_PROVIDERS) == Source::Team);
 
         // A control from before flags says nothing: what was sent stays.
         r.fake.lock().unwrap().flags = None;
@@ -3702,7 +3704,7 @@ pub(crate) mod tests {
         while r.dir.join(flags::CONTROL_FILE).exists() && t.elapsed() < Duration::from_secs(10) {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        assert!(!flags::get(&r.dir, STUDIO) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, CHAT));
+        assert!(!flags::get(&r.dir, STUDIO) && !flags::get(&r.dir, SANDBOX_PROVIDERS) && !flags::get(&r.dir, CHAT));
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 
@@ -3712,6 +3714,13 @@ pub(crate) mod tests {
     fn controls_local_only_flags_are_the_registrys() {
         let registry: Vec<&str> = arugula_proto::flags::FLAGS.iter().filter(|f| f.local_only).map(|f| f.name).collect();
         assert_eq!(registry, wire::LOCAL_ONLY_FLAGS);
+    }
+
+    /// aru-117: control's renamed flags are the registry's, so what it
+    /// stores, takes and pushes under an old name is what the daemon reads.
+    #[test]
+    fn controls_flag_aliases_are_the_registrys() {
+        assert_eq!(arugula_proto::flags::ALIASES, wire::FLAG_ALIASES);
     }
 
     /// #347: a machine with Developer settings says so to control, which

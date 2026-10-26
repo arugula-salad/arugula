@@ -45,12 +45,19 @@
 //!   the account owns the machine, a team only reaches the machines in it.
 //!   So each flag is three-way in `flags.json`: on, off, or not named,
 //!   which follows control ([`unset`]). A [`Flag::local_only`] one
-//!   (`guest-ssh`, `agents`) ignores control: only `flags.json` sets it.
+//!   (`guest-ssh`, `agent-delegation`) ignores control: only `flags.json`
+//!   sets it.
 //! - **A feature that leaves Labs takes its row with it.** Its name moves to
 //!   [`RETIRED`]: a file or a control push that still names it is read as
 //!   it always was, as a name that isn't a flag, and nothing follows, while
 //!   [`set`] and [`unset`] say why it's gone. `fountain` was the first
 //!   (#942, F5).
+//! - **A renamed flag answers to its old name forever.** [`ALIASES`] maps
+//!   each old name to the new (aru-117): in `flags.json`, in a control push,
+//!   and to [`get`], [`set`] and [`unset`] (so `PUT /api/flags/vms` and
+//!   `arugulad flags vms on` work), so no machine loses a setting. A flag's
+//!   own name wins over an old one where both are said. Only new names are
+//!   listed anywhere.
 
 use std::{
     collections::BTreeMap,
@@ -77,18 +84,20 @@ pub const LABS: &str = "labs";
 /// The chat page, which is control's (M125): and, joined to control, this
 /// machine's old threads brought into it (M124).
 pub const CHAT: &str = "chat";
-/// VM tabs and panes, machines and the sandboxes page.
-pub const VMS: &str = "vms";
+/// VM tabs and panes, machines and the sandboxes page, through the
+/// machine's own sandbox provider. Was `vms`.
+pub const SANDBOX_PROVIDERS: &str = "sandbox-providers";
 /// Studio app blocks.
 pub const STUDIO: &str = "studio";
-/// Chant workspace blocks.
-pub const WORKSPACES: &str = "workspaces";
+/// Chant workspace blocks. Was `workspaces`.
+pub const CHANT_WORKSPACES: &str = "chant-workspaces";
 /// Inviting a guest to a pane over plain ssh.
 pub const GUEST_SSH: &str = "guest-ssh";
-/// Forgejo and GitLab blocks, beside GitHub's.
-pub const FORGES: &str = "forges";
-/// Agent recipes offered from this machine, and the team's agent catalog.
-pub const AGENTS: &str = "agents";
+/// Forgejo and GitLab blocks, beside GitHub's. Was `forges`.
+pub const ADDITIONAL_FORGES: &str = "additional-forges";
+/// Agent recipes offered from this machine, the team's agent catalog and
+/// A2A tasks. Was `agents`.
+pub const AGENT_DELEGATION: &str = "agent-delegation";
 /// Doc blocks: a document an agent builds beside its pane.
 pub const DOCS: &str = "docs";
 
@@ -135,15 +144,23 @@ const fn local_row(name: &'static str, title: &'static str, about: &'static str)
 /// Every flag there is. A new one is a row here.
 pub const FLAGS: &[Flag] = &[
     row(CHAT, "Chat", "The chat page, which needs control. Brings this machine's old threads into it."),
-    row(VMS, "VMs and sandboxes", "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider."),
+    row(
+        SANDBOX_PROVIDERS,
+        "External sandbox providers",
+        "VM tabs and panes, machines and the sandboxes page, from your own sandbox provider. Cloud workspaces don't need it.",
+    ),
     row(STUDIO, "Studio apps", "Studio app blocks. Needs a linked studio."),
-    row(WORKSPACES, "Chant workspaces", "Chant workspace blocks."),
+    row(
+        CHANT_WORKSPACES,
+        "Chant workspaces",
+        "Chant workspace blocks: a workspace's members, relationships and gates.",
+    ),
     local_row(GUEST_SSH, "Guest ssh", "Invite a guest to a pane over plain ssh."),
-    row(FORGES, "Forgejo and GitLab", "PR and issue blocks for Forgejo and GitLab, beside GitHub's."),
+    row(ADDITIONAL_FORGES, "GitLab and Forgejo", "PR and issue blocks for GitLab and Forgejo, beside GitHub's."),
     local_row(
-        AGENTS,
-        "Agent catalog",
-        "Offer Claude Code subagents from this machine, and see the ones your team offers.",
+        AGENT_DELEGATION,
+        "Local agent delegation",
+        "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.",
     ),
     row(DOCS, "Docs", "Agents build documents in a block beside their pane."),
 ];
@@ -167,6 +184,26 @@ pub const RETIRED: &[(&str, &str)] = &[
     ),
 ];
 
+/// Flags that were renamed (aru-117, 2026-10-26): the old name, then the
+/// new. An old name is read forever, wherever a name comes in (the file, a
+/// control push, [`get`], [`set`], [`unset`]), and never listed.
+pub const ALIASES: &[(&str, &str)] = &[
+    ("vms", SANDBOX_PROVIDERS),
+    ("workspaces", CHANT_WORKSPACES),
+    ("forges", ADDITIONAL_FORGES),
+    ("agents", AGENT_DELEGATION),
+];
+
+/// A flag's name now: `name`, unless it's an old name in [`ALIASES`].
+pub fn canonical(name: &str) -> &str {
+    ALIASES.iter().find(|(old, _)| *old == name).map_or(name, |(_, new)| *new)
+}
+
+/// The names a flag is known by: its own, then its old ones.
+fn names_of(name: &'static str) -> impl Iterator<Item = &'static str> {
+    std::iter::once(name).chain(ALIASES.iter().filter(move |(_, new)| *new == name).map(|(old, _)| *old))
+}
+
 /// What to say of `name` if it is a [`RETIRED`] flag.
 pub fn retired(name: &str) -> Option<String> {
     RETIRED.iter().find(|(n, _)| *n == name).map(|(_, why)| format!("{name} isn't a flag any more: {why}"))
@@ -186,8 +223,10 @@ impl On {
         On((1 << FLAGS.len()) - 1)
     }
 
-    /// Whether `name` is on; a name that isn't in [`FLAGS`] is off.
+    /// Whether `name` (or a flag it's an old name of) is on; a name that
+    /// isn't in [`FLAGS`] is off.
     pub fn has(self, name: &str) -> bool {
+        let name = canonical(name);
         FLAGS.iter().position(|f| f.name == name).is_some_and(|i| self.0 & (1 << i) != 0)
     }
 
@@ -216,7 +255,8 @@ pub fn unlocked(state_dir: &Path) -> bool {
 
 /// What control says for this machine (#347): its account's flags and,
 /// for a team's machine, its team's, by name. A name that isn't in
-/// [`FLAGS`] is kept and means nothing here.
+/// [`FLAGS`] is kept and means nothing here; an old name in [`ALIASES`]
+/// speaks for its flag.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pushed {
     #[serde(default)]
@@ -299,7 +339,9 @@ pub fn forget_control(state_dir: &Path) -> io::Result<bool> {
     }
 }
 
-fn flag(name: &str) -> Option<&'static Flag> {
+/// The flag `name` names, by its name or an old one in [`ALIASES`].
+pub fn lookup(name: &str) -> Option<&'static Flag> {
+    let name = canonical(name);
     FLAGS.iter().find(|f| f.name == name)
 }
 
@@ -395,10 +437,10 @@ impl Doc {
         }
     }
 
-    /// This machine's word on a flag: the file's on it, else its word on
-    /// `labs` (which was all of them).
+    /// This machine's word on a flag: the file's on it (by name, else by
+    /// an old name), else its word on `labs` (which was all of them).
     fn local(&self, f: &Flag) -> Option<bool> {
-        self.says(f.name).or_else(|| self.says(LABS))
+        names_of(f.name).find_map(|n| self.says(n)).or_else(|| self.says(LABS))
     }
 
     /// A flag's state: this machine's word, else control's for the
@@ -406,7 +448,8 @@ impl Doc {
     fn state(&self, pushed: &Pushed, f: &Flag) -> State {
         let local = self.local(f);
         // A local-only flag doesn't hear control at all.
-        let pushed_for = |m: &BTreeMap<String, bool>| m.get(f.name).copied().filter(|_| !f.local_only);
+        let pushed_for =
+            |m: &BTreeMap<String, bool>| names_of(f.name).find_map(|n| m.get(n).copied()).filter(|_| !f.local_only);
         let account = pushed_for(&pushed.account);
         let team = pushed_for(&pushed.team);
         let (on, source) = match (local, account, team) {
@@ -419,10 +462,10 @@ impl Doc {
     }
 }
 
-/// Whether the flag `name` is on in `state_dir`. Read on every call; a
-/// name that isn't in [`FLAGS`] is off.
+/// Whether the flag `name` (or an old name of one) is on in `state_dir`.
+/// Read on every call; a name that isn't in [`FLAGS`] is off.
 pub fn get(state_dir: &Path, name: &str) -> bool {
-    flag(name).is_some_and(|f| read(state_dir).state(&read_control(state_dir), f).on)
+    lookup(name).is_some_and(|f| read(state_dir).state(&read_control(state_dir), f).on)
 }
 
 /// Every flag with its state, from one read of each file.
@@ -431,15 +474,17 @@ pub fn all(state_dir: &Path) -> Vec<(Flag, bool)> {
 }
 
 /// Turns the flag `name` on or off, keeping everything else in the file.
-/// An unknown name is `InvalidInput`.
+/// An old name sets the flag it now is (an old name already in the file is
+/// written too, so an older daemon reading it agrees). An unknown name is
+/// `InvalidInput`.
 pub fn set(state_dir: &Path, name: &str, on: bool) -> io::Result<()> {
-    known(name)?;
-    write(state_dir, Some((name, Some(on))))
+    write(state_dir, Some((known(name)?, Some(on))))
 }
 
-fn known(name: &str) -> io::Result<()> {
-    if flag(name).is_some() {
-        return Ok(());
+/// The flag `name` names, or why it doesn't.
+fn known(name: &str) -> io::Result<&'static str> {
+    if let Some(f) = lookup(name) {
+        return Ok(f.name);
     }
     if let Some(why) = retired(name) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, why));
@@ -454,10 +499,10 @@ fn known(name: &str) -> io::Result<()> {
 /// Takes this machine's word on `name` back (#347): the flag follows
 /// control, or its default. Where `labs` (or the old marker) spoke for it,
 /// `labs` is first spelled out as each flag the file didn't name, so the
-/// others stay as they were. An unknown name is `InvalidInput`.
+/// others stay as they were. An old name takes back the flag it now is,
+/// under both names. An unknown name is `InvalidInput`.
 pub fn unset(state_dir: &Path, name: &str) -> io::Result<()> {
-    known(name)?;
-    write(state_dir, Some((name, None)))
+    write(state_dir, Some((known(name)?, None)))
 }
 
 /// Makes the flags file if there is none, with nothing in it: the owner
@@ -466,9 +511,9 @@ pub fn unlock(state_dir: &Path) -> io::Result<()> {
     if state_dir.join(FILE).exists() { Ok(()) } else { write(state_dir, None) }
 }
 
-/// The file written again with `key` set (`None`: taken out), if one is
-/// given.
-fn write(state_dir: &Path, key: Option<(&str, Option<bool>)>) -> io::Result<()> {
+/// The file written again with the flag `key` set (`None`: taken out), if
+/// one is given.
+fn write(state_dir: &Path, key: Option<(&'static str, Option<bool>)>) -> io::Result<()> {
     let mut doc = match read(state_dir) {
         Doc::Ok(m) => m,
         Doc::Missing => Map::new(),
@@ -481,19 +526,29 @@ fn write(state_dir: &Path, key: Option<(&str, Option<bool>)>) -> io::Result<()> 
     let flags = doc.entry("flags").or_insert_with(|| Value::Object(Map::new()));
     match (flags, key) {
         (Value::Object(flags), Some((name, Some(on)))) => {
+            // An old name the file has is kept in step, for an older
+            // daemon reading it; a new file gets the new name only.
+            for old in names_of(name).skip(1).filter(|n| flags.contains_key(*n)).collect::<Vec<_>>() {
+                flags.insert(old.to_owned(), Value::Bool(on));
+            }
             flags.insert(name.to_owned(), Value::Bool(on));
         }
         (Value::Object(flags), Some((name, None))) => {
             // `labs` speaks for every flag the file doesn't name: name
             // them first, so taking one back leaves the rest as they were.
+            let named = |flags: &Map<String, Value>, f: &'static str| names_of(f).any(|n| flags.contains_key(n));
             let labs = flags.get(LABS).and_then(Value::as_bool);
-            if let Some(labs) = labs.filter(|_| !flags.contains_key(name)) {
+            if let Some(labs) = labs.filter(|_| !named(flags, name)) {
                 for f in FLAGS {
-                    flags.entry(f.name).or_insert(Value::Bool(labs));
+                    if !named(flags, f.name) {
+                        flags.insert(f.name.to_owned(), Value::Bool(labs));
+                    }
                 }
                 flags.remove(LABS);
             }
-            flags.remove(name);
+            for n in names_of(name) {
+                flags.remove(n);
+            }
         }
         _ => {}
     }
@@ -647,8 +702,8 @@ mod tests {
         fs::write(d.join(FILE), r#"{"flags":{"labs":true}}"#).unwrap();
         assert_eq!(on(&d), On::all());
         // One turned off there leaves the rest.
-        set(&d, VMS, false).unwrap();
-        assert!(!get(&d, VMS) && get(&d, CHAT));
+        set(&d, SANDBOX_PROVIDERS, false).unwrap();
+        assert!(!get(&d, SANDBOX_PROVIDERS) && get(&d, CHAT));
         assert_eq!(names(&d).len(), FLAGS.len() - 1);
 
         // On is all of them, off none.
@@ -682,9 +737,17 @@ mod tests {
         assert!(!write_control(&d, &Pushed::default()).unwrap(), "nothing to write, nothing written");
         assert!(!d.join(CONTROL_FILE).exists() && !unlocked(&d));
 
-        assert!(write_control(&d, &pushed(&[("vms", false)], &[(CHAT, true), (VMS, true), ("future", true)])).unwrap());
+        // `vms` is the flag's old name, and speaks for it (aru-117).
         assert!(
-            !write_control(&d, &pushed(&[("vms", false)], &[(CHAT, true), (VMS, true), ("future", true)])).unwrap()
+            write_control(&d, &pushed(&[("vms", false)], &[(CHAT, true), (SANDBOX_PROVIDERS, true), ("future", true)]))
+                .unwrap()
+        );
+        assert!(
+            !write_control(
+                &d,
+                &pushed(&[("vms", false)], &[(CHAT, true), (SANDBOX_PROVIDERS, true), ("future", true)])
+            )
+            .unwrap()
         );
         // Control saying something offers Developer settings, to see it.
         assert!(unlocked(&d) && !d.join(FILE).exists());
@@ -693,21 +756,21 @@ mod tests {
             state_of(&d, CHAT),
             State { on: true, source: Source::Team, local: None, account: None, team: Some(true) }
         );
-        assert_eq!(state_of(&d, VMS).source, Source::Account);
-        assert!(!state_of(&d, VMS).on);
+        assert_eq!(state_of(&d, SANDBOX_PROVIDERS).source, Source::Account);
+        assert!(!state_of(&d, SANDBOX_PROVIDERS).on);
         assert_eq!(state_of(&d, STUDIO).source, Source::Default);
 
         // The machine forces either way, and taking its word back follows
         // control again.
         set(&d, CHAT, false).unwrap();
-        set(&d, VMS, true).unwrap();
-        assert_eq!(names(&d), [VMS]);
+        set(&d, SANDBOX_PROVIDERS, true).unwrap();
+        assert_eq!(names(&d), [SANDBOX_PROVIDERS]);
         assert_eq!(
             state_of(&d, CHAT),
             State { on: false, source: Source::Machine, local: Some(false), account: None, team: Some(true) }
         );
         unset(&d, CHAT).unwrap();
-        unset(&d, VMS).unwrap();
+        unset(&d, SANDBOX_PROVIDERS).unwrap();
         assert_eq!(names(&d), [CHAT]);
         assert_eq!(fs::read_to_string(d.join(FILE)).unwrap().replace(char::is_whitespace, ""), r#"{"flags":{}}"#);
         assert_eq!(unset(&d, "nope").unwrap_err().kind(), io::ErrorKind::InvalidInput);
@@ -733,7 +796,7 @@ mod tests {
         assert!(get(&d, CHAT) && state_of(&d, CHAT).source == Source::Machine);
         unset(&d, CHAT).unwrap();
         assert_eq!(state_of(&d, CHAT).source, Source::Team);
-        assert!(!get(&d, CHAT) && get(&d, VMS) && !get(&d, STUDIO));
+        assert!(!get(&d, CHAT) && get(&d, SANDBOX_PROVIDERS) && !get(&d, STUDIO));
         assert_eq!(names(&d).len(), FLAGS.len() - 2);
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
         assert!(v["flags"].get(LABS).is_none() && v["flags"].get(CHAT).is_none());
@@ -745,19 +808,19 @@ mod tests {
     #[test]
     fn control_has_no_say_in_a_local_only_flag() {
         let local: Vec<_> = FLAGS.iter().filter(|f| f.local_only).map(|f| f.name).collect();
-        assert_eq!(local, [GUEST_SSH, AGENTS]);
+        assert_eq!(local, [GUEST_SSH, AGENT_DELEGATION]);
         let d = dir("local-only");
-        write_control(&d, &pushed(&[(GUEST_SSH, true)], &[(AGENTS, true), (CHAT, true)])).unwrap();
+        write_control(&d, &pushed(&[(GUEST_SSH, true)], &[(AGENT_DELEGATION, true), (CHAT, true)])).unwrap();
         assert_eq!(names(&d), [CHAT]);
         assert_eq!(
             state_of(&d, GUEST_SSH),
             State { on: false, source: Source::Default, local: None, account: None, team: None }
         );
-        assert_eq!(state_of(&d, AGENTS).source, Source::Default);
+        assert_eq!(state_of(&d, AGENT_DELEGATION).source, Source::Default);
         // Nor off: the machine's word is all there is.
-        set(&d, AGENTS, true).unwrap();
-        write_control(&d, &pushed(&[(AGENTS, false)], &[])).unwrap();
-        assert!(get(&d, AGENTS) && state_of(&d, AGENTS).source == Source::Machine);
+        set(&d, AGENT_DELEGATION, true).unwrap();
+        write_control(&d, &pushed(&[(AGENT_DELEGATION, false)], &[])).unwrap();
+        assert!(get(&d, AGENT_DELEGATION) && state_of(&d, AGENT_DELEGATION).source == Source::Machine);
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -802,11 +865,96 @@ mod tests {
         assert!(!get(&d, "huddles"));
         write_control(&d, &pushed(&[("huddles", true)], &[("huddles", true)])).unwrap();
         assert_eq!(names(&d), [CHAT]);
-        set(&d, VMS, true).unwrap();
+        set(&d, SANDBOX_PROVIDERS, true).unwrap();
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
         assert_eq!(v["flags"]["huddles"], true, "kept for an older daemon");
         let e = set(&d, "huddles", true).unwrap_err();
         assert!(e.to_string().contains("isn't a flag any more") && e.to_string().contains("removed"), "{e}");
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// The renamed flags (aru-117): each old name is the new flag, in the
+    /// file and to every function that takes a name, and listed nowhere.
+    #[test]
+    fn an_old_name_in_the_file_is_its_flag() {
+        for (old, new) in ALIASES {
+            assert!(FLAGS.iter().all(|f| f.name != *old), "{old} is a flag's name and an old one");
+            assert!(RETIRED.iter().all(|(n, _)| n != old), "{old} is retired and renamed");
+            assert!(ALIASES.iter().all(|(o, _)| o != new), "{new} is an old name too");
+            assert_eq!((canonical(old), lookup(old).map(|f| f.name)), (*new, Some(*new)));
+            let d = dir(&format!("alias-{old}"));
+            fs::write(d.join(FILE), format!(r#"{{"flags":{{"{old}":true}}}}"#)).unwrap();
+            assert!(get(&d, new) && get(&d, old) && on(&d).has(old), "{old}");
+            assert_eq!(names(&d), [*new], "listed by its new name only");
+            assert_eq!(state_of(&d, new).local, Some(true));
+            fs::remove_dir_all(&d).unwrap();
+        }
+        assert_eq!(canonical(CHANT_WORKSPACES), CHANT_WORKSPACES);
+        assert_eq!(canonical("nope"), "nope");
+        // Where both are said, the new name's word wins.
+        let d = dir("alias-both");
+        fs::write(d.join(FILE), r#"{"flags":{"vms":true,"sandbox-providers":false}}"#).unwrap();
+        assert!(!get(&d, SANDBOX_PROVIDERS) && !get(&d, "vms"));
+        // An unknown name's error lists the new names, not the old.
+        let e = set(&d, "nope", true).unwrap_err().to_string();
+        assert!(e.contains(SANDBOX_PROVIDERS) && !e.contains("vms"), "{e}");
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// `arugulad flags vms on` and `PUT /api/flags/vms` set the flag by its
+    /// new name; an old name already in the file is kept in step for an
+    /// older daemon, and taking the flag back takes both.
+    #[test]
+    fn setting_by_an_old_name_sets_the_new_one() {
+        let d = dir("alias-set");
+        set(&d, "vms", true).unwrap();
+        assert_eq!(
+            fs::read_to_string(d.join(FILE)).unwrap().replace(char::is_whitespace, ""),
+            r#"{"flags":{"sandbox-providers":true}}"#
+        );
+        assert_eq!(names(&d), [SANDBOX_PROVIDERS]);
+        fs::write(d.join(FILE), r#"{"flags":{"forges":true}}"#).unwrap();
+        set(&d, ADDITIONAL_FORGES, false).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
+        assert_eq!(v["flags"], serde_json::json!({"forges": false, "additional-forges": false}));
+        set(&d, "forges", true).unwrap();
+        assert!(get(&d, ADDITIONAL_FORGES));
+        unset(&d, "forges").unwrap();
+        assert_eq!(fs::read_to_string(d.join(FILE)).unwrap().replace(char::is_whitespace, ""), r#"{"flags":{}}"#);
+        assert_eq!(state_of(&d, ADDITIONAL_FORGES).source, Source::Default);
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A control (aru-068) that pushes an old name still sets the flag;
+    /// a local-only flag ignores it by either name; the new name wins.
+    #[test]
+    fn control_pushing_an_old_name_still_works() {
+        let d = dir("alias-pushed");
+        write_control(
+            &d,
+            &pushed(&[("workspaces", true), ("forges", true), (ADDITIONAL_FORGES, false)], &[("agents", true)]),
+        )
+        .unwrap();
+        assert_eq!(state_of(&d, CHANT_WORKSPACES).source, Source::Account);
+        assert_eq!(names(&d), [CHANT_WORKSPACES]);
+        assert_eq!(
+            state_of(&d, AGENT_DELEGATION),
+            State { on: false, source: Source::Default, local: None, account: None, team: None }
+        );
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// `labs` spelled out by taking a flag back skips a flag the file names
+    /// by its old name: that word stays the flag's.
+    #[test]
+    fn taking_one_back_from_labs_keeps_an_old_name_s_word() {
+        let d = dir("alias-labs");
+        fs::write(d.join(FILE), r#"{"flags":{"labs":true,"vms":false}}"#).unwrap();
+        assert!(!get(&d, SANDBOX_PROVIDERS) && get(&d, CHANT_WORKSPACES));
+        unset(&d, CHANT_WORKSPACES).unwrap();
+        assert!(!get(&d, SANDBOX_PROVIDERS) && get(&d, ADDITIONAL_FORGES) && !get(&d, CHANT_WORKSPACES));
+        let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
+        assert!(v["flags"].get(SANDBOX_PROVIDERS).is_none() && v["flags"]["vms"] == false, "{v}");
         fs::remove_dir_all(&d).unwrap();
     }
 

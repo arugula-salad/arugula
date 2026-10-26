@@ -592,22 +592,22 @@ fn state_dir() -> Option<PathBuf> {
 const LABS_COMMANDS: &[(&str, &str)] = &[
     ("studio", flags::STUDIO),
     ("app", flags::STUDIO),
-    ("workspace", flags::WORKSPACES),
-    ("agents", flags::AGENTS),
+    ("workspace", flags::CHANT_WORKSPACES),
+    ("agents", flags::AGENT_DELEGATION),
     ("guests", flags::GUEST_SSH),
-    ("machines", flags::VMS),
-    ("sandboxes", flags::VMS),
+    ("machines", flags::SANDBOX_PROVIDERS),
+    ("sandboxes", flags::SANDBOX_PROVIDERS),
 ];
 const LABS_OPTIONS: [(&str, &[&str], &str); 6] = [
-    ("agent", &["recipe"], flags::AGENTS),
-    ("agent", &["vm", "machine"], flags::VMS),
-    ("run", &["vm", "vm_tab", "image", "sandbox"], flags::VMS),
+    ("agent", &["recipe"], flags::AGENT_DELEGATION),
+    ("agent", &["vm", "machine"], flags::SANDBOX_PROVIDERS),
+    ("run", &["vm", "vm_tab", "image", "sandbox"], flags::SANDBOX_PROVIDERS),
     ("share", &["guest", "rw", "reusable", "relay", "addr", "name"], flags::GUEST_SSH),
-    ("open", &["machine"], flags::VMS),
-    ("edit", &["machine"], flags::VMS),
+    ("open", &["machine"], flags::SANDBOX_PROVIDERS),
+    ("edit", &["machine"], flags::SANDBOX_PROVIDERS),
 ];
 
-/// Machines (`mN`) are Labs too: with the `vms` flag, `fs` and `view` say
+/// Machines (`mN`) are Labs too: with the `sandbox-providers` flag, `fs` and `view` say
 /// their paths take one.
 fn labs_machine_paths(cmd: clap::Command) -> clap::Command {
     cmd.mut_subcommand("fs", |fs| {
@@ -639,7 +639,7 @@ fn labs_command(on: On) -> clap::Command {
     for (name, opts, _) in LABS_OPTIONS.iter().filter(|(_, _, f)| on.has(f)) {
         cmd = cmd.mut_subcommand(*name, |s| opts.iter().fold(s, |s, o| s.mut_arg(*o, |a| a.hide(false))));
     }
-    if on.has(flags::VMS) {
+    if on.has(flags::SANDBOX_PROVIDERS) {
         cmd = labs_machine_paths(cmd);
     }
     cmd

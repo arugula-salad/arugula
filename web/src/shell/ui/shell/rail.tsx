@@ -41,7 +41,7 @@ export function Rail({ client }: { client: Client }) {
   const threads = hasChat();
   const { n, mention } = threads ? chatUnread() : { n: 0, mention: false };
   // As places.tsx decides: the machine owner's, with the Labs flag.
-  const agents = client.flag("agents") && !client.state?.roles;
+  const agents = client.flag("agent-delegation") && !client.state?.roles;
   const docs = client.flag("docs") && !client.state?.roles;
   const host = directory.current || "this machine";
   const panes = () => {

@@ -8,7 +8,7 @@
 //! - **Who wins.** The machine: its own `flags.json` beats anything here.
 //!   Then the account's, then the team's (`arugula_proto::flags` resolves
 //!   it; control only sends both).
-//! - **Some are the machine's alone.** `guest-ssh` and `agents`
+//! - **Some are the machine's alone.** `guest-ssh` and `agent-delegation`
 //!   (`wire::LOCAL_ONLY_FLAGS`) are refused here; a daemon ignores them
 //!   from control anyway.
 //! - **Who sees them.** The page shows them only to someone with a machine
@@ -18,6 +18,10 @@
 //!   on `arugula-proto`): a name is any short lowercase word, and a daemon
 //!   ignores one it doesn't have. The web offers the list it was built
 //!   with.
+//! - **Renamed flags (aru-117).** Control knows the renames
+//!   (`wire::FLAG_ALIASES`): an old name set from an older page is stored
+//!   as the new one (the database's own were moved at startup), and a
+//!   machine is sent both, so one from before the rename still hears it.
 
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -67,7 +71,24 @@ pub fn for_daemon(app: &App, account: &str, device: &str) -> anyhow::Result<wire
         Some(t) => app.db.labs_flags(&team_owner(&t))?,
         None => BTreeMap::new(),
     };
-    Ok(wire::Flags { account: app.db.labs_flags(&account_owner(account))?, team })
+    let account = app.db.labs_flags(&account_owner(account))?;
+    Ok(wire::Flags { account: with_old_names(account), team: with_old_names(team) })
+}
+
+/// Each renamed flag under its old name too (aru-117), for a daemon from
+/// before the rename; a newer one reads the new name first.
+fn with_old_names(mut flags: BTreeMap<String, bool>) -> BTreeMap<String, bool> {
+    for (old, new) in wire::FLAG_ALIASES {
+        if let Some(on) = flags.get(*new).copied() {
+            flags.entry(old.to_string()).or_insert(on);
+        }
+    }
+    flags
+}
+
+/// A flag's name now: an old one (aru-117) is the flag it was renamed to.
+fn canonical(name: String) -> String {
+    wire::FLAG_ALIASES.iter().find(|(old, _)| *old == name).map_or(name, |(_, new)| new.to_string())
 }
 
 /// `GET /api/flags`: the signed-in account's flags and those of each team
@@ -112,10 +133,11 @@ fn valid(name: &str) -> bool {
 
 /// `POST /api/flags`: set or unset one of the account's flags, or (an
 /// owner) one of a team's; the machines it reaches look again now.
-pub async fn set(State(app): State<Arc<App>>, s: Session, Json(b): Json<Set>) -> R {
+pub async fn set(State(app): State<Arc<App>>, s: Session, Json(mut b): Json<Set>) -> R {
     if !valid(&b.name) {
         return Err(err(StatusCode::BAD_REQUEST, "that isn't a flag's name"));
     }
+    b.name = canonical(b.name);
     if wire::LOCAL_ONLY_FLAGS.contains(&b.name.as_str()) {
         return Err(err(
             StatusCode::BAD_REQUEST,

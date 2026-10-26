@@ -4,7 +4,7 @@
 // machine without the block's flag gets a plain note instead (an old saved
 // layout can still hold such a block), and nothing is fetched for it.
 
-import type { Client } from "../client";
+import type { Client, FlagName } from "../client";
 import { loadLabs, type Labs } from "../labs-load";
 import type { BlockType, PaneId } from "../../shared/proto";
 import { showLabsOff } from "./labs-off";
@@ -14,7 +14,7 @@ const LABS_BLOCKS = ["app", "workspace", "agents"] as const;
 type LabsBlock = (typeof LABS_BLOCKS)[number];
 
 /** The Labs flag each needs. */
-const FLAGS: Record<LabsBlock, string> = { app: "studio", workspace: "workspaces", agents: "agents" };
+const FLAGS: Record<LabsBlock, FlagName> = { app: "studio", workspace: "chant-workspaces", agents: "agent-delegation" };
 const TITLES: Record<LabsBlock, string> = { app: "App", workspace: "Workspace", agents: "Team agents" };
 
 function rendererOf(labs: Labs, type: LabsBlock) {

@@ -117,7 +117,7 @@ export function closePlace(at: Place) {
 export function Places({ client, at }: { client: Client; at: Place }) {
   useChatTick(client);
   const { n, mention } = chatUnread();
-  const agents = client.flag("agents") && !client.state?.roles;
+  const agents = client.flag("agent-delegation") && !client.state?.roles;
   const docs = client.flag("docs") && !client.state?.roles;
   // No machine yet: no panes or swarm to go to.
   const machines = !!client.state || directory.names.length > 0;

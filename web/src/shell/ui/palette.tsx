@@ -330,7 +330,7 @@ function places(client: Client, phone: boolean): Command[] {
     go("activity", "Go to Chat: Activity", () => openChatView("activity"), "what needs you");
     go("threads", "Go to Chat: Threads you follow", () => openChatView("threads"));
   }
-  if (client.flag("agents") && !client.state?.roles) {
+  if (client.flag("agent-delegation") && !client.state?.roles) {
     go("recipes", "Go to Agents: Recipes", () => openAgentsPage("recipes"));
     go("team", "Go to Agents: Team", () => openAgentsPage("team"));
   }
