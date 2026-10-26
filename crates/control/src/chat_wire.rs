@@ -600,23 +600,10 @@ async fn a_roster_change_reaches_chat_within_the_documented_delay() {
     assert!(took < CACHE_TICK, "{took:?}");
 }
 
-/// A message as a machine kept it, for an import.
-fn old(id: u64, at: u64, account: Option<&str>, name: &str, text: &str) -> Value {
-    json!({ "id": id, "at": at, "account": account, "name": name, "text": text })
-}
-
-/// (number, author, name there, text).
+/// (number, author, name there if it was brought in, text).
 type Told = (i64, String, Option<String>, String);
 
-fn t(seq: i64, author: &str, name: &str, text: &str) -> Told {
-    (seq, author.into(), Some(name.into()), text.into())
-}
-
 impl Rig {
-    async fn import(&self, machine: &DeviceKeys, body: &Value) -> (u16, Value) {
-        self.c.daemon_post(machine, arugula_control_wire::chat::CHAT_IMPORT, body).await
-    }
-
     /// The room on box-a's pane or session.
     async fn target(&self, who: &str, kind: &str, target: &str) -> String {
         let open = json!({ "machine": self.box_a.id(), "kind": kind, "target": target });
@@ -641,159 +628,17 @@ impl Rig {
 }
 
 #[tokio::test]
-async fn a_machines_old_threads_come_in_once_with_their_numbers_authors_and_quotes() {
-    let r = rig().await;
-    // Session 3's thread was used in control first: two of its own.
-    let s3 = r.target(&r.jake, "session", "3").await;
-    r.post(&r.jake, &s3, json!({ "text": "new one" })).await;
-    r.post(&r.jake, &s3, json!({ "text": "new two" })).await;
-
-    let mut first = old(1, 1000, Some("a1jake"), "Jake", "@alex the mean test fails");
-    first["quote"] = json!("test mean ... FAILED");
-    first["pane"] = json!("2");
-    first["mentions"] = json!(["a2alex", "a3sam"]);
-    let body = json!({
-        "readers": [{ "kind": "pane", "target": "2", "readers": [{ "account": "a2alex" }] }],
-        "threads": [
-            { "kind": "pane", "target": "2", "messages": [
-                first,
-                old(2, 1100, Some("a2alex"), "alex", "on it"),
-                // No account here (a tailnet login), and an account that
-                // doesn't see the room: both under the owner, by name.
-                old(3, 1200, None, "sam@tailnet", "drive-by"),
-                old(4, 1300, Some("a3sam"), "sam", "not his room"),
-            ] },
-            { "kind": "session", "target": "3", "messages": [
-                old(1, 900, Some("a1jake"), "Jake", "old one"),
-                old(2, 950, Some("a1jake"), "Jake", "old two"),
-            ] },
-        ],
-        "archives": [{
-            "id": "c-00000000000000000000000000000001", "title": "calc", "created": 500,
-            "members": [{ "account": "a1jake" }, { "account": "a2alex" }, { "account": "a4carol", "from": 1600 }],
-            "messages": [
-                old(1, 1500, Some("a1jake"), "Jake", "before carol"),
-                old(2, 1700, None, "lead", "L1 finished: tests pass"),
-            ],
-        }],
-    });
-    let (st, v) = r.import(&r.box_a, &body).await;
-    assert_eq!((st, v.clone()), (200, json!({ "rooms": 3, "messages": 8, "already": 0 })), "{v}");
-
-    // Pane 2's thread, with its numbers, authors and quote; alex reads it
-    // (the reader list came with it), carol doesn't.
-    let p2 = r.target(&r.alex, "pane", "2").await;
-    assert_eq!(
-        r.told(&r.alex, &p2).await,
-        [
-            t(1, "a1jake", "Jake", "@alex the mean test fails"),
-            t(2, "a2alex", "alex", "on it"),
-            t(3, "a1jake", "sam@tailnet", "drive-by"),
-            t(4, "a1jake", "sam", "not his room"),
-        ]
-    );
-    let ms = r.messages(&r.alex, &p2).await;
-    assert_eq!(ms[0]["quote"], "test mean ... FAILED");
-    assert_eq!(ms[0]["pane"], json!({ "machine": r.box_a.id(), "machine_name": "box-a", "pane": "2", "opens": true }));
-    assert_eq!(ms[0]["mentions"], json!(["a2alex"]), "only who sees the room");
-    let open = json!({ "machine": r.box_a.id(), "kind": "pane", "target": "2" });
-    assert_eq!(r.call(&r.carol, "POST", "/api/chat/targets", Some(open)).await.0, 404);
-    let listed = r.room_in_list(&r.alex, &p2).await;
-    assert_eq!(
-        (listed["last"].as_i64(), listed["unread"].as_u64(), listed["mentions"].as_u64()),
-        (Some(4), Some(0), Some(0)),
-        "old messages count as read"
-    );
-    assert_eq!(r.search(&r.alex, "FAILED").await, [(p2.clone(), 1)]);
-    // The next one numbers on.
-    assert_eq!(r.post(&r.alex, &p2, json!({ "text": "fixed" })).await["seq"], 5);
-
-    // Session 3 keeps its own numbers, after the old ones.
-    let seen = |v: Vec<Told>| v.into_iter().map(|m| (m.0, m.3)).collect::<Vec<_>>();
-    let s = |n: i64, x: &str| (n, x.to_owned());
-    assert_eq!(seen(r.told(&r.jake, &s3).await), [s(-1, "old one"), s(0, "old two"), s(1, "new one"), s(2, "new two")]);
-    assert_eq!(r.post(&r.jake, &s3, json!({ "text": "new three" })).await["seq"], 3);
-
-    // The conversation: an archive its members read, carol from when she
-    // joined, read-only; nobody else sees it.
-    let rooms = r.rooms(&r.alex).await;
-    let ar = rooms.iter().find(|x| x["kind"] == "archive").expect("alex has the archive");
-    assert_eq!((ar["name"].as_str(), ar["writable"].as_bool()), (Some("calc"), Some(false)));
-    let ar = ar["id"].as_str().unwrap().to_owned();
-    assert_eq!(
-        r.told(&r.alex, &ar).await,
-        [t(1, "a1jake", "Jake", "before carol"), t(2, "a1jake", "lead", "L1 finished: tests pass")]
-    );
-    assert_eq!(r.told(&r.carol, &ar).await, [t(2, "a1jake", "lead", "L1 finished: tests pass")]);
-    let (st, _) =
-        r.call(&r.alex, "POST", &format!("/api/chat/rooms/{ar}/messages"), Some(json!({ "text": "hi" }))).await;
-    assert_eq!(st, 409);
-    r.c.app.db.set_labs_flag("account:a3sam", "chat", Some(true)).unwrap();
-    r.settle().await;
-    assert_eq!(r.call(&r.sam, "GET", &format!("/api/chat/rooms/{ar}"), None).await.0, 404);
-
-    // Sent again: nothing new. A later part of a thread lands after the
-    // earlier ones, even in a room with its own messages.
-    let (st, v) = r.import(&r.box_a, &body).await;
-    assert_eq!((st, v), (200, json!({ "rooms": 0, "messages": 0, "already": 8 })));
-    let more =
-        json!({ "threads": [{ "kind": "session", "target": "3", "messages": [old(3, 990, None, "x", "old three")] }] });
-    assert_eq!(r.import(&r.box_a, &more).await.1["messages"], 1);
-    assert_eq!(
-        seen(r.told(&r.jake, &s3).await),
-        [s(-2, "old one"), s(-1, "old two"), s(0, "old three"), s(1, "new one"), s(2, "new two"), s(3, "new three")]
-    );
-
-    // A machine with chat off isn't heard; nor is a target that isn't one.
-    let sams_box = daemon(&r.c.app, "a3sam", "sams-box");
-    r.c.app.db.set_labs_flag("account:a3sam", "chat", Some(false)).unwrap();
-    r.settle().await;
-    let (st, v) = r.import(&sams_box, &body).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some("chat_off")));
-    let bad = json!({ "threads": [{ "kind": "pane", "target": "two words", "messages": [] }] });
-    assert_eq!(r.import(&r.box_a, &bad).await.0, 400);
-}
-
-#[tokio::test]
-async fn controls_page_says_which_machines_to_update_for_chat() {
-    let r = rig().await;
-    let update = |v: &Value, id: &str| {
-        v["daemons"].as_array().unwrap().iter().find(|d| d["id"] == id).unwrap()["chat_update"].as_bool()
-    };
-    // box-a said nothing of importing (the last release's daemon).
-    r.c.app.db.set_daemon_features(&r.box_a.id(), "presigned-invites,owner-moves").unwrap();
-    let dir = r.ok(&r.jake, "GET", "/api/directory", None).await;
-    assert_eq!(update(&dir, &r.box_a.id()), Some(true));
-    // This release's does.
-    r.c.app.db.set_daemon_features(&r.box_a.id(), "presigned-invites,chat-import").unwrap();
-    let dir = r.ok(&r.jake, "GET", "/api/directory", None).await;
-    assert_eq!(update(&dir, &r.box_a.id()), None);
-    // Only with chat on.
-    r.c.app.db.set_daemon_features(&r.box_a.id(), "").unwrap();
-    r.c.app.db.set_labs_flag(&format!("team:{TEAM}"), "chat", Some(false)).unwrap();
-    r.settle().await;
-    let dir = r.ok(&r.jake, "GET", "/api/directory", None).await;
-    assert_eq!(update(&dir, &r.box_a.id()), None);
-}
-
-#[tokio::test]
 async fn a_viewer_reads_a_sessions_thread_and_doesnt_post() {
     let r = rig().await;
     // box-a says alex drives session 1 and carol only watches it.
-    let list = json!({ "kind": "session", "target": "1", "readers": [
+    let list = json!({ "targets": [{ "kind": "session", "target": "1", "readers": [
         { "account": "a2alex" }, { "account": "a4carol", "watching": true },
-    ] });
-    let (st, v) = r
-        .import(
-            &r.box_a,
-            &json!({ "readers": [list], "threads": [
-        { "kind": "session", "target": "1", "messages": [old(1, 1000, Some("a4carol"), "carol", "from before")] },
-    ] }),
-        )
-        .await;
+    ] }] });
+    let (st, v) = r.readers(&r.box_a, list).await;
     assert_eq!(st, 200, "{v}");
-    let th = r.target(&r.carol, "session", "1").await;
-    assert_eq!(r.told(&r.carol, &th).await, [t(1, "a4carol", "carol", "from before")], "she reads it");
+    let th = r.target(&r.alex, "session", "1").await;
+    assert_eq!(r.post(&r.alex, &th, json!({ "text": "hi carol" })).await["seq"], 1);
+    assert_eq!(r.told(&r.carol, &th).await, [(1, "a2alex".into(), None, "hi carol".into())], "she reads it");
     assert_eq!(r.room_in_list(&r.carol, &th).await["writable"], false);
     assert_eq!(r.room_in_list(&r.alex, &th).await["writable"], true);
     assert_eq!(r.room_in_list(&r.jake, &th).await["writable"], true, "the owner always posts");
@@ -801,7 +646,7 @@ async fn a_viewer_reads_a_sessions_thread_and_doesnt_post() {
         r.call(&r.carol, "POST", &format!("/api/chat/rooms/{th}/messages"), Some(json!({ "text": "hi" }))).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some("watching")), "{v}");
     assert!(v["error"].as_str().unwrap().contains("watching this session"));
-    assert_eq!(r.post(&r.alex, &th, json!({ "text": "hi carol" })).await["seq"], 2);
+    assert_eq!(r.post(&r.alex, &th, json!({ "text": "over to you" })).await["seq"], 2);
 
     // Made an editor there, she posts.
     let list = json!({ "targets": [{ "kind": "session", "target": "1", "readers": [{ "account": "a4carol" }] }] });

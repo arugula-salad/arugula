@@ -3717,7 +3717,6 @@ export type OpName = keyof typeof OPS;
 
 /** The Labs flags (`arugula_proto::flags::FLAGS`), in order. */
 export const FLAGS = [
-  { name: "chat", title: "Chat", about: "The chat page, which needs control. Brings this machine's old threads into it.", default: false, local_only: false },
   { name: "vms", title: "VMs and sandboxes", about: "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider.", default: false, local_only: false },
   { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
   { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false, local_only: false },

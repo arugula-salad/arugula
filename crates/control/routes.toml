@@ -1422,13 +1422,6 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 
-[[route]]
-method = "POST"
-path = "/api/daemon/chat/import"  # wire::chat::CHAT_IMPORT
-process = "platform"
-auth = "daemon"
-clients = ["daemon"]
-
 # A machine's agents in conversations (M198): MCP's thread tools list,
 # read, search and post in the rooms its owner's grants reach (M197:
 # `threads.read`, `threads.post`), asked again on every call. `{id}` is a

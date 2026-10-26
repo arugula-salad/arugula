@@ -52,7 +52,7 @@ export function ChatApp({ route, fit, scope }: { route: ChatRoute; fit?: ChatFit
         </button>
       </p>
     );
-  } else note = <p>Chat is off for you. A team owner turns it on in the team's Developer settings, on Control, for the team's channels and messages.</p>;
+  } else note = <p>Chat is off for you. A team owner turns it on for the team under Teams, on Control: its channels, messages and threads.</p>;
   return (
     <div class="chat" data-chat data-chat-off={chat.on === false && !chat.signedOut ? "" : undefined}>
       <Bar />

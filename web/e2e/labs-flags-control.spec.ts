@@ -118,7 +118,7 @@ test("a team's and an account's flags reach the machine, each saying where it co
   expect(existsSync(join(state, "flags.json"))).toBe(false);
   // No machine of the account has Developer settings: the page offers none.
   expect((await me.api<{ dev: boolean }>("/api/flags")).dev).toBe(false);
-  await setOnControl("chat", true, team);
+  await setOnControl("forges", true, team);
   await setOnControl("workspaces", true, team);
   await setOnControl("workspaces", false);
   // Each set nudges the machine: the file may come before the last of them.
@@ -128,12 +128,12 @@ test("a team's and an account's flags reach the machine, each saying where it co
   };
   await expect.poll(fromControl, { timeout: 20_000 }).toEqual({
     account: { workspaces: false },
-    team: { chat: true, workspaces: true },
+    team: { forges: true, workspaces: true },
   });
 
   await reopen(page);
-  await expect(row(page, "chat").locator("input")).toBeChecked();
-  await expect(row(page, "chat").locator("[data-flag-source]")).toHaveText("Set for your team on control");
+  await expect(row(page, "forges").locator("input")).toBeChecked();
+  await expect(row(page, "forges").locator("[data-flag-source]")).toHaveText("Set for your team on control");
   // The account's word beats the team's.
   await expect(row(page, "workspaces").locator("input")).not.toBeChecked();
   await expect(row(page, "workspaces").locator("[data-flag-source]")).toHaveText("Set for your account on control");
@@ -142,10 +142,10 @@ test("a team's and an account's flags reach the machine, each saying where it co
   // take them, and the dialog says so.
   await expect(setOnControl("guest-ssh", true, team)).rejects.toThrow(/400/);
   await expect(row(page, "guest-ssh").locator("[data-flag-local-only]")).toBeVisible();
-  await expect(row(page, "chat").locator("[data-flag-local-only]")).toHaveCount(0);
+  await expect(row(page, "forges").locator("[data-flag-local-only]")).toHaveCount(0);
   // Control saying something is the machine asking: the menus offer them.
   await expect.poll(() => page.evaluate(() => window.__arugula.client.hasDev())).toBe(true);
-  await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("chat"))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("forges"))).toBe(true);
   // And it tells control so on its next refresh (a change nudges one), so
   // control's page now offers the flags.
   await setOnControl("studio", true);
@@ -155,22 +155,22 @@ test("a team's and an account's flags reach the machine, each saying where it co
 
 test("the machine overrides control, and Use control's takes its word back", async ({ page }) => {
   await reopen(page);
-  await row(page, "chat").locator("input").uncheck();
-  await expect(row(page, "chat").locator("[data-flag-source]")).toHaveText("Set on this machine; control has it on for your team");
-  expect(JSON.parse(readFileSync(join(state, "flags.json"), "utf8"))).toEqual({ flags: { chat: false } });
-  await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("chat"))).toBe(false);
+  await row(page, "forges").locator("input").uncheck();
+  await expect(row(page, "forges").locator("[data-flag-source]")).toHaveText("Set on this machine; control has it on for your team");
+  expect(JSON.parse(readFileSync(join(state, "flags.json"), "utf8"))).toEqual({ flags: { forges: false } });
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("forges"))).toBe(false);
 
-  await row(page, "chat").getByRole("button", { name: "Use control's for Chat" }).click();
-  await expect(row(page, "chat").locator("input")).toBeChecked();
-  await expect(row(page, "chat").locator("[data-flag-source]")).toHaveText("Set for your team on control");
-  await expect(row(page, "chat").getByRole("button")).toHaveCount(0);
+  await row(page, "forges").getByRole("button", { name: "Use control's for Forgejo and GitLab" }).click();
+  await expect(row(page, "forges").locator("input")).toBeChecked();
+  await expect(row(page, "forges").locator("[data-flag-source]")).toHaveText("Set for your team on control");
+  await expect(row(page, "forges").getByRole("button")).toHaveCount(0);
   expect(JSON.parse(readFileSync(join(state, "flags.json"), "utf8"))).toEqual({ flags: {} });
 });
 
 test("unset on control, the machine is back to the flag's default", async ({ page }) => {
-  await setOnControl("chat", null, team);
+  await setOnControl("forges", null, team);
   await expect.poll(() => JSON.parse(readFileSync(join(state, "flags.control.json"), "utf8")).team, { timeout: 20_000 }).toEqual({ workspaces: true });
   await reopen(page);
-  await expect(row(page, "chat").locator("input")).not.toBeChecked();
-  await expect(row(page, "chat").locator("[data-flag-source]")).toHaveCount(0);
+  await expect(row(page, "forges").locator("input")).not.toBeChecked();
+  await expect(row(page, "forges").locator("[data-flag-source]")).toHaveCount(0);
 });

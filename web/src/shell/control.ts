@@ -102,9 +102,6 @@ export interface DirDaemon {
   account?: string;
   owner_name?: string;
   team?: string | null;
-  /** M124: one of mine from before chat moved to control, with chat on:
-   * its threads stay on it until it's updated. */
-  chat_update?: boolean;
   /** M178: a hosted machine, accepted for this project only (labelled
    * "Hosted: the operator can read" wherever it's shown). */
   hosted?: { project: string; workspace: string; role: TeamRole };

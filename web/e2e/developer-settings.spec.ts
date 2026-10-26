@@ -47,7 +47,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["chat", "vms", "studio", "workspaces", "guest-ssh", "forges", "agents", "docs"] as const;
+const FLAGS = ["vms", "studio", "workspaces", "guest-ssh", "forges", "agents", "docs"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -76,9 +76,6 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
   const page_says = await page.evaluate(() => {
     const c = window.__arugula.client as unknown as { flag(n: string): boolean; forgeLink(u: string): string | null };
     return {
-      // Chat is control's, on its platform page (M155): the machine's flag
-      // draws nothing here of its own, but the page has it.
-      chat: c.flag("chat"),
       workspaces: c.flag("workspaces"),
       forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
       // M76 is the daemon's and the CLI's; the page's catalog is M77's.
@@ -86,7 +83,6 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
       docs: c.flag("docs"),
     };
   });
-  if (page_says.chat) out.push("chat");
   if (page_says.workspaces) out.push("workspaces");
   if (page_says.forges) out.push("forges");
   if (page_says.agents) out.push("agents");
@@ -122,34 +118,34 @@ test("a machine that hasn't asked isn't offered Developer settings, and #develop
   expect(existsSync(join(state, "flags.json"))).toBe(false);
 });
 
-const chatFlag = (page: Page) => page.evaluate(() => window.__arugula.client.flag("chat"));
+const workspacesFlag = (page: Page) => page.evaluate(() => window.__arugula.client.flag("workspaces"));
 
-test("turning chat on in the dialog turns on chat, and nothing else, without a reload", async ({ page }) => {
+test("turning chant workspaces on in the dialog turns on them, and nothing else, without a reload", async ({ page }) => {
   const pane = await start(page);
   await page.goto("/#developer");
-  await dialog(page).locator('[data-flag="chat"] input').check();
-  await expect.poll(() => chatFlag(page)).toBe(true);
-  // Chat itself is on control's platform page: nothing of it here.
-  await expect(page.locator("[data-open-chat]")).toHaveCount(0);
+  // Chat isn't a flag (native #203): it's control's, by team.
+  await expect(dialog(page).locator('[data-flag="chat"]')).toHaveCount(0);
+  await dialog(page).locator('[data-flag="workspaces"] input').check();
+  await expect.poll(() => workspacesFlag(page)).toBe(true);
   await expect(dialog(page).locator("[data-flag] input:checked")).toHaveCount(1);
-  expect(onNow()).toEqual(["chat"]);
+  expect(onNow()).toEqual(["workspaces"]);
   await dialog(page).getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog(page)).toBeHidden();
-  expect(await shown(page, pane)).toEqual(["chat"]);
+  expect(await shown(page, pane)).toEqual(["workspaces"]);
   // The swarm's views are no flag's: all four, whatever is on.
   await page.goto("/#swarm");
   await expect(page.locator(".swarm")).toBeVisible();
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 });
 
-test("once asked for, the account menu offers them; off takes chat away again", async ({ page }) => {
+test("once asked for, the account menu offers them; off takes chant workspaces away again", async ({ page }) => {
   const pane = await start(page);
-  expect(await chatFlag(page)).toBe(true);
+  expect(await workspacesFlag(page)).toBe(true);
   await page.locator(".ws-head [data-account-menu]").click();
   await page.getByRole("menuitem", { name: "Developer settings…" }).click();
-  await expect(dialog(page).locator('[data-flag="chat"] input')).toBeChecked();
-  await dialog(page).locator('[data-flag="chat"] input').uncheck();
-  await expect.poll(() => chatFlag(page)).toBe(false);
+  await expect(dialog(page).locator('[data-flag="workspaces"] input')).toBeChecked();
+  await dialog(page).locator('[data-flag="workspaces"] input').uncheck();
+  await expect.poll(() => workspacesFlag(page)).toBe(false);
   expect(onNow()).toEqual([]);
   await page.keyboard.press("Escape");
   expect(await shown(page, pane)).toEqual([]);
@@ -236,9 +232,16 @@ test("the swarm's views are no flag: swarm-themes is retired", async ({ page }) 
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 });
 
+test("chat is no flag: chat is retired, and control's by team", async () => {
+  const r = await setFlag("chat", true);
+  expect(r.ok).toBe(false);
+  expect(await r.text()).toContain("isn't a flag any more");
+  expect(onNow()).toEqual([]);
+});
+
 test("the flags are the owner's: someone else can't read or change them", async () => {
   const other = "friend@example.com";
-  expect((await setFlag("chat", true, other)).status).toBe(403);
+  expect((await setFlag("vms", true, other)).status).toBe(403);
   expect((await fetch(`${base}/api/flags`, { headers: { "tailscale-user-login": other } })).status).toBe(403);
   expect(onNow()).toEqual([]);
 });

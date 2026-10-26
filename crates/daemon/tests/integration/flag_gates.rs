@@ -128,9 +128,9 @@ fn managoat_is_gone_and_an_old_flag_changes_nothing() {
         assert!(d.get("/api/flags").as_array().unwrap().iter().all(|f| f["name"] != "fountain"));
     }
     // What the file said is kept, for an older daemon reading it.
-    set(&d.state, "chat", true);
+    set(&d.state, "forges", true);
     let file: Value = serde_json::from_str(&std::fs::read_to_string(d.state.join("flags.json")).unwrap()).unwrap();
-    assert_eq!(file["flags"], json!({ "fountain": true, "chat": true }));
+    assert_eq!(file["flags"], json!({ "fountain": true, "forges": true }));
 
     let arugulad = |args: &[&str]| {
         arugula_testkit::command(Path::new(env!("CARGO_BIN_EXE_arugulad")))
@@ -143,7 +143,7 @@ fn managoat_is_gone_and_an_old_flag_changes_nothing() {
     let list = arugulad(&["flags"]);
     assert!(list.status.success());
     let list = String::from_utf8_lossy(&list.stdout);
-    assert!(list.contains("chat") && !list.lines().any(|l| l.starts_with("fountain")), "{list}");
+    assert!(list.contains("forges") && !list.lines().any(|l| l.starts_with("fountain")), "{list}");
     for args in [&["flags", "fountain", "on"][..], &["flags", "fountain"][..]] {
         let out = arugulad(args);
         let err = String::from_utf8_lossy(&out.stderr);

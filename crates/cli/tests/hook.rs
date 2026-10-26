@@ -31,7 +31,7 @@ enum Daemon {
 
 fn flags(docs: bool) -> Value {
     json!([
-        { "name": "chat", "title": "Chat", "about": "", "on": false, "default": false },
+        { "name": "vms", "title": "VMs and sandboxes", "about": "", "on": false, "default": false },
         { "name": "docs", "title": "Docs", "about": "", "on": docs, "default": false },
     ])
 }

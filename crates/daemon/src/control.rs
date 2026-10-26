@@ -86,17 +86,9 @@ pub const REFRESH_WAIT: Duration = Duration::from_secs(10);
 /// What this daemon tells control it understands, so control offers only
 /// what every daemon checking a team can take (presigned invites' rosters).
 /// `ARUGULA_FEATURES` says otherwise (tests play an older daemon with "").
-/// `chat-import` (M124): it brings its threads into control's chat, so
-/// control's page doesn't tell its owner to update it.
+/// (`chat-import`, M124, went with the import, native #203.)
 fn features() -> String {
-    std::env::var("ARUGULA_FEATURES")
-        .unwrap_or_else(|_| format!("presigned-invites,owner-moves,join-secret,{}", wire::chat::CHAT_IMPORT_FEATURE))
-}
-
-/// Whether this daemon brings its threads into control (M124): an older
-/// one, played by `ARUGULA_FEATURES` without `chat-import`, doesn't.
-pub fn imports_chat() -> bool {
-    has_feature(&features(), wire::chat::CHAT_IMPORT_FEATURE)
+    std::env::var("ARUGULA_FEATURES").unwrap_or_else(|_| "presigned-invites,owner-moves,join-secret".into())
 }
 
 /// Whether `features` names `feature`.
@@ -2000,7 +1992,7 @@ impl Control {
     /// Run for good: notice joins and leaves, keep certificates fresh, and
     /// keep the relay socket up while enrolled.
     pub fn start(self: &Arc<Self>, app: Arc<App>) {
-        crate::chat_import::start(self.clone(), app.clone());
+        crate::chat_readers::start(self.clone(), app.clone());
         let (a, r) = (app.clone(), app.clone());
         self.run(
             move || app.mux.send(crate::mux::Cmd::AclChanged),
@@ -3673,21 +3665,21 @@ pub(crate) mod tests {
     /// control says nothing of them, and go when the machine leaves.
     #[tokio::test]
     async fn control_pushes_labs_flags_and_the_machine_overrides() {
-        use arugula_proto::flags::{self, CHAT, STUDIO, Source, VMS};
+        use arugula_proto::flags::{self, FORGES, STUDIO, Source, VMS};
         let r = rig("flags").await;
         r.fake.lock().unwrap().flags =
-            Some(serde_json::json!({ "account": { "vms": false }, "team": { "chat": true, "vms": true } }));
+            Some(serde_json::json!({ "account": { "vms": false }, "team": { "forges": true, "vms": true } }));
         let c = r.daemon().await;
-        assert!(flags::get(&r.dir, CHAT) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, STUDIO));
+        assert!(flags::get(&r.dir, FORGES) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, STUDIO));
         let source = |name| flags::explain(&r.dir).into_iter().find(|(f, _)| f.name == name).unwrap().1.source;
-        assert_eq!((source(CHAT), source(VMS)), (Source::Team, Source::Account));
+        assert_eq!((source(FORGES), source(VMS)), (Source::Team, Source::Account));
 
         // The machine forces one off; a team change doesn't move it.
-        flags::set(&r.dir, CHAT, false).unwrap();
+        flags::set(&r.dir, FORGES, false).unwrap();
         r.fake.lock().unwrap().flags =
-            Some(serde_json::json!({ "team": { "chat": true, "studio": true, "vms": true } }));
+            Some(serde_json::json!({ "team": { "forges": true, "studio": true, "vms": true } }));
         assert!(c.refresh_now(REFRESH_WAIT).await);
-        assert!(!flags::get(&r.dir, CHAT) && flags::get(&r.dir, STUDIO));
+        assert!(!flags::get(&r.dir, FORGES) && flags::get(&r.dir, STUDIO));
         // VMs follow the account's word going away: the team's says on.
         assert!(flags::get(&r.dir, VMS) && source(VMS) == Source::Team);
 
@@ -3702,7 +3694,7 @@ pub(crate) mod tests {
         while r.dir.join(flags::CONTROL_FILE).exists() && t.elapsed() < Duration::from_secs(10) {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        assert!(!flags::get(&r.dir, STUDIO) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, CHAT));
+        assert!(!flags::get(&r.dir, STUDIO) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, FORGES));
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 

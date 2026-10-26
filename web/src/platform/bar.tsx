@@ -65,7 +65,7 @@ function Place({ to, here, children, data }: { to: string; here: boolean; childr
 
 export function PlatformBar({ children }: { children?: ComponentChildren }) {
   useSubscribe((fn) => session.subscribe(fn));
-  // Issues come with chat (M201): its Labs flag says whether they're there,
+  // Issues come with chat (M201): its setting on control says whether they're there,
   // and its rooms what's new in issues' and runs' threads.
   useSubscribe((fn) => chat.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));

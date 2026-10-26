@@ -13,7 +13,11 @@ removed on 2026-10-18 and control's on 2026-10-23; agents in the cloud run
 on hosted workspaces now ([managoat.md](managoat.md)). Huddles,
 voice calls on a session, were here until they were removed (2026-10-18,
 DECISIONS.md "Huddles are removed"); a `huddles` flag left in `flags.json`
-does nothing.
+does nothing. Chat was here until it left Labs (native #203, 2026-10-26):
+it's on wherever a team's owners turn it on in control, a `chat` flag left
+in `flags.json` does nothing, and a machine's old threads are no longer
+brought into control. [Threads and chat](#threads-and-chat) still
+describes it below.
 
 ## Turning a feature on
 
@@ -21,7 +25,6 @@ Each feature has a flag, off on a new install:
 
 | Flag | Turns on |
 | --- | --- |
-| `chat` | The chat page (chat itself is control's), and bringing old threads into control |
 | `vms` | VM tabs and panes, machines and the sandboxes page |
 | `studio` | Studio app blocks |
 | `workspaces` | Chant workspace blocks |
@@ -42,7 +45,6 @@ one isn't made.
 
 | Flag | What is refused without it |
 | --- | --- |
-| `chat` | Nothing on the machine: it shows the Chat page, and, joined to control, brings old threads into it (see [Threads and chat](#threads-and-chat)) |
 | `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `workspaces` | chant workspace blocks |
@@ -53,7 +55,7 @@ one isn't made.
 
 ```
 arugulad flags                # the flags, and which are on
-arugulad flags chat on        # and `off`
+arugulad flags vms on         # and `off`
 ```
 
 Or, as the machine's owner, in the web client: *Developer settings…* in the
@@ -63,7 +65,7 @@ menus offer it only on a machine that has asked: one where `arugulad flags`
 has been run, or a flag set. The desktop app's *Daemon* menu has *Developer
 settings…* either way, and so does the page at `/#developer`.
 
-The flags are `{"flags": {"chat": true}}` in `flags.json` in the state
+The flags are `{"flags": {"vms": true}}` in `flags.json` in the state
 directory, which is `$ARUGULA_STATE_DIR` if set, else
 `$XDG_STATE_HOME/arugula`, else `~/.local/state/arugula`; on Windows,
 `%LOCALAPPDATA%\arugula\state`. `arugulad flags` writes it directly, so it
@@ -80,7 +82,8 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
 - **Per machine.** They're read by the machine that serves the page, so every
   machine you want a feature on needs its own. Someone you share a session
   with sees VMs or studio apps on your machine if it has them on, and not
-  otherwise. Chat is control's and follows control's flag.
+  otherwise. Chat is no flag: it's control's, on by team (see
+  [Threads and chat](#threads-and-chat)).
 - **No restart.** The daemon reads the flags whenever it's asked.
 - **Each feature still needs its own setup.** Studio needs a link, VMs a
   sandbox provider, guest ssh its listener; a flag lets its
@@ -108,7 +111,7 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
 - **Web client:** `Client.has("vms" | "studio")` and
   `hasLabs()` and `flag(name)` in `web/src/shell/client.ts`: VM panes and tabs,
   *Sandboxes…*, *Split (local)* and a VM tab's *Machine* items, studio
-  apps, *Open as workspace*, *Invite over ssh…*, threads and chat.
+  apps, *Open as workspace*, *Invite over ssh…*.
   The swarm's city, hive and timeline views left Labs (2026-10-26): every
   swarm offers them under *Theme*, and `swarm-themes` is a retired flag.
 - **Machines (VMs).** A *machine* (`--machine mN`, `mN:PATH`, `--machine
@@ -156,9 +159,12 @@ one, as after a lost machine.
 
 Chat is control's (#978, DECISIONS.md "Chat lives in control, in plain
 text"): a team's channels and DMs, and a thread about each pane and each
-session, held by control so they work with every machine asleep. It's
-behind control's own `chat` flag, the account's or a team's
-(`POST /api/flags`); the API is under `/api/chat`
+session, held by control so they work with every machine asleep. It isn't
+Labs any more (native #203): no machine has a flag for it. It's on for
+everyone in a team whose owners turned it on (*Chat* under Teams on
+control's page, kept as the team's `chat` beside its Labs flags,
+`POST /api/flags`; an account's own word, set before, still beats its
+teams'); the API is under `/api/chat`
 (`crates/platform/src/chat.rs`, control's platform since M138), and the
 pages read it in
 `web/src/shared/chat-store.ts`, `web/src/shared/chat/rooms.tsx` and
@@ -167,21 +173,19 @@ pages read it in
 thread beside it and links to the rest, and since M155 draws no chat page
 of its own.
 
-**No machine keeps chat (M125).** A machine's `chat` flag does one thing
-now:
-- Joined to control, with control's flag on too, it brings the threads and
-  conversations an older daemon kept (`<state>/threads/`) into control
-  once, then renames the folder `threads.imported/` (M124,
-  `crates/daemon/src/chat_import.rs`). A machine that skipped the release
-  with the import still does this. Not joined, the folder stays where it
-  is, unread. An older daemon is marked "Update to bring its threads into
-  chat" under Devices and machines.
+**No machine keeps chat (M125).** The threads and conversations an older
+daemon kept (`<state>/threads/`) were brought into control once by daemons
+from 0.49 to 0.62 (M124); that import is gone (native #203, no replacement).
+What came in stays in control; a folder that never came in stays on its
+machine, unread, and `threads.imported/` is left as it was.
 
 What the daemon still does for chat is say who may read each pane's and
 session's thread (`POST /api/daemon/chat/readers`, from
-`crates/mux/src/mux/chat_readers.rs`): the same people as the pane or
-session, a private pane's only its owner, a "from now" share from when it
-was made. Control holds the messages; the machine decides who reads them.
+`crates/mux/src/mux/chat_readers.rs`, sent by
+`crates/daemon/src/chat_readers.rs` while control has chat on for the
+machine's account or team): the same people as the pane or session, a
+private pane's only its owner, a "from now" share from when it was made.
+Control holds the messages; the machine decides who reads them.
 
 - **Threads on panes and sessions.** *Thread* in a pane's menu, *Session
   thread* in the session menu, or the bubble on a pane opens its room
@@ -205,9 +209,9 @@ was made. Control holds the messages; the machine decides who reads them.
   `threads.post` grant, as the owner's agent and labelled so; `@agent` is
   text otherwise. [control.md](control.md) has the grants; "What chat does
   for agents" below says what each feature below means for them.
-- **Conversations** (#855) were rooms of their own on one machine. Brought
-  into control they're read-only archives (S41 decision 3); a new one is a
-  channel or a DM.
+- **Conversations** (#855) were rooms of their own on one machine. Those
+  brought into control (M124) are read-only archives (S41 decision 3); a
+  new one is a channel or a DM.
 - **Gone with the machine's store:** an `@` of someone who can't read the
   thread no longer offers to invite them (#297), and `search` and MCP
   `history` find terminal output only.

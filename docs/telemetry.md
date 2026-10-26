@@ -112,7 +112,7 @@ Once on, the preview looks like this:
       "blocks_opened": { "terminal": 14, "browser": 2, "review": 1 },
       "clients": { "web": 4, "cli": 1, "mcp": 2 },
       "views": {},
-      "flags_on": ["chat"],
+      "flags_on": ["vms"],
       "web_errors": 0
     }
   ],
