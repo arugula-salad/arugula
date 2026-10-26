@@ -118,6 +118,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-096](docs/decisions/aru-096-hosted-inference-strangers-bring-their-own-key.md): Hosted inference: strangers bring their own key
 - [aru-111](docs/decisions/aru-111-a-hosted-mcp-endpoint-serves-agents-with-no-mach.md): A hosted MCP endpoint serves agents with no machine
 - [aru-112](docs/decisions/aru-112-the-claude-credential-broker-and-its-metering-mo.md): The Claude credential broker and its metering move to the platform
+- [aru-115](docs/decisions/aru-115-a-thread-s-agent-session-runs-on-the-project-s-h.md): A thread's agent session runs on the project's hosted box
 
 ## Federation and control
 

@@ -5,7 +5,8 @@
 //! bytes are hex, so a find-and-replace across the repo can't change them
 //! along with the code. Block grants (M50) came after the rename and say
 //! "arugula …"; they're pinned here too, since browsers sign the same bytes,
-//! and so are run events (M210), which daemons sign and anyone may check.
+//! and so are run events (M210) and session events (M254), which daemons
+//! sign and anyone may check.
 
 use serde_json::json;
 
@@ -77,6 +78,16 @@ fn signed_domains_never_change() {
         detail: "{}",
         daemon: "d",
     };
+    let session = crate::session::Event {
+        session: "s",
+        n: 1,
+        kind: crate::session::Kind::State,
+        from: crate::session::State::Queued,
+        to: crate::session::State::Working,
+        at: 1,
+        detail: "{}",
+        daemon: "d",
+    };
     let op = Operation {
         project: "p".into(),
         environment: "e".into(),
@@ -127,6 +138,8 @@ fn signed_domains_never_change() {
         (first_line(public.body()), "61727567756c61207075626c69632070726576696577206772616e74207631"),
         // Run events (M210), which hosted daemons sign.
         (first_line(run.body()), "61727567756c612072756e206576656e74207631"),
+        // Agent sessions' events (M254), which hosted daemons sign.
+        (first_line(session.body()), "61727567756c612073657373696f6e206576656e74207631"),
         // M218's deploy operation and approval.
         (first_line(op.body()), "61727567756c61206465706c6f79206f70207631"),
         (first_line(approval.body()), "61727567756c61206465706c6f7920617070726f76616c207631"),

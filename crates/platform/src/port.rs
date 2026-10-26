@@ -336,6 +336,7 @@ impl PlatformPort for Platform {
                 // Before the runs go: their files in the run-log bucket.
                 let run_files = db::run_logs::erase_account(&tx)?;
                 db::runs::erase_account(&tx, deleted)?;
+                db::sessions::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
                 db::deploys::erase_account(&tx, deleted)?;
                 db::redone::erase_account(&tx, deleted)?;
                 db::triggers::erase_account(&tx, deleted)?;
