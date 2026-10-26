@@ -303,7 +303,26 @@ pub struct SessionWork {
     /// box runs after each turn, before it pushes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish: Option<FinishStep>,
+    /// The agent it runs ([`HARNESSES`]): `claude` unless it says (M264,
+    /// a Try 3's sibling or a review). A box without the one asked for
+    /// runs `claude`, and its first report says which it ran
+    /// ([`SessionDetail::harness`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+    /// A review (M264, `@codex review`): read-only. The box runs no finish
+    /// step and pushes nothing, and its turn's report carries the agent's
+    /// reply ([`SessionDetail::reply`]), which the platform posts in the
+    /// thread.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub review: bool,
 }
+
+/// The agents a session runs on (M264): Claude Code and Codex, through
+/// their ACP adapters.
+pub const HARNESSES: &[&str] = &["claude", "codex"];
+
+/// The most of a review's reply a turn's report carries, in bytes.
+pub const REPLY_MAX: usize = 10 * 1024;
 
 /// A workspace's finish step (M261): a command (`just check`) the box runs
 /// as the session's user, in its checkout, after each turn and before the
@@ -508,6 +527,14 @@ pub struct SessionDetail {
     /// one. A failed one isn't pushed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish: Option<FinishResult>,
+    /// Taking a session (M264): the agent the box runs it on, which is
+    /// `claude` when the one asked for isn't on the box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+    /// A review's turn (M264): the agent's reply, at most [`REPLY_MAX`]
+    /// bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply: Option<String>,
 }
 
 /// [`WORK_SESSION_PUSH`]'s body: which session, and the ref it pushes,
