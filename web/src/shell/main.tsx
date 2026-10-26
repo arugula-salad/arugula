@@ -406,15 +406,21 @@ if (!linkTarget) {
 
 // Opened from a notification (`#pane=N`), or told to by the service
 // worker. Notifications come from the home daemon, so show it first.
-const openPane = (pane: number, daemon?: string, share = false) => {
+const openPane = (pane: number, daemon?: string, share = false, follow?: string) => {
   // From a notification through control: that daemon's host first.
   const host = daemon ? directory.list?.hosts.find((h) => h.id === daemon)?.name : undefined;
   if (host) directory.select(host);
   else if (directory.home !== null) directory.select(directory.home);
+  let watched = false;
   const go = () => {
     if (!client.info(pane)) return false;
     client.setActive(pane);
     if (share) shareFrom(pane);
+    // Once: watching emits, and this runs again from inside that.
+    if (follow && !watched) {
+      watched = true;
+      client.watch(follow, pane);
+    }
     return true;
   };
   untilShown(go);
@@ -440,12 +446,12 @@ window.addEventListener("arugula:notice", (e) => {
 // A push's Share (#237) adds `&share`: the share picker opens over it.
 // An older daemon's mention push (before M125) adds `&thread=…`: the pane
 // opens, and its room is in chat.
-const fromHash = /^#pane=(?:([0-9a-f]+)\.)?(\d+)(?:&thread=(?:pane|session)-\d+)?(&share)?$/.exec(location.hash);
+const fromHash = /^#pane=(?:([0-9a-f]+)\.)?(\d+)(?:&thread=(?:pane|session)-\d+)?(&share)?(?:&follow=([^&]+))?$/.exec(location.hash);
 if (fromHash) {
-  const [, daemon, pane, share] = fromHash;
+  const [, daemon, pane, share, follow] = fromHash;
   // A notification through control names its daemon: once its host is in
   // the list, open the pane there.
-  const go = () => openPane(Number(pane), daemon, !!share);
+  const go = () => openPane(Number(pane), daemon, !!share, follow && decodeURIComponent(follow));
   if (daemon && !directory.find?.(directory.list?.hosts.find((h) => h.id === daemon)?.name ?? "")) {
     const off = directory.subscribe(() => {
       if (directory.list?.hosts.some((h) => h.id === daemon)) {

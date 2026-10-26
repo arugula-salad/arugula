@@ -74,7 +74,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   // Following someone stops as soon as you do something yourself.
   useEffect(() => {
     const stop = (e: Event) => {
-      if (client.following !== null && !(e.target as HTMLElement).closest?.(".avatar")) client.follow(null);
+      if ((client.following !== null || client.watching !== null) && !(e.target as HTMLElement).closest?.(".avatar")) client.follow(null);
     };
     window.addEventListener("pointerdown", stop, true);
     window.addEventListener("keydown", stop, true);

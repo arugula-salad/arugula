@@ -1833,7 +1833,12 @@ drive_minutes?: number | null,
  * For an `account:` no grant or pin vouches for: their root device,
  * whose fingerprint the owner checked with them.
  */
-root?: string | null, };
+root?: string | null, 
+/**
+ * Their window follows the inviter's: to watch (#1473). Opening the
+ * invite starts following whichever of the owner's windows is there.
+ */
+follow?: boolean | null, };
 
 /**
  * What an invite answers.
