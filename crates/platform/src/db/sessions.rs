@@ -928,6 +928,53 @@ fn queue_in(c: &impl Sql, s: &Session, p: &NewPrompt, at: u64) -> Result<Result<
     Ok(Ok(prompt))
 }
 
+/// Why a session is queued again on its workspace's new box.
+pub const BOX_REBUILT: &str = "box_rebuilt: the box was rebuilt; starting again from the thread";
+
+/// Session `id`, last seen `from`, moves to its workspace's new box
+/// `machine` (M258: the box was rebuilt) in the caller's transaction. A
+/// session no box took yet only follows the workspace's machine. One that
+/// was taken is queued again: control's move, saying [`BOX_REBUILT`]. Its
+/// block was the old box's and its actions asked of that agent, so both
+/// go; its queued prompts are dropped for `prompt` (the thread hydrated
+/// again, which holds them), which the new box's first turn starts with.
+/// The box's report numbers go on from where they were.
+pub fn rebuilt_in(
+    c: &impl Sql,
+    id: &str,
+    from: State,
+    machine: &str,
+    prompt: &NewPrompt,
+    at: u64,
+) -> Result<Result<Session, Refused>> {
+    if from == State::Queued {
+        let Some(s) = session_for_update(c, id)? else { return Ok(Err(Refused::NoSession)) };
+        if s.state != State::Queued {
+            return Ok(Err(Refused::Moved { now: s.state }));
+        }
+        c.execute("UPDATE agent_sessions SET machine = ?2 WHERE id = ?1", params![id, machine])?;
+        return Ok(Ok(session_for_update(c, id)?.context("the session it moved")?));
+    }
+    let detail = serde_json::json!({ "reason": BOX_REBUILT, "machine": machine }).to_string();
+    let s = match move_session_in(c, id, &Move::Control { from, to: State::Queued, at, detail: &detail })? {
+        Ok((s, _)) => s,
+        Err(e) => return Ok(Err(e)),
+    };
+    c.execute("UPDATE agent_sessions SET machine = ?2, block = NULL WHERE id = ?1", params![id, machine])?;
+    c.execute(
+        "UPDATE session_prompts SET state = 'dropped', dropped_at = ?2 WHERE session_id = ?1 AND state = 'queued'",
+        params![id, at],
+    )?;
+    c.execute(
+        "UPDATE session_actions SET state = 'dropped', done_at = ?2 WHERE session_id = ?1 AND state = 'pending'",
+        params![id, at],
+    )?;
+    if let Err(e) = queue_in(c, &s, prompt, at)? {
+        return Ok(Err(e));
+    }
+    Ok(Ok(session_for_update(c, id)?.context("the session it moved")?))
+}
+
 fn session_for_update(c: &impl Sql, id: &str) -> Result<Option<Session>> {
     c.query_row(&format!("SELECT {COLS} FROM agent_sessions WHERE id = ?1{}", c.for_update()), params![id], session_row)
         .optional()
@@ -975,7 +1022,7 @@ pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(Sessi
             if !from.control_may(to) {
                 return Ok(Err(Refused::Reporter));
             }
-            if from == State::Unresponsive && Some(to) != s.was && !to.terminal() {
+            if from == State::Unresponsive && Some(to) != s.was && !to.terminal() && to != State::Queued {
                 return Ok(Err(Refused::Disallowed { from, to }));
             }
             let d = match detail_of(detail) {
@@ -1333,6 +1380,36 @@ impl Db {
                 |r| r.get(0),
             )
             .optional()
+    }
+
+    /// Every session on `workspace` that hasn't ended, oldest first.
+    pub fn live_sessions_on(&self, workspace: &str) -> Result<Vec<Session>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {COLS} FROM agent_sessions WHERE workspace_id = ?1 AND state NOT IN ('failed', 'stopped')
+                 ORDER BY created_at, id"
+            ),
+            params![workspace],
+            session_row,
+        )
+    }
+
+    /// [`rebuilt_in`] in a transaction of its own.
+    pub fn session_rebuilt(
+        &self,
+        id: &str,
+        from: State,
+        machine: &str,
+        prompt: &NewPrompt,
+        at: u64,
+    ) -> Result<Result<Session, Refused>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let moved = rebuilt_in(&tx, id, from, machine, prompt, at)?;
+        if moved.is_ok() {
+            tx.commit()?;
+        }
+        Ok(moved)
     }
 
     /// What a hosted machine on `workspace` pulls (M255): every session

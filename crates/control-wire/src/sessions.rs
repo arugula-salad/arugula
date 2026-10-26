@@ -73,7 +73,8 @@ pub struct SessionCard {
     pub ended_at: Option<u64>,
     pub last_tool: Option<String>,
     pub last_error: Option<String>,
-    /// Why it failed or stopped.
+    /// Why it failed or stopped, or why it's queued again (its box was
+    /// rebuilt).
     pub reason: Option<String>,
     /// What its latest turn left.
     pub turn: Option<SessionTurn>,

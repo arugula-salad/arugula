@@ -261,7 +261,11 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           {c.last_error}
         </p>
       )}
-      {c.reason && c.state !== "stopped" && <p class="session-card-line bad">{c.reason.replace(/^[a-z_]+: /, "")}</p>}
+      {c.reason && c.state !== "stopped" && (
+        <p class={c.state === "queued" ? "session-card-line dim" : "session-card-line bad"} data-session-reason>
+          {c.reason.replace(/^[a-z_]+: /, "")}
+        </p>
+      )}
       {c.turn && (
         <div class="session-card-turn" data-session-turn>
           <span class={c.turn.pushed ? "ok" : "dim"}>{c.turn.pushed ? "Pushed" : "Not pushed"}</span>

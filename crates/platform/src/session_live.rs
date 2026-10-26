@@ -181,6 +181,7 @@ fn line(e: &Event, name: &dyn Fn(&str) -> String) -> String {
     match (e.kind, e.from, e.to) {
         (Kind::State, None, _) => "Asked for".into(),
         (Kind::State, Some(State::Queued), State::Working) => "Its box took it".into(),
+        (Kind::State, Some(_), State::Queued) => "Its box was rebuilt: starting again from the thread".into(),
         (Kind::State, Some(State::Done), State::Working) => "A new turn started".into(),
         (Kind::State, Some(State::NeedsInput), State::Working) => "Answered: working again".into(),
         (Kind::State, Some(State::Unresponsive), to) => format!("Its box is heard from again ({})", said(to)),
@@ -248,7 +249,9 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool) -> Result<Sessi
         at: a.at,
     });
     let ended = matches!(s.state, State::Done | State::Failed | State::Stopped);
-    let reason = s.state.terminal().then(|| last_state(s.state)).flatten().and_then(|e| detail(e).reason);
+    // Why it ended, or why it's queued again (its box was rebuilt).
+    let again = s.state == State::Queued && s.last_seq > 1;
+    let reason = (s.state.terminal() || again).then(|| last_state(s.state)).flatten().and_then(|e| detail(e).reason);
     let ports = crate::hosted::previews::ports(app, &s.workspace, now_ms())?
         .into_iter()
         .map(|p| SessionPort { port: p.port, label: p.label, url: p.url })
