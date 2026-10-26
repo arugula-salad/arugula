@@ -294,7 +294,7 @@ export function IssueView({
           </article>
           <div class="issue-thread chat-thread" data-issue-thread={room?.id}>
             {room ? (
-              <RoomBody room={room} phone={phone} focus={msg} name={`#${issue.number}`} between={between} empty="No comments yet. Everyone in the project reads them; write @name to notify someone." />
+              <RoomBody room={room} phone={phone} focus={msg} embedded name={`#${issue.number}`} between={between} empty="No comments yet. Everyone in the project reads them; write @name to notify someone." />
             ) : (
               <>
                 {between.map((b) => (

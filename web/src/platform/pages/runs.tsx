@@ -821,7 +821,7 @@ function RunThread({ run, msg }: { run: RunView; msg?: number }) {
       ) : (
         <div class="issue-thread chat-thread" data-run-thread={room?.id}>
           {room ? (
-            <RoomBody room={room} phone={phone} focus={msg} name={`run ${short(run.id)}`} empty="Nothing said about this run yet. Everyone in the project reads it; write @name to notify someone." />
+            <RoomBody room={room} phone={phone} focus={msg} embedded name={`run ${short(run.id)}`} empty="Nothing said about this run yet. Everyone in the project reads it; write @name to notify someone." />
           ) : (
             <p class="thread-note">{error ? `The thread didn't load: ${error}` : "Loading the thread…"}</p>
           )}
