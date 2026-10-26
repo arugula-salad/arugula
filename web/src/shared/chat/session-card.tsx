@@ -348,6 +348,10 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   const block = c.block && /^\d+$/.test(c.block) ? c.block : null;
   const asking = askOf(c);
   const idle = idleOf(c);
+  // The last turn's finish step failed (M261): it wasn't pushed. While the
+  // session still works, the agent has its one turn to fix it.
+  const failed = c.turn?.finish?.ok === false;
+  const fixing = failed && (c.state === "working" || c.state === "needs_input");
   const port = c.ports[0];
   const page = api.sessionHref?.(c.project, c.session);
   return (
@@ -420,6 +424,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
               <div class="session-card-finish" data-session-finish="failed">
                 <p class="bad">
                   finish failed: <code>{c.turn.finish.command}</code>
+                  {fixing && <span class="dim"> · the agent is fixing it</span>}
                 </p>
                 {c.turn.finish.output_tail && <pre data-session-finish-output>{lastLines(c.turn.finish.output_tail)}</pre>}
               </div>
@@ -472,14 +477,22 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             PR ↗
           </a>
         ) : c.pushed && view.asked ? (
-          <button type="button" aria-pressed={drafting} title="Draft its PR, then send it as you" data-session-pr onClick={() => setDrafting((d) => !d)}>
+          <button
+            type="button"
+            aria-pressed={drafting}
+            title={failed ? "Draft its PR, then send it as you: it has what was pushed, not the last turn, whose finish step failed" : "Draft its PR, then send it as you"}
+            data-session-pr
+            onClick={() => setDrafting((d) => !d)}
+          >
             PR…
           </button>
         ) : (
           <button
             type="button"
             disabled
-            title={c.pushed ? `${c.asker_name || "Its asker"} sends its PR: it goes out as them` : "PR after a turn pushes its branch"}
+            title={
+              c.pushed ? `${c.asker_name || "Its asker"} sends its PR: it goes out as them` : failed ? "PR after its finish step passes and a turn pushes its branch" : "PR after a turn pushes its branch"
+            }
             data-session-pr
           >
             PR
