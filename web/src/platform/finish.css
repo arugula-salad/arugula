@@ -126,13 +126,6 @@ html[data-finish="brushed"] .platform-toast {
   box-shadow: inset 0 1px 0 #fff3, 0 12px 36px #0008, 0 0 0 1px #0003;
 }
 
-/* The roll-back chip bevelled, as the buttons are (shared/buttons.css). */
-html[data-finish="brushed"] .deploy-roll-back {
-  background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--raised);
-  border-color: color-mix(in srgb, var(--raised) 60%, #000);
-  box-shadow: inset 0 1px 0 #fff6, 0 1px 1px #0004;
-}
-
 /* A row's divider is a groove: its line, and a light edge under it. */
 html[data-finish="brushed"] .platform-drafts li,
 html[data-finish="brushed"] .platform-inbox-list li,

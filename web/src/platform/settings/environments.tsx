@@ -231,7 +231,7 @@ function RecentDeploys({ env, history: { page, busy, err, older } }: { env: stri
             <tr>
               <th scope="col">State</th>
               <th scope="col">Commit</th>
-              <th scope="col">Roll back</th>
+              <th scope="col">Rollback</th>
               <th scope="col">When</th>
             </tr>
           </thead>

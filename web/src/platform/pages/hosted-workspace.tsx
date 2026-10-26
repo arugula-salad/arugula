@@ -13,6 +13,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
 import { usePlatformApi } from "../../shared/platform-api";
 import { PageHeader } from "../../shared/ui/page-header";
+import { StateChip } from "../../shared/ui/state-chip";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { controlOrigin, session } from "../session";
@@ -217,9 +218,9 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
         named
         back={{ href: list, label: "Workspaces", onClick: (e) => follow(e, list) }}
         state={
-          <span class={`page-state ${toneClass(workspaceTone(w.state, w.asked))}`} data-hosted-state={w.state}>
+          <StateChip tone={workspaceTone(w.state, w.asked)} data-hosted-state={w.state}>
             {said(w)}
-          </span>
+          </StateChip>
         }
         actions={
           w.machine &&

@@ -25,6 +25,7 @@ import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
+import { StateChip } from "../../shared/ui/state-chip";
 import { ago } from "../../shared/issues/text";
 import "../../shared/issues/issues.css";
 import { names } from "../links";
@@ -223,7 +224,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
                 </a>
                 <ThreadUnread target={r.id} />
                 <span class="issue-row-meta dim">
-                  {STATES[r.state] ?? r.state} · {TRIGGERS[r.trigger] ?? r.trigger}
+                  <StateChip tone={runTone(r.state)}>{STATES[r.state] ?? r.state}</StateChip> · {TRIGGERS[r.trigger] ?? r.trigger}
                   {r.trigger === "manual" ? ` by ${startedBy(r, nameOf)}` : ""} · {ago(r.created_at)}
                   {r.started_at && end ? ` · ${took(r.started_at, end)}` : ""}
                   {r.exit_code !== null && r.exit_code !== undefined ? ` · exit ${r.exit_code}` : ""}
@@ -605,10 +606,10 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
         named
         back={{ href: back, label: "Runs", onClick: (e) => follow(e, back), data: "run-back" }}
         state={
-          <span class={`page-state ${toneClass(runTone(run.state))}`} data-run-state-label>
+          <StateChip tone={runTone(run.state)} data-run-state-label>
             {STATES[run.state] ?? run.state}
             {run.exit_code !== null && run.exit_code !== undefined ? ` · exit ${run.exit_code}` : ""}
-          </span>
+          </StateChip>
         }
       />
       <dl class="run-facts">

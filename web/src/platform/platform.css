@@ -426,7 +426,7 @@ html[data-corners="square"] .platform-section {
 }
 
 /* A deploy's card (M218): where it goes and its state, what it deploys,
-   the plan's digest in full, the operation an approval signs, and Approve
+   the plan's digest (short, to copy), the operation an approval signs, and Approve
    and Deny, which open on control's page. */
 .deploy-cards {
   display: grid;
@@ -449,25 +449,23 @@ html[data-corners="square"] .platform-section {
   gap: 4px 12px;
 }
 
-.platform-section .deploy-card h2 {
+/* Above .platform .sw-page h2's section margin (UI audit #167). Its
+   title is a card's name, as the swarm's cards' are (.sw-name): no
+   accent, underlined on hover. */
+.platform .sw-page .deploy-card h2 {
   margin: 0;
-  font-size: 16px;
+  font: 700 19px/1.05 var(--f-display);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
-.deploy-state {
-  font-size: 12px;
-  color: var(--dim);
+.platform .sw-page .deploy-card h2 a {
+  color: var(--fg);
+  text-decoration: none;
 }
 
-.deploy-state-pending {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.deploy-state-stale,
-.deploy-state-denied,
-.deploy-state-failed {
-  color: var(--danger, var(--dim));
+.platform .sw-page .deploy-card h2 a:is(:hover, :focus-visible) {
+  text-decoration: underline;
 }
 
 .deploy-facts {
@@ -533,7 +531,8 @@ html[data-corners="square"] .platform-section {
   font-size: 12px;
 }
 
-@media (max-width: 520px) {
+/* The inbox's width (UI audit #167). */
+@media (max-width: 600px) {
   .deploy-facts {
     grid-template-columns: 1fr;
   }
@@ -822,14 +821,6 @@ html[data-corners="square"] .platform-section {
 
 .deploy-secret-names p {
   margin: 4px 0;
-}
-
-.deploy-roll-back {
-  padding: 0 6px;
-  border: 1px solid var(--raised);
-  border-radius: 4px;
-  font-size: 12px;
-  color: var(--dim);
 }
 
 /* What's new in an issue's or a run's thread, on its row in the list

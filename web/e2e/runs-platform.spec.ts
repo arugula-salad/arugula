@@ -246,9 +246,9 @@ test("a run that fails is in the inbox, and opens there; a phone reads it", asyn
 
   await alice.locator("[data-platform-inbox]").click();
   const entry = alice.locator(`[data-inbox-group="run_failed"] [data-inbox-entry="${started}"]`);
-  await expect(entry).toContainText("Acme:");
+  await expect(entry).toContainText("Acme ·");
   await expect(entry).toContainText(`sh -c echo hi && exit 2`);
-  await expect(entry).toContainText("Run · failed · started by alice");
+  await expect(entry).toContainText("Run · Failed · started by alice");
   await entry.locator("a").click();
   await expect(alice).toHaveURL(new RegExp(`/runs/${started}$`));
   // The thread kept what was said.

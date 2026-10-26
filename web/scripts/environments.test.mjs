@@ -76,6 +76,8 @@ test("an environment's history: its page of the project's deploys, and when each
   assert.equal(lastMoved({ created_at: 1, decided_at: 2, finished_at: null }), 2);
   assert.equal(lastMoved({ created_at: 1, decided_at: null, finished_at: null }), 1);
   assert.equal(shortRef("0123456789abcdef0123456789abcdef01234567"), "0123456789ab");
+  // An artifact's digest: 12 hex after its `sha256:` (UI audit #167).
+  assert.equal(shortRef(`sha256:c09af${"0".repeat(59)}`), "c09af0000000");
 });
 
 test("Deploy… offers the environment's repo: its last deploy's, else the one named as it is, else the first (UI audit #147)", () => {
