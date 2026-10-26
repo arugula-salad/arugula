@@ -21,6 +21,7 @@
 //! - `ses_`: an agent session (M254), in its project. Its own thread is
 //!   the one it was asked in; this is the thread on the session as an
 //!   object, for a link to it to name and preview.
+//! - `brd_`: a board (live status board), in its project.
 //! - Anything else: no such object.
 //!
 //! **Who sees one:** the third rule beside a team's roster and a machine's
@@ -80,6 +81,7 @@ enum Prefix {
     Hosted,
     Run,
     Session,
+    Board,
 }
 
 fn prefix(target: &str) -> Option<Prefix> {
@@ -93,12 +95,13 @@ fn prefix(target: &str) -> Option<Prefix> {
         "hw" => Some(Prefix::Hosted),
         "run" => Some(Prefix::Run),
         "ses" => Some(Prefix::Session),
+        "brd" => Some(Prefix::Board),
         _ => None,
     }
 }
 
 /// Whether `target` is an object's global id by its shape (`iss_…`,
-/// `fi_…`, `hw_…`, `run_…`, `ses_…`), not a room's: an agent names an object's
+/// `fi_…`, `hw_…`, `run_…`, `ses_…`, `brd_…`), not a room's: an agent names an object's
 /// thread by it (M198).
 pub(super) fn is_object(target: &str) -> bool {
     prefix(target).is_some()
@@ -140,6 +143,10 @@ pub(super) fn find(app: &Platform, targets: &[&str]) -> anyhow::Result<HashMap<S
     for (id, project, _) in app.db.session_places(&sessions)? {
         let short = id.trim_start_matches("ses_").chars().take(8).collect::<String>();
         out.insert(id, Object { project, name: format!("session {short}"), guard: Guard::Members });
+    }
+    let boards: Vec<&str> = of(Prefix::Board).collect();
+    for (id, project, title) in app.db.board_places(&boards)? {
+        out.insert(id, Object { project, name: format!("board {title}"), guard: Guard::Members });
     }
     Ok(out)
 }
@@ -258,6 +265,7 @@ mod tests {
         assert_eq!(prefix("hw_9d81"), Some(Prefix::Hosted));
         assert_eq!(prefix("run_9d81"), Some(Prefix::Run));
         assert_eq!(prefix("ses_9d81"), Some(Prefix::Session));
+        assert_eq!(prefix("brd_9d81"), Some(Prefix::Board));
         for bad in ["cw_9d81", "prj_1", "iss_", "fi", "fi_a-b", "_x", "", &format!("fi_{}", "a".repeat(65))] {
             assert_eq!(prefix(bad), None, "{bad}");
         }

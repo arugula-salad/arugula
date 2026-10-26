@@ -1,0 +1,86 @@
+---
+schema: 1
+id: "aru-116"
+title: "A board is the project's tracker, a platform object daemons report agent blocks to"
+state: "decided"
+area: "Agents and blocks"
+source:
+  via: "cli"
+  issue: "arugula-salad/arugula#1479"
+question: "Where does a live status board live, what may a machine tell control for it, and how does it relate to issues?"
+options:
+  - id: "a"
+    label: "A board is a project-scoped platform object; daemons report their own agent blocks' state under a boards.write grant; the board is the tracker, so issues get no parent field"
+    how: "A board (brd_) belongs to a project, with ordered zones of rows, each row a pointer (a forge item, a native issue, a run, a Cloud workspace or an agent block) with a one-line note and a status. Control keeps it, so the phone and other machines see it live while machines sleep. A daemon may tell control only about its own agent blocks: the state word, the branch, the short HEAD, whether it is pushed, the number of uncommitted files and the diffstat line. It sends no message text, file names or transcripts, and only under a boards.write machine grant its owner gives. Issues stay flat; the board groups them."
+    tradeoff: "Control now holds a little of what an agent block is doing, a step past aru-051, and a project's structure lives in boards and not in issues."
+  - id: "b"
+    label: "A board is a daemon block"
+    how: "The board is a block on one machine, as a terminal or a browser is, and other clients reach it through that machine."
+    tradeoff: "The phone and teammates see it only while that machine is awake and reachable, which is when they need it least."
+  - id: "c"
+    label: "Daemons report their agent blocks in full"
+    how: "A daemon sends an agent block's messages, file names and transcript so the board can show them."
+    tradeoff: "Control would hold what aru-051 keeps out of it: the content of an agent's work, on every machine that reports."
+  - id: "d"
+    label: "Issues get a parent field"
+    how: "A native issue names a parent issue, and a project's structure is a tree of issues."
+    tradeoff: "A second way to group the same work, beside the board, and a tree to keep consistent with it."
+choice:
+  option: "a"
+  reason: "The owner approved the board design: a status board is useful when machines sleep, so it is the platform's, and what a daemon says of an agent block is facts about its state, never its content."
+rejected:
+  - option: "b"
+    why: "A board that disappears when its machine sleeps can't be the shared, live view that phones and other machines need."
+  - option: "c"
+    why: "Messages, file names and transcripts stay on the machine (aru-051); the board needs only the state."
+  - option: "d"
+    why: "The board is the project's tracker: it groups issues and everything else a row can point at, so issues need no parent field for now."
+supersedes: []
+evidence:
+  - title: "#1479"
+    url: "https://github.com/arugula-salad/arugula/issues/1479"
+  - title: "Arugula #187"
+    url: "https://app.arugula.io/issues/iss_2eb7c661b2f79e84f07fa7c719949fe1"
+decided_by: "jhgaylor"
+decided_on: "2026-10-25"
+reviews: []
+constrains:
+  - "aru-051"
+  - "aru-090"
+  - "path:crates/platform/src/boards.rs"
+  - "path:crates/platform/src/db/boards.rs"
+  - "path:crates/platform/migrations"
+  - "path:crates/control-wire/src/boards.rs"
+  - "path:crates/platform/src/chat/objects.rs"
+---
+
+# A board is the project's tracker, a platform object daemons report agent blocks to
+
+A live status board is a **platform object**, not a daemon block. This is
+the approved design for the board (Arugula #187, step 1 of 5), three rulings:
+
+- **A board is a project's object (`brd_`).** It has ordered zones, each
+  with ordered rows; a row points at a forge item (`fi_`), a native issue
+  (`iss_`), a run (`run_`), a Cloud workspace (`hw_`) or an agent block
+  (`{machine, pane}`), or at nothing, with a one-line note and a status
+  (open, working, needs input, done, failed, or none). A zone of kind
+  `proofs` is kept last. Control stores zones and rows as entries, each with
+  a `rev` that a write names, so a stale write is refused (409) and the
+  client reads again, as a Doc's `ifRev` works; a status change and a move
+  leave the rev alone, so they never conflict with a note. Because control
+  holds it, the phone and other machines see it live while machines sleep
+  ("Two planes, two trust rules"). A board has a thread like an issue does
+  ("Threads hang off any object"). It is behind the `boards` Labs flag, and
+  with it off the routes answer 404.
+- **A daemon may tell control only about its own agent blocks:** the state
+  word, the branch, the short HEAD, whether it is pushed, the number of
+  uncommitted files and the diffstat line. It may not send message text, file
+  names or transcripts. It does so only under a `boards.write` machine grant
+  its owner gives. This is a deliberate step past "Chat lives in control, in
+  plain text; terminal content doesn't": control learns what an agent block
+  is doing, never what it said or touched. The pushes are a later step.
+- **A board serves as the project's tracker,** so issues get no parent field
+  for now. A board groups issues with everything else a row can point at.
+
+Where: the tables (migration `0058_boards`) and their rules (`crates/platform/src/db/boards.rs`), the routes (`crates/platform/src/boards.rs`, paths in `crates/control-wire/src/boards.rs`), boards as objects (`crates/platform/src/chat/objects.rs`). The page, the block, the MCP tools and the daemon's pushes follow.
+From: Arugula #187 (native, step 1 of the status board).

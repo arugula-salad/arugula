@@ -173,21 +173,27 @@ fn team_owner(team: &str) -> String {
     format!("team:{team}")
 }
 
-fn flag_of(flags: &HashMap<String, Flags>, owner: &str) -> Option<bool> {
-    flags.get(owner).and_then(|f| f.get(FLAG)).copied()
+fn flag_of(flags: &HashMap<String, Flags>, owner: &str, flag: &str) -> Option<bool> {
+    flags.get(owner).and_then(|f| f.get(flag)).copied()
 }
 
 /// Whether chat is on for an account: its own flag if it set one, else on
 /// when any team it's in turned it on.
 pub async fn chat_on(app: &Platform, account: &str) -> anyhow::Result<bool> {
+    flag_on(app, account, FLAG).await
+}
+
+/// Whether the Labs flag `flag` is on for an account, by the rule chat's
+/// is: its own if it set one, else on when any team it's in turned it on.
+pub async fn flag_on(app: &Platform, account: &str, flag: &str) -> anyhow::Result<bool> {
     let teams = app.cache.teams_of(&*app.hub, account).await?;
     let mut owners = vec![account_owner(account)];
     owners.extend(teams.iter().map(|t| team_owner(t)));
     let flags = app.cache.flags(&*app.hub, &owners).await?;
-    if let Some(on) = flag_of(&flags, &account_owner(account)) {
+    if let Some(on) = flag_of(&flags, &account_owner(account), flag) {
         return Ok(on);
     }
-    Ok(teams.iter().any(|t| flag_of(&flags, &team_owner(t)) == Some(true)))
+    Ok(teams.iter().any(|t| flag_of(&flags, &team_owner(t), flag) == Some(true)))
 }
 
 async fn gate(app: &Platform, account: &str) -> Result<(), ApiError> {
@@ -2532,7 +2538,7 @@ async fn machine_chat_on(app: &Platform, machine: &Daemon) -> anyhow::Result<boo
     Ok(match &machine.team {
         Some(t) => {
             let owner = team_owner(t);
-            flag_of(&app.cache.flags(&*app.hub, std::slice::from_ref(&owner)).await?, &owner) == Some(true)
+            flag_of(&app.cache.flags(&*app.hub, std::slice::from_ref(&owner)).await?, &owner, FLAG) == Some(true)
         }
         None => false,
     })

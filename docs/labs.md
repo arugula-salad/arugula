@@ -30,6 +30,7 @@ Each feature has a flag, off on a new install:
 | `forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on) |
 | `agents` | Offering Claude Code subagents from this machine as A2A agents, and the team's agent catalog (#403) |
 | `docs` | Doc blocks: a report, plan or write-up an agent builds beside its pane, section by section (#962), kept in a library you can list and reopen (#1492) |
+| `boards` | A project's live status board, which is control's: zones of rows that point at issues, PRs, runs, workspaces and agent blocks |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
 `arugula --help` and `arugulad --help`. Without it they aren't offered, and
@@ -52,6 +53,7 @@ one isn't made.
 | `forges` | Forgejo and GitLab blocks and webhooks |
 | `agents` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
 | `docs` | new Doc blocks, the `doc` tool by name, and the Doc library's `/api/docs…` (list, open, delete) |
+| `boards` | nothing on the daemon: control's board routes answer 404 for an account without it |
 
 ```
 arugulad flags                # the flags, and which are on

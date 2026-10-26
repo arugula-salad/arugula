@@ -281,7 +281,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   expect(await features()).toEqual({
     ...{ labs: true, dev: true, blocks: false, vms: true, studio: true, block_channels: false },
     // `labs`, the one switch from before, is every flag (#665).
-    flags: ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents", "docs"],
+    flags: ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents", "docs", "boards"],
   });
 
   await open(page);

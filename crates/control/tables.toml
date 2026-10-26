@@ -1229,6 +1229,28 @@ note = "GitHub's text, not an account's. Those of sessions that go, go."
 seen_by = ["litestream", "e2b", "anthropic"]
 
 [[table]]
+name = "boards"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A project's live status board: its title, who made it and when."
+why_asleep = "A board shows on a teammate's phone with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest stay, with no creator."
+seen_by = ["litestream"]
+
+[[table]]
+name = "board_entries"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A board's zones and rows, in order: a zone's title and kind (proofs is last); a row's one-line note, its status, and what it points at (a forge item, an issue, a run or a Cloud workspace by id, or an agent block by machine and pane); each with its rev, which a write must name."
+why_asleep = "A board's rows are read and edited from a phone with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest stay: they name no account."
+seen_by = ["litestream"]
+
+[[table]]
 name = "deploy_approvals"
 plane = "platform"
 process = "platform"
