@@ -947,6 +947,10 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 let may_push = fix.is_none() && finished.may_push();
                 info!(session = id, may_push, fix = fix.is_some(), "hosted: a session's turn ended");
                 let pushed = if may_push { push::push_turn(app, &l).await } else { Ok(None) };
+                // Stopped while it pushed: what the push left goes too.
+                if may_push && push::clean_if_ended(&dir, &l).await {
+                    return false;
+                }
                 let branch = l.branch.clone();
                 let (k, m, base, again) = (keys.clone(), me.clone(), s.turns, fix.clone());
                 say(Box::new(move |now| {

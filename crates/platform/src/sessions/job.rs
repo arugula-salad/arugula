@@ -23,11 +23,15 @@
 //!   `stopped`, saying so ([`IDLE`]): a done session holds a slot on its
 //!   box, which this frees. `@arugula` again starts a new one.
 //!
+//! - **Feedback** (M260, [`crate::sessions::feedback::flush`]): CI's
+//!   failures and reviews on its branch that are due go to it as prompts,
+//!   first, so the rest of the step sees them queued.
+//!
 //! It looks again in [`work::WAITING_MS`] while the session waits for its
 //! box, [`work::RUNNING_MS`] while a turn is under way, and [`IDLE_MS`]
-//! while it's `done` with nothing queued; a prompt queued in its thread
-//! makes it look at once (`Db::nudge_session`). It's done when the session
-//! ends.
+//! while it's `done` with nothing queued, or sooner when its feedback is
+//! due; a prompt queued in its thread, or feedback gathered, makes it look
+//! at once (`Db::nudge_session`). It's done when the session ends.
 
 use std::sync::Arc;
 
@@ -113,6 +117,9 @@ impl Follow {
             db.uncancel_job(job, now)?;
         }
         let Some(s) = db.session(&job.id)? else { return Ok(Step::Done) };
+        // CI's failures and reviews that are due (M260): queued as its
+        // prompts, or, once it ended, dropped and said.
+        let feedback_due = crate::sessions::feedback::flush(&self.app, &s, now).await?;
         if s.state.terminal() {
             return Ok(Step::Done);
         }
@@ -199,7 +206,7 @@ impl Follow {
             State::Done => IDLE_MS.min(idle_since.saturating_add(idle_end).saturating_sub(now).max(1)),
             _ => work::RUNNING_MS,
         };
-        Ok(Step::Again(now + next))
+        Ok(Step::Again(feedback_due.map_or(now + next, |due| due.max(now).min(now + next))))
     }
 }
 

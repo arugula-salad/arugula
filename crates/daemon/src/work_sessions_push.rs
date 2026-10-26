@@ -216,6 +216,18 @@ pub async fn clean(dir: &Path, l: &Session) {
     let _ = super::as_user(&l.user, &["rm", "-f", "--", &bundle]).await;
 }
 
+/// Once a push of session `l` is back: an `end` that came while it ran
+/// cleaned the session's slot then, and the push may have made its place
+/// again since (its bundle, the daemon's repo). So an ended session's is
+/// cleaned again here. Whether it had ended.
+pub async fn clean_if_ended(dir: &Path, l: &Session) -> bool {
+    let ended = super::read(dir, &l.session).ok().flatten().is_none_or(|now| now.ended.is_some());
+    if ended {
+        clean(dir, l).await;
+    }
+    ended
+}
+
 /// Push session `l`'s branch at the end of a turn (module docs): the commit
 /// that's on GitHub now, as the checkout has it (pushed now, or before:
 /// `l.pushed_head`), `None` when there's nothing to push (no repo, or no
