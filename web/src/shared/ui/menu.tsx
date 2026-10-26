@@ -23,6 +23,8 @@ interface OpenMenu {
   x: number;
   y: number;
   items: MenuItem[];
+  /** The button it hangs from, for its aria-expanded. */
+  from?: HTMLElement;
 }
 
 let current: OpenMenu | null = null;
@@ -36,11 +38,23 @@ const changed = () => listeners.forEach((fn) => fn());
  * over the tab view's), else each would close the other's on a click. */
 const layers: object[] = [];
 
-export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[]) {
+export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[], from?: HTMLElement) {
   e.preventDefault();
   if (!current) opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  current = { x: e.clientX, y: e.clientY, items };
+  current = { x: e.clientX, y: e.clientY, items, from };
   changed();
+}
+
+/** Whether the menu open now hangs from `el`: a menu button's
+ * aria-expanded (UI audit #174). */
+export function useMenuOpenFrom(el: { current: HTMLElement | null }): boolean {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((t) => t + 1);
+    listeners.add(fn);
+    return () => void listeners.delete(fn);
+  }, []);
+  return !!current?.from && current.from === el.current;
 }
 
 /** Close it, and put the focus back where it was when it opened. */
@@ -98,7 +112,13 @@ export function MenuLayer() {
   // Keep the menu on screen.
   useLayoutEffect(() => {
     if (!current || !ref.current) return setPos(null);
+    // Measured at the window's left, where nothing squeezes it: near the
+    // right edge it wrapped ("Command palette… Ctrl+Shift+P") and then sat
+    // flush with the edge, wider than measured (UI audit #174).
+    const was = ref.current.style.left;
+    ref.current.style.left = "0px";
     const r = ref.current.getBoundingClientRect();
+    ref.current.style.left = was;
     setPos({
       left: Math.max(4, Math.min(current.x, window.innerWidth - r.width - 4)),
       top: Math.max(4, Math.min(current.y, window.innerHeight - r.height - 4)),

@@ -89,7 +89,7 @@ impl Handle for DocsList {
             .into_iter()
             .map(|m| DocRow {
                 open: open.get(&m.id).copied(),
-                shared: links.get(&m.id).map(|(_, e)| DocShared { made: e.made, updated: e.updated }),
+                shared: links.get(&m.id).map(|(link, e)| DocShared { made: e.made, updated: e.updated, link: link.clone() }),
                 id: m.id,
                 title: m.title,
                 made: m.made,

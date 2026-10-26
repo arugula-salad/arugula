@@ -9,7 +9,8 @@ import type { Client } from "../client";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { HostButton } from "./hosts";
 import { Places, type Place } from "./places";
-import { openMenu, type MenuItem } from "../../shared/ui/menu";
+import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
+import { useRef } from "preact/hooks";
 import { settingsItems } from "./commands";
 import { ariaKeys, keyHint } from "./keys";
 import { openPalette } from "./palette";
@@ -115,6 +116,8 @@ export function CommandsButton({ client, search }: { client: Client; search?: bo
 export function AccountButton({ client }: { client: Client | null }) {
   const account = useAccount();
   const login = account?.login() ?? null;
+  const ref = useRef<HTMLButtonElement>(null);
+  const expanded = useMenuOpenFrom(ref);
   const open = (e: MouseEvent) => {
     countView("settings");
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -122,11 +125,14 @@ export function AccountButton({ client }: { client: Client | null }) {
     const items: MenuItem[] = [...mine, ...presenceItems(), ...settingsItems(client)];
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
     // Right-aligned under the button; the menu keeps itself on screen.
-    openMenu({ clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items);
+    openMenu({ clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
   return (
     <button
+      ref={ref}
       class="account-button"
+      aria-haspopup="menu"
+      aria-expanded={expanded}
       title={login ? "Your account and settings" : "Settings"}
       aria-label={login ? `Account: ${login}` : "Settings"}
       data-account-menu

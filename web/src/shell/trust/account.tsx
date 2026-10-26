@@ -8,7 +8,7 @@ import { UsageReports } from "../../shared/ui/account-telemetry";
 import { agentName, api, shownName, type ControlSession } from "../control";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "../../shared/ui/confirm";
-import { RecoveryAndName } from "./recovery";
+import { NameLine, RecoveryLeft } from "./recovery";
 
 export interface SessionRow {
   id: string;
@@ -80,6 +80,11 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
   };
   if (deleting) return <DeleteAccount s={s} back={() => setDeleting(false)} />;
   const others = (sessions ?? []).filter((x) => !x.current).length;
+  // Sign-ins from before control kept the browser all read "An earlier
+  // sign-in": folded into a count by Sign out everywhere (UI audit #174:
+  // ten rows of them).
+  const earlier = (x: SessionRow) => !x.current && !x.agent && !(x.device && s.trusted.has(x.device));
+  const unnamed = (sessions ?? []).filter(earlier).length;
   return (
     <>
       <h2>Sign-in and account</h2>
@@ -87,10 +92,11 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         Signed in as <b>{s.login}</b>
         {keys?.github ? ` (GitHub: ${keys.github})` : ""}.
       </p>
-      <RecoveryAndName s={s} />
+      <NameLine s={s} />
+      <RecoveryLeft s={s} />
       <h3 class="control-group">Where you're signed in</h3>
       <ul class="control-devices control-rows" data-sessions>
-        {(sessions ?? []).map((x) => (
+        {(sessions ?? []).filter((x) => !earlier(x)).map((x) => (
           <li key={x.id} data-session={x.id}>
             <span>
               {sessionName(s, x)}
@@ -112,7 +118,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         ))}
       </ul>
       <p class="dim">
-        {others ? `${others} other session${others === 1 ? "" : "s"}. ` : "Nowhere else. "}
+        {others ? `${others} other session${others === 1 ? "" : "s"}${unnamed ? `, ${unnamed} of them from before control kept which browser` : ""}. ` : "Nowhere else. "}
         <button
           class={confirming === "all" ? "link danger" : "link"}
           data-end-all

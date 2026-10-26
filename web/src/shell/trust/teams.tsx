@@ -122,7 +122,7 @@ export function Teams({ s, close }: { s: ControlSession; close: () => void }) {
         </section>
       ) : null}
       <form
-        class="control-code"
+        class="control-code control-name"
         onSubmit={(e) => {
           e.preventDefault();
           void act(() => s.createTeam(name)).then(() => setName(""));

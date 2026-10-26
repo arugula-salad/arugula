@@ -632,12 +632,13 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--danger);
 }
 
+/* Headers keep their case: they hold logins and machine names ("Signed in
+ * as jhgaylor", "This machine: geek"; UI audit #174, #175). */
 .menu-header {
   padding: 6px 10px 2px;
   font-size: 11px;
+  font-weight: 600;
   color: var(--dim);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 /* A checkable item's dot hangs in the item's left padding, so its label
@@ -1790,7 +1791,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .rules h2 {
   margin: 0;
-  font-size: 15px;
 }
 
 /* Its × (UI audit #158) shares the heading's row: the dialog is a grid,
@@ -1830,6 +1830,22 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .rules-list .rule-text {
   font: 12px ui-monospace, monospace;
   overflow-wrap: anywhere;
+}
+
+/* Shared Docs: a Doc's title over a dim sans line, its buttons on one
+ * line each (UI audit #174). */
+.shared-docs-list .rule-text {
+  font: inherit;
+  min-width: 0;
+}
+
+.shared-docs-list .rule-text .dim {
+  font-size: 12px;
+}
+
+.shared-docs-list button {
+  flex: none;
+  white-space: nowrap;
 }
 
 .developer label {
@@ -2000,7 +2016,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .agent-dialog h2 {
   margin: 0;
-  font-size: 15px;
 }
 
 .agent-dialog select,
@@ -2086,7 +2101,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .sandboxes h2 {
   margin: 0;
-  font-size: 15px;
 }
 
 .sandboxes .hint {
@@ -2673,7 +2687,19 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   line-height: 1;
   color: var(--dim);
   background: var(--raised);
+  z-index: 2;
+}
+
+/* A Modal's title is a bar that stays at the top with the × on it, so
+ * what scrolls under the × is hidden, not drawn over (UI audit #174: rows
+ * of Teams and Sign-in showed through). -16px: the dialog's padding. */
+.control-prompt > .modal-close + h2 {
+  position: sticky;
+  top: -16px;
   z-index: 1;
+  margin: -16px 0 0;
+  padding: 16px 32px 8px 0;
+  background: var(--raised);
 }
 
 .modal-close:hover {
@@ -2683,7 +2709,15 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .control-prompt h2 {
   margin: 0 0 8px;
+}
+
+/* Every dialog's title, one size: they were 15, 16 and 20px (UI audit
+ * #174). Each dialog's own rule keeps only its margin. */
+.prompt h2,
+.telemetry-card h2,
+.add-pane-head h2 {
   font-size: 16px;
+  font-weight: 600;
 }
 
 .control-prompt p {
@@ -2707,7 +2741,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .telemetry-card h2 {
   margin: 0 0 8px;
-  font-size: 15px;
 }
 
 .telemetry-card p {
@@ -2777,7 +2810,10 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--letterbox);
   font: 13px ui-monospace, monospace;
   white-space: pre-wrap;
-  word-break: break-all;
+  /* Breaks between words where it can, anywhere only when it must (UI
+   * audit #174: "--tea|m"). */
+  word-break: normal;
+  overflow-wrap: anywhere;
   user-select: all;
 }
 
@@ -2877,12 +2913,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 /* A team's members and its machines, each under its own heading. */
+/* Under a group (a team's members, its machines): the menus' header
+ * style, in its case, not caps (UI audit #174). */
 .control-subgroup {
   margin: 14px 0 0;
   font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--dim);
 }
 
@@ -3280,7 +3316,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .share-dialog h2 {
   margin: 0 0 8px;
-  font-size: 16px;
 }
 
 .share-list {
@@ -3367,9 +3402,10 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--dim);
 }
 
+/* A team's name: a group heading, as h3.control-group (UI audit #174). */
 .team h3 {
   margin: 12px 0 4px;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .control-cmd-inline,
@@ -8052,7 +8088,6 @@ input.chat-search {
 
 .conv-dialog h2 {
   margin: 0 0 12px;
-  font-size: 15px;
 }
 
 .conv-dialog label + label {
@@ -8576,7 +8611,6 @@ input.chat-search {
 
 .appearance h2 {
   margin: 0 0 4px;
-  font-size: 16px;
 }
 
 .appearance h3 {

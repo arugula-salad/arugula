@@ -51,7 +51,7 @@ export function Rail({ client }: { client: Client }) {
   const settings = (e: MouseEvent) => {
     countView("settings");
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    openMenu({ clientX: r.right + 4, clientY: r.top, preventDefault: () => e.preventDefault() }, settingsItems(client));
+    openMenu({ clientX: r.right + 4, clientY: r.top, preventDefault: () => e.preventDefault() }, settingsItems(client, { machine: true }), e.currentTarget as HTMLElement);
   };
   return (
     <nav class="ws-rail" aria-label="Places">

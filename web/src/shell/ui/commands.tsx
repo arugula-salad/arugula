@@ -252,10 +252,11 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
 /** The account menu's settings: this device, this machine, and help. The
  * same everywhere (the panes, the swarm, chat, agents), with or without a
  * session. */
-export function settingsItems(client: Client | null): MenuItem[] {
+export function settingsItems(client: Client | null, opts: { machine?: boolean } = {}): MenuItem[] {
   // The machine's own settings are in the machine menu, where there is
-  // one; else (a daemon's page with no other machine) here.
-  const machine = client && !hostMenuShown() ? machineSettingsItems(client) : [];
+  // one; else (a daemon's page with no other machine) here. The rail's
+  // Settings always has them: its tooltip says so (UI audit #174).
+  const machine = client && (opts.machine || !hostMenuShown()) ? machineSettingsItems(client) : [];
   return [
     ...(machine.length ? [{ header: "This machine" } as MenuItem, ...machine, "separator" as const] : []),
     // How the page looks is this device's, with or without a machine.

@@ -1052,7 +1052,7 @@ export type DocOpened = { pane: number, };
 
 /**
  * One Doc in the library (#1493): `GET /api/docs`. `open` is the block
- * that shows it now, `shared` its link's dates (never the link).
+ * that shows it now, `shared` its link's dates and id (never its key).
  */
 export type DocRow = { id: string, title: string, made: number, updated: number, 
 /**
@@ -1064,7 +1064,12 @@ by: string, open?: number | null, shared?: DocShared | null, };
 /**
  * When a Doc was shared with a link, and last updated.
  */
-export type DocShared = { made: number, updated: number, };
+export type DocShared = { made: number, updated: number, 
+/**
+ * The link's id, as control's list of shared Docs names it (never the
+ * key): that list titles its rows from it (UI audit #174).
+ */
+link: string, };
 
 /**
  * An agent's write, waiting for a person.

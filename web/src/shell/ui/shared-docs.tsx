@@ -10,7 +10,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { ControlSession } from "../control";
 import { opPath, OPS } from "../ops";
-import type { DocOpenRequest, DocOpened } from "../../shared/proto";
+import type { DocOpenRequest, DocOpened, DocRow } from "../../shared/proto";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import { getFleet } from "./hosts";
@@ -37,18 +37,37 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
   const [removing, setRemoving] = useState<Row | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  // Each link's Doc title, by link id, from the machines this page reaches
+  // (control knows none: UI audit #174 had every row titled by machine).
+  const [titles, setTitles] = useState<Map<string, string>>(new Map());
 
   const load = async () => {
     try {
       const res = await fetch("/api/doc-links", { credentials: "same-origin" });
       if (!res.ok) throw new Error(`control said ${res.status}`);
       const v = (await res.json()) as Row[] | { links: Row[] };
-      setRows(Array.isArray(v) ? v : v.links);
+      const list = Array.isArray(v) ? v : v.links;
+      setRows(list);
+      void loadTitles(list);
     } catch (e) {
       setErr((e as Error).message);
     }
   };
   useEffect(() => void load(), []);
+
+  const loadTitles = async (list: Row[]) => {
+    const fleet = getFleet();
+    const names = new Set(list.map((r) => s.daemons.find((x) => x.id === r.daemon)).filter((d) => d?.online && fleet?.clientOf(d.name)).map((d) => d!.name));
+    const got = new Map<string, string>();
+    await Promise.all(
+      [...names].map(async (n) => {
+        const res = await fleet!.request(n, OPS["docs.list"].method, opPath("docs.list")).catch(() => null);
+        const docs = res?.ok ? await res.json<DocRow[]>().catch(() => null) : null;
+        for (const d of Array.isArray(docs) ? docs : []) if (d.shared?.link) got.set(d.shared.link, d.title);
+      }),
+    );
+    setTitles(got);
+  };
 
   /** The machine that made it, if it is online and this page reaches it. */
   const machine = (r: Row) => {
@@ -117,13 +136,14 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
       {err && <p class="control-error">{err}</p>}
       {note && <p class="hint" data-shared-docs-note>{note}</p>}
       {rows && rows.length === 0 && <p class="hint">No Doc is shared.</p>}
-      <ul class="rules-list">
+      <ul class="rules-list shared-docs-list">
         {(rows ?? []).map((r) => (
           <li key={r.id} data-shared-doc={r.id}>
             <span class="rule-text">
-              <b>{name(r)}</b>
+              <b data-shared-doc-title>{titles.get(r.id) ?? name(r)}</b>
               <br />
               <span class="dim">
+                {titles.has(r.id) ? `on ${name(r)} · ` : ""}
                 {size(r.size)} · shared {when(r.made)} · updated {when(r.updated)} · {opened(r.opens)}
               </span>
             </span>
