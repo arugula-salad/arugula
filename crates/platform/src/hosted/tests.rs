@@ -90,8 +90,9 @@ impl Substrate for Fake {
                 started_at: String::new(),
                 end_at: String::new(),
                 pauses_on_timeout: Some(true),
-                cpus: Some(2),
-                memory_mb: Some(2048),
+                // As E2B sizes a box by its template (M266).
+                cpus: Some(if b.template.contains("-large") { 8 } else { 2 }),
+                memory_mb: Some(if b.template.contains("-large") { 8192 } else { 2048 }),
             },
         );
         if self.lose_next.swap(false, SeqCst) {
@@ -179,12 +180,31 @@ pub(crate) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Pla
     (hub, fake, app, base, project)
 }
 
+/// [`serve`], its hosted config changed by `set` first.
+pub(crate) async fn serve_with(
+    enroll: EnrollBy,
+    set: impl FnOnce(&mut Config),
+) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
+    let fake = Arc::new(Fake::default());
+    let (hub, app, base, project) = serve_on_with(enroll, fake.clone(), "tpl", set).await;
+    (hub, fake, app, base, project)
+}
+
 /// [`serve`] on another provider, with template `template` (M263's
 /// snapshots run on the E2B adapter against its fake).
 pub(crate) async fn serve_on(
     enroll: EnrollBy,
     compute: Arc<dyn Substrate>,
     template: &str,
+) -> (Arc<TestHub>, Arc<Platform>, String, String) {
+    serve_on_with(enroll, compute, template, |_| {}).await
+}
+
+async fn serve_on_with(
+    enroll: EnrollBy,
+    compute: Arc<dyn Substrate>,
+    template: &str,
+    set: impl FnOnce(&mut Config),
 ) -> (Arc<TestHub>, Arc<Platform>, String, String) {
     let hub = Arc::new(TestHub::default());
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("vic", TeamRole::Viewer)]);
@@ -199,6 +219,7 @@ pub(crate) async fn serve_on(
         cipher: Some(Arc::new(crate::secrets::SecretCipher::new(&"5e".repeat(32)).unwrap())),
         ..Default::default()
     };
+    set(&mut p.hosted);
     let app = Arc::new(p);
     let project = app.db.team_project("t1", "t1", 0).unwrap();
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -748,4 +769,127 @@ fn the_finish_step_leaves_the_specs_hash_alone() {
     assert!(long.check().is_err());
     let big = super::Spec { finish: "x".repeat(5000), ..spec };
     assert!(big.check().is_err());
+}
+
+/// M266: a spec's size is left out of what it's stored and hashed as when
+/// it's small, so no box built before sizes shows "rebuild needed"; large
+/// is kept, and changes the hash, so changing it needs a rebuild.
+#[test]
+fn a_small_size_leaves_the_specs_hash_alone() {
+    use super::{Size, Spec};
+    // A spec as it was stored before sizes, field for field.
+    let before = r#"{"repos":["https://github.com/acme/app"],"packages":[],"setup":"make","env":[]}"#;
+    let spec: Spec = serde_json::from_str(before).unwrap();
+    assert_eq!(spec.size, Size::Small, "small unless it says");
+    assert_eq!(serde_json::to_string(&spec).unwrap(), before, "stored as before");
+    let old = {
+        use sha2::Digest as _;
+        hex::encode(sha2::Sha256::digest(before.as_bytes()))
+    };
+    assert_eq!(spec.hash(), old, "an existing spec's hash is unchanged");
+    // Said small outright, it's the same spec.
+    let said: Spec = serde_json::from_str(&before.replace("}", r#","size":"small"}"#)).unwrap();
+    assert_eq!((said.hash(), serde_json::to_string(&said).unwrap()), (old.clone(), before.to_owned()));
+    let large = Spec { size: Size::Large, ..spec };
+    assert!(serde_json::to_string(&large).unwrap().ends_with(r#","size":"large"}"#));
+    assert_ne!(large.hash(), old, "a large box is built from another template");
+    assert!(large.check().is_ok());
+    assert!(serde_json::from_str::<Spec>(r#"{"size":"huge"}"#).is_err());
+}
+
+/// M266: a workspace's box is made from this release's template of its
+/// size, on create and on a rebuild after its size was changed, which shows
+/// "rebuild needed" until then; viewers can't change it, and a size that
+/// isn't one is refused. A control that names its own template makes every
+/// size from it, unless it names large's too.
+#[tokio::test]
+async fn the_size_chooses_the_template() {
+    use crate::compute::template::{Size, current};
+    let (hub, fake, app, base, project) = serve_with(EnrollBy::Sandbox, |c| c.template = None).await;
+    hub.delegate(&project);
+    let workspaces = format!("/api/projects/{project}/workspaces");
+    let (status, small) = make(&base, "bob", &project, "small").await;
+    assert_eq!(status, 201, "{small}");
+    assert_eq!(small["spec"].get("size"), None, "small is left out: {small}");
+    let spec = json!({ "repos": ["https://github.com/acme/app"], "size": "large" });
+    let (status, large) = call(&base, "alice", "POST", &workspaces, Some(json!({ "name": "large", "spec": spec }))).await;
+    assert_eq!(status, 201, "{large}");
+    assert_eq!(large["spec"]["size"], "large");
+    let bad = json!({ "name": "huge", "spec": { "size": "huge" } });
+    assert_eq!(call(&base, "alice", "POST", &workspaces, Some(bad)).await.0, 422, "no such size");
+
+    let now = now_ms();
+    drive(&app, now).await;
+    let templates = |fake: &Fake| fake.creates().iter().map(|c| c.template.clone()).collect::<Vec<_>>();
+    let mut made = templates(&fake);
+    made.sort();
+    let mut both = vec![current(Size::Small), current(Size::Large)];
+    both.sort();
+    assert_eq!(made, both);
+    let big = fake.creates().into_iter().find(|c| c.template == current(Size::Large)).unwrap();
+    assert_eq!(big.metadata["arugula_template"], current(Size::Large));
+    let (small_id, large_id) = (small["id"].as_str().unwrap(), large["id"].as_str().unwrap());
+    hub.enroll(small_id, "m-small");
+    hub.enroll(large_id, "m-large");
+    drive(&app, now + 3_000).await;
+    let w = show(&base, &project, large_id).await;
+    assert_eq!((w["state"].as_str(), w["template"].as_str()), (Some("ready"), Some(&*current(Size::Large))));
+    assert_eq!(w["rebuild_needed"], false);
+    // Its size, as the provider says it, is what's metered (M188).
+    drive(&app, now + 70_000).await;
+    let classes: Vec<_> = app
+        .db
+        .hosted_usage(0, u64::MAX / 2)
+        .unwrap()
+        .into_iter()
+        .map(|i| (i.workspace, i.class))
+        .filter(|(w, _)| w == large_id)
+        .collect();
+    assert_eq!(classes, [(large_id.to_owned(), Some(Size::Large.class()))]);
+
+    // Edit: a viewer can't; an editor can, and it wants a rebuild.
+    let path = format!("{workspaces}/{small_id}");
+    let mut spec = small["spec"].clone();
+    spec["size"] = json!("large");
+    assert_eq!(call(&base, "vic", "PUT", &format!("{path}/spec"), Some(spec.clone())).await.0, 403, "a viewer");
+    let (status, w) = call(&base, "bob", "PUT", &format!("{path}/spec"), Some(spec.clone())).await;
+    assert_eq!((status, w["rebuild_needed"].as_bool()), (200, Some(true)), "{w}");
+    assert_eq!(w["spec"]["size"], "large");
+    spec["size"] = json!("huge");
+    assert_eq!(call(&base, "bob", "PUT", &format!("{path}/spec"), Some(spec)).await.0, 422);
+    // Its box isn't touched until it's rebuilt; then the new one is large.
+    assert_eq!(fake.creates().len(), 2);
+    let (status, _) = call(&base, "bob", "POST", &format!("{path}/rebuild"), None).await;
+    assert_eq!(status, 200);
+    drive(&app, now + 80_000).await;
+    let rebuilt = fake.creates().last().cloned().unwrap();
+    assert_eq!((rebuilt.template.as_str(), rebuilt.metadata["arugula_workspace"].as_str()), (&*current(Size::Large), small_id));
+    hub.enroll(small_id, "m-small-2");
+    drive(&app, now + 83_000).await;
+    let w = show(&base, &project, small_id).await;
+    assert_eq!((w["template"].as_str(), w["rebuild_needed"].as_bool()), (Some(&*current(Size::Large)), Some(false)));
+    // And back to small: a rebuild again, from the small template.
+    let mut spec = w["spec"].clone();
+    spec["size"] = json!("small");
+    let (_, w) = call(&base, "alice", "PUT", &format!("{path}/spec"), Some(spec)).await;
+    assert_eq!((w["rebuild_needed"].as_bool(), w["spec"].get("size")), (Some(true), None), "{w}");
+    call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+    drive(&app, now + 90_000).await;
+    assert_eq!(fake.creates().last().unwrap().template, current(Size::Small));
+
+    // A control with its own template (loam, testnet).
+    for (large, want) in [(None, "tpl"), (Some("tpl-large"), "tpl-large")] {
+        let (hub, fake, app, base, project) =
+            serve_with(EnrollBy::Sandbox, |c| c.template_large = large.map(Into::into)).await;
+        hub.delegate(&project);
+        let body = json!({ "name": "big", "spec": { "size": "large" } });
+        assert_eq!(call(&base, "alice", "POST", &format!("/api/projects/{project}/workspaces"), Some(body)).await.0, 201);
+        make(&base, "alice", &project, "small").await;
+        drive(&app, now_ms()).await;
+        let mut made = templates(&fake);
+        made.sort();
+        let mut expect = vec!["tpl".to_owned(), want.to_owned()];
+        expect.sort();
+        assert_eq!(made, expect, "{large:?}");
+    }
 }
