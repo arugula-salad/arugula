@@ -29,8 +29,23 @@ daemon=${ARUGULAD:-/usr/local/bin/arugulad}
 say() { echo "arugula-hosted-start: $*" >&2; }
 
 if [ "$#" -eq 0 ] && [ -d /run/systemd/system ] && sudo -n systemctl start --no-block arugulad.service 2>/dev/null; then
-  say "arugulad.service runs the daemon"
-  exec sleep infinity
+  # Once it answers. v0.62.0's template build never saw it answer (its
+  # ready check timed out), so if it hasn't within a minute, say what
+  # systemd says into the build's log and supervise it here instead.
+  tries=0
+  while [ "$tries" -lt 120 ]; do
+    if arugula-hosted-ready 2>/dev/null; then
+      say "arugulad.service runs the daemon"
+      exec sleep infinity
+    fi
+    sleep 0.5
+    tries=$((tries + 1))
+  done
+  say "arugulad.service didn't answer in a minute:"
+  sudo -n systemctl status --no-pager arugulad.service >&2 2>&1 || true
+  sudo -n journalctl -u arugulad.service -n 40 --no-pager >&2 2>&1 || true
+  say "supervising the daemon here instead"
+  sudo -n systemctl stop arugulad.service 2>/dev/null || true
 fi
 
 # Lowering a score takes root: the template's sudo rule for `user`.
