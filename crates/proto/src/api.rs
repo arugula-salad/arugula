@@ -865,7 +865,7 @@ pub enum WorktreeFate {
 }
 
 /// One Doc in the library (#1493): `GET /api/docs`. `open` is the block
-/// that shows it now, `shared` its link's dates (never the link).
+/// that shows it now, `shared` its link's dates and id (never its key).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
@@ -884,11 +884,15 @@ pub struct DocRow {
 }
 
 /// When a Doc was shared with a link, and last updated.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DocShared {
     pub made: u64,
     pub updated: u64,
+    /// The link's id, as control's list of shared Docs names it (never the
+    /// key): that list titles its rows from it (UI audit #174).
+    #[serde(default)]
+    pub link: String,
 }
 
 /// `POST /api/docs/open` (#1493): a Doc from the library in a block. Exactly

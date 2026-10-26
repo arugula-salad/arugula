@@ -97,7 +97,7 @@ test("a Doc whose pane was closed is on the page, and Open shows it again with i
   await goToDocs(page);
   const r = row(page, "Quarterly plan");
   await expect(r).toHaveCount(1);
-  await expect(r).toContainText(/written (just now|\d+m ago)/);
+  await expect(r).toContainText(/updated (just now|\d+m ago)/);
   await expect(r).toContainText("made by");
   await expect(r.locator("[data-doc-shared]")).toHaveCount(0);
   await r.locator("[data-open-doc]").click();

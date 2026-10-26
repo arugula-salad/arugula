@@ -19,6 +19,7 @@
 // set up, the first screen offers that click too.
 
 import { opPath } from "../ops";
+import { directory } from "../hosts";
 import qrcode from "qrcode-generator";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useModal } from "../../shared/ui/modal";
@@ -274,7 +275,9 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
   const id = STEPS[step].id;
   const last = step === STEPS.length - 1;
   const go = (i: number) => setStep(Math.max(0, Math.min(STEPS.length - 1, i)));
-  const name = host?.name ?? "this machine";
+  // Through control the daemon's host.get isn't this page's: the machine
+  // shown is the one (UI audit #174: "this machine" from the Docs page).
+  const name = host?.name ?? (directory.current || "this machine");
 
   return (
     <div class="prompt-backdrop start-backdrop" role="dialog" aria-modal="true" aria-label="Getting started" onPointerDown={(e) => e.target === e.currentTarget && close()}>

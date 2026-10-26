@@ -16,8 +16,8 @@
 //   machine's answer is yes. Control's page sends its own to control (M104),
 //   never here, so no view counts twice.
 
-import { useEffect, useRef, useState } from "preact/hooks";
-import { CloseX, useModal } from "../../shared/ui/modal";
+import { useEffect, useState } from "preact/hooks";
+import { Modal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { desktopApp } from "../../shared/desktop";
 import { OPS, opPath } from "../ops";
@@ -187,10 +187,8 @@ const KEPT_OFF: Partial<Record<TelemetryInfo["why"], string>> = {
   test: "Off: this daemon is a test run.",
 };
 
+// A Modal like control's dialogs (UI audit #175).
 function MachineTelemetrySettings({ client, close }: { client: Client; close: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // UI audit #150: takes the focus, keeps it, and Escape closes it.
-  useModal(ref, close);
   const [t, setT] = useState<TelemetryInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -202,15 +200,7 @@ function MachineTelemetrySettings({ client, close }: { client: Client; close: ()
     answer(client, on).then(setT, (e: Error) => setError(e.message));
   };
   return (
-    <div
-      class="prompt-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Usage and crash reports"
-      onPointerDown={(e) => e.target === e.currentTarget && close()}
-    >
-      <div ref={ref} class="prompt rules machine-telemetry">
-        <CloseX close={close} />
+    <Modal close={close} label="Usage and crash reports" class="rules machine-telemetry">
         <h2>Usage and crash reports</h2>
         <p class="hint">{ABOUT}</p>
         {error && <p class="error">{error}</p>}
@@ -236,7 +226,6 @@ function MachineTelemetrySettings({ client, close }: { client: Client; close: ()
             Done
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

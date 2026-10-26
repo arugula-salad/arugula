@@ -9,7 +9,8 @@ import type { Client } from "../client";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { HostButton } from "./hosts";
 import { Places, type Place } from "./places";
-import { openMenu, type MenuItem } from "../../shared/ui/menu";
+import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
+import { useRef } from "preact/hooks";
 import { settingsItems } from "./commands";
 import { ariaKeys, keyHint } from "./keys";
 import { openPalette } from "./palette";
@@ -33,6 +34,10 @@ let account: Account | null = null;
 export function setAccount(a: Account) {
   account = a;
 }
+
+/** The account now, for the command palette's Account commands (UI audit
+ * #176); null on a daemon's own page. */
+export const currentAccount = (): Account | null => account;
 
 /** The account, kept current; null on a daemon's own page. The bar's menu
  * and the phone's sheet (#820) both show its items. */
@@ -60,7 +65,7 @@ export function AppBar({
   children?: ComponentChildren;
   /** Before the account menu: the panes' people. */
   end?: ComponentChildren;
-  /** The place shows every machine (the swarm, chat, the team's agents):
+  /** The place shows every machine (the swarm):
    * the machine picker would read as a filter it isn't, so it says so. */
   all?: boolean;
 }) {
@@ -115,6 +120,8 @@ export function CommandsButton({ client, search }: { client: Client; search?: bo
 export function AccountButton({ client }: { client: Client | null }) {
   const account = useAccount();
   const login = account?.login() ?? null;
+  const ref = useRef<HTMLButtonElement>(null);
+  const expanded = useMenuOpenFrom(ref);
   const open = (e: MouseEvent) => {
     countView("settings");
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -122,11 +129,14 @@ export function AccountButton({ client }: { client: Client | null }) {
     const items: MenuItem[] = [...mine, ...presenceItems(), ...settingsItems(client)];
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
     // Right-aligned under the button; the menu keeps itself on screen.
-    openMenu({ clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items);
+    openMenu({ clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
   return (
     <button
+      ref={ref}
       class="account-button"
+      aria-haspopup="menu"
+      aria-expanded={expanded}
       title={login ? "Your account and settings" : "Settings"}
       aria-label={login ? `Account: ${login}` : "Settings"}
       data-account-menu

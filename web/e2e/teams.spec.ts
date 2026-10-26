@@ -609,11 +609,10 @@ test("Cancel turns a join down; Just me keeps a machine apart from the team's", 
   await alice.locator(".host-button").click();
   await expect(alice.locator(".menu-header", { hasText: "Team Acme" })).toBeVisible();
   await expect(alice.locator(".menu-header", { hasText: "Yours" })).toBeVisible();
-  // #778: each says its place, and the shown one what that means.
-  await expect(alice.getByRole("menuitem", { name: /minebox\b.* · Just me$/ })).toBeVisible();
-  await expect(alice.getByRole("menuitem", { name: /buildbox\b.* · In Acme$/ })).toBeVisible();
-  const shown = await alice.evaluate(() => window.__arugula.hosts.current);
-  await expect(alice.getByRole("menuitem", { name: shown === "minebox" ? /^Just me: only your devices/ : /^In Acme: everyone in Acme sees its panes/ })).toBeVisible();
+  // #778: each says its place and what that means, in its tooltip (UI
+  // audit #175: its group's header says the place).
+  await expect(alice.getByRole("menuitem", { name: /^minebox\b/ })).toHaveAttribute("title", /^Just me: only your devices/);
+  await expect(alice.getByRole("menuitem", { name: /^buildbox\b/ })).toHaveAttribute("title", /^In Acme: everyone in Acme sees its panes/);
   await alice.keyboard.press("Escape");
 });
 
