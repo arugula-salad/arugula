@@ -6,7 +6,7 @@ state: "decided"
 area: "Agents and blocks"
 source:
   via: "cli"
-  issue: "arugula-salad/arugula#1264"
+  issue: "arugula-salad/arugula#1479"
 question: "Where does a live status board live, what may a machine tell control for it, and how does it relate to issues?"
 options:
   - id: "a"
@@ -37,12 +37,12 @@ rejected:
     why: "The board is the project's tracker: it groups issues and everything else a row can point at, so issues need no parent field for now."
 supersedes: []
 evidence:
-  - title: "#1264"
-    url: "https://github.com/arugula-salad/arugula/issues/1264"
+  - title: "#1479"
+    url: "https://github.com/arugula-salad/arugula/issues/1479"
   - title: "Arugula #187"
-    url: "https://app.arugula.io/issues/iss_00000000000000000000000000000187"
+    url: "https://app.arugula.io/issues/iss_2eb7c661b2f79e84f07fa7c719949fe1"
 decided_by: "jhgaylor"
-decided_on: "2026-10-26"
+decided_on: "2026-10-25"
 reviews: []
 constrains:
   - "aru-051"
