@@ -115,7 +115,7 @@ function SignIn() {
             <button class="primary" data-sign-in onClick={() => void signIn(controlOrigin())}>
               Sign in
             </button>{" "}
-            <span class="dim">on control's page, where your passkeys are; it brings you back here.</span>
+            <span class="dim">on Control, where your passkeys are; it brings you back here.</span>
           </p>
         </section>
       </main>

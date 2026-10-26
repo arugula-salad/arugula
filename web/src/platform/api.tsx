@@ -45,8 +45,8 @@ export const platformApi: PlatformApi = {
   },
   ...noMachines,
   // A pane's chip opens on control's page, where the machines are.
-  goToPane: () => toast(`Panes open on control's page (${new URL(controlOrigin()).host}), where your machines are`),
-  goToSession: () => toast(`Sessions open on control's page (${new URL(controlOrigin()).host}), where your machines are`),
+  goToPane: () => toast(`Panes open on Control (${new URL(controlOrigin()).host}), where your machines are`),
+  goToSession: () => toast(`Sessions open on Control (${new URL(controlOrigin()).host}), where your machines are`),
   Bar: PlatformBar,
   controlHref: (hash) => `${controlOrigin()}/#${hash}`,
   sessionHref: (project, ses) => pathOf({ page: "session", project, session: ses }, names),

@@ -51,8 +51,8 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
 type Head = { head: string; short?: string; name: string; gives: string };
 const HEADS: Record<Column, Head> = {
   threads: { head: "Threads & issues", short: "Threads", name: "threads & issues", gives: "read and post in its threads (a team's channels), and write its issues" },
-  runs: { head: "Runs", name: "runs", gives: "read its runs, and start its run specs on its hosted workspaces" },
-  commands: { head: "Commands", name: "commands", gives: "start commands of their own on its hosted workspaces" },
+  runs: { head: "Runs", name: "runs", gives: "read its runs, and start its run specs on its cloud workspaces" },
+  commands: { head: "Commands", name: "commands", gives: "start commands of their own on its cloud workspaces" },
   deploys: { head: "Deploys", name: "deploys", gives: "plan its deploys and ask its owners to approve them" },
 };
 

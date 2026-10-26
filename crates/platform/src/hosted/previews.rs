@@ -128,9 +128,9 @@ async fn workspace(
         return Err(err(StatusCode::FORBIDDEN, "a viewer can't make a port public"));
     }
     let w =
-        app.db.hosted_workspace(&project, id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such hosted workspace"))?;
+        app.db.hosted_workspace(&project, id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such cloud workspace"))?;
     if w.state == "deleting" || w.state == "deleted" {
-        return Err(err(StatusCode::CONFLICT, "this hosted workspace is being deleted"));
+        return Err(err(StatusCode::CONFLICT, "this cloud workspace is being deleted"));
     }
     Ok((project, w))
 }

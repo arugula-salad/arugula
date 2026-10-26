@@ -1705,7 +1705,7 @@ async fn an_agent_drives_cloud_workspaces_through_control() {
     let row = &listed["cloud_workspaces"][0];
     assert_eq!((row["kind"].as_str(), row["name"].as_str()), (Some("hosted"), Some("App box")), "{listed}");
     let why = refused(&s, "read_cloud", json!({ "kind": "files", "cloud_workspace": "cw_0a" })).await;
-    assert!(why.contains("no hosted workspace cw_0a"), "{why}");
+    assert!(why.contains("no cloud workspace cw_0a"), "{why}");
     let why = refused(&s, "wait", json!({ "cloud_workspace": "hw_0a", "tab": "3", "until": "exit" })).await;
     assert!(why.contains("until idle or needs_input"), "{why}");
 

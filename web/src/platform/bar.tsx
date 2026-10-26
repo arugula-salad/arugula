@@ -95,7 +95,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       { label: "Appearance…", run: openAppearance },
       // Who's around (#110): chat's people see this, and only they.
       ...presenceItems(),
-      { label: "Your machines, devices and teams ↗", run: () => location.assign(controlOrigin()) },
+      // Control's one label (UI audit #184): it opens in this tab, so no ↗.
+      { label: "Open Control", run: () => location.assign(controlOrigin()) },
       "separator",
       // This page only: the hub's session, on control's page, stays.
       { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },
@@ -153,8 +154,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       </nav>
       {children}
       <div class="bar-fill" data-tauri-drag-region />
-      <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals and devices, on control's page" data-platform-shell>
-        Machines ↗
+      <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals, devices and teams, on Control" data-platform-shell>
+        Control
       </a>
       {me && (
         <button class="account-button platform-me" title={me.login ? `Signed in as ${me.login}` : "Signed in"} aria-label={`Account: ${me.login || me.name}`} data-signed-in-as onClick={account}>

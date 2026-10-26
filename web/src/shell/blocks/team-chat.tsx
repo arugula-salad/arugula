@@ -243,9 +243,9 @@ function NeedsControl({ client, joined, guest }: { client: Client; joined: boole
     <div class="chat-block-needs" data-chat-needs-control>
       <h3>Team chat needs Arugula control</h3>
       {guest ? (
-        <p>Chat is your team's, on Arugula control, and you read it as yourself. Open this machine through control's page, signed in, to chat here.</p>
+        <p>Chat is your team's, on Arugula control, and you read it as yourself. Open this machine through Control, signed in, to chat here.</p>
       ) : joined ? (
-        <p>This machine has joined Arugula control, but this page isn't signed in to it. Open the machine through control's page and chat is here as you.</p>
+        <p>This machine has joined Arugula control, but this page isn't signed in to it. Open the machine through Control and chat is here as you.</p>
       ) : (
         <>
           <p>Channels, direct messages and threads are held by Arugula control, and you read them as yourself. This machine hasn't joined one.</p>

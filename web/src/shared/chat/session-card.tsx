@@ -310,7 +310,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
         {c.machine && port && (
           <button
             type="button"
-            title={port.url ? `Its dev server on :${port.port}, public` : `Its dev server on :${port.port}, on control's page`}
+            title={port.url ? `Its dev server on :${port.port}, public` : `Its dev server on :${port.port}, on Control`}
             data-session-preview
             onClick={() => (port.url ? window.open(port.url, "_blank", "noopener") : open(`machine=${c.machine}`, () => api.goToSession(c.machine!)))}
           >

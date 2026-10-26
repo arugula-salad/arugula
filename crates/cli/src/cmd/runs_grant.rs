@@ -44,9 +44,9 @@ pub struct Which {
 const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 
 /// What `sign` and `revoke` say.
-const SIGN_ELSEWHERE: &str = "sign or revoke a project's standing grant from a browser or a phone of yours, on control's page \
-     (Devices and machines, Runs on hosted workspaces): this CLI's key is a file an agent on this machine can read, so \
-     the platform and its hosted machines don't take a grant or a revoke it signed";
+const SIGN_ELSEWHERE: &str = "sign or revoke a project's standing grant from a browser or a phone of yours, on Control \
+     (Devices and machines, Runs on cloud workspaces): this CLI's key is a file an agent on this machine can read, so \
+     the platform and its cloud workspaces don't take a grant or a revoke it signed";
 
 pub fn run(cmd: Option<GrantCmd>, which: Which, json_out: bool) -> anyhow::Result<i32> {
     if matches!(cmd, Some(GrantCmd::Sign { .. } | GrantCmd::Revoke { .. })) {
@@ -91,24 +91,22 @@ fn shown(v: &Value) -> String {
     let mut out = String::new();
     let g = &v["grant"]["grant"];
     if g.is_null() {
-        out.push_str("No standing grant: runs don't start on this project's hosted workspaces.\n");
+        out.push_str("No standing grant: runs don't start on this project's cloud workspaces.\n");
         if v["offer"] == true {
-            out.push_str(
-                "It has hosted workspaces: an owner signs one on control's page, from a browser or a phone.\n",
-            );
+            out.push_str("It has cloud workspaces: an owner signs one on Control, from a browser or a phone.\n");
         }
     } else {
         let expires =
             g["expires"].as_u64().map_or_else(|| "until revoked".to_owned(), |e| format!("until {}", when(e)));
         out.push_str(&format!(
             "Standing grant {}: the platform may start and instruct runs (any command the project's runs start) on \
-             every hosted workspace of the project, {expires}.\nSigned by device {} {}.\n",
+             every cloud workspace of the project, {expires}.\nSigned by device {} {}.\n",
             g["id"].as_str().unwrap_or_default(),
             g["by"].as_str().unwrap_or_default(),
             g["made"].as_u64().map(day).unwrap_or_default(),
         ));
         if v["stale"] == true {
-            out.push_str("It names a delegation that isn't the project's live one: sign it again on control's page.\n");
+            out.push_str("It names a delegation that isn't the project's live one: sign it again on Control.\n");
         } else if v["renew"] == true {
             out.push_str("It expires soon: revoke it and sign it again to keep runs starting.\n");
         }
@@ -165,7 +163,7 @@ mod tests {
     #[test]
     fn what_show_says() {
         let none = json!({ "grant": null, "past": [], "offer": true });
-        assert!(shown(&none).contains("on control's page"));
+        assert!(shown(&none).contains("on Control"));
         let g = json!({ "id": "abc", "by": "dev1", "made": 1, "expires": null });
         let stale = json!({ "grant": { "grant": g }, "past": [], "stale": true });
         assert!(shown(&stale).contains("sign it again"));

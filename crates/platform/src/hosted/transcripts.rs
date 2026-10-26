@@ -70,7 +70,7 @@ pub async fn archive(app: &Platform, workspace: &str, machine: &str, t: Transcri
         })
         .optional()?;
     let Some((project, enrolled)) = row else {
-        return Ok(refused(StatusCode::NOT_FOUND, "no such hosted workspace"));
+        return Ok(refused(StatusCode::NOT_FOUND, "no such cloud workspace"));
     };
     if enrolled.as_deref() != Some(machine) {
         return Ok(refused(StatusCode::FORBIDDEN, "this machine isn't its workspace's box any more"));

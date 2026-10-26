@@ -173,7 +173,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
         }
         sub={
           <>
-            Runs go on this project's hosted workspaces: by hand, on a schedule, or on an event from a linked repo. Scheduled and event runs start
+            Runs go on this project's cloud workspaces: by hand, on a schedule, or on an event from a linked repo. Scheduled and event runs start
             under the project's standing grant, in its{" "}
             <a href={settings} onClick={(e) => follow(e, settings)}>
               settings
@@ -289,7 +289,7 @@ function StartRun({ p, specs, workspaces, done }: { p: PlatformProject; specs: R
         <>
           <input class="run-command" placeholder="make test" aria-label="Command" value={command} data-run-start-command onInput={(e) => setCommand(e.currentTarget.value)} />
           {workspaces.length > 1 && (
-            <select aria-label="Hosted workspace" value={workspace} data-run-start-workspace onChange={(e) => setWorkspace(e.currentTarget.value)}>
+            <select aria-label="Cloud workspace" value={workspace} data-run-start-workspace onChange={(e) => setWorkspace(e.currentTarget.value)}>
               {workspaces.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name}
@@ -462,7 +462,7 @@ function NewSpec({ p, workspaces, done }: { p: PlatformProject; workspaces: Host
     e.preventDefault();
     const argv = argvOf(command.trim());
     if (!name.trim() || !argv?.length) return toast("A name and a command");
-    if (!workspace) return toast("This project has no hosted workspace to run on");
+    if (!workspace) return toast("This project has no cloud workspace to run on");
     try {
       await runs.addSpec(p.id, { name: name.trim(), workspace, argv });
       done();
@@ -475,7 +475,7 @@ function NewSpec({ p, workspaces, done }: { p: PlatformProject; workspaces: Host
       <input placeholder="nightly" aria-label="Name" value={name} data-run-spec-name onInput={(e) => setName(e.currentTarget.value)} />
       <input class="run-command" placeholder="make test" aria-label="Command" value={command} data-run-spec-command onInput={(e) => setCommand(e.currentTarget.value)} />
       {workspaces.length > 1 && (
-        <select aria-label="Hosted workspace" value={workspace} onChange={(e) => setWorkspace(e.currentTarget.value)}>
+        <select aria-label="Cloud workspace" value={workspace} onChange={(e) => setWorkspace(e.currentTarget.value)}>
           {workspaces.map((w) => (
             <option key={w.id} value={w.id}>
               {w.name}
@@ -676,10 +676,10 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
         <dd>
           {run.workspace ? (
             <>
-              {run.deploy ? "Its deploy's own box" : `Hosted workspace${run.workspace_name ? ` ${run.workspace_name}` : ""}`} <code>{run.workspace}</code>
+              {run.deploy ? "Its deploy's own box" : `Cloud workspace${run.workspace_name ? ` ${run.workspace_name}` : ""}`} <code>{run.workspace}</code>
             </>
           ) : (
-            "No hosted workspace"
+            "No cloud workspace"
           )}
           , machine <code>{run.daemon.slice(0, 12)}</code>
           {run.grant ? <span class="dim"> · under the project's standing grant</span> : <span class="dim"> · no standing grant: it waits for an approval</span>}
@@ -691,17 +691,17 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
           <>
             It's running in a pane on its machine.{" "}
             <a href={live} target="_blank" rel="noopener" data-run-pane>
-              Watch pane %{run.pane} on control's page ↗
+              Watch pane %{run.pane} on Control ↗
             </a>
-            <span class="dim"> The platform page has no machines; control's page shows the pane end to end.</span>
+            <span class="dim"> The platform page has no machines; Control shows the pane end to end.</span>
           </>
         ) : going ? (
-          <span class="dim">Waiting for its hosted workspace to take it.</span>
+          <span class="dim">Waiting for its cloud workspace to take it.</span>
         ) : live ? (
           <span class="dim">
             It ended. It ran in pane %{run.pane}, which may still be open{" "}
             <a href={live} target="_blank" rel="noopener" data-run-pane>
-              on control's page ↗
+              on Control ↗
             </a>
             .
           </span>
@@ -902,7 +902,7 @@ function RunThread({ run, msg }: { run: RunView; msg?: number }) {
     <div class="run-thread">
       <h2>Thread</h2>
       {on === false ? (
-        <p class="dim">Threads come with chat, which is off for you. A team owner turns it on in the team's Labs, on control's page.</p>
+        <p class="dim">Threads come with chat, which is off for you. A team owner turns it on in the team's Labs, on Control.</p>
       ) : (
         <div class="issue-thread chat-thread" data-run-thread={room?.id}>
           {room ? (

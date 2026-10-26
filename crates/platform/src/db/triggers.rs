@@ -374,8 +374,8 @@ impl Started {
     pub fn why_not(&self) -> Option<&'static str> {
         match self {
             Started::Made(_) | Started::Already(_) => None,
-            Started::NoWorkspace => Some("its hosted workspace is gone"),
-            Started::NoMachine => Some("its hosted workspace has no machine yet"),
+            Started::NoWorkspace => Some("its cloud workspace is gone"),
+            Started::NoMachine => Some("its cloud workspace has no machine yet"),
             Started::NoProject => Some("its project is gone"),
             Started::Outsider => Some("the event came from a fork or from outside the repo"),
             Started::Capped => Some("its rule started its most runs this hour"),

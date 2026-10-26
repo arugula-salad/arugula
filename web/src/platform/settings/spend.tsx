@@ -62,7 +62,7 @@ export function ClaudeSpend({ p }: { p: PlatformProject }) {
       more={
         <p>
           At Anthropic's list prices, by who made the calls (or a product, for them) and whose key paid: the project's, their own, or Arugula's,
-          which has a monthly cap per account. Agent turns on the project's hosted workspaces are counted beside them: their calls go through
+          which has a monthly cap per account. Agent turns on the project's cloud workspaces are counted beside them: their calls go through
           E2B's proxy, which doesn't see their usage, so their tokens aren't priced here. Keys are never shown, here or anywhere.
         </p>
       }
@@ -121,7 +121,7 @@ export function ClaudeSpend({ p }: { p: PlatformProject }) {
       )}
       {v.hosted.turns > 0 && (
         <p class="dim settings-note" data-spend-hosted>
-          Hosted workspaces: {count(v.hosted.turns)} agent {v.hosted.turns === 1 ? "turn" : "turns"} ({count(v.hosted.minutes)} min)
+          Cloud workspaces: {count(v.hosted.turns)} agent {v.hosted.turns === 1 ? "turn" : "turns"} ({count(v.hosted.minutes)} min)
           {v.hosted.platform_turns > 0 ? `, ${count(v.hosted.platform_turns)} on Arugula's key` : ""}. Their tokens aren't priced here.
         </p>
       )}

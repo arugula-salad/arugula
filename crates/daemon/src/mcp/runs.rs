@@ -49,7 +49,7 @@ pub(crate) const START_TOOL: &str = "start_run";
 const BACK_OFF: Duration = Duration::from_secs(5);
 pub(crate) const READ_TOOL: &str = "read_run";
 
-pub(crate) const START_DESCRIPTION: &str = "Start a run on one of a project's hosted boxes in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.";
+pub(crate) const START_DESCRIPTION: &str = "Start a run on one of a project's cloud workspaces in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read a run in Arugula control (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.";
 
@@ -74,7 +74,7 @@ pub struct StartRunArgs {
     /// Where it runs: an absolute directory on the box (default its home).
     #[serde(default)]
     pub directory: Option<String>,
-    /// Which of the project's hosted boxes: its name or id (hw_…). Needed
+    /// Which of the project's cloud workspaces: its name or id (hw_…). Needed
     /// when it has more than one.
     #[serde(default, rename = "box")]
     pub on_box: Option<String>,

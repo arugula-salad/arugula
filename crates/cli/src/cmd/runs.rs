@@ -28,13 +28,13 @@ use crate::util::print_json;
 pub enum RunsCmd {
     /// Start a run by hand: a spec, or a command after `--`.
     ///
-    /// It runs on the project's hosted workspace (`--workspace` when it
+    /// It runs on the project's cloud workspace (`--workspace` when it
     /// has more than one). Needs owner or editor on the project.
     Start {
         /// A run spec's name or id.
         #[arg(long, conflicts_with_all = ["command", "instruction"])]
         spec: Option<String>,
-        /// The hosted workspace's name or id.
+        /// The cloud workspace's name or id.
         #[arg(long)]
         workspace: Option<String>,
         /// Where it runs (an absolute path); the workspace's home without.
@@ -93,7 +93,7 @@ pub enum RunsCmd {
         #[arg(short, long)]
         follow: bool,
     },
-    /// The project's standing grant for runs on its hosted workspaces.
+    /// The project's standing grant for runs on its cloud workspaces.
     ///
     /// `show` (the default) says whether there is one and who signed it,
     /// `sign` signs one with this CLI's device (an owner, once the project
@@ -112,7 +112,7 @@ pub enum SpecCmd {
     Add {
         /// Its name in the project: letters, digits, `-`, `_` and `.`.
         name: String,
-        /// The hosted workspace it runs on (name or id).
+        /// The cloud workspace it runs on (name or id).
         #[arg(long)]
         workspace: String,
         #[arg(long)]
