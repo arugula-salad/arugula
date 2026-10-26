@@ -97,7 +97,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
           </Place>
         )}
         {project && (
-          <Place to={pathOf({ page: "runs", project }, names)} here={r.page === "runs" || r.page === "run"} data="runs">
+          <Place to={pathOf({ page: "runs", project }, names)} here={r.page === "runs" || r.page === "run" || r.page === "session"} data="runs">
             Runs
             <PlaceUnread project={project} prefix="run_" />
           </Place>

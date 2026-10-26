@@ -39,6 +39,7 @@ import { useSubscribe } from "../ui/hooks";
 import { useChatShown } from "./shown";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 import { ReplyTag, setThreadNav, ThreadFooter } from "./thread-ui";
+import { SessionCardMessage, sessionOf } from "./session-card";
 import { dmLabel } from "./members";
 
 // ---- machines, by control's id for them
@@ -548,6 +549,8 @@ export function RoomMessage({
     );
   }
   if (m.system) return <SystemLine room={room} m={m} />;
+  // M257: an agent session's card, drawn live in place of its message.
+  if (sessionOf(m) && m.deleted === null) return <SessionCardMessage room={room} m={m} />;
   if (m.deleted !== null) {
     return (
       <div class="thread-msg first deleted" data-msg={m.seq}>
