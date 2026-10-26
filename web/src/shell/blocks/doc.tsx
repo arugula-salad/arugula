@@ -15,7 +15,6 @@ import { render, type ComponentChildren } from "preact";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { DocBlock, markdown, type DocState } from "./doc-render";
-import { clearLabsOff, showLabsOff } from "./labs-off";
 import { registerBlock, type BlockView } from "./view";
 
 // The renderer is doc-render.tsx's; the share page imports it from there.
@@ -107,19 +106,7 @@ registerBlock("doc", (client: Client, id): BlockView => {
   const fresh = new Map<string, number>();
   const images = makeImages(client, id);
   open.set(id, images);
-  let note = false;
   const draw = () => {
-    // The daemon's features arrive just after its layout. Without the flag a
-    // saved Doc is still on the machine, but it isn't shown (#347).
-    if (client.features !== null && !client.flag("docs")) {
-      if (!note) render(null, host);
-      showLabsOff(host, client, "docs");
-      note = true;
-      return;
-    }
-    if (note) clearLabsOff(host);
-    note = false;
-    host.className = "block block-doc";
     render(
       <div class="review">
         <DocBar client={client} id={id} s={state} />

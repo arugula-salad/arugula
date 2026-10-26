@@ -334,7 +334,7 @@ function places(client: Client, phone: boolean): Command[] {
     go("recipes", "Go to Agents: Recipes", () => openAgentsPage("recipes"));
     go("team", "Go to Agents: Team", () => openAgentsPage("team"));
   }
-  if (client.flag("docs") && !client.state?.roles) go("docs", "Go to Docs", openDocsPage);
+  if (!client.state?.roles) go("docs", "Go to Docs", openDocsPage);
   return out;
 }
 
@@ -400,7 +400,7 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
   // every keystroke), for "Open Doc: TITLE".
   const [docs, setDocs] = useState<DocRow[]>([]);
   useEffect(() => {
-    if (!client.flag("docs") || client.state?.roles) return;
+    if (client.state?.roles) return;
     let live = true;
     client
       .request(OPS["docs.list"].method, opPath("docs.list"))

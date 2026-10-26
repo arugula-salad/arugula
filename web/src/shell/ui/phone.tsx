@@ -307,7 +307,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                       Agents
                     </button>
                   )}
-                  {owner && client.flag("docs") && (
+                  {owner && (
                     <button data-open-docs onClick={act(() => openDocsPage())}>
                       Docs
                     </button>

@@ -43,10 +43,8 @@
 //! a URL. The state gains `shared: {made, updated} | null` and nothing more:
 //! the key is in `<state>/doc-links.json`, never here.
 //!
-//! The Doc is Labs' while `docs` is a flag, but its code is core: it checks
-//! the flag itself when made ([`DocKind`]), and a restored one comes back
-//! with the flag off (#347: turning a flag off hides and refuses, it
-//! doesn't throw away).
+//! Docs left Labs (native #204): no flag gates them, and sharing is still
+//! only ever the owner's tap or the card an agent's `share` raises.
 
 mod ask;
 mod assets;
@@ -88,9 +86,6 @@ pub struct DocKind;
 
 impl BlockKind for DocKind {
     fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
-        if !ctx.restoring {
-            arugula_mux::labs::flag(&ctx.state_dir, arugula_proto::flags::DOCS)?;
-        }
         let config: Config = serde_json::from_value(config).map_err(|e| format!("doc config: {e}"))?;
         let id = match config.doc {
             Some(id) => id,
@@ -482,7 +477,6 @@ impl Doc {
 
     /// `doc_share` and `doc_share_update`: the URL.
     async fn share(&self, update: bool) -> Result<Value, String> {
-        arugula_mux::labs::flag(&self.link.state_dir, arugula_proto::flags::DOCS)?;
         let _one = self.shares.lock().await;
         self.share_held(update).await
     }
@@ -507,7 +501,6 @@ impl Doc {
     /// `doc_shares`: this Doc's URL again, or that it has none (and whether
     /// it could have).
     async fn shares(&self) -> Result<Value, String> {
-        arugula_mux::labs::flag(&self.link.state_dir, arugula_proto::flags::DOCS)?;
         let _one = self.shares.lock().await;
         let got = match self.link.shares().await {
             Ok(Some(s)) => {
@@ -526,7 +519,6 @@ impl Doc {
 
     /// `doc_unshare`: with an `id`, only if that is this Doc's link.
     async fn unshare(&self, id: Option<String>) -> Result<Value, String> {
-        arugula_mux::labs::flag(&self.link.state_dir, arugula_proto::flags::DOCS)?;
         let _one = self.shares.lock().await;
         if let Some(id) = &id
             && self.link.current().is_none_or(|(mine, _)| mine != *id)
@@ -1062,23 +1054,12 @@ mod tests {
         (BlockCtx::new(7, dir, base, None, restoring, Default::default(), Default::default()), seen, sent)
     }
 
-    /// Made only where the machine has `docs` on; brought back whatever the
-    /// flag says (#347).
+    /// Made anywhere (native #204: Docs left Labs), and brought back.
     #[tokio::test]
-    async fn the_kind_is_made_with_the_flag_on_and_restored_without_it() {
+    async fn the_kind_is_made_and_restored() {
         let state = temp("kind");
         let config = json!({ "title": "Report" });
-        let (new, _seen) = ctx(&state, false);
-        let refused = DocKind.create(new, config.clone());
-        // A build without Labs has no flags to be off (`labs::flag`).
-        if crate::labs::BUILT {
-            let e = refused.err().expect("refused while the flag is off");
-            assert!(e.contains("arugulad flags docs on"), "{e}");
-        }
-        arugula_proto::flags::set(&state, arugula_proto::flags::DOCS, true).unwrap();
-        // A refusal made no Doc; without Labs there is no flag to refuse it.
         let kept = library::list(&state).len();
-        assert_eq!(kept, usize::from(!crate::labs::BUILT));
         let (new, _seen) = ctx(&state, false);
         let made = DocKind.create(new, config.clone()).unwrap();
         assert_eq!(made.kind(), BlockType::Doc);
@@ -1087,10 +1068,9 @@ mod tests {
         let listed = library::list(&state);
         assert_eq!(listed.len(), kept + 1);
         assert!(listed.iter().any(|m| m.id == doc));
-        arugula_proto::flags::set(&state, arugula_proto::flags::DOCS, false).unwrap();
         let (back, _seen) = ctx(&state, true);
         let back = DocKind.create(back, json!({ "doc": doc, "title": "Report" })).unwrap();
-        assert_eq!(back.kind(), BlockType::Doc, "restored with it off");
+        assert_eq!(back.kind(), BlockType::Doc, "restored");
         assert_eq!(back.config()["doc"], doc.as_str());
         // A saved block with no Doc is from before the library: the
         // migration gives it one, and until it has, the block says so.
@@ -1106,7 +1086,6 @@ mod tests {
     #[tokio::test]
     async fn a_restored_ask_is_raised_only_within_its_day() {
         let state = temp("restore-ask");
-        arugula_proto::flags::set(&state, arugula_proto::flags::DOCS, true).unwrap();
         let asks = |mut sent: tokio::sync::mpsc::UnboundedReceiver<crate::mux::Cmd>| {
             let mut n = 0;
             while let Ok(c) = sent.try_recv() {
@@ -1415,13 +1394,12 @@ mod share_tests {
         (doc, pushes)
     }
 
-    /// A Doc with an outline, two sections (one with a picture) and `docs` on.
+    /// A Doc with an outline and two sections (one with a picture).
     async fn setup(name: &str) -> Setup {
         let dir = temp(name);
         let fake = Fake::new();
         let (doc, _) = at(&dir, Some(fake.clone()), false);
         let state_dir = dir.join("state");
-        arugula_proto::flags::set(&state_dir, "docs", true).unwrap();
         doc.call(
             "doc_outline",
             json!({ "title": "Plan", "sections": [
@@ -1709,7 +1687,6 @@ mod share_tests {
     async fn no_control_or_a_control_without_doc_links_says_what_to_do() {
         let dir = temp("nocontrol");
         let (doc, _) = at(&dir, None, false);
-        arugula_proto::flags::set(&dir.join("state"), "docs", true).unwrap();
         doc.call("doc_outline", json!({ "title": "T", "sections": [{ "heading": "H" }] })).await.unwrap();
         for m in ["doc_share"] {
             assert_eq!(
@@ -1728,22 +1705,6 @@ mod share_tests {
         let r = s.doc.call("doc_shares", json!({})).await.unwrap();
         assert_eq!(r["why"], "this control can't keep shared Docs yet");
         assert!(s.fake.paths().is_empty(), "nothing was sent");
-    }
-
-    /// A build without Labs has no flags to turn off.
-    #[cfg(feature = "labs")]
-    #[tokio::test]
-    async fn the_docs_flag_gates_every_method() {
-        let s = setup("flag").await;
-        s.doc.call("doc_share", json!({})).await.unwrap();
-        let before = s.fake.paths().len();
-        arugula_proto::flags::set(&s.state_dir, "docs", false).unwrap();
-        for m in ["doc_share", "doc_share_update", "doc_unshare", "doc_shares"] {
-            let e = s.doc.call(m, json!({})).await.unwrap_err();
-            assert!(e.contains("Labs feature that's off"), "{m}: {e}");
-        }
-        assert_eq!(s.fake.paths().len(), before, "nothing reached control");
-        assert!(s.doc.state()["shared"].is_object(), "off hides and refuses; it doesn't unshare");
     }
 
     #[tokio::test]

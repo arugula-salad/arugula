@@ -89,12 +89,11 @@ pub const GUEST_SSH: &str = "guest-ssh";
 pub const FORGES: &str = "forges";
 /// Agent recipes offered from this machine, and the team's agent catalog.
 pub const AGENTS: &str = "agents";
-/// Doc blocks: a document an agent builds beside its pane.
-pub const DOCS: &str = "docs";
 
-/// What an agent is told where `docs` is on (#1486), in one wording: the
-/// MCP server's instructions carry it, and so does the context
-/// `arugula hook` adds on `SessionStart`. Claude Code's own Artifact tool
+/// What every agent is told about Docs (#1486), in one wording: the MCP
+/// server's instructions carry it, and so does the context `arugula hook`
+/// adds on `SessionStart`. Docs have no flag since they left Labs (native
+/// #204), so neither does this. Claude Code's own Artifact tool
 /// invites it to publish anything meant for other people, so this names the
 /// competitor. The plugin's skill says the same in its voice.
 pub const DOCS_STEERING: &str = "In Arugula, a report, plan or write-up longer than a screen goes in a Doc (the arugula `doc` tool), not an Artifact or another tool's page: the user watches it fill in beside your pane. When they want to show it to someone, ask with `doc share`: the user decides, and you get the link back.";
@@ -145,7 +144,6 @@ pub const FLAGS: &[Flag] = &[
         "Agent catalog",
         "Offer Claude Code subagents from this machine, and see the ones your team offers.",
     ),
-    row(DOCS, "Docs", "Agents build documents in a block beside their pane."),
 ];
 
 /// Flags that were, and why they aren't: a feature that left Labs. A file
@@ -160,6 +158,9 @@ pub const RETIRED: &[(&str, &str)] = &[
     ("huddles", "Huddles (voice calls on a session) were removed from Arugula"),
     // Graduated, not removed: every swarm offers its four views now.
     ("swarm-themes", "The swarm's views are no longer in Labs: every swarm offers them under Theme"),
+    // Graduated (native #204): Doc blocks, the doc tool and the Docs page.
+    // Sharing one is still the owner's tap, or a card that asks them.
+    ("docs", "Docs are no longer in Labs: every machine has Doc blocks, the doc tool and the Docs page"),
     // Never a flag, but the name it would have now.
     (
         "managoat",

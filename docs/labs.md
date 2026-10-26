@@ -28,7 +28,6 @@ Each feature has a flag, off on a new install:
 | `guest-ssh` | *Invite over ssh…* for a guest with only OpenSSH |
 | `forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on) |
 | `agents` | Offering Claude Code subagents from this machine as A2A agents, and the team's agent catalog (#403) |
-| `docs` | Doc blocks: a report, plan or write-up an agent builds beside its pane, section by section (#962), kept in a library you can list and reopen (#1492) |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
 `arugula --help` and `arugulad --help`. Without it they aren't offered, and
@@ -49,7 +48,6 @@ one isn't made.
 | `guest-ssh` | `/api/guests` (list, invite, revoke) |
 | `forges` | Forgejo and GitLab blocks and webhooks |
 | `agents` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
-| `docs` | new Doc blocks, the `doc` tool by name, and the Doc library's `/api/docs…` (list, open, delete) |
 
 ```
 arugulad flags                # the flags, and which are on
@@ -111,6 +109,10 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
   apps, *Open as workspace*, *Invite over ssh…*, threads and chat.
   The swarm's city, hive and timeline views left Labs (2026-10-26): every
   swarm offers them under *Theme*, and `swarm-themes` is a retired flag.
+  Docs left Labs the same day (native #204): Doc blocks, the `doc` tool,
+  the Docs page and the Doc library's `/api/docs…` are on every machine,
+  and `docs` is a retired flag. Sharing a Doc is still the owner's tap, or
+  a card that asks them when an agent's `doc share` wants it.
 - **Machines (VMs).** A *machine* (`--machine mN`, `mN:PATH`, `--machine
   local`, MCP `run`'s `machine`) is a VM or sandbox from the provider
   (`crates/mux/src/labs/machine.rs`). Examples that use them: `arugula open
