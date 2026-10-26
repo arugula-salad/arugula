@@ -4421,8 +4421,10 @@ button.att {
   white-space: nowrap;
 }
 
-/* Room for the pane's grip. */
-.app:not(.phone) .review-bar {
+/* Room for the pane's grip, at the top right of the pane: every block's
+   bar ends short of it (UI audit #177 made them one fixed-height row, so
+   a full bar's last items ran under it and the grip took their clicks). */
+.app:not(.phone) :is(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) {
   padding-right: 28px;
 }
 
@@ -4801,11 +4803,18 @@ button.diff-why-run {
   color: var(--dim);
 }
 
+/* In a narrow pane the bar's middle gives way, cut short, rather than
+   pushing its buttons out of the row. */
 .ws-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
 }
 
 .ws-env {
+  min-width: 0;
+  max-width: 14em;
   background: var(--raised);
   color: var(--fg);
   border: 0;
