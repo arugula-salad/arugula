@@ -187,7 +187,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   min-width: 70px;
   padding: 0 4px 0 12px;
   color: var(--dim);
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--card-radius) var(--card-radius) 0 0;
   margin-top: 4px;
   cursor: default;
   touch-action: none;
@@ -212,7 +212,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .tab-close {
   width: 20px;
   height: 20px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   opacity: 0;
   line-height: 1;
 }
@@ -232,7 +232,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   width: 24px;
   font-size: 10px;
   color: var(--dim);
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   margin: 4px 0 0;
 }
 
@@ -244,7 +244,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   width: 32px;
   font-size: 18px;
   color: var(--dim);
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   margin: 4px 0 0;
 }
 
@@ -262,8 +262,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   height: 24px;
   margin: 0 6px;
   padding: 0 4px 0 10px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--btn-radius);
   background: var(--bg);
   color: var(--dim);
   white-space: nowrap;
@@ -276,7 +276,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .commands-button kbd {
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   background: var(--raised);
   font: 11px system-ui, sans-serif;
 }
@@ -296,7 +296,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   gap: 6px;
   padding: 0 10px;
   white-space: nowrap;
-  border-left: 1px solid var(--divider);
+  border-left: 1px solid var(--line);
 }
 
 .account-button:hover {
@@ -352,7 +352,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   outline: none;
 }
 
@@ -453,7 +453,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-size: 14px;
   color: var(--dim);
   background: var(--raised);
-  border-radius: 0 0 0 6px;
+  border-radius: 0 0 0 var(--field-radius);
   opacity: 0;
   cursor: grab;
   touch-action: none;
@@ -511,7 +511,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   outline: 2px solid var(--accent);
   outline-offset: -2px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
 }
 
 .drag-ghost {
@@ -520,7 +520,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   pointer-events: none;
   padding: 4px 10px;
   background: var(--raised);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   box-shadow: var(--shadow-md);
   max-width: 240px;
   overflow: hidden;
@@ -538,9 +538,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   align-items: center;
   gap: 10px;
   padding: 6px 6px 6px 12px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   box-shadow: var(--shadow-md);
   color: var(--dim);
   font-size: 12px;
@@ -549,7 +549,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .sized-elsewhere button {
   padding: 4px 10px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   background: var(--accent);
   color: var(--on-color);
   font-weight: 600;
@@ -624,7 +624,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   max-width: min(460px, calc(100vw - 8px));
   padding: 4px;
   background: var(--raised);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
@@ -640,7 +640,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .menu-item {
   text-align: left;
   padding: 6px 10px;
-  border-radius: 5px;
+  border-radius: var(--field-radius);
   white-space: pre;
   /* Cut short in a narrow window rather than run off it (UI audit #175). */
   overflow: hidden;
@@ -718,7 +718,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   right: 8px;
   z-index: 60;
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   background: var(--raised);
   font-size: 12px;
   pointer-events: none;
@@ -789,7 +789,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   min-height: 44px;
   padding: 0 12px;
   text-align: left;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   color: var(--fg);
 }
 
@@ -829,7 +829,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   flex: none;
   min-height: 36px;
   padding: 0 14px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--accent);
   color: var(--on-color);
   font-weight: 600;
@@ -849,7 +849,7 @@ button.att {
 .sheet-card {
   border-radius: var(--card-radius);
   background: var(--bg);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   padding: 2px 4px;
 }
 
@@ -858,7 +858,7 @@ button.att {
 }
 
 .sheet-session.here {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--divider));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
 }
 
 .sheet-session-head {
@@ -868,7 +868,7 @@ button.att {
   width: 100%;
   min-height: 44px;
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   text-align: left;
   font-weight: 700;
 }
@@ -894,8 +894,8 @@ button.att {
   min-height: 38px;
   font-size: 14px;
   color: var(--dim);
-  border-left: 2px solid var(--divider);
-  border-radius: 0 8px 8px 0;
+  border-left: 2px solid var(--line);
+  border-radius: 0 var(--card-radius) var(--card-radius) 0;
 }
 
 .pane-number {
@@ -931,7 +931,7 @@ button.att {
 .sheet-actions button {
   min-height: 44px;
   padding: 0 12px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--raised);
   text-align: center;
 }
@@ -968,7 +968,7 @@ button.att {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--panel-radius);
   background: var(--raised);
   box-shadow: var(--shadow-md);
   font-size: 13px;
@@ -1014,7 +1014,7 @@ button.att {
   flex: 1 0 auto;
   min-width: 40px;
   min-height: 38px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   background: var(--raised);
   touch-action: manipulation;
 }
@@ -1032,7 +1032,7 @@ button.att {
   right: 12px;
   bottom: 12px;
   padding: 6px 14px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--accent);
   color: var(--on-color);
   font-weight: 600;
@@ -1055,7 +1055,7 @@ button.att {
 .prompt {
   width: min(440px, calc(100vw - 32px));
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--panel-radius);
   background: var(--raised);
   box-shadow: var(--shadow-lg);
 }
@@ -1104,7 +1104,7 @@ button.att {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
 }
 
 .prompt-choices button:hover,
@@ -1136,7 +1136,7 @@ button.att {
   word-break: break-all;
   font-size: 12px;
   background: var(--bg);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .deploy-approve .deploy-hash code {
@@ -1206,7 +1206,7 @@ button.att {
   left: 50%;
   transform: translateX(-50%);
   padding: 2px 10px;
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   font-size: 11px;
   font-weight: 600;
   pointer-events: none;
@@ -1234,7 +1234,7 @@ button.att {
   right: 6px;
   bottom: 4px;
   padding: 1px 7px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -1256,7 +1256,7 @@ button.att {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding: 1px 7px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   font-size: 10px;
   font-weight: 600;
   pointer-events: auto;
@@ -1282,7 +1282,7 @@ button.att {
 .host-tag {
   margin-right: 5px;
   padding: 0 4px;
-  border-radius: 3px;
+  border-radius: var(--tag-radius);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -1339,7 +1339,7 @@ button.att {
   right: 6px;
   bottom: 4px;
   padding: 1px 7px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -1390,7 +1390,7 @@ button.att {
   align-items: center;
   padding: 4px;
   background: var(--surface);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .browser-bar button,
@@ -1398,7 +1398,7 @@ button.att {
   min-width: 28px;
   height: 26px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   background: var(--raised);
   color: var(--fg);
   text-decoration: none;
@@ -1419,7 +1419,7 @@ button.att {
   width: 100%;
   height: 26px;
   padding: 0 8px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--letterbox);
   color: var(--fg);
@@ -1489,7 +1489,7 @@ button.att {
   padding: 4px 8px;
   font-size: 12px;
   color: var(--dim);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 /* ---- hosts (M4a): which daemon this window shows */
@@ -1498,7 +1498,7 @@ button.att {
   padding: 0 10px;
   white-space: nowrap;
   color: var(--info);
-  border-right: 1px solid var(--divider);
+  border-right: 1px solid var(--line);
 }
 
 .host-button:hover {
@@ -1512,13 +1512,13 @@ button.att {
   padding: 0 10px;
   white-space: nowrap;
   color: var(--dim);
-  border-right: 1px solid var(--divider);
+  border-right: 1px solid var(--line);
 }
 
 .host-crumb {
   margin-right: 6px;
   padding: 0 5px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   color: var(--info);
   border: 1px solid var(--info)66;
 }
@@ -1534,7 +1534,7 @@ button.att {
 
 .host-picker button {
   padding: 6px 14px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--raised);
 }
 
@@ -1558,13 +1558,13 @@ button.att {
   align-items: center;
   padding: 5px 8px;
   background: var(--surface);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
 
 .agent-bar button {
   padding: 3px 10px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   background: var(--raised);
 }
 
@@ -1587,7 +1587,7 @@ button.att {
   align-items: center;
   padding: 4px 8px;
   background: var(--surface);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   font-size: 12px;
 }
 
@@ -1606,7 +1606,7 @@ button.att {
 
 .agent-status {
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   font-size: 11px;
   font-weight: 600;
   background: var(--raised);
@@ -1638,7 +1638,7 @@ button.att {
   align-self: flex-end;
   max-width: 85%;
   padding: 7px 11px;
-  border-radius: 12px 12px 2px 12px;
+  border-radius: var(--panel-radius) var(--panel-radius) 2px var(--panel-radius);
   background: color-mix(in srgb, var(--accent) 22%, var(--raised));
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1671,7 +1671,7 @@ button.att {
 
 /* #79: turns Continue won't remember, folded and dimmed. */
 .agent-forgotten {
-  border-left: 2px dashed var(--divider);
+  border-left: 2px dashed var(--line);
   padding-left: 8px;
 }
 
@@ -1698,9 +1698,9 @@ button.att {
 
 .agent-tool {
   flex-shrink: 0;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-left: 3px solid var(--dim);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--surface);
   overflow: hidden;
 }
@@ -1779,7 +1779,7 @@ button.att {
   margin: 0 8px 8px;
   padding: 10px 12px;
   border: 1px solid var(--accent);
-  border-radius: 10px;
+  border-radius: var(--panel-radius);
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
   /* #421: a card taller than the pane scrolls, so its buttons are reachable. */
   flex-shrink: 0;
@@ -1794,7 +1794,7 @@ button.att {
 .agent-perm-cmd {
   margin: 6px 0 10px;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   font: 12px ui-monospace, monospace;
   white-space: pre-wrap;
@@ -1824,7 +1824,7 @@ button.att {
   gap: 8px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--raised);
+  border-top: 1px solid var(--line);
 }
 
 .agent-perm-standing label {
@@ -1867,7 +1867,7 @@ button.att {
   align-items: center;
   justify-content: space-between;
   padding: 6px 0;
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
 }
 
 .rules-list .rule-text {
@@ -1943,7 +1943,7 @@ button.att {
 .agent-error {
   margin: 0 8px 8px;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--danger)22;
   color: var(--danger);
 }
@@ -1954,7 +1954,7 @@ button.att {
   gap: 6px;
   align-items: flex-end;
   padding: 6px 8px 8px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
   background: var(--surface);
 }
 
@@ -1968,7 +1968,7 @@ button.att {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   outline: none;
   field-sizing: content;
 }
@@ -2004,7 +2004,7 @@ button.att {
   align-items: center;
   height: 56px;
   max-width: 160px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--raised);
   overflow: hidden;
 }
@@ -2052,7 +2052,7 @@ button.att {
   display: block;
   max-width: min(240px, 100%);
   max-height: 180px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .agent-image.missing {
@@ -2138,8 +2138,8 @@ button.att {
   font-size: 12px;
   color: var(--fg);
   background: var(--bg);
-  border: 1px solid var(--divider);
-  border-radius: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
 }
 
 .chat-block .agent-composer {
@@ -2224,7 +2224,7 @@ button.att {
   width: min(560px, calc(100vw - 32px));
   height: min(520px, 70vh);
   padding: 14px;
-  border-radius: 12px;
+  border-radius: var(--panel-radius);
   background: var(--raised);
   box-shadow: var(--shadow-lg);
   box-sizing: border-box;
@@ -2263,7 +2263,7 @@ button.att {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   outline: none;
 }
 
@@ -2276,7 +2276,7 @@ button.att {
   padding: 0;
   list-style: none;
   overflow-y: auto;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--surface);
 }
 
@@ -2332,7 +2332,7 @@ button.att {
 
 .picker-actions button {
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
 }
 
 .picker-target {
@@ -2453,7 +2453,7 @@ button.att {
   margin: 0 8px 8px;
   padding: 10px 12px;
   border: 1px solid var(--accent);
-  border-radius: 10px;
+  border-radius: var(--panel-radius);
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
   display: flex;
   flex-direction: column;
@@ -2483,7 +2483,7 @@ button.att {
 
 .ask-header {
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   background: var(--raised);
   color: var(--dim);
   font-size: 11px;
@@ -2512,7 +2512,7 @@ button.att {
   min-height: 40px;
   padding: 8px 12px;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--raised);
   text-align: left;
   cursor: pointer;
@@ -2547,7 +2547,7 @@ button.att {
 .ask-preview {
   margin: 6px 0 0;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   font: 12px/1.3 ui-monospace, monospace;
   white-space: pre;
@@ -2598,7 +2598,7 @@ button.att {
 
 .ask-url {
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   font: 12px ui-monospace, monospace;
   overflow-wrap: anywhere;
@@ -2629,7 +2629,7 @@ button.att {
   bottom: 8px;
   max-height: calc(100% - 16px);
   overflow-y: auto;
-  border-radius: 10px;
+  border-radius: var(--panel-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
 }
@@ -2659,7 +2659,7 @@ button.att {
   right: 12px;
   bottom: 12px;
   padding: 8px 14px;
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   background: var(--accent);
   color: var(--on-color);
   font-weight: 600;
@@ -2697,7 +2697,7 @@ button.att {
   align-self: stretch;
   margin-bottom: 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   line-height: 1.45;
 }
 
@@ -2831,7 +2831,7 @@ button.att {
   width: 28px;
   height: 28px;
   margin: -6px -6px 0 8px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   font-size: 18px;
   line-height: 1;
   color: var(--dim);
@@ -2883,7 +2883,7 @@ button.att {
   bottom: 16px;
   width: min(380px, calc(100vw - 32px));
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--panel-radius);
   background: var(--raised);
   box-shadow: var(--shadow-lg);
 }
@@ -2912,7 +2912,7 @@ button.att {
   overflow: auto;
   margin: 8px 0 0;
   padding: 8px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--surface);
   font: 11px/1.4 ui-monospace, monospace;
   white-space: pre;
@@ -2955,7 +2955,7 @@ button.att {
 .control-cmd {
   margin: 8px 0;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   font: 13px ui-monospace, monospace;
   white-space: pre-wrap;
@@ -3107,7 +3107,7 @@ button.att {
   gap: 12px;
   margin-top: 14px;
   padding-top: 10px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .team-lock p {
@@ -3129,7 +3129,7 @@ button.att {
   align-items: center;
   gap: 10px;
   padding: 6px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 @media (max-width: 700px) {
@@ -3228,7 +3228,7 @@ button.att {
 .control-badge {
   margin-left: 6px;
   padding: 0 5px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   font-size: 11px;
   background: var(--raised);
 }
@@ -3270,7 +3270,7 @@ button.att {
 
 .control-both-card {
   padding: 8px 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   min-width: 0;
   overflow-wrap: anywhere;
@@ -3285,7 +3285,7 @@ button.att {
 .control-aside {
   margin-top: 14px;
   padding: 8px 12px;
-  border-left: 2px solid var(--divider);
+  border-left: 2px solid var(--line);
   color: var(--dim);
 }
 
@@ -3299,7 +3299,7 @@ button.att {
   height: min(220px, 60vw, 32vh);
   flex: none;
   margin: 8px 0;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .control-steps {
@@ -3326,7 +3326,7 @@ button.att {
 .host-path {
   margin-left: 6px;
   padding: 0 5px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   font-size: 11px;
   color: var(--dim);
   background: var(--raised);
@@ -3365,7 +3365,7 @@ button.att {
 .copy-button {
   flex: none;
   padding: 4px 10px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   background: var(--raised-hover);
   font-size: 12px;
 }
@@ -3444,7 +3444,7 @@ button.att {
 .pane-person,
 .pane-driver {
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   font: 600 11px system-ui, sans-serif;
   color: var(--on-color);
   background: var(--who, var(--accent));
@@ -3457,7 +3457,7 @@ button.att {
 
 .pane-take {
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   font: 600 11px system-ui, sans-serif;
   color: var(--on-color);
   background: var(--accent);
@@ -3590,7 +3590,7 @@ button.att {
   align-items: center;
   gap: 4px 14px;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .control-who {
@@ -3601,7 +3601,7 @@ button.att {
 .control-account .account-button {
   height: 32px;
   border-left: 0;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
 }
 
 .control-steps {
@@ -3617,7 +3617,7 @@ button.att {
 
 .control-asked {
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--raised);
 }
 
@@ -3643,7 +3643,7 @@ button.att {
   left: 8px;
   right: 8px;
   bottom: 8px;
-  border-radius: 10px;
+  border-radius: var(--panel-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
   padding-bottom: 8px;
@@ -3813,7 +3813,7 @@ button.att {
 .swarm-seg {
   display: flex;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   background: var(--panel);
   padding: 3px;
 }
@@ -3823,7 +3823,7 @@ button.att {
   border: 0;
   background: none;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   font: 500 12px/1 var(--f-ui);
   color: var(--mute);
 }
@@ -3846,7 +3846,7 @@ button.att {
   border: 1px solid var(--line);
   background: var(--panel);
   padding: 7px 12px;
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   font: 500 12px/1 var(--f-mono);
 }
 .swarm-notice {
@@ -3907,7 +3907,7 @@ button.att {
   max-width: 720px;
   padding: 8px 8px 8px 14px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--panel-radius);
   background: var(--panel);
   font: 500 13px/1.4 var(--f-ui);
   color: var(--ink);
@@ -3922,7 +3922,7 @@ button.att {
   max-width: 380px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   padding: 8px 12px;
 }
 .swarm-key summary {
@@ -4055,7 +4055,7 @@ button.att {
   font: 700 12px/1 var(--f-mono);
   color: var(--void);
   background: var(--c);
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   padding: 3px 7px;
 }
 .swarm-card .cm {
@@ -4085,7 +4085,7 @@ button.att {
   font: 500 12px/1 var(--f-mono);
   background: rgba(255, 255, 255, 0.06);
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--tag-radius);
 }
 .swarm-card .ca {
   display: flex;
@@ -4137,7 +4137,7 @@ button.att {
   pointer-events: none;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   padding: 8px 10px;
   backdrop-filter: blur(6px);
 }
@@ -4274,7 +4274,7 @@ button.att {
   color: var(--fg);
   background: var(--surface);
   border: 1px solid var(--raised-hover);
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   resize: vertical;
 }
 
@@ -4295,7 +4295,7 @@ button.att {
   color: var(--fg);
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
@@ -4304,7 +4304,7 @@ button.att {
   align-items: center;
   gap: 14px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
   background: var(--surface);
   min-width: 0;
 }
@@ -4348,7 +4348,7 @@ button.att {
   padding: 4px 12px;
   font-size: 12px;
   color: var(--mute);
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
 }
 .follow-note.paused {
   color: var(--warn);
@@ -4393,7 +4393,7 @@ button.att {
   padding: 4px 8px;
   min-height: 34px;
   background: var(--surface);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -4407,7 +4407,7 @@ button.att {
   min-width: 28px;
   height: 26px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   background: var(--raised);
   color: var(--fg);
 }
@@ -4467,7 +4467,7 @@ button.att {
 }
 
 .diff-file {
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .diff-file-head {
@@ -4499,7 +4499,7 @@ button.att {
 .diff-st {
   width: 1.4em;
   text-align: center;
-  border-radius: 3px;
+  border-radius: var(--tag-radius);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-weight: 700;
   color: var(--warn);
@@ -4547,7 +4547,7 @@ button.att {
   gap: 2px 10px;
   padding: 3px 8px;
   font: 12px/1.4 system-ui, sans-serif;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
 
@@ -4727,7 +4727,7 @@ button.diff-why-run {
 .conv-source {
   flex: none;
   padding: 0 5px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   font-size: 11px;
   color: var(--dim);
   border: 1px solid var(--raised-hover);
@@ -4786,14 +4786,14 @@ button.diff-why-run {
   background: var(--raised);
   color: var(--fg);
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   font-size: 12px;
   height: 26px;
 }
 
 .ws-gates {
   border: 1px solid var(--accent);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   padding: 8px 10px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
@@ -4807,7 +4807,7 @@ button.diff-why-run {
 }
 
 .ws-gate + .ws-gate {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .ws-gate-what {
@@ -4846,7 +4846,7 @@ button.diff-why-run {
 .ws-why {
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -4896,7 +4896,7 @@ button.diff-why-run {
 
 .ws-card {
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
   padding: 8px 10px;
   display: flex;
@@ -5098,8 +5098,8 @@ button.diff-why-run {
 .forge-chips .ws-tag {
   font-size: 12px;
   padding: 2px 9px;
-  border-radius: 11px;
-  border: 1px solid var(--divider);
+  border-radius: var(--chip-radius);
+  border: 1px solid var(--line);
   background: var(--surface);
   color: var(--fg);
 }
@@ -5154,7 +5154,7 @@ button.diff-why-run {
   }
 
   .forge-two > .forge-side {
-    border-left: 1px solid var(--divider);
+    border-left: 1px solid var(--line);
     padding-left: 18px;
   }
 }
@@ -5163,7 +5163,7 @@ button.diff-why-run {
   font-size: 12px;
   margin: 3px 0 0 12px;
   padding-left: 8px;
-  border-left: 2px solid var(--divider);
+  border-left: 2px solid var(--line);
   overflow-wrap: anywhere;
 }
 
@@ -5203,7 +5203,7 @@ button.diff-why-run {
   gap: 6px 12px;
   margin: 0 -12px -14px;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
   background: var(--bg);
 }
 
@@ -5254,13 +5254,13 @@ button.diff-why-run {
 }
 
 .doc-body {
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .doc-pending {
   padding: 8px 10px;
-  border: 1px dashed var(--divider);
-  border-radius: 6px;
+  border: 1px dashed var(--line);
+  border-radius: var(--field-radius);
   color: var(--dim);
   font-size: 13px;
 }
@@ -5365,13 +5365,13 @@ button.diff-why-run {
   font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
   background: var(--raised);
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--tag-radius);
 }
 
 .md pre {
   background: var(--surface);
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   padding: 8px 10px;
   overflow-x: auto;
   font: 11.5px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
@@ -5389,7 +5389,7 @@ button.diff-why-run {
 
 .md hr {
   border: 0;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
   margin: 1em 0;
 }
 
@@ -5405,7 +5405,7 @@ button.diff-why-run {
 
 .md th,
 .md td {
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   padding: 3px 8px;
   text-align: left;
 }
@@ -5414,8 +5414,8 @@ button.diff-why-run {
 .md details {
   margin: 0 0 0.7em;
   padding: 4px 10px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
 }
 
 .md summary {
@@ -5456,7 +5456,7 @@ button.diff-why-run {
   height: auto;
   margin: 0 0 0.7em;
   background: #fff;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 /* A picture the agent saved (#965): as wide as it is, no wider than the page. */
@@ -5464,7 +5464,7 @@ button.diff-why-run {
   max-width: 100%;
   height: auto;
   vertical-align: middle;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .md .doc-image-wait,
@@ -5527,7 +5527,7 @@ button.diff-why-run {
 }
 
 .forge-draft + .forge-draft {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .forge-want {
@@ -5553,7 +5553,7 @@ button.diff-why-run {
   color: var(--ink);
   font: 14px/1.45 var(--f-ui);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--panel-radius);
   box-shadow: 0 24px 80px #000c;
   overflow: hidden;
   outline: none;
@@ -5595,7 +5595,7 @@ button.diff-why-run {
 .start-x {
   border: 1px solid var(--line);
   background: var(--panel);
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   width: 30px;
   height: 30px;
   color: var(--mute) !important;
@@ -5612,7 +5612,7 @@ button.diff-why-run {
   padding: 3px;
   list-style: none;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   background: var(--panel);
   overflow-x: auto;
   scrollbar-width: none;
@@ -5627,7 +5627,7 @@ button.diff-why-run {
   border: 0;
   background: none;
   padding: 7px 10px;
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   font: 500 11px/1 var(--f-mono) !important;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -5738,7 +5738,7 @@ button.diff-why-run {
   padding: 2px 5px;
   border: 1px solid var(--line);
   border-bottom-width: 2px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   background: #0c1019;
 }
 
@@ -5756,7 +5756,7 @@ button.diff-why-run {
   gap: 10px;
   padding: 9px 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--panel);
   font: 500 13px/1.3 var(--f-mono);
   color: var(--mute);
@@ -5803,7 +5803,7 @@ button.diff-why-run {
   padding: 10px 12px;
   border: 1px solid rgba(255, 84, 104, 0.4);
   border-left: 3px solid var(--s-fail);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: rgba(255, 84, 104, 0.06);
 }
 
@@ -5817,7 +5817,7 @@ button.diff-why-run {
   padding: 12px;
   border: 1px solid var(--line);
   border-left: 3px solid rgb(185, 140, 255);
-  border-radius: 10px;
+  border-radius: var(--panel-radius);
   background: var(--panel);
 }
 
@@ -5834,7 +5834,7 @@ button.diff-why-run {
   margin: 14px 0;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--panel-radius);
   background: var(--panel);
 }
 
@@ -5842,7 +5842,7 @@ button.diff-why-run {
   flex: none;
   width: 132px;
   height: 132px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   shape-rendering: crispEdges;
 }
 
@@ -5850,7 +5850,7 @@ button.diff-why-run {
   margin: 16px 0;
   padding: 18px;
   border: 1px solid rgba(185, 140, 255, 0.35);
-  border-radius: 12px;
+  border-radius: var(--panel-radius);
   background: rgba(185, 140, 255, 0.05);
   text-align: center;
 }
@@ -5924,7 +5924,7 @@ button.diff-why-run {
   transform: translateX(-50%);
   padding: 10px 16px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   background: var(--void);
   color: var(--ink);
   font: 500 12px/1 var(--f-mono);
@@ -5979,7 +5979,7 @@ button.diff-why-run {
 
 .adapter-install button {
   padding: 4px 12px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   background: var(--accent);
   color: var(--on-color);
   font-weight: 600;
@@ -6009,7 +6009,7 @@ button.diff-why-run {
   align-items: center;
   gap: 2px;
   padding-left: 8px;
-  border-left: 1px solid var(--divider);
+  border-left: 1px solid var(--line);
 }
 
 /* Recipes and Team are the Agents page's own tabs, not more places: small,
@@ -6072,7 +6072,7 @@ button.diff-why-run {
   margin: 0 8px 16px;
   padding: 16px 18px;
   border: 1px dashed var(--raised-hover);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   line-height: 1.5;
 }
 
@@ -6144,7 +6144,7 @@ button.diff-why-run {
   padding: 10px 12px;
   border-radius: var(--card-radius);
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
 }
 
 /* What went wrong on the Agents and Docs pages, the same red. */
@@ -6181,7 +6181,7 @@ button.diff-why-run {
   gap: 12px;
   margin: 0 12px;
   padding: 8px 4px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 /* Cleared while the pointer was over the list: held in place, faded. */
@@ -6280,9 +6280,9 @@ button.diff-why-run {
   margin: 0 8px 16px;
   padding: 12px 14px;
   max-width: 760px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   text-align: left;
 }
 
@@ -6317,7 +6317,7 @@ button.diff-why-run {
   box-sizing: border-box;
   padding: 4px 8px;
   border-radius: var(--field-radius);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   background: var(--bg);
   color: var(--fg);
 }
@@ -6414,7 +6414,7 @@ button.diff-why-run {
   padding: 8px 10px;
   border-radius: var(--card-radius);
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   min-width: 0;
 }
 
@@ -6441,7 +6441,7 @@ button.diff-why-run {
 }
 
 .worn-mcp {
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
 }
 
 .offer-actions {
@@ -6494,7 +6494,7 @@ button.diff-why-run {
   width: min(420px, calc(100vw - 16px));
   padding: 10px 12px;
   background: var(--raised);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   box-shadow: var(--shadow-lg);
   line-height: 1.45;
 }
@@ -6516,14 +6516,14 @@ button.diff-why-run {
 
 .update-actions button {
   padding: 4px 10px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   background: var(--raised-hover);
 }
 
 .update-now {
   padding: 4px 10px;
   border: 1px solid var(--accent);
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--accent);
 }
 
@@ -6547,7 +6547,7 @@ button.diff-why-run {
   align-items: center;
   gap: 4px;
   padding: 2px 6px;
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   font-size: 11px;
   font-weight: 600;
   color: var(--dim);
@@ -6581,7 +6581,7 @@ button.diff-why-run {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-left: 1px solid var(--divider);
+  border-left: 1px solid var(--line);
   box-shadow: var(--shadow-md);
 }
 
@@ -6599,7 +6599,7 @@ button.diff-why-run {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .thread-panel header strong {
@@ -6612,7 +6612,7 @@ button.diff-why-run {
 
 .thread-close {
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
 }
 
@@ -6637,7 +6637,7 @@ button.diff-why-run {
   flex: none;
   margin: 0;
   padding: 10px 12px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .thread-error {
@@ -6654,7 +6654,7 @@ button.diff-why-run {
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .thread-offer p {
@@ -6799,8 +6799,8 @@ button.diff-why-run {
 
 .thread-text code {
   padding: 1px 4px;
-  border-radius: 4px;
-  border: 1px solid var(--divider);
+  border-radius: var(--tag-radius);
+  border: 1px solid var(--line);
   background: var(--letterbox);
   color: var(--peach);
   font: 12px ui-monospace, monospace;
@@ -6812,7 +6812,7 @@ button.diff-why-run {
 
 .mention {
   padding: 0 2px;
-  border-radius: 3px;
+  border-radius: var(--tag-radius);
   background: color-mix(in srgb, var(--info) 18%, transparent);
   color: var(--info);
   font-weight: 600;
@@ -6834,8 +6834,8 @@ button.diff-why-run {
 .msg-code {
   margin: 4px 0;
   padding: 8px 10px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   font: 12px/1.4 ui-monospace, monospace;
   white-space: pre-wrap;
@@ -6856,13 +6856,13 @@ button.diff-why-run {
 .msg-new::after {
   content: "";
   flex: 1;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .msg-day span {
   padding: 2px 12px;
-  border: 1px solid var(--divider);
-  border-radius: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--chip-radius);
   color: var(--fg);
 }
 
@@ -6888,8 +6888,8 @@ button.diff-why-run {
   right: 16px;
   z-index: 1;
   display: none;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
@@ -6926,8 +6926,8 @@ button.diff-why-run {
   flex-direction: column;
   min-width: 190px;
   padding: 4px;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
 }
@@ -6937,7 +6937,7 @@ button.diff-why-run {
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   text-align: left;
   white-space: nowrap;
 }
@@ -6980,7 +6980,7 @@ button.diff-why-run {
 .react-menu.with-items > .react-menu-items:not(:first-child) {
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 /* "↓ 3 new messages", floating over the bottom of a list scrolled up. The
@@ -7000,7 +7000,7 @@ button.diff-why-run {
   transform: translateX(-50%);
   padding: 5px 14px;
   border: 1px solid var(--accent);
-  border-radius: 999px;
+  border-radius: var(--chip-radius);
   background: var(--accent);
   color: var(--on-color);
   font-size: 12px;
@@ -7090,8 +7090,8 @@ button.diff-why-run {
   align-items: center;
   gap: 5px;
   padding: 1px 8px;
-  border: 1px solid var(--divider);
-  border-radius: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--chip-radius);
   background: var(--raised);
   color: var(--dim);
   font-size: 12px;
@@ -7134,8 +7134,8 @@ button.diff-why-run {
   display: flex;
   gap: 2px;
   padding: 4px;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
 }
@@ -7143,7 +7143,7 @@ button.diff-why-run {
 .react-menu > button {
   width: 34px;
   height: 34px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   font-size: 18px;
   line-height: 1;
 }
@@ -7195,7 +7195,7 @@ button.diff-why-run {
     justify-content: space-around;
     padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
     border-width: 1px 0 0;
-    border-radius: 12px 12px 0 0;
+    border-radius: var(--panel-radius) var(--panel-radius) 0 0;
   }
 
   .react-menu > button {
@@ -7219,7 +7219,7 @@ button.diff-why-run {
   padding: 6px 8px;
   text-align: left;
   border-left: 3px solid var(--raised-hover);
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   background: var(--letterbox);
 }
 
@@ -7267,7 +7267,7 @@ button.thread-quote:hover {
   grid-template-columns: 1fr auto auto auto;
   align-items: end;
   border: 1px solid var(--raised-hover);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--letterbox);
 }
 
@@ -7299,7 +7299,7 @@ button.thread-quote:hover {
   width: 32px;
   height: 28px;
   margin: 0 6px 6px 0;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   background: var(--accent);
   color: var(--surface);
 }
@@ -7321,7 +7321,7 @@ button.thread-quote:hover {
   width: 28px;
   height: 28px;
   margin: 0 2px 6px 0;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
 }
 
@@ -7336,7 +7336,7 @@ button.thread-quote:hover {
   margin: 0 0 8px;
   padding: 8px;
   border: 1px solid var(--raised-hover);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   max-height: 50vh;
   overflow: auto;
@@ -7361,7 +7361,7 @@ button.thread-quote:hover {
   width: 100%;
   padding: 4px 6px;
   text-align: left;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
 }
 
 .chat-quote-pick li button:hover {
@@ -7375,7 +7375,7 @@ button.thread-quote:hover {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   padding: 6px;
 }
 
@@ -7405,7 +7405,7 @@ button.thread-quote:hover {
   padding: 2px 10px;
   font-size: 12px;
   color: var(--dim);
-  border-radius: 10px;
+  border-radius: var(--chip-radius);
 }
 
 .chat-older:hover {
@@ -7482,8 +7482,8 @@ button.thread-quote:hover {
   margin: 0;
   padding: 4px;
   list-style: none;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
 }
@@ -7493,7 +7493,7 @@ button.thread-quote:hover {
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   cursor: pointer;
   --msg-gutter: 20px;
 }
@@ -7574,7 +7574,7 @@ button.thread-quote:hover {
 .place {
   height: 26px;
   padding: 0 10px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   color: var(--dim);
   white-space: nowrap;
 }
@@ -7598,7 +7598,7 @@ button.thread-quote:hover {
   min-width: 16px;
   margin-left: 6px;
   padding: 1px 5px;
-  border-radius: 8px;
+  border-radius: var(--chip-radius);
   box-sizing: border-box;
   background: var(--accent);
   color: var(--surface);
@@ -7653,7 +7653,7 @@ button.thread-quote:hover {
   display: flex;
   gap: 8px;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .chat-block-bar .chat-search {
@@ -7689,8 +7689,8 @@ button.thread-quote:hover {
   min-width: 120px;
   height: 24px;
   padding: 0 10px;
-  border-radius: 6px;
-  border: 1px solid var(--divider);
+  border-radius: var(--field-radius);
+  border: 1px solid var(--line);
   background: var(--bg);
   color: var(--dim);
   text-align: left;
@@ -7719,7 +7719,7 @@ input.chat-search {
    16px so iOS doesn't zoom in on it. */
 .chat-search-open {
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
   line-height: 0;
 }
@@ -7750,8 +7750,8 @@ input.chat-search {
   width: 100%;
   margin: 8px 0;
   padding: 8px 12px 10px;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   text-align: left;
   --msg-gutter: 28px;
 }
@@ -7809,8 +7809,8 @@ input.chat-search {
 
 .chat-switcher {
   width: min(560px, calc(100vw - 32px));
-  border: 1px solid var(--divider);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
@@ -7821,7 +7821,7 @@ input.chat-search {
   width: 100%;
   padding: 14px 16px;
   border: 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   background: none;
   color: var(--fg);
   font: inherit;
@@ -7842,7 +7842,7 @@ input.chat-search {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   cursor: pointer;
 }
 
@@ -7878,7 +7878,7 @@ input.chat-search {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-right: 1px solid var(--divider);
+  border-right: 1px solid var(--line);
 }
 
 .chat-side-head {
@@ -7888,7 +7888,7 @@ input.chat-search {
   height: 49px;
   padding: 0 8px;
   box-sizing: border-box;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 /* Whose rooms these are, then ⋯ for the view's menu (UI audit #169). */
@@ -7906,7 +7906,7 @@ input.chat-search {
 .chat-side-head .chat-workspace {
   flex: none;
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   color: var(--dim);
   font-size: 16px;
   line-height: 1.2;
@@ -7970,7 +7970,7 @@ input.chat-search {
   gap: 4px;
   width: 100%;
   padding: 3px 8px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: inherit;
   text-align: left;
 }
@@ -7998,7 +7998,7 @@ input.chat-search {
   width: calc(100% - 12px);
   margin: 0 6px;
   padding: 4px 10px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   text-align: left;
   color: var(--fg);
   /* A room's row is a link (UI audit #185), drawn as the others. */
@@ -8091,8 +8091,8 @@ input.chat-search {
   align-items: center;
   gap: 0;
   padding: 3px 8px 3px 4px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--btn-radius);
   color: var(--dim);
 }
 
@@ -8127,7 +8127,7 @@ input.chat-search {
 .chat-info {
   width: 30px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
   font-size: 15px;
 }
@@ -8137,7 +8137,7 @@ input.chat-search {
   width: 340px;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--divider);
+  border-left: 1px solid var(--line);
   background: var(--bg);
 }
 
@@ -8156,8 +8156,8 @@ input.chat-search {
 
 .chat-peek {
   margin-bottom: 8px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   background: var(--letterbox);
   overflow: hidden;
 }
@@ -8166,7 +8166,7 @@ input.chat-search {
   display: block;
   width: 100%;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   text-align: left;
   color: var(--dim);
   font-size: 12px;
@@ -8230,7 +8230,7 @@ input.chat-search {
 }
 
 .chat-list section.chat-drop {
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   outline: 1px dashed var(--accent);
   outline-offset: -2px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -8253,7 +8253,7 @@ input.chat-search {
   margin: 0 0 10px;
   padding: 8px 10px;
   border-left: 3px solid var(--warn);
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   background: var(--letterbox);
   line-height: 1.45;
 }
@@ -8287,7 +8287,7 @@ input.chat-search {
 
 .conv-remove {
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
   font-size: 12px;
 }
@@ -8323,7 +8323,7 @@ input.chat-search {
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .chat-head > strong {
@@ -8401,7 +8401,7 @@ input.chat-search {
 .chat-go {
   flex: none;
   padding: 5px 10px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   background: var(--raised);
 }
 
@@ -8462,8 +8462,8 @@ input.chat-search {
   font: inherit;
   background: var(--surface);
   color: var(--fg);
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--btn-radius);
   padding: 6px;
 }
 
@@ -8585,8 +8585,8 @@ input.chat-search {
 .forge-status {
   font-size: 12px;
   padding: 8px 10px;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
 }
 
@@ -8639,7 +8639,7 @@ input.chat-search {
   font: inherit;
   color: var(--fg);
   background: var(--surface);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   padding: 7px 9px;
   width: 100%;
@@ -8658,8 +8658,8 @@ input.chat-search {
 }
 
 .forge-preview {
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   padding: 10px 12px;
   min-height: 320px;
 }
@@ -8741,7 +8741,7 @@ input.chat-search {
   min-height: 220px;
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .ws-graph + .review-body {
@@ -8767,7 +8767,7 @@ input.chat-search {
 
 .ws-graph-bar button {
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   background: var(--raised);
   color: var(--fg);
   min-width: 24px;
@@ -8816,7 +8816,7 @@ input.chat-search {
   gap: 4px;
   padding: 6px;
   text-align: left;
-  border-radius: 10px;
+  border-radius: var(--panel-radius);
   outline: 2px solid transparent;
 }
 
@@ -8838,7 +8838,7 @@ input.chat-search {
   height: 56px;
   overflow: hidden;
   border: 1px solid;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   font: 10px/1.2 ui-monospace, monospace;
 }
 
@@ -8891,7 +8891,7 @@ input.chat-search {
   gap: 4px;
   padding: 6px;
   text-align: left;
-  border-radius: 10px;
+  border-radius: var(--panel-radius);
   outline: 2px solid transparent;
 }
 
@@ -8909,7 +8909,7 @@ input.chat-search {
   width: 100%;
   padding: 12px;
   border: 1px solid var(--accent);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));
   text-align: left;
 }
@@ -8921,9 +8921,9 @@ input.chat-search {
   grid-template-rows: 14px 1fr;
   height: 52px;
   overflow: hidden;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--bg);
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
 }
 
 .sample-bar {
@@ -8975,7 +8975,7 @@ html[data-finish="brushed"] .sized-elsewhere button {
   border-radius: 4px;
   background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--raised);
   color: var(--fg);
-  border: 1px solid color-mix(in srgb, var(--raised) 60%, #000);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, #000);
   box-shadow: inset 0 1px 0 #fff6, 0 1px 1px #0004;
 }
 
@@ -9008,7 +9008,7 @@ html[data-finish="brushed"] .sized-elsewhere button {
   align-items: center;
   gap: 8px;
   padding: 8px 14px 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   outline: 2px solid transparent;
 }
 
@@ -9069,17 +9069,23 @@ html:not([data-corners="square"]) .menu {
   border-radius: calc(var(--radius) + 2px);
 }
 
-html[data-corners="round"] .prompt {
-  border-radius: 18px;
-}
-
 /* The corners of what's on the page, not only the panes' (UI audit #158):
    buttons (buttons.css), fields, cards and chips take these. Soft is the
-   default. */
+   default.
+   Every corner takes one of these or the panes' --radius (UI audit #181):
+   --btn-radius a button; --field-radius a field, a row in a list, a code
+   block or an image; --card-radius a card, menu or tab; --panel-radius a
+   dialog, popover, prompt or sheet; --tag-radius a badge, kbd or inline
+   code; --chip-radius a pill or a count. Literals stay only where the
+   shape is the point: circles and dots (50%), avatars, the switch (its own
+   square rule), 1-3px marks and accent bars, the aqua finish's gel pills
+   and the Appearance samples, which show a setting whatever is picked. */
 :root {
   --btn-radius: 6px;
   --field-radius: 6px;
   --card-radius: 8px;
+  --panel-radius: 10px;
+  --tag-radius: 4px;
   --chip-radius: 999px;
 }
 
@@ -9087,6 +9093,8 @@ html[data-corners="square"] {
   --btn-radius: 2px;
   --field-radius: 2px;
   --card-radius: 2px;
+  --panel-radius: 2px;
+  --tag-radius: 2px;
   --chip-radius: 2px;
 }
 
@@ -9094,6 +9102,8 @@ html[data-corners="round"] {
   --btn-radius: 999px;
   --field-radius: 10px;
   --card-radius: 14px;
+  --panel-radius: 18px;
+  --tag-radius: 6px;
 }
 
 /* -- Aqua: a lit title bar, pinstripes behind the panes, gel buttons,
@@ -9269,7 +9279,7 @@ html[data-finish="glass"] .prompt-backdrop {
   width: min(320px, 100%);
   aspect-ratio: 1;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: #000;
 }
 
@@ -9315,7 +9325,7 @@ a.ws-ov-name, a.ws-ov-pane { text-decoration: none; }
   padding: 6px 0 8px;
   box-sizing: border-box;
   background: var(--letterbox);
-  border-right: 1px solid var(--raised);
+  border-right: 1px solid var(--line);
   app-region: drag;
   -webkit-app-region: drag;
 }
@@ -9348,7 +9358,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   gap: 3px;
   margin: 0 5px;
   padding: 7px 0 5px;
-  border-radius: 8px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
 }
 
@@ -9385,7 +9395,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   min-width: 14px;
   padding: 0 3px;
   box-sizing: border-box;
-  border-radius: 7px;
+  border-radius: var(--chip-radius);
   background: var(--raised-hover);
   color: var(--fg);
   font-size: 9px;
@@ -9414,7 +9424,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   padding: 0 0 0 10px;
   box-sizing: border-box;
   background: var(--surface);
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
   app-region: drag;
   -webkit-app-region: drag;
 }
@@ -9441,7 +9451,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   height: 28px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--fg);
   font-weight: 600;
 }
@@ -9461,8 +9471,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   gap: 5px;
   height: 20px;
   padding: 0 8px;
-  border: 1px solid var(--raised);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--chip-radius);
   color: var(--dim);
   font-size: 11px;
   white-space: nowrap;
@@ -9527,7 +9537,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   height: 28px;
   min-width: 0;
   padding: 0 8px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   font-size: 13px;
   font-weight: 600;
 }
@@ -9558,7 +9568,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   margin: 0;
   gap: 8px;
   padding: 0 6px 0 10px;
-  border-color: var(--raised);
+  border-color: var(--line);
   background: var(--bg);
 }
 
@@ -9570,8 +9580,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-share {
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--raised);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--btn-radius);
   color: var(--fg);
 }
 
@@ -9582,7 +9592,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-head .account-button {
   align-self: stretch;
-  border-left: 1px solid var(--raised);
+  border-left: 1px solid var(--line);
 }
 
 .ws-row {
@@ -9600,7 +9610,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   flex-direction: column;
   min-height: 0;
   background: var(--surface);
-  border-right: 1px solid var(--raised);
+  border-right: 1px solid var(--line);
 }
 
 /* A narrow window: over the panes, so their terminals keep their size. */
@@ -9643,7 +9653,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   padding: 0;
   width: 26px;
   height: 26px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
 }
 
@@ -9658,8 +9668,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   margin: 2px 10px 8px;
   padding: 0 8px;
   height: 30px;
-  border: 1px solid var(--raised);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   background: var(--bg);
   color: var(--dim);
 }
@@ -9717,7 +9727,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   display: flex;
   align-items: center;
   gap: 2px;
-  border-radius: 7px;
+  border-radius: var(--field-radius);
   border: 1px solid transparent;
 }
 
@@ -9864,7 +9874,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   align-items: stretch;
   padding: 0 6px;
   background: var(--surface);
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
 }
 
 .ws-tabs .tabbar {
@@ -9875,11 +9885,11 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   margin: 5px 2px 0;
   border: 1px solid transparent;
   border-bottom: 0;
-  border-radius: 7px 7px 0 0;
+  border-radius: var(--field-radius) var(--field-radius) 0 0;
 }
 
 .ws-tabs .tab.selected {
-  border-color: var(--raised);
+  border-color: var(--line);
   box-shadow: inset 0 2px 0 var(--accent);
 }
 
@@ -9902,7 +9912,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   flex-direction: column;
   min-height: 0;
   background: var(--surface);
-  border-top: 1px solid var(--raised);
+  border-top: 1px solid var(--line);
   font-size: 12px;
 }
 
@@ -9940,7 +9950,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   gap: 5px;
   height: 22px;
   padding: 0 8px;
-  border-radius: 5px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
   font-size: 12px;
 }
@@ -10015,7 +10025,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   width: 100%;
   min-height: 24px;
   padding: 3px 8px;
-  border-radius: 5px;
+  border-radius: var(--field-radius);
   text-align: left;
   color: var(--fg);
   font-size: 12px;
@@ -10143,7 +10153,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   gap: 14px;
   padding: 0 12px;
   background: var(--surface);
-  border-top: 1px solid var(--raised);
+  border-top: 1px solid var(--line);
   color: var(--dim);
   font-size: 12px;
   white-space: nowrap;
@@ -10168,7 +10178,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-foot-needs {
   height: 20px;
   padding: 0 8px;
-  border-radius: 10px;
+  border-radius: var(--chip-radius);
   color: var(--warn);
 }
 
@@ -10186,8 +10196,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-hint kbd {
   padding: 0 5px;
-  border: 1px solid var(--raised);
-  border-radius: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--tag-radius);
   font: 11px system-ui, sans-serif;
   color: var(--subtle);
 }
@@ -10203,7 +10213,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-crumb-caret {
   height: 26px;
   padding: 0 4px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
 }
 
@@ -10218,7 +10228,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   place-items: center;
   width: 30px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
 }
 
@@ -10239,7 +10249,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   min-width: 15px;
   padding: 0 4px;
   box-sizing: border-box;
-  border-radius: 8px;
+  border-radius: var(--chip-radius);
   background: var(--warn);
   color: var(--on-color);
   font-size: 10px;
@@ -10254,7 +10264,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   gap: 6px;
   margin: -2px -6px;
   padding: 2px 6px;
-  border-radius: 5px;
+  border-radius: var(--btn-radius);
   color: inherit;
   font: inherit;
 }
@@ -10275,7 +10285,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-left: 1px solid var(--raised);
+  border-left: 1px solid var(--line);
   box-shadow: var(--shadow-md);
 }
 
@@ -10284,7 +10294,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   align-items: center;
   gap: 8px;
   padding: 12px 10px 8px 16px;
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
 }
 
 .ws-att-head h2 {
@@ -10302,7 +10312,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   max-height: 38%;
   overflow-y: auto;
   padding: 6px;
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
   scrollbar-width: thin;
 }
 
@@ -10317,7 +10327,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--field-radius);
   text-align: left;
   color: var(--fg);
 }
@@ -10376,8 +10386,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   gap: 6px;
   margin: 0 0 14px;
   padding: 10px 12px;
-  border: 1px solid var(--raised);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   background: var(--bg);
 }
 
@@ -10419,7 +10429,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-att-go {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid var(--raised);
+  border-top: 1px solid var(--line);
 }
 
 .ws-att-foot {
@@ -10428,7 +10438,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 16px;
-  border-top: 1px solid var(--raised);
+  border-top: 1px solid var(--line);
   color: var(--dim);
   font-size: 12px;
 }
@@ -10473,8 +10483,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-ov-back {
   height: 30px;
   padding: 0 12px;
-  border: 1px solid var(--raised);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--btn-radius);
   color: var(--fg);
 }
 
@@ -10492,8 +10502,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-ov-session {
   min-width: 0;
   padding: 10px 12px 12px;
-  border: 1px solid var(--raised);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
   background: var(--surface);
 }
 
@@ -10522,7 +10532,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   min-width: 0;
   padding: 2px 6px;
   margin-left: -6px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   color: var(--fg);
   font-size: 14px;
   font-weight: 600;
@@ -10561,7 +10571,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   text-align: left;
   padding: 1px 6px;
   margin-left: -6px;
-  border-radius: 5px;
+  border-radius: var(--field-radius);
   color: var(--subtle);
   font-size: 12px;
   font-weight: 600;
@@ -10585,7 +10595,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   width: 100%;
   padding: 5px 8px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   text-align: left;
   color: var(--fg);
 }
@@ -10595,7 +10605,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-ov-pane.active {
-  border-color: var(--raised);
+  border-color: var(--line);
 }
 
 .ws-ov-kind {
@@ -10727,7 +10737,7 @@ html[data-workspace="new"] .thread-panel {
   min-width: 13px;
   padding: 0 3px;
   box-sizing: border-box;
-  border-radius: 3px;
+  border-radius: var(--tag-radius);
   background: var(--raised);
   color: var(--subtle);
   font: 600 10px/13px ui-monospace, Menlo, monospace;
@@ -10783,7 +10793,7 @@ html[data-workspace="new"] .thread-panel {
 .pane-header-host {
   flex: none;
   padding: 0 5px;
-  border-radius: 3px;
+  border-radius: var(--tag-radius);
   background: color-mix(in srgb, var(--info) 18%, transparent);
   color: var(--info);
 }
@@ -10826,7 +10836,7 @@ html[data-workspace="new"] .thread-panel {
   place-items: center;
   width: 18px;
   height: calc(100% - 2px);
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   color: var(--dim);
   cursor: pointer;
 }
@@ -10882,7 +10892,7 @@ html[data-workspace="new"] .thread-panel {
   height: 34px;
   padding: 0 10px;
   background: var(--bg);
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
   color: var(--dim);
   font-size: 12px;
   white-space: nowrap;
@@ -10895,7 +10905,7 @@ html[data-workspace="new"] .thread-panel {
   gap: 6px;
   height: 24px;
   padding: 0 8px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--subtle);
 }
 
@@ -10955,14 +10965,14 @@ html[data-workspace="new"] .thread-panel {
 }
 
 .pane-toolbar > .pt-add {
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   color: var(--fg);
 }
 
 .pt-add kbd {
   padding: 0 4px;
-  border: 1px solid var(--raised);
-  border-radius: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--tag-radius);
   font: 10px system-ui, sans-serif;
   color: var(--muted);
 }
@@ -10988,8 +10998,8 @@ html[data-workspace="new"] .thread-panel {
   gap: 10px;
   padding: 14px;
   background: var(--surface);
-  border: 1px solid var(--raised);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   box-shadow: var(--shadow-lg);
   color: var(--fg);
   font-size: 12px;
@@ -11013,15 +11023,15 @@ html[data-workspace="new"] .thread-panel {
   flex-wrap: wrap;
   gap: 2px;
   padding: 2px;
-  border: 1px solid var(--raised);
-  border-radius: 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   background: var(--bg);
 }
 
 .add-pane-seg button {
   height: 24px;
   padding: 0 9px;
-  border-radius: 5px;
+  border-radius: var(--field-radius);
   color: var(--subtle);
 }
 
@@ -11046,7 +11056,7 @@ html[data-workspace="new"] .thread-panel {
   height: 28px;
   padding: 0 8px;
   box-sizing: border-box;
-  border: 1px solid var(--raised);
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--bg);
   color: var(--fg);
@@ -11066,8 +11076,8 @@ html[data-workspace="new"] .thread-panel {
   flex: none;
   height: 28px;
   padding: 0 12px;
-  border: 1px solid var(--raised);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--btn-radius);
 }
 
 .add-pane-choose:hover:not(:disabled) {
@@ -11082,7 +11092,7 @@ html[data-workspace="new"] .thread-panel {
 .add-pane-dest {
   margin: 0;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--bg);
   color: var(--subtle);
   line-height: 1.45;
@@ -11134,7 +11144,7 @@ html[data-workspace="new"] .thread-panel {
   gap: 3px;
   margin: 5px 2px 4px;
   padding: 0 7px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -11186,7 +11196,7 @@ html[data-workspace="new"] .thread-panel {
 .ws-stale {
   flex: none;
   padding: 5px 12px;
-  border-bottom: 1px solid var(--raised);
+  border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--warn) 12%, var(--surface));
   color: var(--fg);
   font-size: 12px;
@@ -11267,7 +11277,7 @@ html[data-workspace="new"] .thread-panel {
 
 .msg-badge.agent-badge {
   padding: 0 5px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   border: 1px solid var(--teal);
   color: var(--teal);
   font-size: 10px;
@@ -11325,8 +11335,8 @@ html[data-workspace="new"] .thread-panel {
   max-height: 60vh;
   overflow-y: auto;
   padding: 10px 12px;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: 0 6px 24px color-mix(in srgb, var(--letterbox) 45%, transparent);
   font-size: 13px;
@@ -11384,7 +11394,7 @@ html[data-workspace="new"] .thread-panel {
   display: flex;
   justify-content: flex-end;
   padding: 2px 8px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 /* Chat's Markdown (#109): a message is a line of talk, not a document.
@@ -11424,7 +11434,7 @@ html[data-workspace="new"] .thread-panel {
 }
 
 .md.md-chat code {
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   background: var(--letterbox);
   color: var(--peach);
 }
@@ -11505,8 +11515,8 @@ html[data-workspace="new"] .thread-panel {
   max-width: calc(100vw - 24px);
   height: 340px;
   max-height: 60dvh;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
 }
@@ -11519,7 +11529,7 @@ html[data-workspace="new"] .thread-panel {
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   outline: none;
 }
 
@@ -11532,7 +11542,7 @@ html[data-workspace="new"] .thread-panel {
   display: flex;
   overflow-x: auto;
   padding: 0 4px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .emoji-cats button {
@@ -11563,7 +11573,7 @@ html[data-workspace="new"] .thread-panel {
   height: 36px;
   font-size: 22px;
   line-height: 1;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
 }
 
 .emoji-grid button:hover,
@@ -11588,7 +11598,7 @@ html[data-workspace="new"] .thread-panel {
     width: auto;
     max-width: none;
     height: 45dvh;
-    border-radius: 12px 12px 0 0;
+    border-radius: var(--panel-radius) var(--panel-radius) 0 0;
     padding-bottom: env(safe-area-inset-bottom);
   }
 
@@ -11615,7 +11625,7 @@ html[data-workspace="new"] .thread-panel {
   width: 100%;
   max-width: 440px;
   padding: 8px 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-left: 3px solid var(--raised-hover);
   border-radius: var(--card-radius);
   background: var(--surface);
@@ -11682,7 +11692,7 @@ html[data-workspace="new"] .thread-panel {
   flex: none;
   width: 72px;
   height: 72px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   object-fit: cover;
   background: var(--letterbox);
 }
@@ -11690,7 +11700,7 @@ html[data-workspace="new"] .thread-panel {
 .link-card-state {
   padding: 0 6px;
   border: 1px solid currentColor;
-  border-radius: 8px;
+  border-radius: var(--chip-radius);
   font-size: 11px;
   font-weight: 600;
 }
@@ -11838,8 +11848,8 @@ html[data-workspace="new"] .thread-panel {
   flex-direction: column;
   min-width: 190px;
   padding: 4px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
@@ -11848,7 +11858,7 @@ html[data-workspace="new"] .thread-panel {
   width: auto;
   height: auto;
   padding: 6px 10px;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   color: var(--fg);
   font-size: 13px;
   text-align: left;
@@ -11874,8 +11884,8 @@ html[data-workspace="new"] .thread-panel {
 
 .saved-actions button {
   padding: 2px 8px;
-  border: 1px solid var(--divider);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--chip-radius);
   color: var(--dim);
 }
 
@@ -11922,7 +11932,7 @@ html[data-workspace="new"] .thread-panel {
 }
 
 .attach-chip img {
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   object-fit: cover;
 }
 
@@ -11989,7 +11999,7 @@ html[data-workspace="new"] .thread-panel {
   height: 28px;
   padding: 0 4px;
   box-sizing: border-box;
-  border-radius: 4px;
+  border-radius: var(--tag-radius);
   background: var(--raised);
   color: var(--subtle);
   font-size: 10px;
@@ -12011,8 +12021,8 @@ html[data-workspace="new"] .thread-panel {
   max-width: 100%;
   min-width: 0;
   padding: 0;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   background: var(--surface);
   overflow: hidden;
   cursor: zoom-in;
@@ -12043,7 +12053,7 @@ html[data-workspace="new"] .thread-panel {
   display: block;
   width: 100%;
   max-height: 320px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
   background: var(--letterbox);
 }
 
@@ -12068,8 +12078,8 @@ html[data-workspace="new"] .thread-panel {
   box-sizing: border-box;
   width: min(100%, 320px);
   padding: 8px 10px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
   background: var(--surface);
 }
 
@@ -12101,7 +12111,7 @@ html[data-workspace="new"] .thread-panel {
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   color: var(--dim);
 }
 
@@ -12194,8 +12204,8 @@ html[data-workspace="new"] .thread-panel {
   max-height: min(420px, 70vh);
   overflow-y: auto;
   padding: 12px;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
   font-size: 13px;
@@ -12220,7 +12230,7 @@ html[data-workspace="new"] .thread-panel {
 
 .chat-pop-buttons button {
   padding: 3px 9px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   background: var(--raised);
   font-size: 12px;
 }
@@ -12237,7 +12247,7 @@ html[data-workspace="new"] .thread-panel {
 
 .chat-pins li {
   padding: 8px 0;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .chat-pin-who {

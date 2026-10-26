@@ -73,7 +73,7 @@
 .platform .settings-more > summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: var(--tag-radius);
 }
 
 .platform .settings-more p {
@@ -88,7 +88,7 @@
   align-items: baseline;
   gap: 2px 12px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
 }
 
 .platform .settings-rows > li:last-child {
@@ -334,7 +334,7 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .agent-matrix thead th,
 .platform .settings-table thead th {
   padding-top: 2px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--line);
   font: 500 11px/1.3 var(--f-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -371,7 +371,7 @@ html[data-corners="square"] .platform input.sw-switch {
 
 .platform .agent-matrix tbody tr + tr > *,
 .platform .settings-table tbody tr + tr > * {
-  border-top: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
 }
 
 /* Top-aligned, so a row's switches stay in line when one has an "only …"
@@ -804,7 +804,7 @@ html[data-corners="square"] .platform input.sw-switch {
     margin: 0;
     padding: 0;
     list-style: none;
-    border-left: 1px solid var(--divider);
+    border-left: 1px solid var(--line);
   }
   .platform .settings-index a {
     display: block;
@@ -857,7 +857,7 @@ html[data-corners="square"] .platform input.sw-switch {
     padding: 8px 0;
   }
   .platform .agent-matrix-wide tbody tr + tr {
-    border-top: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
   }
   .platform .agent-matrix-wide tbody tr + tr > * {
     border-top: 0;
@@ -912,7 +912,7 @@ html[data-corners="square"] .platform input.sw-switch {
     padding: 8px 0;
   }
   .platform .settings-table tbody tr + tr {
-    border-top: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
   }
   .platform .settings-table tbody tr > *,
   .platform .settings-table tbody tr + tr > * {

@@ -47,7 +47,7 @@
   gap: 8px;
   min-width: 0;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--field-radius);
 }
 
 .members-list li:hover {
