@@ -515,11 +515,12 @@ fn a_turn_cut_off_by_a_restart_asks_whether_to_continue() {
         entries(&d.state(id)).iter().any(|e| e["type"] == "user" && e["text"] == CUT_PROMPT)
     });
     d.wait(id, "idle");
-    let list = d.get("/api/attention");
-    assert!(
-        list.as_array().unwrap().iter().all(|i| i["pane"] != id || i["state"] != "needs_input"),
-        "the card went: {list}"
-    );
+    // The attention list catches up with the block a moment later, under
+    // load: wait for the card to go rather than read it once.
+    d.wait_for("the card to go", || {
+        let list = d.get("/api/attention");
+        list.as_array().unwrap().iter().all(|i| i["pane"] != id || i["state"] != "needs_input")
+    });
 }
 
 /// #680: only a real interruption is a card: a block that was idle comes
