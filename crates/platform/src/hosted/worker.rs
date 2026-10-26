@@ -223,7 +223,8 @@ pub(super) async fn delete(app: &Platform, sub: &dyn Substrate, job: &mut Hosted
 async fn create(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step> {
     match job.stage.as_str() {
         "" => {
-            let Some(template) = super::template(app) else {
+            let size = job.w.spec.size;
+            let Some(template) = super::template(app, size) else {
                 return Ok(fail(job, "This control has no template for cloud workspaces.", now));
             };
             let Some(ask) = enroll_ask(app, job, None)? else {
@@ -296,7 +297,7 @@ async fn create(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u
                 }
                 // This release's template isn't built yet (M177's release
                 // job runs beside the deploy): nothing was made.
-                Err(compute::Error::NotFound) if template == compute::template::current() => Ok(fail(
+                Err(compute::Error::NotFound) if template == compute::template::current(size) => Ok(fail(
                     job,
                     &compute::template::CreateError::NotBuilt { template: template.clone() }.to_string(),
                     now,

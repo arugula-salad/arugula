@@ -6,7 +6,8 @@
 // has a switch for content mirroring (M166), with what turning it on means.
 // Then where its new issues go (M195, moved here by UI audit #163), its
 // environments, their secrets and "Deploy…" (M252), its standing grant for
-// runs (M211), its cloud workspaces' finish step for agent sessions (M261),
+// runs (M211), its cloud workspaces' sizes (M266) and finish step for agent
+// sessions (M261),
 // for its owners the agent tokens over it
 // and its own secrets (M230), what its Claude calls cost (M231), and the
 // apps products keep in it (M236), and for a team's owners its chat's
@@ -28,6 +29,7 @@ import { Missing } from "./project";
 import { IssueHomeSetting } from "./issues";
 import { RunGrant } from "../settings/runs";
 import { FinishStep } from "../settings/finish-step";
+import { WorkspaceSize } from "../settings/workspace-size";
 import { Environments } from "../settings/environments";
 import { ProjectAgents } from "../settings/project-agents";
 import { ClaudeSpend } from "../settings/spend";
@@ -225,6 +227,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
           <IssueHomeSetting key={linked} p={p} />
           <Environments p={p} />
           <RunGrant project={p.id} />
+          <WorkspaceSize p={p} />
           <FinishStep p={p} />
           <ProjectAgents p={p} />
           <ClaudeSpend p={p} />

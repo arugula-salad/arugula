@@ -326,3 +326,50 @@ fn the_ops_command_reads_either_database() {
         let _ = std::fs::remove_file(&path);
     }
 }
+
+/// M266: each workspace size's box costs what E2B bills its vCPUs and
+/// memory, the prices docs/control.md quotes: small (2 vCPU, 2 GiB) $0.1332
+/// an hour, large (8 vCPU, 8 GiB) $0.5328. A large box is metered at its
+/// size through the checkpoint, and checked against E2B's record of it.
+#[test]
+fn a_large_box_is_metered_at_its_size() {
+    use crate::compute::template::Size;
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+    assert_eq!(Size::Small.class(), SMALL);
+    assert_eq!(Size::Large.class(), Class { cpus: 8, memory_mb: 8192 });
+    assert!(close(PRICES.per_hour(Size::Small.class()), 0.1332), "{}", PRICES.per_hour(Size::Small.class()));
+    assert!(close(PRICES.per_hour(Size::Large.class()), 0.5328), "{}", PRICES.per_hour(Size::Large.class()));
+
+    let db = Db::test();
+    workspace(&db, "hw_1", "prj_a");
+    let h = 3_600_000;
+    let large = Size::Large.class();
+    step(&db, "hw_1", "enrolling", Some("sbx1"), Seen::default(), h);
+    step(&db, "hw_1", "ready", Some("sbx1"), Seen { class: Some(large), ..Default::default() }, h + 60_000);
+    step(&db, "hw_1", "deleted", None, Seen::default(), 3 * h);
+    assert_eq!(rows(&db, "hw_1"), [(h, Some(3 * h), Some(8))]);
+    let r = report(&db.hosted_usage(0, 4 * h).unwrap(), vec![], 0, 4 * h);
+    assert_eq!(r.all.ms.get(&Some(large)), Some(&(2 * h)));
+    assert!(close(r.all.cost(), 2.0 * 0.5328), "{}", r.all.cost());
+    assert!(close(r.all.per_active_hour().unwrap(), 0.5328));
+    let text = r.render("platform.db", 7);
+    assert!(text.contains("8 vCPU, 8192 MiB"), "{text}");
+
+    let runs = [Run { started_at: h, ms: 2 * h, cpus: 8, memory_mb: 8192 }];
+    db.set_hosted_usage_provider("sbx1", "hw_1", "prj_a", Some(&runs), 4 * h).unwrap();
+    let checked = db.hosted_usage_checked(0, 4 * h).unwrap();
+    assert_eq!(
+        checked,
+        [Checked {
+            workspace: "hw_1".into(),
+            provider_ms: 2 * h,
+            provider_cpu_ms: 8 * 2 * h,
+            provider_mib_ms: 8192 * 2 * h,
+            metered_ms: 2 * h,
+        }]
+    );
+    // What E2B billed, at its prices, is what the platform metered.
+    let billed = checked[0].provider_cpu_ms as f64 / 1000.0 * PRICES.usd_per_cpu_second
+        + checked[0].provider_mib_ms as f64 / 1000.0 / 1024.0 * PRICES.usd_per_gib_second;
+    assert!(close(billed, r.all.cost()), "{billed}");
+}

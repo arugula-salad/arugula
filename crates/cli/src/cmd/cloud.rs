@@ -16,12 +16,15 @@ use serde_json::{Value, json};
 use crate::control::Enrolled;
 use crate::util::print_json;
 
+/// A cloud workspace's sizes (M266): the platform's `Size`.
+const SIZES: [&str; 2] = ["small", "large"];
+
 #[derive(clap::Subcommand)]
 pub enum CloudCmd {
     /// Make a cloud workspace.
     ///
-    /// Its box is made from the current release's template and enrolls
-    /// into the project. Needs owner or editor on the project.
+    /// Its box is made from the current release's template of its size
+    /// and enrolls into the project. Needs owner or editor on the project.
     Create {
         /// Its name in the project: letters, digits, `-`, `_` and `.`.
         name: String,
@@ -37,6 +40,9 @@ pub enum CloudCmd {
         /// The name of an env var it takes from its secrets. Repeatable.
         #[arg(long = "env")]
         env: Vec<String>,
+        /// Its box's size: small (2 vCPU, 2 GiB) or large (8 vCPU, 8 GiB).
+        #[arg(long, value_parser = SIZES, default_value = "small")]
+        size: String,
         /// Wait until it's set up (or failed).
         #[arg(long)]
         wait: bool,
@@ -97,6 +103,11 @@ pub enum CloudCmd {
         /// How long the finish step may run, in seconds (default: 15 min).
         #[arg(long, value_name = "SECONDS")]
         finish_timeout: Option<u64>,
+        /// Its box's size: small (2 vCPU, 2 GiB) or large (8 vCPU, 8 GiB).
+        ///
+        /// It takes a rebuild.
+        #[arg(long, value_parser = SIZES)]
+        size: Option<String>,
         #[arg(long)]
         project: Option<String>,
     },
@@ -251,14 +262,15 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
     };
     let show = |w: &Value| if json_out { print_json(w) } else { println!("{}", line(w)) };
     match cmd {
-        CloudCmd::Create { name, repos, packages, setup, env, wait, project } => {
+        CloudCmd::Create { name, repos, packages, setup, env, size, wait, project } => {
             let setup = match setup.as_deref() {
                 None => String::new(),
                 Some(f) => read_setup(f)?,
             };
             let project = project_of(&e, project.as_deref())?;
-            let body =
-                json!({ "name": name, "spec": { "repos": repos, "packages": packages, "setup": setup, "env": env } });
+            let body = json!({ "name": name, "spec": {
+                "repos": repos, "packages": packages, "setup": setup, "env": env, "size": size,
+            } });
             let w = e.api("POST", &format!("/api/projects/{project}/workspaces"), Some(&body))?;
             let w = if wait { with_tail(wait_ready(&e, &project, &w)?) } else { w };
             show(&w);
@@ -301,6 +313,7 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
             env,
             finish,
             finish_timeout,
+            size,
             project,
         } => {
             let (project, w) = find(&e, project.as_deref(), &workspace)?;
@@ -322,6 +335,9 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
             }
             if let Some(t) = finish_timeout {
                 spec["finish_timeout_s"] = json!(t);
+            }
+            if let Some(s) = size {
+                spec["size"] = json!(s);
             }
             show(&e.api("PUT", &format!("{}/spec", path(&project, &w)), Some(&spec))?);
         }
@@ -625,6 +641,10 @@ fn wait_ready(e: &Enrolled, project: &str, w: &Value) -> anyhow::Result<Value> {
 fn line(w: &Value) -> String {
     let s = |k: &str| w[k].as_str().unwrap_or_default();
     let mut out = format!("{:<24} {:<10} {}", s("name"), s("state"), s("id"));
+    // Small unless it says (a small spec leaves it out).
+    if let Some(size) = w["spec"]["size"].as_str().filter(|z| *z != "small") {
+        out.push_str(&format!("  {size}"));
+    }
     if let Some(m) = w["machine"].as_str() {
         out.push_str(&format!("  machine {m}"));
     }
@@ -697,6 +717,8 @@ mod tests {
             &["arugula", "cloud", "edit", "dev", "--repo", "https://github.com/acme/app", "--setup", "setup.sh"],
             &["arugula", "cloud", "edit", "dev", "--no-packages", "--env", "NPM_TOKEN"],
             &["arugula", "cloud", "edit", "dev", "--finish", "just check", "--finish-timeout", "1200"],
+            &["arugula", "cloud", "create", "dev", "--size", "large"],
+            &["arugula", "cloud", "edit", "dev", "--size", "small"],
             &["arugula", "cloud", "secret", "set", "dev", "GIT_TOKEN"],
             &["arugula", "cloud", "secret", "ls", "dev"],
             &["arugula", "cloud", "secret", "rm", "dev", "GIT_TOKEN", "--project", "Acme"],
@@ -746,5 +768,10 @@ mod tests {
         w["setup"]["tail"] = json!("make: no\nError 2");
         assert!(line(&w).ends_with("\n  | make: no\n  | Error 2"), "{}", line(&w));
         assert!(crate::Cli::try_parse_from(["arugula", "cloud", "edit", "dev", "--repo", "x", "--no-repos"]).is_err());
+        assert!(crate::Cli::try_parse_from(["arugula", "cloud", "create", "dev", "--size", "huge"]).is_err());
+        let w = json!({ "name": "dev", "state": "ready", "id": "hw_1", "spec": { "size": "large" } });
+        assert!(line(&w).ends_with("hw_1  large"), "{}", line(&w));
+        let w = json!({ "name": "dev", "state": "ready", "id": "hw_1", "spec": { "size": "small" } });
+        assert!(line(&w).ends_with("hw_1"), "{}", line(&w));
     }
 }

@@ -202,7 +202,8 @@ daemon's update check read it.
    the job's summary says `hub unchanged since vX: not deployed` and the
    hub stays on vX. The repository variable `ARUGULA_HUB_DEPLOY=always`
    deploys it anyway (set it, re-run the job, unset it). Its `template` job
-   builds a hosted workspace's E2B template, `arugula-workspace:vX.Y.Z`,
+   builds a hosted workspace's E2B templates, one per size:
+   `arugula-workspace:vX.Y.Z` and `arugula-workspace-large:vX.Y.Z`,
    from the same build (the `E2B_API_KEY` secret;
    [control-ops.md](control-ops.md#hosted-workspaces-template)). It builds
    no app.
