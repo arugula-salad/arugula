@@ -88,7 +88,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       { header: "Projects" },
       ...session.projects.map((x) => ({ label: x.name, checked: x.id === project, run: () => go(pathOf({ page: "project", project: x.id }, names)) })),
     ];
-    openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as Element);
+    openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
   const me = session.me;
   const account = (e: MouseEvent) => {
@@ -107,7 +107,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       // This page only: the hub's session, on control's page, stays.
       { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },
     ];
-    openMenu({ clientX: at.right, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as Element);
+    openMenu({ clientX: at.right, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
   // Both are menu buttons (UI audit #185): they say so, and whether theirs is open.
   const switcher = useRef<HTMLButtonElement>(null);

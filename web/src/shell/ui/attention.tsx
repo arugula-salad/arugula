@@ -56,7 +56,7 @@ export function AttentionBadge({ state, reason, pane, client }: { state: Attenti
         e.stopPropagation();
         // Under the badge, from a key as from a click.
         const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, [{ header: label }, ...items], e.currentTarget as Element);
+        openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, [{ header: label }, ...items], e.currentTarget as HTMLElement);
       }}
     >
       {mark}
