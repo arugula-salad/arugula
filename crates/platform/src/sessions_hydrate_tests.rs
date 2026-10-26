@@ -115,8 +115,6 @@ pub(crate) fn sessions(app: &Platform, project: &str) -> Vec<Session> {
     app.db.project_sessions(project, 50).unwrap()
 }
 
-/// The box takes `s`, starting its first turn with its queued prompts, as
-/// its machine (`keys`) signs it.
 /// The box's signed report `n` on session `s`, `from` to `to`.
 pub(crate) fn box_says(app: &Platform, keys: &DeviceKeys, s: &str, n: u64, from: State, to: State, detail: &str) {
     let id = keys.id();
@@ -125,6 +123,8 @@ pub(crate) fn box_says(app: &Platform, keys: &DeviceKeys, s: &str, n: u64, from:
     app.db.move_session(s, &Move::Daemon { report: &r, now: arugula_e2e::now_ms() }).unwrap().unwrap();
 }
 
+/// The box takes `s`, starting its first turn with its queued prompts, as
+/// its machine (`keys`) signs it.
 pub(crate) fn take(app: &Platform, keys: &DeviceKeys, s: &str) {
     let prompts: Vec<String> = app
         .db
@@ -379,7 +379,8 @@ async fn a_done_session_holds_its_slot_so_a_fourth_waits() {
 
     // One ends: room, and the fourth's 15 minutes start.
     let done = sessions(&app, &t).into_iter().find(|s| s.state == State::Done).unwrap();
-    app.db.move_session(&done.id, &Move::Control { from: State::Done, to: State::Stopped, at: late, detail: "{}" })
+    app.db
+        .move_session(&done.id, &Move::Control { from: State::Done, to: State::Stopped, at: late, detail: "{}" })
         .unwrap()
         .unwrap();
     assert!(app.db.session_work("hw_dev").unwrap().iter().any(|w| w.session == fourth.id), "offered");
