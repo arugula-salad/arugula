@@ -11,6 +11,7 @@ import { chat, chatStore } from "../shared/chat-store";
 import { threadNews } from "../shared/chat/unread";
 import { platformFetch } from "../shared/maintenance";
 import { useSubscribe } from "../shared/ui/hooks";
+import { session } from "./session";
 
 let entries: InboxEntry[] | null = null;
 const listeners = new Set<() => void>();
@@ -44,12 +45,16 @@ export function InboxCount() {
     return () => void listeners.delete(fn);
   });
   useSubscribe((fn) => chat.subscribe(fn));
+  // Once signed in: the bar is drawn while the page signs in, and a call
+  // before then would race the sign-in.
+  const ready = session.state === "ready";
   useEffect(() => {
+    if (!ready) return;
     void load();
     const back = () => document.visibilityState === "visible" && void load();
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
-  }, []);
+  }, [ready]);
   const n = inboxUnseen();
   if (!n) return null;
   const title = `${n} unseen in your inbox`;
