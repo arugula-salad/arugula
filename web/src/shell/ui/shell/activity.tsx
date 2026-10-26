@@ -351,9 +351,20 @@ const clock = (ms: number) =>
     hour12: false,
   });
 
+/** A pane by what it runs, not its id (UI audit #171): the id is in the
+ * row's tooltip. */
 function paneName(client: Client, pane: PaneId): string {
   const t = client.title(pane) || client.info(pane)?.command || client.cwd(pane)?.split("/").filter(Boolean).pop() || "";
-  return t ? `%${pane} ${t}` : `%${pane}`;
+  return t || `pane ${pane}`;
+}
+
+/** Who did it, as one name (UI audit #171): history says a person by the
+ * name they came with, which is a login through control and a tailnet
+ * login (`jake@github`, `jake@example.com`) over the tailnet. The part
+ * before the @ is that login; the whole of it is the tooltip. */
+export function byName(by: string): string {
+  const at = by.indexOf("@");
+  return at > 0 ? by.slice(0, at) : by;
 }
 
 // ---- the drawer
@@ -562,8 +573,16 @@ function Row({ client, it, onClick }: { client: Client; it: Item; onClick: () =>
       <span class={`ws-activity-kind ${it.kind}`}>{KIND[it.kind]}</span>
       <span class="ws-activity-text">{it.text || "(no text)"}</span>
       <span class={`ws-activity-status ${status?.cls ?? ""}`}>{status?.text}</span>
-      {it.by && <span class="ws-activity-by">{it.by}</span>}
-      {it.pane !== null && <span class="ws-activity-pane">{here ? paneName(client, it.pane) : `%${it.pane}`}</span>}
+      {it.by && (
+        <span class="ws-activity-by" title={it.by}>
+          {byName(it.by)}
+        </span>
+      )}
+      {it.pane !== null && (
+        <span class={here ? "ws-activity-pane" : "ws-activity-pane closed"} title={`Pane %${it.pane}`}>
+          {here ? paneName(client, it.pane) : "closed pane"}
+        </span>
+      )}
     </button>
   );
 }

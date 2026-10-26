@@ -228,7 +228,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .new-tab-more {
-  width: 18px;
+  /* A target that can be hit (UI audit #171). */
+  width: 24px;
   font-size: 10px;
   color: var(--dim);
   border-radius: 6px;
@@ -614,6 +615,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   /* Over the phone's full-screen chat and pane threads (80): a menu opened
      there would sit under them. */
   z-index: 90;
+  /* As wide as its longest item and its chord, wherever it opens: a menu
+     opened near the right edge doesn't shrink and wrap its kbds under
+     their items (UI audit #171). */
+  width: max-content;
+  max-width: calc(100vw - 16px);
   min-width: 190px;
   max-width: min(460px, calc(100vw - 8px));
   padding: 4px;
@@ -3701,12 +3707,14 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--panel);
   padding: 3px;
 }
+/* Words, in sentence case like every other segmented control (UI audit
+   #172). */
 .swarm-seg button {
   border: 0;
   background: none;
   padding: 6px 12px;
   border-radius: 999px;
-  font: 500 12px/1 var(--f-mono);
+  font: 500 12px/1 var(--f-ui);
   color: var(--mute);
 }
 .swarm-seg button[aria-pressed="true"] {
@@ -3764,7 +3772,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
-  font: 500 11px/1 var(--f-mono);
+  font: 500 11px/1 var(--f-ui);
   color: var(--mute);
 }
 .swarm-legend i {
@@ -3796,14 +3804,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 .swarm-tip span {
   flex: 1;
-}
-.swarm-tip button {
-  border: 0;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--void);
-  font: 600 12px/1 var(--f-ui);
 }
 /* M41: how to read the city. */
 .swarm-key {
@@ -3883,7 +3883,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .swarm-waiting {
   padding: 10px 18px 16px;
   border-top: 1px solid var(--line);
-  font: 500 11.5px/1.4 var(--f-mono);
+  font: 500 12px/1.4 var(--f-ui);
   color: var(--mute);
 }
 .swarm-waiting b {
@@ -3923,10 +3923,22 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   align-items: baseline;
   gap: 8px;
 }
-.swarm-card .ch b {
+.swarm-card .ch b,
+.swarm-card .ch .ct {
   font: 700 19px/1.05 var(--f-display);
   text-transform: uppercase;
   color: var(--c);
+}
+/* The title finds the card's pane in the swarm: a button, drawn as the
+   heading it is (UI audit #172). */
+.swarm-card .ch .ct {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+.swarm-card .ch .ct:hover {
+  text-decoration: underline;
 }
 .swarm-card .ch .n {
   margin-left: auto;
@@ -9385,6 +9397,11 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   background: var(--info);
 }
 
+/* Something failed (UI audit #172): not "offline", which is a link's. */
+.ws-dot.failed {
+  background: var(--danger);
+}
+
 .ws-crumb-sep {
   color: var(--muted);
   padding: 0 2px;
@@ -9534,8 +9551,16 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   color: var(--dim);
 }
 
+/* One ring: the field's border, not an outline on the input inside it
+   too (UI audit #171). */
 .ws-search:focus-within {
   border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* (Over the chrome's focus rule, M113, whose :is() counts as two classes.) */
+.app.ws .ws-sidebar .ws-search input:focus-visible {
+  outline: none;
 }
 
 .ws-search input {
@@ -9654,6 +9679,11 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: ui-monospace, Menlo, monospace;
+}
+
+/* "Multiple repos": words, in the sidebar's own face (UI audit #171). */
+.ws-session-context.words {
+  font-family: inherit;
 }
 
 .ws-session-ago {
@@ -10974,6 +11004,33 @@ html[data-workspace="new"] .thread-panel {
 
 .ws-tabs .tabstrip > .tabbar {
   flex: 0 1 auto;
+}
+
+/* Each tab as wide as its name, between a minimum and the maximum (.tab):
+   they don't all shrink to one width when there are many; the strip
+   scrolls, and the menu after it lists them all (UI audit #171). */
+.ws-tabs .tab {
+  flex: none;
+  min-width: 56px;
+}
+
+.ws-tabs .tabs-all {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 5px 2px 4px;
+  padding: 0 7px;
+  border-radius: 6px;
+  color: var(--dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-tabs .tabs-all:hover,
+.ws-tabs .tabs-all[aria-expanded="true"] {
+  background: var(--raised);
+  color: var(--fg);
 }
 
 .ws-tabs .tabbar[data-overflow="end"] {

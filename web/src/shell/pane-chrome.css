@@ -97,10 +97,13 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
 }
 
 .grid.pane-chrome .pane-header.live { gap: 9px; }
+/* Two sizes in the header: 13px for the title, 11px for everything about
+   it (UI audit #171). */
 .grid.pane-chrome .pane-header-n {
-  font: 12px ui-monospace, Menlo, monospace;
+  font: 11px ui-monospace, Menlo, monospace;
   font-variant-numeric: tabular-nums;
 }
+.grid.pane-chrome .pane-header-branch { font-size: 11px; }
 .grid.pane-chrome .pane-header-type {
   display: inline-flex;
   flex: none;
@@ -119,4 +122,39 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
 @container (max-width: 560px) {
   .grid.pane-chrome .pane-header-where,
   .grid.pane-chrome .pane-header-branch { display: none; }
+}
+
+/* Another window sizes the tab (UI audit #171): a chip in the active
+   pane's header, not a note over its prompt. */
+.grid.pane-chrome .pane-header-sized {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 2px 0 8px;
+  border-radius: var(--chip-radius);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  color: var(--fg);
+  font-size: 11px;
+  cursor: default;
+}
+.grid.pane-chrome .pane-header-sized button {
+  height: 18px;
+  padding: 0 8px;
+  border-radius: var(--chip-radius);
+  background: var(--warn);
+  color: var(--on-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.grid.pane-chrome .pane-header-sized button:hover {
+  filter: brightness(1.1);
+}
+@container (max-width: 420px) {
+  .grid.pane-chrome .pane-header-sized-what { display: none; }
 }

@@ -246,7 +246,7 @@ test("on a phone, an editor approves from the sheet, gates first; a viewer sees 
   await page.goto("/#swarm");
   const card = page.locator('.swarm-card[data-kind="gate"]');
   await expect(card).toBeVisible({ timeout: 15_000 });
-  await expect(card.locator(".ch b")).toHaveText("Waits at a gate");
+  await expect(card.locator(".ch .ct")).toHaveText("Waits at a gate");
   await expect(card.locator(".cq")).toHaveText("delivery: release waits at gate approve-release");
   await expect(card.locator("[data-approve-gate]")).toHaveText("Approve");
   expect(await card.getAttribute("data-bundle")).toBe(`gate:${ws}`);

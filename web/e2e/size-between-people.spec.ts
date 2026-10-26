@@ -104,7 +104,7 @@ test("another person's switch and typing keep the size; asking takes it", async 
   expect((await tab(owner)).owner).toBe(await me(owner));
 
   // The button takes it.
-  await friend.locator(".sized-elsewhere").getByRole("button", { name: "Use this window's size" }).click();
+  await friend.locator("[data-sized-elsewhere]").getByRole("button", { name: "Use this window's size" }).click();
   await expect.poll(async () => (await tab(owner)).owner).toBe(await me(friend));
   await expect.poll(async () => (await sizes()).length).toBe(2);
   const [was, now] = await sizes();

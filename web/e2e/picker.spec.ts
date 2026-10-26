@@ -206,7 +206,7 @@ test("desktop: browse from the pane's directory, new pane there, cd there", asyn
   // New tab here, from the + button's menu.
   const tabs = await page.evaluate(() => window.__arugula.client.state!.tabs.length);
   await page.locator(".new-tab").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "In a directory…" }).click();
+  await page.getByRole("menuitem", { name: "New tab in a directory…" }).click();
   await expect.poll(() => pickerPath(page)).toBe(join(root, "with space"));
   await page.locator(".picker-row", { hasText: ".." }).first().click();
   await row(page, join(root, "gamma")).click();

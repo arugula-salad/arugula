@@ -203,14 +203,15 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
 
 /** The `+` button's menu: a new tab, and blocks in tabs of their own. */
 export function newTabItems(client: Client, session: SessionId): MenuItem[] {
+  // Each one a verb, "New …" or "Open …" (UI audit #171).
   return [
     { label: "New tab", run: () => client.intent({ op: "new_tab", session, from_pane: client.active() ?? null }) },
     ...(client.has("vms") ? [{ label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem] : []),
-    { label: "In a directory…", shortcut: keyHint("picker"), disabled: client.active() === undefined, run: () => openPicker(client, client.active()) },
+    { label: "New tab in a directory…", shortcut: keyHint("picker"), disabled: client.active() === undefined, run: () => openPicker(client, client.active()) },
     // M35: a studio app's box, in a tab of its own. The owner's.
     ...(!client.state?.roles && client.has("studio") ? [{ label: "Open a studio app…", run: () => pickApp(client, { session }) } as MenuItem] : []),
     // #123: the team's chat, in a tab of its own.
-    ...(!client.state?.roles && hasChat() ? [{ label: "Team chat", run: () => void openTeamChat(client, { session }) } as MenuItem] : []),
+    ...(!client.state?.roles && hasChat() ? [{ label: "Open team chat", run: () => void openTeamChat(client, { session }) } as MenuItem] : []),
     // M36: a pull request, in a tab of its own.
     ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { session }) } as MenuItem] : []),
     // M37: an issue, in a tab of its own.
@@ -220,14 +221,23 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
   ];
 }
 
-/** The session button's menu, after the list of sessions: what acts on
- * this session, and nothing else. Settings for the device, the machine and
- * the account are in the account menu (`settingsItems`). */
-export function sessionItems(client: Client, session: SessionId, rename: () => void, opts: { bar?: boolean } = {}): MenuItem[] {
+/** The session's menu: the sidebar row's … and the header's ▾ (after its
+ * list of sessions) show the same one (UI audit #171). What acts on this
+ * session first, then a new one, then closing it; settings for the
+ * device, the machine and the account are in the account menu
+ * (`settingsItems`). */
+export function sessionItems(client: Client, session: SessionId, rename: () => void): MenuItem[] {
   // A guest's: the session's thread and notifications. Making, renaming
   // and closing sessions are the machine owner's (M113).
   if (client.state?.roles) return [...sessionThreadItems(client, session), ...agentNotifyItems(client, session)];
   return [
+    { label: "Rename session", run: rename },
+    // M61: the people's conversation about this session.
+    ...sessionThreadItems(client, session),
+    // Sharing is the daemon's owner's (M13).
+    { label: "Share session…", run: () => shareSession(session) },
+    ...agentNotifyItems(client, session),
+    "separator",
     { label: "New session", run: () => client.intent({ op: "new_session", name: null, from_pane: client.active() ?? null }) },
     // VMs and sandboxes need wisp (#180).
     ...(client.has("vms")
@@ -236,17 +246,25 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
           { label: "Sandboxes…", run: () => openSandboxes(client) } as MenuItem,
         ]
       : []),
-    { label: "Rename session", run: rename },
-    // M61: the people's conversation about this session.
-    ...sessionThreadItems(client, session),
-    // The bar has Share beside the session's button: its menu doesn't
-    // repeat it (the palette has it).
-    // Sharing is the daemon's owner's (M13).
-    ...(client.state?.roles || opts.bar ? [] : [{ label: "Share session…", run: () => shareSession(session) } as MenuItem]),
-    ...agentNotifyItems(client, session),
     "separator",
     { label: "Close session", danger: true, run: () => client.intent({ op: "close_session", session }) },
   ];
+}
+
+/** What the session's menu holds, in a few words, for the tooltips of the
+ * buttons that open it: read from its items, so they never promise one it
+ * hasn't (UI audit #171). */
+export function sessionMenuHint(items: MenuItem[]): string {
+  const has = (re: RegExp) => items.some((i) => typeof i === "object" && "label" in i && re.test(i.label));
+  const words = [
+    has(/^Rename/) && "rename",
+    has(/thread/) && "its thread",
+    has(/^Share/) && "share",
+    has(/^Notify/) && "notifications",
+    has(/^New session/) && "a new session",
+    has(/^Close/) && "close",
+  ].filter((w): w is string => !!w);
+  return words.join(", ");
 }
 
 /** The account menu's settings: this device, this machine, and help. The
