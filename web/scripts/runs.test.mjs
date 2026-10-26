@@ -4,7 +4,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { argvOf, commandLine, httpsOnly, decodeOp, eventDetail, keepLatest, paneLink, runTitle, runsQuery, startedBy, stripAnsi, took, withoutExitNote, workspaceLabel } from "../src/platform/runs-text.ts";
+import { argvOf, commandLine, httpsOnly, decodeOp, eventDetail, keepLatest, paneLink, runTitle, runsQuery, shortId, startedBy, stripAnsi, took, triggerLine, triggerOf, withoutExitNote, workspaceLabel } from "../src/platform/runs-text.ts";
 
 const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
 const op = (lines) => `arugula op v1\ndaemon d1\n${lines.join("\n")}\n`;
@@ -69,6 +69,10 @@ test("how a run is said", () => {
   assert.equal(startedBy({ trigger: "manual", started_by: "x", started_by_agent: null, source: {} }, names), "someone who left");
   assert.equal(startedBy({ trigger: "schedule", started_by: "rsc_1", started_by_agent: null, source: {} }, names), "its schedule");
   assert.equal(startedBy({ trigger: "event", started_by: "rru_1", started_by_agent: null, source: { event: "pr_opened", repo: "o/r" } }, names), "a rule (pr opened on o/r)");
+  // A timeline row's subject (UI audit #164): capitalised, a name kept.
+  assert.equal(startedBy({ trigger: "schedule", started_by: "rsc_1", started_by_agent: null, source: {} }, names, true), "Its schedule");
+  assert.equal(startedBy({ trigger: "manual", started_by: "e", started_by_agent: null, source: {} }, names, true), "Eve");
+
   assert.equal(took(0, 42_000), "42s");
   assert.equal(took(0, 185_000), "3m 5s");
   assert.equal(took(0, 3_720_000), "1h 2m");
@@ -101,4 +105,16 @@ test("a followed log keeps its latest pages, about 4 MiB", () => {
 test("a chant ledger link is a link only when it's https (M220)", () => {
   assert.equal(httpsOnly("https://github.com/acme/app/blob/" + "a".repeat(40) + "/github/releases.jsonl#L3"), true);
   for (const bad of ["javascript:alert(1)", "http://github.com/x", "data:text/html,x", "chant:acme/app", "not a url"]) assert.equal(httpsOnly(bad), false, bad);
+});
+
+test("what started a run, in a line, and short ids (UI audit #164)", () => {
+  const names = (a) => ({ e: "eve" })[a];
+  const run = (trigger, source = {}, deploy) => ({ trigger, started_by: "e", started_by_agent: null, source, deploy });
+  assert.equal(triggerLine(run("manual"), names), "Manual · eve");
+  assert.equal(triggerOf(run("manual", { deploy: "dep_1" })), "deploy");
+  assert.equal(triggerLine(run("manual", { deploy: "dep_1" }), names), "Deploy · eve");
+  assert.equal(triggerLine(run("schedule"), names), "Scheduled");
+  assert.equal(triggerLine(run("event", { event: "push", repo: "o/r" }), names), "Event · push on o/r");
+  assert.equal(shortId("hw_fa79e709aabbccdd"), "hw_fa79e709");
+  assert.equal(shortId("0123456789abcdef"), "01234567");
 });

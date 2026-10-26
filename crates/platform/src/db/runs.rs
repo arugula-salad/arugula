@@ -137,6 +137,9 @@ pub struct RunFilter<'a> {
     pub trigger: Option<TriggerKind>,
     /// A run spec's id, as its trigger's source names it.
     pub spec: Option<&'a str>,
+    /// Only deploys' runs (M219), or (false) none of them. A deploy's run
+    /// is `manual`: this tells them apart (UI audit #164).
+    pub deploy: Option<bool>,
 }
 
 /// One change of a run's state.
@@ -559,10 +562,15 @@ impl Db {
             super::migrate::Dialect::Sqlite => "json_extract(trigger_source, '$.spec')",
             super::migrate::Dialect::Postgres => "(CAST(trigger_source AS jsonb) ->> 'spec')",
         };
+        let deploy = match f.deploy {
+            None => "",
+            Some(true) => " AND EXISTS (SELECT 1 FROM deploy_runs d WHERE d.run_id = runs.id)",
+            Some(false) => " AND NOT EXISTS (SELECT 1 FROM deploy_runs d WHERE d.run_id = runs.id)",
+        };
         c.query_map(
             &format!(
                 "SELECT {COLS} FROM runs WHERE project_id = ?1
-                     AND (?2 = '' OR state = ?2) AND (?3 = '' OR trigger_kind = ?3) AND (?4 = '' OR {spec} = ?4)
+                     AND (?2 = '' OR state = ?2) AND (?3 = '' OR trigger_kind = ?3) AND (?4 = '' OR {spec} = ?4){deploy}
                  ORDER BY created_at DESC, id DESC LIMIT ?5"
             ),
             params![

@@ -146,7 +146,7 @@ test("a team's runs: one started by hand, its view and its thread", async ({ bro
   await expect(view.locator("[data-run-state-label]")).toHaveText("Pending");
   await expect(view.locator("[data-run-command]")).toHaveText(`sh -c 'echo hi && exit 2'`);
   await expect(view.locator("[data-run-op-hash]")).toHaveText(/^[0-9a-f]{64}$/);
-  await expect(view.locator("[data-run-started-by]")).toContainText("By hand, by alice");
+  await expect(view.locator("[data-run-started-by]")).toContainText("Manual · alice");
   await expect(view.locator("[data-run-live]")).toContainText("Waiting for its hosted workspace");
   await expect(view.locator("[data-run-event]")).toHaveCount(1);
   // No box runs here, so the platform keeps no log of it: the page says so.

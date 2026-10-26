@@ -145,7 +145,33 @@ export const STATES: Record<string, string> = {
   expired: "Expired",
 };
 
-export const TRIGGERS: Record<string, string> = { manual: "By hand", schedule: "Schedule", event: "Event" };
+/** What starts runs, as the Trigger filter offers them (UI audit #164).
+ * `deploy` is a deploy's run (M219), `manual` underneath: the platform's
+ * list tells them apart. */
+export const TRIGGERS: Record<string, string> = { manual: "Manual", schedule: "Scheduled", event: "Event", deploy: "Deploy" };
+
+/** What started a run, as TRIGGERS names it: a deploy's run is `deploy`. */
+export function triggerOf(run: { trigger: string; source: Record<string, unknown>; deploy?: unknown }): string {
+  return run.deploy || (run.trigger === "manual" && typeof run.source?.deploy === "string") ? "deploy" : run.trigger;
+}
+
+/** A run's trigger and who, in a line (UI audit #164): `Manual · kim`,
+ * `Deploy · kim`, `Scheduled`, `Event · push on o/r`. */
+export function triggerLine(
+  run: { trigger: string; started_by: string; started_by_agent: string | null; source: Record<string, unknown>; deploy?: unknown },
+  name: (account: string) => string | undefined,
+): string {
+  const t = triggerOf(run);
+  const word = TRIGGERS[t] ?? t;
+  if (t === "manual" || t === "deploy") return `${word} · ${startedBy(run, name)}`;
+  if (t === "event") {
+    const s = run.source ?? {};
+    const ev = typeof s.event === "string" ? s.event.replace(/_/g, " ") : "";
+    const repo = typeof s.repo === "string" ? ` on ${s.repo}` : "";
+    return ev ? `${word} · ${ev}${repo}` : word;
+  }
+  return word;
+}
 
 /** Nothing leaves it. */
 export const ended = (state: string) => ["succeeded", "failed", "denied", "canceled", "expired"].includes(state);
@@ -167,20 +193,31 @@ export function took(from: number, to: number): string {
 }
 
 /** Who or what started it: a person (by hand, or an agent of theirs), a
- * schedule or a rule. `name` names an account. */
+ * schedule or a rule. `name` names an account. `start`: it begins a
+ * sentence (a timeline row's subject, UI audit #164), so what isn't a
+ * person's name is capitalised. */
 export function startedBy(
   run: { trigger: string; started_by: string; started_by_agent: string | null; source: Record<string, unknown> },
   name: (account: string) => string | undefined,
+  start = false,
 ): string {
   const s = run.source ?? {};
-  if (run.trigger === "schedule") return "its schedule";
+  const cap = (t: string) => (start ? `${t.charAt(0).toUpperCase()}${t.slice(1)}` : t);
+  if (run.trigger === "schedule") return cap("its schedule");
   if (run.trigger === "event") {
     const ev = typeof s.event === "string" ? s.event.replace(/_/g, " ") : "an event";
     const repo = typeof s.repo === "string" ? ` on ${s.repo}` : "";
-    return `a rule (${ev}${repo})`;
+    return cap(`a rule (${ev}${repo})`);
   }
-  const who = run.started_by ? (name(run.started_by) ?? "someone who left") : "someone who left";
+  const who = run.started_by ? (name(run.started_by) ?? cap("someone who left")) : cap("someone who left");
   return run.started_by_agent ? `${who}'s agent` : who;
+}
+
+/** An id short, its prefix kept: `hw_fa79e709` (UI audit #164). The page
+ * puts the whole one in a title. */
+export function shortId(id: string): string {
+  const at = id.indexOf("_");
+  return at >= 0 && at < 6 ? id.slice(0, at + 9) : id.slice(0, 8);
 }
 
 /** The run's pane on control's page, where its machine is: the shell's
