@@ -202,7 +202,7 @@ details.issues-note > summary {
 
 .issue-split > button:last-child {
   margin-left: -1px;
-  padding: 0 7px;
+  padding: 0 var(--space-2);
   border-radius: 0 var(--btn-radius) var(--btn-radius) 0;
 }
 
@@ -372,7 +372,7 @@ details.issues-note > summary {
 
 .issue-form label {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
 }
 
 .issue-form label.control-confirm {
@@ -389,7 +389,7 @@ details.issues-note > summary {
 
 .issue-form-part {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
 }
 
 .issue-form-label {

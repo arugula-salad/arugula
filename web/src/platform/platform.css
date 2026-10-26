@@ -865,7 +865,7 @@ html[data-corners="square"] .platform-section {
 .hosted-chip {
   display: inline-block;
   margin-right: 4px;
-  padding: 1px 7px;
+  padding: 1px var(--space-2);
   border: 1px solid var(--line);
   border-radius: var(--chip-radius);
   color: var(--dim);
@@ -1001,5 +1001,5 @@ html[data-corners="square"] .platform-section {
 }
 
 .frame-place .chat-count {
-  margin-left: 5px;
+  margin-left: var(--space-1);
 }

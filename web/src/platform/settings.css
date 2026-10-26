@@ -45,7 +45,7 @@
 .platform .settings-more > summary {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
   font: 500 11px/1.6 var(--f-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -326,7 +326,7 @@ html[data-corners="square"] .platform input.sw-switch {
 
 .platform .agent-matrix th,
 .platform .agent-matrix td {
-  padding: 7px 6px;
+  padding: var(--space-2) 6px;
 }
 
 /* A matrix's and a settings table's column heads, mono capitals; one with a
@@ -430,7 +430,7 @@ html[data-corners="square"] .platform input.sw-switch {
   flex: none;
   display: inline-block;
   margin-left: 8px;
-  padding: 1px 7px;
+  padding: 1px var(--space-2);
   border: 1px solid var(--raised-hover);
   border-radius: var(--chip-radius);
   font: 500 11px/1.4 var(--f-mono);
@@ -454,7 +454,7 @@ html[data-corners="square"] .platform input.sw-switch {
 
 .platform .settings-table th,
 .platform .settings-table td {
-  padding: 7px 8px;
+  padding: var(--space-2) 8px;
   vertical-align: middle;
 }
 
@@ -699,7 +699,7 @@ html[data-corners="square"] .platform input.sw-switch {
 }
 
 .platform .deploy-source-kind {
-  margin-right: 5px;
+  margin-right: var(--space-1);
   font: 500 10px/1.3 var(--f-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -809,7 +809,7 @@ html[data-corners="square"] .platform input.sw-switch {
   .platform .settings-index a {
     display: block;
     margin-left: -1px;
-    padding: 5px 0 5px 12px;
+    padding: var(--space-1) 0 var(--space-1) 12px;
     border-left: 2px solid transparent;
     font: 500 11px/1.3 var(--f-mono);
     letter-spacing: 0.03em;

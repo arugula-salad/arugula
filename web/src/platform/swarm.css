@@ -384,7 +384,7 @@
 /* A warning on a card (UI audit #165): "Wants a rebuild". */
 .platform .sw-chip {
   align-self: flex-start;
-  padding: 1px 7px;
+  padding: 1px var(--space-2);
   border: 1px solid var(--warn);
   border-radius: var(--chip-radius);
   background: color-mix(in srgb, var(--warn) 12%, transparent);
@@ -401,7 +401,7 @@
 
 .platform .sw-n {
   margin-left: auto;
-  padding: 3px 7px;
+  padding: 3px var(--space-2);
   border-radius: var(--chip-radius);
   background: var(--c);
   color: var(--on-color);
