@@ -341,6 +341,10 @@ async fn an_approved_deploy_is_applied_by_its_run_with_its_secrets_once() {
     let failed = app.db.deploy_history(&id).unwrap().pop().unwrap();
     assert_eq!((failed.kind.as_str(), failed.actor.clone()), ("failed", format!("run {}", run.id)));
     assert_eq!(failed.detail_json().unwrap()["reason"], json!("the apply exited 3"));
+    // Its page says why, and which run (UI audit #146).
+    let (_, v) = call(&base, "a", "GET", &format!("/api/deploys/{id}"), None).await;
+    let last = v["events"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!((&last["detail"]["reason"], &last["run"]), (&json!("the apply exited 3"), &json!(run.id)), "{last}");
     let page = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             if let Some(p) = hub.pushes().into_iter().find(|(_, m, _)| m["tag"] == json!(format!("deploy-failed-{id}")))

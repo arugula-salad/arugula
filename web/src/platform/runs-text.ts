@@ -230,6 +230,14 @@ export function stripAnsi(s: string): string {
     .replace(/\r+\n/g, "\n");
 }
 
+/** The note a pane writes when what it ran ended and it waits for Enter
+ * (arugula_mux's pane: `[exited with code 0 · press Enter for a shell]`):
+ * the terminal's, not the run's, so a kept log ends without it (UI audit
+ * #146). `text` is already without its escapes. */
+export function withoutExitNote(text: string): string {
+  return text.replace(/\n*\[(?:exited with code -?\d+|process ended by signal \d+) · press Enter for a shell\]\s*$/, "\n");
+}
+
 /** The most of a followed log a run's view keeps (about 4 MiB): older
  * pages go first, and Earlier reads them again. */
 export const LOG_KEPT = 4 * 1024 * 1024;

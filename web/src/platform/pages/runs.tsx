@@ -16,7 +16,7 @@
 // (M196's object room on the run's id). While it goes, the view waits on
 // the platform for its next event (`since` and `wait`).
 
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { RoomBody } from "../../shared/chat/room";
 import type { ChatRoom } from "../../shared/proto";
@@ -33,7 +33,7 @@ import { mayWrite, nameIn } from "./issues";
 import { Missing } from "./project";
 import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type RunLogPage, type RunSpec, type RunView } from "../runs";
 import { runTone, toneClass, type Tone } from "../swarm";
-import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, deployTitle, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, startedBy, stripAnsi, tone, took, workspaceLabel } from "../runs-text";
+import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, deployTitle, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, startedBy, stripAnsi, tone, took, withoutExitNote, workspaceLabel } from "../runs-text";
 import { ThreadUnread } from "../thread-unread";
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
@@ -738,8 +738,24 @@ function RunLog({ run }: { run: RunView }) {
       toast((e as Error).message);
     }
   };
-  const text = useMemo(() => stripAnsi((pages ?? []).map((p) => p.text).join("")), [pages]);
+  // The pane's own "press Enter for a shell" note goes (UI audit #146).
+  const text = useMemo(() => {
+    const t = stripAnsi((pages ?? []).map((p) => p.text).join(""));
+    return going ? t : withoutExitNote(t);
+  }, [pages, going]);
   const kept = !!pages?.some((p) => p.kept);
+  // A failed run's log opens at its end, where it says why (UI audit
+  // #146); one that goes stays there while it's followed at its end.
+  const box = useRef<HTMLPreElement>(null);
+  const opened = useRef(false);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || !text) return;
+    if (!opened.current) {
+      opened.current = true;
+      if (state === "failed") el.scrollTop = el.scrollHeight;
+    }
+  }, [text, state]);
   return (
     <div class="run-log" data-run-log={pages ? (kept ? "kept" : "none") : ""}>
       <h2>Log</h2>
@@ -753,7 +769,7 @@ function RunLog({ run }: { run: RunView }) {
               Earlier
             </button>
           )}
-          <pre class="run-log-text" data-run-log-text>
+          <pre class="run-log-text" data-run-log-text ref={box}>
             {text || (going ? "(nothing yet)" : "(empty)")}
           </pre>
           <p class="dim run-log-foot">{going ? "It follows the log while the run goes." : last?.end ? "The end of its log. Kept 30 days." : "Kept 30 days."}</p>

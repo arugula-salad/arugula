@@ -4,7 +4,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { argvOf, commandLine, httpsOnly, decodeOp, eventDetail, keepLatest, paneLink, runTitle, runsQuery, startedBy, stripAnsi, took, workspaceLabel } from "../src/platform/runs-text.ts";
+import { argvOf, commandLine, httpsOnly, decodeOp, eventDetail, keepLatest, paneLink, runTitle, runsQuery, startedBy, stripAnsi, took, withoutExitNote, workspaceLabel } from "../src/platform/runs-text.ts";
 
 const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
 const op = (lines) => `arugula op v1\ndaemon d1\n${lines.join("\n")}\n`;
@@ -38,6 +38,12 @@ test("a deploy's operation reads as its deploy, by its environment and commit (U
   assert.equal(workspaceLabel({ workspace: "hw_1", workspace_name: "ci" }), "ci");
   assert.equal(workspaceLabel({ workspace: "hw_1" }), "hw_1");
   assert.equal(workspaceLabel({ workspace: null }), null);
+});
+
+test("a kept log ends without the pane's exit note (UI audit #146)", () => {
+  assert.equal(withoutExitNote("boom\nerror: it broke\n\n[exited with code 0 · press Enter for a shell]\n"), "boom\nerror: it broke\n");
+  assert.equal(withoutExitNote("x\n[process ended by signal 9 · press Enter for a shell]"), "x\n");
+  assert.equal(withoutExitNote("[exited with code 1 · press Enter for a shell] then more\n"), "[exited with code 1 · press Enter for a shell] then more\n", "only at its end");
 });
 
 test("anything else isn't an operation", () => {

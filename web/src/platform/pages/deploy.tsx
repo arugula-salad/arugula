@@ -12,7 +12,8 @@
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { controlOrigin } from "../session";
-import { follow } from "../router";
+import { names } from "../links";
+import { follow, pathOf } from "../router";
 import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
 import { ago } from "../settings/agent-tokens";
 import { deployTone, toneClass } from "../swarm";
@@ -46,7 +47,11 @@ export interface Deploy {
     expires: number;
     passkey: { id: string } | null;
   }[];
-  events: { seq: number; kind: string; actor: string; by: string; at: number; hash: string }[];
+  /** The run that applied it, once it started. */
+  run?: string | null;
+  /** `detail` is what the event said (a failure's reason, its run); `run`
+   * the run it's by, if one. */
+  events: { seq: number; kind: string; actor: string; by: string; at: number; hash: string; detail?: Record<string, unknown>; run?: string | null }[];
   log: { verified?: number; broken_at?: number };
 }
 
@@ -149,6 +154,16 @@ export function DeployCard({ d, link, planOpen }: { d: Deploy; link?: boolean; p
   );
 }
 
+/** Why a deploy that won't be applied ended: its last event's reason. */
+export function endedWhy(d: Pick<Deploy, "state" | "events">): string | null {
+  if (!["failed", "canceled", "expired", "denied"].includes(d.state)) return null;
+  const last = d.events.at(-1);
+  return typeof last?.detail?.reason === "string" ? last.detail.reason : null;
+}
+
+/** A run's page, from a deploy's (UI audit #146). */
+const runPath = (d: Pick<Deploy, "project">, run: string) => pathOf({ page: "run", project: d.project.id, run }, names);
+
 /** `/deploys/:id`: the deploy, its approvals and its log. */
 export function DeployPage({ id }: { id: string }) {
   const [d, setD] = useState<Deploy | null>(null);
@@ -161,6 +176,21 @@ export function DeployPage({ id }: { id: string }) {
   return (
     <section class="platform-section deploy-page" data-deploy-page={d.id}>
       <DeployCard d={d} />
+      {endedWhy(d) || (d.state === "failed" && d.run) ? (
+        // Why it failed, and the run that has its log (UI audit #146).
+        <p class="deploy-note" data-deploy-why>
+          {stateText(d.state)}
+          {endedWhy(d) ? `: ${endedWhy(d)}` : ""}
+          {d.run ? (
+            <>
+              {" · "}
+              <a href={runPath(d, d.run)} onClick={(e) => follow(e, runPath(d, d.run!))} data-deploy-run>
+                its run's log
+              </a>
+            </>
+          ) : null}
+        </p>
+      ) : null}
       {d.approvals.length > 0 ? (
         <>
           <h2>Approvals</h2>
@@ -184,8 +214,18 @@ export function DeployPage({ id }: { id: string }) {
       <ol class="platform-list deploy-events">
         {d.events.map((e) => (
           <li key={e.seq}>
-            <span class="dim">#{e.seq}</span> {e.kind} <span class="dim">
-              by {e.by}, {when(e.at)}
+            <span class="dim">#{e.seq}</span> {e.kind}
+            {typeof e.detail?.reason === "string" ? `: ${e.detail.reason}` : ""}{" "}
+            <span class="dim">
+              by{" "}
+              {e.run ? (
+                <a href={runPath(d, e.run)} onClick={(ev) => follow(ev, runPath(d, e.run!))}>
+                  run <code>{e.run}</code>
+                </a>
+              ) : (
+                e.by
+              )}
+              , {when(e.at)}
             </span>
           </li>
         ))}

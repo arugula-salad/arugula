@@ -350,9 +350,15 @@ pub(crate) async fn deploy_json(
         .iter()
         .zip(&actors)
         .map(|(e, a)| {
+            // What it said (a failure's reason, its run), and the run it's
+            // by, for the page to link (UI audit #146).
+            let run = match a {
+                Some(Actor::Run(r)) => Some(r.clone()),
+                _ => None,
+            };
             json!({
                 "seq": e.seq, "kind": e.kind, "actor": e.actor, "by": by(a), "at": e.at, "hash": e.hash,
-                "prev_hash": e.prev_hash,
+                "prev_hash": e.prev_hash, "detail": e.detail_json().unwrap_or_default(), "run": run,
             })
         })
         .collect();
