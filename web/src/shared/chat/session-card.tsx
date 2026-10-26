@@ -118,10 +118,12 @@ export function idleOf(c: SessionCard): string | null {
 
 /** What a try's or a review's state says, past the plain states: a try
  * that wasn't kept is "not picked", a queued one with no slot on its box
- * "waiting for a slot", a posted review "reviewed". */
+ * "waiting for a slot", a posted review "reviewed", and one whose PR
+ * merged (M265) "merged ✓". */
 export function triedAs(state: string, reason: string | null, noSlot = false): { label: string; tone: Tone } | null {
   if (state === "stopped" && reason?.startsWith("not_picked")) return { label: "not picked", tone: "muted" };
   if (state === "stopped" && reason?.startsWith("reviewed")) return { label: "reviewed", tone: "ok" };
+  if (state === "stopped" && reason?.startsWith("merged")) return { label: "merged ✓", tone: "ok" };
   if (state === "queued" && noSlot) return { label: "waiting for a slot", tone: "warn" };
   return null;
 }
@@ -134,10 +136,12 @@ export function triesLine(tries: SessionTry[]): string {
   const starting = n((t) => t.state === "queued" && !t.no_slot);
   const waiting = n((t) => t.state === "queued" && t.no_slot);
   const done = n((t) => t.state === "done");
+  const merged = n((t) => t.state === "stopped" && !!t.reason?.startsWith("merged"));
   if (running) parts.push(`${running} running`);
   if (starting) parts.push(`${starting} starting`);
   if (waiting) parts.push(`${waiting} waiting for a slot`);
   if (done) parts.push(`${done} done`);
+  if (merged) parts.push(`${merged} merged`);
   return parts.join(", ");
 }
 
@@ -400,7 +404,7 @@ function TriesView({ c, may, busy, pick }: { c: SessionCard; may: boolean; busy:
                   </a>
                 )}
                 <span class="session-card-fill" />
-                {may && !c.picked && t.state !== "failed" && t.state !== "stopped" && (
+                {may && !c.picked && c.merged_at === null && t.state !== "failed" && t.state !== "stopped" && (
                   <button type="button" disabled={busy} title="Keep this one: the others stop, and what they didn't push goes" data-session-pick={t.session} onClick={() => pick(t.session)}>
                     Pick
                   </button>
@@ -475,7 +479,8 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   const parentPage = c.parent_session ? api.sessionHref?.(c.project, c.parent_session) : undefined;
   const parentShort = c.parent_session?.replace(/^ses_/, "").slice(0, 8);
   const review = c.role === "review";
-  const mayTry = view.may && c.role === "thread" && c.tries.length === 0 && c.state !== "failed" && c.state !== "stopped";
+  // Not once its PR merged (M265): its thread is done.
+  const mayTry = view.may && c.role === "thread" && c.tries.length === 0 && c.merged_at === null && c.state !== "failed" && c.state !== "stopped";
   return (
     <div class={`session-card tone-${tone}${large ? " large" : ""}`} data-session-card={c.session} data-session-state={quiet && c.state !== "unresponsive" ? "quiet" : c.state}>
       <div class="session-card-top">
