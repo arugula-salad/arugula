@@ -128,7 +128,8 @@ the clone; any other with the workspace's `GIT_TOKEN` secret (and
 environment for the clone alone, from a file in memory the setup removes as
 it reads it: nothing lands in a repo's config or on the disk. The spec's
 `env` names take their values from the workspace's secrets, for the setup
-script. Changing the spec shows "rebuild needed" until the box is rebuilt.
+script. Changing the spec shows "rebuild needed" until the box is rebuilt,
+but for its finish step (below), which the box gets with its sessions' work.
 Before a rebuild the CLI asks the box, through the relay, for repos with
 changes or commits on no remote branch (`GET /api/hosted/setup` on the
 daemon), and stops unless `--download FILE` saves them first (a tarball of
@@ -140,10 +141,22 @@ arugula cloud create dev --repo https://github.com/acme/app --setup setup.sh
 arugula cloud ls                          # every project's; --project <id or name>
 arugula cloud open dev --wait             # wakes a paused box, says its machine and its setup
 arugula cloud edit dev --setup setup.sh   # rebuild needed
+arugula cloud edit dev --finish "just check"   # no rebuild: the next turn runs it
 echo "$TOKEN" | arugula cloud secret set dev GIT_TOKEN
 arugula cloud rebuild dev --download dev.tgz   # a new box from the spec
 arugula cloud delete dev
 ```
+
+**The finish step** (M261) is the spec's `finish`: a command such as `just
+check` that a thread's agent session runs on the box after each turn, before
+the push. It runs as the session's own user, in its checkout, with that
+user's environment and nothing secret, for at most 15 minutes
+(`finish_timeout_s`, `--finish-timeout`). When it fails, the agent gets one
+more turn, with the last 4 KiB of its output as a prompt from the finish
+step. When that turn's finish step fails too, nothing is pushed, and the
+session's card shows the failure and its last lines. It's one field in the
+project's settings, and `--finish` on `cloud edit`; it isn't part of the
+spec's hash, so changing it needs no rebuild.
 
 **Runs and their triggers (M214, platform step 7).** A run executes on one
 of a project's hosted workspaces. It starts by hand, on a schedule, or on a

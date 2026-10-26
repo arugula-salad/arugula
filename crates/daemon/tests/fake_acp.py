@@ -586,6 +586,15 @@ def prompt(mid, p):
         update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tc, "status": "completed", "_meta": meta,
                         "content": [{"type": "content", "content": {"type": "text", "text": said}}]})
         msg("Waiting on the background task.")
+    elif text.startswith("The finish step"):
+        # A hosted session's finish step failed (M261): fix what it said,
+        # if it's something this fake knows how to fix.
+        if "FIXED is missing" in text:
+            with open(os.path.join(s.get("cwd") or ".", "FIXED"), "w") as f:
+                f.write("fixed\n")
+            msg("Fixed it.")
+        else:
+            msg("I can't fix that.")
     else:
         msg("Hello! I am fake.")
     if stop != "cancelled":

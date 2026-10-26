@@ -220,8 +220,8 @@ async fn a_sessions_card_lives_in_its_thread_and_its_people_answer_it() {
 
     // The box takes the answer and finishes the turn.
     b0x.say(&app, &s.id, Kind::State, Some(State::Working), json!({ "actions": [action.id] })).await;
-    let turn =
-        json!({ "branch": s.branch, "pushed": true, "commits": ["abc fix login"], "diffstat": "1 file changed" });
+    let turn = json!({ "branch": s.branch, "pushed": true, "commits": ["abc fix login"], "diffstat": "1 file changed",
+        "finish": { "ok": true, "command": "just check" } });
     b0x.say(&app, &s.id, Kind::Turn, None, turn).await;
     b0x.say(&app, &s.id, Kind::State, Some(State::Done), json!({})).await;
     let (_, v) = call(&base, "a", "GET", &path, None).await;
@@ -232,6 +232,7 @@ async fn a_sessions_card_lives_in_its_thread_and_its_people_answer_it() {
         "{c}"
     );
     assert!(c["ended_at"].is_u64(), "{c}");
+    assert_eq!(c["turn"]["finish"], json!({ "ok": true, "command": "just check", "output_tail": "" }), "M261");
     let lines: Vec<&str> = v["events"].as_array().unwrap().iter().map(|e| e["text"].as_str().unwrap()).collect();
     assert_eq!(
         lines,
@@ -240,7 +241,7 @@ async fn a_sessions_card_lives_in_its_thread_and_its_people_answer_it() {
             "Its box took it",
             "Asks: Which page?",
             "Answered: working again",
-            &format!("Turn pushed {}: 1 commit", s.branch),
+            &format!("Turn pushed {}: 1 commit (finish passed: just check)", s.branch),
             "The turn finished"
         ]
     );
