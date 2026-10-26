@@ -300,6 +300,8 @@ impl Prompt {
         SessionPrompt {
             id: self.id.clone(),
             author: self.author.clone(),
+            // Filled by the pull (`work::work`): the hub knows names.
+            author_name: String::new(),
             source: self.source.as_str().into(),
             association: self.association.clone(),
             text: self.text.clone(),
@@ -775,11 +777,19 @@ fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport) -> Result<Result<Ve
             if !from.daemon_may(to) {
                 return Ok(Err(Refused::Reporter));
             }
+            // A turn someone started in the session's block itself (its
+            // Open button) names no prompts: a done session's next only.
+            if d.in_block && (from != State::Done || to != State::Working || !d.prompts.is_empty()) {
+                return refuse("only a done session's next turn starts in its block, naming no prompts");
+            }
             match to {
                 State::Working => {
                     let starts = matches!(from, State::Queued | State::Done);
-                    if starts && d.prompts.is_empty() {
+                    if starts && d.prompts.is_empty() && !d.in_block {
                         return refuse("a turn starts with the queued prompts it names");
+                    }
+                    if d.by.as_deref().is_some_and(|b| b.chars().count() > 200) {
+                        return refuse("who started a turn is at most 200 characters");
                     }
                     if from == State::Queued && !d.block.as_deref().is_some_and(word) {
                         return refuse("taking a session names its agent block");

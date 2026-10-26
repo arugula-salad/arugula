@@ -212,13 +212,39 @@ impl Handler for Dispatch {
     }
 }
 
+/// Each member's prompt's `author_name`: its author's login, else the
+/// name they chose.
+fn name_authors(
+    sessions: &mut [arugula_control_wire::work::SessionWork],
+    accounts: &std::collections::HashMap<String, crate::hub::Account>,
+) {
+    for p in sessions.iter_mut().flat_map(|s| s.prompts.iter_mut()).filter(|p| p.source == "member") {
+        if let Some(a) = accounts.get(&p.author) {
+            p.author_name = if a.login.is_empty() { a.name.clone() } else { a.login.clone() };
+        }
+    }
+}
+
 /// `GET /api/hosted/work` for `m`: the runs ready for it, with what it
 /// needs to check each before it starts, and its thread sessions. `takes`
 /// is what it said it takes.
 pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result<Work> {
     // Thread sessions (M256) go to a machine that says it takes them: every
     // one on its workspace that hasn't ended (`Db::session_work`).
-    let sessions = if takes.iter().any(|t| t == TAKES_SESSION) { app.db.session_work(&m.workspace)? } else { vec![] };
+    let mut sessions =
+        if takes.iter().any(|t| t == TAKES_SESSION) { app.db.session_work(&m.workspace)? } else { vec![] };
+    // Each prompt with its author's login, for the transcript's "from"
+    // note. Without the hub the box says the account id.
+    let authors: Vec<String> =
+        sessions.iter().flat_map(|s| &s.prompts).filter(|p| p.source == "member").map(|p| p.author.clone()).collect();
+    if !authors.is_empty() {
+        match app.cache.accounts(&*app.hub, &authors).await {
+            Ok(accounts) => name_authors(&mut sessions, &accounts),
+            Err(e) => {
+                warn!(workspace = m.workspace, error = %format!("{e:#}"), "can't name the sessions' prompts' authors")
+            }
+        }
+    }
     if !takes.iter().any(|t| t == TAKES_RUN) {
         return Ok(Work { sessions, ..Work::default() });
     }

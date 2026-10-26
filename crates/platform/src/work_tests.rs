@@ -411,3 +411,45 @@ async fn a_quiet_ready_box_is_woken_and_a_pulling_one_isnt() {
     }
     assert_eq!(got.as_deref(), Some("wake"));
 }
+
+/// A pulled prompt says who wrote it by login (the "from" note's), else by
+/// the name they chose; GitHub's text and an author the hub doesn't know
+/// are left as they are.
+#[test]
+fn a_pulled_prompt_names_its_author() {
+    use arugula_control_wire::work::{SessionPrompt, SessionWork};
+    let p = |author: &str, source: &str| SessionPrompt {
+        id: format!("spr_{author}"),
+        author: author.into(),
+        author_name: String::new(),
+        source: source.into(),
+        association: None,
+        text: "hi".into(),
+        at: 1,
+    };
+    let mut sessions = vec![SessionWork {
+        session: "ses_1".into(),
+        project: "prj_1".into(),
+        workspace: "hw_1".into(),
+        asker: "acct_jake".into(),
+        repo: None,
+        branch: "arugula/1-x".into(),
+        state: "queued".into(),
+        n: 0,
+        prompts: vec![
+            p("acct_jake", "member"),
+            p("acct_ann", "member"),
+            p("acct_gone", "member"),
+            p("github:o", "github"),
+        ],
+        actions: vec![],
+        finish: None,
+    }];
+    let account = |id: &str, login: &str, name: &str| {
+        (id.to_owned(), crate::hub::Account { id: id.into(), login: login.into(), name: name.into() })
+    };
+    let accounts = [account("acct_jake", "jhgaylor", "Jake"), account("acct_ann", "", "Ann")].into_iter().collect();
+    super::name_authors(&mut sessions, &accounts);
+    let named: Vec<&str> = sessions[0].prompts.iter().map(|p| p.who()).collect();
+    assert_eq!(named, ["jhgaylor", "Ann", "acct_gone", "github:o"]);
+}

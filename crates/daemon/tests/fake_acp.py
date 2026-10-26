@@ -50,7 +50,9 @@ Prompts:
                  (a cancel answers it at once)
   model          says the model set_config_option chose
   mode           says the permission mode session/set_mode chose (it knows
-                 claude-agent-acp's: default, acceptEdits, plan, auto)
+                 claude-agent-acp's: default, acceptEdits, plan, auto, and
+                 bypassPermissions, which it offers a user that isn't root;
+                 its tool calls still ask, as a bypass-immune one would)
   look           says what came with the prompt (M71): its images' types,
                  and any other text blocks (an image's path, to an agent
                  that takes no images); the prompt's blocks are in
@@ -697,7 +699,7 @@ def handle(m):
         send({"id": mid, "result": {"configOptions": CONFIG_OPTIONS}})
     elif method == "session/set_mode":
         s = load(p.get("sessionId", ""))
-        if s is None or p.get("modeId") not in ("default", "acceptEdits", "plan", "auto"):
+        if s is None or p.get("modeId") not in ("default", "acceptEdits", "plan", "auto", "bypassPermissions"):
             send({"id": mid, "error": {"code": -32602, "message": "Invalid Mode"}})
             return
         s["mode"] = p["modeId"]

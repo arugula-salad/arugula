@@ -275,6 +275,10 @@ async fn report(Axum(f): Axum<Fake>, Json(r): Json<SessionReport>) -> Json<Value
         return refuse(format!("from {} but it's {}", r.from, s.work.state), None, None);
     }
     let d: SessionDetail = serde_json::from_str(&r.detail).unwrap();
+    let starts = r.kind == "state" && r.to == "working" && (r.from == "queued" || r.from == "done");
+    if starts && d.prompts.is_empty() && !(d.in_block && r.from == "done") {
+        return refuse("a turn starts with the queued prompts it names".into(), None, None);
+    }
     s.work.n = r.n;
     s.work.state = r.to.clone();
     s.work.prompts.retain(|p| !d.prompts.contains(&p.id));
@@ -367,6 +371,7 @@ fn prompt(n: u32, author: &str, text: &str) -> SessionPrompt {
     SessionPrompt {
         id: format!("spr_{n:032}"),
         author: author.into(),
+        author_name: String::new(),
         source: "member".into(),
         association: None,
         text: text.into(),
@@ -514,7 +519,10 @@ fn a_hosted_machine_runs_sessions() {
     // A session's first prompt: a turn as ses1, in its own clone, on its
     // branch, with the repo's CLAUDE.md as text.
     let a = ses('a');
-    f.start(&a, "fix-readme", prompt(1, "acct1", "hello"));
+    // Its author's login comes with it, for the transcript's note.
+    let mut first = prompt(1, "acct1", "hello");
+    first.author_name = "jhgaylor".into();
+    f.start(&a, "fix-readme", first);
     wait(&marks, &f, "session a's first turn", || f.state(&a) == "done");
     assert_eq!(
         f.moves(&a),
@@ -563,10 +571,10 @@ fn a_hosted_machine_runs_sessions() {
     let block = block_of(&f, &a);
     let lines = transcript(&d, block);
     let at = lines.iter().position(|l| l.starts_with("user: hello")).unwrap();
-    assert_eq!(lines[at - 1], "note: A follow-up from acct1", "{lines:#?}");
+    assert_eq!(lines[at - 1], "note: A follow-up from jhgaylor", "{lines:#?}");
 
     // A follow-up queued mid-turn waits for the turn, then goes as its own
-    // author's; a cancel stops the turn.
+    // author's (by id, with no login); a cancel stops the turn.
     f.queue(&a, prompt(2, "acct1", "slow"));
     wait(&marks, &f, "the slow turn", || f.turns(&a).len() == 2);
     f.queue(&a, prompt(3, "acct2", "work README.md NOTES.md"));
@@ -613,17 +621,22 @@ fn a_hosted_machine_runs_sessions() {
     assert!(lines.iter().any(|l| l.starts_with("note: Answered by acct2")), "{lines:#?}");
     assert!(lines.iter().any(|l| l.starts_with("agent: ") && l.contains("Blue")), "{lines:#?}");
 
-    // A permission: approved, it runs.
+    // A permission: nobody's asked (aru-115). The agent runs in
+    // bypassPermissions, and what still asks, the block allows.
+    let questions = f.of(&a).iter().filter(|(r, _)| r.to == "needs_input").count();
     f.queue(&a, prompt(5, "acct1", "run touch it"));
-    wait(&marks, &f, "the permission", || f.state(&a) == "needs_input");
-    let (_, perm) = f.of(&a).into_iter().rfind(|(r, _)| r.to == "needs_input").unwrap();
-    assert_eq!(perm.ask.as_deref(), Some("permission"));
-    assert!(perm.options.iter().any(|o| o == "allow-once"), "{perm:?}");
-    let mut approve = action(3, "acct2", "approve");
-    approve.request = perm.request.clone();
-    f.ask(&a, approve);
-    wait(&marks, &f, "the approved turn", || f.state(&a) == "done" && f.turns(&a).len() == 5);
-    assert!(transcript(&d, block).iter().any(|l| l == "agent: Ran it."));
+    wait(&marks, &f, "the allowed turn", || f.state(&a) == "done" && f.turns(&a).len() == 5);
+    assert_eq!(f.of(&a).iter().filter(|(r, _)| r.to == "needs_input").count(), questions, "it asked nobody");
+    let lines = transcript(&d, block);
+    assert!(lines.iter().any(|l| l == "agent: Ran it."), "{lines:#?}");
+    assert!(lines.iter().any(|l| l == "note: Allowed touch it (a session on its box)"), "{lines:#?}");
+    let modes: String = std::fs::read_dir(&fake_dir)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("fake-"))
+        .map(|e| std::fs::read_to_string(e.path()).unwrap())
+        .collect();
+    assert!(modes.contains(r#""mode": "bypassPermissions""#), "its session's mode: {modes}");
 
     // A restart between turns: what was queued while the daemon was down
     // runs once, and the agent's conversation goes on, as the same user.
@@ -799,4 +812,68 @@ fn a_finish_step_runs_after_each_turn() {
     let checkout = homes.join("ses2").join("work").join(&x);
     wait(&marks, &f, "x's slot cleaned", || !checkout.exists() && !claude.exists() && !pushed.exists());
     assert!(homes.join("ses1").join("work").join(&p).exists(), "the others' are left alone");
+}
+
+/// A block's method, as the web client calls it.
+fn call(d: &arugula_testkit::Daemon, block: u64, method: &str, args: Value) -> Value {
+    d.post(&format!("/api/blocks/{block}/call/{method}"), args)
+}
+
+/// The live test's fifth bug: someone opens the session's block from its
+/// card and types there. The session follows the block, not only what the
+/// box hands it: that turn is reported (`in_block`), and goes to the same
+/// end as the box's own (the finish step, the push, the turn's report). A
+/// question asked in such a turn goes out as `needs_input`, and answered
+/// in the block it moves on with no action; a tool call asks nobody.
+#[test]
+fn a_turn_typed_in_the_block_is_the_sessions() {
+    let Rig { _rt, f, marks, homes, d, remote, .. } = rig("in-block");
+    let s = ses('4');
+    let step = FinishStep { command: "test -d .git && echo checked".into(), timeout_s: 0 };
+    f.start_with(&s, "typed", prompt(1, "acct1", "hello"), Some(step.clone()));
+    wait(&marks, &f, "the session's first turn", || f.state(&s) == "done" && f.turn_reports(&s).len() == 1);
+    let block = block_of(&f, &s);
+    let branch = format!("arugula/{}-typed", &s[4..12]);
+
+    // Typed in the block, as the web composer sends it.
+    call(&d, block, "send", json!({ "text": "work README.md NOTES.md" }));
+    wait(&marks, &f, "the typed turn's end", || f.state(&s) == "done" && f.turn_reports(&s).len() == 2);
+    assert_eq!(
+        f.moves(&s)[3..],
+        [("state", "done", "working"), ("turn", "working", "working"), ("state", "working", "done")]
+            .map(|(k, a, b)| (k.to_owned(), a.to_owned(), b.to_owned()))
+    );
+    let (_, start) = f.of(&s).into_iter().rfind(|(r, _)| r.to == "working" && r.from == "done").unwrap();
+    assert!(start.in_block && start.prompts.is_empty(), "{start:?}");
+    assert!(f.refused.lock().unwrap().is_empty(), "{:?}", f.refused.lock().unwrap());
+    let turn = f.turn_reports(&s).pop().unwrap();
+    assert_eq!(turn.finish, Some(FinishResult { ok: true, command: step.command.clone(), output_tail: String::new() }));
+    assert!(turn.commits.iter().any(|c| c.ends_with(" add NOTES.md")), "{turn:?}");
+    assert_eq!(turn.pushed, Some(true), "{turn:?}");
+    let head = git(&homes.join("ses1").join("work").join(&s), &["rev-parse", "HEAD"]);
+    assert_eq!(git(&remote, &["for-each-ref", "--format=%(objectname)", &format!("refs/heads/{branch}")]), head);
+
+    // A question in a typed turn goes out; answered in the block, it goes
+    // on with no action named.
+    call(&d, block, "send", json!({ "text": "ask one" }));
+    wait(&marks, &f, "the question", || f.state(&s) == "needs_input");
+    let (_, asked) = f.of(&s).into_iter().rfind(|(r, _)| r.to == "needs_input").unwrap();
+    assert_eq!(asked.ask.as_deref(), Some("question"), "{asked:?}");
+    let request = asked.request.clone().expect("its request");
+    call(&d, block, "answer", json!({ "id": request, "content": { "question_0": "Blue" } }));
+    wait(&marks, &f, "the answered turn", || f.state(&s) == "done" && f.turn_reports(&s).len() == 3);
+    let (_, back) = f.of(&s).into_iter().rfind(|(r, _)| r.from == "needs_input").unwrap();
+    assert!(back.actions.is_empty(), "{back:?}");
+    assert!(transcript(&d, block).iter().any(|l| l.starts_with("agent: ") && l.contains("Blue")));
+
+    // A tool call in a typed turn asks nobody.
+    call(&d, block, "send", json!({ "text": "run touch it" }));
+    wait(&marks, &f, "the allowed turn", || f.state(&s) == "done" && f.turn_reports(&s).len() == 4);
+    assert_eq!(f.of(&s).iter().filter(|(r, _)| r.to == "needs_input").count(), 1, "only the question");
+    assert!(transcript(&d, block).iter().any(|l| l == "agent: Ran it."));
+
+    // And the thread's prompts still go, after.
+    f.queue(&s, prompt(2, "acct2", "hello"));
+    wait(&marks, &f, "the thread's next prompt", || f.turns(&s).len() == 2 && f.state(&s) == "done");
+    assert!(f.refused.lock().unwrap().is_empty(), "{:?}", f.refused.lock().unwrap());
 }

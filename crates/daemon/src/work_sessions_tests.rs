@@ -54,6 +54,7 @@ fn each_report_is_the_sessions_next_signed() {
         last_at: 0,
         events: vec![],
         pushed_head: None,
+        turns_seen: Some(0),
     };
     l.push(
         &keys,
