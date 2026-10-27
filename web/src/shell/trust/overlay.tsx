@@ -16,7 +16,7 @@ import type { MenuItem } from "../../shared/ui/menu";
 import { Modal } from "../../shared/ui/modal";
 import { ADD_PASSKEY_HASH, DEVICE_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
 import { SharedDocs } from "../ui/shared-docs";
-import { AccountPanel, GITHUB_LINK_HASH } from "./account";
+import { ACCOUNT_HASH, AccountPanel, GITHUB_LINK_HASH } from "./account";
 import { DeviceLinkPrompt, DevicePrompt, JoinPrompt } from "./approve";
 import { DEPLOY_HASH, DeployPrompt } from "./deploy";
 import { openPanel, useControl, usedLink, type Panel } from "./common";
@@ -96,6 +96,18 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
     return (
       <Modal close={done}>
         <AccountPanel s={s} close={done} linked={linked} />
+      </Modal>
+    );
+  }
+  // The desktop app sends Link GitHub to a browser here (#235).
+  if (hash === ACCOUNT_HASH) {
+    const done = () => {
+      history.replaceState(history.state, "", location.pathname + location.search);
+      setHash("");
+    };
+    return (
+      <Modal close={done}>
+        <AccountPanel s={s} close={done} />
       </Modal>
     );
   }

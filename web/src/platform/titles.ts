@@ -16,6 +16,8 @@ export interface Known {
   run(id: string): string | null | undefined;
   /** A chat room's title (`#general`, a person's name). */
   room(id: string): string | null | undefined;
+  /** A project Doc's title (aru-118). */
+  doc?(id: string): string | null | undefined;
   /** The project the bar shows for a route that names none (a deploy's). */
   shown?: string;
 }
@@ -44,6 +46,12 @@ export function titleOf(r: Route, k: Known): string {
       return parts("Boards", p);
     case "board":
       return parts("Board", p);
+    case "docs":
+      return parts("Docs", p);
+    case "doc": {
+      const title = k.doc?.(r.doc);
+      return parts(title ?? "Doc", p);
+    }
     case "runs":
       return parts("Runs", p);
     case "run":

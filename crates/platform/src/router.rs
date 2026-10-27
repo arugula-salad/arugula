@@ -11,7 +11,7 @@ use axum::{
     routing::{MethodRouter, get, post, put},
 };
 
-use arugula_control_wire::{boards, issues, runs as wire_runs};
+use arugula_control_wire::{boards, issues, project_docs, runs as wire_runs};
 
 use crate::{
     Platform, agent_mcp, agent_tokens, billing, chat, clients, deploys, forge, grants, hosted, links, projects,
@@ -180,6 +180,14 @@ fn routes() -> Routes {
         .route(boards::AGENT_BOARD_ENTRY, axum::routing::delete(crate::boards::agent::delete))
         .route(boards::AGENT_BOARD_ENTRY_MOVE, post(crate::boards::agent::move_entry))
         .route(boards::AGENT_BLOCK_STATE, put(crate::boards::agent::put_block_state))
+        // Project Docs (aru-118), with chat.
+        .route(project_docs::PROJECT_DOCS, get(crate::project_docs::list_route).post(crate::project_docs::create_route))
+        .route(
+            project_docs::PROJECT_DOC,
+            get(crate::project_docs::get_route)
+                .put(crate::project_docs::put_route)
+                .delete(crate::project_docs::delete_route),
+        )
         // Deploys and their approval (M218).
         .route(deploys::ENVIRONMENTS, get(deploys::environments).post(deploys::create_environment))
         .route(deploys::PROJECT_DEPLOYS, get(deploys::list).post(deploys::plan_route))

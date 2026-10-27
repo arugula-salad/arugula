@@ -151,9 +151,12 @@ pub fn token_label(name: &str) -> String {
 /// (web/src/shared/agent-label.ts): "<owner>'s agent on <machine>", or an
 /// agent grant token's (M230), whose name isn't a machine's: "<owner>'s
 /// agent token “<name>”" (UI audit #192). `name`: the machine's name, or
-/// the token's (bare or as [`token_label`] names it).
+/// the token's (bare or as [`token_label`] names it). An agent session
+/// (`ses_…`, aru-115) acts as itself, so it is its name alone.
 pub fn agent_label(owner: &str, id: &str, name: &str) -> String {
-    if subject_kind(id) == "agent" {
+    if id.starts_with("ses_") {
+        name.to_owned()
+    } else if subject_kind(id) == "agent" {
         let label = token_label("");
         let name = name.strip_suffix(label.as_str()).unwrap_or(name);
         format!("{owner}'s agent token \u{201c}{name}\u{201d}")

@@ -6,6 +6,8 @@
 import { useEffect, useState } from "preact/hooks";
 import { UsageReports } from "../../shared/ui/account-telemetry";
 import { agentName, api, shownName, type ControlSession } from "../control";
+import { desktopApp } from "../../shared/desktop";
+import { BrowserStep } from "../../shared/ui/browser-step";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
@@ -71,6 +73,10 @@ export function passkeyName(k: Passkeys["passkeys"][number], i: number): string 
 /** Where linking GitHub comes back to: `#github-link=<what happened>`. */
 export const GITHUB_LINK_HASH = /^#github-link=([a-z-]+)$/;
 
+/** The page in a browser that opens Sign-in and account: where the desktop
+ * app sends Link GitHub, as its window can't link (#235). */
+export const ACCOUNT_HASH = "#account";
+
 /** What linking GitHub came back with, for the dialog to say. */
 const LINKED: Record<string, string> = {
   linked: "GitHub is linked: you can sign in with it too.",
@@ -91,6 +97,10 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
   const [unlinking, setUnlinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // The desktop app's window can't link GitHub (control refuses it): the
+  // browser does, and the window asks again when the person is back (#235).
+  const [inBrowser, setInBrowser] = useState(false);
+  const [browserLinked, setBrowserLinked] = useState(false);
   const load = () => {
     api<{ sessions: SessionRow[] }>("/api/me/sessions").then((r) => setSessions(r.sessions), (e: Error) => setErr(e.message));
     api<Passkeys>("/api/me/passkeys").then(setKeys, (e: Error) => setErr(e.message));
@@ -215,7 +225,11 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
       {s.info.github || keys?.github ? (
         <>
           <h3 class="control-group">GitHub</h3>
-          {linked ? (
+          {browserLinked ? (
+            <p class="dim" data-github-link="linked">
+              {LINKED.linked}
+            </p>
+          ) : linked ? (
             <p class={linked === "linked" ? "dim" : "control-error"} data-github-link={linked}>
               {LINKED[linked] ?? LINKED.failed}
             </p>
@@ -240,13 +254,32 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
                 <button
                   class="secondary small"
                   data-link-github
-                  onClick={() => location.assign(`/auth/github?link=1&next=${encodeURIComponent(location.pathname + location.search)}`)}
+                  disabled={inBrowser}
+                  onClick={() =>
+                    desktopApp()
+                      ? setInBrowser(true)
+                      : location.assign(`/auth/github?link=1&next=${encodeURIComponent(location.pathname + location.search)}`)
+                  }
                 >
                   Link GitHub
                 </button>
               )}
             </li>
           </ul>
+          {inBrowser ? (
+            <BrowserStep
+              url={`${location.origin}/${ACCOUNT_HASH}`}
+              label="Link GitHub in your browser"
+              check={async () => !!(await api<Passkeys>("/api/me/passkeys")).github}
+              onDone={() => {
+                setInBrowser(false);
+                setBrowserLinked(true);
+                load();
+                void s.refreshMe();
+              }}
+              cancel={() => setInBrowser(false)}
+            />
+          ) : null}
           {unlinking ? (
             <ConfirmRemove
               title={`Unlink GitHub (${keys?.github ?? ""})?`}

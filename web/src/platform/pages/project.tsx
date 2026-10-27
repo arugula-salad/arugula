@@ -21,6 +21,7 @@ import { controlOrigin, session, type PlatformProject } from "../session";
 import { roomTone, runTone, toneClass } from "../swarm";
 import { HostedWorkspaceList, NoWorkspaces, useHostedWorkspaces } from "./hosted-workspace";
 import { ProjectBoards } from "./boards";
+import { ProjectDocs } from "./docs";
 import { ProjectIssues } from "./issues";
 import { SessionNumbers } from "../session-stats";
 
@@ -77,6 +78,7 @@ export function ProjectHome({ id }: { id: string }) {
               })}
           </ul>
           {chat.on && <ProjectIssues p={p} />}
+          {chat.on && <ProjectDocs p={p} />}
           <ProjectRuns p={p} />
           <ProjectBoards p={p} />
           {(session.hosted || !!workspaces?.length) && (

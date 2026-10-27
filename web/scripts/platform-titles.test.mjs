@@ -43,6 +43,10 @@ test("a DM is in its project, a deploy takes the project the bar shows; unknown 
   assert.equal(t(dep), "Deploy · Arugula");
   assert.equal(t(dep, { ...known, shown: "prj_aaaa" }), "Deploy · Acme · Arugula");
   assert.equal(t("/p/prj_ffff/issues/iss_ffff"), "Issue · Arugula");
+  const doc = "/p/prj_aaaa/docs/pdc_" + "0".repeat(32);
+  assert.equal(t("/p/prj_aaaa/docs"), "Docs · Acme · Arugula");
+  assert.equal(t(doc), "Doc · Acme · Arugula", "a Doc not yet read");
+  assert.equal(t(doc, { ...known, doc: () => "Release plan" }), "Release plan · Acme · Arugula");
 });
 
 // Control's tabs read the same way (UI audit #170).

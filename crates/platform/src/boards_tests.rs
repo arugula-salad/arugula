@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use crate::db::sql::{Sql as _, params};
 use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
@@ -182,6 +183,56 @@ async fn a_board_from_creation_to_a_stale_write() {
 /// With the flag off for an account (chat on doesn't turn it on), every
 /// route answers 404 as if boards weren't there, a board that exists
 /// included.
+/// A row whose pointer a newer build wrote (a kind this one doesn't know,
+/// after a rollback) reads as no pointer, and the board still reads; a note
+/// edit or a status change leaves the stored pointer as it was.
+#[tokio::test]
+async fn a_pointer_from_a_newer_build_reads_as_none_and_is_kept() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let p = seed(&app, &hub, true);
+    let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "B" }))).await;
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let (_, v) = put(&base, "a", &id, json!({ "entry": "zone", "title": "Now" })).await;
+    let zone = v["zones"][0]["id"].as_str().unwrap().to_owned();
+    let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "zone": zone, "note": "proof" })).await;
+    let row = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
+    {
+        // What a newer build's schema allows and this one's doesn't.
+        // A test's database is Postgres only when this names one (`Db::test`).
+        let pg = std::env::var("ARUGULA_TEST_POSTGRES_URL").is_ok_and(|u| !u.is_empty());
+        let c = app.db.c();
+        if pg {
+            c.execute_batch("ALTER TABLE board_entries DROP CONSTRAINT board_entries_target_kind_check").unwrap();
+        } else {
+            c.execute_batch("PRAGMA ignore_check_constraints = ON").unwrap();
+        }
+        c.execute(
+            "UPDATE board_entries SET target_kind = 'link', target = 'https://example.com/proof' WHERE id = ?1",
+            params![row],
+        )
+        .unwrap();
+        if !pg {
+            c.execute_batch("PRAGMA ignore_check_constraints = OFF").unwrap();
+        }
+    }
+    let (st, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!((st, &v["zones"][0]["rows"][0]["pointer"]), (200, &json!({ "kind": "none" })), "{v}");
+    let rev = v["zones"][0]["rows"][0]["rev"].clone();
+    let (st, _) = put(&base, "a", &id, json!({ "id": row, "rev": rev, "note": "proof, edited" })).await;
+    assert_eq!(st, 200);
+    let (st, _) = put(&base, "a", &id, json!({ "id": row, "status": "done" })).await;
+    assert_eq!(st, 200);
+    let kept: (String, String) = app
+        .db
+        .c()
+        .query_row("SELECT target_kind, target FROM board_entries WHERE id = ?1", params![row], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(kept, ("link".to_owned(), "https://example.com/proof".to_owned()));
+}
+
 #[tokio::test]
 async fn with_the_flag_off_there_are_no_boards() {
     let hub = Arc::new(TestHub::default());

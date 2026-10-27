@@ -124,6 +124,13 @@ pub fn start(app: &App, headers: &HeaderMap, gh: &Github, next: String, redirect
     let Some((session, account)) = cookie_session(app, headers) else {
         return (StatusCode::UNAUTHORIZED, "Sign in to Arugula control first, then link GitHub.").into_response();
     };
+    // Linking adds a way to sign in, which the desktop app's window never
+    // does (its cookie may be a program's on that computer; #235).
+    let page = PageSession { account: account.clone(), token_hash: session.clone() };
+    if page.is_app(app).unwrap_or(true) {
+        return (StatusCode::FORBIDDEN, "Link GitHub in a browser or on a phone: the desktop app's window doesn't.")
+            .into_response();
+    }
     let nonce = token();
     let s = Start {
         account: account.clone(),
@@ -467,5 +474,26 @@ mod tests {
         assert_eq!(r.unlink(&cookie).await, StatusCode::OK);
         assert_eq!(r.github_of("pk1"), None);
         assert_eq!(r.app.db.github_account(7).unwrap(), None);
+    }
+
+    /// The desktop app's window (`via = app`) can't link GitHub (#235): a
+    /// 403, and no state kept. A browser's session still goes to GitHub.
+    #[tokio::test]
+    async fn the_desktop_apps_window_cannot_link() {
+        let r = rig().await;
+        let cookie = r.session("pk1");
+        let t = cookie.split_once('=').unwrap().1.to_owned();
+        r.app.db.set_session_via(&hash(&t), crate::auth::Via::App.as_str()).unwrap();
+        let res = r
+            .http
+            .get(format!("{}/auth/github?link=1&next=/here", r.base))
+            .header(header::COOKIE, &cookie)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert!(r.app.github_links.0.lock().unwrap().is_empty(), "nothing kept");
+        // A browser's session of the same account still links.
+        r.start(&r.session("pk1")).await;
     }
 }
