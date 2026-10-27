@@ -32,6 +32,7 @@ mod editors;
 mod forge;
 mod forges;
 mod fs;
+mod git_remote;
 // The gates a forge block and Labs' blocks raise.
 #[cfg(feature = "forge")]
 mod gate;
