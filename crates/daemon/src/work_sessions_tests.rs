@@ -112,15 +112,16 @@ fn each_report_is_the_sessions_next_signed() {
 /// Every turn's report carries the agent's last message as its reply
 /// (not a review's only): trimmed, none when it said nothing, cut to
 /// [`REPLY_MAX`], and cut further when the detail's JSON would be past
-/// what control takes.
+/// what control takes, each time from its start, so its end is kept.
 #[test]
 fn a_turns_report_carries_its_last_message() {
     let said = |m: &str| arugula_proto::api::TurnResult { message: m.into(), work: None };
     assert_eq!(reply_of(Some(&said("  The README is up to date.\n"))).as_deref(), Some("The README is up to date."));
     assert_eq!(reply_of(Some(&said(" \n "))), None, "nothing said, nothing to post");
     assert_eq!(reply_of(None), None);
-    let long = reply_of(Some(&said(&format!("{}é{}", "a".repeat(REPLY_MAX - 1), "b".repeat(100))))).unwrap();
-    assert!(long.len() <= REPLY_MAX + "…".len() && long.ends_with('…') && long.starts_with("aaa"), "{}", long.len());
+    let long = reply_of(Some(&said(&format!("{}é{}", "b".repeat(100), "a".repeat(REPLY_MAX - 1))))).unwrap();
+    assert!(long.len() <= REPLY_MAX + "…".len() && long.starts_with('…') && long.ends_with("aaa"), "{}", long.len());
+    assert!(!long.contains('b'), "its start goes");
 
     let keys = arugula_e2e::DeviceKeys::generate();
     let me = keys.id();
@@ -173,7 +174,7 @@ fn a_turns_report_carries_its_last_message() {
         })
         .collect();
     let cut_reply = d[0].reply.as_deref().unwrap();
-    assert!(cut_reply.ends_with('…') && reply.starts_with(cut_reply.trim_end_matches('…')), "{cut_reply}");
+    assert!(cut_reply.starts_with('…') && reply.ends_with(cut_reply.trim_start_matches('…')), "{cut_reply}");
     assert!(cut_reply.len() < reply.len() && cut_reply.len() > 1024, "cut, not dropped: {}", cut_reply.len());
     assert_eq!(d[1].reply.as_deref(), Some("Done: nothing to change."), "a short one goes as it is");
 }

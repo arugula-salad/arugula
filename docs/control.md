@@ -220,10 +220,15 @@ the finish step, the push and the turn's report.
 **Each turn's answer goes in the thread.** When a turn ends, pushed or
 not, the agent's last message is posted as a reply in the session's
 thread (only there, not also in the channel), as the asker's `via`
-`session:<ses>`, like a review's post. Past 2,000 characters it's cut,
-ending with a link to the session's page for the rest. It's plain text:
+`session:<ses>`, like a review's post. That's its final message only,
+not what it said earlier in the turn. Past 2,000 characters its start is
+cut: it begins with a link to the session's page, where all of it is,
+and keeps the end, where the summary and caveats are. A turn that pushed
+ends with a line saying how many commits went to which branch, since
+the box pushes after the agent's turn and the agent can't say. It's plain text:
 an `@` in it names nobody, and it never prompts the session or starts
-one. An empty message posts nothing, and a box from before this (one
+one. An empty message posts nothing (a turn that pushed posts its pushed
+line alone, so the thread always shows a push), and a box from before this (one
 that reports no reply) posts nothing either. The platform's which-box
 and which-repo questions, and the asker's answers to them, stay out of
 the session's first prompt: they were for the platform. On an Arugula issue's

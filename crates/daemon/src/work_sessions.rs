@@ -378,7 +378,7 @@ impl Session {
 /// `s` cut to `max` bytes, on a character's edge, and marked.
 /// `d` as the report's detail, within [`SESSION_DETAIL_MAX`]: a turn's
 /// reply (whose quotes and newlines grow in JSON) is cut until it fits,
-/// and left out when even none of it would.
+/// from its start, and left out when even none of it would.
 fn fit(d: &mut SessionDetail) -> String {
     loop {
         let detail = serde_json::to_string(&*d).unwrap_or_else(|_| "{}".into());
@@ -388,20 +388,33 @@ fn fit(d: &mut SessionDetail) -> String {
         if keep == 0 {
             d.reply = None;
         } else {
-            cut(r, keep);
+            cut_start(r, keep);
         }
     }
 }
 
 /// The agent's last message of a turn, as its report's reply: trimmed,
-/// at most [`REPLY_MAX`] bytes, and none when it said nothing.
+/// at most [`REPLY_MAX`] bytes, and none when it said nothing. A long one
+/// keeps its end, where a summary's caveats are (Arugula #215).
 fn reply_of(r: Option<&arugula_proto::api::TurnResult>) -> Option<String> {
     let mut m = r?.message.trim().to_owned();
     if m.is_empty() {
         return None;
     }
-    cut(&mut m, REPLY_MAX);
+    cut_start(&mut m, REPLY_MAX);
     Some(m)
+}
+
+/// `s` cut to its last `max` bytes, on a character's edge, and marked at
+/// its start.
+fn cut_start(s: &mut String, max: usize) {
+    if s.len() > max {
+        let mut at = s.len() - max;
+        while !s.is_char_boundary(at) {
+            at += 1;
+        }
+        *s = format!("…{}", &s[at..]);
+    }
 }
 
 fn cut(s: &mut String, max: usize) {
