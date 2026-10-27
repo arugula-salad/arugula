@@ -120,6 +120,8 @@ mod finder;
 mod frames;
 mod links;
 mod notices;
+#[cfg(target_os = "macos")]
+mod notify_mac;
 mod panics;
 mod platform;
 mod profile;
@@ -1001,16 +1003,12 @@ fn notify(app: &AppHandle, click: Click, title: String, body: String) {
                 }
             });
         }
+        // macOS: posted and forgotten; its click comes to one delegate
+        // (`notify_mac.rs`), so nothing waits here.
         #[cfg(target_os = "macos")]
         {
-            use mac_notification_sys::{Notification, NotificationResponse, send_notification, set_application};
-            let _ = set_application(arugula_proto::service::APP_ID);
-            if let Ok(NotificationResponse::Click) =
-                send_notification(&title, None, &body, Some(Notification::new().wait_for_click(true)))
-            {
-                let a = app.clone();
-                let _ = app.run_on_main_thread(move || click.open(&a));
-            }
+            let _ = &app; // the delegate has its own
+            notify_mac::show(click, &title, &body);
         }
     });
 }
@@ -1273,6 +1271,8 @@ fn main() {
             profile::init(app.handle());
             #[cfg(target_os = "macos")]
             finder::init(app.handle());
+            #[cfg(target_os = "macos")]
+            notify_mac::init(app.handle());
             #[cfg(target_os = "macos")]
             std::thread::spawn(|| {
                 let one = ONE.lock().unwrap_or_else(|e| e.into_inner());
