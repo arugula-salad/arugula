@@ -169,7 +169,8 @@ pub struct Config {
     pub worktree: Option<crate::worktree::Owned>,
     /// A hosted session's agent (M255): it runs as this session user, never
     /// as the daemon's, and so does the daemon's git in its directory. It
-    /// gets no Arugula MCP server: the daemon's port is closed to it.
+    /// gets no `/mcp`: the daemon's port is closed to it. It gets
+    /// `mcp::session`'s server, its project's issues and nothing else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_as: Option<hosted::AsUser>,
 }
@@ -700,7 +701,17 @@ impl Inner {
                 w.servers().iter().filter(|s| !list.iter().any(|o| o["name"] == s["name"])).cloned().collect();
             list.extend(extra);
         }
-        let Some(link) = ctx.mcp.as_ref().filter(|_| self.cfg.run_as.is_none()) else { return list };
+        // A hosted session's agent (only those have `run_as`) gets no
+        // `/mcp`, which drives panes as the daemon: it gets the session
+        // server, two tools for its project's issues, which says who is
+        // calling by the socket it calls from, so there's no token to
+        // leak onto a command line. Over HTTP only.
+        if self.cfg.run_as.is_some() {
+            let taken = list.iter().any(|s| s["name"] == crate::mcp::SERVER_NAME);
+            list.extend(crate::mcp::session::entry(self.caps["mcpCapabilities"]["http"] == true && !taken));
+            return list;
+        }
+        let Some(link) = ctx.mcp.as_ref() else { return list };
         if list.iter().any(|s| s["name"] == crate::mcp::SERVER_NAME) {
             return list;
         }

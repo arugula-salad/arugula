@@ -662,6 +662,13 @@ pub fn firewall(state: &Path, users: &[String]) -> Result<(), Refused> {
     Ok(())
 }
 
+/// Whether the firewall keeps runs and sessions off loopback port `port`
+/// whatever the daemon's own are: the privileged ones and the provider's.
+pub fn fenced_port(port: u16) -> bool {
+    let (a, b) = PROVIDER_PORTS.split_once(':').unwrap_or((PROVIDER_PORTS, PROVIDER_PORTS));
+    port <= 1023 || (a.parse::<u16>().is_ok_and(|a| a <= port) && b.parse::<u16>().is_ok_and(|b| port <= b))
+}
+
 /// Everyone [`firewall`] keeps off: the run user, and the template's
 /// session users.
 pub fn fenced(as_: Option<&RunAs>) -> Vec<String> {

@@ -112,6 +112,11 @@ pub const WORK_SESSION_REPORT: &str = "/api/hosted/work/session";
 /// [`PushGiven`].
 pub const WORK_SESSION_PUSH: &str = "/api/hosted/work/session/push";
 
+/// `POST` [`SessionIssuesAsk`], signed as the hosted machine (aru-115,
+/// amended): a session's agent reads its own project's native issues and
+/// comments on them. Answered [`SessionIssuesGiven`].
+pub const WORK_SESSION_ISSUES: &str = "/api/hosted/work/session/issues";
+
 /// The most sessions a box holds at once: taken and not ended (`working`,
 /// `needs_input`, `unresponsive` or `done`; a done one keeps its slot and
 /// its checkout for its next turn). Another waits `queued`.
@@ -599,6 +604,56 @@ impl std::fmt::Debug for PushGiven {
             PushGiven::Refused { why } => f.debug_struct("Refused").field("why", why).finish(),
         }
     }
+}
+
+/// [`WORK_SESSION_ISSUES`]'s body: which session asks, and what. The
+/// project is never named: it is the session's, and the platform finds it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionIssuesAsk {
+    pub session: String,
+    #[serde(flatten)]
+    pub op: SessionIssuesOp,
+}
+
+/// What a session's agent does with its project's native issues: read and
+/// comment, nothing else.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum SessionIssuesOp {
+    /// A page of the project's issues, newest first.
+    List { query: crate::issues::IssueQuery },
+    /// One issue by its number in the project: it, its timeline and its
+    /// newest comments.
+    Show { number: u64 },
+    /// A comment on one, as the session's asker, labelled as posted by the
+    /// session.
+    Comment { number: u64, text: String },
+}
+
+/// [`WORK_SESSION_ISSUES`]'s answer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
+pub enum SessionIssuesGiven {
+    List {
+        list: crate::issues::IssueList,
+    },
+    Shown {
+        issue: crate::issues::Issue,
+        events: Vec<crate::issues::IssueEvent>,
+        /// Oldest first: the newest of its thread.
+        comments: Vec<crate::chat::ChatMessage>,
+        /// There are older comments than these.
+        more_comments: bool,
+    },
+    /// Posted, as this message of the issue's thread.
+    Commented {
+        seq: i64,
+    },
+    /// Not done, and why (the agent reads it).
+    Refused {
+        why: String,
+    },
 }
 
 /// One state change, signed by the machine that made it.
