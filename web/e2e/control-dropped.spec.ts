@@ -115,6 +115,49 @@ test("joined and connected: no banner, and the host menu says where", async ({ p
   await expect(page.locator("[data-control-dropped]")).toBeHidden();
 });
 
+// #1580: in the app, joined but the app isn't signed in there (it never was,
+// it picked "Just this machine", or control moved): this window has no chat
+// and no other machines, and says so, with Sign the app in. Not when the
+// app is signed in, nor in an app from before it said (no `signedIn`).
+test("in the app, joined but not signed in: Sign the app in (#1580)", async ({ page }) => {
+  const joined = { state: "joined", url: CONTROL, kind: "team", name: "arugula", connected: true, seen_ms: Date.now() };
+  await standing(page, joined);
+  await page.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac", signedIn: false } }));
+  await reset(page);
+  const banner = page.locator("[data-app-signin]");
+  await expect(banner).toContainText("This window shows only this machine");
+  await expect(banner).toContainText("the team arugula on control.arugula.io");
+  await expect(page.locator("[data-control-dropped]")).toBeHidden();
+
+  // Sign the app in: control's own sign-in, which the app takes over.
+  let asked = "";
+  await page.route(`${CONTROL}/**`, (r) => {
+    asked = r.request().url();
+    return r.fulfill({ body: "" });
+  });
+  await banner.locator("[data-app-signin-go]").click();
+  await expect.poll(() => asked).toBe(`${CONTROL}/auth/github`);
+});
+
+test("in the app, signed in: no Sign the app in (#1580)", async ({ page }) => {
+  const joined = { state: "joined", url: CONTROL, kind: "team", name: "arugula", connected: true, seen_ms: Date.now() };
+  await standing(page, joined);
+  await page.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac", signedIn: true } }));
+  await reset(page);
+  await page.locator(".host-button").click();
+  await expect(page.getByText("In the team arugula on control.arugula.io: connected")).toBeVisible();
+  await expect(page.locator("[data-app-signin]")).toBeHidden();
+});
+
+test("in the app, Not now hides Sign the app in for this tab (#1580)", async ({ page }) => {
+  await standing(page, { state: "joined", url: CONTROL, kind: "account", name: "lex00", connected: true, seen_ms: Date.now() });
+  await page.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac", signedIn: false } }));
+  await reset(page);
+  const banner = page.locator("[data-app-signin]");
+  await banner.locator("[data-app-signin-hide]").click();
+  await expect(banner).toBeHidden();
+});
+
 test("the real daemon: not joined, said only to its owner", async ({ page }) => {
   await reset(page);
   const host = await page.evaluate(() => fetch("/api/host").then((r) => r.json()));

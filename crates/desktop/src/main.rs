@@ -643,7 +643,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
     let w = builder
         .title("Arugula")
         .inner_size(1280.0, 820.0)
-        .initialization_script(cloud::init_script())
+        .initialization_script(cloud::init_script(cloud::control().is_some_and(|c| cloud::signed_in(app, &c))))
         // The microphone for the client's own pages (a lent device's
         // record_audio, S33; macOS still asks, once, for the app); nobody
         // else's.

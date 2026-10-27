@@ -27,6 +27,7 @@
 <main>
   <div class="kicker">Arugula cloud · optional</div>
   <h1>This window, every machine</h1>
+  <p id="moved" hidden></p>
   <p id="lede">This machine is in Arugula cloud already: your other devices reach it now, and it needs nothing more from you.</p>
   <p>Next, if you like: sign the app in, so this window can reach your other machines too. That's for the app (<b id="device">the Arugula app</b>), separate from the machine's approval.</p>
   <ol class="steps">
@@ -57,6 +58,13 @@
     const machine = s.machine || "This machine";
     if (s.place) $("lede").textContent = `${machine} is in ${s.place}: your other devices reach it now, and it needs nothing more from you.`;
     else if (s.machine) $("lede").textContent = `${machine} is in Arugula cloud already: your other devices reach it now, and it needs nothing more from you.`;
+    // #1580: signed in before, at another address (control moved, or the
+    // machine joined another): that's why this page is back.
+    if (s.was && s.control) {
+      const host = (u) => { try { return new URL(u).host; } catch { return u; } };
+      $("moved").textContent = `The app was signed in at ${host(s.was)}. This machine is on ${host(s.control)} now, so sign the app in again there.`;
+      $("moved").hidden = false;
+    }
     if (s.auto) $("go").click();
   });
   // #758: this window's device keys, made here and handed to control's
