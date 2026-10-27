@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# cargo on the hosted server's workspace (server/Cargo.toml: arugula-control,
+# arugula-platform, arugula-control-common) from anywhere in the checkout,
+# into the root workspace's target dir (CARGO_TARGET_DIR, else target/), so
+# its binaries sit beside arugulad's where the specs, control-smoke and the
+# release look for them.
+#
+#   scripts/server-cargo SUBCOMMAND [ARGS...]   e.g. build -p arugula-control,
+#                                               nextest run, clippy --workspace
+set -euo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd)
+[ $# -gt 0 ] || { echo "usage: scripts/server-cargo SUBCOMMAND [ARGS...]" >&2; exit 2; }
+export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$root/target}
+manifest=$root/server/Cargo.toml
+case $1 in
+  # A subcommand's own subcommand comes first: `cargo nextest run --manifest-path ...`.
+  nextest | about) [ $# -gt 1 ] || { echo "usage: scripts/server-cargo $1 SUBCOMMAND [ARGS...]" >&2; exit 2; }
+    exec cargo "$1" "$2" --manifest-path "$manifest" "${@:3}" ;;
+  *) exec cargo "$1" --manifest-path "$manifest" "${@:2}" ;;
+esac

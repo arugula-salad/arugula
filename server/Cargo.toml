@@ -1,0 +1,78 @@
+# The hosted server's workspace: Arugula control's hub (arugula-control),
+# its platform (arugula-platform) and what only they share
+# (arugula-control-common). Apart from the root workspace so that daemon and
+# CLI work never compiles the server, and server work never compiles the
+# daemon, the mux or Ghostty. The crates stay in crates/; each names this
+# file as its workspace (`package.workspace`), and the root's excludes them.
+#
+# What both sides use stays in the root workspace and is reached here by
+# path: the wire between daemons and control (arugula-control-wire), the
+# end-to-end crypto (arugula-e2e), the GitHub reader (arugula-forge-github)
+# and the protocol crates under it (arugula-proto, arugula-core). Their
+# `workspace = true` fields come from the root's Cargo.toml.
+#
+# Build it with `--manifest-path server/Cargo.toml` from the checkout (the
+# justfile's `server_cargo`), or from here; the justfile builds it into the
+# same target dir as the root's, so its binaries sit beside arugulad.
+[workspace]
+resolver = "3"
+members = [
+    "../crates/control",
+    "../crates/control-common",
+    "../crates/platform",
+]
+
+# The root's [workspace.package]: one version for everything a release
+# ships (scripts/release bumps both).
+[workspace.package]
+version = "0.63.6"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/arugula-salad/arugula"
+
+[workspace.dependencies]
+# The same versions as the root's Cargo.toml: change one, change both.
+arugula-control-common = { path = "../crates/control-common" }
+arugula-control-wire = { path = "../crates/control-wire" }
+arugula-core = { path = "../crates/core" }
+arugula-e2e = { path = "../crates/e2e" }
+arugula-forge-github = { path = "../crates/forge-github" }
+arugula-platform = { path = "../crates/platform" }
+aes-gcm = "0.11.1"
+anyhow = "1.0.104"
+axum = "0.8.9"
+base64 = "0.23.1"
+clap = "4.6.7"
+ed25519-dalek = "3.0.0"
+futures-util = "0.3.34"
+hex = "0.4.3"
+hkdf = "0.13.0"
+hmac = "0.13.0"
+p256 = "0.14.0"
+reqwest = { version = "0.13.5", default-features = false }
+russh = { version = "0.64.0", default-features = false }
+rust-embed = "8.12.0"
+serde = "1.0.229"
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+tokio = "1.53.1"
+tokio-tungstenite = "0.30.0"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+url = "2.5.8"
+webpki-root-certs = "1.0.9"
+
+# The root's lints.
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# The root's dev profile (its Cargo.toml says why): line tables for our
+# crates, no debug info for dependencies.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

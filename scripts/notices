@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# THIRD_PARTY.md and crates/desktop/THIRD_PARTY.md, from cargo-about and
+# THIRD_PARTY.md, server/THIRD_PARTY.md (the server's workspace, control and
+# its platform) and crates/desktop/THIRD_PARTY.md, from cargo-about and
 # scripts/web-notices. Each file is written to a temporary file next to it
 # and moved into place only when every step succeeded, so a missing
 # cargo-about (or pnpm) leaves the old notices alone.
@@ -17,12 +18,17 @@ if ! cargo about --version >/dev/null 2>&1; then
 fi
 
 tmp=THIRD_PARTY.md.tmp
+stmp=server/THIRD_PARTY.md.tmp
 dtmp=crates/desktop/THIRD_PARTY.md.tmp
-trap 'rm -f "$tmp" "$dtmp"' EXIT
+trap 'rm -f "$tmp" "$stmp" "$dtmp"' EXIT
 
 cargo about generate about.hbs >"$tmp"
 scripts/web-notices >>"$tmp"
+# The root's about.toml (its licenses and targets), its own template.
+(cd server && cargo about generate -c ../about.toml about.hbs) >"$stmp"
+scripts/web-notices >>"$stmp"
 (cd crates/desktop && cargo about generate -c about.toml ../../about.hbs) >"$dtmp"
 
 mv "$tmp" THIRD_PARTY.md
+mv "$stmp" server/THIRD_PARTY.md
 mv "$dtmp" crates/desktop/THIRD_PARTY.md

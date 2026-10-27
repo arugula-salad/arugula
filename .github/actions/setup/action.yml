@@ -161,7 +161,12 @@ runs:
         path: ~/.cache/libghostty-vt-sys
         key: ghostty-${{ runner.os }}-${{ inputs.ghostty-key || inputs.cache-key }}-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
     # In place of the build directories geek kept (scripts/ci-cap-target).
-    # Saved from main only, so branches don't evict main's.
+    # Saved from main only, so branches don't evict main's. The root
+    # workspace's dependencies only: the server's (server/Cargo.toml) builds
+    # into the same target dir, and rust-cache cleans a target dir once per
+    # workspace it's given, each pass keeping only that workspace's
+    # dependencies, so listing both would keep neither's. sccache covers
+    # the server's own.
     - uses: Swatinem/rust-cache@v2
       if: inputs.rust == 'true'
       with:

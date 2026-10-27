@@ -5,6 +5,8 @@ platform", #1150): chat, hosted workspaces and billing, and step 1's projects an
 grants. It deploys as often as it likes without dropping a relayed terminal,
 because the relay stays in the hub (`arugula-control`), which is also the
 gateway for every platform path.
+It builds in the server's own Cargo workspace (`server/Cargo.toml`) with
+the hub: `scripts/server-cargo test -p arugula-platform`.
 
 Billing has moved in (M139:
 `src/billing.rs`, its tables in `src/db/billing.rs`), and so have Cloud

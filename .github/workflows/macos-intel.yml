@@ -63,7 +63,7 @@ jobs:
       - run: just bootstrap
       - run: just web
       - name: Clippy (Intel's own; check.yml lints Apple silicon's)
-        run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+        run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- scripts/server-cargo clippy --workspace --all-targets -- -D warnings
       - run: just test
       - run: just build
       - run: just dist

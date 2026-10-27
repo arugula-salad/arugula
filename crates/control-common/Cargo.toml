@@ -1,5 +1,7 @@
 [package]
 name = "arugula-control-common"
+# The hosted server's own workspace (server/Cargo.toml), not the root's.
+workspace = "../../server"
 # The workspace's version: control and the platform rebuild on a bump
 # anyway, and product analytics report it (`$lib_version`).
 version.workspace = true
@@ -20,7 +22,13 @@ clap = { workspace = true, features = ["derive", "env"] }
 hmac = { workspace = true }
 # Stopping Litestream with its last sync (`backup`).
 libc = "0.2.189"
-reqwest = { workspace = true, features = ["rustls", "json"] }
+# HTTP/2 as before the server had its own workspace, when the daemon's
+# reqwest turned it on for both (server/Cargo.toml).
+reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
+# Only for its default features (post-quantum key exchange first, logging),
+# which the CLI's rustls turned on for the server while they were one
+# workspace: the hub's and the platform's TLS stays as it was.
+rustls = "0.23.45"
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

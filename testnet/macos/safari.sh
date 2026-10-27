@@ -7,7 +7,7 @@
 #
 #   testnet/macos/safari.sh [playwright args]
 #
-# Needs `cargo build -p arugula-control` and web/dist (`just web`).
+# Needs `scripts/server-cargo build -p arugula-control` and web/dist (`just web`).
 # SAFARI_DRIVER_PORT (default 7744) is the local end of safaridriver.
 # ARUGULA_MACOS_UP=1: the VM is already up (test.sh tools); use it and
 # leave it up.

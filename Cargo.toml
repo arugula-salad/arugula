@@ -1,7 +1,17 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-exclude = ["vendor/libghostty-vt-sys", "crates/desktop"]
+# The hosted server (control, its platform and what they share) is a
+# workspace of its own, server/Cargo.toml, so the daemon's builds never
+# compile it and its builds never compile the daemon or Ghostty. The desktop
+# app is one too (#388).
+exclude = [
+    "vendor/libghostty-vt-sys",
+    "crates/desktop",
+    "crates/control",
+    "crates/control-common",
+    "crates/platform",
+]
 
 # libghostty-vt-sys with Ghostty patched at build time (M9): see
 # vendor/libghostty-vt-sys/patches.
@@ -18,13 +28,11 @@ repository = "https://github.com/arugula-salad/arugula"
 # The versions every crate shares; a crate adds its own features, `optional`
 # and (for the Unix and Windows tables) its target with
 # `dep = { workspace = true, ... }`.
-arugula-control-common = { path = "crates/control-common" }
 arugula-control-wire = { path = "crates/control-wire" }
 arugula-core = { path = "crates/core" }
 arugula-e2e = { path = "crates/e2e" }
 arugula-forge-github = { path = "crates/forge-github" }
 arugula-mux = { path = "crates/mux" }
-arugula-platform = { path = "crates/platform" }
 arugula-proto = { path = "crates/proto" }
 arugula-vt = { path = "crates/vt" }
 aes-gcm = "0.11.1"

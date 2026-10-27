@@ -1,5 +1,7 @@
 [package]
 name = "arugula-control"
+# The hosted server's own workspace (server/Cargo.toml), not the root's.
+workspace = "../../server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -30,7 +32,7 @@ arugula-e2e = { workspace = true }
 arugula-platform = { workspace = true }
 libc = "0.2.189"
 p256 = { workspace = true, features = ["ecdh", "ecdsa"] }
-reqwest = { workspace = true, features = ["rustls", "json", "stream"] }
+reqwest = { workspace = true, features = ["rustls", "http2", "json", "stream"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
 russh = { workspace = true, features = ["aws-lc-rs"] }
 rust-embed = { workspace = true, features = ["mime-guess"] }
