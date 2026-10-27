@@ -187,6 +187,18 @@ export function MenuLayer() {
     setSub(null);
     setArmed(null);
   }, [current]);
+  // An opened submenu is scrolled into view, by the least that shows it,
+  // and never past its own row: that stays shown.
+  useLayoutEffect(() => {
+    const menu = ref.current;
+    const rows = menu?.querySelector<HTMLElement>(".menu-sub");
+    if (sub === null || !menu || !rows) return;
+    const m = menu.getBoundingClientRect();
+    const pad = parseFloat(getComputedStyle(menu).paddingBottom) || 0;
+    const need = rows.getBoundingClientRect().bottom - (m.bottom - pad);
+    const row = rows.previousElementSibling?.getBoundingClientRect().top ?? m.top;
+    if (need > 0) menu.scrollTop += Math.max(0, Math.min(need, row - m.top));
+  }, [sub]);
   useEffect(() => {
     if (sub === null || !intoSub.current) return;
     intoSub.current = false;
@@ -297,6 +309,7 @@ export function MenuLayer() {
         visibility: pos ? "visible" : "hidden",
         // Where it was placed it stays: a submenu opening under the pointer
         // makes it scroll, never move (and a gutter of 8px below it).
+        boxSizing: "border-box",
         maxHeight: `${window.innerHeight - (pos?.top ?? 8) - 8}px`,
       }}
       onContextMenu={(e) => e.preventDefault()}

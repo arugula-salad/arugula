@@ -743,7 +743,7 @@ test("a channel is quiet until its bell says all, and a snooze shows Alice a moo
   // The bell sets it to every message; the next one pushes him.
   await row.click();
   await list.locator("[data-room-bell]").click();
-  await menuItem(bob, "All messages").click();
+  await chatMenuItem(bob, "All messages").click();
   await expect(list.locator("[data-room-bell]")).toHaveAttribute("data-room-level", "all");
   // Out of the room: nobody's pushed for a room they have open.
   await platform(bob, "/chat");
@@ -755,7 +755,7 @@ test("a channel is quiet until its bell says all, and a snooze shows Alice a moo
   // shows one too.
   await row.click();
   await list.locator("[data-room-bell]").click();
-  await menuItem(bob, "1 hour").click();
+  await chatMenuItem(bob, "1 hour").click();
   await expect(list.locator("[data-room-bell]")).toHaveText("🌙");
   const dm = await alice.evaluate(([tm, b]) => window.__arugula.chat.newDm(tm, b).then((r) => r.id), [team, bobAccount]);
   await platform(aliceChat, "/chat");
@@ -855,7 +855,7 @@ test("threads: Alice starts one, Bob answers from his phone, each sees it live; 
 });
 
 /** A menu's item by its label (`openMenu`'s layer). */
-function menuItem(p: Page, label: string) {
+function chatMenuItem(p: Page, label: string) {
   return p.locator(".menu .menu-item", { hasText: label }).first();
 }
 
