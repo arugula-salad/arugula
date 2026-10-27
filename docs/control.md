@@ -722,7 +722,7 @@ arugula pr comment acme/app#7 "lgtm"      # likewise `issue comment acme/app#2 .
 arugula issue create acme/app -t "Title" -b "Body"
 arugula draft ls                          # your waiting drafts; or OWNER/REPO[#N], --project
 arugula draft show dft_…                  # discard, send
-arugula forge inbox                       # what wants you; --all with what's done
+arugula forge queue                       # what wants you; --all with what's done
 arugula forge done acme/app#7             # seen likewise; --reason, --undo
 ```
 

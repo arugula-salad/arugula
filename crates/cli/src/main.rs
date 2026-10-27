@@ -271,19 +271,28 @@ enum Command {
     /// Shows its questions as a card beside this pane (every client, with a push),
     /// waits, and prints the answer for Claude Code. Outside an Arugula pane, or
     /// "Answer in terminal": no output, so Claude Code shows its picker.
+    #[command(hide = true)]
     Ask,
     /// Claude Code's hook for permission prompts.
     ///
     /// `PermissionRequest` becomes an approval card anyone who may answer can allow
     /// or deny; other events close a card the terminal answered first. Outside an
     /// Arugula pane: nothing.
+    #[command(hide = true)]
     Hook,
     /// Claude Code's background hook for follow-ups (`Stop`, `SessionStart`).
     ///
     /// Waits for a follow-up someone sends the agent, and wakes it with it (exit
     /// 2). A session nobody drives (`claude -p`, the SDK) isn't held: it exits 0 at
     /// once.
+    #[command(hide = true)]
     Inbox,
+    /// The commands Claude Code's hooks and Arugula's clients run.
+    ///
+    /// People don't run them, so `arugula --help` leaves them out; they're
+    /// listed here.
+    #[command(hide = true)]
+    Plumbing,
     /// Put Claude Code's hooks in its settings.json, or say which are there.
     ///
     /// `install` adds them, `status` says which are there. Nothing else in the
@@ -471,13 +480,11 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::forge_ops::DraftCmd,
     },
-    /// Your inbox of PRs and issues on linked repos, on Arugula control.
+    /// What wants you on your linked repos' PRs and issues, on Arugula control.
     ///
-    /// What wants you there (a review requested, your checks failed,
-    /// changes requested, a mention, assigned, merged or ready, a draft
-    /// waiting): `inbox` lists it, `seen` and `done` mark an item's
-    /// entries. Needs `arugula login`. (`arugula inbox` is Claude Code's
-    /// follow-ups.)
+    /// A review requested, your checks failed, changes requested, a
+    /// mention, assigned, merged or ready, a draft waiting: `queue` lists
+    /// it, `seen` and `done` mark an item's entries. Needs `arugula login`.
     Forge {
         #[command(subcommand)]
         cmd: cmd::forge_ops::ForgeCmd,
@@ -557,6 +564,7 @@ impl Cli {
                     | Command::Ask
                     | Command::Hook
                     | Command::Inbox
+                    | Command::Plumbing
             )
     }
 }
@@ -605,6 +613,101 @@ const LABS_OPTIONS: [(&str, &[&str], &str); 5] = [
     ("edit", &["machine"], flags::SANDBOX_PROVIDERS),
 ];
 
+/// `arugula --help`'s groups, as docs.arugula.io/cli has them. Every
+/// command `--help` can list is in one, once (a test holds it to that); a
+/// hidden one shows in its group when its Labs flag is on.
+const GROUPS: &[(&str, &[&str])] = &[
+    (
+        "Panes",
+        &[
+            "ls", "run", "attach", "send", "keys", "mouse", "upload", "tail", "wait", "capture", "process", "cd",
+            "rerun", "close", "export", "events", "history", "log", "search", "fs", "synced",
+        ],
+    ),
+    (
+        "Blocks",
+        &["describe", "call", "open", "edit", "diff", "view", "chat", "pr", "issue", "editors", "workspace", "app"],
+    ),
+    ("Agents", &["agent", "claude", "attention", "rules", "ide", "shell-env", "agents"]),
+    ("Sharing", &["share", "shares", "invite", "access", "guests"]),
+    (
+        "Machines and control",
+        &[
+            "status",
+            "hosts",
+            "web",
+            "join",
+            "login",
+            "logout",
+            "grants",
+            "agent-tokens",
+            "telemetry",
+            "machines",
+            "sandboxes",
+        ],
+    ),
+    ("Cloud and projects", &["cloud", "runs", "deploys", "project", "draft", "forge", "studio"]),
+    ("Setup", &["install", "setup", "hooks", "mcp"]),
+];
+
+/// What Claude Code's hooks and the clients run, hidden from `--help` and
+/// listed by `arugula help plumbing` (with `attention STATE`, which is
+/// `attention`'s other half).
+const PLUMBING: &[&str] = &["ask", "hook", "inbox", "bridge"];
+
+/// Rows of `  name  summary` under a heading, styled as clap styles its own.
+fn command_rows(cmd: &clap::Command, heading: &str, rows: &[(String, String)], width: usize) -> String {
+    let (h, l) = (cmd.get_styles().get_header(), cmd.get_styles().get_literal());
+    let mut out = format!("{h}{heading}:{h:#}\n");
+    for (name, about) in rows {
+        let pad = width.saturating_sub(name.len());
+        out.push_str(&format!("  {l}{name}{l:#}{:pad$}  {about}\n", ""));
+    }
+    out
+}
+
+/// The root's help lists its commands in [`GROUPS`] (clap has one heading
+/// for every subcommand), then points at `help plumbing` and the docs.
+fn grouped_help(cmd: clap::Command) -> clap::Command {
+    let about = |s: &clap::Command| s.get_about().map(|a| a.to_string()).unwrap_or_default();
+    let groups: Vec<(&str, Vec<(String, String)>)> = GROUPS
+        .iter()
+        .map(|(heading, names)| {
+            let rows = names
+                .iter()
+                .filter_map(|n| cmd.find_subcommand(n))
+                .filter(|s| !s.is_hide_set())
+                .map(|s| (s.get_name().to_owned(), about(s)))
+                .collect();
+            (*heading, rows)
+        })
+        .collect();
+    let width = groups.iter().flat_map(|(_, rows)| rows).map(|(n, _)| n.len()).max().unwrap_or(0);
+    let listed: String = groups
+        .iter()
+        .filter(|(_, rows)| !rows.is_empty())
+        .map(|(heading, rows)| command_rows(&cmd, heading, rows, width) + "\n")
+        .collect();
+    let h = cmd.get_styles().get_header();
+    let template = format!(
+        "{{about-with-newline}}\n{{usage-heading}} {{usage}}\n\n{listed}{h}Options:{h:#}\n{{options}}{{after-help}}"
+    );
+    cmd.help_template(template).after_help(
+        "`arugula help COMMAND` for one command, `arugula help plumbing` for what hooks run. \
+         All of it: https://docs.arugula.io/cli/",
+    )
+}
+
+/// `plumbing`'s help lists [`PLUMBING`].
+fn with_plumbing(cmd: clap::Command) -> clap::Command {
+    let about = |n: &str| cmd.find_subcommand(n).and_then(|s| s.get_about()).map(|a| a.to_string()).unwrap_or_default();
+    let mut rows: Vec<(String, String)> = PLUMBING.iter().map(|n| ((*n).to_owned(), about(n))).collect();
+    rows.push(("attention STATE".to_owned(), "An agent's hook says whether its pane needs you".to_owned()));
+    let width = rows.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
+    let listed = command_rows(&cmd, "Commands", &rows, width);
+    cmd.mut_subcommand("plumbing", |p| p.help_template(format!("{{about-with-newline}}\n{listed}")))
+}
+
 /// Machines (`mN`) are Labs too: with the `sandbox-providers` flag, `fs` and `view` say
 /// their paths take one.
 fn labs_machine_paths(cmd: clap::Command) -> clap::Command {
@@ -640,7 +743,7 @@ fn labs_command(on: On) -> clap::Command {
     if on.has(flags::SANDBOX_PROVIDERS) {
         cmd = labs_machine_paths(cmd);
     }
-    cmd
+    grouped_help(with_plumbing(cmd))
 }
 
 fn socket(cli: &Cli) -> PathBuf {
@@ -778,6 +881,12 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Inbox = cli.cmd {
         return Ok(hook::inbox(http::Target::Socket(socket(&cli))));
     }
+    if let Command::Plumbing = cli.cmd {
+        use clap::CommandFactory;
+        let mut cmd = with_plumbing(Cli::command());
+        cmd.find_subcommand_mut("plumbing").expect("plumbing is a command").print_long_help()?;
+        return Ok(0);
+    }
     if let Command::Hooks { cmd } = cli.cmd {
         // A settings file: no daemon involved.
         return hooks::run(cmd, cli.json);
@@ -899,7 +1008,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Capture(args) => cmd::capture::run(args, ctx),
         Command::Events(args) => cmd::events::run(args, ctx),
         Command::Close(args) => cmd::close::run(args, ctx),
-        Command::Ask | Command::Hook | Command::Inbox | Command::Hooks { .. } => {
+        Command::Ask | Command::Hook | Command::Inbox | Command::Plumbing | Command::Hooks { .. } => {
             unreachable!("handled first")
         }
         Command::Attention(args) => cmd::attention::run(args, ctx),
@@ -1063,6 +1172,76 @@ mod tests {
                 |a: &[&str]| super::Cli::from_arg_matches(&labs_command(labs).try_get_matches_from(a).unwrap()).is_ok();
             assert!(parse(&["arugula", "run", "--vm", "--", "make"]));
             assert!(parse(&["arugula", "guests"]));
+        }
+    }
+
+    /// `arugula --help` lists its commands in the site's groups, each command
+    /// once, and leaves the plumbing to `arugula help plumbing`.
+    #[test]
+    fn help_is_in_groups_and_plumbing_is_apart() {
+        use clap::CommandFactory;
+        let root = super::Cli::command();
+        // Every command is grouped once or is plumbing, and each name is one.
+        let grouped: Vec<&str> = super::GROUPS.iter().flat_map(|(_, names)| names.iter().copied()).collect();
+        for sub in root.get_subcommands().map(|s| s.get_name()) {
+            let n = grouped.iter().filter(|g| **g == sub).count();
+            let plumbing = super::PLUMBING.contains(&sub) || sub == "plumbing";
+            assert!(n == 1 && !plumbing || n == 0 && plumbing, "{sub}: in {n} groups, plumbing {plumbing}");
+        }
+        for name in grouped.iter().chain(super::PLUMBING) {
+            assert!(root.find_subcommand(name).is_some(), "{name} isn't a command");
+        }
+        for labs in [false, true] {
+            let help = labs_command(labs).render_long_help().to_string();
+            let headings: Vec<&str> = help.lines().filter_map(|l| l.strip_suffix(':')).collect();
+            let want: Vec<&str> = super::GROUPS.iter().map(|(h, _)| *h).chain(["Options"]).collect();
+            assert_eq!(headings, want, "{help}");
+            let listed: Vec<&str> =
+                help.lines().filter_map(|l| l.strip_prefix("  ")?.split_whitespace().next()).collect();
+            for p in super::PLUMBING.iter().chain(&["plumbing"]) {
+                assert!(!listed.contains(p), "{p} is in `arugula --help`");
+            }
+            assert!(listed.contains(&"forge") && listed.contains(&"hooks"), "{listed:?}");
+            assert!(help.contains("arugula help plumbing") && help.contains("https://docs.arugula.io/cli/"));
+            // `help plumbing` lists them.
+            let plumbing =
+                labs_command(labs).try_get_matches_from(["arugula", "help", "plumbing"]).unwrap_err().to_string();
+            for p in super::PLUMBING.iter().chain(&["attention STATE"]) {
+                assert!(plumbing.lines().any(|l| l.trim_start().starts_with(p)), "{p} not in {plumbing}");
+            }
+        }
+    }
+
+    /// The names hooks and scripts already use still parse: Claude Code's
+    /// hooks as installed, and `forge inbox` from before `forge queue`.
+    #[test]
+    fn old_names_still_parse() {
+        use clap::Parser;
+        let parse = |a: &[&str]| super::Cli::try_parse_from(a).map(|c| c.cmd);
+        for (argv, ok) in [
+            (&["arugula", "inbox"][..], matches!(parse(&["arugula", "inbox"]), Ok(super::Command::Inbox))),
+            (&["arugula", "ask"], matches!(parse(&["arugula", "ask"]), Ok(super::Command::Ask))),
+            (&["arugula", "hook"], matches!(parse(&["arugula", "hook"]), Ok(super::Command::Hook))),
+            (
+                &["arugula", "attention", "done"],
+                matches!(parse(&["arugula", "attention", "done"]), Ok(super::Command::Attention(_))),
+            ),
+            (
+                &["arugula", "forge", "inbox", "--all"],
+                matches!(
+                    parse(&["arugula", "forge", "inbox", "--all"]),
+                    Ok(super::Command::Forge { cmd: crate::cmd::forge_ops::ForgeCmd::Queue { all: true, .. } })
+                ),
+            ),
+        ] {
+            assert!(ok, "{argv:?}");
+        }
+        // Every hook command the installer writes parses.
+        let snippet: serde_json::Value = serde_json::from_str(crate::hooks::HOOKS_SNIPPET).unwrap();
+        let groups = snippet["hooks"].as_object().unwrap().values().flat_map(|v| v.as_array().unwrap());
+        for h in groups.flat_map(|g| g["hooks"].as_array().unwrap()) {
+            let argv: Vec<&str> = h["command"].as_str().unwrap().split_whitespace().collect();
+            assert!(super::Cli::try_parse_from(&argv).is_ok(), "{argv:?}");
         }
     }
 
