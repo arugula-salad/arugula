@@ -10,10 +10,12 @@
 // beside the column (../settings.css).
 
 import { useEffect, useRef, useState } from "preact/hooks";
+import { desktopApp } from "../../shared/desktop";
 import { platformFetch } from "../../shared/maintenance";
+import { BrowserStep } from "../../shared/ui/browser-step";
 import { openAppearance } from "../../shared/ui/appearance";
 import { PageHeader } from "../../shared/ui/page-header";
-import { Plan, type Billing } from "../settings/plan";
+import { Plan, planWords, type Billing } from "../settings/plan";
 import { AgentGrants } from "../settings/agents";
 import { AgentTokens } from "../settings/agent-tokens";
 import { LinkedProducts } from "../settings/linked";
@@ -41,7 +43,16 @@ export function SettingsPage() {
   useEffect(() => {
     call<Billing>("/api/billing").then(setBilling, () => setBilling(null));
   }, []);
+  // The desktop app opens checkout in the browser and waits here for the
+  // plan to change (#236); `words` is the plan it started from.
+  const [finishing, setFinishing] = useState<{ team?: string; words: string } | null>(null);
+  const [now, setNow] = useState("");
   const upgrade = async (team?: string) => {
+    if (desktopApp() && billing) {
+      setNow("");
+      setFinishing({ team, words: planWords(billing, team) });
+      return;
+    }
     location.href = (await call<{ url: string }>("/api/billing/checkout", { team })).url;
   };
   const body = useRef<HTMLDivElement>(null);
@@ -88,7 +99,32 @@ export function SettingsPage() {
           <ClaudeSettings me={session.me?.account} />
         </div>
       </div>
-      {plan && <Plan billing={billing} upgrade={upgrade} close={() => setPlan(false)} />}
+      {plan && (
+        <Plan
+          billing={billing}
+          upgrade={upgrade}
+          close={() => setPlan(false)}
+          finishing={
+            finishing ? (
+              <BrowserStep
+                url={() => call<{ url: string }>("/api/billing/checkout", { team: finishing.team }).then((v) => v.url)}
+                label="Continue to checkout"
+                cancel={() => setFinishing(null)}
+                check={async () => {
+                  const b = await call<Billing>("/api/billing");
+                  if (planWords(b, finishing.team) === finishing.words) return false;
+                  setBilling(b);
+                  setNow(planWords(b, finishing.team));
+                  return true;
+                }}
+                onDone={() => setFinishing(null)}
+              />
+            ) : now ? (
+              <p data-plan-now>You're on {now}.</p>
+            ) : null
+          }
+        />
+      )}
     </section>
   );
 }

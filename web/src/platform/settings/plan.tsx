@@ -18,15 +18,24 @@ export interface Billing {
   teams: { team: string; name: string; owner: boolean; seats: number; plan: string; sandbox_minutes: number }[];
 }
 
-/** `upgrade` goes off to checkout, for a team or (with none) the account. */
-export function Plan({ billing: b, upgrade, close }: { billing: Billing | null; upgrade: (team?: string) => Promise<void>; close: () => void }) {
+/** How a plan is put in a sentence: the account's, or a team's (`team`). */
+export function planWords(b: Billing, team?: string): string {
+  if (!team) return b.plan === "paid" ? "a paid plan" : "the free plan";
+  const t = b.teams.find((x) => x.team === team);
+  return t?.plan === "team" ? `team plan, ${t.seats} seats` : "free";
+}
+
+/** `upgrade` goes off to checkout, for a team or (with none) the account.
+ * `finishing` is the desktop app's step while checkout is open in the
+ * browser (#236). */
+export function Plan({ billing: b, upgrade, close, finishing }: { billing: Billing | null; upgrade: (team?: string) => Promise<void>; close: () => void; finishing?: preact.ComponentChildren }) {
   const [err, setErr] = useState("");
   if (!b) return null;
   return (
     <Modal close={close}>
       <h2>Plan and usage</h2>
       <p>
-        You're on <b>{b.plan === "paid" ? "a paid plan" : "the free plan"}</b>. This month: {mb(b.relay.bytes)} through the relay
+        You're on <b>{planWords(b)}</b>. This month: {mb(b.relay.bytes)} through the relay
         {b.plan === "paid" ? "" : ` of ${mb(b.relay.allowance)} free`}, {b.sandbox_minutes} hosted VM minutes.
       </p>
       {b.relay.warning ? (
@@ -52,6 +61,7 @@ export function Plan({ billing: b, upgrade, close }: { billing: Billing | null; 
         </p>
       ) : null}
       {err ? <p class="control-error">{err}</p> : null}
+      {finishing}
       <div class="prompt-buttons">
         <button class="secondary" onClick={close}>Done</button>
       </div>
