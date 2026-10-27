@@ -21,8 +21,9 @@
 #    titlebar calls work: toggleMaximize fills the screen and restores
 #    it, minimize iconifies it, a drag on the page's top strip moves it
 #    (the app's drag script, start_dragging) and a double-click there
-#    maximizes it. A target=_blank link to it opens a window of ours,
-#    whose close() closes it.
+#    maximizes it. The platform page has one window (#1596): a
+#    target=_blank link to it from that window goes there; from control's
+#    page it opens a window of ours, whose close() closes it.
 # 3. Lookalikes go to the browser and the window stays on the platform
 #    page: another host on its port (127.0.0.3:P), its host on another
 #    port (127.0.0.2:Q), https on its host and port, and a target=_blank
@@ -177,14 +178,30 @@ wait_for 10 maximized "$w" || fail "a double-click on the platform page's strip 
 echo "ok: a double-click on its strip maximized it (internal_toggle_maximize, ${WIDTH}x$HEIGHT)"
 call "$platform" toggleMaximize >/dev/null || true
 
+# The platform page has one window of its own (#1596): a target=_blank
+# link to it from the window already on it goes there, not to a second.
 click_link "$platform" "$platform/second"
 wait_for 20 reported "$platform" loaded /second || fail "a target=_blank link to the platform page loaded nowhere"
-wait_for 10 windows_are 2 || fail "a target=_blank link to the platform page made $(windows | wc -l) windows"
+sleep 1
+windows_are 1 || fail "a target=_blank link to the platform page from its own window made $(windows | wc -l) windows"
 ! grep -qF "127.0.0.2" "$work/opened" 2>/dev/null || fail "it opened the platform page in the browser: $(cat "$work/opened")"
-echo "ok: a target=_blank link to the platform page opened a window of ours on it"
-tell "$platform/second" call close
-wait_for 10 windows_are 1 || fail "close() on the platform page's second window left $(windows | wc -l) windows"
+echo "ok: a target=_blank link to the platform page from its window went to that window"
+# From control's page it opens that window of ours, whose close() closes it.
+n=$(wc -l <"$work/control.log")
+tell "$platform/second" go "$control/"
+wait_for 20 logged_since "$n" "^report ${control#*://} what=loaded origin=$control path=/( |\$)" || fail "the window didn't go back to control's page"
+n=$(wc -l <"$work/control.log")
+click_link "$control" "$platform/"
+wait_for 20 logged_since "$n" "^report ${platform#*://} what=loaded origin=$platform path=/( |\$)" || fail "a target=_blank link to the platform page from control's page loaded nowhere"
+wait_for 10 windows_are 2 || fail "a target=_blank link to the platform page from control's page made $(windows | wc -l) windows"
+! grep -qF "127.0.0.2" "$work/opened" 2>/dev/null || fail "it opened the platform page in the browser: $(cat "$work/opened")"
+echo "ok: a target=_blank link to the platform page from control's page opened a window of ours on it"
+tell "$platform" call close
+wait_for 10 windows_are 1 || fail "close() on the platform page's window left $(windows | wc -l) windows"
 echo "ok: close() on it closed that window"
+n=$(wc -l <"$work/control.log")
+tell "$control" go "$platform/"
+wait_for 20 logged_since "$n" "^report ${platform#*://} what=loaded origin=$platform path=/( |\$)" || fail "the window didn't go back to the platform page"
 
 # 3. Lookalikes.
 for look in "http://127.0.0.3:$port/" "http://127.0.0.2:$other/" "https://127.0.0.2:$port/"; do
