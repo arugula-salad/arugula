@@ -6,6 +6,9 @@ has to exist while every machine is asleep (chat, Cloud workspaces, Shared
 Docs, billing). Terminal bytes travel end to end between a device and a
 daemon ([docs/control-e2e.md](../../docs/control-e2e.md), [docs.arugula.io/control](https://docs.arugula.io/control/)). Running
 and operating it: [docs/control-ops.md](../../docs/control-ops.md).
+It builds in the server's own Cargo workspace (`server/Cargo.toml`), not
+the root's: `scripts/server-cargo test -p arugula-control`, or `cargo` in
+`server/`.
 
 Control is two processes (#1150): this crate is the hub, and
 `crates/platform` the platform, which runs in this process

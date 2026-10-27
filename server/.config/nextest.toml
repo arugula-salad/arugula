@@ -1,0 +1,14 @@
+# cargo-nextest for the server's workspace (server/Cargo.toml): the root's
+# .config/nextest.toml without its overrides, which name the daemon's tests
+# (nextest refuses a filter that matches no package here).
+
+[profile.default]
+# A hung test fails after 5 minutes instead of holding the run.
+slow-timeout = { period = "60s", terminate-after = 5 }
+
+# CI (NEXTEST_PROFILE=ci): a test that fails and then passes is reported as
+# flaky, not failed (the root's says why).
+[profile.ci]
+retries = 1
+failure-output = "immediate-final"
+fail-fast = false

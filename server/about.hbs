@@ -1,0 +1,27 @@
+# Third-party notices: Arugula control
+
+Arugula is MIT OR Apache-2.0. Control's binaries, `arugula-control` (the
+hub) and `arugula-platform` (server/Cargo.toml's workspace), include the
+software below. The daemon's and the CLI's are in the root THIRD_PARTY.md.
+
+- **The web client**, which control serves, bundles npm packages: xterm.js, preact, fzstd and three.js (below). three.js draws the swarm's city and loads only when that theme is picked.
+  It also carries the swarm's fonts, Big Shoulders Display, Instrument Sans and JetBrains Mono (Fontsource's builds, SIL Open Font License 1.1, below).
+- **Rust crates**, by license:
+
+{{#each overview}}
+- {{{name}}} ({{count}})
+{{/each}}
+
+{{#each licenses}}
+## {{{name}}}
+
+Used by:
+{{#each used_by}}
+- [{{crate.name}} {{crate.version}}]({{#if crate.repository}}{{crate.repository}}{{else}}https://crates.io/crates/{{crate.name}}{{/if}})
+{{/each}}
+
+```
+{{{text}}}
+```
+
+{{/each}}

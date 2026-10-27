@@ -4,8 +4,10 @@
 #   docs/development.md):
 #   - build and static: the debug and the box's (static) binaries, once;
 #   - clippy: Linux, Apple silicon (cross; Intel's is macos-intel.yml's,
-#     weekly), the desktop app (when the push
-#     changes it: scripts/app-changed), and notices;
+#     weekly), each for both workspaces (the root's and the server's,
+#     server/Cargo.toml), the desktop app (when the push
+#     changes it: scripts/app-changed), the workspaces apart
+#     (`just workspace-guard`), and notices;
 #   - test: `just test` (the Rust tests under nextest), built beside static
 #     and run once static's binaries are in (scripts/ci-wait-job), then the
 #     platform's again on Postgres (`just test-platform-postgres`, M143);
@@ -114,7 +116,10 @@ jobs:
           ghostty-key: gnu
       - run: just bootstrap
       - run: just web
-      - run: mise exec -- cargo build -p arugulad -p arugula -p arugula-control --features arugulad/debug-embed,arugula-control/debug-embed
+      - run: mise exec -- cargo build -p arugulad -p arugula --features arugulad/debug-embed
+      # Control: the server's own workspace (server/Cargo.toml), into the
+      # same target dir.
+      - run: mise exec -- scripts/server-cargo build -p arugula-control --features arugula-control/debug-embed
       - run: scripts/ci-env keep debug
       - name: Hand them to the jobs that need them
         run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist
@@ -179,6 +184,12 @@ jobs:
       - run: just web
       - if: needs.changes.outputs.suite == 'true'
         run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+      # The server's workspace (server/Cargo.toml: control and its platform).
+      - if: needs.changes.outputs.suite == 'true'
+        run: mise exec -- scripts/server-cargo clippy --workspace --all-targets -- -D warnings
+      - name: The root workspace builds no server crate, the server's no daemon crate
+        if: needs.changes.outputs.suite == 'true'
+        run: just workspace-guard
       - if: needs.changes.outputs.suite == 'true'
         run: just check-macos
       # Only when the push changes what the app is built from

@@ -26,14 +26,16 @@
 # - the platform's contract with the hub (HubPort, PlatformPort, signed
 #   internal calls, routes.toml), always, even if the hub stopped
 #   compiling them;
-# - every crate's Cargo.toml (`just static` builds the hub beside arugulad
-#   and arugula-platform, whose features it shares), Cargo.toml and
-#   Cargo.lock: registry crates are absent from the dep-info, and their
-#   versions are in the lock file;
+# - every crate's Cargo.toml (`just static` builds the hub beside
+#   arugula-platform, whose features it shares), the workspaces' Cargo.toml
+#   and Cargo.lock (the server's, server/, which the hub is built in, and
+#   the root's, whose [workspace.dependencies] the shared crates read):
+#   registry crates are absent from the dep-info, and their versions are in
+#   the lock file;
 # - the build itself: rust-toolchain.toml, .cargo/config.toml, .mise.toml
-#   (Zig), the Zig wrappers, the setup action, the `static`, `web` and
-#   `bootstrap` recipes (recipe:NAME lines), and packaging/control (the
-#   image and fly.toml).
+#   (Zig), the Zig wrappers, scripts/server-cargo, the setup action, the
+#   `static`, `_static`, `web` and `bootstrap` recipes (recipe:NAME lines),
+#   and packaging/control (the image and fly.toml).
 # A release's bump changes only version numbers in manifests, lock files and
 # THIRD_PARTY.md, release notes and its copy of the client fixtures: `diff`
 # compares manifests and lock files with every arugula crate's version
@@ -82,15 +84,19 @@ web=(
 build=(
   Cargo.toml
   Cargo.lock
+  server/Cargo.toml
+  server/Cargo.lock
   ':(glob)crates/*/Cargo.toml'
   rust-toolchain.toml
   .cargo/config.toml
   .mise.toml
   scripts/zig-cc-musl
   scripts/zig-ar
+  scripts/server-cargo
   .github/actions/setup
   packaging/control
   recipe:static
+  recipe:_static
   recipe:web
   recipe:bootstrap
 )
@@ -185,7 +191,7 @@ diff_() {
     [ -n "$f" ] || continue
     # A manifest or lock file whose only change is a bump isn't a change.
     case "$f" in
-      Cargo.toml | Cargo.lock | crates/*/Cargo.toml | crates/*/Cargo.lock)
+      Cargo.toml | Cargo.lock | server/Cargo.toml | server/Cargo.lock | crates/*/Cargo.toml | crates/*/Cargo.lock)
         [ "$(git show "$from:$f" 2>/dev/null | "$here/release" blank "$f")" = \
           "$(git show "$to:$f" 2>/dev/null | "$here/release" blank "$f")" ] && continue
         ;;

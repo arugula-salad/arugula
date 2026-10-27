@@ -1,5 +1,7 @@
 [package]
 name = "arugula-platform"
+# The hosted server's own workspace (server/Cargo.toml), not the root's.
+workspace = "../../server"
 # The workspace's version, as the `arugula-platform` binary's (M140).
 version.workspace = true
 edition.workspace = true
@@ -39,7 +41,7 @@ hmac = { workspace = true }
 # Time zones for run schedules (M214), with IANA's database built in: the
 # platform's image has no /usr/share/zoneinfo.
 jiff = { version = "0.2.37", default-features = false, features = ["std", "tzdb-bundle-always"] }
-reqwest = { workspace = true, features = ["rustls", "json"] }
+reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
 # The platform page's build (web/dist-platform, M151), embedded.
 rust-embed = { workspace = true }
