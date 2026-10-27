@@ -239,7 +239,7 @@ async fn an_agents_question_is_an_ask_for_its_asker() {
     let q = json!({ "ask": "question", "request": "q1", "question": "Which colour?", "options": ["Red", "Blue"] });
     report(&app, &keys, &s.id, State::NeedsInput, q).await;
     let via = format!("ask:{}", s.id);
-    assert_eq!(asks_in(&base, "a", p).await, [(via, "@arugula asks b: Which colour?".into(), json!(["b"]))]);
+    assert_eq!(asks_in(&base, "a", p).await, [(via.clone(), "@arugula asks b: Which colour?".into(), json!(["b"]))]);
     assert_eq!(mentions_of(&base, "b").await, (1, 1));
     let to_b: Vec<_> = pushed(&hub).await.into_iter().skip(before).filter(|(to, _)| to == "b").collect();
     assert_eq!(to_b.len(), 1, "pushed once: {to_b:?}");
@@ -250,6 +250,12 @@ async fn an_agents_question_is_an_ask_for_its_asker() {
     let (st, _) = call(&base, "a", "POST", &format!("/api/sessions/{}/actions", s.id), Some(act)).await;
     assert_eq!(st, 200);
     assert_eq!(mentions_of(&base, "b").await, (0, 0));
+    // Arugula #215: the thread says who answered, and what, under the
+    // question: the agent's next words aren't it answering itself.
+    assert_eq!(
+        asks_in(&base, "b", p).await,
+        [(via, "@arugula asks b: Which colour?\na answered: Red".into(), json!([]))]
+    );
     // Its next question is a new ask; the turn going on answers it too.
     report(&app, &keys, &s.id, State::Working, json!({})).await;
     report(&app, &keys, &s.id, State::NeedsInput, json!({ "ask": "question", "request": "q2", "question": "Sure?" }))
@@ -259,6 +265,62 @@ async fn an_agents_question_is_an_ask_for_its_asker() {
     assert_eq!(mentions_of(&base, "b").await.0, 0);
     let open: Vec<_> = asks_in(&base, "a", p).await.into_iter().filter(|a| a.2 != json!([])).collect();
     assert!(open.is_empty(), "{open:?}");
+}
+
+/// Arugula #215: what an answer said, in words, for its ask's line.
+#[test]
+fn an_answer_in_words() {
+    use crate::sessions::asks::said;
+    let a = json!({ "question_1": "Tea", "question_0_custom": "the dark one", "question_0": "Red", "note": "" });
+    assert_eq!(said("answer", Some(&a), None), "answered: Red; the dark one; Tea", "in the order asked");
+    assert_eq!(said("answer", Some(&json!({ "question_0": ["Red", "Blue"] })), None), "answered: Red; Blue");
+    assert_eq!(said("answer", Some(&json!({})), None), "answered, choosing nothing");
+    assert_eq!(said("approve", None, None), "allowed it");
+    assert_eq!(said("deny", None, Some(" not that file ")), "denied it: not that file");
+}
+
+/// Arugula #215: "agents use model …" is the project's setting, for its
+/// owners and editors to change; its sessions' work carries it to their
+/// box, unless the ask named one; the card says the one asked for and
+/// the one the box says it runs on.
+#[tokio::test]
+async fn a_projects_model_goes_to_its_box_and_its_card() {
+    let (_hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
+    let path = format!("/api/projects/{t}/sessions/settings");
+    let (st, v) = call(&base, "x", "GET", &path, None).await;
+    assert_eq!(
+        (st, v["model"].clone(), v["models"].clone()),
+        (200, Value::Null, json!(["opus", "fable", "sonnet", "haiku"]))
+    );
+    let (st, _) = call(&base, "x", "PUT", &path, Some(json!({ "model": "sonnet" }))).await;
+    assert_eq!(st, 403, "a viewer can't");
+    let (st, _) = call(&base, "b", "PUT", &path, Some(json!({ "model": "gpt-9" }))).await;
+    assert_eq!(st, 400, "not one of ours");
+    let (st, v) = call(&base, "b", "PUT", &path, Some(json!({ "model": "sonnet" }))).await;
+    assert_eq!((st, v["model"].clone()), (200, json!("sonnet")));
+    assert_eq!(app.db.agents_model(&t).unwrap().as_deref(), Some("sonnet"), "kept");
+
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula fix the canary").await;
+    let s = s.unwrap();
+    let (_, named) = ask(&app, &base, &t, "b", "@arugula tidy the README, use haiku").await;
+    let named = named.unwrap();
+    let work = app.db.session_work("hw_dev").unwrap();
+    let model_of = |id: &str| work.iter().find(|w| w.session == id).and_then(|w| w.model.clone());
+    assert_eq!(model_of(&s.id).as_deref(), Some("sonnet"), "the project's");
+    assert_eq!(model_of(&named.id).as_deref(), Some("haiku"), "the ask's own word wins");
+
+    // The box says which it runs on; the card shows it.
+    let first = app.db.session_prompts(&named.id).unwrap()[0].id.clone();
+    report(&app, &keys, &named.id, State::Working, json!({ "prompts": [first], "block": "7", "model": "Haiku 4.5" }))
+        .await;
+    let (_, v) = call(&base, "x", "GET", &format!("/api/sessions/{}", named.id), None).await;
+    assert_eq!((v["card"]["model_asked"].clone(), v["card"]["model"].clone()), (json!("haiku"), json!("Haiku 4.5")));
+    let (_, v) = call(&base, "x", "GET", &format!("/api/sessions/{}", s.id), None).await;
+    assert_eq!((v["card"]["model_asked"].clone(), v["card"]["model"].clone()), (json!("sonnet"), Value::Null));
+    // Back to the strongest: the box picks it.
+    let (st, v) = call(&base, "a", "PUT", &path, Some(json!({ "model": null }))).await;
+    assert_eq!((st, v["model"].clone()), (200, Value::Null));
+    assert_eq!(app.db.session_work("hw_dev").unwrap().iter().find(|w| w.session == s.id).unwrap().model, None);
 }
 
 /// Move to…: a done session goes to another box with its repo, queued

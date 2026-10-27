@@ -249,6 +249,14 @@ export function harnessLabel(harness: string, ran: string | null): string {
   return ran && ran !== harness ? `${name(ran)} (no ${name(harness)} on its box)` : name(ran ?? harness);
 }
 
+/** The model a session's agent runs on (Arugula #215), as its box said
+ * ("Opus 5.5"); until it has, the one it was asked to use ("Sonnet"). */
+export function modelLabel(c: { model: string | null; model_asked: string | null }): string | null {
+  if (c.model) return c.model;
+  const a = c.model_asked;
+  return a ? a.charAt(0).toUpperCase() + a.slice(1) : null;
+}
+
 /** A permission's option id in words: `allow-once` is "Allow once". */
 export function optionLabel(id: string): string {
   const w = id.replace(/[-_]+/g, " ").trim();
@@ -686,6 +694,15 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             · {harnessLabel(c.harness, c.ran)}
           </span>
         ) : null}
+        {modelLabel(c) && (
+          <span
+            class="dim"
+            data-session-model
+            title={c.model ? (c.model_asked ? `Asked for ${c.model_asked}; its agent runs on ${c.model}` : `Its agent runs on ${c.model}`) : `Asked for ${c.model_asked}`}
+          >
+            · {modelLabel(c)}
+          </span>
+        )}
       </div>
       {c.parent_session && (
         <p class="session-card-line dim" data-session-parent>

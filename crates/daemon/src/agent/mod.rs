@@ -408,6 +408,12 @@ struct Inner {
     follow: crate::conversations::convert::Follow,
     /// The session's `configOptions` (for choosing a model).
     config_options: Value,
+    /// The model the agent says it answers with (claude-agent-acp's
+    /// `usage_update` `_meta` `_claude/model`), once it has (Arugula #215).
+    served_model: Option<String>,
+    /// The agent answered the switch to the block's own model (`def.model`):
+    /// until then, the model it's on isn't the one it'll answer with.
+    model_settled: bool,
     /// Its adapter isn't installed, or has no Node (#111): what to show
     /// (`adapters::Status::json`), until it starts.
     adapter: Option<Value>,
@@ -629,6 +635,8 @@ impl Inner {
             import_stamp: None,
             follow: Default::default(),
             config_options: Value::Null,
+            served_model: None,
+            model_settled: false,
             adapter: None,
             worn: None,
             wearing: false,
@@ -1018,6 +1026,9 @@ impl Inner {
             // An answer to one of ours.
             (Some(id), None) => {
                 let Some(purpose) = id.as_u64().and_then(|id| self.ours.remove(&id)) else { return fx };
+                if matches!(purpose, Purpose::SetModel) {
+                    self.model_settled = true;
+                }
                 let error = m.get("error").map(|e| e["message"].as_str().unwrap_or("error").to_owned());
                 // #379: say whose login failed, and how to log in to it.
                 let login = match (m.get("error"), &self.login) {
@@ -1133,6 +1144,9 @@ impl Inner {
                 let u = &m["params"]["update"];
                 match u["sessionUpdate"].as_str().unwrap_or("") {
                     "usage_update" => {
+                        if let Some(m) = u["_meta"]["_claude/model"].as_str().filter(|m| !m.is_empty()) {
+                            self.served_model = Some(m.to_owned());
+                        }
                         // A user turn's result: claude-agent-acp sends it before it
                         // answers the prompt, and holds the answer while background
                         // subagents live. An autonomous cycle's names its origin.
@@ -1157,6 +1171,10 @@ impl Inner {
                                 t.cost = Some(amount - t.cost_base.unwrap_or(0.0));
                             }
                         }
+                    }
+                    // A mode's or model's change, as the agent says it.
+                    "config_option_update" if u["configOptions"].is_array() => {
+                        self.config_options = u["configOptions"].clone();
                     }
                     "session_info_update" => {
                         if let Some(title) = u["title"].as_str() {
@@ -1438,6 +1456,31 @@ impl Inner {
         (json!(list), opt["currentValue"].clone())
     }
 
+    /// The model it's on, in words (Arugula #215): its current option's
+    /// name (`Opus 5.5`); for the adapter's `default`, the model the agent
+    /// says it answers with, else what the option says it is. Nothing
+    /// while a switch is on its way: the one it's leaving isn't news.
+    fn model_name(&self) -> Option<String> {
+        if self.ours.values().any(|p| matches!(p, Purpose::SetModel))
+            || (self.cfg.def.model.is_some() && !self.model_settled)
+        {
+            return None;
+        }
+        let opt = self.config_options.as_array().and_then(|o| o.iter().find(|o| o["id"] == "model"));
+        let now = opt.and_then(|o| {
+            let v = o["currentValue"].as_str()?;
+            o["options"].as_array()?.iter().find(|x| x["value"] == v).map(|x| (v, x))
+        });
+        let text = |v: &Value| v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
+        match now {
+            Some(("default", x)) => {
+                self.served_model.clone().or_else(|| text(&x["description"])).or_else(|| text(&x["name"]))
+            }
+            Some((_, x)) => text(&x["name"]),
+            None => self.served_model.clone(),
+        }
+    }
+
     /// Its state, and the first entry that changed since the last time
     /// this was asked (#713).
     fn state_and_changed(&mut self, ctx: &AgentCtx) -> (Value, u64) {
@@ -1509,6 +1552,8 @@ impl Inner {
         let (models, model) = self.models();
         state["models"] = models;
         state["model"] = model;
+        state["model_name"] = json!(self.model_name());
+        state["served_model"] = json!(self.served_model);
         // #606: it will carry on by itself (its turn held for background
         // work, or tasks it left running): `wait --idle` waits.
         state["held"] = json!(self.status == Status::Working && self.result_in);
@@ -2468,7 +2513,7 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
         Effect::SessionOpen { fresh: _ } => {
             // An imported conversation goes on with the model it had (a
             // resume resets it to the adapter's default, S20).
-            let model = g.cfg.def.model.clone().or_else(|| {
+            let model = g.cfg.def.model.as_deref().map(|m| model_value(&g.config_options, m)).or_else(|| {
                 let want = g.cfg.import.as_ref()?.model.clone()?;
                 crate::conversations::model_option(&g.config_options, &want)
             });
@@ -2598,6 +2643,29 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
             }
         }
         Effect::Retry(_) => {}
+    }
+}
+
+/// The model option that `want` names (Arugula #215): one whose value it
+/// is, else one whose name starts with it (`fable` for `Fable 5.1`), else
+/// a Claude model id's (`claude-opus-5-5`); else `want` itself, for the
+/// agent to take or refuse.
+pub(crate) fn model_value(config_options: &Value, want: &str) -> String {
+    let opts = config_options
+        .as_array()
+        .and_then(|o| o.iter().find(|o| o["id"] == "model"))
+        .and_then(|o| o["options"].as_array())
+        .map_or(&[][..], Vec::as_slice);
+    let w = want.trim().to_lowercase();
+    let found = opts.iter().find(|o| o["value"] == want).or_else(|| {
+        opts.iter().find(|o| {
+            o["value"].as_str().is_some_and(|v| v.to_lowercase() == w)
+                || o["name"].as_str().is_some_and(|n| n.to_lowercase().split_whitespace().next() == Some(w.as_str()))
+        })
+    });
+    match found.and_then(|o| o["value"].as_str()) {
+        Some(v) => v.to_owned(),
+        None => crate::conversations::model_option(config_options, want).unwrap_or_else(|| want.to_owned()),
     }
 }
 
