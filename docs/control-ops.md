@@ -1920,8 +1920,15 @@ fly logs -a arugula-platform | grep 'forge mirror:'
   wrote a row, `arrival_p50_ms`/`arrival_p95_ms` (from the request
   reaching the platform to the row's commit) and
   `event_p50_ms`/`event_p95_ms` (from GitHub's own time for the change,
-  in whole seconds, so up to a second pessimistic). The gate is
-  `event_p95_ms` under 5000.
+  in whole seconds, so up to a second pessimistic). The window starts
+  again at each deploy, so just after one its p95 is a handful of
+  samples'; read the gate from the next line.
+- `forge mirror: webhook to row by day`: the same event times counted per
+  UTC `day` in `buckets` (`le_ms:count`, the slower as `inf`), with this
+  process's `run`. For a day, add up each (machine, `run`)'s last line:
+  every machine's, and every process's between deploys. The gate is the
+  day's p95, the bucket where 95% of the counts are reached, at or under
+  5000.
 - `forge mirror: drift today`: one line per linked repo, its `items`,
   `drift` fixed today (UTC, this machine's), and `per_thousand`. The gate
   is under 1 a day; add the machines' counts up, or count the day's
@@ -2025,7 +2032,7 @@ In order:
 
    | Number | Line | Field | Holds when |
    |---|---|---|---|
-   | Webhook to row | `forge mirror: webhook to row` | `event_p95_ms` | under 5000 |
+   | Webhook to row | `forge mirror: webhook to row by day` | `buckets`, each run's last, summed | p95 at or under 5000 |
    | Drift | `forge mirror: drift today` (every machine) | `drift` over `items`, summed | under 1 per 1000 a day |
    | Rate budget | `forge mirror: rate budget` | `used_pct`, `backing_off` | never backing off for long |
    | Inbox shadow | `inbox shadow` (every machine) | `agree / compared`, summed | 99% or more |
