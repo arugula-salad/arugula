@@ -141,7 +141,13 @@ function fromMenu(group: string, items: MenuItem[], about?: string, heading: str
       else under = item.header;
     } else {
       const label = under ? `${under}: ${item.label}` : item.label;
-      out.push({ key: `${group}/${label}`, group, detail, ...item, label });
+      // A row that asks first in the menu asks here too, in a prompt.
+      const run = item.confirm
+        ? async () => {
+            if ((await askText(`${item.label}? Type yes to confirm`, ""))?.trim().toLowerCase() === "yes") item.run();
+          }
+        : item.run;
+      out.push({ key: `${group}/${label}`, group, detail, ...item, label, run });
     }
   });
   return out;

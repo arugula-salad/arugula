@@ -28,6 +28,11 @@ export type MenuItem =
        * and the tab's Go to directory…): the command palette lists it
        * once (UI audit #195). */
       id?: string;
+      /** For what can't be undone: the first click keeps the menu open and
+       * shows this in the row's place ("Forget history? Click again to
+       * confirm"); the second runs it. A second click straight after the
+       * first (a double-click) is ignored (#328). */
+      confirm?: string;
     }
   /** `name`: the header holds a name (a channel's, a login), shown as
    * written rather than in capitals (UI audit #169). `note`: a line under
@@ -46,6 +51,10 @@ interface OpenMenu {
   /** Opened from a menu button: the keys go into it (UI audit #171). */
   focus: boolean;
 }
+
+/** How long a row asking to be confirmed ignores clicks: the second click
+ * of a double-click lands here (the same as the confirm dialog's). */
+const CONFIRM_SETTLE_MS = 500;
 
 let current: OpenMenu | null = null;
 /** What had the focus when the menu opened: an item gives it back before it
@@ -123,6 +132,8 @@ export function MenuLayer() {
   const [sub, setSub] = useState<number | null>(null);
   /** A key opened a submenu: its first item gets the keys once drawn. */
   const intoSub = useRef(false);
+  /** The row asking to be confirmed: its label, and when it asked. */
+  const [armed, setArmed] = useState<{ label: string; at: number } | null>(null);
 
   useEffect(() => {
     const fn = () => setTick((t) => t + 1);
@@ -168,7 +179,10 @@ export function MenuLayer() {
       top: Math.max(8, Math.min(current.y, window.innerHeight - r.height - 8)),
     });
   }, [current, top, sub]);
-  useEffect(() => setSub(null), [current]);
+  useEffect(() => {
+    setSub(null);
+    setArmed(null);
+  }, [current]);
   useEffect(() => {
     if (sub === null || !intoSub.current) return;
     intoSub.current = false;
@@ -233,10 +247,14 @@ export function MenuLayer() {
         aria-checked={item.checked}
         aria-current={item.current || undefined}
         aria-keyshortcuts={item.shortcut?.replace("Ctrl", "Control")}
-        class={`menu-item${item.danger ? " danger" : ""}${item.faded ? " faded" : ""}`}
+        class={`menu-item${item.danger || (item.confirm && armed?.label === item.label) ? " danger" : ""}${item.faded ? " faded" : ""}`}
         disabled={item.disabled}
         title={item.hint}
         onClick={() => {
+          if (item.confirm) {
+            if (!armed || armed.label !== item.label) return setArmed({ label: item.label, at: Date.now() });
+            if (Date.now() - armed.at < CONFIRM_SETTLE_MS) return;
+          }
           // Shut for good before the item runs: a dialog it opens finds
           // no menu left over, and the focus where the menu was opened.
           closeAndReturn();
@@ -248,7 +266,7 @@ export function MenuLayer() {
             {item.checked || item.current ? "●" : ""}
           </span>
         )}
-        {item.label}
+        {item.confirm && armed?.label === item.label ? item.confirm : item.label}
         {item.detail && (
           <>
             {" "}

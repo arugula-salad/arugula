@@ -212,6 +212,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
       },
       {
         label: "Forget history",
+        confirm: "Forget history? Click again to confirm",
         run: () => client.paneOp(id, { op: "purge" }),
       },
     ]),

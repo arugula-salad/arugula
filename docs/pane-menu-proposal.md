@@ -1,6 +1,6 @@
 # Proposal: a better pane right-click menu
 
-Status: implemented (steps 1 to 3; the context-sensitive top and command-mark merge are not). Palette lists submenu rows by their own names, not "Pane › Open beside › …", so command keys and search stay as they were. Submenus open inline (accordion), on touch and mouse alike. Code: `paneItems` in
+Status: implemented (steps 1 to 3; see Follow-ups for what isn't). *Forget history* asks first: its row turns into "Forget history? Click again to confirm" (a new `confirm` field on menu items; a click within 500 ms is ignored, as the confirm dialog does for double-clicks). Palette lists submenu rows by their own names, not "Pane › Open beside › …", so command keys and search stay as they were. Submenus open inline (accordion), on touch and mouse alike. Code: `paneItems` in
 `web/src/shell/ui/commands.tsx`, drawn by `web/src/shared/ui/menu.tsx`, opened
 from `web/src/shell/ui/panes/pane-slot.tsx`.
 
@@ -94,6 +94,16 @@ Close pane
 3. Regroup `paneItems` into the layout above; update e2e specs that click
    menu rows by label.
 4. Context-sensitive top and command-mark merge.
+
+## Follow-ups (not in this change)
+
+- **Block-specific top rows**: a browser, doc, editor or agent pane's own
+  rows (Reload, Copy URL, Share doc…) in place of Copy/Paste at the top.
+- **Command-mark merge**: the stripe's menu (copy command, copy output,
+  re-run) folded into the pane menu when the click lands on a mark.
+- Submenu type-ahead on the first letter, and icons in a left column.
+- The palette says "Type yes to confirm" for *Forget history*; a proper
+  confirm dialog for menu rows would serve both.
 
 Tab, session and `+` menus have the same flat-list shape and can reuse the
 submenu work later; they're shorter and not in scope here.
