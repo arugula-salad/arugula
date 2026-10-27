@@ -57,6 +57,13 @@ never merges accounts, starts a session or switches account, and it
 revokes the user token after reading `/user`. Unlink
 (`POST /api/me/github/unlink`) is refused (409) when GitHub is the
 account's last way to sign in (`crates/control/src/github_link.rs`).
+The desktop app's window can't take that callback, so it links through
+GitHub's device flow (#235): `POST /api/me/github/device` keeps GitHub's
+device code for the session that asked and returns the user code to type on
+GitHub, and `POST /api/me/github/device/{id}` polls it once per call (404
+for any other session), linking through the same code as the callback. It
+needs device flow turned on in the GitHub App; until then the window says to
+link from a browser.
 
 **Linked repos (M163, #1209).** A GitHub repo is linked to one project, by
 a member of it (the account, for a personal project; a team's owner or
