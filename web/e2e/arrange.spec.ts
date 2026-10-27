@@ -181,3 +181,47 @@ test("Add Pane previews the selected split and keeps its actions reachable in a 
   await expect(drawer).toBeHidden();
   await expect(trigger).toBeFocused();
 });
+
+test("+ Pane opens a web page, and hands a pull request, an issue or a conversation to its opener", async ({ page }) => {
+  await newWorkspace(page);
+  const first = await active(page);
+  const drawer = page.locator("[data-add-pane-drawer]");
+  const openDrawer = async () => {
+    await page.locator("[data-add-pane]").click();
+    await expect(drawer).toBeVisible();
+  };
+  await openDrawer();
+  for (const kind of ["pr", "issue", "web", "conversation"]) await expect(drawer.locator(`[data-kind="${kind}"]`)).toBeEnabled();
+
+  // A web page: its address in the drawer, then a browser block below.
+  await drawer.locator('[data-kind="web"]').click();
+  await expect(drawer.locator("[data-add-pane-create]")).toBeDisabled();
+  await drawer.locator("[data-add-pane-url]").fill("example.com");
+  await drawer.locator('[data-place="down"]').click();
+  await expect(drawer.locator("[data-add-pane-destination]")).toHaveText(/^Web page on .*, below pane 1/);
+  await drawer.locator("[data-add-pane-create]").click();
+  await expect(drawer).toBeHidden();
+  await expect.poll(() => panes(page)).toHaveLength(2);
+  const made = (await panes(page)).find((p) => p !== first)!;
+  expect(await page.evaluate((p) => window.__arugula.client.info(p)?.type, made)).toBe("browser");
+  const rects = Object.fromEntries((await tab(page)).layout.panes);
+  expect(rects[made].y).toBeGreaterThan(rects[first].y);
+
+  // The rest ask which, as Open beside's items do: Next… opens that.
+  for (const [kind, dialog] of [
+    ["pr", "Open a pull request"],
+    ["issue", "Open an issue"],
+    ["conversation", "Claude Code conversations"],
+  ] as const) {
+    await paneEl(page, first).click({ position: { x: 40, y: 40 } });
+    await openDrawer();
+    await drawer.locator(`[data-kind="${kind}"]`).click();
+    await expect(drawer.locator("[data-add-pane-create]")).toHaveText("Next…");
+    await drawer.locator("[data-add-pane-create]").click();
+    await expect(drawer).toBeHidden();
+    await expect(page.getByRole("dialog", { name: dialog }).first()).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: dialog })).toHaveCount(0);
+  }
+  expect(await panes(page)).toHaveLength(2);
+});

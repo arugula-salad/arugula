@@ -61,7 +61,7 @@ const api = (path: string, body?: unknown, as?: string) =>
 const features = async () => ((await (await api("/api/host")).json()) as { features: Record<string, boolean | string[]> }).features;
 
 /** What this page shows to a stranger's eye, wherever labs would put it. */
-const MENU_HIDDEN = [/^Thread\b/, /^Session thread/, /\bVM\b/, /^Sandboxes/, /studio app/i, /^Invite over ssh/, /^Developer settings/];
+const MENU_HIDDEN = [/^Thread\b/, /^Session thread/, /\bVM\b/, /^Sandboxes/, /studio app/i, /^Invite over ssh/];
 
 async function noLabsItems(page: Page, pane: number) {
   // The pane's menu: still the usual, and still the read-only link.

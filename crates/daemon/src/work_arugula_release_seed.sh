@@ -32,6 +32,8 @@ echo three >src/code
 git commit -qam three
 three=$(git rev-parse HEAD)
 for n in 0.1.1 app-0.2.0; do echo "notes $n" >"docs/releases/$n.md"; done
+# A daemon release's notes have a headline section (scripts/whats-new.mjs).
+printf '\n```whats-new\n[]\n```\n' >>docs/releases/0.1.1.md
 git add -A
 git commit -qm notes
 git tag -a "ci/green/$(git rev-parse HEAD~3)" -m green HEAD~3

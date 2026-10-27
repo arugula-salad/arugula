@@ -903,6 +903,9 @@ test("Getting started joins as soon as a device approves: nothing to compare (#7
   // Straight to joined: no fingerprint to check.
   await expect(start.locator("[data-start-joined]")).toHaveText("Joined to your account", { timeout: 20_000 });
   await expect(start.locator("[data-start-confirm]")).toHaveCount(0);
+  // Joined: sharing next, a team to share with and a session to share.
+  await expect(start.locator("[data-start-make-team]")).toBeVisible();
+  await expect(start.locator("[data-start-share]")).toBeVisible();
   await page.context().close();
   await laptop.goto("/");
   await expect.poll(() => hostNames(laptop), { timeout: 20_000 }).toContain("sealed");
@@ -1232,7 +1235,8 @@ test("Sign-in and account has the account's email for notices (#1609)", async ()
   await laptop.locator("[data-email-change]").click();
   await laptop.locator("[data-email-input]").fill("lex@example.com");
   await laptop.locator("[data-email-send]").click();
-  expect(asked).toBe("lex@example.com");
+  // The route answers after the click returns.
+  await expect.poll(() => asked).toBe("lex@example.com");
   await expect(laptop.locator("[data-email-said]")).toContainText("A link went to lex@example.com");
   await expect(laptop.locator("[data-email-pending]")).toContainText("lex@example.com");
   await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();

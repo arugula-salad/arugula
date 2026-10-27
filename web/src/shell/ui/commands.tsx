@@ -6,7 +6,7 @@ import { hostMenuShown } from "./hosts";
 import { opPath } from "../ops";
 import { paneIds, type Client } from "../client";
 import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from "../../shared/proto";
-import { askText, type MenuItem } from "../../shared/ui/menu";
+import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, shareSession } from "./people";
 import { hasChat } from "./places";
@@ -15,7 +15,7 @@ import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { openPicker } from "./picker";
 import { openPalette } from "./palette";
-import { agentNotifyItems, notificationItems } from "./notify";
+import { agentNotifyItems, notificationItems, notifyThisDevice } from "./notify";
 import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
@@ -29,6 +29,8 @@ import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
 import { watchingNote } from "./shell/live";
 import { setTips, tipsOn } from "../../shared/seen";
+import { openWhatsNew } from "./whats-new";
+import { openPanel } from "../trust/common";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -337,25 +339,54 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
       ? [
           "separator" as const,
           { label: "Getting started", run: () => openGettingStarted(undefined, client) } as MenuItem,
+          { label: "What's new", hint: "The newest releases' headlines", run: () => void openWhatsNew(client) } as MenuItem,
           { label: "Command palette…", shortcut: keyHint("palette"), run: () => openPalette(client) } as MenuItem,
         ]
       : []),
   ];
 }
 
-/** What a hint's action may name (shell/hints), by id: each takes what
- * the hint's fact says. */
+/** What a hint's action (shell/hints) and What's new's *Try it*
+ * (docs/releases' headline sections) may name, by id: each takes what the
+ * hint's fact says; What's new gives none. */
 export const COMMANDS: Record<string, (client: Client, args: Record<string, string | number>) => void> = {
   /** A port listening in a pane, opened beside it with nothing asked. */
   "port.open-beside": (client, { pane, port }) => {
     const mine = client.machine(Number(pane));
     openPortAt(client, { split: Number(pane), host: mine?.id, local: !mine }, Number(port));
   },
+  "palette.open": (client) => openPalette(client),
+  /** Getting started at its Agents step: Use Claude Code with Arugula. */
+  "getting-started.agents": (client) => openGettingStarted("agents", client),
+  /** Pin a board… beside the shown tab's pane. */
+  "board.pin": (client) => {
+    const pane = client.tab === null ? undefined : client.activePane.get(client.tab);
+    if (pane !== undefined) void pinBoard(client, { from: pane });
+    else client.toast("Open a pane first: a board pins beside one");
+  },
+  /** A PR's or an issue's link it printed, as a block beside it. */
+  "forge.open-link": (client, { pane, url }) => void client.openForgeLink(Number(pane), String(url)),
+  /** Pane settings › After a restart, under the pane's header. */
+  "pane.restart-settings": (client, { pane }) => {
+    const at = document.querySelector(`[data-pane-header="${pane}"]`)?.getBoundingClientRect();
+    openMenu({ clientX: at ? at.left + 8 : innerWidth / 2, clientY: at ? at.bottom : innerHeight / 3, preventDefault() {} }, restartItems(client, Number(pane)));
+  },
+  "pane.attach": (client, { pane }) => void client.attachFiles(Number(pane)),
+  "pane.picker": (client, { pane }) => openPicker(client, Number(pane)),
+  "push.enable": (client) => notifyThisDevice(client),
+  /** Follow someone in the session (their client). */
+  "people.follow": (client, { client: them }) => client.follow(Number(them)),
+  "control.teams": () => openPanel("teams")(),
+  "conversations.pick": (client) => {
+    const pane = client.active();
+    pickConversation(client, pane === undefined ? { session: client.session ?? undefined } : { split: pane, cwd: client.cwd(pane) ?? undefined });
+  },
 };
 
 /** The shown machine's settings: its standing permission rules (#166), its
  * usage and crash reports (M103) and its Labs flags (#665), the owner's.
- * In the machine menu. */
+ * In the machine menu. Developer settings are there whether or not the
+ * machine has a `flags.json` yet: the dialog is how a flag gets turned on. */
 export function machineSettingsItems(client: Client): MenuItem[] {
   if (!client.state || client.state.roles) return [];
   return [
@@ -363,7 +394,7 @@ export function machineSettingsItems(client: Client): MenuItem[] {
     { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
     // Native #205: a sharing setting, which was the `guest-ssh` flag.
     { label: "Guest SSH access…", run: () => openSharing(client) },
-    ...(client.hasDev() ? [{ label: "Developer settings…", run: () => openDeveloper(client) } as MenuItem] : []),
+    { label: "Developer settings…", run: () => openDeveloper(client) },
   ];
 }
 

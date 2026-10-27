@@ -546,6 +546,13 @@ export class TerminalView {
   }
 
   private filesCb: ((files: File[]) => void) | undefined;
+  private offeredCb: ((what: { text: string } | { files: true }) => void) | undefined;
+  /** Text pasted in (before xterm sends it), or files dragged over it: what
+   * the attach hint looks for (shell/hints/attach). */
+  onOffered(cb: (what: { text: string } | { files: true }) => void) {
+    this.offeredCb = cb;
+  }
+
   /** Files pasted or dropped on the terminal (M70). */
   onFiles(cb: (files: File[]) => void) {
     this.filesCb = cb;
@@ -561,11 +568,21 @@ export class TerminalView {
       e.stopImmediatePropagation();
       this.filesCb([...files]);
     };
-    this.host.addEventListener("paste", (e) => take(e, e.clipboardData?.files), true);
+    this.host.addEventListener(
+      "paste",
+      (e) => {
+        const text = e.clipboardData?.files.length ? "" : e.clipboardData?.getData("text/plain");
+        if (text) this.offeredCb?.({ text });
+        take(e, e.clipboardData?.files);
+      },
+      true,
+    );
     this.host.addEventListener(
       "dragover",
       (e) => {
-        if (this.filesCb && e.dataTransfer?.types.includes("Files")) e.preventDefault();
+        if (!this.filesCb || !e.dataTransfer?.types.includes("Files")) return;
+        e.preventDefault();
+        this.offeredCb?.({ files: true });
       },
       true,
     );

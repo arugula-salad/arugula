@@ -30,7 +30,8 @@ test("a newer release: the chip, the command, and Not now", async ({ page }) => 
   const pop = page.getByRole("dialog", { name: "Update Arugula" });
   await expect(pop).toContainText("this daemon is 0.16.0");
   await expect(pop.locator("[data-update-command]")).toHaveText("curl -fsSL https://arugula.io/install.sh | sh");
-  await expect(pop.getByRole("link", { name: "What's new" })).toHaveAttribute("href", /\/tag\/v0\.17\.0$/);
+  // What's new opens the panel (whats-new.spec.ts).
+  await expect(pop.locator("[data-update-whats-new]")).toHaveText("What's new");
 
   // Dismissed for this version: gone, and still gone after a reload.
   await pop.locator("[data-update-dismiss]").click();

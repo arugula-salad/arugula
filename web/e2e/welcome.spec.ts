@@ -1,5 +1,8 @@
-// #110: Getting started opens once per browser, then from the account menu
-// and the phone's sheet. #96: what a phone that can't be notified is told.
+// #110: Getting started opens once per browser (on a daemon's own page; on
+// control's, once per account: getting-started-control.spec.ts), then from
+// the account menu and the phone's sheet. Its last step, Things to try, is a
+// button for each thing, marked done once used. #96: what a phone that
+// can't be notified is told.
 
 import { devices, expect, test } from "@playwright/test";
 import { reset, closeContexts, sheetTab } from "./helpers";
@@ -33,10 +36,10 @@ test("opens once on first run, a step at a time, then from the account menu", as
   await panel.locator("[data-start-next]").click();
   await expect(progress).toHaveText("Step 4 / 5 · Agents");
   await expect(panel.locator("[data-start-agent]")).toBeVisible();
-  await panel.locator('[data-start-seg="ready"]').click();
-  await expect(progress).toHaveText("Step 5 / 5 · Ready");
+  await panel.locator('[data-start-seg="try"]').click();
+  await expect(progress).toHaveText("Step 5 / 5 · Things to try");
   // The test daemon isn't joined or served: those are still to do.
-  await expect(panel.locator('[data-check="todo"]').first()).toBeVisible();
+  await expect(panel.locator('[data-start-todo] [data-check="todo"]').first()).toBeVisible();
   await panel.getByRole("button", { name: "Done" }).click();
   await expect(panel).toBeHidden();
   // Closing says where it went.
@@ -130,4 +133,61 @@ test.describe("phone", () => {
     await sheetTab(page, "More");
     await expect(page.locator("[data-notify-blocked]")).toHaveText("Notifications are blocked for this site in your browser's settings.");
   });
+});
+
+test("Things to try: each button does its thing, and is marked done once used, for good", async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await reset(page);
+  const panel = page.getByRole("dialog", { name: "Getting started" });
+  const tryStep = async () => {
+    await page.locator(".ws-head [data-account-menu]").click();
+    await page.getByRole("menuitem", { name: "Getting started" }).click();
+    await panel.locator('[data-start-seg="try"]').click();
+    await expect(panel.locator("[data-start-tries]")).toBeVisible();
+  };
+  const item = (id: string) => panel.locator(`[data-start-try="${id}"]`);
+  await tryStep();
+  for (const id of ["swarm", "agent", "port", "pr", "push", "search"]) await expect(item(id)).toBeVisible();
+  await expect(panel.locator("[data-start-try][data-done]")).toHaveCount(0);
+  // The test daemon has no block sites: Open a port says why it can't.
+  await expect(item("port").getByRole("button")).toBeDisabled();
+  await expect(item("port")).toContainText("block sites");
+
+  // Command search.
+  await item("search").getByRole("button").click();
+  await expect(panel).toBeHidden();
+  await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Open a pull request asks which.
+  await tryStep();
+  await expect(item("search")).toHaveAttribute("data-done", "");
+  await item("pr").getByRole("button").click();
+  await expect(page.getByRole("dialog", { name: "Open a pull request" }).first()).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Start an agent opens the agent dialog.
+  await tryStep();
+  await item("agent").getByRole("button").click();
+  await expect(panel).toBeHidden();
+  await expect(page.getByRole("dialog", { name: "Start an agent" }).first()).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // The swarm.
+  await tryStep();
+  await item("swarm").getByRole("button").click();
+  await expect(page.locator(".swarm")).toBeVisible();
+  expect(new URL(page.url()).hash).toMatch(/^#swarm/);
+
+  // Remembered (the seen store, this browser's here), after a reload too.
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.__arugula?.client.state !== null)).toBe(true);
+  await expect(page.locator(".session-button")).toBeVisible();
+  await tryStep();
+  for (const id of ["search", "pr", "agent", "swarm"]) await expect(item(id)).toHaveAttribute("data-done", "");
+  await expect(item("port")).not.toHaveAttribute("data-done", "");
+  const seen = await page.evaluate(() => JSON.parse(localStorage.getItem("arugula.seen") ?? "{}"));
+  expect(Object.keys(seen)).toEqual(expect.arrayContaining(["seen:getting-started.try.search", "seen:getting-started.try.swarm"]));
+  await ctx.close();
 });

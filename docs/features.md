@@ -37,8 +37,11 @@ around your panes. A phone keeps its own header and sheet.
 - **The tabs**, then **the pane toolbar:** the pane count (a switcher),
   the layouts *Columns*, *Grid* and *Main + stack*, *Focus* (one pane fills
   the tab; again to restore it), and *+ Pane* (a shell, agent, chat, editor,
-  changes or a port, on which machine, in which directory, to the right or
-  below). The drawer previews the split before creation. Layouts and focus
+  changes, a port, a pull request, an issue, a web page or a Claude Code
+  conversation, on which machine, in which directory, to the right or
+  below). The drawer previews the split before creation; an agent, a pull
+  request, an issue or a conversation then asks which, as *Open beside*
+  does. Layouts and focus
   are the machine's, so everyone sees the same.
 - **Each pane's header**, including a single or focused desktop pane: its number (the
   Ctrl+Shift+digit one), what it is, its status, where it runs, its
@@ -63,8 +66,8 @@ around your panes. A phone keeps its own header and sheet.
 sandbox, attached to a project ([control.md](control.md), "Hosted
 workspaces"). A project's are listed on the platform page
 (`app.arugula.io/p/:project/workspaces`, [control-ops.md](control-ops.md));
-`arugula cloud create` makes one, small (2 vCPU, 2 GiB) or large (8 vCPU,
-8 GiB, `--size large`). Each is a machine like any other: its
+`arugula cloud create`, or Create a cloud workspace there, makes one, small
+(2 vCPU, 2 GiB) or large (8 vCPU, 8 GiB, `--size large`). Each is a machine like any other: its
 sessions and agent blocks open on control's page, and an agent on one of
 your own machines drives it over MCP (`list kind cloud_workspaces`, `cloud`,
 `read_cloud`). The Managoat-backed Cloud workspaces that came first, their
@@ -122,6 +125,7 @@ takes it only when it can act, and otherwise the key goes to the pane.
 | Ctrl+Shift+1–9 | Go to pane 1–9 of this tab (the numbers on the pane headers) |
 | Ctrl+Shift+Enter | Focus the active pane, or restore the layout |
 | Ctrl+Shift+E | + Pane |
+| Ctrl+Shift+L | Go to the next pane that needs you |
 | Ctrl+Alt+Shift+arrows | Grow (→ ↓) or shrink (← ↑) the active pane (GNOME keeps these for itself) |
 | Ctrl+Shift+C, Ctrl+Shift+V | Copy and paste in a terminal |
 | Escape | Close the drawer, dialog or menu that's open |

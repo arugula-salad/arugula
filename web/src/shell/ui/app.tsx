@@ -32,6 +32,7 @@ import { LinkNote } from "./link-note";
 import { MaintenanceNote } from "../../shared/ui/maintenance-note";
 import { AgentsNudge } from "./agents-setup";
 import { HintEmpty, HintsWatch, HintToast } from "./hints";
+import { WhatsNewLayer } from "./whats-new";
 import { useWorkspaceKeys } from "./keys";
 import { connection, ContextHeader } from "./shell/context-header";
 import type { Renaming } from "./shell/rename-input";
@@ -145,6 +146,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <ControlRequests client={client} />
       {state && <HintsWatch client={client} />}
       {state && <HintToast client={client} />}
+      <WhatsNewLayer client={client} />
     </>
   );
   if (ws) {
@@ -232,6 +234,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <ControlRequests client={client} />
       {state && <HintsWatch client={client} />}
       {state && <HintToast client={client} />}
+      <WhatsNewLayer client={client} />
       <StatusPill client={client} />
     </div>
   );

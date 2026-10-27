@@ -27,6 +27,9 @@ import { AddPasskeyAgain, AdmitPrompt, AppLoginDone, AppLoginPrompt, ConfirmPass
 import { RecoveryCodes } from "./recovery";
 import { Teams } from "./teams";
 
+/** Control's address that opens Teams (where a team's owner turns chat on). */
+const TEAMS_HASH = "#teams";
+
 /** Over the app: approval prompts, a daemon's join, the device list. */
 export function ControlOverlay({ s }: { s: ControlSession }) {
   useControl(s);
@@ -125,6 +128,14 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
         <AccountPanel s={s} close={done} />
       </Modal>
     );
+  }
+  // The platform page's Turn on chat comes here, to the teams (Discovery 5).
+  if (hash === TEAMS_HASH) {
+    const done = () => {
+      history.replaceState(history.state, "", location.pathname + location.search);
+      setHash("");
+    };
+    return <Teams s={s} close={done} />;
   }
   if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
   if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;

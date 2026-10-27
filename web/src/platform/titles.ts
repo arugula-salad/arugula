@@ -69,6 +69,8 @@ export function titleOf(r: Route, k: Known): string {
       return parts("Cloud workspace", p);
     case "project-settings":
       return parts("Settings", p);
+    case "deploys":
+      return parts("Deploys", p);
     case "new-deploy":
       return parts("Deploy…", p);
     case "deploy":

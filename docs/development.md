@@ -201,7 +201,13 @@ daemon's update check read it.
 **The daemon (`v*`).**
 
 1. Notes go in `docs/releases/X.Y.Z.md`; merge them to main (they needn't
-   pass CI first).
+   pass CI first). They end with a headline section, a ```` ```whats-new ````
+   block of a few items (each a feature id, a title, one line, and maybe
+   a **Try it** command or route and who it `needs`): the web client's
+   What's new panel shows them after the update, and the format is in
+   `scripts/whats-new.mjs` (`just whats-new` checks them).
+   `scripts/release bump` refuses notes without one (a dry run says so and
+   goes on), and `publish` leaves it out of the GitHub release.
 2. `just release` (a patch; `just release minor`, `just release major`)
    bumps the version on top of the newest commit on main that passed CI
    (below), copies the client fixtures to

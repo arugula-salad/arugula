@@ -82,9 +82,9 @@ control pushes, in `PUT /api/flags/NAME` and in `arugulad flags NAME on`
 Or, as the machine's owner, in the web client: *Developer settings…* in the
 session menu (and the command palette, and the phone's sheet) has a switch
 for each flag, and the page follows a switch at once, with no reload. The
-menus offer it only on a machine that has asked: one where `arugulad flags`
-has been run, or a flag set. The desktop app's *Daemon* menu has *Developer
-settings…* either way, and so does the page at `/#developer`.
+machine menu offers it to the owner on every machine, whether or not
+`flags.json` exists yet; so do the desktop app's *Daemon* menu and the page
+at `/#developer`.
 
 The flags are `{"flags": {"vms": true}}` in `flags.json` in the state
 directory, which is `$ARUGULA_STATE_DIR` if set, else

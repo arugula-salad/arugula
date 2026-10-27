@@ -2,15 +2,17 @@
 // of pane, on which machine, in which directory and on which side of the
 // active pane, shows where that is before it makes it, and then gives the
 // new pane the keys. Each kind is made the way its menu item makes it (a
-// split, the agent dialog, an editor, changes or a port block); a block
-// opens beside the active pane and, placed below, is moved there.
+// split, the agent dialog, an editor, changes, a port or web page block,
+// or the pull request, issue and conversation openers of *Open beside*);
+// a block opens beside the active pane and, placed below, is moved there.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { paneIds, type Client } from "../../client";
-import { newRemote, remoteHosts } from "../../blocks";
+import { newRemote, openIssue, openPr, remoteHosts } from "../../blocks";
 import { directory } from "../../hosts";
 import type { Node, OpenRequest, PaneId, TabView } from "../../../shared/proto";
 import { startAgent } from "../agent-dialog";
+import { pickConversation } from "../conversations";
 import { useEscape } from "../keys";
 import { openPicker } from "../picker";
 import { closeAttention } from "./attention-drawer";
@@ -66,7 +68,7 @@ export function useAddPane(): boolean {
 
 // ---- the drawer
 
-type Kind = "shell" | "agent" | "chat" | "editor" | "changes" | "port";
+type Kind = "shell" | "agent" | "chat" | "editor" | "changes" | "port" | "pr" | "issue" | "web" | "conversation";
 type Place = "right" | "down";
 /** Where it runs: this host, the tab's machine (a VM tab), or another host
  * in the home daemon's list (a shell only). */
@@ -79,7 +81,19 @@ const KINDS: { kind: Kind; label: string; description: string }[] = [
   { kind: "editor", label: "Editor", description: "Edit files in a code workspace" },
   { kind: "changes", label: "Changes", description: "Review code changes and diffs" },
   { kind: "port", label: "Port", description: "Preview an app running on a port" },
+  { kind: "pr", label: "Pull request", description: "Its checks, reviews and timeline" },
+  { kind: "issue", label: "Issue", description: "Read it, or put an agent on it" },
+  { kind: "web", label: "Web page", description: "Any address, in a pane" },
+  { kind: "conversation", label: "Claude Code conversation", description: "Pick one up from a terminal or the app" },
 ];
+
+/** Kinds whose opener asks the rest (which agent, which PR): the drawer
+ * hands over to it. */
+const NEXT: Kind[] = ["agent", "pr", "issue", "conversation"];
+/** Kinds that run on this machine only, as their menu items open them. */
+const HERE: Kind[] = ["chat", "pr", "issue", "web", "conversation"];
+/** Kinds with no working directory. */
+const NO_DIR: Kind[] = ["port", "chat", "web"];
 
 const whereKey = (w: Where) => (w.kind === "here" ? "here" : w.kind === "machine" ? `m${w.id}` : `h:${w.name}`);
 
@@ -95,6 +109,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   const [where, setWhere] = useState<Where>(() => (tabMachine ? { kind: "machine", id: tabMachine.id, name: tabMachine.name ?? tabMachine.sprite } : { kind: "here" }));
   const [dir, setDir] = useState(() => (anchor === undefined ? "" : (client.cwd(anchor) ?? "")));
   const [port, setPort] = useState("");
+  const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const first = useRef<HTMLButtonElement>(null);
@@ -108,6 +123,8 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   const kindRefusal = (k: Kind): string | null => {
     if (k === "editor" && !owner) return "Editors are the machine owner's";
     if (k === "changes" && !owner) return "Changes are the machine owner's";
+    if ((k === "pr" || k === "issue") && !owner) return "Pull requests and issues open with the machine owner's login";
+    if (k === "conversation" && !owner) return "Conversations are the machine owner's";
     if ((k === "editor" || k === "port") && !client.showsBlocks()) return "This page can't show block sites";
     return null;
   };
@@ -119,7 +136,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   const whereRefusal = (w: Where): string | null => {
     if (w.kind === "host" && kind !== "shell") return "Only a shell opens on another host from here";
     if (w.kind !== "here" && kind === "agent") return "The agent dialog says where an agent runs";
-    if (w.kind !== "here" && kind === "chat") return "A chat runs on this machine";
+    if (w.kind !== "here" && HERE.includes(kind)) return `${KINDS.find((k) => k.kind === kind)!.label} opens on this machine`;
     return null;
   };
   const chosenWhere = whereRefusal(where) ? { kind: "here" as const } : where;
@@ -135,11 +152,11 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   const anchorName = anchor === undefined ? "" : `pane ${ordinal(tab, anchor)} (${client.title(anchor) || client.info(anchor)?.command || `%${anchor}`})`;
   const label = KINDS.find((k) => k.kind === kind)!.label;
   const what = kind === "port" ? `Port ${portMatch ? portMatch[1] : "…"}` : label;
-  const destination = `${what} on ${whereName(chosenWhere)}${kind === "port" || kind === "chat" ? "" : ` in ${theDir || "its home directory"}`}, ${place === "right" ? "right of" : "below"} ${anchorName}`;
+  const destination = `${what} on ${whereName(chosenWhere)}${NO_DIR.includes(kind) ? "" : ` in ${theDir || "its home directory"}`}, ${place === "right" ? "right of" : "below"} ${anchorName}`;
   const refusal =
     anchor === undefined
       ? "No pane to put it beside"
-      : (kindRefusal(kind) ?? (kind === "port" && !portMatch ? "Type a port number" : null));
+      : (kindRefusal(kind) ?? (kind === "port" && !portMatch ? "Type a port number" : kind === "web" && !url.trim() ? "Type an address" : null));
 
   /** Once the new pane shows in this tab: move it below if it was opened
    * beside, give it the keys, and close. */
@@ -193,6 +210,14 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
       startAgent(client, { split: anchor, from: anchor, cwd: theDir || undefined });
       return;
     }
+    if (kind === "pr" || kind === "issue" || kind === "conversation") {
+      // As *Open beside* opens them: their own question says which.
+      addPane.close();
+      settle(before, place === "down", true);
+      if (kind === "conversation") pickConversation(client, { split: anchor, cwd: theDir || undefined });
+      else void (kind === "pr" ? openPr : openIssue)(client, { split: anchor, dir: theDir || null });
+      return;
+    }
     setBusy(true);
     if (kind === "shell") {
       if (chosenWhere.kind === "host") {
@@ -222,7 +247,9 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
         ? { type: "editor", config: theDir ? { path: theDir } : {}, split: anchor, from_pane: anchor, ...on }
         : kind === "changes"
           ? { type: "diff", config: theDir ? { repo: theDir } : {}, split: anchor, from_pane: anchor, ...on }
-          : { type: "browser", config: { port: Number(portMatch![1]), path: portMatch![2] ?? "/" }, split: anchor, ...on };
+          : kind === "web"
+            ? { type: "browser", config: { url: url.trim() }, split: anchor }
+            : { type: "browser", config: { port: Number(portMatch![1]), path: portMatch![2] ?? "/" }, split: anchor, ...on };
     const err = await client.make("/api/blocks", body);
     if (err) return failed(err);
     settle(before, place === "down");
@@ -297,7 +324,20 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
           ))}
         </select>
       </label>
-      {kind !== "port" && kind !== "chat" && (
+      {kind === "web" && (
+        <label class="add-pane-row">
+          <span class="add-pane-label">Address</span>
+          <input
+            class="add-pane-input"
+            data-add-pane-url
+            value={url}
+            placeholder="https://… or example.com"
+            autocomplete="off"
+            onInput={(e) => setUrl(e.currentTarget.value)}
+          />
+        </label>
+      )}
+      {!NO_DIR.includes(kind) && (
         <div class="add-pane-row">
           <span class="add-pane-label">Working directory</span>
           <div class="add-pane-directory"><span class="add-pane-dir" data-add-pane-dir title={theDir || undefined}>
@@ -329,6 +369,8 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
       <p class="add-pane-dest" data-add-pane-destination>
         {destination}
         {kind === "agent" && <span class="add-pane-then"> (the agent dialog opens next)</span>}
+        {(kind === "pr" || kind === "issue") && <span class="add-pane-then"> (it asks which {kind === "pr" ? "pull request" : "issue"} next)</span>}
+        {kind === "conversation" && <span class="add-pane-then"> (the conversations open next, to pick one)</span>}
       </p>
       {error && (
         <p class="add-pane-error" role="alert" data-add-pane-error>
@@ -341,7 +383,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
           Cancel
         </button>
         <button class="primary" data-add-pane-create disabled={!!refusal || busy} title={refusal ?? "Ctrl+Enter"} onClick={() => void create()}>
-          {busy ? "Opening…" : kind === "agent" ? "Next…" : `Open ${label.toLowerCase()}`}
+          {busy ? "Opening…" : NEXT.includes(kind) ? "Next…" : `Open ${label.toLowerCase()}`}
         </button>
       </div>
     </div>
@@ -366,6 +408,10 @@ function KindIcon({ kind }: { kind: Kind }) {
     editor: "M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6 M9 16h6",
     changes: "M7 7v10 M9 5h7v12 M7 3a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M7 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M16 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4",
     port: "M3 12h18 M12 3c-6 6-6 12 0 18 M12 3c6 6 6 12 0 18 M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18",
+    pr: "M6 7v10 M6 3a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M6 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M18 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M18 17V9a3 3 0 0 0-3-3h-4 M13 4l-2 2 2 2",
+    issue: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M12 8v5 M12 16v.5",
+    web: "M3 5h18v14H3z M3 9h18 M6 7h.5 M8.5 7h.5",
+    conversation: "M4 4h12v9H8l-4 3z M10 16v1h6l4 3v-9h-4",
   };
   return <svg class="add-pane-kind-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={paths[kind]} /></svg>;
 }

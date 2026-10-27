@@ -433,6 +433,12 @@ struct Daemon {
     /// Terminals one of Arugula's Claude Code hooks has spoken from, while
     /// Claude Code runs there (`PaneInfo.unhooked`).
     hooked: std::collections::HashSet<PaneId>,
+    /// The last link to a PR or an issue each terminal printed
+    /// (`PaneInfo.link`).
+    links: HashMap<PaneId, String>,
+    /// Terminals brought back at startup that didn't keep running across
+    /// it (`PaneInfo.restored`).
+    restored: std::collections::HashSet<PaneId>,
     /// Who's been typing in the tabs whose size they own: another client's
     /// typing waits for them to stop before taking the size (#333).
     hold: arugula_core::SizeHold,
@@ -619,6 +625,8 @@ pub fn start(
         status_pushed: Default::default(),
         turn_typed: Default::default(),
         hooked: Default::default(),
+        links: Default::default(),
+        restored: Default::default(),
         hold: Default::default(),
         clients: HashMap::new(),
         focus: HashMap::new(),
@@ -809,8 +817,13 @@ impl Daemon {
             let integrate = meta.integration.unwrap_or(true);
             // Still running what `run` started: keep holding it.
             let hold = meta.hold && matches!(start, Start::Adopt(_) | Start::Resume { .. });
+            // Its process went with the old daemon: its policy says what now.
+            let fresh = !matches!(start, Start::Adopt(_) | Start::Resume { .. });
             match self.open_pane(id, cols, rows, true, start, cwd, integrate, hold, meta.host) {
                 Ok(()) => {
+                    if fresh {
+                        self.restored.insert(id);
+                    }
                     self.meta.insert(id, meta);
                 }
                 Err(e) => {
@@ -1316,6 +1329,12 @@ impl Daemon {
                 }
                 Signal::Status(s) => self.status_report(pane, &s),
                 Signal::Reset => self.status_reset(pane),
+                Signal::Link { url } => {
+                    if self.links.get(&pane) != Some(&url) {
+                        self.links.insert(pane, url);
+                        self.touch(pane);
+                    }
+                }
             },
         }
     }

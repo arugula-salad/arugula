@@ -11,7 +11,8 @@
 // questions stay on its screen. A one-line chip on the pane says they could
 // be cards, with Set up: the same one click (`POST
 // /api/setup/agents/claude`, which installs the hooks too). A one-off for
-// now, kept apart so it can move into the hints when they come.
+// now, kept apart so it can move into the hints when they come. The bell's
+// empty drawer offers the same Set up (`setUpClaude`).
 
 import { opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
@@ -124,12 +125,24 @@ export function AgentsNudge({ client }: { client: Client }) {
  * show. */
 let hooksHere: Promise<boolean> | null = null;
 
-function hooksInstalled(): Promise<boolean> {
+export function hooksInstalled(): Promise<boolean> {
   hooksHere ??= fetch(`${opPath("setup.get")}?part=agents`)
     .then((r) => (r.ok ? (r.json() as Promise<AgentsSetup>) : null))
     .then((s) => s?.claude.hooks !== false)
     .catch(() => true);
   return hooksHere;
+}
+
+/** Getting started's one click for Claude Code (`POST
+ * /api/setup/agents/claude`, which installs the hooks too): whether it
+ * worked, and what to say. */
+export async function setUpClaude(): Promise<{ ok: boolean; said: string }> {
+  const o = await fetch(opPath("setup.agent", { kind: "claude" }), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+    .then((r) => r.json() as Promise<{ ok: boolean; error?: string; done?: string[] }>)
+    .catch((e: unknown) => ({ ok: false, error: String(e), done: [] }));
+  if (o.ok) hooksHere = Promise.resolve(true);
+  const hooks = o.done?.find((d) => d.includes("hooks")) ?? o.done?.[0];
+  return { ok: o.ok, said: o.ok ? (hooks ?? "Set up.") : (o.error ?? "Setting it up didn't work.") };
 }
 
 /** Panes whose chip was put away, for this page. */
@@ -157,16 +170,10 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
   if (!wants || (!missing && !said)) return null;
   const setUp = async () => {
     setBusy(true);
-    const o = await fetch(opPath("setup.agent", { kind: "claude" }), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
-      .then((r) => r.json() as Promise<{ ok: boolean; error?: string; done?: string[] }>)
-      .catch((e: unknown) => ({ ok: false, error: String(e), done: [] }));
+    const o = await setUpClaude();
     setBusy(false);
-    if (o.ok) {
-      hooksHere = Promise.resolve(true);
-      setMissing(false);
-    }
-    const hooks = o.done?.find((d) => d.includes("hooks")) ?? o.done?.[0];
-    setSaid({ ok: o.ok, text: o.ok ? `${hooks ?? "Set up."} Start Claude again here to use them.` : (o.error ?? "Setting it up didn't work.") });
+    if (o.ok) setMissing(false);
+    setSaid({ ok: o.ok, text: o.ok ? `${o.said} Start Claude again here to use them.` : o.said });
   };
   return (
     <div class="hooks-chip" role="status" data-hooks-chip={said ? (said.ok ? "done" : "failed") : "offer"} onPointerDown={(e) => e.stopPropagation()}>

@@ -78,6 +78,11 @@ proto-ts mode="write":
 decisions mode="write":
     node scripts/decisions-index.mjs {{ if mode == "write" { "" } else { "--check" } }}
 
+# Check the headline sections of the release notes (docs/releases/X.Y.Z.md),
+# which What's new reads at build time, and list them.
+whats-new:
+    node scripts/whats-new.mjs
+
 # Write "What control stores" in docs/control-e2e.md from control's table
 # manifest (crates/control/tables.toml). Without `write`, check it's
 # current, and that the manifest lists every table control has: the same
@@ -813,6 +818,7 @@ check: test mux-guard workspace-guard
     cd web && pnpm run paths
     just proto-ts check
     just decisions check
+    just whats-new
     just control-tables check
     scripts/check-binaries
     {{cargo}} fmt --all --check
