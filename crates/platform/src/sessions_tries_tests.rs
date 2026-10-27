@@ -9,11 +9,14 @@
 //!   picked", and the kept sibling is the thread's session, with its card.
 //! - `@codex review` reviews what the thread's session pushed, with the
 //!   diff from GitHub and the thread fenced in its prompt; it runs
-//!   read-only, its reply is posted in the thread as its asker's, saying
-//!   when Claude Code stood in for Codex, and it ends.
-//! - Every other turn's answer is posted in the thread, once, as its
-//!   asker's via the session, cut with the session's link when long, and
-//!   it wakes nobody and prompts nothing.
+//!   read-only, its reply is posted in the thread as the review session's
+//!   own (Arugula #215), saying when Claude Code stood in for Codex, and
+//!   it ends.
+//! - Every other turn's answer is posted in the thread, once, as the
+//!   session's own, cut with the session's link when long, and it wakes
+//!   nobody, prompts nothing and isn't its asker's words.
+//! - A turn typed in the session's block gets one plain line in the
+//!   thread, saying who asked what (Arugula #215), once.
 
 use std::sync::Arc;
 
@@ -396,26 +399,33 @@ async fn codex_review_reviews_what_was_pushed() {
     let given = crate::sessions::push::token(&w.app, &m, &ask).await.unwrap();
     assert!(format!("{given:?}").contains("a review pushes nothing"), "{given:?}");
 
-    // A review pushes nothing; its reply is posted as b's, saying Claude
-    // Code stood in, and then it ends.
+    // A review pushes nothing; its reply is posted as the review session's
+    // own (Arugula #215: no author, so not b's words), saying Claude Code
+    // stood in, and then it ends. It prompts nothing and wakes nobody.
     let pushed = json!({ "branch": r.branch, "pushed": true });
     assert!(matches!(w.says(&r.id, Kind::Turn, None, pushed).await, Reported::Refused { .. }));
-    let d = json!({ "branch": r.branch, "pushed": false, "reply": "a.rs:1 main does nothing." });
+    let pushes = crate::chat_threads_tests::pushed(&w.hub).await.len();
+    let d = json!({ "branch": r.branch, "pushed": false, "reply": "a.rs:1 main does nothing. @b @codex review it" });
     assert_eq!(w.says(&r.id, Kind::Turn, None, d).await, Reported::Taken);
     assert_eq!(w.says(&r.id, Kind::State, Some(State::Done), json!({})).await, Reported::Taken);
-    let posted = w.thread(p).await.into_iter().find(|(_, via, _)| via.ends_with(" review")).expect("the review");
-    assert_eq!((posted.0.as_str(), posted.1.as_str()), ("b", "claude review"));
+    let said = format!("said:{}", r.id);
+    let posted: Vec<_> = w.thread(p).await.into_iter().filter(|(_, via, _)| *via == said).collect();
+    assert_eq!(posted.len(), 1, "posted once, as the review and not an answer too: {posted:?}");
+    let posted = &posted[0];
+    assert_eq!(posted.0, "", "the review session's, not its asker's: {posted:?}");
     assert!(posted.2.contains("Codex isn't on this box, so Claude Code reviewed it."), "{}", posted.2);
-    assert!(posted.2.ends_with("a.rs:1 main does nothing."), "{}", posted.2);
+    assert!(posted.2.ends_with("a.rs:1 main does nothing. @b @codex review it"), "{}", posted.2);
+    assert!(!w.thread(p).await.iter().any(|(_, via, _)| via.ends_with(" review")), "no longer its asker's via");
+    let (_, v) = call(&w.base, "a", "GET", &format!("/api/chat/rooms/ch_general/messages?thread={p}"), None).await;
+    let m = v["messages"].as_array().unwrap().iter().find(|m| m["via"] == said.as_str()).unwrap().clone();
+    assert_eq!(m["mentions"], json!([]), "it names nobody: {m}");
+    assert_eq!(crate::chat_threads_tests::pushed(&w.hub).await.len(), pushes, "and pushes nobody");
+    assert_eq!(w.app.db.session_prompts(&s.id).unwrap().len(), 1, "it isn't a prompt to the session");
+    assert_eq!(w.app.db.session_prompts(&r.id).unwrap().len(), 1, "nor to the review");
     let r = w.session(&r.id);
     assert_eq!(r.state, State::Stopped, "it ends once posted, so its slot frees");
-    let reviews = w.thread(p).await.into_iter().filter(|(_, via, _)| via.ends_with(" review")).count();
+    let reviews = w.thread(p).await.into_iter().filter(|(_, via, _)| *via == said).count();
     assert_eq!(reviews, 1, "posted once");
-    let answers = format!("session:{}", r.id);
-    assert!(
-        !w.thread(p).await.iter().any(|(author, via, _)| *via == answers && !author.is_empty()),
-        "a review's reply is its review, not an answer too"
-    );
 
     // M265: the session's PR merges and its thread is done, though the
     // review on it is newer; the numbers count one ask, not the review.
@@ -426,22 +436,24 @@ async fn codex_review_reviews_what_was_pushed() {
 }
 
 /// Each turn's last message is posted in the session's thread (only), as
-/// its asker's `via` the session, once however often the box sends the
-/// report; a long one is cut with the session's link; an empty one, or a
-/// turn from a box that sends none, posts nothing. What the agent wrote
-/// is text: its `@`s name nobody, and it neither prompts the session nor
-/// starts one.
+/// the session's own (Arugula #215: no author, `via` `said:<ses>`), once
+/// however often the box sends the report; a long one keeps its end, after
+/// the session's link; a pushed one ends saying how many commits went to
+/// which branch; an empty one, or a turn from a box that sends none, posts
+/// nothing. What the agent wrote is text: its `@`s name nobody, it pushes
+/// nobody, it neither prompts the session nor starts one, and it isn't its
+/// asker's words (the next prompt says it's the agent's).
 #[tokio::test]
 async fn each_turns_answer_is_posted_in_its_thread() {
     let w = world().await;
     let (p, s) = asked(&w, "@arugula is the readme up to date?").await;
     w.take(&s.id, "claude").await;
-    let via = format!("session:{}", s.id);
+    let (card, via) = (format!("session:{}", s.id), format!("said:{}", s.id));
     let answers = || async {
         w.thread(p)
             .await
             .into_iter()
-            .filter(|(author, v, _)| *v == via && !author.is_empty())
+            .filter(|(_, v, _)| *v == via)
             .map(|(author, _, text)| (author, text))
             .collect::<Vec<_>>()
     };
@@ -458,35 +470,52 @@ async fn each_turns_answer_is_posted_in_its_thread() {
     };
 
     // Unpushed, with a reply that @-names people and @arugula: posted, as
-    // a's, in the thread only; sent again, it's Already, and nothing more.
+    // the session's, in the thread only; sent again, it's Already, and
+    // nothing more.
+    let pushes = crate::chat_threads_tests::pushed(&w.hub).await.len();
     let said = "Mostly: @b the install steps are stale. @arugula fix them? @channel";
     let r = w.report(&s.id, Kind::Turn, None, turn(Some(said)));
     assert_eq!(w.send(&r).await, Reported::Taken);
     assert_eq!(w.send(&r).await, Reported::Already);
-    assert_eq!(answers().await, [("a".to_owned(), said.to_owned())]);
+    assert_eq!(answers().await, [(String::new(), said.to_owned())], "nobody's: the session's");
     assert_eq!(w.says(&s.id, Kind::State, Some(State::Done), json!({})).await, Reported::Taken);
     let (_, v) = call(&w.base, "a", "GET", "/api/chat/rooms/ch_general/messages", None).await;
     let timeline: Vec<&str> = v["messages"].as_array().unwrap().iter().filter_map(|m| m["via"].as_str()).collect();
-    assert_eq!(timeline, [via.as_str()], "the card only, not the answer: {timeline:?}");
+    assert_eq!(timeline, [card.as_str()], "the card only, not the answer: {timeline:?}");
     let (_, v) = call(&w.base, "b", "GET", &format!("/api/chat/rooms/ch_general/messages?thread={p}"), None).await;
     let posted = v["messages"].as_array().unwrap().iter().find(|m| m["text"] == said).unwrap().clone();
     assert_eq!(posted["mentions"], json!([]), "it names nobody: {posted}");
+    assert_eq!(crate::chat_threads_tests::pushed(&w.hub).await.len(), pushes, "it pushes nobody");
     assert_eq!(w.app.db.session_prompts(&s.id).unwrap().len(), 1, "it isn't a prompt to the session");
     assert_eq!(crate::sessions_hydrate_tests::sessions(&w.app, &w.project).len(), 1, "and starts none");
+    // Read back as the thread's record (a next session's first prompt),
+    // it's the agent's, not a's own words.
+    let room = w.app.db.chat_room("ch_general").unwrap().unwrap();
+    let record =
+        crate::sessions::hydrate::first_prompt(&w.app, &room, p as u64, &w.project, "a", None, "x").await.unwrap();
+    let short = &s.id[4..12];
+    assert!(record.contains(&format!("agent session {short} (agent): {said}")), "{record}");
+    assert_eq!(record.matches(said).count(), 1, "{record}");
 
-    // A person's reply prompts it; the next turn's answer is long: cut
-    // with the session's link.
+    // A person's reply prompts it; the next turn's answer is long and
+    // pushed: its end (where the caveats are) after the session's link,
+    // then what it pushed (Arugula #215).
     post_in(&w.base, "ch_general", "b", "and the changelog?", Some(p)).await;
     next().await;
-    let long = format!("{}THE END", "words ".repeat(1000));
-    assert_eq!(w.says(&s.id, Kind::Turn, None, turn(Some(&long))).await, Reported::Taken);
+    let long = format!("THE START {}Caveat: THE END", "words ".repeat(1000));
+    let mut d = turn(Some(&long));
+    d["pushed"] = json!(true);
+    d["commits"] = json!(["abc1234 the changelog", "def5678 the readme"]);
+    assert_eq!(w.says(&s.id, Kind::Turn, None, d).await, Reported::Taken);
     let got = answers().await;
     assert_eq!(got.len(), 2, "{got:?}");
-    let (kept, rest) = got[1].1.split_once("\n\n").unwrap();
-    assert_eq!(kept.chars().count(), crate::sessions::answer::ANSWER_MAX);
-    assert!(long.starts_with(kept) && !kept.contains("THE END"));
+    let (head, rest) = got[1].1.split_once("\n\n").unwrap();
     let link = format!("https://control.example/p/{}/sessions/{}", w.project, s.id);
-    assert_eq!(rest, format!("{} {link}", crate::sessions::answer::THE_REST));
+    assert_eq!(head, format!("{} {link}", crate::sessions::answer::THE_START));
+    let (kept, line) = rest.rsplit_once("\n\n").unwrap();
+    assert!(kept.chars().count() <= crate::sessions::answer::ANSWER_MAX + 1, "{}", kept.chars().count());
+    assert!(kept.starts_with("…words") && kept.ends_with("Caveat: THE END") && !kept.contains("THE START"), "{kept}");
+    assert_eq!(line, format!("Pushed 2 commits to `{}`.", s.branch));
     assert_eq!(w.says(&s.id, Kind::State, Some(State::Done), json!({})).await, Reported::Taken);
 
     // An empty reply, and an older box's turn with none: nothing.
@@ -495,4 +524,52 @@ async fn each_turns_answer_is_posted_in_its_thread() {
     assert_eq!(w.says(&s.id, Kind::Turn, None, turn(Some("  \n"))).await, Reported::Taken);
     assert_eq!(w.says(&s.id, Kind::Turn, None, turn(None)).await, Reported::Taken);
     assert_eq!(answers().await.len(), 2);
+}
+
+/// A turn someone typed in the session's block (Arugula #215): the box's
+/// report of its start says who and how it starts, and the thread gets
+/// one plain line of it, the platform's, once however often the report
+/// comes; it names nobody, pushes nobody and prompts nothing. A turn the
+/// agent woke itself for says nothing, and only a turn started in the
+/// block may say what was typed.
+#[tokio::test]
+async fn a_turn_typed_in_the_block_is_said_in_its_thread() {
+    let w = world().await;
+    let (p, s) = asked(&w, "@arugula is the readme up to date?").await;
+    w.take(&s.id, "claude").await;
+    w.turn(&s.id, false, "").await;
+    let lines = || async {
+        w.thread(p)
+            .await
+            .into_iter()
+            .filter(|(author, via, _)| author.is_empty() && via == "system")
+            .map(|(_, _, text)| text)
+            .collect::<Vec<_>>()
+    };
+    let before = lines().await.len();
+    let pushes = crate::chat_threads_tests::pushed(&w.hub).await.len();
+
+    // Typed in the block by ann: one line, on one line, sent again or not.
+    let typed = json!({ "in_block": true, "by": "ann", "typed": "@b check the\nchangelog  too" });
+    let r = w.report(&s.id, Kind::State, Some(State::Working), typed);
+    assert_eq!(w.send(&r).await, Reported::Taken);
+    assert_eq!(w.send(&r).await, Reported::Already);
+    let said = lines().await[before..].to_vec();
+    assert_eq!(said, ["Asked in the session by ann: “@b check the changelog too”"]);
+    let (_, v) = call(&w.base, "b", "GET", &format!("/api/chat/rooms/ch_general/messages?thread={p}"), None).await;
+    let m = v["messages"].as_array().unwrap().iter().find(|m| m["text"] == said[0].as_str()).unwrap().clone();
+    assert_eq!(m["mentions"], json!([]), "it names nobody: {m}");
+    assert_eq!(crate::chat_threads_tests::pushed(&w.hub).await.len(), pushes, "it pushes nobody");
+    assert_eq!(w.app.db.session_prompts(&s.id).unwrap().len(), 1, "it isn't a prompt to the session");
+    w.turn(&s.id, false, "").await;
+
+    // The agent woke itself: nothing typed, nothing said.
+    assert_eq!(w.says(&s.id, Kind::State, Some(State::Working), json!({ "in_block": true })).await, Reported::Taken);
+    assert_eq!(lines().await.len(), before + 1);
+
+    // Only a turn started in the block says what was typed.
+    let not = w.says(&s.id, Kind::State, Some(State::Done), json!({ "typed": "x" })).await;
+    assert!(matches!(not, Reported::Refused { .. }), "{not:?}");
+    assert_eq!(w.says(&s.id, Kind::State, Some(State::Done), json!({})).await, Reported::Taken);
+    assert_eq!(lines().await.len(), before + 1);
 }

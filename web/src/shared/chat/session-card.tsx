@@ -39,6 +39,15 @@
 // review`) shows as a card in the thread, "reviewed" once it's posted.
 //
 // Once it merges, the card says "merged ✓" (M265, ./session-done).
+//
+// What its agent says in the thread (each turn's answer, a review) is the
+// session's own message, `via` `said:<ses>` with no author (Arugula #215):
+// the room draws it with the session's look (`SaidHead`, `SaidAvatar`),
+// its agent and short id linked to its page, apart from people.
+//
+// Parked (Arugula #215): a done session idle for 30 minutes has its agent
+// closed on its box, keeping its checkout and conversation. The card says
+// "parked", with no Open (its block is gone); a reply opens it again.
 
 import "./session-card.css";
 import { useEffect, useState } from "preact/hooks";
@@ -60,8 +69,87 @@ export function sessionOf(m: ChatMessage): string | null {
   return !m.author && v.startsWith("session:ses_") ? v.slice("session:".length) : null;
 }
 
-/** A session's answer (a turn's last message, posted in its thread as its
- * asker's `via` the session): the badge's words and its title, or null. */
+/** What a session's agent said in its thread (Arugula #215): a turn's
+ * answer or a review, the session's own message (no author, `via`
+ * `said:<ses>`). Its session, or null. Not its card (`session:<ses>`). */
+export function saidOf(m: ChatMessage): string | null {
+  const v = m.via ?? "";
+  return !m.author && v.startsWith("said:ses_") ? v.slice("said:".length) : null;
+}
+
+/** "Claude Code · session 1a2b3c4d", or "Codex review · session …": who
+ * said it, in words, from its session's card once it's read. */
+export function saidName(ses: string, c: SessionCard | null): string {
+  const short = ses.replace(/^ses_/, "").slice(0, 8);
+  const agent = c ? harnessLabel(c.harness, c.ran).replace(/ \(.*\)$/, "") : "Agent";
+  return `${agent}${c?.role === "review" ? " review" : ""} · session ${short}`;
+}
+
+// Each session's card, read once per page for the messages it said: a
+// thread holds many of them, and the card's own reads stay with the card.
+const saidCards = new Map<string, Promise<SessionCard | null>>();
+
+/** Session `ses`'s card, for what it said; null until it's read (or if it
+ * can't be). */
+export function useSaidBy(ses: string): SessionCard | null {
+  const [card, setCard] = useState<SessionCard | null>(null);
+  useEffect(() => {
+    let live = true;
+    let read = saidCards.get(ses);
+    if (!read) {
+      read = call<SessionView>("GET", `/api/sessions/${enc(ses)}`).then(
+        (v) => v.card,
+        () => null,
+      );
+      saidCards.set(ses, read);
+    }
+    void read.then((c) => live && setCard(c));
+    return () => {
+      live = false;
+    };
+  }, [ses]);
+  return card;
+}
+
+/** The head of what a session said: its agent and short id, linked to its
+ * page, with a badge that says it's an agent session's, not a person's. */
+export function SaidHead({ ses, project }: { ses: string; project: string | null }) {
+  const api = usePlatformApi();
+  const c = useSaidBy(ses);
+  const where = c?.project ?? project;
+  const page = where ? api.sessionHref?.(where, ses) : undefined;
+  const name = saidName(ses, c);
+  return (
+    <>
+      {page ? (
+        <a class="thread-name said-name" href={page} title="This agent session's own page" data-said-page>
+          {name}
+        </a>
+      ) : (
+        <span class="thread-name said-name">{name}</span>
+      )}
+      <span class="msg-badge said-badge" title={c?.role === "review" ? "A read-only review by an agent session" : "What an agent session said at the end of a turn"}>
+        {c?.role === "review" ? "review" : "agent session"}
+      </span>
+    </>
+  );
+}
+
+/** A session's mark in the gutter: its agent's letter on the session's
+ * own tone, not a person's picture. */
+export function SaidAvatar({ ses }: { ses: string }) {
+  const c = useSaidBy(ses);
+  const letters = c && (c.ran ?? c.harness) === "codex" ? "Cx" : "CC";
+  return (
+    <span class="msg-avatar said-avatar" aria-hidden="true" data-said-avatar>
+      {c ? letters : "·"}
+    </span>
+  );
+}
+
+/** A session's answer from before Arugula #215 (a turn's last message,
+ * posted in its thread as its asker's `via` the session): the badge's
+ * words and its title, or null. */
 export function answerVia(m: ChatMessage, name: string): { label: string; title: string } | null {
   const v = m.via ?? "";
   if (!m.author || !v.startsWith("session:ses_")) return null;
@@ -163,6 +251,14 @@ export function triesLine(tries: SessionTry[]): string {
 export function harnessLabel(harness: string, ran: string | null): string {
   const name = (h: string) => (h === "codex" ? "Codex" : "Claude Code");
   return ran && ran !== harness ? `${name(ran)} (no ${name(harness)} on its box)` : name(ran ?? harness);
+}
+
+/** The model a session's agent runs on (Arugula #215), as its box said
+ * ("Opus 5.5"); until it has, the one it was asked to use ("Sonnet"). */
+export function modelLabel(c: { model: string | null; model_asked: string | null }): string | null {
+  if (c.model) return c.model;
+  const a = c.model_asked;
+  return a ? a.charAt(0).toUpperCase() + a.slice(1) : null;
 }
 
 /** A permission's option id in words: `allow-once` is "Allow once". */
@@ -543,7 +639,8 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
     );
   }
   const quiet = isQuiet(c, now);
-  const { label, tone } = mergedOf(c) ?? triedAs(c.state, c.reason) ?? stateOf(c.state, quiet);
+  const parked = c.state === "done" && c.parked;
+  const { label, tone } = mergedOf(c) ?? triedAs(c.state, c.reason) ?? (parked ? { label: "parked", tone: "ok" as Tone } : stateOf(c.state, quiet));
   const short = c.session.replace(/^ses_/, "").slice(0, 8);
   const ended = c.state === "done" || c.state === "failed" || c.state === "stopped";
   const took = elapsed((c.ended_at ?? now) - c.created_at);
@@ -602,6 +699,15 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             · {harnessLabel(c.harness, c.ran)}
           </span>
         ) : null}
+        {modelLabel(c) && (
+          <span
+            class="dim"
+            data-session-model
+            title={c.model ? (c.model_asked ? `Asked for ${c.model_asked}; its agent runs on ${c.model}` : `Its agent runs on ${c.model}`) : `Asked for ${c.model_asked}`}
+          >
+            · {modelLabel(c)}
+          </span>
+        )}
       </div>
       {c.parent_session && (
         <p class="session-card-line dim" data-session-parent>
@@ -620,6 +726,10 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
         </p>
       ) : c.state === "queued" ? (
         <p class="session-card-line dim">Waiting for its box to take it.</p>
+      ) : parked ? (
+        <p class="session-card-line dim" data-session-parked>
+          Idle a while, so its agent was closed. Its work and conversation are kept: a reply opens it again.
+        </p>
       ) : null}
       <MergedLine c={c} />
       {c.last_error && (
@@ -681,7 +791,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
       {c.tries.length > 0 && c.role === "thread" && <TriesView c={c} may={view.may} busy={busy} pick={(ses) => void act("pick", { session: ses })} />}
       {drafting && !c.pr && <PrEditor ses={c.session} onClose={() => setDrafting(false)} />}
       <div class="session-card-buttons">
-        {c.machine && block && (
+        {c.machine && block && !parked && (
           <button type="button" title="Its agent block, live on its box" data-session-open onClick={() => open(`pane=${c.machine}.${block}`, () => api.goToPane(c.machine!, block, null))}>
             Open ↗
           </button>

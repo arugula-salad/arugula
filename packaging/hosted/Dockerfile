@@ -91,10 +91,12 @@ RUN { id -u runner >/dev/null 2>&1 || useradd -m -s /bin/bash runner; } && userm
  && echo 'Defaults>runner env_reset, use_pty' > /etc/sudoers.d/runner && chmod 0440 /etc/sudoers.d/runner
 
 # --- M255 (thread = session): session users. ---------------------------
-# A hosted session's agent runs as one of ses1..ses3, one per session the
-# box runs at once (the daemon's cap), each kept by its session for life:
-# `sudo -n -u sesN -- env -i …` from arugulad, for the agent and for all of
-# the daemon's git in the session's checkout (a clone in ~sesN/work).
+# A hosted session's agent runs as one of ses1..ses6, one per session the
+# box holds (the daemon's MAX_HELD_SESSIONS_PER_BOX: three running, the
+# rest parked with their checkouts, Arugula #215), each kept by its session
+# for life: `sudo -n -u sesN -- env -i …` from arugulad, for the agent and
+# for all of the daemon's git in the session's checkout (a clone in
+# ~sesN/work). A test checks these lines make the daemon's users.
 # - no sudo of its own, and env_reset;
 # - not in `user`'s group, unlike `runner`: /home/user (0750), setup's
 #   files there and the daemon's state are closed to it;
@@ -105,9 +107,9 @@ RUN { id -u runner >/dev/null 2>&1 || useradd -m -s /bin/bash runner; } && userm
 # `user`, who updates them), linked from where the daemon looks first: a
 # session's agent is started by the link's target. Other blocks go above or
 # below this one, not in it.
-RUN for n in 1 2 3; do { id -u "ses$n" >/dev/null 2>&1 || useradd -m -s /bin/bash "ses$n"; } \
+RUN for n in 1 2 3 4 5 6; do { id -u "ses$n" >/dev/null 2>&1 || useradd -m -s /bin/bash "ses$n"; } \
       && chmod 0700 "/home/ses$n"; done \
- && printf 'Defaults>ses1 env_reset\nDefaults>ses2 env_reset\nDefaults>ses3 env_reset\n' > /etc/sudoers.d/sessions \
+ && printf 'Defaults>ses%s env_reset\n' 1 2 3 4 5 6 > /etc/sudoers.d/sessions \
  && chmod 0440 /etc/sudoers.d/sessions \
  && install -d -o user -g user -m 0755 /opt/arugula /opt/arugula/agents
 # --- end M255 -----------------------------------------------------------
@@ -136,6 +138,25 @@ RUN chmod 0755 /usr/local/bin/arugula-hosted-start && chmod 0644 /etc/systemd/sy
  && mkdir -p /etc/systemd/system/multi-user.target.wants \
  && ln -sf /etc/systemd/system/arugulad.service /etc/systemd/system/multi-user.target.wants/arugulad.service
 # ---- end M258 ------------------------------------------------------------
+
+# ---- Arugula #215: the setup's tools, for every session user ------------
+# The setup runs as `user`, whose home (0750) session users can't enter, so
+# what it installs there is "Permission denied" to them. /opt/arugula/tools
+# is where it puts what they run instead: owned by `user`, open to all to
+# read and run, written by nobody else (one session can't plant a tool for
+# the next). Its bin is first on a session user's PATH (the daemon's
+# SESSION_PATH) and on `user`'s (arugulad.service, the start command, login
+# shells), and `env` in it is what the daemon adds to a session user's
+# environment. `arugula-tools` publishes a tool there (packaging/hosted/tools,
+# checked by scripts/tests/hosted-tools.sh). Other blocks go above or below
+# this one, not in it.
+COPY tools /usr/local/bin/arugula-tools
+RUN chmod 0755 /usr/local/bin/arugula-tools \
+ && install -d -o user -g user -m 0755 /opt/arugula/tools /opt/arugula/tools/bin \
+ && printf '%s\n' 'case ":$PATH:" in *:/opt/arugula/tools/bin:*) ;; *) PATH=/opt/arugula/tools/bin:$PATH ;; esac' \
+      > /etc/profile.d/arugula-tools.sh \
+ && chmod 0644 /etc/profile.d/arugula-tools.sh
+# ---- end Arugula #215 ---------------------------------------------------
 
 # The adapters where the daemon looks first (agent/adapters.rs).
 USER user

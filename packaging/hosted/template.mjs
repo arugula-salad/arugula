@@ -1,5 +1,5 @@
 // Builds the hosted workspace's E2B template (M177) from a context
-// directory scripts/ci-hosted-template made: Dockerfile, ready, start,
+// directory scripts/ci-hosted-template made: Dockerfile, ready, start, tools,
 // arugulad.service, arugulad.json, arugulad and arugula. E2B runs the start
 // command at the end of the build and snapshots the box once the ready
 // check passes, so a box made from it has the daemon running already.

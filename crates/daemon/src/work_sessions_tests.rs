@@ -25,6 +25,22 @@ fn a_session_names_only_its_own_branch() {
     }
 }
 
+/// The template makes the daemon's session users (Arugula #215): one per
+/// session a box holds, `ses1` to `ses6`, each in sudoers' `env_reset`,
+/// and more than the three that run at once.
+#[test]
+fn the_template_makes_a_user_for_each_session_held() {
+    let image = include_str!("../../../packaging/hosted/Dockerfile");
+    let users = default_users();
+    assert_eq!(users.len(), MAX_HELD_SESSIONS_PER_BOX);
+    const { assert!(MAX_HELD_SESSIONS_PER_BOX > MAX_SESSIONS_PER_BOX, "parked ones keep a user each") };
+    let ns: Vec<String> = users.iter().map(|u| u.trim_start_matches("ses").to_owned()).collect();
+    let made = format!(r#"RUN for n in {}; do {{ id -u "ses$n""#, ns.join(" "));
+    assert!(image.contains(&made), "packaging/hosted/Dockerfile: {made}");
+    let sudoers = format!(r"printf 'Defaults>ses%s env_reset\n' {} > /etc/sudoers.d/sessions", ns.join(" "));
+    assert!(image.contains(&sudoers), "packaging/hosted/Dockerfile: {sudoers}");
+}
+
 /// Each report is the session's next, signed, from the state the box last
 /// said, and names the actions done since the last.
 #[test]
@@ -57,6 +73,11 @@ fn each_report_is_the_sessions_next_signed() {
         turns_seen: Some(0),
         harness: None,
         review: false,
+        model: None,
+        model_now: None,
+        model_said: None,
+        parked: None,
+        reopened: false,
     };
     l.push(
         &keys,
@@ -112,15 +133,16 @@ fn each_report_is_the_sessions_next_signed() {
 /// Every turn's report carries the agent's last message as its reply
 /// (not a review's only): trimmed, none when it said nothing, cut to
 /// [`REPLY_MAX`], and cut further when the detail's JSON would be past
-/// what control takes.
+/// what control takes, each time from its start, so its end is kept.
 #[test]
 fn a_turns_report_carries_its_last_message() {
     let said = |m: &str| arugula_proto::api::TurnResult { message: m.into(), work: None };
     assert_eq!(reply_of(Some(&said("  The README is up to date.\n"))).as_deref(), Some("The README is up to date."));
     assert_eq!(reply_of(Some(&said(" \n "))), None, "nothing said, nothing to post");
     assert_eq!(reply_of(None), None);
-    let long = reply_of(Some(&said(&format!("{}é{}", "a".repeat(REPLY_MAX - 1), "b".repeat(100))))).unwrap();
-    assert!(long.len() <= REPLY_MAX + "…".len() && long.ends_with('…') && long.starts_with("aaa"), "{}", long.len());
+    let long = reply_of(Some(&said(&format!("{}é{}", "b".repeat(100), "a".repeat(REPLY_MAX - 1))))).unwrap();
+    assert!(long.len() <= REPLY_MAX + "…".len() && long.starts_with('…') && long.ends_with("aaa"), "{}", long.len());
+    assert!(!long.contains('b'), "its start goes");
 
     let keys = arugula_e2e::DeviceKeys::generate();
     let me = keys.id();
@@ -150,6 +172,11 @@ fn a_turns_report_carries_its_last_message() {
         turns_seen: Some(0),
         harness: None,
         review: false,
+        model: None,
+        model_now: None,
+        model_said: None,
+        parked: None,
+        reopened: false,
     };
     // Quotes and newlines double in JSON: a full reply beside a full
     // diffstat would be past 16 KiB.
@@ -173,7 +200,7 @@ fn a_turns_report_carries_its_last_message() {
         })
         .collect();
     let cut_reply = d[0].reply.as_deref().unwrap();
-    assert!(cut_reply.ends_with('…') && reply.starts_with(cut_reply.trim_end_matches('…')), "{cut_reply}");
+    assert!(cut_reply.starts_with('…') && reply.ends_with(cut_reply.trim_start_matches('…')), "{cut_reply}");
     assert!(cut_reply.len() < reply.len() && cut_reply.len() > 1024, "cut, not dropped: {}", cut_reply.len());
     assert_eq!(d[1].reply.as_deref(), Some("Done: nothing to change."), "a short one goes as it is");
 }
@@ -437,6 +464,11 @@ async fn a_push_back_after_an_end_cleans_again() {
         turns_seen: None,
         harness: None,
         review: false,
+        model: None,
+        model_now: None,
+        model_said: None,
+        parked: None,
+        reopened: false,
     };
     assert!(claim(&dir, &l));
     let place = dir.join(super::super::DIR).join(DIR).join(format!("{}.push", l.session));
@@ -462,4 +494,68 @@ fn a_questions_choices_go_to_the_card() {
     assert!(choices(&two).is_empty());
     let s = seen(&json!({ "asks": [one] }));
     assert_eq!(s.open, Some(("question", "q1".into(), "Which colour?".into(), vec!["Red".into(), "Blue".into()])));
+}
+
+/// A turn typed in the block (Arugula #215): who typed it and what, cut,
+/// by the block's turn number, or its queue's head before it starts; a
+/// turn the agent woke for typed nothing.
+#[test]
+fn what_was_typed_in_the_block_is_its_turns() {
+    let long = "x".repeat(TYPED_MAX + 50);
+    // `recent_turns` is newest first: turns 3, 2 and 1 of 4 (0 is gone).
+    let s = seen(&json!({
+        "turns": 4,
+        "recent_turns": [
+            { "prompt": crate::agent::WOKEN },
+            { "prompt": long, "by": "ann" },
+            { "prompt": "  fix the README \n", "by": "bo" },
+        ],
+        "queued": ["and the changelog"],
+    }));
+    assert_eq!((s.by_at(1), s.typed_at(1).as_deref()), (Some("bo".into()), Some("fix the README")));
+    assert_eq!(s.typed_at(2).map(|t| t.chars().count()), Some(TYPED_MAX), "cut");
+    assert_eq!(s.typed_at(3), None, "the agent woke itself");
+    assert_eq!(s.typed_at(0), None, "too old to say");
+    assert_eq!(s.typed_at(4).as_deref(), Some("and the changelog"), "not started: the queue's head");
+    assert_eq!(s.typed_at(5), None);
+}
+
+/// Which model a session's block opens with (Arugula #215): the one control
+/// asked for, else the strongest, said outright; Codex picks its own. Its
+/// reports say the one its agent is on when that changes, and each turn's.
+#[test]
+fn a_session_runs_on_the_model_asked_for() {
+    let w = |model: Option<&str>| -> SessionWork {
+        serde_json::from_value(json!({ "session": format!("ses_{}", "f".repeat(32)), "project": "prj_1",
+            "workspace": "hw_1", "asker": "acct1", "branch": "arugula/x", "state": "queued", "n": 0, "model": model }))
+        .unwrap()
+    };
+    assert_eq!(model_for(&w(None), None).as_deref(), Some(DEFAULT_MODEL), "the strongest, said outright");
+    assert_eq!(DEFAULT_MODEL, "opus");
+    assert_eq!(model_for(&w(Some("sonnet")), None).as_deref(), Some("sonnet"));
+    assert_eq!(model_for(&w(Some("gpt-9")), None).as_deref(), Some("opus"), "not one of ours: the default");
+    assert_eq!(model_for(&w(Some("sonnet")), Some("codex")), None, "Codex picks its own");
+
+    let keys = arugula_e2e::DeviceKeys::generate();
+    let me = keys.id();
+    let mut l: Session = serde_json::from_value(json!({
+        "session": format!("ses_{}", "f".repeat(32)), "project": "prj_1", "workspace": "hw_1", "asker": "acct1",
+        "branch": "arugula/x", "user": { "user": "ses1", "home": "/home/ses1" }, "checkout": "/home/ses1/work/x",
+        "taken_at": 1, "n": 0, "state": "queued", "model": "opus" }))
+    .unwrap();
+    let model = |l: &Session, i: usize| -> Option<String> {
+        serde_json::from_str::<SessionDetail>(&l.events[i].report.detail).unwrap().model
+    };
+    l.push(&keys, &me, Kind::State, State::Working, SessionDetail::default());
+    assert_eq!(model(&l, 0), None, "not known yet");
+    l.model_now = Some("Opus 5.5".into());
+    l.push(&keys, &me, Kind::Heartbeat, State::Working, SessionDetail::default());
+    l.push(&keys, &me, Kind::Heartbeat, State::Working, SessionDetail::default());
+    l.push(&keys, &me, Kind::Turn, State::Working, SessionDetail::default());
+    assert_eq!(
+        (model(&l, 1).as_deref(), model(&l, 2), model(&l, 3).as_deref()),
+        (Some("Opus 5.5"), None, Some("Opus 5.5")),
+        "once it's known, again on each turn"
+    );
+    assert_eq!(agent_config(&l)["model"], "opus", "the block switches to it as the session opens");
 }

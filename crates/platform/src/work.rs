@@ -239,8 +239,15 @@ fn name_authors(
 pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result<Work> {
     // Thread sessions (M256) go to a machine that says it takes them: every
     // one on its workspace that hasn't ended (`Db::session_work`).
-    let mut sessions =
-        if takes.iter().any(|t| t == TAKES_SESSION) { app.db.session_work(&m.workspace)? } else { vec![] };
+    // How many session users its box has (Arugula #215) is kept first:
+    // what it may hold.
+    let mut sessions = if takes.iter().any(|t| t == TAKES_SESSION) {
+        let users = arugula_control_wire::work::session_users_of(takes);
+        app.db.set_session_users(&m.workspace, users.map(|n| n as u64))?;
+        app.db.session_work(&m.workspace)?
+    } else {
+        vec![]
+    };
     // Each prompt with its author's login, for the transcript's "from"
     // note, and each action with its asker's, for "Answered by". Without
     // the hub the box says the account id.

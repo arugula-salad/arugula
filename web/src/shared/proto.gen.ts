@@ -3302,7 +3302,13 @@ heard_at: number | null,
  * When it last stopped running (done, failed, stopped): the clock
  * stops there. `None` while a turn is under way or queued.
  */
-ended_at: number | null, last_tool: string | null, last_error: string | null, 
+ended_at: number | null, 
+/**
+ * Done and parked (Arugula #215): idle long enough that its box
+ * closed its agent, keeping its checkout and conversation. A reply
+ * opens it again.
+ */
+parked: boolean, last_tool: string | null, last_error: string | null, 
 /**
  * Why it failed or stopped, or why it's queued again (its box was
  * rebuilt).
@@ -3366,6 +3372,15 @@ role: string, parent_session: string | null,
  * it on, once it took it (`claude` when the other isn't there).
  */
 harness: string, ran: string | null, 
+/**
+ * The model it was asked to use (Arugula #215): its ask's word ("use
+ * sonnet"), else its project's setting, else `None` (the strongest).
+ */
+model_asked: string | null, 
+/**
+ * The model its agent runs on, as its box last said (`Opus 5.5`).
+ */
+model: string | null, 
 /**
  * A Try 3's sessions, on its parent's card: the parent first, then its
  * siblings, oldest first. Empty for every other session.
@@ -3530,6 +3545,17 @@ via: string | null,
 machine: string | null, };
 
 /**
+ * [`PROJECT_SESSION_SETTINGS`]: "agents use model …" (Arugula #215), one
+ * of [`crate::work::MODELS`], or `None` for the strongest. An ask's own
+ * word ("use sonnet") wins for its session.
+ */
+export type SessionSettings = { model: string | null, 
+/**
+ * What it may be, in a `GET`'s answer: [`crate::work::MODELS`].
+ */
+models: Array<string>, };
+
+/**
  * [`PROJECT_SESSION_STATS`]'s answer: of the project's sessions asked for
  * in the last [`STATS_DAYS`] days, how many led to a PR (sent by its
  * asker, or opened from its branch by hand) and how many merged, and the
@@ -3554,8 +3580,8 @@ turn: SessionTurn | null, pushed: boolean,
  */
 reason: string | null, updated_at: number, 
 /**
- * Queued with no slot on its box for it yet (the box holds three
- * sessions, done ones too).
+ * Queued with no slot on its box for it yet (the box runs three
+ * sessions, done ones not yet parked too, or holds six).
  */
 no_slot: boolean, };
 

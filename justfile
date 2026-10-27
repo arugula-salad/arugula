@@ -748,8 +748,8 @@ macos cmd="tools" *args:
 # `just notices` keeping THIRD_PARTY.md when cargo-about fails;
 # `scripts/release check-green` refusing a tag on a commit CI didn't pass;
 # a release deploying the hub only when what it's built from changed; the
-# hosted template's supervision of arugulad (M258); and its templates, one
-# per workspace size (M266).
+# hosted template's supervision of arugulad (M258); its templates, one
+# per workspace size (M266); and its tools for session users (Arugula #215).
 test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/install.sh
@@ -761,6 +761,7 @@ test-scripts:
     scripts/tests/hub-changed.sh
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
+    scripts/tests/hosted-tools.sh
 
 # The two workspaces stay apart: the root's has no server crate, and the
 # server's (server/Cargo.toml) builds none of the daemon's, the mux or

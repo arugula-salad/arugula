@@ -16,7 +16,10 @@ use arugula_control_wire::{
     hosted::{SetupPlan, SetupReport},
     run_logs::{Upload, UploadGiven, Uploaded},
     transcripts::TranscriptPost,
-    work::{ArtifactGiven, PushAsk, PushGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionReport, Work},
+    work::{
+        ArtifactGiven, PushAsk, PushGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionIssuesAsk,
+        SessionIssuesGiven, SessionReport, Work,
+    },
 };
 
 pub use crate::hosted::{inference::TurnAnswer, previews::PublicPreview, transcripts::Archived};
@@ -182,6 +185,21 @@ pub trait PlatformPort: Send + Sync {
     ) -> BoxFuture<'a, anyhow::Result<PushGiven>> {
         let _ = (machine, ask);
         Box::pin(async { Ok(PushGiven::Refused { why: "this platform doesn't push sessions' branches".into() }) })
+    }
+
+    /// A hosted machine's session's agent reading and commenting on its
+    /// project's native issues, for the hub's `POST
+    /// /api/hosted/work/session/issues`. A platform from before that
+    /// refuses.
+    fn hosted_session_issues<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a SessionIssuesAsk,
+    ) -> BoxFuture<'a, anyhow::Result<SessionIssuesGiven>> {
+        let _ = (machine, ask);
+        Box::pin(async {
+            Ok(SessionIssuesGiven::Refused { why: "this platform doesn't let sessions read issues".into() })
+        })
     }
 
     /// A hosted machine's deploy run's secrets (M219), for the hub's `POST
@@ -496,6 +514,14 @@ impl PlatformPort for Platform {
         ask: &'a PushAsk,
     ) -> BoxFuture<'a, anyhow::Result<PushGiven>> {
         Box::pin(crate::sessions::push::token(self, machine, ask))
+    }
+
+    fn hosted_session_issues<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a SessionIssuesAsk,
+    ) -> BoxFuture<'a, anyhow::Result<SessionIssuesGiven>> {
+        Box::pin(crate::sessions::issues::answer(self, machine, ask))
     }
 
     fn hosted_secrets<'a>(

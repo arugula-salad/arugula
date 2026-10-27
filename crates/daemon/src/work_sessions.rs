@@ -6,12 +6,26 @@
 //!   takes sessions ([`takes`]); each pull's [`SessionWork`]s are kept as
 //!   the latest word on each ([`pulled`]). One this box runs that's no
 //!   longer listed has ended (a person stopped it): its agent is stopped.
-//! - **A slot each, at most three** ([`Slots`]). A session runs as one of
-//!   the box's session users (`ses1` to `ses3`, the template's), which it
-//!   keeps for life: its checkout and its agent's own state (`~/.claude`,
-//!   the ACP session a restart loads) live in that user's home. With every
-//!   slot taken a queued session waits, listed, until one ends. Runs keep
-//!   their one at a time beside them.
+//! - **A user each, at most six; three running** ([`Slots`]). A session
+//!   runs as one of the box's session users (`ses1` to `ses6`, the
+//!   template's: [`MAX_HELD_SESSIONS_PER_BOX`]), which it keeps for life:
+//!   its checkout and its agent's own state (`~/.claude`, the ACP session
+//!   a restart loads) live in that user's home. At most
+//!   [`MAX_SESSIONS_PER_BOX`] have their agent block open at once. With
+//!   every user taken, or three running, a queued session waits, listed,
+//!   until one ends or parks. Each pull says how many users it has
+//!   (`session_users:N`), and control holds no more there. Runs keep their
+//!   one at a time beside them.
+//! - **Parked** ([`park`], Arugula #215). A done session control lists as
+//!   `park` (idle 30 minutes, `SESSION_PARK_MS`) has its transcript
+//!   archived (`hosted.archive`'s path, [`crate::hosted::archive::flush`]),
+//!   then its agent block closed and what its user left killed: that frees
+//!   the memory, and a running slot. Its user, checkout and `~/.claude`
+//!   stay. When control lists prompts for it again (only while it has a
+//!   running slot for it), the box opens a block on the same user and
+//!   checkout with the agent's session id ([`unpark`]), which loads the
+//!   conversation as a restart does, and its next turn names the new
+//!   block.
 //! - **Its checkout is a clone, not a worktree** ([`checkout`]): the
 //!   daemon's user clones the workspace's clone of the session's repo,
 //!   hands it to the session user, and everything the daemon does in it
@@ -20,8 +34,10 @@
 //!   (whose git would run the agent's planted repo config).
 //! - **Its agent is an ACP agent block** of kind `claude` (so M185's turn
 //!   gate and placeholder key hold), whose agent runs as the session user
-//!   (`agent::Config::run_as`): `sudo -n -u sesN -- env -i …`, with no
-//!   Arugula MCP server and nothing secret on its command line.
+//!   (`agent::Config::run_as`): `sudo -n -u sesN -- env -i …`, with nothing
+//!   secret on its command line, and not `/mcp`: the daemon's port is
+//!   closed to it. Its one MCP server is `mcp::session`'s, two tools for
+//!   its project's native issues, on a listener of its own.
 //! - **One prompt per turn, with its author** ([`hand`]). The box hands
 //!   the block a queued prompt only when no turn is under way, oldest first,
 //!   as its author's (the block's transcript says whose). The first also
@@ -30,7 +46,8 @@
 //! - **Its block is followed, not only what it hands in** ([`step`]). A
 //!   turn started in the block itself (someone typed there from the card's
 //!   Open, or the agent woke itself) is reported as a turn's start
-//!   (`in_block`, with who typed it when the block says), and goes to the
+//!   (`in_block`, with who typed it when the block says, and the start of
+//!   what they typed, for the thread's line), and goes to the
 //!   same end as the box's own: the finish step, the push, the turn's
 //!   report. A question it asks goes out as `needs_input`; one answered in
 //!   the block moves it back with no action named. The thread's prompts
@@ -95,8 +112,9 @@ use std::{
 };
 
 use arugula_control_wire::work::{
-    FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, REPLY_MAX, Reported, SESSION_DETAIL_MAX,
-    SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork, WORK_SESSION_REPORT,
+    DEFAULT_MODEL, FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_HELD_SESSIONS_PER_BOX, MAX_SESSIONS_PER_BOX,
+    MODEL_MAX, MODELS, REPLY_MAX, Reported, SESSION_DETAIL_MAX, SessionAction, SessionDetail, SessionPrompt,
+    SessionReport, SessionWork, TYPED_MAX, WORK_SESSION_REPORT,
 };
 use arugula_e2e::{
     now_ms,
@@ -160,6 +178,10 @@ fn block_is(block: u32, session: &str) {
     BLOCK_SESSIONS.lock().unwrap_or_else(|e| e.into_inner()).insert(block, session.to_owned());
 }
 
+fn block_gone(block: u32) {
+    BLOCK_SESSIONS.lock().unwrap_or_else(|e| e.into_inner()).remove(&block);
+}
+
 fn heartbeat_every() -> Duration {
     std::env::var("ARUGULA_SESSION_HEARTBEAT_MS")
         .ok()
@@ -182,22 +204,24 @@ pub struct Slots {
     pub real: bool,
 }
 
-/// The box's session users: `ARUGULA_HOSTED_SESSION_USERS` (`ses1,ses2,ses3`
-/// by default), each the template's, at most [`MAX_SESSIONS_PER_BOX`]. A
-/// box without them runs no sessions (an older template). Tests name a
+/// The box's session users: `ARUGULA_HOSTED_SESSION_USERS` (`ses1` to
+/// `ses6` by default), each the template's, at most
+/// [`MAX_HELD_SESSIONS_PER_BOX`]. A box without them runs no sessions (an
+/// older template). A box from before the six has three, and runs and
+/// holds three: no session parks to make room there. Tests name a
 /// directory of homes instead (`ARUGULA_HOSTED_SESSION_HOMES`): the users
 /// aren't made, and `ARUGULA_HOSTED_SUDO` stands in for sudo.
 pub fn slots() -> Option<Slots> {
     static SLOTS: OnceLock<Option<Slots>> = OnceLock::new();
     SLOTS
         .get_or_init(|| {
-            let names = std::env::var("ARUGULA_HOSTED_SESSION_USERS").unwrap_or_else(|_| "ses1,ses2,ses3".into());
+            let names = std::env::var("ARUGULA_HOSTED_SESSION_USERS").unwrap_or_else(|_| default_users().join(","));
             let names: Vec<String> =
                 names.split(',').map(str::trim).filter(|n| !n.is_empty()).map(str::to_owned).collect();
             if names.is_empty() || !names.iter().all(|n| AsUser::plain(n)) {
                 return None;
             }
-            let names = names.into_iter().take(MAX_SESSIONS_PER_BOX);
+            let names = names.into_iter().take(MAX_HELD_SESSIONS_PER_BOX);
             if let Some(homes) = std::env::var_os("ARUGULA_HOSTED_SESSION_HOMES").filter(|h| !h.is_empty()) {
                 let homes = PathBuf::from(homes);
                 let users = names.map(|user| AsUser { home: homes.join(&user).display().to_string(), user }).collect();
@@ -206,6 +230,11 @@ pub fn slots() -> Option<Slots> {
             let mut users = vec![];
             for user in names {
                 let Some(home) = home_of(&user) else {
+                    // A template from before the six has the first three.
+                    if users.len() >= 3 {
+                        info!(user, held = users.len(), "hosted: fewer session users here (an older template)");
+                        break;
+                    }
                     info!(user, "hosted: no session user here (an older template): this box takes no sessions");
                     return None;
                 };
@@ -214,6 +243,11 @@ pub fn slots() -> Option<Slots> {
             Some(Slots { users, real: true })
         })
         .clone()
+}
+
+/// The template's session users: `ses1` to `ses6`.
+pub fn default_users() -> Vec<String> {
+    (1..=MAX_HELD_SESSIONS_PER_BOX).map(|n| format!("ses{n}")).collect()
 }
 
 fn home_of(user: &str) -> Option<String> {
@@ -330,6 +364,35 @@ pub struct Session {
     /// A review (M264): no finish step and no push.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub review: bool,
+    /// The model its block was opened with (Arugula #215, [`model_for`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The model its agent says it's on now, and the last a report said:
+    /// a report says it again when the two differ ([`Session::push`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_now: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_said: Option<String>,
+    /// Parked (Arugula #215): its block closed, its user, checkout and
+    /// conversation kept, until control lists a prompt for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parked: Option<Parked>,
+    /// Its block was opened again after it was parked: the next turn's
+    /// start names it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reopened: bool,
+}
+
+/// What a parked session keeps of its closed block (Arugula #215).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Parked {
+    /// When it was parked (ms).
+    pub at: u64,
+    /// The block it was in.
+    pub block: Option<u32>,
+    /// Its agent's ACP session, which a block opened again loads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_session: Option<String>,
 }
 
 impl Session {
@@ -348,6 +411,15 @@ impl Session {
             return;
         }
         d.actions.append(&mut self.unnamed);
+        // The model it's on (Arugula #215): when it changed, and on each
+        // turn's report.
+        if d.model.is_none() && (self.model_now != self.model_said || kind == Kind::Turn) {
+            d.model = self.model_now.clone();
+        }
+        if let Some(m) = &mut d.model {
+            cut(m, MODEL_MAX);
+            self.model_said = self.model_now.clone();
+        }
         for t in [&mut d.question, &mut d.error, &mut d.reason, &mut d.diffstat].into_iter().flatten() {
             cut(t, TEXT_MAX);
         }
@@ -378,7 +450,7 @@ impl Session {
 /// `s` cut to `max` bytes, on a character's edge, and marked.
 /// `d` as the report's detail, within [`SESSION_DETAIL_MAX`]: a turn's
 /// reply (whose quotes and newlines grow in JSON) is cut until it fits,
-/// and left out when even none of it would.
+/// from its start, and left out when even none of it would.
 fn fit(d: &mut SessionDetail) -> String {
     loop {
         let detail = serde_json::to_string(&*d).unwrap_or_else(|_| "{}".into());
@@ -388,20 +460,33 @@ fn fit(d: &mut SessionDetail) -> String {
         if keep == 0 {
             d.reply = None;
         } else {
-            cut(r, keep);
+            cut_start(r, keep);
         }
     }
 }
 
 /// The agent's last message of a turn, as its report's reply: trimmed,
-/// at most [`REPLY_MAX`] bytes, and none when it said nothing.
+/// at most [`REPLY_MAX`] bytes, and none when it said nothing. A long one
+/// keeps its end, where a summary's caveats are (Arugula #215).
 fn reply_of(r: Option<&arugula_proto::api::TurnResult>) -> Option<String> {
     let mut m = r?.message.trim().to_owned();
     if m.is_empty() {
         return None;
     }
-    cut(&mut m, REPLY_MAX);
+    cut_start(&mut m, REPLY_MAX);
     Some(m)
+}
+
+/// `s` cut to its last `max` bytes, on a character's edge, and marked at
+/// its start.
+fn cut_start(s: &mut String, max: usize) {
+    if s.len() > max {
+        let mut at = s.len() - max;
+        while !s.is_char_boundary(at) {
+            at += 1;
+        }
+        *s = format!("…{}", &s[at..]);
+    }
 }
 
 fn cut(s: &mut String, max: usize) {
@@ -519,9 +604,15 @@ pub fn all(dir: &Path) -> Vec<Session> {
     out
 }
 
-/// The sessions this box runs now (taken, not ended).
-fn live(dir: &Path) -> Vec<Session> {
+/// The sessions this box holds now (taken, not ended), parked ones too.
+pub(crate) fn live(dir: &Path) -> Vec<Session> {
     all(dir).into_iter().filter(|l| l.ended.is_none()).collect()
+}
+
+/// How many of them run now: not parked, their agent block open or about
+/// to be.
+fn running(dir: &Path) -> usize {
+    live(dir).iter().filter(|l| l.parked.is_none()).count()
 }
 
 /// A pull's sessions: kept as the latest word on each; the ones this box
@@ -560,6 +651,13 @@ pub async fn resume(app: &Arc<App>) {
     }
     let real = slots().is_some_and(|s| s.real);
     for l in live(&dir) {
+        // Parked as the daemon stopped: the block it was closing, should
+        // the restart have brought it back, goes.
+        if let Some(b) = l.parked.as_ref().and_then(|p| p.block)
+            && app.mux.api(|r| Api::Block(b, r)).await.flatten().is_some()
+        {
+            app.mux.api(|r| Api::Close(b, r)).await;
+        }
         info!(session = l.session, "hosted: following a session from before the restart");
         // A restart stops only the daemon (M258's `KillMode=process`): what
         // the agent started (a build, a server) would run on as its user,
@@ -606,6 +704,19 @@ fn harness_for(w: &SessionWork) -> Option<String> {
     w.harness.clone().filter(|h| h != "claude" && has_harness(h))
 }
 
+/// The model session `w`'s block opens with, on `harness` (`None`: Claude
+/// Code), Arugula #215: the one control asked for, else the strongest,
+/// said outright ([`DEFAULT_MODEL`]), since the adapter's own `default`
+/// depends on the account. Codex picks its own: Claude's words aren't its
+/// models.
+fn model_for(w: &SessionWork, harness: Option<&str>) -> Option<String> {
+    if harness.is_some_and(|h| h != "claude") {
+        return None;
+    }
+    let asked = w.model.as_deref().map(str::trim).filter(|m| MODELS.contains(m));
+    Some(asked.unwrap_or(DEFAULT_MODEL).to_owned())
+}
+
 /// A free slot: a session user no session this box runs holds.
 fn free_slot(dir: &Path) -> Option<(AsUser, bool)> {
     let slots = slots()?;
@@ -634,6 +745,10 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         // Every slot is taken: it waits, listed, until one ends.
         return;
     };
+    if running(&dir) >= MAX_SESSIONS_PER_BOX {
+        // Three run: it waits, listed, until one ends or parks.
+        return;
+    }
     let dest = Path::new(&user.home).join("work").join(&w.session).display().to_string();
     let mut l = Session {
         session: w.session.clone(),
@@ -661,7 +776,13 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         turns_seen: Some(0),
         harness: harness_for(w),
         review: w.review,
+        model: None,
+        model_now: None,
+        model_said: None,
+        parked: None,
+        reopened: false,
     };
+    l.model = model_for(w, l.harness.as_deref());
     if let Some(h) = w.harness.as_deref().filter(|h| *h != "claude" && l.harness.is_none()) {
         info!(session = l.session, harness = h, "hosted: this box hasn't that agent; the session runs on Claude Code");
     }
@@ -706,7 +827,7 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         Ok(notes) => l.notes = notes,
         Err(why) => return fail(l, format!("its checkout: {why}")),
     }
-    let block = match open_block(app, &l).await {
+    let block = match open_block(app, &l, None).await {
         Ok(b) => b,
         Err(why) => return fail(l, format!("its agent block: {why}")),
     };
@@ -854,8 +975,8 @@ fn notes(repo: &Path) -> Option<String> {
     })
 }
 
-/// The agent a session's block runs: Claude Code in `bypassPermissions`,
-/// or Codex, when it runs on it (M264), in `full-access`, unless a test
+/// The agent a session's block runs: Claude Code in `bypassPermissions` on
+/// its model, or Codex, when it runs on it (M264), in `full-access`, unless a test
 /// names a command (`ARUGULA_HOSTED_SESSION_AGENT`), which still runs as
 /// that kind, under M185's gate.
 fn agent_config(l: &Session) -> Value {
@@ -874,6 +995,11 @@ fn agent_config(l: &Session) -> Value {
         // review read-only is that its box pushes nothing for it.
         "permission_mode": mode_of(agent),
     });
+    // Its model (Arugula #215), which the block switches to as the session
+    // opens, before the mode.
+    if let Some(m) = &l.model {
+        c["model"] = json!(m);
+    }
     if let Some(cmd) = std::env::var("ARUGULA_HOSTED_SESSION_AGENT").ok().filter(|c| !c.trim().is_empty()) {
         c["command"] = json!(crate::agent::defs::split_command(&cmd));
     }
@@ -888,14 +1014,15 @@ fn mode_of(agent: &str) -> &'static str {
     }
 }
 
-async fn open_block(app: &App, l: &Session) -> Result<u32, String> {
-    let req = OpenRequest {
-        kind: BlockType::Agent,
-        config: agent_config(l),
-        session: Some(BLOCKS.into()),
-        local: true,
-        ..Default::default()
-    };
+/// Open session `l`'s agent block: a new conversation, or with
+/// `agent_session`, the one it had (a parked session's), loaded.
+async fn open_block(app: &App, l: &Session, agent_session: Option<&str>) -> Result<u32, String> {
+    let mut config = agent_config(l);
+    if let Some(sid) = agent_session {
+        config["session_id"] = json!(sid);
+    }
+    let req =
+        OpenRequest { kind: BlockType::Agent, config, session: Some(BLOCKS.into()), local: true, ..Default::default() };
     match app.mux.api(|r| Api::Open(req, None, r)).await {
         Some(Ok(b)) => Ok(b),
         Some(Err(e)) => Err(e),
@@ -938,9 +1065,16 @@ struct Seen {
     open: Option<(&'static str, String, String, Vec<String>)>,
     tool: Option<String>,
     error: Option<String>,
+    /// The model its agent is on, in words (Arugula #215).
+    model: Option<String>,
     /// Whose each turn's prompt was, oldest first, of the last few
     /// (`None`: the block's owner's, or the agent's own).
     by: Vec<Option<String>>,
+    /// Each of those turns' prompt, as far as the block keeps it (`None`:
+    /// the agent woke itself).
+    prompt: Vec<Option<String>>,
+    /// The first prompt waiting in the block's queue.
+    next: Option<String>,
 }
 
 impl Seen {
@@ -948,6 +1082,20 @@ impl Seen {
     fn by_at(&self, n: u64) -> Option<String> {
         let from = self.turns.saturating_sub(self.by.len() as u64);
         n.checked_sub(from).and_then(|i| self.by.get(i as usize).cloned().flatten())
+    }
+
+    /// What was typed for the block's turn number `n` (from 0), or for the
+    /// next when it hasn't started (its prompt is still queued): at most
+    /// [`TYPED_MAX`] characters, and none for a turn the agent woke for.
+    fn typed_at(&self, n: u64) -> Option<String> {
+        let from = self.turns.saturating_sub(self.prompt.len() as u64);
+        let p = match n.checked_sub(from) {
+            Some(i) if n < self.turns => self.prompt.get(i as usize).cloned().flatten(),
+            _ if n == self.turns => self.next.clone(),
+            _ => None,
+        }?;
+        let p = p.trim();
+        (!p.is_empty()).then(|| p.chars().take(TYPED_MAX).collect())
     }
 }
 
@@ -974,11 +1122,20 @@ fn seen(s: &Value) -> Seen {
         open: perm.or_else(ask),
         tool: s["current_tool"]["title"].as_str().map(str::to_owned),
         error: s["error"].as_str().map(str::to_owned),
+        model: s["model_name"].as_str().map(str::to_owned),
         // `recent_turns` is newest first.
         by: s["recent_turns"]
             .as_array()
             .map(|t| t.iter().rev().map(|t| t["by"].as_str().map(str::to_owned)).collect())
             .unwrap_or_default(),
+        prompt: s["recent_turns"]
+            .as_array()
+            .map(|t| {
+                let typed = |t: &Value| t["prompt"].as_str().filter(|p| *p != crate::agent::WOKEN).map(str::to_owned);
+                t.iter().rev().map(typed).collect()
+            })
+            .unwrap_or_default(),
+        next: s["queued"][0].as_str().map(str::to_owned),
     }
 }
 
@@ -1004,6 +1161,11 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
         return false;
     }
     let Some((keys, me, ..)) = me(app) else { return true };
+    if l.parked.is_some() {
+        unpark(app, &l, &keys, &me).await;
+        send(app, id).await;
+        return true;
+    }
     let Some(block) = l.block else { return true };
     let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten() else {
         // A restart restores it: give it a while.
@@ -1031,8 +1193,12 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
             });
         }
     }
-    let Ok(Some(l)) = read(&dir, id) else { return false };
     let s = seen(&b.state());
+    if s.model.is_some() && s.model != l.model_now {
+        let m = s.model.clone();
+        update(&dir, id, |now| now.model_now = m);
+    }
+    let Ok(Some(l)) = read(&dir, id) else { return false };
     let say = |f: Box<dyn FnOnce(&mut Session) + Send>| {
         update(&dir, id, f);
     };
@@ -1181,6 +1347,7 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 say(Box::new(move |now| now.push(&k, &m, Kind::State, State::Working, SessionDetail::default())));
             } else if now_ms().saturating_sub(l.last_at) >= heartbeat_every().as_millis() as u64
                 || !l.unnamed.is_empty()
+                || l.model_now != l.model_said
             {
                 let (k, m, tool) = (keys.clone(), me.clone(), s.tool.clone());
                 say(Box::new(move |now| {
@@ -1203,7 +1370,7 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 // or the agent woke itself): followed like the box's own,
                 // to the same end (finish step, push, turn report). The
                 // thread's prompts wait for it.
-                let by = s.by_at(seen_turns);
+                let (by, typed) = (s.by_at(seen_turns), s.typed_at(seen_turns));
                 let (k, m) = (keys.clone(), me.clone());
                 info!(session = id, "hosted: a turn started in the session's block");
                 say(Box::new(move |now| {
@@ -1215,11 +1382,20 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                         fix: None,
                         cancelled: false,
                     });
-                    let d = SessionDetail { in_block: true, by, ..Default::default() };
+                    let d = SessionDetail { in_block: true, by, typed, ..Default::default() };
                     now.push(&k, &m, Kind::State, State::Working, d);
                 }));
             } else if let Some(p) = next {
                 hand(app, &b, id, p, &keys, &me, s.turns).await;
+            } else if l.now() == State::Done
+                && work.as_ref().is_some_and(|w| w.park)
+                && l.unnamed.is_empty()
+                && s.queued == 0
+                && s.open.is_none()
+                && !matches!(s.status.as_str(), "working" | "starting")
+            {
+                park(app, &l, block, &b).await;
+                return true;
             } else if !l.unnamed.is_empty() {
                 // An action with no turn to do it to (a cancel too late):
                 // named, so it leaves control's list.
@@ -1233,6 +1409,75 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
     }
     send(app, id).await;
     true
+}
+
+/// Park done session `l` (Arugula #215): its transcript archived first,
+/// as `hosted.archive` sends it, then its block closed and what its user
+/// left killed, which frees the memory and a running slot. Its user,
+/// checkout and `~/.claude` stay, and the ledger keeps its agent's
+/// session id for [`unpark`].
+pub async fn park(app: &Arc<App>, l: &Session, block: u32, b: &Arc<dyn crate::block::Block>) {
+    let dir = app.control.state_dir().to_owned();
+    let agent_session = b.state()["session_id"].as_str().map(str::to_owned);
+    let archived = crate::hosted::archive::flush(Some(&[u64::from(block)])).await;
+    info!(session = l.session, block, ?archived, "hosted: parking an idle session: its transcript archived");
+    let parked = Parked { at: now_ms(), block: Some(block), agent_session };
+    if update(&dir, &l.session, |now| {
+        now.parked = Some(parked);
+        now.block = None;
+    })
+    .is_none()
+    {
+        return;
+    }
+    block_gone(block);
+    app.mux.api(|r| Api::Close(block, r)).await;
+    if slots().is_some_and(|s| s.real) {
+        super::kill_user(&l.user.user).await;
+    }
+    info!(session = l.session, user = l.user.user, "hosted: parked a session: its checkout and conversation kept");
+}
+
+/// A parked session's look: once control lists a prompt it hasn't handed
+/// (it does only while there's a running slot), and the box has one, open
+/// its block again on the same user and checkout, loading its agent's
+/// conversation; the next look hands the prompt. Actions with no agent to
+/// do them to (a late cancel) are named, so they leave control's list.
+async fn unpark(app: &Arc<App>, l: &Session, keys: &Arc<arugula_e2e::DeviceKeys>, me: &str) {
+    let dir = app.control.state_dir().to_owned();
+    let Some(w) = latest(&l.session) else { return };
+    let late: Vec<String> = w.actions.iter().filter(|a| !l.acted.contains(&a.id)).map(|a| a.id.clone()).collect();
+    if !late.is_empty() {
+        update(&dir, &l.session, |now| {
+            now.acted.extend(late.iter().cloned());
+            now.unnamed.extend(late);
+            let to = now.now();
+            now.push(keys, me, Kind::Heartbeat, to, SessionDetail::default());
+        });
+        return;
+    }
+    if !w.prompts.iter().any(|p| !l.handed.contains(&p.id)) || running(&dir) >= MAX_SESSIONS_PER_BOX {
+        return;
+    }
+    let sid = l.parked.as_ref().and_then(|p| p.agent_session.clone());
+    let block = match open_block(app, l, sid.as_deref()).await {
+        Ok(b) => b,
+        Err(why) => return fail(app, &l.session, &format!("its agent block, opened again: {why}")).await,
+    };
+    block_is(block, &l.session);
+    let opened = update(&dir, &l.session, |now| {
+        now.block = Some(block);
+        now.parked = None;
+        now.reopened = true;
+        // A new block: its turns count from none.
+        now.turns_seen = Some(0);
+    });
+    if opened.is_none() {
+        app.mux.api(|r| Api::Close(block, r)).await;
+        return;
+    }
+    info!(session = l.session, block, resumed = sid.is_some(), "hosted: opened a parked session's block again");
+    follow(app, &l.session);
 }
 
 /// Start a turn with prompt `p`: the ledger says it's handed (fsynced)
@@ -1309,9 +1554,11 @@ fn started(now: &mut Session, keys: &arugula_e2e::DeviceKeys, me: &str) {
     now.error = None;
     if matches!(now.now(), State::Queued | State::Done) {
         let first = now.now() == State::Queued;
+        // A parked one's block, opened again, is named too.
+        let named = first || std::mem::take(&mut now.reopened);
         let d = SessionDetail {
             prompts,
-            block: first.then(|| now.block.map(|b| b.to_string())).flatten(),
+            block: named.then(|| now.block.map(|b| b.to_string())).flatten(),
             // The agent it runs on (M264), said once.
             harness: first.then(|| now.harness.clone().unwrap_or_else(|| "claude".into())),
             ..Default::default()

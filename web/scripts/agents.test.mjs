@@ -27,6 +27,13 @@ test("an agent's message is its owner's agent's, on its machine", () => {
   assert.equal(authorLabel(msg({ author: "", name: "" })), "a deleted account");
 });
 
+test("what an agent session said is the session's, not a person's (Arugula #215)", () => {
+  assert.equal(authorLabel(msg({ author: "", name: "", via: "said:ses_1a2b3c4d5e6f" })), "Agent session 1a2b3c4d");
+  // Its card's message, and an answer from before, aren't.
+  assert.equal(authorLabel(msg({ author: "", name: "", via: "session:ses_1a2b3c4d5e6f" })), "a deleted account");
+  assert.equal(authorLabel(msg({ via: "session:ses_1a2b3c4d5e6f" })), "Jake");
+});
+
 test("a room says whose agents reach it, and what they may do", () => {
   const a = (owner, owner_name, machine_name, powers) => ({ owner, owner_name, machine: machine_name, machine_name, powers });
   assert.deepEqual(agentLines([]), []);

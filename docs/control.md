@@ -151,6 +151,54 @@ daemon), and stops unless `--download FILE` saves them first (a tarball of
 those repos' files that aren't ignored and their `.git`, `GET
 /api/hosted/setup/archive`) or `--force`.
 
+<a id="session-tools"></a>**Session users' tools (Arugula #215).** The
+setup runs as `user`, and a session's agent and its finish step run as a
+session user (`ses1` to `ses6`), who can't enter `/home/user`: a tool the
+setup installs there, or links into there from `/usr/local/bin`, is
+"Permission denied" to every session. The template's place for what
+sessions run is `/opt/arugula/tools`, owned by `user`, which everyone can
+read and run and nobody else can write. Its `bin` comes first on a session
+user's `PATH` (the daemon's `SESSION_PATH`, which the agent, the finish
+step and the daemon's git in the checkout all get) and on `user`'s. The
+template's `arugula-tools` publishes a tool there (`packaging/hosted/tools`):
+
+```
+arugula-tools link zig "$(mise which zig)"    # a binary: a link in bin
+arugula-tools rustup                          # rustup's proxies: wrappers that set RUSTUP_HOME
+arugula-tools wrap NAME TARGET VAR=VALUE      # any tool that needs a variable set
+arugula-tools env 'CARGO_TARGET_DIR=~/target' # every session user's environment
+arugula-tools as ses1 cargo --version         # as a session sees it
+```
+
+It refuses a binary in a home or behind a directory other users can't
+search, and writes each file beside the old one and renames it over, so a
+link already there (into `~user`, say) is replaced, never written through.
+Install into the prefix (rustup with `RUSTUP_HOME=/opt/arugula/tools/rustup`
+and `CARGO_HOME=/opt/arugula/tools/cargo`, mise with
+`MISE_DATA_DIR=/opt/arugula/tools/mise`) or anywhere outside `/home`.
+rustup's proxies get wrappers, not a `RUSTUP_HOME` in the session's
+environment, so they work wherever they're run from, a script that clears
+its environment included; each user keeps a `~/.cargo` of their own for
+the registry. `env` keeps `/opt/arugula/tools/env`, a `NAME=VALUE` a line
+that the daemon adds to a session user's environment, with a leading `~/`
+as that user's home. It can't set `HOME`, `USER`, `LOGNAME`, `PATH`, `LANG`
+or `GIT_*`, and it goes on sudo's command line, so nothing secret.
+`packaging/hosted/examples/arugula-dev-setup.sh` is this repo's own
+workspaces' setup, built that way.
+
+A session's checkout is new, so its build starts cold. The example gives
+each session user a build cache of their own instead: sccache (its cache
+in `~/.cache/sccache`, 2 GB at most; its server on a socket in the
+user's home, since on sccache's default port one user's server would
+compile another's) and libghostty-vt-sys's Ghostty checkout and Zig
+caches. A slot's next session finds its dependencies and Ghostty built;
+its own crates build again, as the checkout's path is new. A cache all
+session users wrote to would let one session plant what another links.
+A slot's caches outlive its sessions, like the rest of the slot user's
+home but `~/.claude` and the checkout. sccache over a kept target
+directory, because its size has a cap: an Arugula target directory is
+8 to 40 GB, and a box has three slots.
+
 **Snapshots (M263, Arugula #140).** Once a workspace's box has set up all
 right, the platform builds the workspace a snapshot, and its new boxes and
 rebuilds start from it, set up, instead of running setup again. One per
@@ -214,16 +262,45 @@ new branch whose workflow files differ from the default branch's without
 `workflows`, as a session's do once main changed CI after it began. So a
 session's branch can change `.github/workflows/`, and whoever reviews its
 PR checks those changes.
+
+**A question holds the turn** until it's answered (Arugula #215): the agent
+waits on its question tool, and the answer comes back as the tool's result.
+Answered from its card or its ask in the channel, the ask's line in the
+thread says who answered and what (`jhgaylor answered: CLI can't read
+native issues`), so the agent's next words don't read as it answering
+itself.
+
+**Which model** (Arugula #215). A session's agent runs on the strongest
+model unless the project says otherwise: the box asks Claude Code's
+adapter for Opus outright, since the adapter's own `default` depends on
+the account (a box's sessions ran Sonnet). The project's **Agent model**
+setting (`GET`/`PUT /api/projects/{project}/sessions/settings`, owners and
+editors) chooses Opus, Fable, Sonnet or Haiku for its sessions from the
+next on, and an ask's own words win for its session ("use sonnet,
+…", or "using", "on", "with"). Codex picks its own model whatever these
+say. The card shows the model the box says its agent runs on (`Opus 5.5`).
+
 A turn someone types in the session's block (the card's **Open**) is the
 session's too: the card shows it working, and it ends the same way, with
-the finish step, the push and the turn's report.
+the finish step, the push and the turn's report. The thread gets one
+plain line for it, the platform's: "Asked in the session by <who>:" and
+the first 300 characters of what they typed (the box's report says who
+and what, `by` and `typed`). It's posted once, and it's never a prompt.
 **Each turn's answer goes in the thread.** When a turn ends, pushed or
 not, the agent's last message is posted as a reply in the session's
-thread (only there, not also in the channel), as the asker's `via`
-`session:<ses>`, like a review's post. Past 2,000 characters it's cut,
-ending with a link to the session's page for the rest. It's plain text:
+thread (only there, not also in the channel), as the session's own
+message, like a review's post: no author, `via` `said:<ses>` (Arugula
+#215). The page draws it with the session's look (its agent, its short
+id linked to its page), apart from people's, and it's never counted as
+the asker's words. That's its final message only, not what it said
+earlier in the turn. Past 2,000 characters its start is cut: it begins
+with a link to the session's page, where all of it is, and keeps the
+end, where the summary and caveats are. A turn that pushed ends with a
+line saying how many commits went to which branch, since the box pushes
+after the agent's turn and the agent can't say. It's plain text:
 an `@` in it names nobody, and it never prompts the session or starts
-one. An empty message posts nothing, and a box from before this (one
+one. An empty message posts nothing (a turn that pushed posts its pushed
+line alone, so the thread always shows a push), and a box from before this (one
 that reports no reply) posts nothing either. The platform's which-box
 and which-repo questions, and the asker's answers to them, stay out of
 the session's first prompt: they were for the platform. On an Arugula issue's

@@ -24,6 +24,8 @@
 //! | `POST` [`SESSION_TRY`] [`SessionTryAsk`]: [`SessionView`] | owners and editors who may start one |
 //! | `POST` [`SESSION_PICK`] [`SessionPick`]: [`SessionView`] | owners and editors |
 //! | `GET` [`PROJECT_SESSION_STATS`]: [`SessionStats`] | the project's members |
+//! | `GET` [`PROJECT_SESSION_SETTINGS`]: [`SessionSettings`] | the project's members |
+//! | `PUT` [`PROJECT_SESSION_SETTINGS`] [`SessionSettings`]: [`SessionSettings`] | owners and editors |
 //! | `POST` [`ISSUE_AGENT`]: [`IssueAgent`] | the project's owners and editors, as `@arugula` |
 //! | `POST` [`SESSION_MOVE`] [`SessionMove`]: [`SessionView`] | its asker, owners and editors |
 //! | `GET` [`ASK`]: [`ChatAsk`] | whoever reads its room |
@@ -35,6 +37,19 @@
 //! least busy, then by name. Its card says which ([`SessionCard::moves`]),
 //! and **Move to…** sends a queued or done session to another of them:
 //! its next turn starts there from the thread.
+//!
+//! **What its agent said** (Arugula #215). A turn's answer and a review
+//! are the session's own messages in its thread: no author, `via`
+//! `said:<ses>` ([`said_via`]), drawn with the session's look (its short
+//! id, its harness, a link to its page), apart from people's. They're
+//! nobody's words: never a prompt, never a mention, never the asker's.
+//! A turn someone typed in the session's block itself gets the platform's
+//! line in the thread, saying who asked what there.
+//!
+//! **Which model** (Arugula #215). The ask's own word ("use sonnet"), else
+//! the project's "agents use model" setting ([`SessionSettings`]), else the
+//! strongest: Opus for Claude Code. The card says which its box runs it on
+//! ([`SessionCard::model`]).
 //!
 //! **Asks** (Arugula #214). What still needs the asker is a message in the
 //! thread, also sent to the channel, that mentions them, so it's an unread
@@ -90,6 +105,9 @@ pub const SESSION_PICK: &str = "/api/sessions/{ses}/pick";
 
 /// `GET`: a project's agent sessions in numbers ([`SessionStats`], M265).
 pub const PROJECT_SESSION_STATS: &str = "/api/projects/{project}/sessions/stats";
+/// `GET` [`SessionSettings`]: what a project's sessions use (Arugula
+/// #215); `PUT` [`SessionSettings`]: change it, for its owners and editors.
+pub const PROJECT_SESSION_SETTINGS: &str = "/api/projects/{project}/sessions/settings";
 /// `POST`: "Agent on this" on a native issue ([`IssueAgent`], M265).
 pub const ISSUE_AGENT: &str = "/api/issues/{issue}/agent";
 
@@ -130,6 +148,20 @@ pub fn card_of(via: &str) -> Option<&str> {
     via.strip_prefix(CARD_VIA).filter(|s| s.starts_with("ses_"))
 }
 
+/// What a session's own message (its agent's answer, a review) has for
+/// `via`, before the session's id (Arugula #215).
+pub const SAID_VIA: &str = "said:";
+
+/// The `via` of a message session `ses`'s agent said.
+pub fn said_via(ses: &str) -> String {
+    format!("{SAID_VIA}{ses}")
+}
+
+/// The session whose agent said a message, by its `via`, if it's one.
+pub fn said_of(via: &str) -> Option<&str> {
+    via.strip_prefix(SAID_VIA).filter(|s| s.starts_with("ses_"))
+}
+
 /// A session as its card shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -159,6 +191,11 @@ pub struct SessionCard {
     /// When it last stopped running (done, failed, stopped): the clock
     /// stops there. `None` while a turn is under way or queued.
     pub ended_at: Option<u64>,
+    /// Done and parked (Arugula #215): idle long enough that its box
+    /// closed its agent, keeping its checkout and conversation. A reply
+    /// opens it again.
+    #[serde(default)]
+    pub parked: bool,
     pub last_tool: Option<String>,
     pub last_error: Option<String>,
     /// Why it failed or stopped, or why it's queued again (its box was
@@ -204,6 +241,13 @@ pub struct SessionCard {
     /// it on, once it took it (`claude` when the other isn't there).
     pub harness: String,
     pub ran: Option<String>,
+    /// The model it was asked to use (Arugula #215): its ask's word ("use
+    /// sonnet"), else its project's setting, else `None` (the strongest).
+    #[serde(default)]
+    pub model_asked: Option<String>,
+    /// The model its agent runs on, as its box last said (`Opus 5.5`).
+    #[serde(default)]
+    pub model: Option<String>,
     /// A Try 3's sessions, on its parent's card: the parent first, then its
     /// siblings, oldest first. Empty for every other session.
     pub tries: Vec<SessionTry>,
@@ -285,8 +329,8 @@ pub struct SessionTry {
     /// Why it failed or stopped.
     pub reason: Option<String>,
     pub updated_at: u64,
-    /// Queued with no slot on its box for it yet (the box holds three
-    /// sessions, done ones too).
+    /// Queued with no slot on its box for it yet (the box runs three
+    /// sessions, done ones not yet parked too, or holds six).
     pub no_slot: bool,
 }
 
@@ -503,6 +547,19 @@ pub struct SessionPrSent {
     pub machine: Option<String>,
 }
 
+/// [`PROJECT_SESSION_SETTINGS`]: "agents use model …" (Arugula #215), one
+/// of [`crate::work::MODELS`], or `None` for the strongest. An ask's own
+/// word ("use sonnet") wins for its session.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionSettings {
+    #[serde(default)]
+    pub model: Option<String>,
+    /// What it may be, in a `GET`'s answer: [`crate::work::MODELS`].
+    #[serde(default)]
+    pub models: Vec<String>,
+}
+
 /// [`PROJECT_SESSION_STATS`]'s answer: of the project's sessions asked for
 /// in the last [`STATS_DAYS`] days, how many led to a PR (sent by its
 /// asker, or opened from its branch by hand) and how many merged, and the
@@ -539,6 +596,17 @@ mod tests {
         assert_eq!(card_of("session:ses_ab"), Some("ses_ab"));
         for not in ["system", "hud box", "session:", "session:run_1"] {
             assert_eq!(card_of(not), None, "{not}");
+        }
+    }
+
+    #[test]
+    fn what_a_session_said_names_it_apart_from_its_card() {
+        assert_eq!(said_via("ses_ab"), "said:ses_ab");
+        assert_eq!(said_of("said:ses_ab"), Some("ses_ab"));
+        assert_eq!(card_of(&said_via("ses_ab")), None, "not its card");
+        assert_eq!(said_of(&card_via("ses_ab")), None);
+        for not in ["system", "said:", "said:run_1", "ask:ses_ab"] {
+            assert_eq!(said_of(not), None, "{not}");
         }
     }
 

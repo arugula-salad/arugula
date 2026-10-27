@@ -29,6 +29,11 @@
 //! - before a rebuild (Arugula #209), control's `hosted.archive` over the
 //!   relay sends each open agent block's transcript, a session's too, and
 //!   the blocks stay open.
+//! - a done session control says to park (Arugula #215) has its transcript
+//!   archived, then its block closed, keeping its checkout and
+//!   `~/.claude`; a reply opens a block again on the same user and
+//!   checkout, resuming its conversation; with three running, a parked
+//!   one's reply waits until one parks.
 
 use std::{
     collections::BTreeMap,
@@ -85,6 +90,9 @@ struct Fake {
     asked: Arc<Mutex<Vec<Value>>>,
     /// Every push token the box asked for (M259), and those it revoked.
     pushes: Arc<Mutex<Vec<Value>>>,
+    /// Every call a session's agent made on its project's issues, as the
+    /// box sent it to control.
+    issue_asks: Arc<Mutex<Vec<Value>>>,
     revoked: Arc<Mutex<Vec<String>>>,
     /// The relay socket, to ask the box an op on (Arugula #209), and what
     /// the box said on it.
@@ -92,6 +100,8 @@ struct Fake {
     said: Arc<Mutex<Vec<Value>>>,
     /// The transcripts the box archived (M184).
     transcripts: Arc<Mutex<Vec<Value>>>,
+    /// What the box said it takes on its last pull.
+    takes: Arc<Mutex<String>>,
 }
 
 impl Fake {
@@ -122,10 +132,12 @@ impl Fake {
             pulls: Default::default(),
             asked: Default::default(),
             pushes: Default::default(),
+            issue_asks: Default::default(),
             revoked: Default::default(),
             relay: Default::default(),
             said: Default::default(),
             transcripts: Default::default(),
+            takes: Default::default(),
         }
     }
 
@@ -153,6 +165,21 @@ impl Fake {
         harness: Option<&str>,
         review: bool,
     ) {
+        self.start_on(id, slug, prompt, finish, harness, review, None);
+    }
+
+    /// [`Fake::start_as`], on `model` (Arugula #215).
+    #[allow(clippy::too_many_arguments)]
+    fn start_on(
+        &self,
+        id: &str,
+        slug: &str,
+        prompt: SessionPrompt,
+        finish: Option<FinishStep>,
+        harness: Option<&str>,
+        review: bool,
+        model: Option<&str>,
+    ) {
         let work = SessionWork {
             session: id.into(),
             project: PROJECT.into(),
@@ -167,6 +194,8 @@ impl Fake {
             finish,
             harness: harness.map(str::to_owned),
             review,
+            model: model.map(str::to_owned),
+            park: false,
         };
         self.sessions.lock().unwrap().insert(id.into(), Ses { work, stopped: false });
     }
@@ -177,6 +206,11 @@ impl Fake {
 
     fn ask(&self, id: &str, a: SessionAction) {
         self.sessions.lock().unwrap().get_mut(id).unwrap().work.actions.push(a);
+    }
+
+    /// Control's word that `id` is parked, or not (Arugula #215).
+    fn park(&self, id: &str, on: bool) {
+        self.sessions.lock().unwrap().get_mut(id).unwrap().work.park = on;
     }
 
     fn stop(&self, id: &str) {
@@ -313,8 +347,9 @@ async fn archived(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
 
 /// Every session that hasn't ended, as the platform lists them (the box
 /// keeps to its own cap).
-async fn work(Axum(f): Axum<Fake>) -> Json<Work> {
+async fn work(Axum(f): Axum<Fake>, q: axum::extract::Query<BTreeMap<String, String>>) -> Json<Work> {
     *f.pulls.lock().unwrap() += 1;
+    *f.takes.lock().unwrap() = q.get("takes").cloned().unwrap_or_default();
     let sessions = f.sessions.lock().unwrap().values().filter(|s| !s.stopped).map(|s| s.work.clone()).collect();
     Json(Work { items: vec![], revokes: vec![], sessions })
 }
@@ -375,6 +410,18 @@ async fn turn_end() -> Json<Value> {
     Json(json!({ "ended": true }))
 }
 
+/// A session's agent reading and commenting on its project's issues
+/// (aru-115, amended): what it was asked is kept, and answered as the
+/// platform would.
+async fn issues(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
+    f.issue_asks.lock().unwrap().push(b.clone());
+    Json(match b["op"].as_str() {
+        Some("list") => json!({ "kind": "list", "list": { "project": PROJECT, "issues": [], "more": false } }),
+        Some("comment") => json!({ "kind": "commented", "seq": 7 }),
+        _ => json!({ "kind": "refused", "why": "no such issue" }),
+    })
+}
+
 fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
     rt.block_on(async {
         let app = Router::new()
@@ -385,6 +432,7 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/api/hosted/work", get(work))
             .route("/api/hosted/work/session", post(report))
             .route("/api/hosted/work/session/push", post(push_token))
+            .route("/api/hosted/work/session/issues", post(issues))
             .route("/installation/token", axum::routing::delete(revoke))
             .route("/api/hosted/turns", post(turn))
             .route("/api/hosted/turns/{turn}/end", post(turn_end))
@@ -557,6 +605,9 @@ fn rig_with(tag: &str, more: &[(&str, &str)]) -> Rig {
     .unwrap();
     std::fs::set_permissions(&sudo, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let homes = marks.join("homes");
+    // What the setup adds to session users' environment (Arugula #215).
+    let session_env = marks.join("tools-env");
+    std::fs::write(&session_env, "CARGO_TARGET_DIR=~/.cache/arugula/cargo-target\n").unwrap();
     let fake = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fake_acp.py");
     let agent = format!("sh -c 'FAKE_ACP_DIR=$HOME/.fake-acp exec python3 {}'", fake.display());
 
@@ -576,6 +627,7 @@ fn rig_with(tag: &str, more: &[(&str, &str)]) -> Rig {
         .env("ARUGULA_HOSTED_RUN_USER", "")
         .env("ARUGULA_HOSTED_SESSION_HOMES", &homes)
         .env("ARUGULA_HOSTED_SUDO", &sudo)
+        .env("ARUGULA_HOSTED_SESSION_ENV", &session_env)
         .env("ARUGULA_HOSTED_SESSION_AGENT", &agent)
         .env("ARUGULA_SESSION_HEARTBEAT_MS", "400")
         .env("ARUGULA_GITHUB_GIT", format!("file://{}", github.display()))
@@ -620,6 +672,16 @@ fn a_hosted_machine_runs_sessions() {
     let said = std::fs::read_to_string(&sudo_log).unwrap();
     assert!(said.contains(&format!("-n -u ses1 -- env -i HOME={} USER=ses1", homes.join("ses1").display())), "{said}");
     assert!(said.contains("ANTHROPIC_API_KEY=arugula-brokered sh -c"), "the agent, with the placeholder: {said}");
+    // Arugula #215: the setup's tools first on its PATH, and the setup's
+    // environment, `~/` its user's home.
+    let theirs = format!(
+        "LOGNAME=ses1 PATH=/opt/arugula/tools/bin:/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 CARGO_TARGET_DIR={}",
+        homes.join("ses1/.cache/arugula/cargo-target").display()
+    );
+    assert!(
+        said.lines().any(|l| l.contains(&theirs) && l.contains("ANTHROPIC_API_KEY=arugula-brokered sh -c")),
+        "the agent gets the setup's tools and env: {said}"
+    );
     assert!(
         said.lines().any(|l| l.starts_with("-n -u ses1 -- env -i") && l.contains(" git -C ") && l.contains(" switch ")),
         "the session's git runs as its user: {said}"
@@ -642,11 +704,23 @@ fn a_hosted_machine_runs_sessions() {
         .filter(|e| e.file_name().to_string_lossy().starts_with("mcp-"))
         .map(|e| std::fs::read_to_string(e.path()).unwrap())
         .collect();
-    assert!(!mcp.contains("arugula"), "a session gets no Arugula MCP server: {mcp}");
+    // Not `/mcp`: its own server, over HTTP, with nothing secret in it.
+    let servers: Vec<Value> =
+        serde_json::Deserializer::from_str(&mcp).into_iter::<Vec<Value>>().next().unwrap().unwrap();
+    assert_eq!(servers.len(), 1, "{mcp}");
+    assert_eq!((servers[0]["type"].as_str(), servers[0]["name"].as_str()), (Some("http"), Some("arugula")), "{mcp}");
+    assert!(servers[0]["url"].as_str().unwrap().starts_with("http://127.0.0.1:"), "{mcp}");
+    assert_eq!(servers[0]["headers"], json!([]), "no token to leak onto a command line: {mcp}");
+    assert!(!mcp.contains("ilb_") && !mcp.contains("Bearer"), "{mcp}");
     let block = block_of(&f, &a);
     let lines = transcript(&d, block);
     let at = lines.iter().position(|l| l.starts_with("user: hello")).unwrap();
     assert_eq!(lines[at - 1], "note: A follow-up from jhgaylor", "{lines:#?}");
+    // Arugula #215: on the strongest model, said outright as the session
+    // opened, and its reports say which.
+    let models: Vec<String> = f.of(&a).into_iter().filter_map(|(_, d)| d.model).collect();
+    assert!(models.first().is_some_and(|m| m == "Opus 5.5"), "{models:?}");
+    assert!(f.turn_reports(&a).iter().all(|d| d.model.as_deref() == Some("Opus 5.5")), "each turn's says it");
 
     // A follow-up queued mid-turn waits for the turn, then goes as its own
     // author's (by id, with no login); a cancel stops the turn.
@@ -687,6 +761,14 @@ fn a_hosted_machine_runs_sessions() {
     let (_, asked_d) = f.of(&a).into_iter().rfind(|(r, _)| r.to == "needs_input").unwrap();
     assert_eq!(asked_d.ask.as_deref(), Some("question"));
     assert!(asked_d.question.as_deref().is_some_and(|q| q.contains("colour")), "{asked_d:?}");
+    // Arugula #215: the question holds the turn until it's answered. The
+    // agent waits on it: nothing ends, and nothing goes on, unasked.
+    let turns = f.turn_reports(&a).len();
+    let p = f.pulls();
+    wait(&marks, &f, "pulls while it waits", || f.pulls() > p + 10);
+    assert_eq!(f.state(&a), "needs_input", "still waiting on its answer");
+    assert_eq!(f.turn_reports(&a).len(), turns, "no turn ended without it");
+    assert!(!transcript(&d, block).iter().any(|l| l.contains("You answered")), "the agent didn't go on");
     // As its asker's login, which the platform sends (else the account id).
     let mut answer = action(2, "acct2", "answer");
     answer.by_name = "ann".into();
@@ -714,6 +796,7 @@ fn a_hosted_machine_runs_sessions() {
         .map(|e| std::fs::read_to_string(e.path()).unwrap())
         .collect();
     assert!(modes.contains(r#""mode": "bypassPermissions""#), "its session's mode: {modes}");
+    assert!(modes.contains(r#""model": "opus""#), "its session's model, set as it opened: {modes}");
 
     // A restart between turns: what was queued while the daemon was down
     // runs once, and the agent's conversation goes on, as the same user.
@@ -752,8 +835,12 @@ fn a_hosted_machine_runs_sessions() {
     // until one is stopped.
     let (b, c, e) = (ses('b'), ses('c'), ses('e'));
     f.start(&b, "one", prompt(10, "acct1", "slow"));
-    f.start(&c, "two", prompt(11, "acct1", "slow"));
+    // c on the model its ask named (Arugula #215).
+    f.start_on(&c, "two", prompt(11, "acct1", "slow"), None, None, false, Some("haiku"));
     wait(&marks, &f, "b and c working", || f.state(&b) == "working" && f.state(&c) == "working");
+    wait(&marks, &f, "c says its model", || f.of(&c).iter().any(|(_, d)| d.model.is_some()));
+    let said: Vec<String> = f.of(&c).into_iter().filter_map(|(_, d)| d.model).collect();
+    assert_eq!(said, ["Haiku 4.5"], "the one asked for, by its name");
     f.start(&e, "three", prompt(12, "acct2", "hello"));
     let p = f.pulls();
     wait(&marks, &f, "more pulls", || f.pulls() > p + 10);
@@ -822,6 +909,14 @@ fn a_finish_step_runs_after_each_turn() {
     assert!(
         said.lines().any(|l| l.starts_with("-n -u ses1 -- env -i HOME=") && l.contains(how)),
         "it runs as the session's user, for 15 minutes at most: {said}"
+    );
+    // With the setup's tools and environment, as the agent has them
+    // (Arugula #215).
+    assert!(
+        said.lines().any(|l| l.contains(how)
+            && l.contains(" PATH=/opt/arugula/tools/bin:/usr/local/bin:/usr/bin:/bin ")
+            && l.contains(" CARGO_TARGET_DIR=")),
+        "the finish step gets the setup's tools and env: {said}"
     );
 
     // It fails, and the agent's fix (a turn from the finish step, with its
@@ -922,6 +1017,8 @@ fn a_turn_typed_in_the_block_is_the_sessions() {
     );
     let (_, start) = f.of(&s).into_iter().rfind(|(r, _)| r.to == "working" && r.from == "done").unwrap();
     assert!(start.in_block && start.prompts.is_empty(), "{start:?}");
+    // What was typed goes with it, for the thread's line (Arugula #215).
+    assert_eq!(start.typed.as_deref(), Some("work README.md NOTES.md"), "{start:?}");
     assert!(f.refused.lock().unwrap().is_empty(), "{:?}", f.refused.lock().unwrap());
     let turn = f.turn_reports(&s).pop().unwrap();
     assert_eq!(turn.finish, Some(FinishResult { ok: true, command: step.command.clone(), output_tail: String::new() }));
@@ -1067,6 +1164,53 @@ fn a_codex_session_asks_nobody_but_its_questions_reach_the_card() {
     assert!(transcript(&d, block).iter().any(|l| l.starts_with("agent: ") && l.contains("Blue")));
 }
 
+/// A session's agent has two tools for its project's issues, on a server of
+/// its own: a list and a comment go to control as the session's, with an
+/// issue's number and no project, signed by the box; and nothing else of
+/// Arugula's is there to call. Linux only: the server knows its caller by
+/// the socket's owner in `/proc/net/tcp`, and boxes run Linux.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_sessions_agent_reads_and_comments_on_its_projects_issues() {
+    let Rig { _rt, f, marks, d, .. } = rig("issues");
+    let a = ses('a');
+    f.start(&a, "look", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "session a's first turn", || f.state(&a) == "done");
+    let block = block_of(&f, &a);
+
+    let mut n = 1;
+    let mut call = |text: &str| {
+        n += 1;
+        f.queue(&a, prompt(n, "acct1", text));
+        wait(&marks, &f, "the tool turn", || f.state(&a) == "done" && f.turns(&a).len() == n as usize);
+        let lines = transcript(&d, block);
+        lines.into_iter().rev().find(|l| l.starts_with("agent: MCP ")).expect("the agent's answer")
+    };
+    let listed = call("mcp read_session_issues {}");
+    assert!(listed.contains("0 issue(s) in project prj_1"), "{listed}");
+    let commented = call(r##"mcp comment_session_issue {"issue": "#3", "text": "bisected it"}"##);
+    assert!(commented.contains("Commented on #3"), "{commented}");
+    let shown = call(r##"mcp read_session_issues {"issue": "#9"}"##);
+    assert!(shown.contains("no such issue"), "control's refusal reaches the agent: {shown}");
+
+    let asks = f.issue_asks.lock().unwrap().clone();
+    assert_eq!(asks.len(), 3, "{asks:#?}");
+    for ask in &asks {
+        assert_eq!(ask["session"], json!(a));
+        assert!(ask.get("project").is_none() && !ask.to_string().contains(PROJECT), "never a project: {ask}");
+    }
+    assert_eq!(
+        (asks[0]["op"].as_str(), asks[1]["op"].as_str(), asks[2]["op"].as_str()),
+        (Some("list"), Some("comment"), Some("show"))
+    );
+    assert_eq!((asks[1]["number"].as_u64(), asks[1]["text"].as_str()), (Some(3), Some("bisected it")));
+
+    // The daemon's own tools aren't there, nor `/mcp` for it.
+    let other = call(r##"mcp run {"command": "touch x"}"##);
+    assert!(other.contains("no tool run"), "{other}");
+    assert_eq!(f.issue_asks.lock().unwrap().len(), 3, "and nothing reached control");
+}
+
 /// Before a rebuild (Arugula #209): control asks the box `hosted.archive`
 /// over its relay. Each open agent block's transcript goes, as closing it
 /// would send it, a session's with what it was asked; then it answers. The
@@ -1098,4 +1242,90 @@ fn a_box_archives_its_open_agents_before_a_rebuild() {
     assert!(ours["closed_at"].as_u64().unwrap() > 0);
     // Still open: its transcript is there to read.
     assert!(transcript(&d, block).iter().any(|l| l.starts_with("user: hello")));
+}
+
+/// The blocks session `id`'s turns started in, in order: its first, then
+/// each one opened again after it was parked.
+fn blocks_of(f: &Fake, id: &str) -> Vec<u64> {
+    f.of(id).iter().filter(|(r, _)| r.to == "working").filter_map(|(_, d)| d.block.as_ref()?.parse().ok()).collect()
+}
+
+/// Arugula #215: parking closes a done session's block, its transcript
+/// archived first, and keeps its user's checkout and `~/.claude`; a reply
+/// opens a block again, as the same user in the same checkout, loading
+/// its conversation (the agent still knows what it was told), and its
+/// turn names the new block. With three running, a parked one's reply
+/// waits until one of them parks.
+#[test]
+fn a_parked_session_reopens_on_a_reply() {
+    let Rig { _rt, f, marks, homes, sudo_log, d, .. } = rig("park");
+    // It says how many session users it has: the template's six.
+    wait(&marks, &f, "a pull", || f.pulls() > 0);
+    assert_eq!(*f.takes.lock().unwrap(), "run,session,session_users:6");
+    let a = ses('a');
+    f.start(&a, "fix-readme", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
+    f.queue(&a, prompt(2, "acct1", "remember plum"));
+    wait(&marks, &f, "a's second turn", || f.turns(&a).len() == 2 && f.state(&a) == "done");
+    let first = block_of(&f, &a);
+    let checkout = homes.join("ses1").join("work").join(&a);
+    let claude = homes.join("ses1").join(".claude");
+    std::fs::create_dir_all(&claude).unwrap();
+    std::fs::write(claude.join("kept"), "its agent's state").unwrap();
+
+    f.park(&a, true);
+    wait(&marks, &f, "a's block closed", || d.raw("GET", &format!("/api/blocks/{first}"), None).0 == 404);
+    let kept = f.transcripts.lock().unwrap().clone();
+    assert!(
+        kept.iter().any(|t| t["block"] == first && t["text"].as_str().is_some_and(|x| x.contains("remember plum"))),
+        "its transcript: {kept:#?}"
+    );
+    let log = std::fs::read_to_string(marks.join("arugulad.log")).unwrap();
+    let archived = log.find("its transcript archived").expect("archived");
+    let closed = log.find("parked a session").expect("parked");
+    assert!(archived < closed, "archived before its block closed");
+    assert!(checkout.join(".git").exists(), "its checkout stays");
+    assert!(claude.join("kept").exists(), "its ~/.claude stays");
+    assert_eq!(f.state(&a), "done");
+    let agents = || {
+        let said = std::fs::read_to_string(&sudo_log).unwrap();
+        said.lines().filter(|l| l.starts_with("-n -u ses1 -- env -i") && l.contains("arugula-brokered sh -c")).count()
+    };
+    assert_eq!(agents(), 1);
+
+    // A reply: a block again, as ses1, in its checkout, on its
+    // conversation; the turn names it.
+    f.park(&a, false);
+    f.queue(&a, prompt(3, "acct1", "recall"));
+    wait(&marks, &f, "the reply's turn", || f.turns(&a).len() == 3 && f.state(&a) == "done");
+    let blocks = blocks_of(&f, &a);
+    assert_eq!(blocks.len(), 2, "{blocks:?}");
+    let second = blocks[1];
+    assert_ne!(second, first);
+    let lines = transcript(&d, second);
+    assert!(lines.iter().any(|l| l == "agent: You said plum."), "{lines:#?}");
+    let state = d.get(&format!("/api/blocks/{second}"))["state"].clone();
+    assert_eq!(state["cwd"].as_str(), Some(checkout.to_str().unwrap()));
+    assert_eq!(agents(), 2, "its agent, as ses1 again");
+
+    // Parked again; three others run (done, their agents up): a reply to
+    // it waits, until one of them parks.
+    f.park(&a, true);
+    wait(&marks, &f, "a parked again", || d.raw("GET", &format!("/api/blocks/{second}"), None).0 == 404);
+    let (b, c, e) = (ses('b'), ses('c'), ses('e'));
+    f.start(&b, "one", prompt(10, "acct1", "hello"));
+    f.start(&c, "two", prompt(11, "acct1", "hello"));
+    f.start(&e, "three", prompt(12, "acct1", "hello"));
+    wait(&marks, &f, "b, c and e done", || [&b, &c, &e].iter().all(|s| f.state(s) == "done"));
+    assert!(homes.join("ses4").join("work").join(&e).join(".git").exists(), "e has the fourth user");
+    f.park(&a, false);
+    f.queue(&a, prompt(4, "acct1", "recall"));
+    let p = f.pulls();
+    wait(&marks, &f, "more pulls", || f.pulls() > p + 10);
+    assert_eq!(f.turns(&a).len(), 3, "three run: the reply waits");
+    f.park(&b, true);
+    wait(&marks, &f, "a's reply once b parked", || f.turns(&a).len() == 4 && f.state(&a) == "done");
+    assert!(homes.join("ses2").join("work").join(&b).join(".git").exists(), "b keeps its checkout");
+    assert_eq!(blocks_of(&f, &a).len(), 3);
+    assert!(f.refused.lock().unwrap().is_empty(), "{:?}", f.refused.lock().unwrap());
 }
