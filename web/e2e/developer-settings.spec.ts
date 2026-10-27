@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, open, paneEl, ready } from "./helpers";
+import { closeContexts, menuItems, open, paneEl, ready } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 
 const OWNER = "me@example.com";
@@ -69,8 +69,8 @@ async function shown(page: Page, pane: number): Promise<(Flag | "guest-ssh")[]> 
   await page.evaluate(() => window.__arugula.client.loadFeatures());
   const out: (Flag | "guest-ssh")[] = [];
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
-  await expect(page.getByRole("menuitem", { name: "Share read-only link…" })).toBeVisible();
-  const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
+  await expect(page.getByRole("menuitem", { name: "Split right" })).toBeVisible();
+  const items = await menuItems(page);
   await page.keyboard.press("Escape");
   if (items.includes("New VM pane on the right")) out.push("sandbox-providers");
   if (items.includes("Open a studio app…")) out.push("studio");

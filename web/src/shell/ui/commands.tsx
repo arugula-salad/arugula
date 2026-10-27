@@ -76,13 +76,34 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
   const tabMachine = tabId === undefined ? undefined : client.tabMachine(tabId);
   const mine = client.machine(id);
   const own = mine !== undefined && "pane" in mine.owner && mine.owner.pane === id;
-  return [
-    // #1066: a Doc's link, the owner's.
-    ...(info?.type === "doc" ? docShareItems(client, id) : []),
-    ...focus,
-    { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
-    { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
-    ...(tabMachine ? [{ label: "Split (local)", run: () => client.intent({ op: "split", pane: id, edge: "right", local: true }) } as MenuItem] : []),
+  const owner = !client.state?.roles;
+  const view = info?.type === "doc" ? undefined : entry?.view;
+  // What a terminal's own menu offers first, before anything about panes.
+  const clipboard: MenuItem[] = view
+    ? [
+        { label: "Copy", shortcut: desktopPlatform() === "macos" ? undefined : "Ctrl+Shift+C", disabled: !view.selection(), run: () => void navigator.clipboard?.writeText(view.selection()) },
+        ...(client.mayType(id)
+          ? [
+              {
+                label: "Paste",
+                shortcut: desktopPlatform() === "macos" ? undefined : "Ctrl+Shift+V",
+                hint: "If the browser won't give us the clipboard, paste with the keyboard",
+                run: () => {
+                  void navigator.clipboard?.readText?.().then((t) => t && view.paste(t)).catch(() => {});
+                  view.focus();
+                },
+              } as MenuItem,
+            ]
+          : []),
+        { label: "Select all", run: () => view.selectAll() },
+        { label: "Clear scrollback", run: () => view.clearScrollback() },
+        "separator",
+      ]
+    : [];
+  const sub = (label: string, items: MenuItem[]): MenuItem[] => {
+    return items.some((i) => i !== "separator") ? [{ label, submenu: items }] : [];
+  };
+  const openBeside: MenuItem[] = [
     ...(client.has("vms") ? [{ label: "New VM pane on the right", run: () => void client.newVm({ split: id }) } as MenuItem] : []),
     ...elsewhere(),
     {
@@ -104,33 +125,26 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
         ]
       : []),
     // M33: Claude Code conversations from terminals and the desktop app.
-    ...(!client.state?.roles
-      ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem]
-      : []),
+    ...(owner ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
     // M35: a studio app's box beside this pane.
-    ...(!client.state?.roles && client.has("studio") ? [{ label: "Open a studio app…", run: () => pickApp(client, { split: id }) } as MenuItem] : []),
+    ...(owner && client.has("studio") ? [{ label: "Open a studio app…", run: () => pickApp(client, { split: id }) } as MenuItem] : []),
     // M36: a pull request beside it (N: in its repository).
-    ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { split: id, dir: cwd }) } as MenuItem] : []),
+    ...(owner ? [{ label: "Open pull request…", run: () => void openPr(client, { split: id, dir: cwd }) } as MenuItem] : []),
     // M37: an issue beside it (N: in its repository).
-    ...(!client.state?.roles ? [{ label: "Open issue…", run: () => void openIssue(client, { split: id, dir: cwd }) } as MenuItem] : []),
+    ...(owner ? [{ label: "Open issue…", run: () => void openIssue(client, { split: id, dir: cwd }) } as MenuItem] : []),
     // M27: VS Code where this pane runs, in its directory. The owner's,
     // like ports.
-    ...(entry && !client.state?.roles ? [{ label: "Open in editor", run: () => openEditor(client, id) } as MenuItem] : []),
+    ...(entry && owner ? [{ label: "Open in editor", run: () => openEditor(client, id) } as MenuItem] : []),
     // M11: what changed in its repository, where it runs.
-    ...(!client.state?.roles ? [{ id: "changes", label: "Changes", run: () => openChanges(client, id) } as MenuItem] : []),
+    ...(owner ? [{ id: "changes", label: "Changes", run: () => openChanges(client, id) } as MenuItem] : []),
     ...(workspace ? [{ label: "Open as workspace", run: () => openWorkspace(client, workspace, id) } as MenuItem] : []),
-    ...(own && !tabMachine
-      ? [{ label: "Share machine with tab", run: () => void client.api(`/api/panes/${id}/share-machine`) } as MenuItem]
+  ];
+  const share: MenuItem[] = [
+    // The owner's: the share form for this pane's session, opening here,
+    // with their window following ours (#1473).
+    ...(owner && client.sessionOfPane(id) !== null
+      ? [{ label: "Share this pane…", run: () => shareSession(client.sessionOfPane(id)!, { pane: id }) } as MenuItem]
       : []),
-    "separator",
-    // M70: a file onto this pane's host, its path pasted in (for an agent
-    // there to read).
-    ...(entry && client.mayType(id)
-      ? [{ label: "Attach file…", shortcut: desktopPlatform() === "macos" ? keyHint("desktop.attach") : undefined, run: () => void client.attachFiles(id) } as MenuItem]
-      : []),
-    moveToTab,
-    { id: "picker", label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, id, phone) },
-    { label: "Copy working directory", disabled: !cwd, run: () => cwd && void navigator.clipboard?.writeText(cwd) },
     // A dial-out host's links would be on a daemon nobody can reach.
     ...(client.base.startsWith("/")
       ? []
@@ -145,7 +159,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
         ]),
     // An ssh command for a guest with only OpenSSH. The owner's. Only where
     // they've turned on Guest SSH access, a sharing setting (native #205).
-    ...(client.base.startsWith("/") || client.state?.roles || !client.guestSsh()
+    ...(client.base.startsWith("/") || !owner || !client.guestSsh()
       ? []
       : [
           {
@@ -156,30 +170,51 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
             },
           } as MenuItem,
         ]),
-    // The owner's: the share form for this pane's session, opening here,
-    // with their window following ours (#1473).
-    ...(client.state?.roles || client.sessionOfPane(id) === null
-      ? []
-      : [{ label: "Share this pane…", run: () => shareSession(client.sessionOfPane(id)!, { pane: id }) } as MenuItem]),
+    ...(own && !tabMachine
+      ? [{ label: "Share machine with tab", run: () => void client.api(`/api/panes/${id}/share-machine`) } as MenuItem]
+      : []),
     ...driveItems(client, id),
+  ];
+  return [
+    // #1066: a Doc's link, the owner's.
+    ...(info?.type === "doc" ? [...docShareItems(client, id), "separator" as const] : []),
+    ...clipboard,
+    ...focus,
+    { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
+    { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
+    ...(tabMachine ? [{ label: "Split (local)", run: () => client.intent({ op: "split", pane: id, edge: "right", local: true }) } as MenuItem] : []),
+    ...sub("Open beside", openBeside),
+    ...sub("Move", [
+      moveToTab,
+      { id: "picker", label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, id, phone) },
+    ]),
     "separator",
+    { label: "Copy working directory", disabled: !cwd, run: () => cwd && void navigator.clipboard?.writeText(cwd) },
+    // M70: a file onto this pane's host, its path pasted in (for an agent
+    // there to read).
+    ...(entry && client.mayType(id)
+      ? [{ label: "Attach file…", shortcut: desktopPlatform() === "macos" ? keyHint("desktop.attach") : undefined, run: () => void client.attachFiles(id) } as MenuItem]
+      : []),
+    ...sub("Share", share),
     // M61: the people's conversation about this pane.
-    ...threadItems(client, id),
-    "separator",
-    ...restartItems(client, id),
+    ...sub("Thread", threadItems(client, id)),
     "separator",
     ...(info && (info.attention === "needs_input" || info.attention === "done")
       ? [{ label: "Dismiss", run: () => void client.act({ action: "dismiss", pane: id }) } as MenuItem]
       : []),
-    {
-      label: "Shell integration (new shells)",
-      checked: info?.integration ?? true,
-      run: () => client.paneOp(id, { op: "set_integration", on: !(info?.integration ?? true) }),
-    },
-    {
-      label: "Forget history",
-      run: () => client.paneOp(id, { op: "purge" }),
-    },
+    ...sub("Pane settings", [
+      ...restartItems(client, id),
+      "separator",
+      {
+        label: "Shell integration (new shells)",
+        checked: info?.integration ?? true,
+        run: () => client.paneOp(id, { op: "set_integration", on: !(info?.integration ?? true) }),
+      },
+      {
+        label: "Forget history",
+        run: () => client.paneOp(id, { op: "purge" }),
+      },
+    ]),
     closePane,
   ];
 }

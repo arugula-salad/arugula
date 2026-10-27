@@ -33,6 +33,10 @@ export type MenuItem =
    * written rather than in capitals (UI audit #169). `note`: a line under
    * it saying what the items do (UI audit #163). */
   | { header: string; name?: boolean; note?: string }
+  /** A row that opens its items under it, indented, rather than a flyout:
+   * a long menu stays short, and a phone has no hover. The command palette
+   * lists them as if they were in the menu. */
+  | { label: string; submenu: MenuItem[]; id?: string }
   | "separator";
 
 interface OpenMenu {
@@ -115,6 +119,10 @@ export function MenuLayer() {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const [me] = useState(() => ({}));
+  /** The submenu open, by its row's index: one at a time. */
+  const [sub, setSub] = useState<number | null>(null);
+  /** A key opened a submenu: its first item gets the keys once drawn. */
+  const intoSub = useRef(false);
 
   useEffect(() => {
     const fn = () => setTick((t) => t + 1);
@@ -159,7 +167,13 @@ export function MenuLayer() {
       left: Math.max(8, Math.min(current.x, window.innerWidth - r.width - 8)),
       top: Math.max(8, Math.min(current.y, window.innerHeight - r.height - 8)),
     });
-  }, [current, top]);
+  }, [current, top, sub]);
+  useEffect(() => setSub(null), [current]);
+  useEffect(() => {
+    if (sub === null || !intoSub.current) return;
+    intoSub.current = false;
+    ref.current?.querySelector<HTMLElement>(".menu-sub .menu-item:not(:disabled)")?.focus({ preventScroll: true });
+  }, [sub]);
   // From a menu button, the first item has the keys once it's shown.
   useEffect(() => {
     if (!pos || !focusIn.current) return;
@@ -177,11 +191,77 @@ export function MenuLayer() {
       : e.key === "Home" ? 0
       : e.key === "End" ? items.length - 1
       : null;
+    const at = document.activeElement as HTMLElement | null;
+    // → opens a submenu and goes in; ← shuts it and goes back to its row.
+    if (e.key === "ArrowRight" && at?.getAttribute("aria-haspopup")) {
+      e.preventDefault();
+      e.stopPropagation();
+      const n = Number(at.dataset.sub);
+      if (sub === n) at.nextElementSibling?.querySelector<HTMLElement>(".menu-item:not(:disabled)")?.focus();
+      else {
+        intoSub.current = true;
+        setSub(n);
+      }
+      return;
+    }
+    if (e.key === "ArrowLeft" && at?.closest(".menu-sub")) {
+      e.preventDefault();
+      e.stopPropagation();
+      const row = at.closest(".menu-sub")?.previousElementSibling as HTMLElement | null;
+      setSub(null);
+      row?.focus();
+      return;
+    }
     if (to === null) return;
     e.preventDefault();
     e.stopPropagation();
     items[to].focus();
   };
+
+  const renderItem = (item: MenuItem, i: number) =>
+    item === "separator" ? (
+      <div key={i} class="menu-sep" />
+    ) : "header" in item ? (
+      <Fragment key={i}>
+        <div class={item.name ? "menu-header named" : "menu-header"}>{item.header}</div>
+        {item.note && <div class="menu-note">{item.note}</div>}
+      </Fragment>
+    ) : "submenu" in item ? null : (
+      <button
+        key={i}
+        role={item.checked === undefined ? "menuitem" : "menuitemradio"}
+        aria-checked={item.checked}
+        aria-current={item.current || undefined}
+        aria-keyshortcuts={item.shortcut?.replace("Ctrl", "Control")}
+        class={`menu-item${item.danger ? " danger" : ""}${item.faded ? " faded" : ""}`}
+        disabled={item.disabled}
+        title={item.hint}
+        onClick={() => {
+          // Shut for good before the item runs: a dialog it opens finds
+          // no menu left over, and the focus where the menu was opened.
+          closeAndReturn();
+          item.run();
+        }}
+      >
+        {(item.checked ?? item.current) !== undefined && (
+          <span class="menu-check" aria-hidden="true">
+            {item.checked || item.current ? "●" : ""}
+          </span>
+        )}
+        {item.label}
+        {item.detail && (
+          <>
+            {" "}
+            <span class="menu-detail">{item.detail}</span>
+          </>
+        )}
+        {item.shortcut && (
+          <kbd class="menu-key" aria-hidden="true">
+            {item.shortcut}
+          </kbd>
+        )}
+      </button>
+    );
 
   if (!current || !top) return null;
   return (
@@ -198,48 +278,29 @@ export function MenuLayer() {
       onKeyDown={onKey}
     >
       {current.items.map((item, i) =>
-        item === "separator" ? (
-          <div key={i} class="menu-sep" />
-        ) : "header" in item ? (
+        typeof item === "object" && "submenu" in item ? (
           <Fragment key={i}>
-            <div class={item.name ? "menu-header named" : "menu-header"}>{item.header}</div>
-            {item.note && <div class="menu-note">{item.note}</div>}
+            <button
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={sub === i}
+              data-sub={i}
+              class="menu-item menu-parent"
+              onClick={() => setSub(sub === i ? null : i)}
+            >
+              {item.label}
+              <span class="menu-chevron" aria-hidden="true">
+                {sub === i ? "▾" : "▸"}
+              </span>
+            </button>
+            {sub === i && (
+              <div class="menu-sub" role="group" aria-label={item.label}>
+                {item.submenu.map((it, j) => renderItem(it, j))}
+              </div>
+            )}
           </Fragment>
         ) : (
-          <button
-            key={i}
-            role={item.checked === undefined ? "menuitem" : "menuitemradio"}
-            aria-checked={item.checked}
-            aria-current={item.current || undefined}
-            aria-keyshortcuts={item.shortcut?.replace("Ctrl", "Control")}
-            class={`menu-item${item.danger ? " danger" : ""}${item.faded ? " faded" : ""}`}
-            disabled={item.disabled}
-            title={item.hint}
-            onClick={() => {
-              // Shut for good before the item runs: a dialog it opens finds
-              // no menu left over, and the focus where the menu was opened.
-              closeAndReturn();
-              item.run();
-            }}
-          >
-            {(item.checked ?? item.current) !== undefined && (
-              <span class="menu-check" aria-hidden="true">
-                {item.checked || item.current ? "●" : ""}
-              </span>
-            )}
-            {item.label}
-            {item.detail && (
-              <>
-                {" "}
-                <span class="menu-detail">{item.detail}</span>
-              </>
-            )}
-            {item.shortcut && (
-              <kbd class="menu-key" aria-hidden="true">
-                {item.shortcut}
-              </kbd>
-            )}
-          </button>
+          renderItem(item, i)
         ),
       )}
     </div>

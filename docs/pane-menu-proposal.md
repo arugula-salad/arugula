@@ -1,6 +1,6 @@
 # Proposal: a better pane right-click menu
 
-Status: proposal, nothing implemented. Code: `paneItems` in
+Status: implemented (steps 1 to 3; the context-sensitive top and command-mark merge are not). Palette lists submenu rows by their own names, not "Pane › Open beside › …", so command keys and search stay as they were. Submenus open inline (accordion), on touch and mouse alike. Code: `paneItems` in
 `web/src/shell/ui/commands.tsx`, drawn by `web/src/shared/ui/menu.tsx`, opened
 from `web/src/shell/ui/panes/pane-slot.tsx`.
 

@@ -114,7 +114,35 @@ export async function run(page: Page, pane: PaneId, cmd: string, marker: string)
 
 export async function menu(page: Page, target: Locator, item: string) {
   await target.click({ button: "right", position: { x: 60, y: 60 } });
-  await page.getByRole("menuitem", { name: item }).click();
+  await (await menuItem(page, item)).click();
+}
+
+/** A row of the open menu, opening the submenu it is in when it isn't
+ * shown (a pane's menu keeps most actions in Open beside, Share, …). */
+export async function menuItem(page: Page, name: string | RegExp) {
+  const item = page.getByRole("menuitem", { name });
+  await expect(page.getByRole("menu")).toBeVisible();
+  if ((await item.count()) > 0) return item.first();
+  const parents = page.locator(".menu .menu-parent");
+  for (let i = 0; i < (await parents.count()); i++) {
+    await parents.nth(i).click();
+    if ((await item.count()) > 0) return item.first();
+  }
+  return item.first();
+}
+
+/** Every row of the open menu, in its submenus too, trimmed. */
+export async function menuItems(page: Page): Promise<string[]> {
+  await expect(page.getByRole("menu")).toBeVisible();
+  const text = async () => (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
+  const out = await text();
+  const parents = page.locator(".menu .menu-parent");
+  for (let i = 0; i < (await parents.count()); i++) {
+    await parents.nth(i).click();
+    out.push(...(await page.locator(".menu .menu-sub .menu-item").allInnerTexts()).map((s) => s.trim()));
+    await parents.nth(i).click();
+  }
+  return out;
 }
 
 /** Drag with real pointer events, in steps, like a hand would. */

@@ -731,6 +731,26 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   vertical-align: 1px;
 }
 
+/* A submenu's rows, under their parent and indented. */
+.menu-parent {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.menu-chevron {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.menu-sub {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 2px 10px;
+  padding-left: 4px;
+  border-left: 1px solid var(--raised-hover);
+}
+
 .menu-sep {
   height: 1px;
   margin: 4px 6px;

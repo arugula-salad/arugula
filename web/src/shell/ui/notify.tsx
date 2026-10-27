@@ -153,7 +153,7 @@ export function NotifySection({ client, session }: { client: Client; session: nu
       {items.map(
         (item) =>
           typeof item === "object" &&
-          "label" in item && (
+          "run" in item && (
             <button key={item.label} class="sheet-item sheet-toggle" aria-pressed={!!item.checked} onClick={item.run}>
               <span class="sheet-check">{item.checked ? "●" : "○"}</span> {item.label}
             </button>

@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Locator, type Page } from "@playwright/test";
-import { paneEl, panes, reset, text } from "./helpers";
+import { menuItem, paneEl, panes, reset, text } from "./helpers";
 
 const fake = fileURLToPath(new URL("../../crates/daemon/tests/fake_acp.py", import.meta.url));
 const cli = resolve("../target/debug/arugula");
@@ -58,7 +58,7 @@ for (const [name, use] of Object.entries(viewports)) {
         } else {
           const [term] = await panes(page);
           await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
-          await page.getByRole("menuitem", { name: "Start an agent…" }).click();
+          await (await menuItem(page, "Start an agent…")).click();
         }
         const dialog = page.getByRole("dialog", { name: "Start an agent" });
         await expect(dialog).toBeVisible();
