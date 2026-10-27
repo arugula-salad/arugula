@@ -196,6 +196,14 @@ CREATE TABLE IF NOT EXISTS push_prefs (
     account TEXT PRIMARY KEY,
     muted TEXT NOT NULL
 );
+-- An account's small preferences, for every page it signs in to
+-- (`prefs.rs`): each value one short JSON text.
+CREATE TABLE IF NOT EXISTS account_prefs (
+    account TEXT NOT NULL,
+    k TEXT NOT NULL,
+    v TEXT NOT NULL,
+    PRIMARY KEY (account, k)
+);
 CREATE TABLE IF NOT EXISTS usage (
     account TEXT NOT NULL,
     day TEXT NOT NULL,
@@ -2438,6 +2446,37 @@ impl Db {
         Ok(())
     }
 
+    /// An account's prefs (`prefs.rs`), by name: each a JSON text.
+    pub fn prefs(&self, account: &str) -> anyhow::Result<Vec<(String, String)>> {
+        let c = self.c();
+        let mut q = c.prepare("SELECT k, v FROM account_prefs WHERE account = ?1 ORDER BY k")?;
+        let rows = q.query_map(params![account], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Set some of an account's prefs (`None` takes one back), unless that
+    /// leaves it more than `max`: then nothing changes, and false.
+    pub fn set_prefs(&self, account: &str, changes: &[(&str, Option<String>)], max: usize) -> anyhow::Result<bool> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        for (k, v) in changes {
+            match v {
+                Some(v) => tx.execute(
+                    "INSERT OR REPLACE INTO account_prefs (account, k, v) VALUES (?1, ?2, ?3)",
+                    params![account, k, v],
+                )?,
+                None => tx.execute("DELETE FROM account_prefs WHERE account = ?1 AND k = ?2", params![account, k])?,
+            };
+        }
+        let n: i64 =
+            tx.query_row("SELECT COUNT(*) FROM account_prefs WHERE account = ?1", params![account], |r| r.get(0))?;
+        if n as usize > max {
+            return Ok(false);
+        }
+        tx.commit()?;
+        Ok(true)
+    }
+
     pub fn push_sub_account(&self, endpoint: &str) -> anyhow::Result<Option<String>> {
         Ok(self
             .c()
@@ -2597,6 +2636,7 @@ impl Db {
             "DELETE FROM share_answers WHERE account = ?1",
             "DELETE FROM push_subs WHERE account = ?1",
             "DELETE FROM push_prefs WHERE account = ?1",
+            "DELETE FROM account_prefs WHERE account = ?1",
             "DELETE FROM notices WHERE account = ?1",
             "DELETE FROM labs_flags WHERE owner = 'account:' || ?1",
             "DELETE FROM usage WHERE account = ?1",

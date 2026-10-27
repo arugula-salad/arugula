@@ -11,11 +11,13 @@
 // back to the command.
 //
 // #335: agents need Claude Code's (or Codex's) ACP adapter, and Claude Code
-// needs Arugula's MCP server to start its helpers as panes. The Agents
-// step says each adapter's state next to Start an agent, with Install (in
-// a pane) or the npm line when it can't; and "Use Claude Code with
-// Arugula" does both in one click (`POST /api/setup/agents/claude`),
-// then says what changed. Where Claude Code is on the machine and isn't
+// needs Arugula's MCP server to start its helpers as panes, and its hooks
+// (`arugula hooks install`) to put a terminal Claude's questions and
+// permission prompts on cards. The Agents step says each adapter's state
+// next to Start an agent, with Install (in a pane) or the npm line when it
+// can't, and checks the MCP server and the hooks; "Use Claude Code with
+// Arugula" does all three in one click (`POST /api/setup/agents/claude`),
+// then says what changed, naming the settings file. Where Claude Code is on the machine and isn't
 // set up, the first screen offers that click too.
 
 import { opPath } from "../ops";
@@ -72,7 +74,9 @@ interface Setup {
     /** #325: as `/api/host`'s `control_state` (absent: an older daemon). */
     state?: ControlState;
   };
-  claude: { installed: boolean; tools: boolean };
+  /** `hooks`: Arugula's hooks are in Claude Code's settings (`arugula
+   * hooks status`; absent from an older daemon). */
+  claude: { installed: boolean; tools: boolean; hooks?: boolean };
   /** #335: each adapter, with `found` (its agent's CLI is here). Absent
    * from an older daemon. */
   adapters?: Adapter[];
@@ -352,11 +356,12 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
 
 // ---- steps
 
-/** Claude Code works here: its adapter's at the pin and it has the MCP
- * server. (An older daemon doesn't say the adapter's.) */
+/** Claude Code works here: its adapter's at the pin, and it has the MCP
+ * server and the hooks. (An older daemon doesn't say the adapter's or
+ * the hooks'.) */
 function claudeReady(setup: AgentsSetup | null): boolean {
   const a = setup?.adapters?.find((x) => x.kind === "claude");
-  return !!setup?.claude.tools && (!a || adapterReady(a));
+  return !!setup?.claude.tools && setup.claude.hooks !== false && (!a || adapterReady(a));
 }
 
 function Welcome({ name, client, setup, manual, refresh }: { name: string; client: Client | null; setup: AgentsSetup | null; manual: boolean; refresh: () => Promise<void> }) {
@@ -415,8 +420,8 @@ function Welcome({ name, client, setup, manual, refresh }: { name: string; clien
       {offer && (
         <div class="start-offer" data-start-offer>
           <p>
-            <b>Claude Code is on this machine.</b> One click lets it run here as agent panes, and start its helpers as panes you can watch: it installs Claude
-            Code's adapter and adds Arugula's MCP server.
+            <b>Claude Code is on this machine.</b> One click lets it run here as agent panes, start its helpers as panes you can watch, and put its questions
+            on cards: it installs Claude Code's adapter, and adds Arugula's MCP server and hooks.
           </p>
           <UseClaude setup={setup} refresh={refresh} />
         </div>
@@ -730,13 +735,14 @@ function Cloud({
 }
 
 /** #335: "Use Claude Code with Arugula": its adapter (installed, or
- * updated to the pin) and Arugula's MCP server, then what changed. */
+ * updated to the pin), Arugula's MCP server and its hooks, then what
+ * changed. */
 function UseClaude({ setup, refresh }: { setup: AgentsSetup | null; refresh: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const go = async () => {
     setBusy(true);
-    setOutcome(await post(opPath("setup.claude")));
+    setOutcome(await post(opPath("setup.agent", { kind: "claude" })));
     await refresh();
     setBusy(false);
   };
@@ -825,14 +831,15 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
             <h3>Claude Code, with Arugula</h3>
             <p>
               Agent panes run it through its adapter. Arugula's MCP server lets it put builds, servers and its own helpers in panes you can watch and take
-              over, and its questions on cards.
+              over. Its hooks put a terminal Claude's questions and permission prompts on cards, here and on your phone.
             </p>
             {manual ? (
               <>
-                <p class="start-dim">On this machine, both at once:</p>
+                <p class="start-dim">On this machine, all three at once:</p>
                 <CopyText text="arugula setup claude" data-setup-command />
-                <p class="start-dim">Or only the MCP server:</p>
+                <p class="start-dim">Or only the MCP server, or only the hooks:</p>
                 <CopyText text="claude mcp add arugula -- arugula mcp" data-mcp-command />
+                <CopyText text="arugula hooks install" data-hooks-command />
               </>
             ) : (
               <>
@@ -842,6 +849,11 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
                       {cl?.tools ? "Claude Code has Arugula's tools" : cl && !cl.installed ? "Claude Code isn't installed" : "Arugula's MCP server: not added yet"}
                     </span>
                   </Check>
+                  {cl?.hooks !== undefined && (
+                    <Check state={cl.hooks ? "done" : "todo"}>
+                      <span data-start-hooks>{cl.hooks ? "Questions on cards: Claude Code has Arugula's hooks" : "Questions on cards: Arugula's hooks aren't in Claude Code's settings yet"}</span>
+                    </Check>
+                  )}
                 </ul>
                 <UseClaude setup={setup} refresh={refresh} />
               </>

@@ -5,7 +5,7 @@
 import { render } from "preact";
 import type { Client } from "../client";
 import { OPS, opPath } from "../ops";
-import type { OpenRequest, PaneId, Ports } from "../../shared/proto";
+import type { ListeningPort, OpenRequest, PaneId, Ports } from "../../shared/proto";
 import { askText, tellSetup, type PromptChoice } from "../../shared/ui/menu";
 import { BlockFrame, RoutePill } from "./block-frame";
 import { BlockError, BlockLoading, OpenOutside } from "./block-states";
@@ -55,25 +55,29 @@ function shown(s: BrowserState) {
 }
 
 /** The ports listening where the port would open (#150), the pane's own
- * first, as answers to tap. None when the daemon can't say (an older one,
- * through control too): then it's typed. */
-async function listening(client: Client, where: { split?: PaneId; host?: number; local?: boolean }): Promise<PromptChoice[]> {
-  if (where.split === undefined) return [];
+ * first; null when the daemon can't say (an older one, through control too). */
+export async function panePorts(client: Client, where: { split?: PaneId; host?: number; local?: boolean }): Promise<ListeningPort[] | null> {
+  if (where.split === undefined) return null;
   const q = where.host !== undefined ? `?host=${where.host}` : where.local ? "?local=true" : "";
   try {
     const res = await client.request(OPS["pane.ports"].method, opPath("pane.ports", { id: where.split }) + q);
-    if (!res.ok) return [];
-    const { ports } = await res.json<Ports>();
-    return ports.map((p) => ({
-      value: String(p.port),
-      label: `:${p.port}`,
-      hint: [p.process, p.pane ? "this pane" : ""].filter(Boolean).join(" · ") || undefined,
-      title: `port ${p.port}${p.process ? `, ${p.process}` : ""}${p.pane ? ", started from this pane" : ""}`,
-      strong: p.pane,
-    }));
+    if (!res.ok) return null;
+    return (await res.json<Ports>()).ports;
   } catch {
-    return [];
+    return null;
   }
+}
+
+/** The same, as answers to tap. None when the daemon can't say: then it's
+ * typed. */
+async function listening(client: Client, where: { split?: PaneId; host?: number; local?: boolean }): Promise<PromptChoice[]> {
+  return ((await panePorts(client, where)) ?? []).map((p) => ({
+    value: String(p.port),
+    label: `:${p.port}`,
+    hint: [p.process, p.pane ? "this pane" : ""].filter(Boolean).join(" · ") || undefined,
+    title: `port ${p.port}${p.process ? `, ${p.process}` : ""}${p.pane ? ", started from this pane" : ""}`,
+    strong: p.pane,
+  }));
 }
 
 /**
@@ -90,11 +94,17 @@ export async function openPort(client: Client, where: { split?: PaneId; host?: n
     client.toast(`not a port: ${v}`);
     return;
   }
+  openPortAt(client, where, Number(m[1]), m[2] ?? "/");
+}
+
+/** Open `port` beside `split`, asking nothing (a hint's Open beside). */
+export function openPortAt(client: Client, where: { split?: PaneId; host?: number; local?: boolean }, port: number, path = "/") {
+  if (!client.showsBlocks()) return blocksOff("port");
   void client.api(
     "/api/blocks",
     {
       type: "browser",
-      config: { port: Number(m[1]), path: m[2] ?? "/" },
+      config: { port, path },
       split: where.split ?? null,
       host: where.host ?? null,
       local: !!where.local,
