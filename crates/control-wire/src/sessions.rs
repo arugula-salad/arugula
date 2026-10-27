@@ -36,6 +36,14 @@
 //! and **Move to…** sends a queued or done session to another of them:
 //! its next turn starts there from the thread.
 //!
+//! **What its agent said** (Arugula #215). A turn's answer and a review
+//! are the session's own messages in its thread: no author, `via`
+//! `said:<ses>` ([`said_via`]), drawn with the session's look (its short
+//! id, its harness, a link to its page), apart from people's. They're
+//! nobody's words: never a prompt, never a mention, never the asker's.
+//! A turn someone typed in the session's block itself gets the platform's
+//! line in the thread, saying who asked what there.
+//!
 //! **Asks** (Arugula #214). What still needs the asker is a message in the
 //! thread, also sent to the channel, that mentions them, so it's an unread
 //! mention and a push, until it's answered: `via` `ask:repo` for which
@@ -128,6 +136,20 @@ pub fn card_via(ses: &str) -> String {
 /// The session a message's `via` is the card of, if it's one.
 pub fn card_of(via: &str) -> Option<&str> {
     via.strip_prefix(CARD_VIA).filter(|s| s.starts_with("ses_"))
+}
+
+/// What a session's own message (its agent's answer, a review) has for
+/// `via`, before the session's id (Arugula #215).
+pub const SAID_VIA: &str = "said:";
+
+/// The `via` of a message session `ses`'s agent said.
+pub fn said_via(ses: &str) -> String {
+    format!("{SAID_VIA}{ses}")
+}
+
+/// The session whose agent said a message, by its `via`, if it's one.
+pub fn said_of(via: &str) -> Option<&str> {
+    via.strip_prefix(SAID_VIA).filter(|s| s.starts_with("ses_"))
 }
 
 /// A session as its card shows it.
@@ -539,6 +561,17 @@ mod tests {
         assert_eq!(card_of("session:ses_ab"), Some("ses_ab"));
         for not in ["system", "hud box", "session:", "session:run_1"] {
             assert_eq!(card_of(not), None, "{not}");
+        }
+    }
+
+    #[test]
+    fn what_a_session_said_names_it_apart_from_its_card() {
+        assert_eq!(said_via("ses_ab"), "said:ses_ab");
+        assert_eq!(said_of("said:ses_ab"), Some("ses_ab"));
+        assert_eq!(card_of(&said_via("ses_ab")), None, "not its card");
+        assert_eq!(said_of(&card_via("ses_ab")), None);
+        for not in ["system", "said:", "said:run_1", "ask:ses_ab"] {
+            assert_eq!(said_of(not), None, "{not}");
         }
     }
 

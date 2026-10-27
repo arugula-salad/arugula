@@ -251,6 +251,7 @@ pub struct Elicit {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct TurnStat {
+    /// Its prompt's first [`TURN_PROMPT_SHOWN`] characters, or [`WOKEN`].
     pub prompt: String,
     pub started_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -965,7 +966,7 @@ impl Inner {
                         self.interrupted = false;
                         self.cut = false;
                         self.turns.push(TurnStat {
-                            prompt: text.chars().take(120).collect(),
+                            prompt: text.chars().take(TURN_PROMPT_SHOWN).collect(),
                             started_ms: at,
                             cost_base: self.cost,
                             run: self.carry_run.take(),
@@ -2352,7 +2353,12 @@ fn publish(ctx: &AgentCtx, inner: &Arc<Mutex<Inner>>, first: bool) {
 }
 
 /// A turn the agent took by itself, woken by a background task (#700).
-const WOKEN: &str = "(woken by a background task)";
+pub(crate) const WOKEN: &str = "(woken by a background task)";
+
+/// How much of each turn's prompt the block's state keeps: as much as a
+/// hosted session says in its thread of one typed in its block (Arugula
+/// #215).
+pub(crate) const TURN_PROMPT_SHOWN: usize = arugula_control_wire::work::TYPED_MAX;
 
 /// Why a block whose turn the daemon's restart cut off needs you (#680).
 const CUT_OFF: &str = "the daemon restarted and cut its turn off";

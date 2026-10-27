@@ -325,6 +325,10 @@ pub const HARNESSES: &[&str] = &["claude", "codex"];
 /// The most of the agent's reply a turn's report carries, in bytes.
 pub const REPLY_MAX: usize = 10 * 1024;
 
+/// The most characters of a prompt typed in a session's block that its
+/// turn's start carries ([`SessionDetail::typed`]).
+pub const TYPED_MAX: usize = 300;
+
 /// The most a session report's detail (its JSON) may hold, in bytes: the
 /// platform refuses a longer one.
 pub const SESSION_DETAIL_MAX: usize = 16 * 1024;
@@ -490,6 +494,12 @@ pub struct SessionDetail {
     /// An `in_block` turn's: who typed its prompt, when the block says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<String>,
+    /// An `in_block` turn's: the start of the prompt typed there, at most
+    /// [`TYPED_MAX`] characters; none when the agent woke itself. The
+    /// platform says it in the session's thread, as its own line (Arugula
+    /// #215), and it's never a prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub typed: Option<String>,
     /// The agent block the session runs in, on taking it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block: Option<String>,

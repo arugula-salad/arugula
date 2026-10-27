@@ -27,8 +27,10 @@
 //!   which-repo questions (`chat::sessions::answers`): they were for the
 //!   platform, and the agent read one as a stray message. `<role>` is the author's in the project now (`owner`,
 //!   `editor`, `viewer`, `left` once they're out of it), `agent` for a
-//!   machine's agent's message (`<owner>'s agent`), and `via <product>` for
-//!   one a product posted for its author. A message quoting a pane's lines
+//!   machine's agent's message (`<owner>'s agent`) and for what a
+//!   session's agent said in the thread (`agent session <id>`: an answer,
+//!   a review), and `via <product>` for one a product posted for its
+//!   author. A message quoting a pane's lines
 //!   has them after it, each line `> `.
 //! - **Linked** resolves every link in those messages that names one of
 //!   our objects (an issue, a run, a deploy, a workspace, a session) or a
@@ -277,6 +279,14 @@ fn role_word(r: Option<TeamRole>) -> String {
     }
 }
 
+/// Who said `m`, when a session's agent did (its answer, a review: no
+/// author, `via` `said:<ses>`, Arugula #215), as a record names it:
+/// "agent session <8 of its hex>". Never a person: it isn't its asker's.
+pub fn said_by(m: &Message) -> Option<String> {
+    let ses = arugula_control_wire::sessions::said_of(m.via.as_deref()?).filter(|_| m.author.is_empty())?;
+    Some(format!("agent session {}", ses.trim_start_matches("ses_").chars().take(8).collect::<String>()))
+}
+
 /// The thread's messages, oldest first: the one it hangs off and its
 /// replies, or (`parent_seq` 0) an object thread's list.
 pub fn messages(app: &Platform, room: &Room, parent_seq: u64) -> Result<Vec<Message>> {
@@ -369,9 +379,11 @@ pub async fn first_prompt(
     // The platform's which-box and which-repo questions (its lines, with no
     // author) and the asker's answers to them were for the platform.
     let answers = crate::chat::sessions::answers(app, project, asker, &ms)?;
-    let ms: Vec<Message> =
-        ms.into_iter().filter(|m| m.deleted.is_none() && !m.author.is_empty() && !answers.contains(&m.seq)).collect();
-    let mut people: Vec<String> = ms.iter().map(|m| m.author.clone()).collect();
+    let ms: Vec<Message> = ms
+        .into_iter()
+        .filter(|m| m.deleted.is_none() && (!m.author.is_empty() || said_by(m).is_some()) && !answers.contains(&m.seq))
+        .collect();
+    let mut people: Vec<String> = ms.iter().map(|m| m.author.clone()).filter(|a| !a.is_empty()).collect();
     people.push(asker.to_owned());
     people.sort();
     people.dedup();
@@ -389,10 +401,11 @@ pub async fn first_prompt(
     let said = ms
         .iter()
         .map(|m| {
-            let (author, role) = match (&m.agent, &m.via) {
-                (Some(_), _) => (format!("{}'s agent", name(&m.author)), "agent".to_owned()),
-                (None, Some(v)) => (name(&m.author), format!("via {v}")),
-                (None, None) => (name(&m.author), roles.get(&m.author).cloned().unwrap_or_else(|| "left".into())),
+            let (author, role) = match (said_by(m), &m.agent, &m.via) {
+                (Some(said), _, _) => (said, "agent".to_owned()),
+                (None, Some(_), _) => (format!("{}'s agent", name(&m.author)), "agent".to_owned()),
+                (None, None, Some(v)) => (name(&m.author), format!("via {v}")),
+                (None, None, None) => (name(&m.author), roles.get(&m.author).cloned().unwrap_or_else(|| "left".into())),
             };
             Said { author, role, text: m.text.clone(), quote: m.quote.clone() }
         })

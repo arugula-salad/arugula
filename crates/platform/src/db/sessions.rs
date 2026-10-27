@@ -77,7 +77,9 @@
 //!   read-only, that ends once its review is posted.
 
 use anyhow::{Context as _, Result, bail};
-pub use arugula_control_wire::work::{MAX_SESSIONS_PER_BOX, SessionAction, SessionDetail, SessionPrompt, SessionWork};
+pub use arugula_control_wire::work::{
+    MAX_SESSIONS_PER_BOX, SessionAction, SessionDetail, SessionPrompt, SessionWork, TYPED_MAX,
+};
 pub use arugula_e2e::session::{Kind, QUIET_MS, State};
 
 use super::{
@@ -892,6 +894,9 @@ fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport) -> Result<Result<Ve
             // Open button) names no prompts: a done session's next only.
             if d.in_block && (from != State::Done || to != State::Working || !d.prompts.is_empty()) {
                 return refuse("only a done session's next turn starts in its block, naming no prompts");
+            }
+            if d.typed.as_deref().is_some_and(|t| !d.in_block || t.chars().count() > TYPED_MAX) {
+                return refuse("only a turn started in its block says what was typed, at most 300 characters");
             }
             match to {
                 State::Working => {
