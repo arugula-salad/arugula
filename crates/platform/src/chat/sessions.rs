@@ -77,7 +77,7 @@ use crate::{
         Taken,
         chat::{Message, NewMessage, Room},
         hosted::HostedWorkspace,
-        sessions::{NewPrompt, NewSession, Source, create_session_in, dispatch, issue_slug, slug},
+        sessions::{NewPrompt, NewSession, Source, create_session_in, dispatch, issue_slug, set_model_in, slug},
     },
     sessions::{asks, hydrate, pool},
     triggers::{Cannot, may_start},
@@ -343,7 +343,9 @@ async fn waiting_ask(app: &Platform, room: &Room, thread: u64, before: i64) -> R
 }
 
 /// Whether `m` is its author's own words: not their agent's, nor a
-/// product's for them (a session's answer is its asker's, `via` it).
+/// product's for them. A session's answer is neither: it has no author
+/// (`via` `said:<ses>`, Arugula #215), or before that was its asker's
+/// `via` the session.
 fn own(m: &Message) -> bool {
     m.agent.is_none() && m.via.is_none()
 }
@@ -554,6 +556,8 @@ async fn launch(
         let tx = c.immediate()?;
         match create_session_in(&tx, &new, now) {
             Ok(Some((s, _))) => {
+                // The model its ask named, if it did (Arugula #215).
+                set_model_in(&tx, &s.id, crate::sessions::model::asked_in(&ask))?;
                 dispatch(&tx, &s.id, now)?;
                 tx.commit()?;
                 Some(s)

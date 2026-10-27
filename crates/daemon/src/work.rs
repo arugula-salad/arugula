@@ -73,7 +73,10 @@ use std::{
 
 use arugula_control_wire::{
     run_logs::ARTIFACTS_ENV,
-    work::{Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkItem, WorkQuery},
+    work::{
+        Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkItem, WorkQuery,
+        session_users_take,
+    },
 };
 use arugula_e2e::{
     now_ms,
@@ -660,6 +663,13 @@ pub fn firewall(state: &Path, users: &[String]) -> Result<(), Refused> {
     info!(?users, "hosted: runs and sessions can't reach the daemon's or the provider's ports");
     *done = true;
     Ok(())
+}
+
+/// Whether the firewall keeps runs and sessions off loopback port `port`
+/// whatever the daemon's own are: the privileged ones and the provider's.
+pub fn fenced_port(port: u16) -> bool {
+    let (a, b) = PROVIDER_PORTS.split_once(':').unwrap_or((PROVIDER_PORTS, PROVIDER_PORTS));
+    port <= 1023 || (a.parse::<u16>().is_ok_and(|a| a <= port) && b.parse::<u16>().is_ok_and(|b| port <= b))
 }
 
 /// Everyone [`firewall`] keeps off: the run user, and the template's
@@ -1252,14 +1262,16 @@ pub fn start(app: Arc<App>) {
             if me(&app).is_some() && !builder {
                 // Only a deploy's own box (M219) takes deploys; a box with
                 // session users takes sessions (M255).
-                let takes: &[&str] = if deploy::deploy_box(&app) {
-                    &[TAKES_RUN, TAKES_DEPLOY]
-                } else if sessions::takes() {
-                    &[TAKES_RUN, TAKES_SESSION]
+                // With how many session users it has (Arugula #215): the
+                // most sessions control has it hold.
+                let takes: Vec<String> = if deploy::deploy_box(&app) {
+                    vec![TAKES_RUN.into(), TAKES_DEPLOY.into()]
+                } else if let Some(s) = sessions::slots() {
+                    vec![TAKES_RUN.into(), TAKES_SESSION.into(), session_users_take(s.users.len())]
                 } else {
-                    &[TAKES_RUN]
+                    vec![TAKES_RUN.into()]
                 };
-                match app.control.get_signed::<Work>(&WorkQuery::path(takes)).await {
+                match app.control.get_signed::<Work>(&WorkQuery::path(&takes)).await {
                     Ok(w) => {
                         // The project's revokes come with every pull: kept,
                         // then checked against the runs going.

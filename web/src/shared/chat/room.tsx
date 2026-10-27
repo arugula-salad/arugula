@@ -41,7 +41,7 @@ import { useChatShown } from "./shown";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 import { ReplyTag, setThreadNav, ThreadFooter } from "./thread-ui";
 import { AskMessage, askOfMessage } from "./ask-card";
-import { answerVia, SessionCardMessage, sessionOf } from "./session-card";
+import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf } from "./session-card";
 import { dmLabel } from "./members";
 import { useStickToBottom } from "./stick";
 import { BookmarkIcon } from "./icons";
@@ -580,17 +580,25 @@ export function RoomMessage({
       </div>
     );
   }
+  // Arugula #215: what an agent session said (its answer, a review), drawn
+  // as the session's, apart from people's.
+  const said = saidOf(m);
   return (
     <div
-      class={`thread-msg${head ? " first" : ""}${mine ? " mine" : ""}${forMe ? " for-me" : ""}${m.agent ? " by-agent" : ""}`}
+      class={`thread-msg${head ? " first" : ""}${mine ? " mine" : ""}${forMe ? " for-me" : ""}${m.agent ? " by-agent" : ""}${said ? " by-session" : ""}`}
       data-msg={m.seq}
       data-author={m.author}
       data-agent={m.agent?.machine}
+      data-said={said ?? undefined}
       {...longPress(() => setPanel("sheet"))}
     >
       <div class="msg-gutter">
         {head ? (
-          <AuthorAvatar m={m} />
+          said ? (
+            <SaidAvatar ses={said} />
+          ) : (
+            <AuthorAvatar m={m} />
+          )
         ) : (
           <time class="msg-hover-time" title={new Date(m.at).toLocaleString()}>
             {whenShort(m.at)}
@@ -606,7 +614,7 @@ export function RoomMessage({
       <div class="msg-body">
         {head && (
           <div class="thread-head">
-            <span class="thread-name">{name}</span>
+            {said ? <SaidHead ses={said} project={room.project} /> : <span class="thread-name">{name}</span>}
             {m.agent && (
               <span class="msg-badge agent-badge" title={`Written by an agent on ${m.agent.machine_name || "a machine"}, through its owner's grant`}>
                 agent
@@ -617,7 +625,7 @@ export function RoomMessage({
                 imported
               </span>
             )}
-            {m.via && (
+            {m.via && !said && (
               <span
                 class="msg-badge via-badge"
                 title={answerVia(m, name)?.title ?? `Posted for ${name} by ${m.via}, where they wrote it`}

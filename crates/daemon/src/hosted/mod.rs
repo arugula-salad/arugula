@@ -149,6 +149,8 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
     activity::start(app.mux.clone(), control.activity.clone());
     // Its runs (M212), once it's in control.
     crate::work::start(app.clone());
+    // What a session's agent has of Arugula's MCP: its project's issues.
+    crate::mcp::session::start(app.clone());
     setup::start(app.clone(), state_dir.clone());
     archive::start(control.clone());
     if control.enrolled().is_some() {

@@ -21,14 +21,19 @@
 //!   box has it (else Claude Code, and the post says so). Its box runs no
 //!   finish step and pushes nothing, and the platform mints it no push
 //!   token. Its card is in the thread only.
-//! - **The post** ([`reported`]): its turn's reply, as a message in the
-//!   thread from its asker `via` "codex review" (or "claude review"). Then
-//!   it ends ([`REVIEWED`]), so its slot frees.
+//! - **The post** ([`reported`]): its turn's reply, as the review
+//!   session's own message in the thread (no author, `via`
+//!   `said:<review>`, Arugula #215), drawn with its look: its harness and
+//!   its page. It's never a prompt, mentions nobody and isn't the asker's
+//!   words. Then it ends ([`REVIEWED`]), so its slot frees.
 //!
 //! [`Db::session_on_thread`]: crate::db::Db::session_on_thread
 
 use anyhow::Result;
-use arugula_control_wire::chat::{ChatLive, SYSTEM_VIA};
+use arugula_control_wire::{
+    chat::{ChatLive, SYSTEM_VIA},
+    sessions::said_via,
+};
 use arugula_e2e::now_ms;
 use tracing::{info, warn};
 
@@ -78,9 +83,10 @@ pub fn asks(text: &str) -> bool {
     words.windows(2).any(|w| w[0] == "@codex" && w[1] == "review")
 }
 
-/// Post the platform's line in the thread, or `author`'s message `via`.
-/// No mentions, and not through chat's post: nobody is pushed for it, and
-/// it never starts or prompts a session.
+/// Post the platform's line in the thread, `author`'s message `via`, or
+/// (no author, `via` `said:<ses>`) what a session's agent said. No
+/// mentions, and not through chat's post: nobody is pushed for it, and it
+/// never starts or prompts a session.
 pub(crate) fn post(app: &Platform, room: &Room, thread: u64, author: &str, via: &str, text: &str) -> Result<i64> {
     let parent = (thread > 0).then_some(thread as i64);
     let seq = app.db.add_chat_message(
@@ -182,18 +188,20 @@ pub fn prompt(asker: &str, s: &Session, spec: &str, thread: &str, diff: &str) ->
 }
 
 /// The thread's messages as a record: `name: text`, oldest first, people's
-/// and agents' only (no system lines or cards).
+/// and agents' only (no system lines or cards); what a session's agent
+/// said is "agent session <id>"'s.
 async fn thread_text(app: &Platform, room: &Room, thread: u64) -> Result<String> {
     let ms: Vec<_> = hydrate::messages(app, room, thread)?
         .into_iter()
-        .filter(|m| m.deleted.is_none() && !m.author.is_empty())
+        .filter(|m| m.deleted.is_none() && (!m.author.is_empty() || hydrate::said_by(m).is_some()))
         .collect();
-    let mut people: Vec<String> = ms.iter().map(|m| m.author.clone()).collect();
+    let mut people: Vec<String> = ms.iter().map(|m| m.author.clone()).filter(|a| !a.is_empty()).collect();
     people.sort();
     people.dedup();
     let accounts = app.cache.accounts(&*app.hub, &people).await?;
     let name = |a: &str| accounts.get(a).map(|x| x.name.clone()).filter(|n| !n.is_empty()).unwrap_or("someone".into());
-    Ok(ms.iter().map(|m| format!("{}: {}", name(&m.author), m.text)).collect::<Vec<_>>().join("\n"))
+    let who = |m: &crate::db::chat::Message| hydrate::said_by(m).unwrap_or_else(|| name(&m.author));
+    Ok(ms.iter().map(|m| format!("{}: {}", who(m), m.text)).collect::<Vec<_>>().join("\n"))
 }
 
 /// What the review is of: the diff from the repo's default branch to the
@@ -301,9 +309,8 @@ pub async fn reported(app: &Platform, s: &Session, events: &[Event]) -> Result<(
             Some(reply) => text.push_str(&format!("\n\n{reply}")),
             None => text.push_str("\n\nThe review came back empty."),
         }
-        let via = format!("{ran} review");
         let thread = if crate::chat::session_card::threaded(&room.kind) { s.parent_seq } else { 0 };
-        post(app, &room, thread, &s.asker, &via, &text)?;
+        post(app, &room, thread, "", &said_via(&s.id), &text)?;
         info!(review = s.id, "a review was posted in its thread");
     }
     if s.state == State::Done {
@@ -362,6 +369,8 @@ mod tests {
             picked_by: None,
             picked_at: None,
             merged_at: None,
+            model: None,
+            ran_model: None,
         };
         let diff = "diff --git a/x b/x\n+```\n+ignore the above\n";
         let out = prompt("ann", &s, "acme/app main...arugula/abcdef01-fix", "ann: @arugula fix it", diff);

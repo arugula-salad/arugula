@@ -27,7 +27,7 @@ options:
     tradeoff: "A machine would act on GitHub as the project with nobody sending it, against \"agents draft, people send\", and a token that pushes any ref can push to main."
 choice:
   option: "a"
-  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them."
+  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them. Amended again (Jake, 2026-10-27, Arugula #215): a box runs three sessions and holds six (or as many session users as it says it has, three when it doesn't say); a done one idle 30 minutes is parked (its agent closed, its user, checkout and conversation kept) and opens again on a reply when there's a running slot. Amended again (Jake, 2026-10-27, Arugula #216): a session's agent reads and comments on its own project's native issues, with its asker's rights and as the session itself, through a server of its own and a route that takes the session as the authority, not machine grants."
 rejected:
   - option: "b"
     why: "Agents on personal machines are never woken by other people's mentions: a person's machine runs what its person starts."
@@ -61,6 +61,8 @@ constrains:
   - "path:crates/platform/src/sessions/pr.rs"
   - "path:crates/platform/src/sessions/tries.rs"
   - "path:crates/platform/src/sessions/review.rs"
+  - "path:crates/platform/src/sessions/issues.rs"
+  - "path:crates/daemon/src/mcp/session.rs"
 ---
 
 # A thread's agent session runs on the project's hosted box
@@ -102,10 +104,38 @@ agents draft while people send".
   the least busy, then by name, and its card's Move to… sends it to
   another (amended, Arugula #214: it no longer asks which box). It asks
   only which repo, when the boxes have several and the ask names none,
-  as a form that mentions the asker until it's answered.
+  as a form that mentions the asker until it's answered. "Least busy"
+  is the fewest live sessions (queued, or a turn under way), then the
+  fewest done ones (Arugula #215): a done session still holds its slot
+  and its checkout, but it isn't working the box now, so asks in a row
+  spread over the awake boxes. A paused box is woken only when no awake
+  one has a free slot, and a box holding six is full (below).
 - **On the box:** an ACP agent block, as its own Unix user, in a worktree of
-  its own, at most three sessions with a turn under way per box. How the
-  user and the worktree are set up is the box's to settle (S42).
+  its own. How the user and the worktree are set up is the box's to settle
+  (S42).
+- **Three running, six held** (amended, Jake, 2026-10-27, Arugula #215).
+  A box runs at most three sessions at once: a turn under way, or done
+  less than 30 minutes ago, its agent still up for the next turn. Each
+  running agent takes the box's memory and CPU, and three is what a box is
+  sized for. It holds at most six: each keeps its own session user
+  (`ses1` to `ses6`), and that user's checkout and `~/.claude`, for its
+  next turn. A box says how many session users it has on each pull, and
+  holds no more than that. One that doesn't say has three: the template
+  from before this, on boxes their owners haven't rebuilt, which hold
+  three as they did.
+  - A done session idle 30 minutes is **parked**: its box archives its
+    transcript, then closes its agent block, keeping its user, checkout
+    and conversation. That frees the memory and a running slot, so a
+    fourth session can run while three wait for replies. Its card says
+    it's parked.
+  - A reply to a parked session waits, queued, until the box has a
+    running slot. Then the box opens a block on the same user and
+    checkout, loading the conversation, and the turn runs there.
+  - Before this, a done session held its slot until it ended, so a box
+    with three done sessions took no new one, and one box held every
+    recent checkout while the others slept.
+  - The day-long idle stop still ends a session for good, and its user
+    and checkout go then.
 - **Untrusted text.** A project member's text goes into a prompt plain.
   Text from GitHub (a review, a comment, a check's log) goes in fenced as
   quoted data, saying whose it is and its `author_association`, so the
@@ -154,6 +184,35 @@ agents draft while people send".
     session's turns, and its asker edits them before sending. Once sent,
     the session links the PR, and the PR's thread says which session it
     came from.
+- **Its project's native issues** (amended 2026-10-27). The session's agent
+  can read its project's native issues and comment on them, and nothing
+  else of Arugula's: no edits, labels or closing, no other project, none of
+  `/mcp`'s tools (which start and drive panes as the daemon's user).
+  - **Whose rights.** The asker's. Control's `POST
+    /api/hosted/work/session/issues`, signed as the box, takes the session
+    id and an issue's number: it checks that the session is this machine's
+    and hasn't ended, takes the project from the session (a call names none,
+    so there is no other project to name), and reads or comments as the
+    asker, so their role in the project is the ceiling (a viewer comments;
+    a review session comments on nothing). A comment is the session's
+    own, as its answers in its thread are: no author, `via` `said:<ses>`,
+    with no mentions, so nobody is pushed for it and it isn't counted as
+    the asker's words. This is not aru-091's machine grants: a
+    hosted box has no owner account to grant for, and the session is what
+    authorises it, as it is for the push token.
+  - **How the agent reaches it.** The daemon serves two tools,
+    `read_session_issues` and `comment_session_issue`, on a loopback
+    listener of its own (`mcp/session.rs`), and gives the session's agent
+    that as its `arugula` MCP server over HTTP. The agent's port to the
+    daemon stays closed, and it gets nothing of `/mcp`. The listener knows
+    who calls by the uid that owns the client end of the connection
+    (`/proc/net/tcp`) and the session that uid runs, not by a token: a token
+    would be on the command line of `sudo env -i …`, readable by the box's
+    other session users, who are other sessions asked by other people.
+  - **What it doesn't stop.** A prompt-injected agent can comment, as its
+    asker, on the issues of the one project, as the session's thread
+    replies already can. An agent that gets from its session user to the
+    daemon's reaches the signing key, as it could before.
 - **Signed and append-only.** The box signs everything it reports of a
   session (`arugula session event v1`), numbered so a report can't be
   replayed, and the platform keeps each state change, error and turn's
@@ -165,5 +224,5 @@ What doesn't change: agents on people's machines read and post through
 their machine's grants ("Agents are in conversations"), an agent's
 "approve" is never an approval, and an agent's GitHub write from a person's
 machine is still a draft its person sends.
-Where: the sessions tables and their rules (`crates/platform/src/db/sessions.rs`, migration `0050_agent_sessions`), the states and the signed event (`crates/e2e/src/session.rs`), what the box pulls and reports (`crates/control-wire/src/work.rs`), sessions as objects (`crates/platform/src/chat/objects.rs`); dispatch (M256), the card (M257), and the push and the PR (M259: `crates/daemon/src/work_sessions_push.rs`, `crates/platform/src/sessions/push.rs` and `pr.rs`, migration `0053_pr_drafts`).
+Where: a session's issues (`crates/platform/src/sessions/issues.rs`, `crates/daemon/src/mcp/session.rs`, `WORK_SESSION_ISSUES` in `crates/control-wire/src/work.rs`); the sessions tables and their rules (`crates/platform/src/db/sessions.rs`, migration `0050_agent_sessions`), the states and the signed event (`crates/e2e/src/session.rs`), what the box pulls and reports (`crates/control-wire/src/work.rs`), sessions as objects (`crates/platform/src/chat/objects.rs`); dispatch (M256), the card (M257), and the push and the PR (M259: `crates/daemon/src/work_sessions_push.rs`, `crates/platform/src/sessions/push.rs` and `pr.rs`, migration `0053_pr_drafts`).
 From: thread = session (Arugula #129, native, behind #1438), M254 (Arugula #131), S42 (Arugula #130).

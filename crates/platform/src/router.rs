@@ -263,6 +263,11 @@ fn routes() -> Routes {
         .route(arugula_control_wire::sessions::SESSION_TRY, post(crate::sessions::tries::start))
         .route(arugula_control_wire::sessions::SESSION_PICK, post(crate::sessions::tries::pick))
         .route(arugula_control_wire::sessions::PROJECT_SESSION_STATS, get(crate::sessions::merged::stats))
+        // Which model its agents use (Arugula #215).
+        .route(
+            arugula_control_wire::sessions::PROJECT_SESSION_SETTINGS,
+            get(crate::sessions::model::show).put(crate::sessions::model::set),
+        )
         .route(arugula_control_wire::sessions::ISSUE_AGENT, post(crate::chat::sessions::issue_agent))
         .route(arugula_control_wire::sessions::SESSION_MOVE, post(crate::sessions::moves::route))
         .route(

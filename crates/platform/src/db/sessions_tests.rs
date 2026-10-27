@@ -436,40 +436,131 @@ fn a_quiet_box_is_unresponsive_until_heard_from() {
     assert_eq!(after.heard_at, Some(heard + 3 * QUIET_MS + 1));
 }
 
-/// A box holds at most three sessions: a fourth's take is refused, and
-/// the pull doesn't offer it. A done session keeps its slot (its checkout,
-/// for its next turn), so three done ones still leave no room; one ending
-/// makes it.
+/// A box runs at most three sessions and holds at most six (Arugula
+/// #215): a fourth's take is refused, and the pull doesn't offer it. A
+/// done session keeps its running slot for [`SESSION_PARK_MS`] (its agent
+/// is up for its next turn), so three just done leave no room; past that
+/// they're parked, and the fourth runs while they keep their checkouts.
 #[test]
-fn a_box_holds_three_sessions_at_once() {
+fn a_box_runs_three_sessions_and_parks_done_ones() {
     let db = Db::test();
     let b = Machine::new();
     seed(&db, Some(&b.id));
+    // A box from this template: six session users.
+    db.set_session_users("hw_1", Some(6)).unwrap();
     for thread in 1..=3 {
         session_in(&db, &b, State::Working, thread);
     }
     let fourth = create(&db, 4);
-    assert_eq!(db.session_work("hw_1").unwrap().len(), 3, "the queued one waits");
+    let ids = |w: Vec<SessionWork>| w.into_iter().map(|w| w.session).collect::<Vec<_>>();
+    assert_eq!(db.session_work_at("hw_1", T0 + 20).unwrap().len(), 3, "the queued one waits");
     assert_eq!(b.report(&db, &fourth.id, State::Working, T0 + 20).unwrap_err(), Refused::Busy);
-    // All three finishing their turns makes no room: done ones keep theirs.
-    let held: Vec<String> = db.session_work("hw_1").unwrap().into_iter().map(|w| w.session).collect();
+    // All three finishing their turns makes no room yet: their agents are
+    // up, for their next turns.
+    let held: Vec<String> = ids(db.session_work_at("hw_1", T0 + 20).unwrap());
     for (i, id) in held.iter().enumerate() {
         b.report(&db, id, State::Done, T0 + 21 + i as u64).unwrap();
     }
-    assert_eq!(db.session_work("hw_1").unwrap().len(), 3, "not offered while three are done");
-    assert_eq!(b.report(&db, &fourth.id, State::Working, T0 + 24).unwrap_err(), Refused::Busy);
-    // A done one's next turn is in its own slot.
-    db.queue_prompt(&held[0], &member("one more thing"), T0 + 25).unwrap().unwrap();
-    b.report(&db, &held[0], State::Working, T0 + 26).unwrap();
-    b.report(&db, &held[0], State::Done, T0 + 27).unwrap();
-    // One ending makes room.
-    control(&db, &held[1], State::Done, State::Stopped, T0 + 28).unwrap();
-    let work = db.session_work("hw_1").unwrap();
-    assert_eq!(work.len(), 3);
-    let queued = work.iter().find(|w| w.session == fourth.id).unwrap();
-    assert_eq!((queued.state.as_str(), queued.n, queued.prompts.len()), ("queued", 0, 1));
+    let soon = T0 + 30;
+    assert_eq!(db.session_work_at("hw_1", soon).unwrap().len(), 3, "not offered while three are just done");
+    assert!(db.session_work_at("hw_1", soon).unwrap().iter().all(|w| !w.park), "none parked yet");
+    assert!(!db.box_has_room("hw_1", &fourth.id, soon).unwrap());
+    assert_eq!(b.report(&db, &fourth.id, State::Working, soon).unwrap_err(), Refused::Busy);
+    // A done one's next turn, within the park time, is in its own slot.
+    db.queue_prompt(&held[0], &member("one more thing"), T0 + 31).unwrap().unwrap();
+    b.report(&db, &held[0], State::Working, T0 + 32).unwrap();
+    b.report(&db, &held[0], State::Done, T0 + 33).unwrap();
+    // A minute short of the park time after the last one's end: still
+    // running.
+    let parks = T0 + 33 + SESSION_PARK_MS;
+    assert!(!db.box_has_room("hw_1", &fourth.id, parks - 60_000).unwrap());
+    // Past it, all three are parked: listed so, so the box closes their
+    // agents, and the fourth is offered and runs.
+    let work = db.session_work_at("hw_1", parks).unwrap();
+    assert!(work.iter().filter(|w| held.contains(&w.session)).all(|w| w.park && w.prompts.is_empty()), "{work:?}");
+    let queued = work.iter().find(|w| w.session == fourth.id).expect("the fourth is offered");
+    assert_eq!((queued.state.as_str(), queued.n, queued.prompts.len(), queued.park), ("queued", 0, 1, false));
     assert_eq!(queued.prompts[0].text, "fix the login page");
-    b.report(&db, &fourth.id, State::Working, T0 + 29).unwrap();
+    assert!(parked(&db.session(&held[1]).unwrap().unwrap(), parks));
+    b.report(&db, &fourth.id, State::Working, parks + 1).unwrap();
+    // Two more run beside it: three live, three parked, six held.
+    let (fifth, sixth) = (create(&db, 5), create(&db, 6));
+    assert_eq!(ids(db.session_work_at("hw_1", parks + 2).unwrap()).len(), 6);
+    b.report(&db, &fifth.id, State::Working, parks + 2).unwrap();
+    b.report(&db, &sixth.id, State::Working, parks + 3).unwrap();
+    // Six held is full, whatever runs: a seventh waits.
+    let seventh = create(&db, 7);
+    assert!(!ids(db.session_work_at("hw_1", parks + 4).unwrap()).contains(&seventh.id));
+    assert!(!db.box_has_room("hw_1", &seventh.id, parks + 4).unwrap());
+
+    // A reply to a parked one while three are live waits: listed parked,
+    // without its prompt, and a start the box tried is refused.
+    let reply = db.queue_prompt(&held[1], &member("and the logout page"), parks + 5).unwrap().unwrap();
+    let work = db.session_work_at("hw_1", parks + 6).unwrap();
+    let h1 = work.iter().find(|w| w.session == held[1]).unwrap();
+    assert!(h1.park && h1.prompts.is_empty(), "it waits for a running slot: {h1:?}");
+    let reopen = json!({ "prompts": [reply.id], "block": "blk_9" }).to_string();
+    let r = b.say(&db, &held[1], Kind::State, Some(State::Working), &reopen, parks + 6);
+    assert_eq!(r.unwrap_err(), Refused::Busy);
+    // One of the three is stopped: the reply goes first, before the
+    // seventh, and its turn runs in the block its box opened again.
+    control(&db, &sixth.id, State::Working, State::Stopped, parks + 7).unwrap();
+    let work = db.session_work_at("hw_1", parks + 8).unwrap();
+    let h1 = work.iter().find(|w| w.session == held[1]).unwrap();
+    assert_eq!((h1.park, h1.prompts.len()), (false, 1), "{h1:?}");
+    assert!(work.iter().all(|w| w.session != seventh.id), "the reply took the slot");
+    let (after, _) = b.say(&db, &held[1], Kind::State, Some(State::Working), &reopen, parks + 8).unwrap();
+    assert_eq!((after.state, after.block.as_deref()), (State::Working, Some("blk_9")));
+    // Still parked: the other two; and the seventh still waits, for both.
+    let work = db.session_work_at("hw_1", parks + 9).unwrap();
+    assert_eq!(work.iter().filter(|w| w.park).count(), 2);
+    assert!(work.iter().all(|w| w.session != seventh.id));
+}
+
+/// A box with three session users (Arugula #215: the template from
+/// before, which says nothing on its pull) holds three, parked ones too:
+/// a fourth isn't offered and its take is refused. A reply to one of its
+/// parked sessions still runs, in the user that session holds. Once the
+/// box says it has six, the fourth is offered.
+#[test]
+fn a_box_with_three_users_holds_three() {
+    let db = Db::test();
+    let b = Machine::new();
+    seed(&db, Some(&b.id));
+    assert_eq!(db.session_caps("hw_1").unwrap(), Caps { run: 3, hold: 3 }, "it hasn't said: three");
+    let mut held = vec![];
+    for thread in 1..=3 {
+        let s = session_in(&db, &b, State::Working, thread);
+        b.report(&db, &s.id, State::Done, T0 + 20).unwrap();
+        held.push(s.id);
+    }
+    let fourth = create(&db, 4);
+    let parks = T0 + 20 + SESSION_PARK_MS;
+    let work = db.session_work_at("hw_1", parks).unwrap();
+    assert!(work.iter().all(|w| w.session != fourth.id), "three held: not offered: {work:?}");
+    assert!(work.iter().all(|w| w.park), "all three parked");
+    assert!(!db.box_has_room("hw_1", &fourth.id, parks).unwrap());
+    assert_eq!(b.report(&db, &fourth.id, State::Working, parks).unwrap_err(), Refused::Busy);
+
+    // A reply to a parked one: listed, and its turn runs, in its own user.
+    let reply = db.queue_prompt(&held[0], &member("and the logout page"), parks + 1).unwrap().unwrap();
+    let work = db.session_work_at("hw_1", parks + 2).unwrap();
+    let h0 = work.iter().find(|w| w.session == held[0]).unwrap();
+    assert_eq!((h0.park, h0.prompts.len()), (false, 1), "{h0:?}");
+    let reopen = json!({ "prompts": [reply.id], "block": "blk_9" }).to_string();
+    let (after, _) = b.say(&db, &held[0], Kind::State, Some(State::Working), &reopen, parks + 2).unwrap();
+    assert_eq!(after.state, State::Working);
+    assert!(db.session_work_at("hw_1", parks + 3).unwrap().iter().all(|w| w.session != fourth.id));
+
+    // Rebuilt on this template: six users, and room.
+    db.set_session_users("hw_1", Some(6)).unwrap();
+    assert_eq!(db.session_caps("hw_1").unwrap(), Caps { run: 3, hold: 6 });
+    assert!(db.session_work_at("hw_1", parks + 3).unwrap().iter().any(|w| w.session == fourth.id));
+    // A box with more users than that still holds six.
+    db.set_session_users("hw_1", Some(9)).unwrap();
+    assert_eq!(db.session_caps("hw_1").unwrap(), Caps { run: 3, hold: 6 });
+    // One with two runs two.
+    assert_eq!(Caps::of(Some(2)), Caps { run: 2, hold: 2 });
 }
 
 /// Prompts: queued until a turn takes them or they're taken back; an

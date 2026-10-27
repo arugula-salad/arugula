@@ -132,6 +132,10 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &SessionReport) -> any
             if let Err(e) = crate::sessions::answer::reported(app, &s, &events) {
                 warn!(session = s.id, error = %format!("{e:#}"), "a turn's answer");
             }
+            // A turn typed in its block says so in its thread (Arugula #215).
+            if let Err(e) = crate::sessions::typed::reported(app, &s, &events).await {
+                warn!(session = s.id, error = %format!("{e:#}"), "a turn typed in its block");
+            }
             // What its agent asks now is an ask for its asker (Arugula #214).
             crate::sessions::asks::opened(app, &s, &events).await;
             Ok(Reported::Taken)
@@ -386,6 +390,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         updated_at: s.updated_at,
         heard_at: s.heard_at,
         ended_at: ended.then(|| last_state(s.state).map_or(s.updated_at, |e| e.at)),
+        parked: crate::db::sessions::parked(s, now_ms()),
         last_tool: s.last_tool.clone(),
         last_error: s.last_error.clone(),
         reason,
@@ -406,6 +411,11 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         parent_session: s.parent_session.clone(),
         harness: s.harness.clone(),
         ran: ran_on(&events),
+        model_asked: match &s.model {
+            Some(m) => Some(m.clone()),
+            None => app.db.agents_model(&s.project)?,
+        },
+        model: s.ran_model.clone(),
         tries,
         picked,
         moves: vec![],
@@ -507,7 +517,11 @@ pub async fn act(
             let after = app.db.session(&id)?.ok_or_else(no_session)?;
             app.chat.session(&app.db, &after);
             if kind.answers() {
-                crate::sessions::asks::close_session(&app, &after)?;
+                // Its ask says who answered, and what (Arugula #215).
+                let n = app.cache.accounts(&*app.hub, std::slice::from_ref(&account)).await?;
+                let who = n.get(&account).map(|a| a.name.clone()).unwrap_or_default();
+                let said = crate::sessions::asks::said(kind.as_str(), b.answer.as_ref(), reason);
+                crate::sessions::asks::answered(&app, &after, &who, &said)?;
             }
             Ok(Json(view(&app, &after, true, &account).await?))
         }

@@ -917,6 +917,14 @@ note = "A token for one push of an agent session's branch (M259): the platform m
 
 [[route]]
 method = "POST"
+path = "/api/hosted/work/session/issues"  # wire::work::WORK_SESSION_ISSUES
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "An agent session reading and commenting on its own project's native issues (aru-115): the platform checks the session is the machine's own and live, takes the project from the session, and reads or comments as the session's asker (PlatformPort::hosted_session_issues)."
+
+[[route]]
+method = "POST"
 path = "/api/hosted/work/secrets"  # wire::work::WORK_SECRETS
 process = "hub"
 auth = "hosted"
@@ -2029,6 +2037,22 @@ process = "platform"
 auth = "session"
 clients = ["page"]
 note = "A project's agent sessions in numbers (M265): of those asked for in the last 30 days, how many led to a PR and how many merged, and the median time from the @ to the PR. Any member."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/sessions/settings"  # wire::sessions::PROJECT_SESSION_SETTINGS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Which model a project's agent sessions use (Arugula #215), and the ones they may: None for the strongest. Any member."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/sessions/settings"  # wire::sessions::PROJECT_SESSION_SETTINGS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Choose the model a project's agent sessions use from the next on (Arugula #215), or the strongest again. Owners and editors."
 
 [[route]]
 method = "POST"

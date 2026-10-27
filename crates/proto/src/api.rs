@@ -758,8 +758,10 @@ pub struct Closed {
 /// message as clean text, and the work it left in the block's git repo.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TurnResult {
-    /// The agent's replies after the last prompt, joined: no thoughts, tool
-    /// calls or notes. Cut (and marked) past [`TurnResult::MESSAGE_MAX`].
+    /// The agent's final message of the last turn (its last, by its ACP
+    /// `messageId`, not the turn's earlier ones): no thoughts, tool calls
+    /// or notes. Past [`TurnResult::MESSAGE_MAX`], its start is cut (and
+    /// marked), since its end is the summary.
     pub message: String,
     /// Present when the block's directory is in a git repo.
     #[serde(default, skip_serializing_if = "Option::is_none")]

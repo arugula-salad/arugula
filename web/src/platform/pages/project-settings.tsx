@@ -29,6 +29,7 @@ import { Missing } from "./project";
 import { IssueHomeSetting } from "./issues";
 import { RunGrant } from "../settings/runs";
 import { FinishStep } from "../settings/finish-step";
+import { AgentModel } from "../settings/agent-model";
 import { WorkspaceSize } from "../settings/workspace-size";
 import { Environments } from "../settings/environments";
 import { ProjectAgents } from "../settings/project-agents";
@@ -229,6 +230,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
           <RunGrant project={p.id} />
           <WorkspaceSize p={p} />
           <FinishStep p={p} />
+          <AgentModel p={p} />
           <ProjectAgents p={p} />
           <ClaudeSpend p={p} />
           <ClientApps p={p} />

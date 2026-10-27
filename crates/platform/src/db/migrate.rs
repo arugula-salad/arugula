@@ -458,8 +458,20 @@ const SQLITE: &[Migration] = &[
     },
     Migration {
         version: 61,
+        name: "session_model",
+        sql: include_str!("../../migrations/sqlite/0061_session_model.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 62,
+        name: "session_users",
+        sql: include_str!("../../migrations/sqlite/0062_session_users.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 63,
         name: "board_block_states",
-        sql: include_str!("../../migrations/sqlite/0061_board_block_states.sql"),
+        sql: include_str!("../../migrations/sqlite/0063_board_block_states.sql"),
         additive: true,
     },
 ];
@@ -830,8 +842,20 @@ const POSTGRES: &[Migration] = &[
     },
     Migration {
         version: 61,
+        name: "session_model",
+        sql: include_str!("../../migrations/postgres/0061_session_model.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 62,
+        name: "session_users",
+        sql: include_str!("../../migrations/postgres/0062_session_users.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 63,
         name: "board_block_states",
-        sql: include_str!("../../migrations/postgres/0061_board_block_states.sql"),
+        sql: include_str!("../../migrations/postgres/0063_board_block_states.sql"),
         additive: true,
     },
 ];
