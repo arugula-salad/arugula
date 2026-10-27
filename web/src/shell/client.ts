@@ -8,6 +8,7 @@
 
 import { cleanTitle } from "../shared/titles";
 import { OPS, opPath } from "./ops";
+import { FLAG_ALIASES, type FLAGS } from "../shared/proto.gen";
 import { pickFollowed, WATCH_MS } from "./follow";
 import {
   decodeFrame,
@@ -217,6 +218,9 @@ class E2ELink implements Link {
     this.sock?.close();
   }
 }
+
+/** A Labs flag's name, as this build calls it. */
+export type FlagName = (typeof FLAGS)[number]["name"];
 
 /** The host features that follow `labs`: also off without it. */
 const LABS_FEATURES: Exclude<keyof HostFeatures, "flags">[] = ["vms", "studio"];
@@ -748,8 +752,7 @@ export class Client {
   }
 
   /** Whether this machine has any Labs flag on: something a stranger
-   * doesn't get (chat, studio, VMs, guest ssh, the
-   * swarm's extra views). `flag` says which. Unlike `has`, unknown means no:
+   * doesn't get (chat, studio, VMs, agents, docs). `flag` says which. Unlike `has`, unknown means no:
    * control serves this page to older daemons too, which never say. */
   hasLabs(): boolean {
     return this.features?.labs === true;
@@ -757,11 +760,23 @@ export class Client {
 
   /** Whether the Labs flag `name` is on here, whatever else its feature
    * needs (`has` says that for VMs and studio). A daemon from
-   * before flags says only `labs`, which was all of them. */
-  flag(name: string): boolean {
+   * before flags says only `labs`, which was all of them; one from before
+   * a flag was renamed (aru-117) names it by its old name. */
+  flag(name: FlagName): boolean {
     const f = this.features;
     if (f?.labs !== true) return false;
-    return f.flags ? f.flags.includes(name) : true;
+    if (!f.flags) return true;
+    return f.flags.includes(name) || FLAG_ALIASES.some(([old, now]) => now === name && f.flags!.includes(old));
+  }
+
+  /** Whether this machine's owner has turned on Guest SSH access, a
+   * sharing setting (native #205): a pane's menu offers *Invite over
+   * ssh…*. A daemon from before says it as the `guest-ssh` flag. */
+  guestSsh(): boolean {
+    const f = this.features;
+    if (f?.guest_ssh !== undefined) return f.guest_ssh;
+    // Not a flag name any more, so read the old daemon's list by hand.
+    return f?.labs === true && (!f.flags || f.flags.includes("guest-ssh"));
   }
 
   /** Whether this machine has asked for Developer settings (`arugulad flags`),
@@ -1432,7 +1447,7 @@ export class Client {
    * only GitHub's links (`/pull/N`; issues on github.com) become blocks. */
   forgeLink(uri: string): "pr" | "issue" | null {
     const what = forgePr(uri) ? "pr" : forgeIssue(uri) ? "issue" : null;
-    if (!what || this.flag("forges")) return what;
+    if (!what || this.flag("additional-forges")) return what;
     try {
       const u = new URL(uri);
       if (what === "pr") return /^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/.test(u.pathname) ? what : null;

@@ -32,12 +32,15 @@
 //!   when the first report arrives; from then on that machine only
 //!   (`machine`).
 //! - **No replays:** each of the machine's reports carries its number in
-//!   the session, `n`, from 1, which must be the next: a signed report is
-//!   good once. Control's events don't take a number, so they never make
-//!   the machine's next one wrong.
+//!   the session, `n`, from 1, which must be past the last one taken: a
+//!   signed report is good once. A report control refused leaves a gap the
+//!   next one steps over, rather than stopping every report after it (a
+//!   refused heartbeat wedged a live session, 0.63.3). Control's events
+//!   don't take a number, so they never make the machine's next one wrong.
 //! - **Events** are append-only: the tables refuse an `UPDATE`, and a
 //!   `DELETE` while the event's session is there. A heartbeat isn't one:
-//!   it takes its number and moves `heard_at` and `last_tool`, and leaves
+//!   it takes its number and moves `heard_at` and `last_tool` (cut to
+//!   [`TOOL_MAX`] characters), and leaves
 //!   no row, so a session waiting hours on a question doesn't fill the
 //!   table.
 //! - **What each report holds** ([`SessionDetail`]): a JSON object of at
@@ -85,10 +88,13 @@ use super::{
 use crate::Deleted;
 
 /// The most a report's or control's detail may hold.
-pub const MAX_DETAIL: usize = 16 * 1024;
+pub const MAX_DETAIL: usize = arugula_control_wire::work::SESSION_DETAIL_MAX;
 
 /// The most a prompt may hold.
 pub const MAX_PROMPT: usize = 32 * 1024;
+
+/// The most of a heartbeat's tool title kept, in characters.
+pub const TOOL_MAX: usize = 200;
 
 /// The longest slug a session's branch takes.
 pub const MAX_SLUG: usize = 40;
@@ -811,6 +817,16 @@ fn said(s: &Option<String>) -> bool {
     s.as_deref().is_some_and(|s| !s.trim().is_empty())
 }
 
+/// `s`, cut to at most `max` characters, the last an ellipsis when cut.
+fn clip(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_owned();
+    }
+    let mut out: String = s.chars().take(max - 1).collect();
+    out.push('…');
+    out
+}
+
 /// The queued prompts of `session` among `ids`, each once: refused when
 /// one isn't.
 fn queued_among(c: &impl Sql, session: &str, ids: &[String]) -> Result<Result<(), Refused>> {
@@ -905,12 +921,9 @@ fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport) -> Result<Result<Ve
             }
             Ok(Ok(d.prompts))
         }
-        Kind::Heartbeat => {
-            if d.tool.as_deref().is_some_and(|t| t.chars().count() > 200) {
-                return refuse("a tool's name is at most 200 characters");
-            }
-            Ok(Ok(vec![]))
-        }
+        // A tool's title is the agent's (a Bash call's is its command line):
+        // a long one is cut when it's kept, never refused.
+        Kind::Heartbeat => Ok(Ok(vec![])),
         Kind::Error if !said(&d.error) => refuse("an error says what (error)"),
         Kind::Error => Ok(Ok(vec![])),
         Kind::Turn => {
@@ -922,9 +935,6 @@ fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport) -> Result<Result<Ve
             }
             if s.role == Role::Review && d.pushed == Some(true) {
                 return refuse("a review pushes nothing");
-            }
-            if d.reply.is_some() && s.role != Role::Review {
-                return refuse("only a review's turn carries a reply");
             }
             Ok(Ok(vec![]))
         }
@@ -1230,14 +1240,21 @@ pub(super) fn queue_in(c: &impl Sql, s: &Session, p: &NewPrompt, at: u64) -> Res
 
 /// Why a session is queued again on its workspace's new box.
 pub const BOX_REBUILT: &str = "box_rebuilt: the box was rebuilt; starting again from the thread";
+/// ...when the old box archived no transcript of its conversation
+/// (Arugula #209: it was already gone, or didn't answer in time), so the
+/// agent starts again without it.
+pub const BOX_REBUILT_LOST: &str = "box_rebuilt: the box was rebuilt, and the agent's conversation was lost with it \
+                                    (the old box sent no transcript); starting again from the thread";
 
 /// Session `id`, last seen `from`, moves to its workspace's new box
 /// `machine` (M258: the box was rebuilt) in the caller's transaction. A
 /// session no box took yet only follows the workspace's machine. One that
-/// was taken is queued again: control's move, saying [`BOX_REBUILT`]. Its
-/// block was the old box's and its actions asked of that agent, so both
-/// go; its queued prompts are dropped for `prompt` (the thread hydrated
-/// again, which holds them), which the new box's first turn starts with.
+/// was taken is queued again: control's move, saying [`BOX_REBUILT`], or
+/// [`BOX_REBUILT_LOST`] when its conversation was `lost` (no transcript
+/// came from the old box). Its block was the old box's and its actions
+/// asked of that agent, so both go; its queued prompts are dropped for
+/// `prompt` (the thread hydrated again, which holds them), which the new
+/// box's first turn starts with.
 /// The box's report numbers go on from where they were.
 pub fn rebuilt_in(
     c: &impl Sql,
@@ -1245,6 +1262,7 @@ pub fn rebuilt_in(
     from: State,
     machine: &str,
     prompt: &NewPrompt,
+    lost: bool,
     at: u64,
 ) -> Result<Result<Session, Refused>> {
     if from == State::Queued {
@@ -1255,7 +1273,8 @@ pub fn rebuilt_in(
         c.execute("UPDATE agent_sessions SET machine = ?2 WHERE id = ?1", params![id, machine])?;
         return Ok(Ok(session_for_update(c, id)?.context("the session it moved")?));
     }
-    let detail = serde_json::json!({ "reason": BOX_REBUILT, "machine": machine }).to_string();
+    let reason = if lost { BOX_REBUILT_LOST } else { BOX_REBUILT };
+    let detail = serde_json::json!({ "reason": reason, "machine": machine }).to_string();
     let s = match move_session_in(c, id, &Move::Control { from, to: State::Queued, at, detail: &detail })? {
         Ok((s, _)) => s,
         Err(e) => return Ok(Err(e)),
@@ -1271,6 +1290,81 @@ pub fn rebuilt_in(
     )?;
     if let Err(e) = queue_in(c, &s, prompt, at)? {
         return Ok(Err(e));
+    }
+    Ok(Ok(session_for_update(c, id)?.context("the session it moved")?))
+}
+
+/// Why a session is queued again on the workspace Move to… sent it to
+/// (Arugula #214).
+pub const MOVED: &str = "moved: moved to another workspace; starting again from the thread";
+/// ...when its old box archived no transcript of its conversation.
+pub const MOVED_LOST: &str = "moved: moved to another workspace, without the agent's conversation (its old box \
+                              sent no transcript); starting again from the thread";
+
+/// Session `id`, last seen `from`, moves to `workspace` (Move to…,
+/// Arugula #214), another live workspace of its project, in the caller's
+/// transaction. Only while nothing runs: a `queued` one just goes, its
+/// prompts with it, for the new workspace's box to take. A `done` one is
+/// queued again there, as a rebuilt box's is ([`rebuilt_in`]): control's
+/// move, saying [`MOVED`] (or [`MOVED_LOST`]), who moved it and where;
+/// its block, its machine and its actions were the old box's, so they go,
+/// and its queued prompts are dropped for `prompt`, which its first turn
+/// there starts with. Anything else is refused: a turn is under way, or
+/// it ended.
+#[allow(clippy::too_many_arguments)]
+pub fn moved_in(
+    c: &impl Sql,
+    id: &str,
+    from: State,
+    workspace: &str,
+    prompt: &NewPrompt,
+    lost: bool,
+    (by, to_name): (&str, &str),
+    at: u64,
+) -> Result<Result<Session, Refused>> {
+    let Some(s) = session_for_update(c, id)? else { return Ok(Err(Refused::NoSession)) };
+    if s.state != from {
+        return Ok(Err(Refused::Moved { now: s.state }));
+    }
+    if !matches!(from, State::Queued | State::Done) {
+        return Ok(Err(Refused::Disallowed { from, to: State::Queued }));
+    }
+    let there: Option<String> = c
+        .query_row(
+            "SELECT id FROM hosted_workspaces
+             WHERE id = ?1 AND project_id = ?2 AND deleted_at IS NULL AND purpose = 'workspace'",
+            params![workspace, s.project],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if there.is_none() || workspace == s.workspace {
+        return Ok(Err(Refused::Detail("that isn't another of the project's workspaces")));
+    }
+    if from == State::Done {
+        let reason = if lost { MOVED_LOST } else { MOVED };
+        let detail = serde_json::json!({ "reason": reason, "by": by, "workspace": workspace, "to_name": to_name });
+        let detail = detail.to_string();
+        if let Err(e) = move_session_in(c, id, &Move::Control { from, to: State::Queued, at, detail: &detail })? {
+            return Ok(Err(e));
+        }
+        c.execute(
+            "UPDATE session_prompts SET state = 'dropped', dropped_at = ?2 WHERE session_id = ?1 AND state = 'queued'",
+            params![id, at],
+        )?;
+        c.execute(
+            "UPDATE session_actions SET state = 'dropped', done_at = ?2 WHERE session_id = ?1 AND state = 'pending'",
+            params![id, at],
+        )?;
+    }
+    c.execute(
+        "UPDATE agent_sessions SET workspace_id = ?2, machine = NULL, block = NULL, updated_at = ?3 WHERE id = ?1",
+        params![id, workspace, at],
+    )?;
+    if from == State::Done {
+        let s = session_for_update(c, id)?.context("the session it moved")?;
+        if let Err(e) = queue_in(c, &s, prompt, at)? {
+            return Ok(Err(e));
+        }
     }
     Ok(Ok(session_for_update(c, id)?.context("the session it moved")?))
 }
@@ -1353,7 +1447,7 @@ pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(Sessi
             if r.session != s.id || own_machine(c, &s)?.as_deref() != Some(r.daemon.as_str()) {
                 return Ok(Err(Refused::OtherDaemon));
             }
-            if r.n != s.daemon_n + 1 {
+            if r.n <= s.daemon_n {
                 return Ok(Err(Refused::Seq { next: s.daemon_n + 1 }));
             }
             let seen = s.seen_as();
@@ -1411,7 +1505,7 @@ pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(Sessi
                     *now,
                     d.block.filter(|_| r.kind == Kind::State && r.from == State::Queued),
                     r.kind == Kind::Heartbeat,
-                    d.tool,
+                    d.tool.map(|t| clip(&t, TOOL_MAX)),
                     d.error.filter(|_| r.kind == Kind::Error)
                 ],
             )?;
@@ -1739,15 +1833,50 @@ impl Db {
         from: State,
         machine: &str,
         prompt: &NewPrompt,
+        lost: bool,
         at: u64,
     ) -> Result<Result<Session, Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
-        let moved = rebuilt_in(&tx, id, from, machine, prompt, at)?;
+        let moved = rebuilt_in(&tx, id, from, machine, prompt, lost, at)?;
         if moved.is_ok() {
             tx.commit()?;
         }
         Ok(moved)
+    }
+
+    /// [`moved_in`] in a transaction of its own.
+    #[allow(clippy::too_many_arguments)]
+    pub fn move_session_to(
+        &self,
+        id: &str,
+        from: State,
+        workspace: &str,
+        prompt: &NewPrompt,
+        lost: bool,
+        by: (&str, &str),
+        at: u64,
+    ) -> Result<Result<Session, Refused>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let moved = moved_in(&tx, id, from, workspace, prompt, lost, by, at)?;
+        if moved.is_ok() {
+            tx.commit()?;
+        }
+        Ok(moved)
+    }
+
+    /// How many of `project`'s sessions each of its workspaces holds or
+    /// has queued (every one that hasn't ended), by workspace: how busy
+    /// its box is, for picking one (Arugula #214).
+    pub fn workspace_load(&self, project: &str) -> Result<std::collections::HashMap<String, u32>> {
+        let rows: Vec<(String, u64)> = self.c().query_map(
+            "SELECT workspace_id, count(*) FROM agent_sessions
+             WHERE project_id = ?1 AND state NOT IN ('failed', 'stopped') GROUP BY workspace_id",
+            params![project],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok(rows.into_iter().map(|(w, n)| (w, n as u32)).collect())
     }
 
     /// What a hosted machine on `workspace` pulls (M255): every session

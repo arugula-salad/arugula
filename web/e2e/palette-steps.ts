@@ -23,23 +23,39 @@ async function paneMenu(page: Page, pane: number): Promise<string[]> {
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
   const menu = page.getByRole("menu");
   await expect(menu).toBeVisible();
-  const labels = await menu.evaluate((m) => {
-    const out: string[] = [];
-    let under: string | null = null;
-    for (const el of Array.from(m.children)) {
-      if (el.classList.contains("menu-sep")) under = null;
-      else if (el.classList.contains("menu-header")) under = el.textContent!.trim();
-      else {
-        const label = Array.from(el.childNodes)
-          .filter((n) => !(n instanceof HTMLElement && (n.classList.contains("menu-check") || n.classList.contains("menu-key"))))
-          .map((n) => n.textContent)
-          .join("")
-          .trim();
-        out.push(under ? `${under}: ${label}` : label);
+  // The rows in order, a submenu's where it is: each opened to be read, and
+  // shut again (one is open at a time).
+  const labels: string[] = [];
+  let under: string | null = null;
+  const read = (el: Element, under: string | null) => {
+    const label = Array.from(el.childNodes)
+      .filter((n) => !(n instanceof HTMLElement && (n.classList.contains("menu-check") || n.classList.contains("menu-key"))))
+      .map((n) => n.textContent)
+      .join("")
+      .trim();
+    return under ? `${under}: ${label}` : label;
+  };
+  const rows = menu.locator(":scope > *");
+  const n = await rows.count();
+  for (let i = 0; i < n; i++) {
+    const row = rows.nth(i);
+    const kind = await row.evaluate((el) => (el.classList.contains("menu-sep") ? "sep" : el.classList.contains("menu-header") ? "header" : el.classList.contains("menu-parent") ? "parent" : "item"));
+    if (kind === "sep") under = null;
+    else if (kind === "header") under = (await row.textContent())!.trim();
+    else if (kind === "parent") {
+      await row.click();
+      const inner = menu.locator(":scope > .menu-sub > *");
+      let sub = under;
+      for (let j = 0; j < (await inner.count()); j++) {
+        const cell = inner.nth(j);
+        const k = await cell.evaluate((el) => (el.classList.contains("menu-sep") ? "sep" : el.classList.contains("menu-header") ? "header" : "item"));
+        if (k === "sep") sub = null;
+        else if (k === "header") sub = (await cell.textContent())!.trim();
+        else labels.push(await cell.evaluate(read, sub));
       }
-    }
-    return out;
-  });
+      await row.click();
+    } else labels.push(await row.evaluate(read, under));
+  }
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   return labels;

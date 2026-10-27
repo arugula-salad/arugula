@@ -524,17 +524,23 @@ async fn a_reply_mid_turn_is_a_queued_prompt() {
     assert!(job.next_at <= arugula_e2e::now_ms(), "nudged: {job:?}");
 }
 
-/// Several repos on the box: a line asks which, and the asker's reply
-/// naming one starts the session there; anyone else's, or one naming
-/// none, is chat. Several boxes and none chosen: asked first, the same
-/// way. No box: a line says to set one up.
+/// Several repos on the box: an ask (Arugula #214) asks which, and the
+/// asker's reply naming one starts the session there; anyone else's, or
+/// one naming none, is chat. Several boxes and none chosen: the pool picks
+/// (`sessions_pool_tests`), and a reply naming a box still runs there. No
+/// box: a line says to set one up. The session's first prompt leaves out
+/// the question and its answer.
 #[tokio::test]
-async fn arugula_asks_which_box_and_repo() {
+async fn arugula_asks_which_repo() {
     use crate::sessions_hydrate_tests::{add_box, lines, platform, post_in, sessions};
     let (_hub, app, base, t, _u, _keys) = platform(&["https://github.com/o/app", "https://github.com/o/web.git"]).await;
     let p = post_in(&base, "ch_general", "b", "@arugula fix the canary", None).await["seq"].as_i64().unwrap();
     let ask = "Which repo should @arugula work in on dev? Reply with one: o/app or o/web.";
-    assert_eq!(lines(&base, "ch_general", Some(p)).await, [ask]);
+    let asks = |th: Value| -> Vec<String> {
+        let ms = th["messages"].as_array().unwrap().clone();
+        ms.iter().filter(|m| m["via"] == "ask:repo").map(|m| m["text"].as_str().unwrap().to_owned()).collect()
+    };
+    assert_eq!(asks(thread(&base, "a", p).await), [ask]);
     post_in(&base, "ch_general", "a", "web", Some(p)).await;
     post_in(&base, "ch_general", "b", "hmm, not sure", Some(p)).await;
     assert!(sessions(&app, &t).is_empty());
@@ -545,16 +551,29 @@ async fn arugula_asks_which_box_and_repo() {
     // The session's card (M257) says it started.
     let said = crate::sessions_hydrate_tests::cards(&base, "ch_general", Some(p)).await;
     assert_eq!(said, [format!("session:{}", s.id)]);
+    // The question and the answer were for the platform: the first prompt
+    // leaves them out, and keeps the rest (a's "web" is someone else's).
+    let first = app.db.session_prompts(&s.id).unwrap().remove(0).text;
+    assert!(
+        first.contains("b (editor): @arugula fix the canary\na (owner): web\nb (editor): hmm, not sure\n\nRules:"),
+        "{first}"
+    );
+    assert!(!first.contains("web, please") && !first.contains("Which repo"), "{first}");
 
-    // A second box, none chosen: which box first, then which repo.
+    // A second box, none chosen: the ask names app, which both have; the
+    // reply naming staging runs there.
     add_box(&app, &t, "hw_stage", "staging", &["https://github.com/o/app"], None);
     let q = post_in(&base, "ch_general", "b", "@arugula deploy it", None).await["seq"].as_i64().unwrap();
-    let box_ask = "Which cloud workspace should @arugula run on? Reply with its name: dev or staging. (An owner or \
-                   editor can choose one for the project in its settings: agents run on.)";
-    assert_eq!(lines(&base, "ch_general", Some(q)).await, [box_ask]);
+    assert_eq!(
+        asks(thread(&base, "a", q).await),
+        ["Which repo should @arugula work in? Reply with one: o/app or o/web."]
+    );
     post_in(&base, "ch_general", "b", "staging", Some(q)).await;
     let s = sessions(&app, &t).into_iter().find(|s| s.parent_seq == q as u64).expect("started on staging");
     assert_eq!((s.workspace.as_str(), s.repo.as_deref()), ("hw_stage", Some("o/app")));
+    let first = app.db.session_prompts(&s.id).unwrap().remove(0).text;
+    assert!(first.contains("b (editor): @arugula deploy it\n\nRules:"), "{first}");
+    assert!(!first.contains("Which cloud workspace"), "{first}");
 
     // No box at all.
     crate::db::sql::Sql::execute(&app.db.c(), "UPDATE hosted_workspaces SET deleted_at = 1", crate::db::sql::params![])

@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { chromium, expect, test, type FrameLocator, type Page } from "@playwright/test";
-import { menu, paneEl, panes, ready, reset, run, closeContexts } from "./helpers";
+import { menu, menuItem, paneEl, panes, ready, reset, run, closeContexts } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { tokenCookies } from "./local-token";
 import { ANY, blockPort, daemonPort } from "./ports";
@@ -335,7 +335,7 @@ test("in the swarm: an editor tile with its file, and Open in editor from a tile
   const key = await page.evaluate((t) => window.__arugula.fleet.panes.find((p) => p.id === t)!.key, term);
   pos = (await at(key))!;
   await page.mouse.click(pos.x, pos.y, { button: "right" });
-  await page.getByRole("menuitem", { name: "Open in editor" }).click();
+  await (await menuItem(page, "Open in editor")).click();
   await expect(page.locator(".swarm")).toHaveCount(0);
   await expect.poll(async () => (await editors(page)).length).toBe(before + 1);
   const made = (await editors(page)).at(-1)!;

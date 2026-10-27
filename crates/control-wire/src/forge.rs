@@ -184,6 +184,10 @@ pub const OPS: &[&str] = &["forge.send"];
 /// hosted machine answers them `cant`.
 pub const RUN_OPS: &[&str] = &["runs.start", "runs.revoke"];
 
+/// The hosted ops (Arugula #209) every daemon of this build knows: one
+/// that isn't a hosted machine answers them `cant`.
+pub const HOSTED_OPS: &[&str] = &["hosted.archive", "hosted.archive_blocks"];
+
 /// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
 /// answers [`OpAnswer::Unknown`] for it without asking.
@@ -197,7 +201,7 @@ pub struct Ops {
 impl Ops {
     /// What this build knows.
     pub fn ours() -> Self {
-        Ops { t: OpsTag, ops: OPS.iter().chain(RUN_OPS).map(|s| (*s).to_owned()).collect() }
+        Ops { t: OpsTag, ops: OPS.iter().chain(RUN_OPS).chain(HOSTED_OPS).map(|s| (*s).to_owned()).collect() }
     }
 }
 
@@ -246,6 +250,15 @@ pub enum DaemonOp {
     /// The project's standing grant was revoked (M211).
     #[serde(rename = "runs.revoke")]
     RunRevoke(crate::runs::RunRevoke),
+    /// Archive every open agent block's transcript now, as each would be
+    /// on closing (M184): the platform is about to rebuild the hosted box,
+    /// which takes them with it (Arugula #209).
+    #[serde(rename = "hosted.archive")]
+    HostedArchive(crate::transcripts::ArchiveOpen),
+    /// Archive just these agent blocks' transcripts now: one session moves
+    /// to another box (Arugula #214, Move to…), and the box stays.
+    #[serde(rename = "hosted.archive_blocks")]
+    HostedArchiveBlocks(crate::transcripts::ArchiveBlocks),
 }
 
 impl DaemonOp {
@@ -254,6 +267,8 @@ impl DaemonOp {
             DaemonOp::ForgeSend(_) => "forge.send",
             DaemonOp::RunStart(_) => "runs.start",
             DaemonOp::RunRevoke(_) => "runs.revoke",
+            DaemonOp::HostedArchive(_) => "hosted.archive",
+            DaemonOp::HostedArchiveBlocks(_) => "hosted.archive_blocks",
         }
     }
 }

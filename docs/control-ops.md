@@ -1648,9 +1648,9 @@ so chat's live stream (SSE, with `Last-Event-ID`) goes through
 unbuffered. A body up to 1 MB is read first; a bigger one streams. If
 the platform can't be reached at all, the call is tried again for 5
 seconds, then answered with the maintenance 503 (`Retry-After: 5`): it
-never reached the platform, so clients send it again. `/api/directory`'s
-"chat is on" comes from the hub's own Labs flags, so the directory never
-waits on the platform.
+never reached the platform, so clients send it again. `/api/directory`
+never waits on the platform (it said which machines were too old to bring
+their threads into chat, M124, until the import went, native #203).
 
 **Logs.** The hub logs each forwarded call that fails with a request id
 (`the platform can't be reached`, `the platform didn't answer`); the

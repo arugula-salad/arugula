@@ -1,4 +1,4 @@
-// The Agents page (#403, Labs: `agents`): this machine's agent recipes
+// The Agents page (#403, Labs: `agent-delegation`): this machine's agent recipes
 // (Claude Code subagent files), and the team's agents.
 //
 // Recipes: every recipe this machine has, in `~/.claude/agents` and in the
@@ -69,7 +69,7 @@ export function AgentsPage({ client }: { client: Client }) {
     return () => window.removeEventListener("hashchange", fn);
   }, []);
   const tab = agentsRoute();
-  if (!tab || !client.flag("agents")) return null;
+  if (!tab || !client.flag("agent-delegation")) return null;
   return <Page client={client} tab={tab} />;
 }
 

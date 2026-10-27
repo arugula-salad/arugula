@@ -1,4 +1,4 @@
-// The Docs page (#1494, Labs: `docs`): every Doc this machine keeps, the
+// The Docs page (#1494): every Doc this machine keeps, the
 // ones an agent wrote and left (#1493), newest first. A Doc outlives its
 // pane, so closing the pane isn't losing it: Open shows it again in the
 // current session (an open one comes forward), with its content and, if it
@@ -17,8 +17,7 @@ import { directory } from "../hosts";
 import { docsRoute, openDoc } from "./docs-route";
 import { LinkIcon } from "./shell/icons";
 
-/** The page, while the route says so, the machine has the flag and this is
- * its owner. */
+/** The page, while the route says so and this is the machine's owner. */
 export function DocsPage({ client }: { client: Client }) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -26,7 +25,7 @@ export function DocsPage({ client }: { client: Client }) {
     window.addEventListener("hashchange", fn);
     return () => window.removeEventListener("hashchange", fn);
   }, []);
-  if (!docsRoute() || !client.flag("docs") || client.state?.roles) return null;
+  if (!docsRoute() || client.state?.roles) return null;
   return <Page client={client} />;
 }
 

@@ -1,6 +1,6 @@
 // The Docs page's route (#1494), in the main bundle so a menu and the
-// palette can open it, or a Doc, without loading Labs: `#docs`. The page
-// itself is in the Labs chunk (ui/docs-page.tsx).
+// palette can open it, or a Doc, without loading the page: `#docs`. The
+// page itself is a chunk of its own (ui/docs-page.tsx).
 
 import type { Client } from "../client";
 import { opPath, OPS } from "../ops";

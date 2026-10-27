@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { paneEl, panes, reset } from "./helpers";
+import { menuItem, menuItems, paneEl, panes, reset } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 import { labs } from "./labs";
 
@@ -38,7 +38,7 @@ test.afterAll(async () => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const items = async (page: Page) => (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
+const items = menuItems;
 
 test("menus offer only what this machine is set up for", async ({ page }) => {
   await reset(page);
@@ -50,8 +50,10 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     studio: false,
     // Not joined to a control with a block domain (#150).
     block_channels: false,
-    // `labs` in flags.json is every flag (#665).
-    flags: ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents", "docs", "boards"],
+    // `labs` in flags.json is every flag (#665), and keeps guest ssh on as
+    // Guest SSH access, a sharing setting (native #205).
+    guest_ssh: true,
+    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation", "boards"],
   });
   const [term] = await panes(page);
   const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Open a studio app…"];
@@ -96,7 +98,7 @@ test("Open a port… and Open in editor say how to turn block sites on", async (
     ["Open in editor", "#editor-blocks"],
   ]) {
     await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
-    await page.getByRole("menuitem", { name: item }).click();
+    await (await menuItem(page, item)).click();
     const note = page.locator("[data-setup-notice]");
     await expect(note).toContainText("--block-listen");
     await expect(note.getByRole("link")).toHaveAttribute("href", new RegExp(`^https://docs\\.arugula\\.io/advanced/${anchor}$`));

@@ -79,7 +79,9 @@ pub fn asks(text: &str) -> bool {
 }
 
 /// Post the platform's line in the thread, or `author`'s message `via`.
-fn post(app: &Platform, room: &Room, thread: u64, author: &str, via: &str, text: &str) -> Result<i64> {
+/// No mentions, and not through chat's post: nobody is pushed for it, and
+/// it never starts or prompts a session.
+pub(crate) fn post(app: &Platform, room: &Room, thread: u64, author: &str, via: &str, text: &str) -> Result<i64> {
     let parent = (thread > 0).then_some(thread as i64);
     let seq = app.db.add_chat_message(
         &room.id,
@@ -300,8 +302,7 @@ pub async fn reported(app: &Platform, s: &Session, events: &[Event]) -> Result<(
             None => text.push_str("\n\nThe review came back empty."),
         }
         let via = format!("{ran} review");
-        let threaded = matches!(room.kind.as_str(), "channel" | "dm" | "pane" | "session");
-        let thread = if threaded { s.parent_seq } else { 0 };
+        let thread = if crate::chat::session_card::threaded(&room.kind) { s.parent_seq } else { 0 };
         post(app, &room, thread, &s.asker, &via, &text)?;
         info!(review = s.id, "a review was posted in its thread");
     }

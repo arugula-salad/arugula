@@ -20,6 +20,7 @@ import { openPicker } from "./picker";
 import { NotifySection } from "./notify";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
+import { openSharing } from "./sharing";
 import { openGettingStarted } from "./welcome";
 import { openPalette } from "./palette";
 import { GateWhy } from "./gate-why";
@@ -259,7 +260,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                       owner &&
                       client.info(active)?.type === "doc" &&
                       docShareItems(client, active).map((i) =>
-                        typeof i === "string" || "header" in i ? null : (
+                        typeof i === "string" || !("run" in i) ? null : (
                           <button key={i.label} data-doc-share={i.label} disabled={i.disabled} title={i.hint} onClick={act(i.run)}>
                             {i.label}
                           </button>
@@ -302,12 +303,12 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                       Issue
                     </button>
                   )}
-                  {owner && client.flag("agents") && (
+                  {owner && client.flag("agent-delegation") && (
                     <button data-open-agents onClick={act(() => openAgentsPage())}>
                       Agents
                     </button>
                   )}
-                  {owner && client.flag("docs") && (
+                  {owner && (
                     <button data-open-docs onClick={act(() => openDocsPage())}>
                       Docs
                     </button>
@@ -341,6 +342,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                     Getting started
                   </button>
                   {owner && <button onClick={act(() => openMachineTelemetry(client))}>Usage and crash reports</button>}
+                  {owner && <button onClick={act(() => openSharing(client))}>Guest SSH access</button>}
                   {owner && client.hasDev() && <button onClick={act(() => openDeveloper(client))}>Developer settings</button>}
                 </div>
               </section>

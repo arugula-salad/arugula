@@ -10,13 +10,21 @@
 //! ([`arugula_control_wire::transcripts::fit`]: the start and the end
 //! kept). A send that fails is tried a few times, then left: the block's
 //! log stays on the box until the box goes.
+//!
+//! Before the platform rebuilds the box, which takes its open blocks with
+//! it unclosed, it asks for them all at once ([`flush`], `hosted.archive`,
+//! Arugula #209), so a session moved to the new box starts from its
+//! conversation.
 
 use std::{
     sync::{Arc, OnceLock},
     time::Duration,
 };
 
-use arugula_control_wire::transcripts::{HOSTED_TRANSCRIPTS, MAX_TEXT, TranscriptPost, fit};
+use arugula_control_wire::{
+    forge::OpAnswer,
+    transcripts::{HOSTED_TRANSCRIPTS, MAX_TEXT, TranscriptPost, fit},
+};
 use tracing::{info, warn};
 
 use crate::control::Control;
@@ -67,37 +75,92 @@ fn post(c: Closed, closed_at: u64) -> TranscriptPost {
     }
 }
 
+/// This daemon's control, when it's a hosted machine.
+fn hosted() -> Option<Arc<Control>> {
+    let control = CONTROL.get().cloned()?;
+    control.enrolled().is_some_and(|e| e.saved.hosted.is_some()).then_some(control)
+}
+
 /// An agent block closed: archive it, if this is a hosted machine.
 pub fn closed(rt: &tokio::runtime::Handle, c: Closed) {
-    let Some(control) = CONTROL.get().cloned() else { return };
-    if control.enrolled().is_none_or(|e| e.saved.hosted.is_none()) {
-        return;
-    }
+    let Some(control) = hosted() else { return };
     let p = post(c, arugula_e2e::now_ms());
     rt.spawn(async move {
-        let body = match serde_json::to_value(&p) {
-            Ok(b) => b,
-            Err(e) => return warn!(error = %e, "hosted: can't send a transcript"),
-        };
-        for attempt in 0..4u32 {
-            match control.cloud_now(reqwest::Method::POST, HOSTED_TRANSCRIPTS, Some(&body)).await {
-                Ok(v) => {
-                    return info!(
-                        block = p.block,
-                        transcript = v["id"].as_str().unwrap_or("?"),
-                        "hosted: archived a transcript"
-                    );
-                }
-                Err(crate::control::CloudRefused::Said { status, said, .. }) if status < 500 => {
-                    return warn!(block = p.block, status, said, "hosted: control refused a transcript");
-                }
-                Err(e) => {
-                    warn!(block = p.block, attempt, error = %e, "hosted: couldn't send a transcript");
+        send(&control, &p, 4).await;
+    });
+}
+
+/// How long `hosted.archive` takes at most: under the platform's wait for
+/// its answer (10 s), so it hears one.
+const FLUSH_WITHIN: Duration = Duration::from_secs(8);
+
+/// `hosted.archive` (Arugula #209): the platform is about to rebuild this
+/// box, so every open agent block's transcript goes now, as closing it
+/// would send it. The blocks stay open; the box goes. Answered once the
+/// sends are done, or past [`FLUSH_WITHIN`]. A transcript the platform
+/// already has for a block stays as it was.
+///
+/// `only` (`hosted.archive_blocks`, Arugula #214): just these blocks, when
+/// one session moves to another box and the rest stay. The platform keeps
+/// one transcript per block, so archiving the others now would keep them
+/// as they are now, not as they end.
+pub async fn flush(only: Option<&[u64]>) -> OpAnswer {
+    let Some(control) = hosted() else {
+        return OpAnswer::Cant { why: "not_hosted: this machine isn't a hosted workspace's box".into() };
+    };
+    let now = arugula_e2e::now_ms();
+    let posts: Vec<TranscriptPost> = crate::agent::open_transcripts()
+        .into_iter()
+        .filter(|c| only.is_none_or(|b| b.contains(&c.block)))
+        .map(|c| post(c, now))
+        .collect();
+    let n = posts.len();
+    let sends = futures_util::future::join_all(posts.iter().map(|p| send(&control, p, 2)));
+    match tokio::time::timeout(FLUSH_WITHIN, sends).await {
+        Ok(sent) => {
+            let kept = sent.iter().filter(|k| **k).count();
+            info!(open = n, kept, "hosted: archived the open agents' transcripts before a rebuild");
+            if kept == n {
+                OpAnswer::Done { url: None }
+            } else {
+                OpAnswer::Failed { error: format!("{} of {n} transcripts weren't archived", n - kept) }
+            }
+        }
+        Err(_) => {
+            warn!(open = n, "hosted: archiving the open agents' transcripts ran out of time");
+            OpAnswer::Failed { error: "archiving the transcripts ran out of time".into() }
+        }
+    }
+}
+
+/// Send `p` to control, trying `attempts` times: whether it was kept.
+async fn send(control: &Control, p: &TranscriptPost, attempts: u32) -> bool {
+    let body = match serde_json::to_value(p) {
+        Ok(b) => b,
+        Err(e) => {
+            warn!(error = %e, "hosted: can't send a transcript");
+            return false;
+        }
+    };
+    for attempt in 0..attempts {
+        match control.cloud_now(reqwest::Method::POST, HOSTED_TRANSCRIPTS, Some(&body)).await {
+            Ok(v) => {
+                info!(block = p.block, transcript = v["id"].as_str().unwrap_or("?"), "hosted: archived a transcript");
+                return true;
+            }
+            Err(crate::control::CloudRefused::Said { status, said, .. }) if status < 500 => {
+                warn!(block = p.block, status, said, "hosted: control refused a transcript");
+                return false;
+            }
+            Err(e) => {
+                warn!(block = p.block, attempt, error = %e, "hosted: couldn't send a transcript");
+                if attempt + 1 < attempts {
                     tokio::time::sleep(Duration::from_secs(2u64.pow(attempt + 1))).await;
                 }
             }
         }
-    });
+    }
+    false
 }
 
 #[cfg(test)]

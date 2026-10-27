@@ -561,6 +561,21 @@ pub struct Agent {
     chat: bool,
 }
 
+/// Every agent block made, for [`open_transcripts`]: a block the mux let go
+/// of is gone from it.
+static OPEN: Mutex<Vec<std::sync::Weak<Agent>>> = Mutex::new(Vec::new());
+
+/// What each open agent block would leave if it closed now (Arugula #209):
+/// a hosted box archives these before a rebuild takes it.
+pub fn open_transcripts() -> Vec<crate::hosted::archive::Closed> {
+    let open: Vec<Arc<Agent>> = {
+        let mut all = OPEN.lock().unwrap();
+        all.retain(|a| a.strong_count() > 0);
+        all.iter().filter_map(std::sync::Weak::upgrade).collect()
+    };
+    open.iter().filter(|a| !a.inner.lock().unwrap().closing).map(|a| a.transcript()).collect()
+}
+
 fn is_finished_stop(s: &str) -> bool {
     !matches!(s, "cancelled")
 }
@@ -1559,6 +1574,7 @@ impl Agent {
         let member = inner.cfg.chant.clone();
         let chat = inner.cfg.def.chat;
         let agent = Arc::new(Agent { ctx: ctx.clone(), inner: Arc::new(Mutex::new(inner)), tx, chat });
+        OPEN.lock().unwrap().push(Arc::downgrade(&agent));
         // #304: its run records, written in order, each noted in its log.
         if let Some(c) = member {
             let (inner, tx) = (Arc::downgrade(&agent.inner), agent.tx.clone());
@@ -1575,6 +1591,24 @@ impl Agent {
             Agent { ctx: agent.ctx.clone(), inner: agent.inner.clone(), tx: agent.tx.clone(), chat: agent.chat };
         ctx.rt.spawn(run(actor, rx));
         Ok(agent)
+    }
+
+    /// What it leaves for its project's archive (M184): its text as it
+    /// is now.
+    fn transcript(&self) -> crate::hosted::archive::Closed {
+        let text = self.text();
+        let g = self.inner.lock().unwrap();
+        crate::hosted::archive::Closed {
+            block: self.ctx.id.into(),
+            agent: serde_json::to_value(g.cfg.def.agent)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+            title: g.shown_title().unwrap_or_else(|| g.cfg.def.label()),
+            cwd: g.cfg.cwd.clone(),
+            started_at: block_made(&self.ctx.dir),
+            text,
+        }
     }
 
     /// Start, adopt, or (by policy) wait.
@@ -3262,22 +3296,8 @@ impl Block for Agent {
 
     fn close(&self) {
         // M184: on a hosted machine, its transcript goes to the project.
-        let text = self.text();
+        crate::hosted::archive::closed(&self.ctx.rt, self.transcript());
         let mut g = self.inner.lock().unwrap();
-        crate::hosted::archive::closed(
-            &self.ctx.rt,
-            crate::hosted::archive::Closed {
-                block: self.ctx.id.into(),
-                agent: serde_json::to_value(g.cfg.def.agent)
-                    .ok()
-                    .and_then(|v| v.as_str().map(str::to_owned))
-                    .unwrap_or_default(),
-                title: g.shown_title().unwrap_or_else(|| g.cfg.def.label()),
-                cwd: g.cfg.cwd.clone(),
-                started_at: block_made(&self.ctx.dir),
-                text,
-            },
-        );
         g.closing = true;
         if let Some(l) = g.link.take() {
             l.stop();

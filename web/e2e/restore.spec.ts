@@ -7,7 +7,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { active, menu, open, paneEl, panes, ready, run, tab, tabsInSession, text, type } from "./helpers";
+import { active, menu, menuItem, open, paneEl, panes, ready, run, tab, tabsInSession, text, type } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 import { labs } from "./labs";
 
@@ -66,11 +66,11 @@ test("after a restart: tabs, splits, cwd and scrollback are back; policies apply
     .poll(() => page.evaluate((p) => window.__arugula.client.info(p)?.command, second), { timeout: 10_000 })
     .toContain("sleep 300");
   await paneEl(page, second).click({ button: "right", position: { x: 60, y: 60 } });
-  await page.getByRole("menuitemradio", { name: /asking first/ }).click();
+  await (await menuItem(page, /asking first/)).click();
 
   // The first pane runs a command of our choosing when restored.
   await paneEl(page, first).click({ button: "right", position: { x: 60, y: 60 } });
-  await page.getByRole("menuitemradio", { name: /Run a command/ }).click();
+  await (await menuItem(page, /Run a command/)).click();
   await page.getByRole("dialog").getByRole("textbox").fill("echo hook-$((3*3))");
   // Exact: the session button's name ("silent brook ▾") has "ok" in it too.
   await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();

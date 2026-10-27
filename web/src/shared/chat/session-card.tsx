@@ -13,8 +13,12 @@
 // check", or "finish failed:" and the last lines of its output.
 // A box that hasn't been heard from for 60 s is "stopped responding" here
 // at once, against the platform's clock, before the platform marks it so.
-// What it asks is a question card (`../ask`), answered by any owner or
-// editor of its project; the platform passes the answer to the box.
+// What it asks is a form (`SessionAskForm`): a question's choices as
+// buttons, and its own words (Arugula #214), or a question card (`../ask`),
+// answered by any owner or editor of its project; the platform passes the
+// answer to the box. The same form is on the ask that mentions its asker
+// (`./ask-card`). Move to… sends a queued or done session to another of
+// the project's workspaces with its repo (Arugula #214).
 //
 // CI (M260): failures on its branch go back to it, at most `ci_max` rounds:
 // the card counts them ("CI round 1 of 2"), and once CI failed again after
@@ -42,7 +46,7 @@ import { AskCard, type Ask } from "../ask";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 import { usePlatformApi } from "../platform-api";
-import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionPick, SessionPr, SessionPrSent, SessionTry, SessionTryAsk, SessionView } from "../proto";
+import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionMove, SessionPick, SessionPr, SessionPrSent, SessionTry, SessionTryAsk, SessionView } from "../proto";
 import { DiffLink, MergedLine, mergedOf } from "./session-done";
 
 /** How long a turn may go without its box saying anything (`QUIET_MS`). */
@@ -54,6 +58,15 @@ const enc = encodeURIComponent;
 export function sessionOf(m: ChatMessage): string | null {
   const v = m.via ?? "";
   return !m.author && v.startsWith("session:ses_") ? v.slice("session:".length) : null;
+}
+
+/** A session's answer (a turn's last message, posted in its thread as its
+ * asker's `via` the session): the badge's words and its title, or null. */
+export function answerVia(m: ChatMessage, name: string): { label: string; title: string } | null {
+  const v = m.via ?? "";
+  if (!m.author || !v.startsWith("session:ses_")) return null;
+  const short = v.slice("session:ses_".length, "session:ses_".length + 8);
+  return { label: `agent session ${short}`, title: `What agent session ${short} said at the end of a turn, posted for ${name}` };
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -196,6 +209,85 @@ export function askOf(c: SessionCard): { ask: Ask; act(content: Record<string, u
     // Skipped: an empty answer, which the box takes as declined.
     act: (content) => ({ kind: "answer", request, answer: typeof content?.answer === "string" ? { question_0: content.answer } : {} }),
   };
+}
+
+/** A question with a button per choice, each answering it at once, and
+ * (`words`) the asker's own words. */
+export function ChoiceForm({ question, choices, words, busy, answer }: { question: string; choices: string[]; words: boolean; busy: boolean; answer(text: string, own: boolean): void }) {
+  const [own, setOwn] = useState("");
+  return (
+    <div class="session-ask-form" data-ask-form>
+      <p class="session-card-line session-ask-question">{question}</p>
+      {choices.length > 0 && (
+        <div class="session-ask-choices" role="group" aria-label={question}>
+          {choices.map((c) => (
+            <button key={c} type="button" disabled={busy} data-ask-choice={c} onClick={() => answer(c, false)}>
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+      {words && (
+        <form
+          class="session-ask-words"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (own.trim()) answer(own.trim(), true);
+          }}
+        >
+          <input aria-label="Your own answer" placeholder={choices.length ? "Or in your own words" : "Your answer"} value={own} maxLength={2000} onInput={(e) => setOwn(e.currentTarget.value)} data-ask-words />
+          <button type="submit" disabled={busy || !own.trim()} data-ask-send>
+            Send
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+/** A session's open question as a form: its choices as buttons, and words
+ * too (Arugula #214); a permission, or a question with no choices, as its
+ * question card. `act` sends the answer to its box. */
+export function SessionAskForm({ c, may, busy, act }: { c: SessionCard; may: boolean; busy: boolean; act(a: SessionAct): void }) {
+  const asking = askOf(c);
+  const o = c.open;
+  if (!asking || !o) return null;
+  if (c.answered) {
+    return (
+      <p class="session-card-line" data-session-answered>
+        {c.answered.kind === "deny" ? "Denied" : c.answered.kind === "approve" ? "Allowed" : "Answered"} by {c.answered.name || "someone"}: waiting for its box to take it.
+      </p>
+    );
+  }
+  if (!may) {
+    return (
+      <div class="session-card-ask" data-session-ask>
+        <p class="session-card-line">
+          It asks: <b>{asking.ask.message}</b>
+        </p>
+        <p class="dim">The project's owners and editors answer it.</p>
+      </div>
+    );
+  }
+  const request = o.request ?? undefined;
+  if (o.ask !== "permission" && o.options.length > 0) {
+    return (
+      <div class="session-card-ask" data-session-ask>
+        <ChoiceForm
+          question={o.question ?? "It waits for an answer"}
+          choices={o.options}
+          words
+          busy={busy}
+          answer={(text) => act({ kind: "answer", request, answer: { question_0: text } })}
+        />
+      </div>
+    );
+  }
+  return (
+    <div class="session-card-ask" data-session-ask>
+      <AskCard key={asking.ask.id} ask={asking.ask} actions={{ answer: (content) => act(asking.act(content)), decline: () => act(asking.act(null)) }} />
+    </div>
+  );
 }
 
 /** A session, read now and again each time it changes; `null` until it's
@@ -455,7 +547,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   const short = c.session.replace(/^ses_/, "").slice(0, 8);
   const ended = c.state === "done" || c.state === "failed" || c.state === "stopped";
   const took = elapsed((c.ended_at ?? now) - c.created_at);
-  const act = async (path: string, body?: SessionAct | SessionTryAsk | SessionPick) => {
+  const act = async (path: string, body?: SessionAct | SessionTryAsk | SessionPick | SessionMove) => {
     setBusy(true);
     try {
       set(await call<SessionView>("POST", `/api/sessions/${enc(c.session)}/${path}`, body));
@@ -468,7 +560,6 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   };
   const open = (hash: string, inPage: () => void) => (api.controlHref ? window.open(api.controlHref(hash), "_blank", "noopener") : inPage());
   const block = c.block && /^\d+$/.test(c.block) ? c.block : null;
-  const asking = askOf(c);
   const idle = idleOf(c);
   // The last turn's finish step failed (M261): it wasn't pushed. While the
   // session still works, the agent has its one turn to fix it.
@@ -580,24 +671,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             ))}
         </div>
       )}
-      {asking &&
-        (c.answered ? (
-          <p class="session-card-line" data-session-answered>
-            {c.answered.kind === "deny" ? "Denied" : c.answered.kind === "approve" ? "Allowed" : "Answered"} by {c.answered.name || "someone"}: waiting for its box to
-            take it.
-          </p>
-        ) : view.may ? (
-          <div class="session-card-ask" data-session-ask>
-            <AskCard key={asking.ask.id} ask={asking.ask} actions={{ answer: (content) => void act("actions", asking.act(content)), decline: () => void act("actions", asking.act(null)) }} />
-          </div>
-        ) : (
-          <div class="session-card-ask" data-session-ask>
-            <p class="session-card-line">
-              It asks: <b>{asking.ask.message}</b>
-            </p>
-            <p class="dim">The project's owners and editors answer it.</p>
-          </div>
-        ))}
+      <SessionAskForm c={c} may={view.may} busy={busy} act={(a) => void act("actions", a)} />
       {c.cancelling && <p class="session-card-line dim">Cancelling the turn: waiting for its box.</p>}
       {said && (
         <p class="session-card-line bad" role="alert" data-session-said>
@@ -665,6 +739,29 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
               <option value="claude">+ Claude ×2</option>
             </select>
           </span>
+        )}
+        {c.moves.length > 0 && (c.state === "queued" || c.state === "done") && (
+          <select
+            class="session-move"
+            aria-label="Move to…"
+            title="Move it to another of the project's workspaces with its repo: its next turn starts there, from the thread"
+            value=""
+            disabled={busy}
+            data-session-move
+            onChange={(e) => {
+              const workspace = e.currentTarget.value;
+              if (workspace) void act("move", { workspace });
+            }}
+          >
+            <option value="">Move to…</option>
+            {c.moves.map((p) => (
+              <option key={p.workspace} value={p.workspace}>
+                {p.name}
+                {p.awake ? "" : " (asleep)"}
+                {p.busy ? ` · ${p.busy} going` : ""}
+              </option>
+            ))}
+          </select>
         )}
         <span class="session-card-fill" />
         {view.may && (c.state === "working" || c.state === "needs_input") && !c.cancelling && (

@@ -452,8 +452,14 @@ const SQLITE: &[Migration] = &[
     },
     Migration {
         version: 60,
+        name: "ci_rounds_required",
+        sql: include_str!("../../migrations/sqlite/0060_ci_rounds_required.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 61,
         name: "board_block_states",
-        sql: include_str!("../../migrations/sqlite/0060_board_block_states.sql"),
+        sql: include_str!("../../migrations/sqlite/0061_board_block_states.sql"),
         additive: true,
     },
 ];
@@ -818,8 +824,14 @@ const POSTGRES: &[Migration] = &[
     },
     Migration {
         version: 60,
+        name: "ci_rounds_required",
+        sql: include_str!("../../migrations/postgres/0060_ci_rounds_required.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 61,
         name: "board_block_states",
-        sql: include_str!("../../migrations/postgres/0060_board_block_states.sql"),
+        sql: include_str!("../../migrations/postgres/0061_board_block_states.sql"),
         additive: true,
     },
 ];

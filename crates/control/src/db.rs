@@ -410,6 +410,12 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE push_subs ADD COLUMN listen TEXT; ALTER TABLE push_subs ADD COLUMN listened INTEGER;",
         )?;
     }
+    // The renamed Labs flags (aru-117): a row under an old name moves to
+    // the new one, unless its owner set that too, whose word stays.
+    for (old, new) in arugula_control_wire::FLAG_ALIASES {
+        conn.execute("UPDATE OR IGNORE labs_flags SET name = ?2 WHERE name = ?1", params![old, new])?;
+        conn.execute("DELETE FROM labs_flags WHERE name = ?1", params![old])?;
+    }
     Ok(())
 }
 
@@ -456,6 +462,19 @@ pub struct Account {
     /// What other people see (#102): the name it chose, or its GitHub
     /// login. Empty only for a passkey account made before names.
     pub name: String,
+}
+
+/// What linking a GitHub identity to an account did (`Db::link_github`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GithubLink {
+    /// Linked now.
+    Linked,
+    /// It was this account's already.
+    Already,
+    /// It signs in to another account: nothing changed.
+    Taken,
+    /// This account has another GitHub identity: nothing changed.
+    HasOther,
 }
 
 #[derive(Debug, Clone)]
@@ -695,6 +714,65 @@ impl Db {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?)
+    }
+
+    /// Link a GitHub identity to a signed-in account (#208), by its numeric
+    /// id only, in one transaction. Never moves an identity from another
+    /// account, and never gives an account a second one.
+    pub fn link_github(&self, account: &str, id: u64, login: &str) -> anyhow::Result<GithubLink> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let holder: Option<String> = tx
+            .query_row(
+                "SELECT account FROM identities WHERE provider = 'github' AND subject = ?1",
+                params![id.to_string()],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match holder {
+            Some(a) if a == account => return Ok(GithubLink::Already),
+            Some(_) => return Ok(GithubLink::Taken),
+            None => {}
+        }
+        let has: u64 = tx.query_row(
+            "SELECT COUNT(*) FROM identities WHERE account = ?1 AND provider = 'github'",
+            params![account],
+            |r| r.get(0),
+        )?;
+        if has > 0 {
+            return Ok(GithubLink::HasOther);
+        }
+        tx.execute(
+            "INSERT INTO identities (provider, subject, account, login) VALUES ('github', ?1, ?2, ?3)",
+            params![id.to_string(), account, login],
+        )?;
+        // Its login can be the account's name (`Db::account`).
+        changed(&tx, ChangeKind::AccountName, account)?;
+        tx.commit()?;
+        Ok(GithubLink::Linked)
+    }
+
+    /// Remove the account's GitHub identity (#208), unless it's the
+    /// account's last way to sign in (checked in the same transaction).
+    pub fn unlink_github(&self, account: &str) -> anyhow::Result<Result<(), &'static str>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let ways: u64 = tx.query_row(
+            "SELECT (SELECT COUNT(*) FROM passkeys WHERE account = ?1)
+                  + (SELECT COUNT(*) FROM identities WHERE account = ?1 AND provider = 'github')",
+            params![account],
+            |r| r.get(0),
+        )?;
+        let n = tx.execute("DELETE FROM identities WHERE account = ?1 AND provider = 'github'", params![account])?;
+        if n == 0 {
+            return Ok(Err("no GitHub account is linked"));
+        }
+        if ways <= 1 {
+            return Ok(Err("GitHub is the only way to sign in to this account: add a passkey first"));
+        }
+        changed(&tx, ChangeKind::AccountName, account)?;
+        tx.commit()?;
+        Ok(Ok(()))
     }
 
     /// The account whose GitHub identity has this numeric id (M235): by
@@ -2716,6 +2794,31 @@ mod tests {
             ["s1", "s2", "s3", "s4", "s5"].map(via),
             [Some("app".into()), Some("app".into()), None, Some("app".into()), None]
         );
+    }
+
+    /// aru-117: Labs flags kept under a renamed flag's old name move to the
+    /// new one at startup; where an owner has both, the new name's word
+    /// stays.
+    #[test]
+    fn renamed_labs_flags_move_to_their_new_names() {
+        let db = Db::memory();
+        for (owner, name, on) in [
+            ("account:a", "vms", true),
+            ("account:a", "chat", true),
+            ("team:t", "forges", true),
+            ("team:t", "additional-forges", false),
+        ] {
+            db.conn()
+                .execute(
+                    "INSERT INTO labs_flags (owner, name, turned_on) VALUES (?1, ?2, ?3)",
+                    params![owner, name, on],
+                )
+                .unwrap();
+        }
+        migrate(&db.conn()).unwrap();
+        let flags = |o: &str| db.labs_flags(o).unwrap().into_iter().collect::<Vec<_>>();
+        assert_eq!(flags("account:a"), [("chat".into(), true), ("sandbox-providers".into(), true)]);
+        assert_eq!(flags("team:t"), [("additional-forges".into(), false)]);
     }
 
     /// #102: a GitHub account goes by its login, a passkey one by the name

@@ -98,7 +98,7 @@ if (session) {
   setHostMenuExtras(() => controlMenuItems(session));
   setAccount({
     login: () => session.login || null,
-    items: () => accountItems(session, client.flag("docs")),
+    items: () => accountItems(session),
     signOut: () => void session.signOut(false),
     subscribe: (fn) => session.subscribe(fn),
   });
@@ -356,8 +356,7 @@ function Swarm({ client }: { client: Client }) {
   const f = route.focus;
   // A notification through control names its daemon; else it's this page's.
   const host = f ? (f.daemon ? directory.list?.hosts.find((h) => h.id === f.daemon)?.name : (directory.home ?? directory.names[0])) : undefined;
-  const home = directory.home ?? directory.names[0] ?? null;
-  const view = (bar: boolean) => <SwarmView fleet={fleet} back={closeSwarm} home={home} focus={f && host ? { host, pane: f.pane } : null} inBar={bar} />;
+  const view = (bar: boolean) => <SwarmView fleet={fleet} back={closeSwarm} focus={f && host ? { host, pane: f.pane } : null} inBar={bar} />;
   // The bar every place shares, over it, once a machine is shown; a phone
   // has its own header, and the swarm its Panes button.
   if (!client.state || phone) return view(false);

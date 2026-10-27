@@ -274,7 +274,7 @@ golden MCP tool list does for tools.
 
 ## Labs
 
-`Op::FLAG` names the flag (`arugula_proto::flags`, `flags::CHAT` and so on)
+`Op::FLAG` names the flag (`arugula_proto::flags`, `flags::VMS` and so on)
 a machine needs on for the operation: without it its MCP tool or kind isn't
 listed, and its route and its tool by name are refused (404, saying how to
 turn it on: `ops::flagged`, #347). For a tool it

@@ -16,7 +16,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { menu, paneEl, panes, reset, closeContexts } from "./helpers";
+import { menu, menuItems, paneEl, panes, reset, closeContexts } from "./helpers";
 import { listen } from "./ports";
 
 test.afterAll(closeContexts);
@@ -203,7 +203,7 @@ test("a studio app opens framed from another site; its agent's question is answe
   // Not linked to a studio: the menus don't offer one (#180).
   await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
   await expect(page.getByRole("menuitem", { name: "Split right" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Open a studio app…" })).toHaveCount(0);
+  expect(await menuItems(page)).not.toContain("Open a studio app…");
   await page.keyboard.press("Escape");
   const r = await page.evaluate(([url, token]) => window.__arugula.client.request("POST", "/api/studio", { url, token }).then((r) => r.status), [studio, TOKEN]);
   expect(r).toBe(200);

@@ -41,13 +41,24 @@ constrains:
 
 # A flag for each Labs feature, and Developer settings to turn them on
 
+*Which flags there are is now "Four Labs flags stay, renamed; the rest
+graduate or retire" (aru-117, 2026-10-26): `sandbox-providers`,
+`chant-workspaces`, `additional-forges` and `agent-delegation`, with `vms`,
+`workspaces`, `forges` and `agents` read as their old names forever; chat,
+docs, guest ssh and the swarm's views graduated, and studio's connector
+retired. The rest of this record stands.*
+
 Chat on a machine shouldn't need Fountain, studio and the rest on with it, so
 the one `labs` flag (above) is nine: `chat`, `huddles`, `vms`, `fountain`,
 `studio`, `workspaces`, `guest-ssh`, `swarm-themes`, `forges`. Each is a row
 in `FLAGS`, off by default. (`agents` came later; `fountain` went with
 #942's F5, a retired flag ever since: "A retired flag is a name that isn't
 one", below; `huddles` went when huddles were removed: "Huddles are
-removed", below.)
+removed", below; `swarm-themes` graduated on 2026-10-26: the swarm's city,
+hive and timeline views are everyone's, picked under the swarm's Theme and
+kept in the browser, so its flag is retired too; so did `docs` (native
+#204): Doc blocks, the `doc` tool and the Docs page are on every machine,
+and sharing a Doc still asks the owner.)
 - **`labs` is no longer a flag; in the file it means all of them.** `labs`
   in `flags.json` is the answer for every flag
   the file doesn't name itself. A machine that had Labs keeps everything, one

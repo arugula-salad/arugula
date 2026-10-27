@@ -26,7 +26,7 @@ fn open(d: &Daemon, config: Value) -> (u16, String) {
 fn refusal(name: &str) -> String {
     if cfg!(feature = "labs") {
         format!(
-            "{name} blocks are a Labs feature that's off on this machine: its owner turns it on with `arugulad flags forges on` there, or in Developer settings"
+            "{name} blocks are a Labs feature that's off on this machine: its owner turns it on with `arugulad flags additional-forges on` there, or in Developer settings"
         )
     } else {
         format!("A {name} block isn't in this build (built without labs)")

@@ -344,6 +344,14 @@ fn unsigned_foreign_and_replayed_reports_are_refused() {
         Err(Refused::Seq { next: 3 })
     );
 
+    // A tool's title is the agent's, a command line for a Bash call: a
+    // long one is kept cut to 200 characters, never refused (refusing it
+    // wedged a live session, 0.63.3).
+    let long = format!(r#"{{"tool":"cd /work && {}"}}"#, "x".repeat(400));
+    let (after, _) = b.say(&db, &s.id, Kind::Heartbeat, None, &long, T0 + 6).unwrap();
+    let kept = after.last_tool.unwrap();
+    assert_eq!((kept.chars().count(), kept.starts_with("cd /work && x"), kept.ends_with('…')), (200, true, true));
+
     // Once a machine reported, a rebuilt box's new machine isn't it.
     let rebuilt = Machine::new();
     db.c().execute("UPDATE hosted_workspaces SET machine = ?1", params![rebuilt.id]).unwrap();

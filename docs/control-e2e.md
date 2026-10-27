@@ -630,7 +630,10 @@ that project only.
   person's browsers. An owner's or editor's machine has full use; a
   viewer's reaches only its agents (`/api/a2a/`). When an agent block on a
   hosted machine closes, the machine sends its transcript
-  (`POST /api/hosted/transcripts`, signed as itself), and the platform
+  (`POST /api/hosted/transcripts`, signed as itself). Just before the
+  platform rebuilds a running box, it asks the box over its relay for its
+  open blocks' transcripts the same way (`hosted.archive`, Arugula #209),
+  and waits up to 10 seconds for them. The platform
   keeps it read only under the project (`hosted_transcripts`), in the
   clear, for the project's people to read after the box is gone. Control
   can read those, as it can read the box.
@@ -837,7 +840,34 @@ native issue, writes `@arugula` in the issue's thread as the person who
 pressed it, so it's that mention, checks and all; the session's branch is
 named for the issue (`i<number>-<title's words>`). A workspace's finish step (its spec's `finish`, M261) runs on the
 box after each turn, as the session's user; a turn whose finish step fails
-twice isn't pushed.
+twice isn't pushed. Each turn's report carries the agent's last message,
+which control posts in the session's thread as its asker's, `via` the
+session (`crates/platform/src/sessions/answer.rs`): once per report it
+keeps, with no mentions, never through chat's post, so it wakes nobody
+and prompts nothing.
+
+**Which box, and what it asks** (Arugula #214,
+`crates/platform/src/sessions/pool.rs`, `asks.rs` and `moves.rs`). A
+session runs on the workspace the project's agents run on, if someone
+chose one, else its only one. With several and none chosen, it picks one
+itself: of those whose spec has the repo, one that's awake (ready and
+online) with a free slot first, then the least busy, then by name. The
+repo is the one the ask names (`owner/name`, or a name only one repo
+has), else the only one the boxes have. It asks only when it must: when
+the boxes have several repos and the ask names none, an ask lists them,
+and when the ask names a repo the project linked that no box has, a line
+says so. What still needs the asker (which repo, or a question the
+session's agent asks) is a message in the thread, also sent to the
+channel, that mentions them: an unread mention and a push, until it's
+answered. It's a form there, a button per choice, and a press answers
+it; a reply naming the repo still does. Only the asker answers which
+repo; owners and editors answer the agent, as on its card. **Move to…**
+on the card sends a queued or done session (never mid-turn) to another
+of the project's workspaces with its repo, for its asker, an owner or an
+editor: its next turn starts there from the thread, and from its
+conversation when its old box archives the session's block first
+(`hosted.archive_blocks`: that block only, since the box's other
+sessions go on).
 
 **Try 3 and reviews** (M264, `crates/platform/src/sessions/tries.rs` and
 `review.rs`). From a session's card, an owner or editor on the beta's list
@@ -1723,8 +1753,8 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `session_prompts` | **plaintext** | What starts an agent session's turns: each prompt's text as written, who wrote it (an account, or a GitHub login for text from GitHub, with its author_association), and whether it's queued, sent to the box or dropped, and when. | A prompt queued in a thread waits for the session's box with every person's machine asleep. | partly: those of sessions that go, go. On the rest its prompts stay blank, with no author, and those still queued are dropped. | E2B, Anthropic |
 | `session_actions` | **plaintext** | What people asked of an agent session that only its box can do (M257): answer its open question (the answer as given), approve or deny its open permission (the option, or why not), or cancel the turn; who asked, when, and whether the box did it (with the number of the report that said so) or the session ended first. | A teammate answers a session's question from their phone, and the box picks it up, with every person's machine asleep. | partly: those of sessions that go, go. On the rest they stay, naming no one who asked, an answer's text blanked. | E2B, Anthropic |
 | `pr_drafts` | **plaintext** | An agent session's pull request as its asker drafts it (M259): the session, the repo, its branch and base, the title and body (prefilled from the repo's PR template and the session's turns), whether it opens as a draft on GitHub, its state, and the PR's number and URL once its asker sent it. | The asker edits and sends a session's PR from their phone with every machine asleep. | yes: its PR drafts, and those of sessions that go with it. A sent PR stays on GitHub, and its link on the session. | GitHub |
-| `session_feedback` | **plaintext** | What came back from GitHub to an agent session (M260): a CI round (the head commit whose checks failed) or a review (its id, the PR's number, the reviewer's GitHub login, numeric id, author_association and the review's state), when it's due, and whether it was sent to the session (the prompt, and a CI round's number), refused (the session had its CI rounds) or dropped (the session had ended). | CI fails on a session's PR, or a teammate reviews it on GitHub, and the session takes it up with every person's machine asleep. | nothing of one: it names GitHub's people, not accounts. Those of sessions that go, go. |  |
-| `session_feedback_items` | **plaintext** | What a session's feedback gathered (M260), each once: a failed check's name, conclusion, link and the end of its output, or a review's text and its inline comments' text with their file and line, as GitHub's webhook brought them. | A session's CI round or review is gathered from GitHub's webhooks with every person's machine asleep. | nothing of one: gitHub's text, not an account's. Those of sessions that go, go. | E2B, Anthropic |
+| `session_feedback` | **plaintext** | What came back from GitHub to an agent session (M260): a CI round (the head commit whose checks failed) or a review (its id, the PR's number, the reviewer's GitHub login, numeric id, author_association and the review's state), when it's due, and whether it was sent to the session (the prompt, and a CI round's number), refused (the session had its CI rounds) or dropped (the session had ended, or none of its failed checks is one the base branch requires). | CI fails on a session's PR, or a teammate reviews it on GitHub, and the session takes it up with every person's machine asleep. | nothing of one: it names GitHub's people, not accounts. Those of sessions that go, go. |  |
+| `session_feedback_items` | **plaintext** | What a session's feedback gathered (M260), each once: a failed check's name, conclusion, link, the GitHub App that ran it and the end of its output, or a review's text and its inline comments' text with their file and line, as GitHub's webhook brought them. | A session's CI round or review is gathered from GitHub's webhooks with every person's machine asleep. | nothing of one: gitHub's text, not an account's. Those of sessions that go, go. | E2B, Anthropic |
 | `boards` | **plaintext** | A project's live status board: its title, who made it and when. | A board shows on a teammate's phone with every machine asleep. | partly: those of projects that go with it go. The rest stay, with no creator. |  |
 | `board_entries` | **plaintext** | A board's zones and rows, in order: a zone's title and kind (proofs is last); a row's one-line note, its status, and what it points at (a forge item, an issue, a run or a Cloud workspace by id, or an agent block by machine and pane); each with its rev, which a write must name; and, for a row an agent added, its machine. | A board's rows are read and edited from a phone with every machine asleep. | partly: those of projects that go with it go. The rest stay: they name no account. |  |
 | `board_block_states` | **plaintext** | What a machine says of one of its own agent blocks, for the board rows that point at it: the state word (working, needs input, idle or closed), the branch, the short HEAD, whether it is pushed, the number of uncommitted files and the diffstat as three numbers. Never message text, file names, prompts or a transcript (aru-116). Set under the machine's boards.write grant, and shown only on boards of a project that grant covers. | A board shows what an agent was doing on a teammate's phone with its machine asleep. | yes: those of its machines. |  |
@@ -1736,7 +1766,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `project_keys` | **plaintext** | A project's data key (M209), which seals that project's secrets, wrapped by the master key control holds apart from the database; which master key wrapped it (a hash of it), when it was made and when it was last re-wrapped. Rotating the master key re-wraps these and nothing else. | A project's secrets are opened for its workspaces and deploys with every machine off. | partly: a personal project's keys go with it, and so do a disbanded team's; other teams' stay. |  |
 | `project_secrets` | **plaintext** | A project's secret that has no table of its own, such as a deploy environment's (M217), by name, sealed with the project's key. And a project's own secrets (`project/<NAME>`, M230), set by name by agents with no machine, each with who last set it and through which agent token. | Deploys run with every machine off. | partly: a personal project's secrets go with it, and so do a disbanded team's; other teams' stay. | Infisical (the operator's) |
 | `hosted_ports` | metadata | A port of a hosted workspace (M186), its label, and while it's public (M187) its preview id (32 random hex characters, the label of its host under the preview domain), who made it public or last renewed it, and until when. | Previews are served and expire with every machine asleep. | partly: it stops naming the account as who made a port public. They go with their workspace. |  |
-| `hosted_transcripts` | **plaintext** | A closed agent block's transcript from a hosted workspace's box (M184): its project, workspace, machine and block, the agent, its title and working directory, when it ran, and its text (prompts, the agent's messages and tool calls, cut to 768 KiB), kept read only. Transcripts copied from a beta Cloud workspace's tabs when it moved off Managoat (M189) are kept the same way. | A project's people read what its hosted workspaces' agents did after the box is paused, rebuilt or deleted. | partly: those of its personal project and its disbanded teams' projects go. A team's stay with its project: its other people read them. |  |
+| `hosted_transcripts` | **plaintext** | An agent block's transcript from a hosted workspace's box, sent as it closes (M184) or just before the box is rebuilt (Arugula #209): its project, workspace, machine and block, the agent, its title and working directory, when it ran, and its text (prompts, the agent's messages and tool calls, cut to 768 KiB), kept read only. Transcripts copied from a beta Cloud workspace's tabs when it moved off Managoat (M189) are kept the same way. | A project's people read what its hosted workspaces' agents did after the box is paused, rebuilt or deleted. | partly: those of its personal project and its disbanded teams' projects go. A team's stay with its project: its other people read them. |  |
 | `hosted_snapshot_orphans` | metadata | A hosted workspace's snapshot (M263, an E2B template id) that the provider still held when its workspace was deleted for good, whose workspace and project it was, since when, and when the worker last asked to delete it. | The worker deletes it at the provider with every machine off. | nothing of one: it names no account. A row goes once the provider deletes the snapshot. | E2B |
 | `hosted_usage` | metadata | When a hosted workspace's box ran (M188): its workspace, project and box, its size (vCPUs and memory), and each running interval's start and end. | The platform meters boxes from their lifecycle, which runs with every machine asleep, and the operator reads what they cost. | nothing of one: it names no account: a workspace's project and box ids only. It stays when the workspace goes: it's what E2B billed. | E2B |
 | `hosted_usage_provider` | metadata | What E2B says a hosted workspace's box ran (M188), from its lifecycle events: how many runs, their milliseconds, vCPU-milliseconds and MiB-milliseconds, and when it was read. | The platform checks its usage against E2B's record with every machine asleep. | nothing of one: it names no account: a workspace's project and box ids only. | E2B |

@@ -315,9 +315,9 @@ enum Command {
     Share(cmd::share::Args),
     /// ssh invites that still work.
     ///
-    /// Made with `share --guest`. `guests revoke ID` ends one and cuts off
-    /// anyone using it.
-    #[command(hide = true)]
+    /// Made with `share --guest`, where the machine's owner has turned on
+    /// Guest SSH access (`arugulad sharing guest-ssh on`). `guests revoke ID`
+    /// ends one and cuts off anyone using it.
     Guests {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
@@ -592,22 +592,20 @@ fn state_dir() -> Option<PathBuf> {
 const LABS_COMMANDS: &[(&str, &str)] = &[
     ("studio", flags::STUDIO),
     ("app", flags::STUDIO),
-    ("workspace", flags::WORKSPACES),
-    ("agents", flags::AGENTS),
-    ("guests", flags::GUEST_SSH),
-    ("machines", flags::VMS),
-    ("sandboxes", flags::VMS),
+    ("workspace", flags::CHANT_WORKSPACES),
+    ("agents", flags::AGENT_DELEGATION),
+    ("machines", flags::SANDBOX_PROVIDERS),
+    ("sandboxes", flags::SANDBOX_PROVIDERS),
 ];
-const LABS_OPTIONS: [(&str, &[&str], &str); 6] = [
-    ("agent", &["recipe"], flags::AGENTS),
-    ("agent", &["vm", "machine"], flags::VMS),
-    ("run", &["vm", "vm_tab", "image", "sandbox"], flags::VMS),
-    ("share", &["guest", "rw", "reusable", "relay", "addr", "name"], flags::GUEST_SSH),
-    ("open", &["machine"], flags::VMS),
-    ("edit", &["machine"], flags::VMS),
+const LABS_OPTIONS: [(&str, &[&str], &str); 5] = [
+    ("agent", &["recipe"], flags::AGENT_DELEGATION),
+    ("agent", &["vm", "machine"], flags::SANDBOX_PROVIDERS),
+    ("run", &["vm", "vm_tab", "image", "sandbox"], flags::SANDBOX_PROVIDERS),
+    ("open", &["machine"], flags::SANDBOX_PROVIDERS),
+    ("edit", &["machine"], flags::SANDBOX_PROVIDERS),
 ];
 
-/// Machines (`mN`) are Labs too: with the `vms` flag, `fs` and `view` say
+/// Machines (`mN`) are Labs too: with the `sandbox-providers` flag, `fs` and `view` say
 /// their paths take one.
 fn labs_machine_paths(cmd: clap::Command) -> clap::Command {
     cmd.mut_subcommand("fs", |fs| {
@@ -639,7 +637,7 @@ fn labs_command(on: On) -> clap::Command {
     for (name, opts, _) in LABS_OPTIONS.iter().filter(|(_, _, f)| on.has(f)) {
         cmd = cmd.mut_subcommand(*name, |s| opts.iter().fold(s, |s, o| s.mut_arg(*o, |a| a.hide(false))));
     }
-    if on.has(flags::VMS) {
+    if on.has(flags::SANDBOX_PROVIDERS) {
         cmd = labs_machine_paths(cmd);
     }
     cmd
@@ -955,7 +953,6 @@ mod tests {
         for (cmd, opts) in [
             ("agent", &["recipe", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
-            ("share", &["guest", "rw", "reusable", "relay", "addr", "name"][..]),
             ("open", &["machine"][..]),
             ("edit", &["machine"][..]),
         ] {
@@ -971,6 +968,12 @@ mod tests {
         assert!(super::Cli::try_parse_from(["arugula", "run", "--vm", "--", "make"]).is_ok());
         assert!(super::Cli::try_parse_from(["arugula", "share", "--guest", "--rw", "%3"]).is_ok());
         assert!(super::Cli::try_parse_from(["arugula", "guests"]).is_ok());
+        // Guest ssh left Labs (native #205): listed, with its options.
+        assert!(listed.contains(&"guests"), "{listed:?}");
+        let share = root.find_subcommand("share").unwrap();
+        for o in ["guest", "rw", "reusable", "relay", "addr", "name"] {
+            assert!(!share.get_arguments().find(|a| a.get_id() == o).unwrap().is_hide_set(), "share --{o} is hidden");
+        }
     }
 
     /// With the `labs` file the help lists what #342 hid, all of it and
@@ -1001,7 +1004,6 @@ mod tests {
         for (cmd, opts) in [
             ("agent", &["recipe", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
-            ("share", &["guest", "rw", "reusable", "relay", "addr", "name"][..]),
             ("open", &["machine"][..]),
             ("edit", &["machine"][..]),
         ] {
@@ -1036,7 +1038,6 @@ mod tests {
         };
         for (cmd, flag) in [
             ("run", "--vm-tab"),
-            ("share", "--guest"),
             ("agent", "--machine"),
             ("open", "--machine"),
             ("edit", "--machine"),

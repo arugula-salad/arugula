@@ -142,7 +142,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 32 - NO_FORGE);
+    assert_eq!(tools.len(), 33 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -398,7 +398,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 32 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 33 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -1056,7 +1056,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 32 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 33 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -1078,17 +1078,10 @@ async fn labs_lists_all_the_tools() {
         s2.cancel().await.unwrap();
 
         arugula_testkit::labs(&d.state, false);
-        // #665: chat's flag alone lists no tool of its own (#1095), and none
-        // of the others' kinds.
-        arugula_proto::flags::set(&d.state, "chat", true).unwrap();
-        let chat = s.list_all_tools().await.unwrap();
-        assert_eq!(chat.len(), 32, "{:?}", names(&chat));
-        assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
-        arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 32 - NO_FORGE);
+        assert_eq!(without.len(), 33 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -1097,7 +1090,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 32 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 33 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
@@ -1580,10 +1573,10 @@ async fn capabilities_says_what_is_here_and_whether_hooks_are_live() {
 
     #[cfg(feature = "labs")]
     {
-        arugula_proto::flags::set(&d.state, "workspaces", true).unwrap();
+        arugula_proto::flags::set(&d.state, "chant-workspaces", true).unwrap();
         let c = call(&s, "capabilities", json!({})).await;
         assert!(c["blocks"].as_array().unwrap().iter().any(|b| b["kind"] == "workspace"), "{c}");
-        assert_eq!(c["flags"], json!(["workspaces"]), "{c}");
+        assert_eq!(c["flags"], json!(["chant-workspaces"]), "{c}");
     }
     s.cancel().await.unwrap();
 

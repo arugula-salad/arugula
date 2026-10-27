@@ -6,8 +6,9 @@ topic: [panes and sessions](https://docs.arugula.io/panes/),
 [pull requests and issues](https://docs.arugula.io/forges/),
 [agents](https://docs.arugula.io/agents/),
 [attention and history](https://docs.arugula.io/attention/) and
-[sharing](https://docs.arugula.io/sharing/). Labs features (chat, threads,
-VMs and the rest) are described for the team in [labs.md](labs.md),
+[sharing](https://docs.arugula.io/sharing/). Labs features (VMs and the
+rest) and chat and threads (control's, on by team) are described for the
+team in [labs.md](labs.md),
 and hosted (Cloud) workspaces in [control.md](control.md). The workspace,
 below, is here until the
 site's panes page has it.
@@ -44,6 +45,14 @@ around your panes. A phone keeps its own header and sheet.
   directory and branch. Click it to type there, drag it to move the pane,
   double-click to focus, `…` for its menu. Headers reserve their own space;
   the cyan outline encloses the focused pane without covering terminal rows.
+- **The pane menu** (right-click a pane, or `…` on its header): Copy, Paste,
+  Select all and Clear scrollback, then Split right and down, Copy working
+  directory and Attach file…, and Close pane. The rest is in submenus that
+  open under their row (→ and ← on the keyboard): *Open beside* (an agent, a
+  web page, a port, a pull request, the editor, …), *Move*, *Share* (links,
+  ssh invites, who drives), *Thread* and *Pane settings* (restart policy,
+  shell integration, *Forget history*, which asks for a second click). The
+  command palette lists the same actions.
 - **The activity drawer** under the panes (the session's commands,
   agent turns, and panes opening, exiting and closing and their machines,
   kept across a reload, a closed pane's too), and **the footer**:

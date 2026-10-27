@@ -88,6 +88,7 @@ path = "/auth/github"
 process = "hub"
 auth = "sign_in"
 clients = ["page", "app"]
+note = "With `link=1`, linking GitHub to the account signed in (#208): only with the session cookie, and its state `link.<nonce>` is kept for that sign-in alone."
 
 [[route]]
 method = "GET"
@@ -95,7 +96,7 @@ path = "/auth/github/callback"
 process = "hub"
 auth = "sign_in"
 clients = ["browser"]
-note = "GitHub sends the browser back here: the URL is set on the GitHub OAuth app, so the path never changes. A state `send.<nonce>` is a person's send (M168): its user token goes to the platform for one call, then is revoked."
+note = "GitHub sends the browser back here: the URL is set on the GitHub OAuth app, so the path never changes. A state `send.<nonce>` is a person's send (M168): its user token goes to the platform for one call, then is revoked. A state `link.<nonce>` is a link (#208): it attaches the GitHub id to the account of the sign-in that started it, in the same browser, or nothing, and its token is revoked."
 
 [[route]]
 method = "POST"
@@ -382,6 +383,14 @@ path = "/api/me/passkeys/{id}/remove"
 process = "hub"
 auth = "session"
 clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/me/github/unlink"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Unlinking the account's GitHub identity (#208): the cookie alone, never the desktop app's window, and refused (409) when it's the last way to sign in."
 
 [[route]]
 method = "GET"
@@ -1422,13 +1431,6 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 
-[[route]]
-method = "POST"
-path = "/api/daemon/chat/import"  # wire::chat::CHAT_IMPORT
-process = "platform"
-auth = "daemon"
-clients = ["daemon"]
-
 # A machine's agents in conversations (M198): MCP's thread tools list,
 # read, search and post in the rooms its owner's grants reach (M197:
 # `threads.read`, `threads.post`), asked again on every call. `{id}` is a
@@ -2035,6 +2037,30 @@ process = "platform"
 auth = "session"
 clients = ["page"]
 note = "Agent on this (M265): @arugula written in a native issue's thread as the caller, starting a session there. Owners and editors on the hosted beta; refused while a session is going on the issue."
+
+[[route]]
+method = "POST"
+path = "/api/sessions/{ses}/move"  # wire::sessions::SESSION_MOVE
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Move to… (Arugula #214): a queued or done session to another of its project's workspaces with its repo, queued there from the thread. Its asker, owners and editors; never mid-turn."
+
+[[route]]
+method = "GET"
+path = "/api/chat/rooms/{room}/asks/{seq}"  # wire::sessions::ASK
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "An ask's form (Arugula #214): which repo a thread's @arugula works in, its choices, and whether it's answered. Whoever reads its room."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{room}/asks/{seq}"  # wire::sessions::ASK
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Answer an ask (Arugula #214): its asker's choice starts the session on the best box with that repo. Its asker only; once."
 
 [[route]]
 method = "GET"

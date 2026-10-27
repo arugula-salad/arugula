@@ -520,7 +520,9 @@ tests twice. The command palette (#139) is the example:
 Chrome (desktop and a Pixel 7) and `palette.webkit.spec.ts` in WebKit
 (Ctrl+Shift+P, Cmd+Shift+P, and an iPhone 13). They cover the chord
 opening the palette from a focused terminal without the shell seeing it,
-the palette listing exactly the pane menu's actions, running actions by
+the palette listing exactly the pane menu's actions (submenu rows in
+place; `menuItem` and `menuItems` in `web/e2e/helpers.ts` open the submenu
+a row is in), running actions by
 typing (split, a restart policy, move to a new tab, rename the tab through
 a prompt), recent picks listed first, jumping to a tab, and the phone's
 full-height sheet from the sheet's Commands button. Run them with:
@@ -1155,7 +1157,7 @@ control's jump host carried for the session. The test checks:
 Run them with `cargo test -p arugulad --test integration guest_ssh::`. They skip,
 saying so, if there's no `ssh` on PATH; the relay test fails without
 Docker unless ARUGULA_SKIP_DOCKER=1. `web/e2e/guest-ssh.spec.ts`
-covers *Invite over ssh…* in the pane menu, on desktop and phone viewports,
+covers *Invite over ssh…* in the pane menu (under *Share*), on desktop and phone viewports,
 with the same system ssh (`pnpm exec playwright test e2e/guest-ssh.spec.ts`
 in `web/`, after `cargo build -p arugulad` and `pnpm run build`).
 
@@ -1348,13 +1350,12 @@ Only what no test can do:
   and the permission prompts are Claude Code's own, so the proof that an
   agent can write a report without a prompt is a run. Before a PR that
   changes what an agent sees of Docs merges:
-  1. Start a daemon of the branch with `docs` on, with a state directory and
-     a port of its own, so it leaves the daily one alone:
+  1. Start a daemon of the branch, with a state directory and a port of
+     its own, so it leaves the daily one alone:
 
      ```sh
      just web && cargo build -p arugulad -p arugula
      S=~/.local/state/arugula-doc-hand
-     target/debug/arugulad flags docs on --state-dir $S
      target/debug/arugulad --listen 127.0.0.1:7690 --state-dir $S
      ```
 

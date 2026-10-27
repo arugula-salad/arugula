@@ -59,7 +59,7 @@ async function call(client: Client, id: PaneId, method: string): Promise<{ ok: b
 
 /** Ask whether this Doc can be shared, and keep the answer for its menu. */
 async function refresh(client: Client, id: PaneId) {
-  if (client.state?.roles || (client.features !== null && !client.flag("docs"))) return;
+  if (client.state?.roles) return;
   const { ok, body } = await call(client, id, "doc_shares");
   if (ok && body.shared === null) can.set(id, { can: body.can !== false, why: body.why });
   else can.delete(id);
@@ -206,10 +206,9 @@ async function run(client: Client, id: PaneId, method: string, then: (b: Shares)
   await then(body);
 }
 
-/** The Doc block's share items, for its menu: the owner's, and only where
- * the `docs` flag is on. */
+/** The Doc block's share items, for its menu: the owner's. */
 export function docShareItems(client: Client, id: PaneId): MenuItem[] {
-  if (client.state?.roles || (client.features !== null && !client.flag("docs"))) return [];
+  if (client.state?.roles) return [];
   const s = client.blocks.get(id)?.state as DocState | null | undefined;
   if (s?.shared) {
     return [

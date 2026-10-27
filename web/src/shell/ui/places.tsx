@@ -113,12 +113,13 @@ export function closePlace(at: Place) {
 
 /** Panes · Swarm · Chat · Agents · Docs, in the bar every place shares
  * (./app-bar). Chat opens the platform page. Agents (#403) is the machine
- * owner's, with its flag, and so is Docs (#1494). */
+ * owner's, with its flag, and so is Docs (#1494; no flag since native
+ * #204). */
 export function Places({ client, at }: { client: Client; at: Place }) {
   useChatTick(client);
   const { n, mention } = chatUnread();
-  const agents = client.flag("agents") && !client.state?.roles;
-  const docs = client.flag("docs") && !client.state?.roles;
+  const agents = client.flag("agent-delegation") && !client.state?.roles;
+  const docs = !client.state?.roles;
   // No machine yet: no panes or swarm to go to.
   const machines = !!client.state || directory.names.length > 0;
   return (

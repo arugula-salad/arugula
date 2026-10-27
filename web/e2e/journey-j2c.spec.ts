@@ -20,7 +20,7 @@ import { clickTerminal, onboarded, screenText } from "./journey/first-run";
 import { account, join, makeTeam, moveInto, show } from "./journey/ui";
 import { Journey, type Surface } from "./journey/record";
 import { World } from "./journey/world";
-import { closeContexts } from "./helpers";
+import { closeContexts, menuItem, menuItems } from "./helpers";
 
 test.afterAll(closeContexts);
 test.use({ actionTimeout: 20_000 });
@@ -364,11 +364,11 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
       async (p) => {
         const v = p.viewportSize()!;
         await p.mouse.click(v.width / 2, v.height / 2, { button: "right" });
-        const ask = p.getByRole("menuitem", { name: "Ask the owner to let me drive it" });
+        const ask = await menuItem(p, "Ask the owner to let me drive it");
         // isVisible doesn't wait: the menu may not be drawn yet.
         if (!(await ask.waitFor({ state: "visible", timeout: 3_000 }).then(() => true, () => false))) {
-          const items = await p.getByRole("menuitem").allInnerTexts();
-          throw new Error(`no "Ask the owner to let me drive it" in the pane menu; it has: ${items.map((t) => t.trim()).join(" | ")}`);
+          const items = await menuItems(p);
+          throw new Error(`no "Ask the owner to let me drive it" in the pane menu; it has: ${items.join(" | ")}`);
         }
         await ask.click();
       },

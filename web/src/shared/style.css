@@ -731,6 +731,26 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   vertical-align: 1px;
 }
 
+/* A submenu's rows, under their parent and indented. */
+.menu-parent {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.menu-chevron {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.menu-sub {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 2px 10px;
+  padding-left: 4px;
+  border-left: 1px solid var(--raised-hover);
+}
+
 .menu-sep {
   height: 1px;
   margin: 4px 6px;
@@ -2967,7 +2987,8 @@ button.att {
   white-space: pre;
 }
 
-.prompt .machine-telemetry-switch {
+.prompt .machine-telemetry-switch,
+.prompt .sharing-switch {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -2976,7 +2997,8 @@ button.att {
   cursor: pointer;
 }
 
-.prompt .machine-telemetry-switch input {
+.prompt .machine-telemetry-switch input,
+.prompt .sharing-switch input {
   width: auto;
   margin: 0;
   padding: 0;

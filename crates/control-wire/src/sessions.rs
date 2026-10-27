@@ -25,6 +25,22 @@
 //! | `POST` [`SESSION_PICK`] [`SessionPick`]: [`SessionView`] | owners and editors |
 //! | `GET` [`PROJECT_SESSION_STATS`]: [`SessionStats`] | the project's members |
 //! | `POST` [`ISSUE_AGENT`]: [`IssueAgent`] | the project's owners and editors, as `@arugula` |
+//! | `POST` [`SESSION_MOVE`] [`SessionMove`]: [`SessionView`] | its asker, owners and editors |
+//! | `GET` [`ASK`]: [`ChatAsk`] | whoever reads its room |
+//! | `POST` [`ASK`] [`ChatAskAnswer`]: [`ChatAsk`] | its asker |
+//!
+//! **Which box** (Arugula #214). The project's "agents run on" setting, or
+//! its only workspace; with several and none chosen, the session picks
+//! one of those with the repo: awake with a free slot first, then the
+//! least busy, then by name. Its card says which ([`SessionCard::moves`]),
+//! and **Move to…** sends a queued or done session to another of them:
+//! its next turn starts there from the thread.
+//!
+//! **Asks** (Arugula #214). What still needs the asker is a message in the
+//! thread, also sent to the channel, that mentions them, so it's an unread
+//! mention and a push, until it's answered: `via` `ask:repo` for which
+//! repo ([`ASK`]'s form), `ask:<ses>` for what the session's agent asks
+//! (its card's form). Its buttons answer it where it is.
 //!
 //! **Try 3** (M264). From a session's card, two siblings of it start: new
 //! sessions under it (`parent_session`), on the same thread, box and repo,
@@ -76,6 +92,27 @@ pub const SESSION_PICK: &str = "/api/sessions/{ses}/pick";
 pub const PROJECT_SESSION_STATS: &str = "/api/projects/{project}/sessions/stats";
 /// `POST`: "Agent on this" on a native issue ([`IssueAgent`], M265).
 pub const ISSUE_AGENT: &str = "/api/issues/{issue}/agent";
+
+/// `POST` [`SessionMove`]: Move to… another of its project's workspaces,
+/// while it's queued or done (Arugula #214).
+pub const SESSION_MOVE: &str = "/api/sessions/{ses}/move";
+/// `GET`: an ask's form ([`ChatAsk`], Arugula #214), by its message;
+/// `POST` [`ChatAskAnswer`]: answer it.
+pub const ASK: &str = "/api/chat/rooms/{room}/asks/{seq}";
+
+/// What an ask's message has for `via`, before what it asks of: `repo`,
+/// or the session's id.
+pub const ASK_VIA: &str = "ask:";
+
+/// The `via` of an ask about `of`: `repo`, or a session's id.
+pub fn ask_via(of: &str) -> String {
+    format!("{ASK_VIA}{of}")
+}
+
+/// What an ask's `via` asks of (`repo`, or a session's id), if it's one.
+pub fn ask_of(via: &str) -> Option<&str> {
+    via.strip_prefix(ASK_VIA).filter(|s| *s == "repo" || s.starts_with("ses_"))
+}
 
 /// How many days [`SessionStats`] looks back.
 pub const STATS_DAYS: u32 = 30;
@@ -173,6 +210,64 @@ pub struct SessionCard {
     /// The one of [`SessionCard::tries`] kept, once one is picked; on a
     /// sibling, its parent's pick.
     pub picked: Option<String>,
+    /// Where Move to… may send it (Arugula #214): its project's other
+    /// workspaces that have its repo, by name. Empty unless the reader may
+    /// move it (its asker, an owner or an editor) and it's queued or done.
+    #[serde(default)]
+    pub moves: Vec<SessionPlace>,
+}
+
+/// One of a project's workspaces, as Move to… lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionPlace {
+    pub workspace: String,
+    pub name: String,
+    /// Its box is up now (ready and online).
+    pub awake: bool,
+    /// How many of its project's sessions it holds or has queued.
+    pub busy: u32,
+}
+
+/// [`SESSION_MOVE`]'s body: the workspace it goes to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionMove {
+    pub workspace: String,
+}
+
+/// An ask's form (Arugula #214, [`ASK`]): which repo a thread's `@arugula`
+/// works in, when the project's workspaces have several and the ask named
+/// none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatAsk {
+    pub room: String,
+    pub seq: i64,
+    /// The thread it's in (`None`: the room's own messages, an issue's).
+    pub parent: Option<i64>,
+    /// `repo`.
+    pub kind: String,
+    /// Whom it waits on, and their name now.
+    pub asker: String,
+    pub asker_name: String,
+    pub question: String,
+    /// One button each.
+    pub choices: Vec<String>,
+    /// It still waits on its asker: nobody answered it, and no later ask in
+    /// its thread took its place.
+    pub open: bool,
+    /// The reader is its asker, so the buttons are theirs.
+    pub mine: bool,
+    /// The session its answer started, once it's answered.
+    pub session: Option<String>,
+}
+
+/// [`ASK`]'s `POST` body: the choice pressed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatAskAnswer {
+    pub choice: String,
 }
 
 /// One of a Try 3's sessions, as its parent's compare view shows it.
@@ -250,7 +345,8 @@ pub struct SessionOpen {
     pub ask: Option<String>,
     /// The words shown.
     pub question: Option<String>,
-    /// A permission's option ids.
+    /// A permission's option ids, or a question's choices, by their labels
+    /// (Arugula #214: a button each; its own words still go too).
     pub options: Vec<String>,
     pub at: u64,
 }
@@ -443,6 +539,16 @@ mod tests {
         assert_eq!(card_of("session:ses_ab"), Some("ses_ab"));
         for not in ["system", "hud box", "session:", "session:run_1"] {
             assert_eq!(card_of(not), None, "{not}");
+        }
+    }
+
+    #[test]
+    fn an_ask_message_names_what_it_asks_of() {
+        assert_eq!(ask_via("repo"), "ask:repo");
+        assert_eq!(ask_of("ask:repo"), Some("repo"));
+        assert_eq!(ask_of(&ask_via("ses_ab")), Some("ses_ab"));
+        for not in ["system", "session:ses_ab", "ask:", "ask:box"] {
+            assert_eq!(ask_of(not), None, "{not}");
         }
     }
 }

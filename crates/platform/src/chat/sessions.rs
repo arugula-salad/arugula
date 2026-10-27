@@ -13,20 +13,27 @@
 //! - **Who** ([`crate::triggers::may_start`], the rule schedules and event
 //!   rules fire by): an owner or editor of the project, on the hosted
 //!   beta's list. Anyone else gets a line saying why, and no session.
-//! - **Which box:** the project's "agents run on" setting
-//!   (`Db::agents_run_on`): the one chosen, else its only workspace. With
-//!   several and none chosen, a line asks which; with none, a line says to
-//!   set one up.
-//! - **Which repo:** the box's spec's repos (GitHub clone URLs, as
-//!   `owner/name`). One is it. Several: a line lists them and asks. None:
-//!   the session works in no repo, and its first line says so.
-//! - **Answering a question** (which box, which repo): the asker's next
-//!   reply in the thread that names exactly one of those listed (a box by
-//!   its name; a repo as `owner/name`, or by its name when that's
-//!   unambiguous) picks it. Nothing is stored for it: the thread is read
-//!   again from the ask on, so a reply that names none, or several, or
-//!   anyone else's reply, is ordinary chat. A box's answer may name the
-//!   repo too.
+//! - **Which box** ([`crate::sessions::pool`], Arugula #214): the
+//!   project's "agents run on" setting (`Db::agents_run_on`), else its
+//!   only workspace, else the pool: the session picks one of those with
+//!   the repo, awake with a free slot first, then the least busy, then by
+//!   name. With none, a line says to set one up. Its card says which, and
+//!   Move to… sends it to another ([`crate::sessions::moves`]).
+//! - **Which repo:** the boxes' specs' repos (GitHub clone URLs, as
+//!   `owner/name`). The one the ask names (`owner/name`, or by its name
+//!   when that's unambiguous) is it; else the only one; none, the session
+//!   works in no repo, and its first line says so. A repo the project
+//!   linked that no box has, named by `owner/name`, is said so. Several,
+//!   and the ask named none: an ask ([`crate::sessions::asks`]) mentions
+//!   the asker, in the thread and the channel, with a button per repo
+//!   ([`ask_show`], [`ask_answer`]).
+//! - **Answering it in words** (the fallback): the asker's next reply in
+//!   the thread that names exactly one of the repos picks it (and one
+//!   naming a box by its name runs on that box). Nothing is stored for
+//!   it: the thread is read again from the ask on, so a reply that names
+//!   none, or several, or anyone else's reply, is ordinary chat.
+//!   The questions and the answers are for the platform: the session's
+//!   first prompt leaves them out ([`answers`]).
 //! - **Starting:** the session and its job in one transaction
 //!   (`db::sessions::create_session_in`, `db::sessions::dispatch`), bound
 //!   to the room and the thread, its branch's slug from the ask's words
@@ -35,7 +42,7 @@
 //!   hydrated thread ([`crate::sessions::hydrate`]).
 //! - **Agent on this** ([`issue_agent`], M265) on a native issue writes
 //!   [`AGENT_ON_THIS`] in the issue's thread as the person who pressed it,
-//!   so it's exactly an `@arugula` there: the same checks, questions and
+//!   so it's exactly an `@arugula` there: the same checks, asks and
 //!   session.
 //!   Its status card (M257, [`super::session_card::post_card`]) says
 //!   where it runs.
@@ -56,7 +63,7 @@ use anyhow::Result;
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::{
     chat::{ChatLive, SYSTEM_VIA},
-    sessions::IssueAgent,
+    sessions::{ChatAsk, ChatAskAnswer, IssueAgent},
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::http::StatusCode;
@@ -70,9 +77,9 @@ use crate::{
         Taken,
         chat::{Message, NewMessage, Room},
         hosted::HostedWorkspace,
-        sessions::{AgentsOn, NewPrompt, NewSession, Source, create_session_in, dispatch, issue_slug, slug},
+        sessions::{NewPrompt, NewSession, Source, create_session_in, dispatch, issue_slug, slug},
     },
-    sessions::hydrate,
+    sessions::{asks, hydrate, pool},
     triggers::{Cannot, may_start},
 };
 
@@ -82,6 +89,11 @@ pub const MENTION: &str = "arugula";
 /// Where `@arugula` works, said where it doesn't.
 pub const NOT_HERE: &str =
     "@arugula works in a project's channels, and in the threads on its issues and pull requests.";
+/// The platform's which-box question starts so.
+pub const WHICH_BOX: &str = "Which cloud workspace should @arugula run on?";
+/// The platform's which-repo question starts so.
+pub const WHICH_REPO: &str = "Which repo should @arugula work in on ";
+
 /// Said when the project has no hosted workspace.
 pub const NO_BOX: &str =
     "@arugula runs on this project's cloud workspace, and it has none: set one up first, then ask again.";
@@ -154,7 +166,7 @@ async fn handle(app: &Platform, room: &Room, author: &str, seq: i64, parent: Opt
         return Ok(());
     };
     if asked {
-        return start(app, room, thread, &project, author).await;
+        return start(app, room, thread, &project, author, text).await;
     }
     // Only a thread, not a channel's new message, has a question to answer.
     if parent.is_some() || thread == 0 {
@@ -201,53 +213,6 @@ pub(crate) fn refusal(who: &str, why: Cannot) -> String {
     }
 }
 
-/// The box's repos as `owner/name` (or the clone URL, when it isn't
-/// GitHub's), in its spec's order.
-fn repos(w: &HostedWorkspace) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for r in &w.spec.repos {
-        let name = crate::hosted::setup::github_repo(r).unwrap_or_else(|| r.clone());
-        if !out.contains(&name) {
-            out.push(name);
-        }
-    }
-    out
-}
-
-/// The words of `text` as names may be written: lowercase, split at
-/// anything but letters, digits, `/`, `.`, `-` and `_`, trailing dots off.
-fn words(text: &str) -> Vec<String> {
-    text.split(|c: char| !(c.is_alphanumeric() || matches!(c, '/' | '.' | '-' | '_')))
-        .map(|w| w.trim_end_matches('.').to_lowercase())
-        .filter(|w| !w.is_empty())
-        .collect()
-}
-
-/// The one of `options` that `text` names, when it names exactly one: by
-/// any of each option's names.
-fn named<'a>(text: &str, options: &'a [(String, Vec<String>)]) -> Option<&'a str> {
-    let ws = words(text);
-    let mut hit = options.iter().filter(|(_, names)| names.iter().any(|n| ws.contains(&n.to_lowercase())));
-    let first = hit.next()?;
-    hit.next().is_none().then_some(first.0.as_str())
-}
-
-/// A repo goes by `owner/name`, and by `name` when no other listed repo
-/// has it.
-fn repo_options(all: &[String]) -> Vec<(String, Vec<String>)> {
-    let short = |r: &str| r.rsplit('/').next().unwrap_or(r).to_owned();
-    all.iter()
-        .map(|r| {
-            let mut names = vec![r.clone()];
-            let s = short(r);
-            if all.iter().filter(|o| short(o) == s).count() == 1 && s != *r {
-                names.push(s);
-            }
-            (r.clone(), names)
-        })
-        .collect()
-}
-
 fn list(items: &[String]) -> String {
     match items {
         [] => String::new(),
@@ -256,71 +221,102 @@ fn list(items: &[String]) -> String {
     }
 }
 
-/// The project's live workspaces among `ids`, by id.
-fn workspaces(app: &Platform, project: &str, ids: &[String]) -> Result<Vec<HostedWorkspace>> {
-    let mut out = Vec::new();
-    for id in ids {
-        if let Some(w) = app.db.hosted_any(project, id)?.filter(|w| !matches!(w.state.as_str(), "deleting" | "deleted"))
-        {
-            out.push(w);
-        }
-    }
-    Ok(out)
-}
-
-/// `@arugula` in a thread with no session going.
-async fn start(app: &Platform, room: &Room, thread: u64, project: &str, asker: &str) -> Result<()> {
+/// `@arugula` in a thread with no session going: the boxes it may run on
+/// ([`pool::candidates`]), the repo ([`pool::settle`]), then the box
+/// ([`pool::pick`]).
+async fn start(app: &Platform, room: &Room, thread: u64, project: &str, asker: &str, text: &str) -> Result<()> {
     if let Some(why) = may_start(app, project, asker).await? {
         let who = super::name_of(app, asker).await?;
         say(app, room, thread, &refusal(if who.is_empty() { "the asker" } else { &who }, why))?;
         return Ok(());
     }
-    let w = match app.db.agents_run_on(project)? {
-        AgentsOn::Nowhere => {
-            say(app, room, thread, NO_BOX)?;
-            return Ok(());
-        }
-        AgentsOn::Ask(ids) => {
-            let names: Vec<String> = workspaces(app, project, &ids)?.into_iter().map(|w| w.name).collect();
-            say(
-                app,
-                room,
-                thread,
-                &format!(
-                    "Which cloud workspace should @arugula run on? Reply with its name: {}. (An owner or editor can \
-                     choose one for the project in its settings: agents run on.)",
-                    list(&names)
-                ),
-            )?;
-            return Ok(());
-        }
-        AgentsOn::Chosen(id) | AgentsOn::Only(id) => {
-            workspaces(app, project, &[id])?.pop().ok_or_else(|| anyhow::anyhow!("the agents' workspace is gone"))?
-        }
-    };
-    with_box(app, room, thread, project, asker, &w).await
+    let boxes = pool::candidates(app, project)?;
+    if boxes.is_empty() {
+        say(app, room, thread, NO_BOX)?;
+        return Ok(());
+    }
+    settled(app, room, thread, project, asker, boxes, &[text]).await
 }
 
-/// The box is settled: ask which repo when there are several, else start.
-async fn with_box(
+/// The boxes are these: settle the repo from what the asker wrote, then
+/// start, or say what's missing, or ask which repo.
+async fn settled(
     app: &Platform,
     room: &Room,
     thread: u64,
     project: &str,
     asker: &str,
-    w: &HostedWorkspace,
+    boxes: Vec<HostedWorkspace>,
+    said: &[&str],
 ) -> Result<()> {
-    let all = repos(w);
-    if all.len() > 1 {
-        say(
-            app,
-            room,
-            thread,
-            &format!("Which repo should @arugula work in on {}? Reply with one: {}.", w.name, list(&all)),
-        )?;
-        return Ok(());
+    let all = pool::all_repos(&boxes);
+    let linked = pool::linked(app, project)?;
+    let mut how = pool::Settled::Ambiguous;
+    for text in if said.is_empty() { &[""][..] } else { said } {
+        how = pool::settle(text, &all, &linked);
+        if how != pool::Settled::Ambiguous {
+            break;
+        }
     }
-    launch(app, room, thread, project, asker, w, all.first().map(String::as_str)).await
+    match how {
+        pool::Settled::Repo(repo) => go(app, room, thread, project, asker, boxes, repo.as_deref()).await,
+        pool::Settled::Missing(repo) => {
+            say(app, room, thread, &missing(&repo))?;
+            Ok(())
+        }
+        pool::Settled::Ambiguous => {
+            let on = match boxes.as_slice() {
+                [one] => Some(one.name.as_str()),
+                _ => None,
+            };
+            ask_repo(app, room, thread, asker, &all, on).await
+        }
+    }
+}
+
+/// Said when the ask names a repo the project linked and none of its
+/// workspaces has.
+pub fn missing(repo: &str) -> String {
+    format!("None of this project's cloud workspaces has {repo}: add it to one's repos (its settings), then ask again.")
+}
+
+/// The repo is settled: the best of `boxes` with it, then start.
+async fn go(
+    app: &Platform,
+    room: &Room,
+    thread: u64,
+    project: &str,
+    asker: &str,
+    boxes: Vec<HostedWorkspace>,
+    repo: Option<&str>,
+) -> Result<()> {
+    let Some(w) = pool::pick(app, project, boxes, repo).await? else {
+        say(app, room, thread, &missing(repo.unwrap_or("that repo")))?;
+        return Ok(());
+    };
+    launch(app, room, thread, project, asker, &w, repo).await
+}
+
+/// The which-repo question, as an ask (Arugula #214): a form on its card,
+/// a mention of its asker until it's answered, and its text the plain
+/// fallback ("Reply with one").
+pub fn repo_question(all: &[String], on: Option<&str>) -> String {
+    let on = on.map(|n| format!(" on {n}")).unwrap_or_default();
+    format!("Which repo should @arugula work in{on}? Reply with one: {}.", list(all))
+}
+
+async fn ask_repo(
+    app: &Platform,
+    room: &Room,
+    thread: u64,
+    asker: &str,
+    all: &[String],
+    on: Option<&str>,
+) -> Result<()> {
+    // A newer ask in the thread takes an older one's place.
+    asks::close(app, room, thread, asks::REPO)?;
+    asks::post(app, room, thread, asks::REPO, asker, &repo_question(all, on)).await?;
+    Ok(())
 }
 
 /// The ask in this thread that's waiting on its asker: the newest message
@@ -342,12 +338,63 @@ async fn waiting_ask(app: &Platform, room: &Room, thread: u64, before: i64) -> R
     };
     let ask = ms[i].clone();
     let after: Vec<Message> =
-        ms[i + 1..].iter().filter(|m| m.author == ask.author && m.deleted.is_none()).cloned().collect();
+        ms[i + 1..].iter().filter(|m| m.author == ask.author && m.deleted.is_none() && own(m)).cloned().collect();
     Ok(Some((ask, after)))
 }
 
+/// Whether `m` is its author's own words: not their agent's, nor a
+/// product's for them (a session's answer is its asker's, `via` it).
+fn own(m: &Message) -> bool {
+    m.agent.is_none() && m.via.is_none()
+}
+
+/// Of a thread's messages `ms`, oldest first, the numbers of `asker`'s
+/// replies that answered the platform's which-box or which-repo question
+/// (as [`answer`] reads them: after the question, before the session's
+/// card, naming exactly one of the project's boxes or their repos). The
+/// first prompt leaves them out ([`hydrate::first_prompt`]): they were
+/// for the platform, not the agent.
+pub(crate) fn answers(app: &Platform, project: &str, asker: &str, ms: &[Message]) -> Result<Vec<i64>> {
+    let ws: Vec<HostedWorkspace> = app
+        .db
+        .hosted_workspaces(project)?
+        .into_iter()
+        .filter(|w| !matches!(w.state.as_str(), "deleting" | "deleted"))
+        .collect();
+    let boxes: Vec<(String, Vec<String>)> = ws.iter().map(|w| (w.id.clone(), vec![w.name.clone()])).collect();
+    let mut all: Vec<String> = Vec::new();
+    for r in ws.iter().flat_map(pool::repos) {
+        if !all.contains(&r) {
+            all.push(r);
+        }
+    }
+    let in_repos = pool::repo_options(&all);
+    let (mut asked, mut out) = (false, Vec::new());
+    for m in ms.iter().filter(|m| m.deleted.is_none()) {
+        if m.author.is_empty() {
+            let line = m.via.as_deref() == Some(SYSTEM_VIA);
+            // The which-repo ask (Arugula #214), or the older lines.
+            let repo_ask = m.via.as_deref() == Some(asks::via(asks::REPO).as_str());
+            if repo_ask || line && (m.text.starts_with(WHICH_BOX) || m.text.starts_with(WHICH_REPO)) {
+                asked = true;
+            } else if m.via.as_deref().and_then(arugula_control_wire::sessions::card_of).is_some() {
+                // The session started: replies from here on are prompts.
+                asked = false;
+            }
+        } else if asked
+            && m.author == asker
+            && own(m)
+            && (pool::named(&m.text, &boxes).is_some() || pool::named(&m.text, &in_repos).is_some())
+        {
+            out.push(m.seq);
+        }
+    }
+    Ok(out)
+}
+
 /// A reply in a thread with no session going: the answer to its asker's
-/// question, when it is one (module docs).
+/// question, when it is one (module docs). The asker may also name one of
+/// the boxes, to run on that one.
 async fn answer(app: &Platform, room: &Room, thread: u64, project: &str, author: &str, seq: i64) -> Result<()> {
     let Some((ask, said)) = waiting_ask(app, room, thread, seq).await? else { return Ok(()) };
     if ask.author != author || !said.iter().any(|m| m.seq == seq) {
@@ -356,44 +403,117 @@ async fn answer(app: &Platform, room: &Room, thread: u64, project: &str, author:
     if may_start(app, project, author).await?.is_some() {
         return Ok(());
     }
-    let (w, from) = match app.db.agents_run_on(project)? {
-        AgentsOn::Nowhere => return Ok(()),
-        AgentsOn::Chosen(id) | AgentsOn::Only(id) => match workspaces(app, project, &[id])?.pop() {
-            Some(w) => (w, None),
-            None => return Ok(()),
-        },
-        AgentsOn::Ask(ids) => {
-            let ws = workspaces(app, project, &ids)?;
-            let options: Vec<(String, Vec<String>)> = ws.iter().map(|w| (w.id.clone(), vec![w.name.clone()])).collect();
-            let Some((m, id)) = said.iter().find_map(|m| named(&m.text, &options).map(|id| (m, id))) else {
-                return Ok(());
-            };
-            let w = ws.into_iter().find(|w| w.id == id).expect("named among them");
-            (w, Some(m.seq))
-        }
-    };
-    let all = repos(&w);
-    if all.len() <= 1 {
-        // Only the box was asked: this is its answer, or nothing.
-        return match from {
-            Some(s) if s == seq => {
-                launch(app, room, thread, project, author, &w, all.first().map(String::as_str)).await
-            }
-            _ => Ok(()),
-        };
+    let mut boxes = pool::candidates(app, project)?;
+    if boxes.is_empty() {
+        return Ok(());
     }
-    let options = repo_options(&all);
-    let repo_said = said.iter().filter(|m| from.is_none_or(|f| m.seq >= f));
-    if let Some(r) = repo_said.clone().find_map(|m| named(&m.text, &options)) {
-        // Named in this reply, or this reply settled the box after a repo
+    // A box named by name: that one.
+    let options: Vec<(String, Vec<String>)> = boxes.iter().map(|w| (w.id.clone(), vec![w.name.clone()])).collect();
+    let chose = (boxes.len() > 1)
+        .then(|| said.iter().find_map(|m| pool::named(&m.text, &options).map(|id| (m.seq, id.to_owned()))))
+        .flatten();
+    if let Some((_, id)) = &chose {
+        boxes.retain(|w| w.id == *id);
+    }
+    let all = pool::all_repos(&boxes);
+    let from = chose.as_ref().map(|(s, _)| *s);
+    let options = pool::repo_options(&all);
+    if let Some(r) =
+        said.iter().filter(|m| from.is_none_or(|f| m.seq >= f)).find_map(|m| pool::named(&m.text, &options))
+    {
+        // Named in this reply, or this reply chose the box after a repo
         // was named: either way it's now.
-        return launch(app, room, thread, project, author, &w, Some(r)).await;
+        let r = r.to_owned();
+        return go(app, room, thread, project, author, boxes, Some(&r)).await;
     }
     if from == Some(seq) {
-        // This reply chose the box: now the repo.
-        return with_box(app, room, thread, project, author, &w).await;
+        // This reply chose the box: its only repo, or which of its repos.
+        return settled(app, room, thread, project, author, boxes, &[]).await;
     }
     Ok(())
+}
+
+/// `GET /api/chat/rooms/{room}/asks/{seq}`: the which-repo ask's form
+/// (Arugula #214), for whoever reads its room.
+pub async fn ask_show(
+    axum::extract::State(app): axum::extract::State<std::sync::Arc<Platform>>,
+    Person { account }: Person,
+    axum::extract::Path((room, seq)): axum::extract::Path<(String, i64)>,
+) -> Result<axum::Json<ChatAsk>, ApiError> {
+    let (room, _, _) = super::room_for(&app, &account, &room).await?;
+    Ok(axum::Json(repo_ask(&app, &room, seq, &account).await?))
+}
+
+/// `POST /api/chat/rooms/{room}/asks/{seq}` [`ChatAskAnswer`]: its asker
+/// answers it, and the session starts on the best box with that repo.
+pub async fn ask_answer(
+    axum::extract::State(app): axum::extract::State<std::sync::Arc<Platform>>,
+    Person { account }: Person,
+    axum::extract::Path((room, seq)): axum::extract::Path<(String, i64)>,
+    axum::Json(b): axum::Json<ChatAskAnswer>,
+) -> Result<axum::Json<ChatAsk>, ApiError> {
+    let (room, _, _) = super::room_for(&app, &account, &room).await?;
+    let a = repo_ask(&app, &room, seq, &account).await?;
+    if !a.mine {
+        let who = if a.asker_name.is_empty() { "its asker".to_owned() } else { a.asker_name.clone() };
+        return Err(err(StatusCode::FORBIDDEN, &format!("this is {who}'s to answer")));
+    }
+    if !a.open {
+        return Err(err(StatusCode::CONFLICT, "it's answered already"));
+    }
+    let Some(choice) = a.choices.iter().find(|c| **c == b.choice).cloned() else {
+        return Err(err(StatusCode::BAD_REQUEST, "that isn't one of its choices"));
+    };
+    let project = app.db.chat_room_project(&room.id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such ask"))?;
+    match may_start(&app, &project, &account).await? {
+        None => {}
+        Some(why) => return Err(err(StatusCode::FORBIDDEN, &refusal("you", why).replace("you isn't", "you aren't"))),
+    }
+    let thread = a.parent.map_or(0, |p| p as u64);
+    let boxes = pool::candidates(&app, &project)?;
+    go(&app, &room, thread, &project, &account, boxes, Some(&choice)).await?;
+    Ok(axum::Json(repo_ask(&app, &room, seq, &account).await?))
+}
+
+/// The which-repo ask at `seq` in `room`, as `reader` sees it.
+async fn repo_ask(app: &Platform, room: &Room, seq: i64, reader: &str) -> Result<ChatAsk, ApiError> {
+    let none = || err(StatusCode::NOT_FOUND, "no such ask");
+    let m = app.db.chat_message(&room.id, seq)?.ok_or_else(none)?;
+    if !m.author.is_empty() || m.via.as_deref() != Some(asks::via(asks::REPO).as_str()) {
+        return Err(none());
+    }
+    let thread = m.parent.map_or(0, |p| p as u64);
+    // Its asker: who wrote the `@arugula` it asks about.
+    let ms = hydrate::messages(app, room, thread)?;
+    let asker = ms
+        .iter()
+        .rev()
+        .find(|x| x.seq < m.seq && x.agent.is_none() && x.via.is_none() && !x.author.is_empty() && asks(&x.text))
+        .map(|x| x.author.clone())
+        .unwrap_or_default();
+    let open = !m.mentions.is_empty();
+    let session = match open {
+        true => None,
+        false => app.db.latest_thread_session(&room.id, thread)?.filter(|s| s.created_at >= m.at).map(|s| s.id),
+    };
+    let choices = match app.db.chat_room_project(&room.id)? {
+        Some(p) => pool::all_repos(&pool::candidates(app, &p)?),
+        None => vec![],
+    };
+    let asker_name = if asker.is_empty() { String::new() } else { super::name_of(app, &asker).await? };
+    Ok(ChatAsk {
+        room: room.id.clone(),
+        seq,
+        parent: m.parent,
+        kind: asks::REPO.into(),
+        mine: !asker.is_empty() && asker == reader,
+        asker,
+        asker_name,
+        question: m.text,
+        choices,
+        open,
+        session,
+    })
 }
 
 /// Make the session and its job, bound to the thread, and say so.
@@ -448,6 +568,8 @@ async fn launch(
     info!(session = s.id, room = room.id, thread, workspace = w.id, "a thread asked @arugula: session made");
     // Its status card (M257) says it started, and where, from here on.
     super::session_card::post_card(app, &s)?;
+    // The which-repo ask is answered (Arugula #214).
+    asks::close(app, room, thread, asks::REPO)?;
     Ok(())
 }
 
@@ -510,28 +632,4 @@ pub async fn issue_agent(
     let session = app.db.session_on_thread(&room.id, 0)?.filter(|s| s.asker == account).map(|s| s.id);
     info!(issue, room = room.id, session = ?session, "agent on this issue");
     Ok(axum::Json(IssueAgent { room: room.id, seq: posted.seq, session }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn opts(names: &[&str]) -> Vec<(String, Vec<String>)> {
-        names.iter().map(|n| ((*n).to_owned(), vec![(*n).to_owned()])).collect()
-    }
-
-    /// A reply picks the one option it names, and nothing when it names
-    /// none or several.
-    #[test]
-    fn a_reply_names_one_option() {
-        let boxes = opts(&["dev", "staging"]);
-        assert_eq!(named("dev please.", &boxes), Some("dev"));
-        assert_eq!(named("Staging", &boxes), Some("staging"));
-        assert_eq!(named("either dev or staging", &boxes), None);
-        assert_eq!(named("devbox", &boxes), None);
-        let repos = repo_options(&["o/app".into(), "o/web".into(), "p/web".into()]);
-        assert_eq!(named("app", &repos), Some("o/app"));
-        assert_eq!(named("web", &repos), None, "two repos are called web");
-        assert_eq!(named("use p/web.", &repos), Some("p/web"));
-    }
 }

@@ -23,7 +23,9 @@
 //! - **The messages** are the thread's: the message it hangs off and its
 //!   replies, or for an object's own thread (an issue's, a mirrored PR's)
 //!   the room's list. Deleted ones and the platform's own system lines are
-//!   left out. `<role>` is the author's in the project now (`owner`,
+//!   left out, and so are the asker's answers to its which-box and
+//!   which-repo questions (`chat::sessions::answers`): they were for the
+//!   platform, and the agent read one as a stray message. `<role>` is the author's in the project now (`owner`,
 //!   `editor`, `viewer`, `left` once they're out of it), `agent` for a
 //!   machine's agent's message (`<owner>'s agent`), and `via <product>` for
 //!   one a product posted for its author. A message quoting a pane's lines
@@ -356,8 +358,12 @@ pub async fn first_prompt(
     repo: Option<&str>,
     slug: &str,
 ) -> Result<String> {
+    let ms = messages(app, room, parent_seq)?;
+    // The platform's which-box and which-repo questions (its lines, with no
+    // author) and the asker's answers to them were for the platform.
+    let answers = crate::chat::sessions::answers(app, project, asker, &ms)?;
     let ms: Vec<Message> =
-        messages(app, room, parent_seq)?.into_iter().filter(|m| m.deleted.is_none() && !m.author.is_empty()).collect();
+        ms.into_iter().filter(|m| m.deleted.is_none() && !m.author.is_empty() && !answers.contains(&m.seq)).collect();
     let mut people: Vec<String> = ms.iter().map(|m| m.author.clone()).collect();
     people.push(asker.to_owned());
     people.sort();
@@ -411,8 +417,9 @@ pub async fn first_prompt(
 }
 
 /// Where a rebuilt box's prompt says the thread starts.
-const REBUILT: &str = "This session's box was rebuilt, and its checkout and your conversation went with the old \
-one: anything it committed and didn't push is gone. You start again in a fresh checkout, from the thread as it is now.";
+const REBUILT: &str = "This session's box was rebuilt, and its checkout went with the old one: anything it \
+committed and didn't push is gone. You start again in a fresh checkout, from the thread as it is now, and your \
+conversation before the rebuild if the old box kept it (below).";
 
 /// The first prompt of session `s` on its workspace's new box (M258: the
 /// box was rebuilt): it can't `--resume` there, so it's the thread
@@ -420,7 +427,25 @@ one: anything it committed and didn't push is gone. You start again in a fresh c
 /// prompt), then the session's archived transcript from the old box, if
 /// the box sent it ([`crate::hosted::transcripts`]), fenced as a record,
 /// its newest part kept to fit [`MAX_PROMPT`].
-pub async fn after_rebuild(app: &Platform, s: &crate::db::sessions::Session) -> Result<String> {
+pub async fn after_rebuild(app: &Platform, s: &crate::db::sessions::Session) -> Result<Rebuilt> {
+    after(app, s, REBUILT, "rebuild").await
+}
+
+/// Where a moved session's prompt says the thread starts (Arugula #214).
+const MOVED: &str = "This session moved to another box (Move to…), and its checkout stayed on the old one: \
+anything it committed and didn't push isn't here. You start again in a fresh checkout, from the thread as it is now, \
+and your conversation before the move if the old box kept it (below).";
+
+/// [`after_rebuild`] for a session Move to… sent to another workspace
+/// (Arugula #214), whose old box archived its conversation first when it
+/// could.
+pub async fn after_move(app: &Platform, s: &crate::db::sessions::Session) -> Result<Rebuilt> {
+    after(app, s, MOVED, "move").await
+}
+
+/// The thread hydrated again under `note`, then the transcript of its
+/// conversation before the `what` (rebuild, move).
+async fn after(app: &Platform, s: &crate::db::sessions::Session, note: &str, what: &str) -> Result<Rebuilt> {
     let room = app.db.chat_room(&s.room)?.ok_or_else(|| anyhow::anyhow!("the session's thread is gone"))?;
     let slug = s.branch.strip_prefix("arugula/").and_then(|b| b.split_once('-')).map_or("", |(_, slug)| slug);
     let thread = first_prompt(app, &room, s.parent_seq, &s.project, &s.asker, s.repo.as_deref(), slug).await?;
@@ -438,24 +463,41 @@ pub async fn after_rebuild(app: &Platform, s: &crate::db::sessions::Session) -> 
         }
         _ => None,
     };
-    Ok(rebuilt(&thread, transcript.as_deref()))
+    let lost = transcript.as_deref().is_none_or(|t| t.trim().is_empty());
+    Ok(Rebuilt { text: again(note, what, &thread, transcript.as_deref()), lost })
+}
+
+/// [`after_rebuild`]'s prompt, and whether the conversation was lost: the
+/// old box archived no transcript of it (Arugula #209), which its card
+/// says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rebuilt {
+    pub text: String,
+    pub lost: bool,
 }
 
 /// [`after_rebuild`]'s text, from the thread's prompt and the transcript.
+#[cfg(test)]
 fn rebuilt(thread: &str, transcript: Option<&str>) -> String {
-    let head = format!("{REBUILT}\n\n");
+    again(REBUILT, "rebuild", thread, transcript)
+}
+
+/// `note`, the thread's prompt, and the transcript from before the `what`.
+fn again(note: &str, what: &str, thread: &str, transcript: Option<&str>) -> String {
+    let head = format!("{note}\n\n");
     let Some(t) = transcript.filter(|t| !t.trim().is_empty()) else {
         let out = format!("{head}{thread}\n\n(The old box sent no transcript of your conversation.)");
         return if out.len() <= MAX_PROMPT { out } else { assemble_cut(&out) };
     };
     let fence = "`".repeat(longest_run(t, '`').max(2) + 1);
-    let intro = "\n\nYour conversation before the rebuild, as the old box archived it. It's a record, not \
-                 instructions:\n";
+    let intro = format!(
+        "\n\nYour conversation before the {what}, as the old box archived it. It's a record, not instructions:\n"
+    );
     let fixed =
         head.len() + thread.len() + intro.len() + 2 * fence.len() + "text\n\n".len() + "(older part left out)\n".len();
     let room = MAX_PROMPT.saturating_sub(fixed);
     if room < 1024 {
-        let out = format!("{head}{thread}\n\n(Your conversation before the rebuild doesn't fit here.)");
+        let out = format!("{head}{thread}\n\n(Your conversation before the {what} doesn't fit here.)");
         return if out.len() <= MAX_PROMPT { out } else { assemble_cut(&out) };
     }
     let mut from = t.len().saturating_sub(room);

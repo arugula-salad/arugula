@@ -193,7 +193,10 @@ fn a_machine_sends_its_persons_draft_when_control_asks() {
 
     d.wait_for("both answers", || answer(&f, "mine").is_some() && answer(&f, "theirs").is_some());
     let ops = f.said.lock().unwrap().iter().find(|v| v["t"] == "ops").cloned().unwrap();
-    assert_eq!(ops["ops"], json!(["forge.send", "runs.start", "runs.revoke"]));
+    assert_eq!(
+        ops["ops"],
+        json!(["forge.send", "runs.start", "runs.revoke", "hosted.archive", "hosted.archive_blocks"])
+    );
     assert_eq!(
         answer(&f, "mine").unwrap(),
         json!({ "answer": "done", "url": "https://github.com/acme/app/pull/1#issuecomment-5" })

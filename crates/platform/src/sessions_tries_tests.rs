@@ -11,6 +11,9 @@
 //!   diff from GitHub and the thread fenced in its prompt; it runs
 //!   read-only, its reply is posted in the thread as its asker's, saying
 //!   when Claude Code stood in for Codex, and it ends.
+//! - Every other turn's answer is posted in the thread, once, as its
+//!   asker's via the session, cut with the session's link when long, and
+//!   it wakes nobody and prompts nothing.
 
 use std::sync::Arc;
 
@@ -101,6 +104,12 @@ async fn world() -> World {
 impl World {
     /// The box's next signed report on `ses`, through the hub's route.
     async fn says(&self, ses: &str, kind: Kind, to: Option<State>, detail: Value) -> Reported {
+        let r = self.report(ses, kind, to, detail);
+        self.send(&r).await
+    }
+
+    /// The box's next signed report on `ses`.
+    fn report(&self, ses: &str, kind: Kind, to: Option<State>, detail: Value) -> SessionReport {
         let s = self.app.db.session(ses).unwrap().unwrap();
         let from = s.seen_as();
         let to = to.unwrap_or(from);
@@ -116,7 +125,7 @@ impl World {
             detail: &detail,
             daemon: &id,
         };
-        let r = SessionReport {
+        SessionReport {
             session: ses.into(),
             n: ev.n,
             kind: kind.as_str().into(),
@@ -125,14 +134,18 @@ impl World {
             at: ev.at,
             sig: ev.sign(&self.keys),
             detail: detail.clone(),
-        };
+        }
+    }
+
+    /// Report `r` through the hub's route, as the box.
+    async fn send(&self, r: &SessionReport) -> Reported {
         let m = HostedMachine {
             project: self.project.clone(),
             workspace: "hw_dev".into(),
-            machine: id,
+            machine: self.keys.id(),
             sign: hex::encode(self.keys.sign_public()),
         };
-        crate::session_live::report(&self.app, &m, &r).await.unwrap()
+        crate::session_live::report(&self.app, &m, r).await.unwrap()
     }
 
     /// The box takes `ses`, saying it runs it on `harness`.
@@ -396,9 +409,13 @@ async fn codex_review_reviews_what_was_pushed() {
     assert!(posted.2.ends_with("a.rs:1 main does nothing."), "{}", posted.2);
     let r = w.session(&r.id);
     assert_eq!(r.state, State::Stopped, "it ends once posted, so its slot frees");
-    // A turn with a reply is a review's only.
-    let d = json!({ "branch": s.branch, "pushed": false, "reply": "hi" });
-    assert!(matches!(w.says(&s.id, Kind::Turn, None, d).await, Reported::Refused { .. }));
+    let reviews = w.thread(p).await.into_iter().filter(|(_, via, _)| via.ends_with(" review")).count();
+    assert_eq!(reviews, 1, "posted once");
+    let answers = format!("session:{}", r.id);
+    assert!(
+        !w.thread(p).await.iter().any(|(author, via, _)| *via == answers && !author.is_empty()),
+        "a review's reply is its review, not an answer too"
+    );
 
     // M265: the session's PR merges and its thread is done, though the
     // review on it is newer; the numbers count one ask, not the review.
@@ -406,4 +423,76 @@ async fn codex_review_reviews_what_was_pushed() {
     assert!(w.app.db.done_threads(&["ch_general"]).unwrap().contains(&("ch_general".to_owned(), p as u64)));
     let counted = w.app.db.session_numbers(&w.project, 0).unwrap();
     assert_eq!(counted.iter().map(|c| c.session.as_str()).collect::<Vec<_>>(), [s.id.as_str()], "{counted:?}");
+}
+
+/// Each turn's last message is posted in the session's thread (only), as
+/// its asker's `via` the session, once however often the box sends the
+/// report; a long one is cut with the session's link; an empty one, or a
+/// turn from a box that sends none, posts nothing. What the agent wrote
+/// is text: its `@`s name nobody, and it neither prompts the session nor
+/// starts one.
+#[tokio::test]
+async fn each_turns_answer_is_posted_in_its_thread() {
+    let w = world().await;
+    let (p, s) = asked(&w, "@arugula is the readme up to date?").await;
+    w.take(&s.id, "claude").await;
+    let via = format!("session:{}", s.id);
+    let answers = || async {
+        w.thread(p)
+            .await
+            .into_iter()
+            .filter(|(author, v, _)| *v == via && !author.is_empty())
+            .map(|(author, _, text)| (author, text))
+            .collect::<Vec<_>>()
+    };
+    let next = || async {
+        let d = json!({ "prompts": queued(&w.app, &s.id) });
+        assert_eq!(w.says(&s.id, Kind::State, Some(State::Working), d).await, Reported::Taken);
+    };
+    let turn = |reply: Option<&str>| {
+        let mut d = json!({ "branch": s.branch, "pushed": false });
+        if let Some(r) = reply {
+            d["reply"] = json!(r);
+        }
+        d
+    };
+
+    // Unpushed, with a reply that @-names people and @arugula: posted, as
+    // a's, in the thread only; sent again, it's Already, and nothing more.
+    let said = "Mostly: @b the install steps are stale. @arugula fix them? @channel";
+    let r = w.report(&s.id, Kind::Turn, None, turn(Some(said)));
+    assert_eq!(w.send(&r).await, Reported::Taken);
+    assert_eq!(w.send(&r).await, Reported::Already);
+    assert_eq!(answers().await, [("a".to_owned(), said.to_owned())]);
+    assert_eq!(w.says(&s.id, Kind::State, Some(State::Done), json!({})).await, Reported::Taken);
+    let (_, v) = call(&w.base, "a", "GET", "/api/chat/rooms/ch_general/messages", None).await;
+    let timeline: Vec<&str> = v["messages"].as_array().unwrap().iter().filter_map(|m| m["via"].as_str()).collect();
+    assert_eq!(timeline, [via.as_str()], "the card only, not the answer: {timeline:?}");
+    let (_, v) = call(&w.base, "b", "GET", &format!("/api/chat/rooms/ch_general/messages?thread={p}"), None).await;
+    let posted = v["messages"].as_array().unwrap().iter().find(|m| m["text"] == said).unwrap().clone();
+    assert_eq!(posted["mentions"], json!([]), "it names nobody: {posted}");
+    assert_eq!(w.app.db.session_prompts(&s.id).unwrap().len(), 1, "it isn't a prompt to the session");
+    assert_eq!(crate::sessions_hydrate_tests::sessions(&w.app, &w.project).len(), 1, "and starts none");
+
+    // A person's reply prompts it; the next turn's answer is long: cut
+    // with the session's link.
+    post_in(&w.base, "ch_general", "b", "and the changelog?", Some(p)).await;
+    next().await;
+    let long = format!("{}THE END", "words ".repeat(1000));
+    assert_eq!(w.says(&s.id, Kind::Turn, None, turn(Some(&long))).await, Reported::Taken);
+    let got = answers().await;
+    assert_eq!(got.len(), 2, "{got:?}");
+    let (kept, rest) = got[1].1.split_once("\n\n").unwrap();
+    assert_eq!(kept.chars().count(), crate::sessions::answer::ANSWER_MAX);
+    assert!(long.starts_with(kept) && !kept.contains("THE END"));
+    let link = format!("https://control.example/p/{}/sessions/{}", w.project, s.id);
+    assert_eq!(rest, format!("{} {link}", crate::sessions::answer::THE_REST));
+    assert_eq!(w.says(&s.id, Kind::State, Some(State::Done), json!({})).await, Reported::Taken);
+
+    // An empty reply, and an older box's turn with none: nothing.
+    post_in(&w.base, "ch_general", "a", "thanks", Some(p)).await;
+    next().await;
+    assert_eq!(w.says(&s.id, Kind::Turn, None, turn(Some("  \n"))).await, Reported::Taken);
+    assert_eq!(w.says(&s.id, Kind::Turn, None, turn(None)).await, Reported::Taken);
+    assert_eq!(answers().await.len(), 2);
 }

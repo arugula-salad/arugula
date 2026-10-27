@@ -16,7 +16,7 @@ import type { MenuItem } from "../../shared/ui/menu";
 import { Modal } from "../../shared/ui/modal";
 import { ADD_PASSKEY_HASH, DEVICE_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
 import { SharedDocs } from "../ui/shared-docs";
-import { AccountPanel } from "./account";
+import { AccountPanel, GITHUB_LINK_HASH } from "./account";
 import { DeviceLinkPrompt, DevicePrompt, JoinPrompt } from "./approve";
 import { DEPLOY_HASH, DeployPrompt } from "./deploy";
 import { openPanel, useControl, usedLink, type Panel } from "./common";
@@ -86,6 +86,19 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   if (s.joined) return <Joined s={s} />;
   const notice = s.notices[0];
   if (notice) return <Notice s={s} n={notice} />;
+  // Back from linking GitHub (#208): Sign-in and account says how it went.
+  const linked = GITHUB_LINK_HASH.exec(hash)?.[1];
+  if (linked) {
+    const done = () => {
+      history.replaceState(history.state, "", location.pathname + location.search);
+      setHash("");
+    };
+    return (
+      <Modal close={done}>
+        <AccountPanel s={s} close={done} linked={linked} />
+      </Modal>
+    );
+  }
   if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
   if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;
   if (panel === "shared-docs")
@@ -131,12 +144,12 @@ export function controlMenuItems(s: ControlSession): MenuItem[] {
 
 /** The account's own items, in the account menu on every page (the bar's,
  * and the no-machines screen's, #97). Sign out is the menu's own, last. */
-export function accountItems(s: ControlSession, docs = false): MenuItem[] {
+export function accountItems(s: ControlSession): MenuItem[] {
   return [
     { label: "Teams…", run: openPanel("teams") },
     { label: "Devices and machines…", run: openPanel("devices") },
-    // #1066: follows the `docs` flag of the machine shown.
-    ...(docs ? [{ label: "Shared Docs…", run: openPanel("shared-docs") } as MenuItem] : []),
+    // #1066; everyone's since Docs left Labs (native #204).
+    { label: "Shared Docs…", run: openPanel("shared-docs") },
     { label: "Add a phone or browser…", run: openPanel("add-device") },
     { label: "Sign-in and account…", run: openPanel("account") },
     ...(platformOrigin() && s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: () => openPlatform("/settings") }] : []),

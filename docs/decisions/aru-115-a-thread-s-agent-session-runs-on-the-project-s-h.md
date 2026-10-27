@@ -27,7 +27,7 @@ options:
     tradeoff: "A machine would act on GitHub as the project with nobody sending it, against \"agents draft, people send\", and a token that pushes any ref can push to main."
 choice:
   option: "a"
-  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes."
+  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them."
 rejected:
   - option: "b"
     why: "Agents on personal machines are never woken by other people's mentions: a person's machine runs what its person starts."
@@ -97,8 +97,12 @@ agents draft while people send".
 - **The grant is the project's standing `runs.instruct`** ("One standing
   grant per project starts runs"): no new grant kind.
 - **Which box:** the project's setting "agents run on `<hw_>`". With none
-  chosen it's the project's only workspace; with several, the agent asks
-  in the thread which one.
+  chosen it's the project's only workspace; with several, the session
+  picks one whose spec has the repo, awake with a free slot first, then
+  the least busy, then by name, and its card's Move to… sends it to
+  another (amended, Arugula #214: it no longer asks which box). It asks
+  only which repo, when the boxes have several and the ask names none,
+  as a form that mentions the asker until it's answered.
 - **On the box:** an ACP agent block, as its own Unix user, in a worktree of
   its own, at most three sessions with a turn under way per box. How the
   user and the worktree are set up is the box's to settle (S42).

@@ -12,7 +12,12 @@
 //! - [`tries`]: Try 3, a session tried three ways and one kept (M264).
 //! - [`review`]: `@codex review`, a read-only session that reviews one's
 //!   pushed diff and posts what it found in the thread (M264).
+//! - [`answer`]: each turn's last message, posted in its thread.
 //! - [`merged`]: its PR merged, so its thread is done (M265).
+//! - [`pool`]: which of the project's workspaces it runs on (Arugula
+//!   #214), and [`moves`], Move to… another.
+//! - [`asks`]: what still needs its asker, as a form and a mention of them
+//!   (Arugula #214).
 //!
 //! **How sessions end besides** (each `stopped` by control, with a
 //! `reason` in its event's detail):
@@ -25,10 +30,14 @@
 //! - its project goes (only with its account or team): the session goes
 //!   with it (`db::sessions::erase_account`).
 
+pub mod answer;
+pub mod asks;
 pub mod feedback;
 pub mod hydrate;
 pub mod job;
 pub mod merged;
+pub mod moves;
+pub mod pool;
 pub mod pr;
 pub mod push;
 pub mod review;

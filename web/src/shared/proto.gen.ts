@@ -305,6 +305,47 @@ export type ChatAddMembers = { accounts: Array<string>, };
 export type ChatAgent = { machine: string, machine_name: string, };
 
 /**
+ * An ask's form (Arugula #214, [`ASK`]): which repo a thread's `@arugula`
+ * works in, when the project's workspaces have several and the ask named
+ * none.
+ */
+export type ChatAsk = { room: string, seq: number, 
+/**
+ * The thread it's in (`None`: the room's own messages, an issue's).
+ */
+parent: number | null, 
+/**
+ * `repo`.
+ */
+kind: string, 
+/**
+ * Whom it waits on, and their name now.
+ */
+asker: string, asker_name: string, question: string, 
+/**
+ * One button each.
+ */
+choices: Array<string>, 
+/**
+ * It still waits on its asker: nobody answered it, and no later ask in
+ * its thread took its place.
+ */
+open: boolean, 
+/**
+ * The reader is its asker, so the buttons are theirs.
+ */
+mine: boolean, 
+/**
+ * The session its answer started, once it's answered.
+ */
+session: string | null, };
+
+/**
+ * [`ASK`]'s `POST` body: the choice pressed.
+ */
+export type ChatAskAnswer = { choice: string, };
+
+/**
  * `POST /api/chat/presence`: a page's heartbeat, every 15 s while it's
  * open, and the answer is what it shows. `idle`: the page hasn't been
  * used for 10 minutes. `gone`: it's closing (sent as a beacon), so the
@@ -1827,6 +1868,13 @@ vms: boolean,
  * A studio is linked (`arugula studio login`).
  */
 studio: boolean, 
+/**
+ * Guest SSH access is on here (a sharing setting, native #205), in a
+ * build that has it: the owner may invite a guest over ssh. Absent
+ * from a daemon before it, where the `guest-ssh` flag in `flags`
+ * says.
+ */
+guest_ssh?: boolean, 
 /**
  * The names of the Labs flags that are on, whatever else each needs
  * (a login, a provider). `None` from a daemon before #665: see `labs`.
@@ -3359,7 +3407,13 @@ tries: Array<SessionTry>,
  * The one of [`SessionCard::tries`] kept, once one is picked; on a
  * sibling, its parent's pick.
  */
-picked: string | null, };
+picked: string | null, 
+/**
+ * Where Move to… may send it (Arugula #214): its project's other
+ * workspaces that have its repo, by name. Empty unless the reader may
+ * move it (its asker, an owner or an editor) and it's queued or done.
+ */
+moves: Array<SessionPlace>, };
 
 /**
  * A turn's finish step (M261): the command, whether it passed, and when
@@ -3385,6 +3439,11 @@ signed: boolean,
 text: string, };
 
 /**
+ * [`SESSION_MOVE`]'s body: the workspace it goes to.
+ */
+export type SessionMove = { workspace: string, };
+
+/**
  * What a session waits on a person for.
  */
 export type SessionOpen = { 
@@ -3401,7 +3460,8 @@ ask: string | null,
  */
 question: string | null, 
 /**
- * A permission's option ids.
+ * A permission's option ids, or a question's choices, by their labels
+ * (Arugula #214: a button each; its own words still go too).
  */
 options: Array<string>, at: number, };
 
@@ -3409,6 +3469,19 @@ options: Array<string>, at: number, };
  * [`SESSION_PICK`]'s body: the session kept, one of the Try 3's.
  */
 export type SessionPick = { session: string, };
+
+/**
+ * One of a project's workspaces, as Move to… lists it.
+ */
+export type SessionPlace = { workspace: string, name: string, 
+/**
+ * Its box is up now (ready and online).
+ */
+awake: boolean, 
+/**
+ * How many of its project's sessions it holds or has queued.
+ */
+busy: number, };
 
 /**
  * One of a workspace's dev servers.
@@ -3588,6 +3661,28 @@ export type ShareRequest = { pane: number,
  * Seconds until it expires [default: an hour; at most a week].
  */
 ttl_secs?: number | null, };
+
+/**
+ * `GET /api/sharing` (the `sharing.get` operation), and what `sharing.set`
+ * answers: the machine's sharing settings.
+ */
+export type Sharing = { 
+/**
+ * Guest SSH access: its owner may invite a guest to a pane over plain
+ * ssh. Off by default.
+ */
+guest_ssh: boolean, 
+/**
+ * Whether this build has guest ssh. A build without Labs keeps the
+ * setting, and nothing follows. Absent: it has.
+ */
+built?: boolean, };
+
+/**
+ * `PUT /api/sharing` (the `sharing.set` operation): the settings to
+ * change; one left out stays as it is.
+ */
+export type SharingSetRequest = { guest_ssh?: boolean, };
 
 /**
  * A split's area and how long each child is along the split's direction,
@@ -3905,6 +4000,8 @@ export const OPS = {
   "share.mint": { method: "POST", path: "/api/shares" },
   "share.revoke": { method: "DELETE", path: "/api/shares/{id}" },
   "shares.list": { method: "GET", path: "/api/shares" },
+  "sharing.get": { method: "GET", path: "/api/sharing" },
+  "sharing.set": { method: "PUT", path: "/api/sharing" },
   "shell_env.get": { method: "GET", path: "/api/hosts/self/shell-env" },
   "shell_env.refresh": { method: "POST", path: "/api/hosts/self/shell-env/refresh" },
   "signin_link.get": { method: "GET", path: "/api/signin-link" },
@@ -3928,14 +4025,19 @@ export type OpName = keyof typeof OPS;
 
 /** The Labs flags (`arugula_proto::flags::FLAGS`), in order. */
 export const FLAGS = [
-  { name: "chat", title: "Chat", about: "The chat page, which needs control. Brings this machine's old threads into it.", default: false, local_only: false },
-  { name: "vms", title: "VMs and sandboxes", about: "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider.", default: false, local_only: false },
+  { name: "sandbox-providers", title: "External sandbox providers", about: "VM tabs and panes, machines and the sandboxes page, from your own sandbox provider. Cloud workspaces don't need it.", default: false, local_only: false },
   { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
-  { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false, local_only: false },
-  { name: "guest-ssh", title: "Guest ssh", about: "Invite a guest to a pane over plain ssh.", default: false, local_only: true },
-  { name: "swarm-themes", title: "Extra swarm views", about: "The swarm's other views beside the default.", default: false, local_only: false },
-  { name: "forges", title: "Forgejo and GitLab", about: "PR and issue blocks for Forgejo and GitLab, beside GitHub's.", default: false, local_only: false },
-  { name: "agents", title: "Agent catalog", about: "Offer Claude Code subagents from this machine, and see the ones your team offers.", default: false, local_only: true },
-  { name: "docs", title: "Docs", about: "Agents build documents in a block beside their pane.", default: false, local_only: false },
+  { name: "chant-workspaces", title: "Chant workspaces", about: "Chant workspace blocks: a workspace's members, relationships and gates.", default: false, local_only: false },
+  { name: "additional-forges", title: "GitLab and Forgejo", about: "PR and issue blocks for GitLab and Forgejo, beside GitHub's.", default: false, local_only: false },
+  { name: "agent-delegation", title: "Local agent delegation", about: "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.", default: false, local_only: true },
   { name: "boards", title: "Boards", about: "A project's live status board, which needs control.", default: false, local_only: false },
+] as const;
+
+/** Renamed Labs flags (`arugula_proto::flags::ALIASES`, aru-117): the old
+ * name, then the new. A daemon from before the rename reports the old. */
+export const FLAG_ALIASES = [
+  ["vms", "sandbox-providers"],
+  ["workspaces", "chant-workspaces"],
+  ["forges", "additional-forges"],
+  ["agents", "agent-delegation"],
 ] as const;

@@ -109,8 +109,8 @@ const READ_RULES: &[&str] = &[
 
 /// What `install` adds beside [`READ_RULES`], without `--allow-acting`
 /// (#963): `doc` builds a Doc in a block beside the pane, and writes only
-/// that block's own folder. It is a write, so it isn't in
-/// docs/mcp-permissions.json's `allow` list while it is a Labs flag.
+/// that block's own folder. It is a write, so docs/mcp-permissions.json
+/// lists it under `ask`, with the other writes.
 const OWN_WRITE_RULES: &[&str] = &["mcp__arugula__doc"];
 
 /// What `install --allow-acting` adds beside [`READ_RULES`] (#655): what
@@ -869,8 +869,8 @@ mod tests {
     fn mcp_rules_follow_the_permissions_snippet() {
         // docs/mcp-permissions.json is what the daemon's own test checks
         // against `read_only` (tools.rs), so tying the CLI's lists to it
-        // ties them to the tools. `delegate` and `doc` are the ones it
-        // leaves out (flags).
+        // ties them to the tools. `delegate` is the one it leaves out (a
+        // flag's); `doc`, a write it asks for, an install allows (#963).
         let snippet: Value = serde_json::from_str(include_str!("../../../docs/mcp-permissions.json")).unwrap();
         let list = |key: &str| -> Vec<String> {
             snippet["permissions"][key].as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_owned()).collect()
@@ -878,15 +878,13 @@ mod tests {
         let mcp = |rules: &[&str]| -> Vec<String> {
             rules.iter().filter(|r| r.starts_with("mcp__")).map(|r| (*r).to_owned()).collect()
         };
-        // What an install adds without --allow-acting is the read tier and
-        // the Doc's own write (#963).
-        let by_default: Vec<&str> = READ_RULES.iter().chain(OWN_WRITE_RULES).copied().collect();
-        let (read, acting) = (mcp(&by_default), mcp(ACTING_RULES));
-        let flagged = ["mcp__arugula__delegate", "mcp__arugula__doc"];
+        let (read, acting) = (mcp(READ_RULES), mcp(ACTING_RULES));
+        let flagged = ["mcp__arugula__delegate"];
         let without =
             |v: &[String]| -> Vec<String> { v.iter().filter(|r| !flagged.contains(&r.as_str())).cloned().collect() };
         assert_eq!(without(&read), list("allow"));
         let mut a = without(&acting);
+        a.extend(mcp(OWN_WRITE_RULES));
         let mut want = list("ask");
         a.sort();
         want.sort();

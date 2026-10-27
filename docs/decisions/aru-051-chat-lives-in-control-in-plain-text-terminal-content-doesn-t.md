@@ -49,7 +49,7 @@ constrains:
   - "path:crates/platform/src/chat.rs"
   - "path:crates/platform/src/db/chat.rs"
   - "path:crates/control-wire/src/chat.rs"
-  - "path:crates/daemon/src/chat_import.rs"
+  - "path:crates/daemon/src/chat_readers.rs"
   - "path:crates/mux/src/mux/chat_readers.rs"
   - "path:crates/daemon/src/control.rs"
 ---
@@ -128,8 +128,17 @@ writable for them and a post is refused (403, `watching`). A daemon from before 
 to bring its threads into chat". The import stays after the store went
 (decision 9): it reads the old files from disk itself, so a machine that
 skips the release with the import still brings its threads in, and one not
-in control leaves them on disk, unread. Where: `crates/daemon/src/chat_import.rs`,
-`crates/mux/src/mux/chat_readers.rs`, `chat::daemon_import` in the platform.
+in control leaves them on disk, unread.
+
+The import was removed on 2026-10-26 (Jake, native #203, when chat left
+Labs), with no replacement: the route, its wire types, the `chat-import`
+feature and control's "Update to bring its threads into chat" went with it.
+What came in stays (archives, imported numbers and names); a `threads/`
+folder that never came in stays on its machine, unread. The reader lists
+stay, sent while control has chat on for the machine's account or team
+(control's setting, which rides with the flags it sends; no machine flag).
+Where: `crates/daemon/src/chat_readers.rs`, `crates/mux/src/mux/chat_readers.rs`,
+`chat::daemon_readers` in the platform.
 
 A conversation (#855, until M125) was a third kind of thread beside them, not
 a pane or session thread moved. It had a global id (`ConvId`, `c-` and 32
