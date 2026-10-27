@@ -1157,6 +1157,77 @@ test("the app's Link GitHub opens the browser, and the window asks again when it
   expect(new URL(laptop.url()).hash).toBe("");
 });
 
+test("the app's passkey buttons open the browser up front and never call their route; a plain browser keeps its dialog (#251)", async () => {
+  // Two passkeys, so Remove is allowed; a third appears "in the browser".
+  const key = (id: string) => ({ id, created: 1, agent: "", provider: `Key ${id}`, used: null });
+  let browser = [key("pk1"), key("pk2")];
+  await laptop.route("**/api/me/passkeys", async (r) => {
+    const real = await (await r.fetch()).json();
+    await r.fulfill({ json: { ...real, passkeys: browser, ways: browser.length + 1 } });
+  });
+  // What the window asks control to do: none of it may be asked from the app.
+  const asked: string[] = [];
+  const watch = (req: { url: () => string; method: () => string }) => {
+    const u = new URL(req.url());
+    if (req.method() === "POST" && /^\/(api\/me\/passkeys\/|auth\/passkey\/register)/.test(u.pathname)) asked.push(u.pathname);
+  };
+  laptop.on("request", watch);
+  await laptop.evaluate(() => {
+    Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac" }, opened: [] as unknown[][] });
+    window.open = (...a: unknown[]) => ((window as unknown as { opened: unknown[][] }).opened.push(a), null);
+    // This control's address can't hold passkeys; the window offers Add anyway.
+    window.__arugula.control!.info.passkeys = true;
+  });
+  const opened = () => laptop.evaluate(() => (window as unknown as { opened: unknown[][] }).opened);
+  await controlPanel(laptop, "account");
+  await expect(laptop.locator("[data-account-in-browser]")).toBeVisible();
+  await expect(laptop.locator("[data-passkeys] li")).toHaveCount(2);
+  // Add a passkey: the step, not the passkey prompt.
+  await laptop.locator("[data-add-passkey]").click();
+  await expect(laptop.locator("[data-passkey-confirm]")).toHaveCount(0);
+  await expect(laptop.locator("[data-browser-step-open]")).toBeVisible();
+  // One step at a time: the other actions wait.
+  await expect(laptop.locator("[data-remove-passkey]").first()).toBeDisabled();
+  await expect(laptop.locator("[data-add-passkey]")).toBeDisabled();
+  await expect(laptop.locator("[data-end-all]")).toBeDisabled();
+  await expect(laptop.locator("[data-delete-account]")).toBeDisabled();
+  await laptop.locator("[data-browser-step-open]").click();
+  expect(await opened()).toEqual([[`${base}/#account`, "_blank", "noopener"]]);
+  // Back with nothing changed: still waiting. Changed: the panel is fresh.
+  await laptop.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(laptop.locator("[data-browser-step-waiting]")).toBeVisible();
+  browser = [...browser, key("pk3")];
+  await laptop.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(laptop.locator("[data-browser-step]")).toHaveCount(0);
+  await expect(laptop.locator("[data-passkeys] li")).toHaveCount(3);
+  // Remove: no dialog, the step instead.
+  await laptop.locator("[data-remove-passkey]").first().click();
+  await expect(laptop.locator("[data-confirm-dialog]")).toHaveCount(0);
+  await laptop.locator("[data-browser-step-open]").click();
+  expect(await opened()).toEqual([
+    [`${base}/#account`, "_blank", "noopener"],
+    [`${base}/#account`, "_blank", "noopener"],
+  ]);
+  await laptop.locator("[data-browser-step-cancel]").click();
+  // Neither went to control (it would refuse both).
+  expect(asked).toEqual([]);
+  laptop.off("request", watch);
+  // A plain browser: Remove still asks in the window.
+  await laptop.evaluate(() => {
+    delete (window as unknown as { __arugulaApp?: unknown }).__arugulaApp;
+  });
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+  await controlPanel(laptop, "account");
+  await expect(laptop.locator("[data-account-in-browser]")).toHaveCount(0);
+  await expect(laptop.locator("[data-passkeys] li")).toHaveCount(3);
+  await laptop.locator("[data-remove-passkey]").first().click();
+  await expect(laptop.locator("[data-confirm-dialog]")).toContainText("stops signing you in at once");
+  await expect(laptop.locator("[data-browser-step]")).toHaveCount(0);
+  await laptop.locator("[data-confirm-dialog]").getByRole("button", { name: "Cancel" }).click();
+  await laptop.unroute("**/api/me/passkeys");
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+});
+
 test("sessions: where you're signed in, and signing out everywhere (#173)", async () => {
   await controlPanel(laptop, "account");
   await expect(laptop.getByRole("heading", { name: "Sign-in and account" })).toBeVisible();

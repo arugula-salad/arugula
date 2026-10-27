@@ -3,11 +3,11 @@
 // in), and deleting the account, after typing its login. Its usage reports switch is shared
 // (../../shared/ui/account-telemetry.tsx), handed the account's answer.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { UsageReports } from "../../shared/ui/account-telemetry";
 import { agentName, api, shownName, type ControlSession } from "../control";
 import { desktopApp } from "../../shared/desktop";
-import { BrowserStep } from "../../shared/ui/browser-step";
+import { BrowserStep, browserButton } from "../../shared/ui/browser-step";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
@@ -77,6 +77,15 @@ export const GITHUB_LINK_HASH = /^#github-link=([a-z-]+)$/;
  * app sends Link GitHub, as its window can't link (#235). */
 export const ACCOUNT_HASH = "#account";
 
+/** The account actions the desktop app's window can't do (control refuses
+ * them from it): each opens the browser step instead (#251). */
+type Away = "end-all" | "remove-passkey" | "add-passkey" | "link-github" | "unlink-github" | "delete";
+
+/** What the browser can change here, as one string: the passkeys, the GitHub
+ * link and the sign-ins. */
+const fingerprint = (sessions: SessionRow[] | null, keys: Passkeys | null) =>
+  JSON.stringify([keys?.passkeys.map((k) => k.id), keys?.github ?? null, sessions?.map((x) => x.id)]);
+
 /** What linking GitHub came back with, for the dialog to say. */
 const LINKED: Record<string, string> = {
   linked: "GitHub is linked: you can sign in with it too.",
@@ -97,9 +106,23 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
   const [unlinking, setUnlinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  // The desktop app's window can't link GitHub (control refuses it): the
-  // browser does, and the window asks again when the person is back (#235).
-  const [inBrowser, setInBrowser] = useState(false);
+  // The desktop app's window can't link GitHub or change passkeys, sign-ins
+  // or the account (control refuses it): the browser does, and the window
+  // asks again when the person is back (#235, #251). Which button sent them,
+  // and what the panel showed then.
+  const [away, setAway] = useState<Away | null>(null);
+  const before = useRef({ print: "", github: null as string | null });
+  const seen = useRef<string | null>(null);
+  const stepRef = useRef<HTMLDivElement>(null);
+  const app = !!desktopApp();
+  // Loaded, so what the browser changes is told from what was here.
+  const waiting = away !== null || (app && (!sessions || !keys));
+  const toBrowser = (a: Away) => {
+    before.current = { print: fingerprint(sessions, keys), github: keys?.github ?? null };
+    setAway(a);
+  };
+  // The step is one, below the panel's buttons: bring it into view.
+  useEffect(() => void (away && stepRef.current?.scrollIntoView?.({ block: "nearest" })), [away]);
   const [browserLinked, setBrowserLinked] = useState(false);
   const load = () => {
     api<{ sessions: SessionRow[] }>("/api/me/sessions").then((r) => setSessions(r.sessions), (e: Error) => setErr(e.message));
@@ -121,6 +144,11 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
   return (
     <>
       <h2>Sign-in and account</h2>
+      {app ? (
+        <p class="dim" data-account-in-browser>
+          Passkeys, GitHub, signing out everywhere and deleting the account are changed in a browser or on a phone: these open it there.
+        </p>
+      ) : null}
       <p class="dim">
         Signed in as <b>{s.login}</b>
         {keys?.github ? ` (GitHub: ${keys.github})` : ""}.
@@ -157,16 +185,17 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
         <button
           class={confirming === "all" ? "link danger" : "link"}
           data-end-all
+          disabled={waiting}
+          {...browserButton(confirming === "all" ? "Sign out everywhere, here too?" : "Sign out everywhere")}
           onClick={() => {
+            if (app) return toBrowser("end-all");
             if (confirming !== "all") return setConfirming("all");
             api("/api/me/sessions/end-all", {}).then(
               () => void s.signOut(false),
               (e: Error) => setErr(e.message),
             );
           }}
-        >
-          {confirming === "all" ? "Sign out everywhere, here too?" : "Sign out everywhere"}
-        </button>
+        />
       </p>
       <p class="dim">Devices and machines lists the same browsers, each with whether it's signed in.</p>
       {s.info.passkeys || keys?.passkeys.length ? (
@@ -190,12 +219,11 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
                 <button
                   class="secondary danger small"
                   data-remove-passkey={k.id}
-                  disabled={(keys?.ways ?? 0) <= 1}
-                  title={(keys?.ways ?? 0) <= 1 ? "Your only way to sign in" : undefined}
-                  onClick={() => setRemoving({ id: k.id, name: passkeyName(k, i) })}
-                >
-                  Remove
-                </button>
+                  disabled={waiting || (keys?.ways ?? 0) <= 1}
+                  {...browserButton("Remove")}
+                  title={(keys?.ways ?? 0) <= 1 ? "Your only way to sign in" : app ? "Opens in your browser" : undefined}
+                  onClick={() => (app ? toBrowser("remove-passkey") : setRemoving({ id: k.id, name: passkeyName(k, i) }))}
+                />
               </li>
             ))}
           </ul>
@@ -216,9 +244,13 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
             </ConfirmRemove>
           ) : null}
           {s.info.passkeys ? (
-            <button class="secondary" data-add-passkey onClick={() => act(() => s.addPasskey())}>
-              Add a passkey
-            </button>
+            <button
+              class="secondary"
+              data-add-passkey
+              disabled={waiting}
+              {...browserButton("Add a passkey")}
+              onClick={() => (app ? toBrowser("add-passkey") : act(() => s.addPasskey()))}
+            />
           ) : null}
         </>
       ) : null}
@@ -244,42 +276,26 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
                 <button
                   class="secondary danger small"
                   data-unlink-github
-                  disabled={keys.ways <= 1}
-                  title={keys.ways <= 1 ? "Your only way to sign in" : undefined}
-                  onClick={() => setUnlinking(true)}
-                >
-                  Unlink
-                </button>
+                  disabled={waiting || keys.ways <= 1}
+                  {...browserButton("Unlink")}
+                  title={keys.ways <= 1 ? "Your only way to sign in" : app ? "Opens in your browser" : undefined}
+                  onClick={() => (app ? toBrowser("unlink-github") : setUnlinking(true))}
+                />
               ) : (
                 <button
                   class="secondary small"
                   data-link-github
-                  disabled={inBrowser}
+                  disabled={waiting}
+                  {...browserButton("Link GitHub")}
                   onClick={() =>
-                    desktopApp()
-                      ? setInBrowser(true)
+                    app
+                      ? toBrowser("link-github")
                       : location.assign(`/auth/github?link=1&next=${encodeURIComponent(location.pathname + location.search)}`)
                   }
-                >
-                  Link GitHub
-                </button>
+                />
               )}
             </li>
           </ul>
-          {inBrowser ? (
-            <BrowserStep
-              url={`${location.origin}/${ACCOUNT_HASH}`}
-              label="Link GitHub in your browser"
-              check={async () => !!(await api<Passkeys>("/api/me/passkeys")).github}
-              onDone={() => {
-                setInBrowser(false);
-                setBrowserLinked(true);
-                load();
-                void s.refreshMe();
-              }}
-              cancel={() => setInBrowser(false)}
-            />
-          ) : null}
           {unlinking ? (
             <ConfirmRemove
               title={`Unlink GitHub (${keys?.github ?? ""})?`}
@@ -303,10 +319,37 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
       <h3 class="control-group">Delete your account</h3>
       <p class="dim">
         Removes your account from this control, with your devices, machines, sessions and passkeys.{" "}
-        <button class="link danger" data-delete-account onClick={() => setDeleting(true)}>
-          Delete account…
-        </button>
+        <button
+          class="link danger"
+          data-delete-account
+          disabled={waiting}
+          {...browserButton("Delete account…")}
+          onClick={() => (app ? toBrowser("delete") : setDeleting(true))}
+        />
       </p>
+      {away ? (
+        <div ref={stepRef}>
+          <BrowserStep
+            url={`${location.origin}/${ACCOUNT_HASH}`}
+            label="Open Sign-in and account in your browser"
+            // Done when the browser changed what this panel lists. A 401 (the
+            // browser signed this window out) throws: the directory poll then
+            // takes the window to signed-out.
+            check={async () => {
+              const [ss, ks] = await Promise.all([api<{ sessions: SessionRow[] }>("/api/me/sessions"), api<Passkeys>("/api/me/passkeys")]);
+              seen.current = ks.github;
+              return fingerprint(ss.sessions, ks) !== before.current.print;
+            }}
+            onDone={() => {
+              if (!before.current.github && seen.current) setBrowserLinked(true);
+              setAway(null);
+              load();
+              void s.refreshMe();
+            }}
+            cancel={() => setAway(null)}
+          />
+        </div>
+      ) : null}
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
         <button class="secondary" onClick={close}>Done</button>
