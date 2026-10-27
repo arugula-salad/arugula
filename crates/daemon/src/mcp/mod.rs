@@ -30,7 +30,7 @@
 //! client typed is in history as theirs.
 
 mod boards;
-mod capabilities;
+pub(crate) mod capabilities;
 mod cloud;
 mod deploys;
 mod forge_ops;

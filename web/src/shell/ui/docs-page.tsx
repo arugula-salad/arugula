@@ -4,7 +4,8 @@
 // current session (an open one comes forward), with its content and, if it
 // was shared with a link, its share menu. Delete removes it for good, and a
 // shared one unshares first; with control out of reach the machine refuses,
-// and the reason is shown here. With none yet, it offers Start an agent.
+// and the reason is shown here. With none yet, it offers Start an agent,
+// with the Doc line of *What your agent can do here* and its example.
 
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
@@ -16,6 +17,7 @@ import { AppBar } from "./app-bar";
 import { directory } from "../hosts";
 import { closeDocsPage, docsRoute, openDoc } from "./docs-route";
 import { startAgent } from "./agent-dialog";
+import { AgentCanCard } from "./agent-can";
 import { LinkIcon } from "./shell/icons";
 
 /** The page, while the route says so and this is the machine's owner. */
@@ -101,6 +103,7 @@ function Page({ client }: { client: Client }) {
           <div class="agents-empty" data-docs-empty>
             <b>Docs your agents write show up here.</b>
             <p>Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps one here.</p>
+            <AgentCanCard client={client} only="doc" />
             <button
               class="primary"
               data-docs-start-agent

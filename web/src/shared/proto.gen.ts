@@ -66,6 +66,27 @@ bps: number,
 last_ms: number, };
 
 /**
+ * One line of the card *What your agent can do here*: `GET /api/agent-can`
+ * (the `agent_can.get` operation). The daemon's MCP tools each have one,
+ * or are part of another's, and only those this machine offers are sent:
+ * their Labs flags, a forge login here, control and its grants, as the
+ * agent's `capabilities` says.
+ */
+export type AgentCan = { 
+/**
+ * The MCP tool it is (`show`, `doc`).
+ */
+tool: string, 
+/**
+ * The rest of "Ask it to …".
+ */
+ask: string, 
+/**
+ * A prompt to copy.
+ */
+example: string, };
+
+/**
  * The agent working on an issue, and what it made.
  */
 export type AgentLink = { branch: string, 
@@ -4059,6 +4080,7 @@ export const OPS = {
   "acl.set": { method: "POST", path: "/api/acl" },
   "adapter.install": { method: "POST", path: "/api/agents/adapters/{kind}/install" },
   "adapters.list": { method: "GET", path: "/api/agents/adapters" },
+  "agent_can.get": { method: "GET", path: "/api/agent-can" },
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },

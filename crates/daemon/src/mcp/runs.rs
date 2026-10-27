@@ -316,34 +316,27 @@ impl Call<'_> {
         let log = self.runs_call(Method::GET, &path, None).await.unwrap_or_else(|e| json!({ "note": e }));
         done(format!("{} ended.\n{}", line(&r), log_text(&log)), json!({ "state": r["state"], "run": r, "log": log }))
     }
+}
 
-    /// Whether run tools are live here, for `capabilities`: joined, and a
-    /// live run grant over a project its owner reads.
-    pub(super) async fn runs_reach(&self) -> RunsReach {
-        let asked = tokio::time::timeout(
-            Duration::from_secs(3),
-            self.app().control.cloud_now(Method::GET, AGENT_RUN_REACH, None),
-        );
-        let v = match asked.await {
-            Ok(Ok(v)) => v,
-            Ok(Err(e)) => return RunsReach { live: false, projects: vec![], note: said(e) },
-            Err(_) => {
-                return RunsReach {
-                    live: false,
-                    projects: vec![],
-                    note: "Arugula control didn't answer in time".into(),
-                };
-            }
-        };
-        let projects: Vec<RunsProject> = serde_json::from_value(v["projects"].clone()).unwrap_or_default();
-        let live = !projects.is_empty();
-        let note = if live {
-            "start_run starts run specs where runs.start reaches, and commands or instructions of your own where runs.command does; read_run and wait with run read them where runs.read does. A start is labelled as your person's agent on this machine; it never approves anything.".into()
-        } else {
-            "This machine's owner hasn't given its agents a run grant: `arugula grants add <machine> runs.read runs.start --project <name>` (and runs.command for commands of your own), or Settings, Agents and runs, on the platform page.".into()
-        };
-        RunsReach { live, projects, note }
-    }
+/// Whether run tools are live here, for `capabilities`: joined, and a
+/// live run grant over a project its owner reads.
+pub(super) async fn runs_reach(app: &crate::server::App) -> RunsReach {
+    let asked = tokio::time::timeout(Duration::from_secs(3), app.control.cloud_now(Method::GET, AGENT_RUN_REACH, None));
+    let v = match asked.await {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => return RunsReach { live: false, projects: vec![], note: said(e) },
+        Err(_) => {
+            return RunsReach { live: false, projects: vec![], note: "Arugula control didn't answer in time".into() };
+        }
+    };
+    let projects: Vec<RunsProject> = serde_json::from_value(v["projects"].clone()).unwrap_or_default();
+    let live = !projects.is_empty();
+    let note = if live {
+        "start_run starts run specs where runs.start reaches, and commands or instructions of your own where runs.command does; read_run and wait with run read them where runs.read does. A start is labelled as your person's agent on this machine; it never approves anything.".into()
+    } else {
+        "This machine's owner hasn't given its agents a run grant: `arugula grants add <machine> runs.read runs.start --project <name>` (and runs.command for commands of your own), or Settings, Agents and runs, on the platform page.".into()
+    };
+    RunsReach { live, projects, note }
 }
 
 /// A log page as text: what it holds, and where the rest is.

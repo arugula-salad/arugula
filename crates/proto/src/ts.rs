@@ -57,6 +57,7 @@ fn generate() -> String {
     c.visit::<FlagInfo>();
     c.visit::<crate::api::DocLinkUrl>();
     c.visit::<crate::api::DocRow>();
+    c.visit::<crate::api::AgentCan>();
     c.visit::<crate::api::DocOpenRequest>();
     c.visit::<crate::api::DocOpened>();
     c.visit::<crate::api::Ports>();
