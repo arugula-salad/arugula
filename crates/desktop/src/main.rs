@@ -661,7 +661,21 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         // platform page's) in a window of ours, anything else in the
         // browser. A webview drops these unless the app handles them.
         .on_new_window(move |url, _| {
-            if ours(&url) || platform_page(&url) {
+            // The platform page (chat, projects) in one window of its own,
+            // beside the terminals: a window already showing it goes there
+            // and comes forward (#1596).
+            if platform_page(&url) {
+                let h = handle.clone();
+                let _ = handle.run_on_main_thread(move || match showing(&h, platform_page) {
+                    Some(w) => {
+                        let _ = w.navigate(url);
+                        bring_forward(&w);
+                    }
+                    None => {
+                        let _ = open_window(&h, WebviewUrl::External(url));
+                    }
+                });
+            } else if ours(&url) {
                 let h = handle.clone();
                 let _ = handle.run_on_main_thread(move || {
                     let _ = open_window(&h, WebviewUrl::External(url));

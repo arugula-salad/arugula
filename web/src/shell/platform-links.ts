@@ -20,13 +20,18 @@ export function setPlatformOrigin(o: string | null | undefined) {
 }
 
 /** The platform page at `path`: in a tab of its own beside the terminals
- * (one, reused), or in this window in the desktop app and an installed
- * app on a phone, where tabs aren't. Nothing without a platform page. */
+ * (one, reused); in the desktop app, a window of its own, which the app
+ * reuses (#1596); in this window in an installed app on a phone, where
+ * tabs aren't. Nothing without a platform page. */
 export function openPlatform(path: string) {
   if (!origin) return;
   const url = `${origin}${path}`;
   const standalone = matchMedia?.("(display-mode: standalone)").matches;
-  if (desktopApp() || standalone || !window.open(url, "arugula-platform")) location.assign(url);
+  if (desktopApp()) {
+    window.open(url, "_blank");
+    return;
+  }
+  if (standalone || !window.open(url, "arugula-platform")) location.assign(url);
 }
 
 /** The platform page's address for `path`, for a link's `href`. */
