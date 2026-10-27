@@ -56,9 +56,9 @@ plan() {
 context() {
   local dir=${1:?usage: ci-hosted-template context DIR OUT} out=${2:?usage: ci-hosted-template context DIR OUT}
   mkdir -p "$out"
-  cp "$here/Dockerfile" "$here/ready" "$here/start" "$here/arugulad.service" "$here/arugulad.json" "$out"/
+  cp "$here/Dockerfile" "$here/ready" "$here/start" "$here/arugulad.service" "$here/arugulad.json" "$here/tools" "$out"/
   cp "$dir/arugulad" "$dir/arugula" "$out"/
-  chmod +x "$out/arugulad" "$out/arugula" "$out/ready" "$out/start"
+  chmod +x "$out/arugulad" "$out/arugula" "$out/ready" "$out/start" "$out/tools"
   file "$out/arugulad" | grep -q 'statically linked\|static-pie' || { echo "$dir/arugulad isn't a static binary (just static)" >&2; return 1; }
 }
 

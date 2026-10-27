@@ -557,6 +557,9 @@ fn rig_with(tag: &str, more: &[(&str, &str)]) -> Rig {
     .unwrap();
     std::fs::set_permissions(&sudo, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let homes = marks.join("homes");
+    // What the setup adds to session users' environment (Arugula #215).
+    let session_env = marks.join("tools-env");
+    std::fs::write(&session_env, "CARGO_TARGET_DIR=~/.cache/arugula/cargo-target\n").unwrap();
     let fake = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fake_acp.py");
     let agent = format!("sh -c 'FAKE_ACP_DIR=$HOME/.fake-acp exec python3 {}'", fake.display());
 
@@ -576,6 +579,7 @@ fn rig_with(tag: &str, more: &[(&str, &str)]) -> Rig {
         .env("ARUGULA_HOSTED_RUN_USER", "")
         .env("ARUGULA_HOSTED_SESSION_HOMES", &homes)
         .env("ARUGULA_HOSTED_SUDO", &sudo)
+        .env("ARUGULA_HOSTED_SESSION_ENV", &session_env)
         .env("ARUGULA_HOSTED_SESSION_AGENT", &agent)
         .env("ARUGULA_SESSION_HEARTBEAT_MS", "400")
         .env("ARUGULA_GITHUB_GIT", format!("file://{}", github.display()))
@@ -620,6 +624,16 @@ fn a_hosted_machine_runs_sessions() {
     let said = std::fs::read_to_string(&sudo_log).unwrap();
     assert!(said.contains(&format!("-n -u ses1 -- env -i HOME={} USER=ses1", homes.join("ses1").display())), "{said}");
     assert!(said.contains("ANTHROPIC_API_KEY=arugula-brokered sh -c"), "the agent, with the placeholder: {said}");
+    // Arugula #215: the setup's tools first on its PATH, and the setup's
+    // environment, `~/` its user's home.
+    let theirs = format!(
+        "LOGNAME=ses1 PATH=/opt/arugula/tools/bin:/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 CARGO_TARGET_DIR={}",
+        homes.join("ses1/.cache/arugula/cargo-target").display()
+    );
+    assert!(
+        said.lines().any(|l| l.contains(&theirs) && l.contains("ANTHROPIC_API_KEY=arugula-brokered sh -c")),
+        "the agent gets the setup's tools and env: {said}"
+    );
     assert!(
         said.lines().any(|l| l.starts_with("-n -u ses1 -- env -i") && l.contains(" git -C ") && l.contains(" switch ")),
         "the session's git runs as its user: {said}"
@@ -822,6 +836,14 @@ fn a_finish_step_runs_after_each_turn() {
     assert!(
         said.lines().any(|l| l.starts_with("-n -u ses1 -- env -i HOME=") && l.contains(how)),
         "it runs as the session's user, for 15 minutes at most: {said}"
+    );
+    // With the setup's tools and environment, as the agent has them
+    // (Arugula #215).
+    assert!(
+        said.lines().any(|l| l.contains(how)
+            && l.contains(" PATH=/opt/arugula/tools/bin:/usr/local/bin:/usr/bin:/bin ")
+            && l.contains(" CARGO_TARGET_DIR=")),
+        "the finish step gets the setup's tools and env: {said}"
     );
 
     // It fails, and the agent's fix (a turn from the finish step, with its

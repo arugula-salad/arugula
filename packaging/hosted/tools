@@ -1,0 +1,228 @@
+#!/bin/sh
+# arugula-tools (Arugula #215): puts a workspace setup's tools where every
+# session user runs them. The setup runs as `user`, whose home is closed to
+# session users (ses1..ses3), so a tool installed there, or linked from
+# /usr/local/bin into there, is "Permission denied" to every session's
+# agent and its finish step. /opt/arugula/tools is the template's place for
+# them instead: owned by `user`, readable by all, writable by nobody else,
+# and its bin first on a session user's PATH (the daemon's SESSION_PATH).
+#
+#   arugula-tools link NAME [TARGET]      bin/NAME, a link to the binary
+#                                         TARGET (NAME on PATH without one)
+#   arugula-tools wrap NAME TARGET [VAR=VALUE...]
+#                                         bin/NAME, a script that sets each
+#                                         VAR (unless it's set) and runs
+#                                         TARGET
+#   arugula-tools rustup                  rustup's proxies (cargo, rustc,
+#                                         rustup...) in $CARGO_HOME/bin as
+#                                         wrappers setting RUSTUP_HOME, the
+#                                         rest there (cargo install's) as
+#                                         links
+#   arugula-tools env NAME=VALUE...       session users' environment: a
+#                                         leading ~/ is each one's home;
+#                                         NAME alone removes it
+#   arugula-tools as USER CMD [ARGS...]   CMD as USER with a session's PATH
+#                                         and environment, to check a tool
+#
+# A TARGET must be somewhere every user can reach: not under /home or
+# /root. Install into the prefix (rustup with RUSTUP_HOME=$prefix/rustup
+# and CARGO_HOME=$prefix/cargo, mise with MISE_DATA_DIR=$prefix/mise), or
+# anywhere else outside a home. Each file in bin is written beside it and
+# renamed over the old one, never written through it: a link left in
+# /usr/local/bin or bin that points into ~user stays pointing there, and
+# what it points at is never touched.
+#
+# The environment goes on sudo's command line, which sudo logs and every
+# user can read in /proc: nothing secret in it.
+#
+# ARUGULA_TOOLS is another prefix (a test's); ARUGULA_HOSTED_SUDO another
+# sudo, for `as`.
+set -eu
+
+prefix=${ARUGULA_TOOLS:-/opt/arugula/tools}
+bin=$prefix/bin
+envfile=$prefix/env
+# The daemon's SESSION_PATH (crates/daemon/src/agent/hosted.rs), checked
+# by scripts/tests/hosted-tools.sh.
+session_path=/opt/arugula/tools/bin:/usr/local/bin:/usr/bin:/bin
+[ "$prefix" = /opt/arugula/tools ] || session_path=$bin:/usr/local/bin:/usr/bin:/bin
+
+say() { echo "arugula-tools: $*" >&2; }
+die() {
+  say "$*"
+  exit 1
+}
+
+writable() {
+  [ -d "$bin" ] || die "there's no $bin: a template from before Arugula #215"
+  [ -w "$bin" ] || die "$bin isn't writable by $(id -un): run this as its owner ($(stat -c %U "$bin" 2>/dev/null || echo user))"
+}
+
+plain_name() {
+  case $1 in '' | .* | */* | *[!A-Za-z0-9._+-]*) die "not a tool's name: $1" ;; esac
+}
+
+# The names the daemon sets itself, which the environment can't
+# (agent/hosted.rs, `reserved`).
+env_name() {
+  case $1 in '' | [0-9]* | *[!A-Za-z0-9_]*) die "not a variable's name: $1" ;; esac
+  case $1 in HOME | USER | LOGNAME | PATH | LANG | GIT_*) die "$1 is the daemon's to set" ;; esac
+}
+
+# Whether every user can get to file $2 (what $1 names): not in a home,
+# and every directory on the way searchable by others.
+open_to_all() {
+  what=$1
+  [ "$1" = "$2" ] || what="$1 ($2)"
+  case $2 in
+    /home/* | /root/*) die "$what is in a home session users can't enter: install it under $prefix (or anywhere outside /home) instead" ;;
+  esac
+  d=$2
+  while d=${d%/*}; [ -n "$d" ]; do
+    m=$(stat -c %a -- "$d")
+    [ $((0$m & 1)) = 1 ] || die "$what: $d is closed to other users"
+  done
+}
+
+# $1 resolved, when every user can run it.
+reachable() {
+  real=$(readlink -f -- "$1" 2>/dev/null) || die "$1: no such file"
+  [ -f "$real" ] || die "$1: no such file"
+  open_to_all "$1" "$real"
+  m=$(stat -c %a -- "$real")
+  [ $((0$m & 1)) = 1 ] || die "$1 is $real, which other users can't run"
+  printf '%s\n' "$real"
+}
+
+# Write stdin to $1 by a file beside it, renamed over it.
+put() {
+  tmp=$(dirname "$1")/.$(basename "$1").$$
+  rm -f -- "$tmp"
+  cat >"$tmp"
+  chmod "$2" -- "$tmp"
+  mv -fT -- "$tmp" "$1"
+}
+
+squote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+link() {
+  writable
+  name=${1:?usage: arugula-tools link NAME [TARGET]}
+  plain_name "$name"
+  target=${2:-}
+  if [ -z "$target" ]; then
+    target=$(command -v -- "$name") || die "no $name on PATH: name its binary"
+  fi
+  real=$(reachable "$target")
+  tmp=$bin/.$name.$$
+  rm -f -- "$tmp"
+  ln -s -- "$real" "$tmp"
+  mv -fT -- "$tmp" "$bin/$name"
+  say "$name -> $real"
+}
+
+wrap() {
+  writable
+  name=${1:?usage: arugula-tools wrap NAME TARGET [VAR=VALUE...]}
+  target=${2:?usage: arugula-tools wrap NAME TARGET [VAR=VALUE...]}
+  shift 2
+  plain_name "$name"
+  real=$(reachable "$target")
+  # Run by its own name, not its link's target's: rustup's proxies are
+  # links to rustup, which tells them apart by the name it's run as.
+  as=$(cd -P -- "$(dirname -- "$target")" && pwd)/$(basename -- "$target")
+  open_to_all "$target" "$as"
+  # All of it checked before anything is written.
+  script="#!/bin/sh
+# $name, for every user on this box (arugula-tools wrap)."
+  for kv in "$@"; do
+    k=${kv%%=*}
+    [ "$k" != "$kv" ] || die "not VAR=VALUE: $kv"
+    env_name "$k"
+    script="$script
+[ -n \"\${$k+x}\" ] || { $k=$(squote "${kv#*=}"); export $k; }"
+  done
+  script="$script
+exec $(squote "$as") \"\$@\""
+  printf '%s\n' "$script" | put "$bin/$name" 0755
+  say "$name -> $as${1:+ (with $*)}"
+}
+
+rustup_() {
+  cargo_home=${CARGO_HOME:-$prefix/cargo}
+  rustup_home=${RUSTUP_HOME:-$prefix/rustup}
+  [ -x "$cargo_home/bin/rustup" ] || die "no rustup in $cargo_home/bin: install it with RUSTUP_HOME=$prefix/rustup CARGO_HOME=$prefix/cargo"
+  [ -d "$rustup_home" ] || die "no $rustup_home"
+  case $rustup_home in /home/* | /root/*) die "$rustup_home is in a home session users can't enter" ;; esac
+  for f in "$cargo_home"/bin/*; do
+    n=$(basename "$f")
+    # A proxy is rustup itself, under another name.
+    if [ "$f" -ef "$cargo_home/bin/rustup" ]; then
+      wrap "$n" "$f" "RUSTUP_HOME=$rustup_home"
+    else
+      link "$n" "$f"
+    fi
+  done
+}
+
+env_() {
+  [ "$#" -gt 0 ] || die "usage: arugula-tools env NAME=VALUE... (NAME alone removes it)"
+  [ -d "$prefix" ] && [ -w "$prefix" ] || die "$prefix isn't writable by $(id -un)"
+  now=$(cat -- "$envfile" 2>/dev/null || true)
+  for kv in "$@"; do
+    k=${kv%%=*}
+    env_name "$k"
+    now=$(printf '%s\n' "$now" | grep -v "^$k=" || true)
+    if [ "$k" != "$kv" ]; then
+      case $kv in *'
+'*) die "$k: one line only" ;; esac
+      now=$(printf '%s\n%s' "$now" "$kv")
+    fi
+  done
+  printf '%s\n' "$now" | sed '/^$/d' | put "$envfile" 0644
+  say "session users' environment: $envfile"
+}
+
+# The environment file for a user whose home is $1, as the daemon reads
+# it (agent/hosted.rs, `session_env`): NAME=VALUE arguments for env.
+session_env() {
+  [ -r "$envfile" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in '' | '#'*) continue ;; esac
+    k=${line%%=*}
+    [ "$k" != "$line" ] || continue
+    case $k in '' | [0-9]* | *[!A-Za-z0-9_]* | HOME | USER | LOGNAME | PATH | LANG | GIT_*) continue ;; esac
+    v=${line#*=}
+    # shellcheck disable=SC2088 # a literal ~, as the file has it
+    case $v in '~') v=$1 ;; '~/'*) v=${1%/}/${v#'~/'} ;; esac
+    printf '%s=%s\n' "$k" "$v"
+  done <"$envfile"
+}
+
+as_() {
+  user=${1:?usage: arugula-tools as USER CMD [ARGS...]}
+  shift
+  [ "$#" -gt 0 ] || die "usage: arugula-tools as USER CMD [ARGS...]"
+  home=$(getent passwd "$user" | cut -d: -f6) || true
+  [ -n "$home" ] || die "no user $user"
+  sudo=${ARUGULA_HOSTED_SUDO:-sudo}
+  # One argument a variable: the file's values may hold spaces.
+  set -f
+  old=$IFS
+  IFS='
+'
+  # shellcheck disable=SC2046 # a line each, split on newlines only
+  set -- $(session_env "$home") "$@"
+  IFS=$old
+  set +f
+  exec "$sudo" -n -u "$user" -- env -i "HOME=$home" "USER=$user" "LOGNAME=$user" "PATH=$session_path" LANG=C.UTF-8 "$@"
+}
+
+case ${1:-} in
+  link) shift; link "$@" ;;
+  wrap) shift; wrap "$@" ;;
+  rustup) shift; rustup_ "$@" ;;
+  env) shift; env_ "$@" ;;
+  as) shift; as_ "$@" ;;
+  *) sed -n '10,25p' "$0" >&2; exit 2 ;;
+esac

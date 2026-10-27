@@ -26,7 +26,7 @@ User=user
 Group=user
 WorkingDirectory=/home/user
 Environment=HOME=/home/user USER=user LOGNAME=user SHELL=/bin/bash
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PATH=/opt/arugula/tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStartPre=/bin/sh -c 'i=0; until [ -s /run/e2b/.E2B_SANDBOX_ID ] || [ "$$i" -ge 100 ]; do sleep 0.1; i=$$((i + 1)); done'
 ExecStart=/usr/local/bin/arugulad --hosted
 TimeoutStartSec=infinity
