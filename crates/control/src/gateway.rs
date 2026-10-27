@@ -213,6 +213,14 @@ impl PlatformPort for PlatformAt {
         self.port().hosted_session_push(machine, ask)
     }
 
+    fn hosted_session_issues<'a>(
+        &'a self,
+        machine: &'a arugula_platform::work::HostedMachine,
+        ask: &'a arugula_control_wire::work::SessionIssuesAsk,
+    ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::SessionIssuesGiven>> {
+        self.port().hosted_session_issues(machine, ask)
+    }
+
     fn hosted_secrets<'a>(
         &'a self,
         machine: &'a arugula_platform::work::HostedMachine,

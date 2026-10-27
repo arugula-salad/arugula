@@ -242,7 +242,7 @@ fn said(e: CloudRefused) -> String {
 }
 
 /// `#12 [open] Title`, its labels and who opened it.
-fn line(i: &Value) -> String {
+pub(super) fn line(i: &Value) -> String {
     let mut s = format!(
         "#{} [{}{}] {} ({})",
         i["number"],
@@ -268,7 +268,7 @@ fn who(account: &Value, agent: &Value) -> String {
 }
 
 /// An issue, its timeline and its newest comments as text.
-fn text(issue: &Value, events: &[Value], comments: &[Value]) -> String {
+pub(super) fn text(issue: &Value, events: &[Value], comments: &[Value]) -> String {
     let mut out = format!("{}\nOpened by {}", line(issue), who(&issue["author"], &issue["agent"]));
     let assignees: Vec<&str> = issue["assignees"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
     if !assignees.is_empty() {
@@ -297,10 +297,15 @@ fn text(issue: &Value, events: &[Value], comments: &[Value]) -> String {
                 Some(machine) => format!("{}'s agent on {machine}", m["name"].as_str().unwrap_or("?")),
                 None => m["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("someone").to_owned(),
             };
-            // Posted for them by a product (M237: a hud box's review).
-            let by = match m["via"].as_str() {
-                Some(v) => format!("{by} via {v}"),
-                None => by,
+            // Posted for them by a product (M237: a hud box's review); or
+            // what an agent session said, no person's (Arugula #215).
+            let said = m["via"].as_str().and_then(arugula_control_wire::sessions::said_of);
+            let by = match (said, m["via"].as_str()) {
+                (Some(ses), _) => {
+                    format!("agent session {}", ses.trim_start_matches("ses_").chars().take(8).collect::<String>())
+                }
+                (None, Some(v)) => format!("{by} via {v}"),
+                (None, None) => by,
             };
             out += &format!("\n[{}] {by}: {}", m["seq"], m["text"].as_str().unwrap_or(""));
         }
@@ -613,5 +618,19 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(issue_query(&q), "state=all&q=dep*+fails&limit=5");
+    }
+
+    /// A comment an agent session made is the session's, not a person's
+    /// (Arugula #215); a product's names who it posted for.
+    #[test]
+    fn a_sessions_comment_reads_as_the_session() {
+        let issue = json!({ "number": 1, "title": "t", "state": "open", "author": "a" });
+        let comments = [
+            json!({ "seq": 1, "name": "", "via": "said:ses_0123456789abcdef", "text": "bisected" }),
+            json!({ "seq": 2, "name": "Ann", "via": "hud", "text": "reviewed" }),
+        ];
+        let t = text(&issue, &[], &comments);
+        assert!(t.contains("[1] agent session 01234567: bisected"), "{t}");
+        assert!(t.contains("[2] Ann via hud: reviewed"), "{t}");
     }
 }

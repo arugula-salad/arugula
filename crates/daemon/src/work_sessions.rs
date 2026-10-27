@@ -20,8 +20,10 @@
 //!   (whose git would run the agent's planted repo config).
 //! - **Its agent is an ACP agent block** of kind `claude` (so M185's turn
 //!   gate and placeholder key hold), whose agent runs as the session user
-//!   (`agent::Config::run_as`): `sudo -n -u sesN -- env -i …`, with no
-//!   Arugula MCP server and nothing secret on its command line.
+//!   (`agent::Config::run_as`): `sudo -n -u sesN -- env -i …`, with nothing
+//!   secret on its command line, and not `/mcp`: the daemon's port is
+//!   closed to it. Its one MCP server is `mcp::session`'s, two tools for
+//!   its project's native issues, on a listener of its own.
 //! - **One prompt per turn, with its author** ([`hand`]). The box hands
 //!   the block a queued prompt only when no turn is under way, oldest first,
 //!   as its author's (the block's transcript says whose). The first also
@@ -534,7 +536,7 @@ pub fn all(dir: &Path) -> Vec<Session> {
 }
 
 /// The sessions this box runs now (taken, not ended).
-fn live(dir: &Path) -> Vec<Session> {
+pub(crate) fn live(dir: &Path) -> Vec<Session> {
     all(dir).into_iter().filter(|l| l.ended.is_none()).collect()
 }
 

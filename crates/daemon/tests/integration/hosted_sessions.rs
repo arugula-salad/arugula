@@ -85,6 +85,9 @@ struct Fake {
     asked: Arc<Mutex<Vec<Value>>>,
     /// Every push token the box asked for (M259), and those it revoked.
     pushes: Arc<Mutex<Vec<Value>>>,
+    /// Every call a session's agent made on its project's issues, as the
+    /// box sent it to control.
+    issue_asks: Arc<Mutex<Vec<Value>>>,
     revoked: Arc<Mutex<Vec<String>>>,
     /// The relay socket, to ask the box an op on (Arugula #209), and what
     /// the box said on it.
@@ -122,6 +125,7 @@ impl Fake {
             pulls: Default::default(),
             asked: Default::default(),
             pushes: Default::default(),
+            issue_asks: Default::default(),
             revoked: Default::default(),
             relay: Default::default(),
             said: Default::default(),
@@ -375,6 +379,18 @@ async fn turn_end() -> Json<Value> {
     Json(json!({ "ended": true }))
 }
 
+/// A session's agent reading and commenting on its project's issues
+/// (aru-115, amended): what it was asked is kept, and answered as the
+/// platform would.
+async fn issues(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
+    f.issue_asks.lock().unwrap().push(b.clone());
+    Json(match b["op"].as_str() {
+        Some("list") => json!({ "kind": "list", "list": { "project": PROJECT, "issues": [], "more": false } }),
+        Some("comment") => json!({ "kind": "commented", "seq": 7 }),
+        _ => json!({ "kind": "refused", "why": "no such issue" }),
+    })
+}
+
 fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
     rt.block_on(async {
         let app = Router::new()
@@ -385,6 +401,7 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/api/hosted/work", get(work))
             .route("/api/hosted/work/session", post(report))
             .route("/api/hosted/work/session/push", post(push_token))
+            .route("/api/hosted/work/session/issues", post(issues))
             .route("/installation/token", axum::routing::delete(revoke))
             .route("/api/hosted/turns", post(turn))
             .route("/api/hosted/turns/{turn}/end", post(turn_end))
@@ -656,7 +673,14 @@ fn a_hosted_machine_runs_sessions() {
         .filter(|e| e.file_name().to_string_lossy().starts_with("mcp-"))
         .map(|e| std::fs::read_to_string(e.path()).unwrap())
         .collect();
-    assert!(!mcp.contains("arugula"), "a session gets no Arugula MCP server: {mcp}");
+    // Not `/mcp`: its own server, over HTTP, with nothing secret in it.
+    let servers: Vec<Value> =
+        serde_json::Deserializer::from_str(&mcp).into_iter::<Vec<Value>>().next().unwrap().unwrap();
+    assert_eq!(servers.len(), 1, "{mcp}");
+    assert_eq!((servers[0]["type"].as_str(), servers[0]["name"].as_str()), (Some("http"), Some("arugula")), "{mcp}");
+    assert!(servers[0]["url"].as_str().unwrap().starts_with("http://127.0.0.1:"), "{mcp}");
+    assert_eq!(servers[0]["headers"], json!([]), "no token to leak onto a command line: {mcp}");
+    assert!(!mcp.contains("ilb_") && !mcp.contains("Bearer"), "{mcp}");
     let block = block_of(&f, &a);
     let lines = transcript(&d, block);
     let at = lines.iter().position(|l| l.starts_with("user: hello")).unwrap();
@@ -1089,6 +1113,51 @@ fn a_codex_session_asks_nobody_but_its_questions_reach_the_card() {
     f.ask(&s, answer);
     wait(&marks, &f, "the answered turn", || f.state(&s) == "done" && f.turns(&s).len() == 3);
     assert!(transcript(&d, block).iter().any(|l| l.starts_with("agent: ") && l.contains("Blue")));
+}
+
+/// A session's agent has two tools for its project's issues, on a server of
+/// its own: a list and a comment go to control as the session's, with an
+/// issue's number and no project, signed by the box; and nothing else of
+/// Arugula's is there to call.
+#[test]
+fn a_sessions_agent_reads_and_comments_on_its_projects_issues() {
+    let Rig { _rt, f, marks, d, .. } = rig("issues");
+    let a = ses('a');
+    f.start(&a, "look", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "session a's first turn", || f.state(&a) == "done");
+    let block = block_of(&f, &a);
+
+    let mut n = 1;
+    let mut call = |text: &str| {
+        n += 1;
+        f.queue(&a, prompt(n, "acct1", text));
+        wait(&marks, &f, "the tool turn", || f.state(&a) == "done" && f.turns(&a).len() == n as usize);
+        let lines = transcript(&d, block);
+        lines.into_iter().rev().find(|l| l.starts_with("agent: MCP ")).expect("the agent's answer")
+    };
+    let listed = call("mcp read_session_issues {}");
+    assert!(listed.contains("0 issue(s) in project prj_1"), "{listed}");
+    let commented = call(r##"mcp comment_session_issue {"issue": "#3", "text": "bisected it"}"##);
+    assert!(commented.contains("Commented on #3"), "{commented}");
+    let shown = call(r##"mcp read_session_issues {"issue": "#9"}"##);
+    assert!(shown.contains("no such issue"), "control's refusal reaches the agent: {shown}");
+
+    let asks = f.issue_asks.lock().unwrap().clone();
+    assert_eq!(asks.len(), 3, "{asks:#?}");
+    for ask in &asks {
+        assert_eq!(ask["session"], json!(a));
+        assert!(ask.get("project").is_none() && !ask.to_string().contains(PROJECT), "never a project: {ask}");
+    }
+    assert_eq!(
+        (asks[0]["op"].as_str(), asks[1]["op"].as_str(), asks[2]["op"].as_str()),
+        (Some("list"), Some("comment"), Some("show"))
+    );
+    assert_eq!((asks[1]["number"].as_u64(), asks[1]["text"].as_str()), (Some(3), Some("bisected it")));
+
+    // The daemon's own tools aren't there, nor `/mcp` for it.
+    let other = call(r##"mcp run {"command": "touch x"}"##);
+    assert!(other.contains("no tool run"), "{other}");
+    assert_eq!(f.issue_asks.lock().unwrap().len(), 3, "and nothing reached control");
 }
 
 /// Before a rebuild (Arugula #209): control asks the box `hosted.archive`
