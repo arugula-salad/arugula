@@ -216,7 +216,7 @@ async fn send(app: &App, id: PaneId, state: &BlockState) -> Result<(), Wait> {
         Ok(Ok(_)) => Ok(()),
         // No grant (403), the flag off there (404), a control from before
         // this (405): ask again after a while, not on every event.
-        Ok(Err(CloudRefused::Said { status: 403 | 404 | 405, said, .. })) => Err(Wait::For(NO_GRANT, said)),
+        Ok(Err(CloudRefused::Said { status: 403..=405, said, .. })) => Err(Wait::For(NO_GRANT, said)),
         Ok(Err(CloudRefused::OldControl | CloudRefused::Off | CloudRefused::NotJoined)) => {
             Err(Wait::For(NO_GRANT, "control doesn't take it".into()))
         }
