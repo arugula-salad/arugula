@@ -8705,6 +8705,34 @@ input.chat-search {
   align-items: stretch;
 }
 
+/* A terminal Claude whose hooks aren't heard: its questions could be cards. */
+.hooks-chip {
+  position: absolute;
+  z-index: 6;
+  top: 8px;
+  left: 8px;
+  max-width: calc(100% - 16px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border-radius: var(--chip-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+}
+
+.hooks-chip button {
+  flex-shrink: 0;
+  padding: 3px 10px;
+}
+
+.hooks-chip button.link {
+  background: none;
+  color: var(--dim);
+  padding: 3px 6px;
+}
+
 /* #551: someone else's machine, new in the list. */
 .machine-note {
   display: flex;

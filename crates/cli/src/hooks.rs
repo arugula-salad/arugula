@@ -169,6 +169,9 @@ pub enum HooksCmd {
     /// that act (`arugula agent`, `run`, `send`, `send_input`, ...)
     /// only with `--allow-acting`. Run each `arugula` command on its own,
     /// not in a pipeline or `&&` chain, or the rules don't match it.
+    ///
+    /// With `--json`, says what changed: `settings` (the file),
+    /// `hooks_added`, `rules_added` and `plugin`.
     Install {
         /// Write DIR/.claude/settings.json instead of the user's
         /// ($CLAUDE_CONFIG_DIR/settings.json, else ~/.claude/settings.json).
@@ -194,7 +197,7 @@ pub enum HooksCmd {
 pub fn run(cmd: HooksCmd, json_out: bool) -> anyhow::Result<i32> {
     match cmd {
         HooksCmd::Install { project, dry_run, allow_acting } => {
-            install_for(&settings_path(project)?, dry_run, allow_acting, plugin_for_user())
+            install_for(&settings_path(project)?, dry_run, allow_acting, plugin_for_user(), json_out)
         }
         HooksCmd::Status { project } => status_for(&settings_path(project)?, json_out, plugin_for_user()),
     }
@@ -444,16 +447,35 @@ fn pretty(v: &Value) -> String {
 
 #[cfg(test)]
 fn install(path: &Path, dry_run: bool, allow_acting: bool) -> anyhow::Result<()> {
-    install_for(path, dry_run, allow_acting, None)
+    install_for(path, dry_run, allow_acting, None, false)
+}
+
+/// What `install --json` says it did: Getting started's "Use Claude Code
+/// with Arugula" runs it and says so in its own words.
+fn said_json(path: &Path, merged: &Merged, plugin: Option<&str>) -> Value {
+    json!({ "settings": path, "hooks_added": merged.added, "rules_added": merged.allowed, "plugin": plugin })
 }
 
 /// `install`, where the user's settings may enable the plugin (`plugin`, its
 /// `enabledPlugins` key): then its hooks are the plugin's, and settings.json
-/// gets only the permission rules.
-fn install_for(path: &Path, dry_run: bool, allow_acting: bool, plugin: Option<String>) -> anyhow::Result<()> {
+/// gets only the permission rules. `json_out`: what changed, as JSON.
+fn install_for(
+    path: &Path,
+    dry_run: bool,
+    allow_acting: bool,
+    plugin: Option<String>,
+    json_out: bool,
+) -> anyhow::Result<()> {
     let mut settings = read_settings(path)?;
     let plugin = plugin_enabled(&settings).or(plugin);
     let merged = merge_for(&mut settings, allow_acting, plugin.is_some())?;
+    if json_out && !dry_run {
+        if merged.changed() || !path.exists() {
+            write_atomic(path, &pretty(&settings))?;
+        }
+        println!("{}", serde_json::to_string_pretty(&said_json(path, &merged, plugin.as_deref())).unwrap_or_default());
+        return Ok(());
+    }
     if let Some(p) = &plugin
         && !dry_run
     {
@@ -684,6 +706,21 @@ mod tests {
         assert_eq!(stop[0]["hooks"][0]["command"], "say done");
         assert_eq!(stop.len(), 3);
         assert!(present(&v).iter().all(|(_, p)| *p == Has::Present));
+    }
+
+    /// `install --json` writes the file and says what it added; nothing,
+    /// the second time.
+    #[test]
+    fn install_json_says_what_changed() {
+        let path = temp("json").join("settings.json");
+        install_for(&path, false, false, None, true).unwrap();
+        let mut v = read_settings(&path).unwrap();
+        assert!(present(&v).iter().all(|(_, h)| *h == Has::Present));
+        let m = merge(&mut v, false).unwrap();
+        let said = said_json(&path, &m, None);
+        assert_eq!(said, json!({ "settings": path, "hooks_added": false, "rules_added": false, "plugin": null }));
+        let fresh = said_json(&path, &Merged { added: true, allowed: true }, Some("arugula@arugula"));
+        assert_eq!((fresh["hooks_added"].clone(), fresh["plugin"].clone()), (json!(true), json!("arugula@arugula")));
     }
 
     #[test]

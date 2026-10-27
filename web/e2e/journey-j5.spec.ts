@@ -111,6 +111,9 @@ test("J5: no docs: from the first screen to an agent that asked and did its work
       async () => {
         await start().getByRole("button", { name: "Use Claude Code with Arugula" }).click();
         await expect(start().getByText("Claude Code has Arugula's tools")).toBeVisible({ timeout: 30_000 });
+        // Its hooks too, in the settings file the done lines name.
+        await expect(start().locator("[data-start-hooks]")).toHaveText("Questions on cards: Claude Code has Arugula's hooks");
+        await expect(start().locator("[data-start-done]")).toContainText("Added Arugula's hooks to ~/claude/settings.json");
       },
     );
 

@@ -494,8 +494,9 @@ enum Command {
     ///
     /// Installs the ACP adapter agent blocks run it through, at the version
     /// this daemon pins (or updates an older one), and for Claude Code adds
-    /// Arugula's MCP server, so it can start its helpers as panes. Says
-    /// what changed. Getting started's Agents step does the same.
+    /// Arugula's MCP server, so it can start its helpers as panes, and its
+    /// hooks (`arugula hooks install`), so a terminal Claude's questions
+    /// come to cards. Says what changed. Getting started's Agents step does the same.
     Setup(cmd::setup::Args),
     /// Join stdin and stdout to this daemon's socket.
     ///
