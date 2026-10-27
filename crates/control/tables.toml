@@ -214,6 +214,15 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "account_resets"
+plane = "machine"
+process = "hub"
+holds = "plaintext"
+what = "An account's devices reset (aru-119): when, who ran it, the reason support wrote, and the certificates and revocations it archived."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "revocations"
 plane = "machine"
 process = "hub"

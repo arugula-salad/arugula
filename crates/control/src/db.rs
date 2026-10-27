@@ -242,6 +242,16 @@ CREATE TABLE IF NOT EXISTS labs_flags (
     turned_on INTEGER NOT NULL,
     PRIMARY KEY (owner, name)
 );
+CREATE TABLE IF NOT EXISTS account_resets (
+    account TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    by TEXT NOT NULL,
+    why TEXT NOT NULL,
+    root TEXT,
+    devices TEXT NOT NULL,
+    revocations TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS account_resets_account ON account_resets (account, at);
 ";
 
 /// Columns added after a table first shipped.
@@ -1373,6 +1383,61 @@ impl Db {
         let mut q = c.prepare("SELECT body FROM revocations WHERE account = ?1")?;
         let rows = q.query_map(params![account], |r| r.get::<_, String>(0))?;
         rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
+    }
+
+    /// An account's devices reset (aru-119, #1582): every device and
+    /// revocation archived into `account_resets` and gone from the account,
+    /// its root cleared, so the next browser to sign in enrolls as its new
+    /// first device. Sessions stay signed in but no longer name a device;
+    /// waiting requests, turn-downs and pending joins go. Its machines keep
+    /// their pin of the old root and are dropped until joined again. One
+    /// transaction; false if there's no such account.
+    pub fn reset_account_devices(&self, account: &str, by: &str, why: &str, now: u64) -> anyhow::Result<bool> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let Some(root) = tx
+            .query_row("SELECT root FROM accounts WHERE id = ?1", params![account], |r| r.get::<_, Option<String>>(0))
+            .optional()?
+        else {
+            return Ok(false);
+        };
+        let devices: Vec<String> = {
+            let mut q = tx.prepare("SELECT cert FROM devices WHERE account = ?1 ORDER BY created")?;
+            q.query_map(params![account], |r| r.get(0))?.collect::<Result<_, _>>()?
+        };
+        let revocations: Vec<String> = {
+            let mut q = tx.prepare("SELECT body FROM revocations WHERE account = ?1")?;
+            q.query_map(params![account], |r| r.get(0))?.collect::<Result<_, _>>()?
+        };
+        let list = |rows: &[String]| format!("[{}]", rows.join(","));
+        tx.execute(
+            "INSERT INTO account_resets (account, at, by, why, root, devices, revocations) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![account, now as i64, by, why, root, list(&devices), list(&revocations)],
+        )?;
+        for sql in [
+            "DELETE FROM devices WHERE account = ?1",
+            "DELETE FROM revocations WHERE account = ?1",
+            "DELETE FROM turned_down WHERE account = ?1",
+            "DELETE FROM joins WHERE account = ?1",
+            "UPDATE sessions SET device = NULL WHERE account = ?1",
+            "UPDATE accounts SET root = NULL WHERE id = ?1",
+        ] {
+            tx.execute(sql, params![account])?;
+        }
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// When an account's devices were last reset, and by whom (aru-119).
+    pub fn last_reset(&self, account: &str) -> anyhow::Result<Option<(u64, String)>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT at, by FROM account_resets WHERE account = ?1 ORDER BY at DESC LIMIT 1",
+                params![account],
+                |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, String>(1)?)),
+            )
+            .optional()?)
     }
 
     /// The first time `device` was removed as one of its account's
@@ -2627,6 +2692,7 @@ impl Db {
             "DELETE FROM devices WHERE account = ?1",
             "DELETE FROM turned_down WHERE account = ?1",
             "DELETE FROM revocations WHERE account = ?1",
+            "DELETE FROM account_resets WHERE account = ?1",
             "DELETE FROM joins WHERE account = ?1",
             "DELETE FROM daemons WHERE account = ?1",
             "DELETE FROM daemon_access WHERE account = ?1",

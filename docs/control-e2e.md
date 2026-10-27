@@ -1648,9 +1648,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 145 tables in two planes ("Two planes, two trust rules"):
+Control's database has 146 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (45 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (46 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (100 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1674,6 +1674,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF. | yes |  |
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |
+| `account_resets` | **plaintext** | An account's devices reset (aru-119): when, who ran it, the reason support wrote, and the certificates and revocations it archived. | yes |  |
 | `revocations` | metadata | A signed revocation of a device's or machine's key. | yes |  |
 | `joins` | metadata | A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval. | yes |  |
 | `daemons` | metadata | The directory: a joined machine's id, name, addresses, team, last seen, and the version, OS and arch it runs. | yes | PostHog |
