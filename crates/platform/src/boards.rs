@@ -66,8 +66,12 @@ use crate::{
         forge::{CheckState, ForgeItem},
         issues::Actor,
         projects::{BOARDS_READ, BOARDS_WRITE},
+        runs::{Run, State as RunState},
     },
-    forge::viewer::{self, Viewer},
+    forge::{
+        links::membership,
+        viewer::{self, Viewer},
+    },
     grants::{AgentScope, agent_may, agent_names},
     issues::PERSONAL,
 };
@@ -219,7 +223,30 @@ fn pointer_ok(p: &wire::Pointer) -> Result<(), ApiError> {
             name_ok(machine, "machine")?;
             name_ok(pane, "pane")
         }
+        wire::Pointer::Link { url } => link_ok(url),
     }
+}
+
+/// A link pointer's URL: `https://` and a host, at most
+/// [`wire::LINK_MAX`] bytes, no userinfo, no whitespace or control
+/// characters.
+fn link_ok(url: &str) -> Result<(), ApiError> {
+    let refuse = |why: &str| Err(bad(&format!("a link is an https:// URL {why}")));
+    if url.len() > wire::LINK_MAX {
+        return refuse(&format!("of at most {} bytes", wire::LINK_MAX));
+    }
+    if url.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return refuse("without spaces or control characters");
+    }
+    let Some(rest) = url.strip_prefix("https://") else { return refuse("(only https is taken)") };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains('@') {
+        return refuse("without a user name or password before the host");
+    }
+    if authority.is_empty() || authority.starts_with(':') {
+        return refuse("with a host");
+    }
+    Ok(())
 }
 
 fn view(s: db::Stored, names: &std::collections::HashMap<String, String>) -> wire::BoardView {
@@ -280,7 +307,18 @@ fn live_item(i: &ForgeItem, repo: &str, checks: &[&CheckState]) -> wire::Live {
     wire::Live { state, kind: i.kind.clone(), repo: Some(repo.to_owned()), number: i.number, title: i.title.clone() }
 }
 
-/// Add each `fi_` and `iss_` row's live state to `v`, as `account` may see
+/// A run as a board shows it: running, succeeded, failed, or other.
+fn live_run(run: &Run) -> wire::Live {
+    let state = match run.state {
+        RunState::Running => wire::LiveState::Running,
+        RunState::Succeeded => wire::LiveState::Succeeded,
+        RunState::Failed => wire::LiveState::RunFailed,
+        _ => wire::LiveState::Other,
+    };
+    wire::Live { state, kind: "run".to_owned(), repo: None, number: 0, title: format!("{} run", run.trigger.as_str()) }
+}
+
+/// Add each `fi_`, `iss_` and `run_` row's live state to `v`, as `account` may see
 /// it: items of the project's linked repos they may read, and its issues.
 async fn resolve(app: &Platform, account: &str, v: &mut wire::BoardView) -> Result<(), ApiError> {
     let (items, issues) = app.db.board_targets(&v.board.id)?;
@@ -308,8 +346,24 @@ async fn resolve(app: &Platform, account: &str, v: &mut wire::BoardView) -> Resu
             live.insert(id, wire::Live { state, kind: "native".to_owned(), repo: None, number, title });
         }
     }
+    let runs = app.db.board_run_targets(&v.board.id)?;
+    if !runs.is_empty() {
+        // The runs routes' own check: a member of the run's project.
+        let mut may: HashMap<String, bool> = HashMap::new();
+        for id in &runs {
+            let Some(run) = app.db.run(id)? else { continue };
+            if !may.contains_key(&run.project) {
+                let ok = membership(app, account, &run.project, false).await.is_ok();
+                may.insert(run.project.clone(), ok);
+            }
+            if may[&run.project] {
+                live.insert(id.clone(), live_run(&run));
+            }
+        }
+    }
     for row in v.zones.iter_mut().flat_map(|z| z.rows.iter_mut()) {
-        if let wire::Pointer::ForgeItem { id } | wire::Pointer::Issue { id } = &row.pointer {
+        if let wire::Pointer::ForgeItem { id } | wire::Pointer::Issue { id } | wire::Pointer::Run { id } = &row.pointer
+        {
             row.live = live.get(id).cloned();
         }
     }

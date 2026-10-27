@@ -189,20 +189,29 @@ export type BoardList = { project: string, boards: Array<ProjectBoard>, };
  */
 export type BoardLive = { state: BoardLiveState, 
 /**
- * `pr` or `issue` (a mirrored one), or `native` for a native issue.
+ * `pr` or `issue` (a mirrored one), `native` for a native issue, or
+ * `run`.
  */
 kind: string, 
 /**
  * `OWNER/NAME` of a mirrored item; absent for a native issue.
  */
-repo?: string | null, number: number, title: string, };
+repo?: string | null, 
+/**
+ * A run has none: 0.
+ */
+number: number, 
+/**
+ * A run's: how it started (`manual run`).
+ */
+title: string, };
 
 /**
- * What a row's `fi_` or `iss_` pointer is now, from data control already
- * has (the forge mirror, the issues table): a separate fact, never written
+ * What a row's `fi_`, `iss_` or `run_` pointer is now, from data control
+ * already has (the forge mirror, the issues and runs tables): a separate fact, never written
  * over the row's stored `status`.
  */
-export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merged" | "closed";
+export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merged" | "closed" | "running" | "succeeded" | "run_failed" | "other";
 
 /**
  * [`BOARD_ENTRY_MOVE`]'s body: put the entry just before `before` (a
@@ -215,7 +224,7 @@ export type BoardMoveEntry = { rev: number | null, zone: string | null, before: 
  * What a row points at. `None` is free text. The ids are the platform's:
  * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
  */
-export type BoardPointer = { "kind": "none" } | { "kind": "forge_item", id: string, } | { "kind": "issue", id: string, } | { "kind": "run", id: string, } | { "kind": "workspace", id: string, } | { "kind": "block", machine: string, pane: string, };
+export type BoardPointer = { "kind": "none" } | { "kind": "forge_item", id: string, } | { "kind": "issue", id: string, } | { "kind": "run", id: string, } | { "kind": "workspace", id: string, } | { "kind": "block", machine: string, pane: string, } | { "kind": "link", url: string, };
 
 /**
  * [`BOARD_ENTRIES`]' body. Without `id` it makes an entry: `entry` says
@@ -245,7 +254,7 @@ status: BoardStatus | null, };
 
 export type BoardRow = { id: string, rev: number, pointer: BoardPointer, note: string, status: BoardStatus, 
 /**
- * A `fi_` or `iss_` pointer's state now, when the reader may see the
+ * A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
  * item ([`BoardView`] is read with it; a write's answer has it too).
  */
 live?: BoardLive | null, 

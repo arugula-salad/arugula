@@ -179,6 +179,7 @@ fn pointer_cols(p: &Pointer) -> (Option<&'static str>, Option<&str>, Option<&str
         Pointer::Run { id } => (Some("run"), Some(id), None),
         Pointer::Workspace { id } => (Some("workspace"), Some(id), None),
         Pointer::Block { machine, pane } => (Some("block"), Some(machine), Some(pane)),
+        Pointer::Link { url } => (Some("link"), Some(url), None),
     }
 }
 
@@ -190,6 +191,7 @@ fn pointer_of(kind: Option<String>, target: Option<String>, pane: Option<String>
         (Some("run"), Some(id), _) => Pointer::Run { id },
         (Some("workspace"), Some(id), _) => Pointer::Workspace { id },
         (Some("block"), Some(machine), Some(pane)) => Pointer::Block { machine, pane },
+        (Some("link"), Some(url), _) => Pointer::Link { url },
         (Some(k), ..) => bail!("a board row pointing at {k:?}"),
     })
 }
@@ -607,6 +609,15 @@ impl Db {
             if k == "issue" { issues.push(t) } else { items.push(t) }
         }
         Ok((items, issues))
+    }
+
+    /// The `run_` ids that the rows of `board` point at.
+    pub fn board_run_targets(&self, board: &str) -> Result<Vec<String>> {
+        self.c().query_map(
+            "SELECT DISTINCT target FROM board_entries WHERE board_id = ?1 AND target_kind = 'run'",
+            params![board],
+            |r| r.get(0),
+        )
     }
 
     /// The boards (id, project) with a row that points at an item of `repo`

@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GLYPH, parsePointer, pointerHref, pointerLabel, progress, stepBefore } from "../src/shared/boards/text.ts";
+import { GLYPH, parsePointer, pointerHref, pointerLabel, progress, proven, stepBefore } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -34,8 +34,23 @@ test("a typed pointer is an id of a kind a row may point at", () => {
   assert.deepEqual(parsePointer(" iss_0abc "), { kind: "issue", id: "iss_0abc" });
   assert.deepEqual(parsePointer("fi_0abc"), { kind: "forge_item", id: "fi_0abc" });
   assert.deepEqual(parsePointer("hw_0abc"), { kind: "workspace", id: "hw_0abc" });
-  assert.equal(parsePointer("https://example.com/x"), null);
+  assert.deepEqual(parsePointer("https://example.com/x"), { kind: "link", url: "https://example.com/x" });
+  assert.equal(parsePointer("http://example.com/x"), null);
+  assert.equal(parsePointer("https://example.com/a b"), null);
   assert.equal(parsePointer("brd_0abc"), null);
+});
+
+test("a proofs row is proven by a link, a succeeded run or a merged PR", () => {
+  const link = { pointer: { kind: "link", url: "https://ci.example.com/1" } };
+  assert.equal(proven(link), true);
+  assert.equal(pointerLabel(link.pointer), "ci.example.com/1");
+  assert.equal(pointerHref(link, () => undefined), "https://ci.example.com/1");
+  const live = (state) => ({ state, kind: "run", number: 0, title: "manual run" });
+  assert.equal(proven({ pointer: { kind: "run", id: "run_a" }, live: live("succeeded") }), true);
+  assert.equal(proven({ pointer: { kind: "run", id: "run_a" }, live: live("running") }), false);
+  assert.equal(proven({ pointer: { kind: "run", id: "run_a" } }), false);
+  assert.equal(proven({ pointer: { kind: "forge_item", id: "fi_a" }, live: live("merged") }), true);
+  assert.equal(proven({ pointer: { kind: "none" } }), false);
 });
 
 test("a step moves an entry one place, or can't", () => {

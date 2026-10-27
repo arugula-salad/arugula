@@ -85,6 +85,8 @@ pub const NOTE_MAX: usize = 280;
 pub const BOARDS_MAX: u64 = 100;
 pub const ZONES_MAX: u64 = 30;
 pub const ROWS_MAX: u64 = 200;
+/// The longest link pointer's URL, in bytes.
+pub const LINK_MAX: usize = 2048;
 
 /// What a row points at. `None` is free text. The ids are the platform's:
 /// `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
@@ -110,6 +112,11 @@ pub enum Pointer {
     Block {
         machine: String,
         pane: String,
+    },
+    /// An `https://` URL, as evidence (a CI page, a report). The platform
+    /// takes only `https`, no userinfo, at most [`LINK_MAX`] bytes.
+    Link {
+        url: String,
     },
 }
 
@@ -169,8 +176,8 @@ pub struct NewBoard {
     pub title: String,
 }
 
-/// What a row's `fi_` or `iss_` pointer is now, from data control already
-/// has (the forge mirror, the issues table): a separate fact, never written
+/// What a row's `fi_`, `iss_` or `run_` pointer is now, from data control
+/// already has (the forge mirror, the issues and runs tables): a separate fact, never written
 /// over the row's stored `status`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardLiveState"))]
@@ -185,6 +192,13 @@ pub enum LiveState {
     Merged,
     /// A PR closed unmerged, or an issue closed.
     Closed,
+    /// A run, running.
+    Running,
+    Succeeded,
+    /// A run that failed.
+    RunFailed,
+    /// A run that is pending, approved, denied, canceled or expired.
+    Other,
 }
 
 /// The item a row points at, as it is now: what the page draws beside the
@@ -193,12 +207,15 @@ pub enum LiveState {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardLive"))]
 pub struct Live {
     pub state: LiveState,
-    /// `pr` or `issue` (a mirrored one), or `native` for a native issue.
+    /// `pr` or `issue` (a mirrored one), `native` for a native issue, or
+    /// `run`.
     pub kind: String,
     /// `OWNER/NAME` of a mirrored item; absent for a native issue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
+    /// A run has none: 0.
     pub number: u64,
+    /// A run's: how it started (`manual run`).
     pub title: String,
 }
 
@@ -308,7 +325,7 @@ pub struct Row {
     pub pointer: Pointer,
     pub note: String,
     pub status: Status,
-    /// A `fi_` or `iss_` pointer's state now, when the reader may see the
+    /// A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
     /// item ([`BoardView`] is read with it; a write's answer has it too).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub live: Option<Live>,
@@ -423,6 +440,29 @@ impl Pointer {
                 short(id)
             }
             Pointer::Block { machine, pane } => format!("{machine}/{pane}"),
+            Pointer::Link { url } => url.strip_prefix("https://").unwrap_or(url).to_owned(),
+        }
+    }
+}
+
+impl Zone {
+    /// Whether this is the `proofs` zone.
+    pub fn is_proofs(&self) -> bool {
+        self.kind == Some(ZoneKind::Proofs)
+    }
+}
+
+impl Row {
+    /// Whether the row proves what it says, in a `proofs` zone: its pointer
+    /// is a link, a run that succeeded or a `fi_` that is merged. Derived,
+    /// never stored over `status`.
+    pub fn proven(&self) -> bool {
+        let state = self.live.as_ref().map(|l| l.state);
+        match &self.pointer {
+            Pointer::Link { .. } => true,
+            Pointer::Run { .. } => state == Some(LiveState::Succeeded),
+            Pointer::ForgeItem { .. } => state == Some(LiveState::Merged),
+            _ => false,
         }
     }
 }
@@ -443,7 +483,9 @@ fn fit(s: &str, max: usize) -> String {
 /// A board as plain text, no wider than [`TEXT_WIDTH`] columns: each zone
 /// is its title and a progress bar counting its done rows, then its rows,
 /// each a status glyph, a short pointer label and the note (cut to fit),
-/// and under an agent block's row what its machine reported of it.
+/// and under an agent block's row what its machine reported of it. A row
+/// in the `proofs` zone starts its note with `[proven]` or `[not proven yet]`
+/// ([`Row::proven`]).
 /// The `proofs` zone comes last. Ids and revs aren't in it: they are in the
 /// [`BoardView`].
 ///
@@ -469,7 +511,12 @@ pub fn render(view: &BoardView) -> String {
         for r in &z.rows {
             let label = fit(&r.pointer.label(), LABEL);
             let lead = format!("  {} {label:<LABEL$} ", r.status.glyph());
-            let note = fit(&r.note, TEXT_WIDTH - lead.chars().count());
+            let mark = match (z.is_proofs(), r.proven()) {
+                (false, _) => "",
+                (true, true) => "[proven] ",
+                (true, false) => "[not proven yet] ",
+            };
+            let note = fit(&format!("{mark}{}", r.note), TEXT_WIDTH - lead.chars().count());
             out += format!("{lead}{note}").trim_end();
             out.push('\n');
             if let Some(b) = &r.block {
@@ -517,9 +564,26 @@ mod tests {
             created_at: 0,
             updated_at: 0,
         };
+        let mut proven_run = row(Pointer::Run { id: "run_aa22".into() }, Status::Done, "Release build");
+        proven_run.live = Some(Live {
+            state: LiveState::Succeeded,
+            kind: "run".into(),
+            repo: None,
+            number: 0,
+            title: "manual run".into(),
+        });
         let long = "Wiring the new tokenizer through every caller, then the benchmarks, then the docs";
         let zones = vec![
-            zone("PROOFS", Some(ZoneKind::Proofs), vec![row(Pointer::None, Status::Done, "Tests green on main")]),
+            zone(
+                "PROOFS",
+                Some(ZoneKind::Proofs),
+                vec![
+                    row(Pointer::None, Status::Done, "Tests green on main"),
+                    row(Pointer::Link { url: "https://ci.example.com/runs/42".into() }, Status::Done, "CI on main"),
+                    proven_run,
+                    row(Pointer::Run { id: "run_ee11".into() }, Status::Done, "Nightly"),
+                ],
+            ),
             zone(
                 "Build",
                 None,
@@ -542,8 +606,11 @@ Build                                                     ██░░░░░�
   ✕                    Flaky test
   ○
 Empty                                                     ░░░░░░░░░░ 0/0
-PROOFS                                                    ██████████ 1/1
-  ●                    Tests green on main";
+PROOFS                                                    ██████████ 4/4
+  ●                    [not proven yet] Tests green on main
+  ● ci.example.com/ru… [proven] CI on main
+  ● run_aa22           [proven] Release build
+  ● run_ee11           [not proven yet] Nightly";
         assert_eq!(text, want);
         assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
     }

@@ -9,7 +9,10 @@ use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
 use super::FLAG;
-use crate::chat_tests::{TestHub, call, serve};
+use crate::{
+    chat_tests::{TestHub, call, serve},
+    db::sql::{Sql as _, params},
+};
 
 /// Team t: a owns it, v views. Chat is on for it, and boards when `boards`
 /// is. c is in team u, which has neither. t's project id. (The platform
@@ -169,6 +172,63 @@ async fn a_board_from_creation_to_a_stale_write() {
     let (st, v) = call(&base, "a", "DELETE", &format!("/api/boards/{id}/entries/{now}"), None).await;
     assert_eq!((st, shape(&v)), (200, vec![zone("Later", &[]), zone("PROOFS", &[])]), "{v}");
     assert_eq!(call(&base, "a", "DELETE", &format!("/api/boards/{id}/entries/{now}"), None).await.0, 404);
+
+    // The proofs zone: a link is kept as it was said and refused if it isn't
+    // plain https; a run row shows the run's state to a reader of its
+    // project, and nothing to one who isn't.
+    let proof = |pointer: Value| put(&base, "a", &id, json!({ "entry": "row", "zone": proofs, "pointer": pointer }));
+    let (st, v) = proof(json!({ "kind": "link", "url": "https://ci.example.com/runs/42?x=1#top" })).await;
+    assert_eq!(
+        (st, &v["zones"][1]["rows"][0]["pointer"]),
+        (200, &json!({ "kind": "link", "url": "https://ci.example.com/runs/42?x=1#top" })),
+        "{v}"
+    );
+    let long = format!("https://example.com/{}", "a".repeat(2048));
+    for bad in [
+        "http://ci.example.com/x",
+        "https://user:pw@ci.example.com/x",
+        "https://ci.example.com@evil.example/x",
+        "https://",
+        "https://ci.example.com/a b",
+        "https://ci.example.com/a\u{7}b",
+        "javascript:alert(1)",
+        long.as_str(),
+    ] {
+        let (st, v) = proof(json!({ "kind": "link", "url": bad })).await;
+        assert_eq!(st, 400, "{bad}: {v}");
+        assert!(v.to_string().contains("https"), "{bad}: {v}");
+    }
+    let mk = |project: &str, state: &str| {
+        let op = "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd -\nargv ZWNobw==\n";
+        let new = crate::db::runs::NewRun {
+            project,
+            workspace: None,
+            trigger: crate::db::runs::TriggerKind::Manual,
+            source: &json!({}),
+            op,
+            started_by: "a",
+            started_by_agent: None,
+            grant: Some("g1"),
+        };
+        let run = app.db.create_run(&new, 1).unwrap().unwrap().id;
+        app.db.c().execute("UPDATE runs SET state = ?2 WHERE id = ?1", params![run, state]).unwrap();
+        run
+    };
+    let theirs = app.db.team_project("u", "u", 1).unwrap();
+    let (ok, running, canceled, hidden) =
+        (mk(&p, "succeeded"), mk(&p, "running"), mk(&p, "canceled"), mk(&theirs, "succeeded"));
+    for r in [&ok, &running, &canceled, &hidden] {
+        let (st, v) = proof(json!({ "kind": "run", "id": r })).await;
+        assert_eq!(st, 200, "{v}");
+    }
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    let live = |i: usize| v["zones"][1]["rows"][i]["live"].clone();
+    assert_eq!(v["zones"][1]["rows"][0].get("live"), None, "a link has no live state");
+    assert_eq!(live(1), json!({ "state": "succeeded", "kind": "run", "number": 0, "title": "manual run" }));
+    assert_eq!(live(2)["state"], json!("running"));
+    assert_eq!(live(3)["state"], json!("other"));
+    assert_eq!(v["zones"][1]["rows"][4].get("live"), None, "a run of a project the reader isn't in");
+    assert_eq!(v["zones"][1]["rows"][4]["pointer"]["id"], json!(hidden));
 
     // The board's thread is an object thread, as an issue's is (with chat on).
     let open = |who: &'static str| {

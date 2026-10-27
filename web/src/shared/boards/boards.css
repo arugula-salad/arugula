@@ -152,6 +152,14 @@
   overflow-wrap: anywhere;
 }
 
+.board-proof.proven {
+  color: var(--ok, #2f9e44);
+}
+
+.board-proof.unproven {
+  opacity: 0.7;
+}
+
 .board-item {
   min-width: 0;
   overflow-wrap: anywhere;

@@ -7594,6 +7594,23 @@
                   "pane"
                 ],
                 "type": "object"
+              },
+              {
+                "description": "An https:// URL as evidence (a CI page, a report): no user name or\npassword in it, at most 2048 bytes. On a PROOFS row it counts as proven.",
+                "properties": {
+                  "kind": {
+                    "const": "link",
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "url"
+                ],
+                "type": "object"
               }
             ]
           },
@@ -15497,6 +15514,23 @@
                   "kind",
                   "machine",
                   "pane"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "An https:// URL as evidence (a CI page, a report): no user name or\npassword in it, at most 2048 bytes. On a PROOFS row it counts as proven.",
+                "properties": {
+                  "kind": {
+                    "const": "link",
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "url"
                 ],
                 "type": "object"
               }
