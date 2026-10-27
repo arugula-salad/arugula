@@ -263,21 +263,27 @@ new branch whose workflow files differ from the default branch's without
 session's branch can change `.github/workflows/`, and whoever reviews its
 PR checks those changes.
 
-**A session's agent has three Arugula tools** (aru-115, amended), and none
-of `/mcp`'s: `read_session_issues` lists its project's native issues or
-reads one, `comment_session_issue` comments on one, and
+**A session's agent has six Arugula tools** (aru-115, amended), and none
+of `/mcp`'s. For its project's native issues: `read_session_issues` lists
+them or reads one, `comment_session_issue` comments on one, and
 `create_session_issue` opens one (a title, a markdown body, labels the
-project's issues already have) and returns its number and link. The box's
-daemon serves them on a loopback listener of their own, to Claude Code
-over HTTP (Codex has no HTTP MCP yet), and each is a call to `POST
+project's issues already have) and returns its number and link. For its
+project's Docs (aru-118): `create_session_doc` makes one (a title and its
+sections, each a heading with its markdown or an intent to fill later) and
+returns its id, its sections' ids and its link; `fill_session_doc` writes
+a section of a Doc the session made, or adds one at the end; and
+`read_project_doc` lists the project's Docs or reads one as markdown. The
+box's daemon serves them on a loopback listener of their own, to Claude
+Code over HTTP (Codex has no HTTP MCP yet), and each is a call to `POST
 /api/hosted/work/session/issues` naming the session and never a project.
 They act in the session's project with its asker's rights: a viewer's
-session reads and comments and opens nothing, and a review session only
-reads. What the agent writes is the session's own: a comment has no
-author (`via` `said:<ses>`), and an issue has none either, with the
-session as its agent, so the page shows it as `Agent session <id>`. Its
-mentions are text and nobody is assigned, so nobody is pushed. Every call
-counts against the box's hourly limit.
+session reads and comments and opens and makes nothing, and a review
+session only reads. What the agent writes is the session's own: a comment
+has no author (`via` `said:<ses>`), and an issue or a Doc has none either,
+with the session as its agent, so the page shows it as `Agent session
+<id>`. Its mentions are text and nobody is assigned, so nobody is pushed.
+It writes only the Docs it made and deletes none. Every call counts
+against the box's hourly limit.
 
 **A question holds the turn** until it's answered (Arugula #215): the agent
 waits on its question tool, and the answer comes back as the tool's result.
@@ -1204,6 +1210,23 @@ aru-085); given a native issue they refuse and point to `issue_write`.
 and `/api/daemon/issues/{id}[/events]`
 (`crates/platform/src/issues/agent.rs`); a comment is a post to the
 issue's thread by its id.
+
+**Project Docs (aru-118).** A project has Docs of its own on the platform:
+a title and sections of Markdown, in a machine Doc's shape (pending, with
+an intent, until written), in plain text with its issues. The platform
+page lists them at `/p/<project>/docs` (and the latest on the project's
+home), and draws one at `/p/<project>/docs/<id>` with the Doc block's
+renderer, charts and drawings included, live while it's open (a write
+pushes an object change on the Doc's thread). Its members read; a team's
+owners and editors make, write (a section's body replaced, or a section
+added at the end) and delete, and a viewer's page has no form. A section
+is at most 64 KB, a Doc 40 sections and 1 MiB, a project 1,000 Docs.
+Nothing shares one outside its project. They come with chat, as native
+issues do. The routes are `GET`/`POST /api/projects/{project}/docs` and
+`GET`/`PUT`/`DELETE /api/projects/{project}/docs/{id}`
+(`crates/platform/src/project_docs.rs`). A session's agent makes them
+too (above); a machine's agents don't yet, and a machine's own Docs stay
+in its library.
 
 **Agents and runs (M216).** Three more powers let a machine's agents at
 a project's runs, each over one project, off until the owner gives it:

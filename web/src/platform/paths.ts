@@ -21,6 +21,8 @@
 //   /p/:project/boards             its boards (live status board), when the
 //                                  `boards` Labs flag is on
 //   /p/:project/boards/:board      a board (`brd_…`)
+//   /p/:project/docs               its Docs (aru-118)
+//   /p/:project/docs/:doc          a Doc (`pdc_…`)
 //   /p/:project/runs               its runs (M215): `?state=…`, `?trigger=…`,
 //                                  `?spec=…` narrow it
 //   /p/:project/runs/:run          a run (`?msg=N`: at that message in its
@@ -68,6 +70,8 @@ export type Route =
   | { page: "issue"; project: string; issue: string; msg?: number }
   | { page: "boards"; project: string }
   | { page: "board"; project: string; board: string }
+  | { page: "docs"; project: string }
+  | { page: "doc"; project: string; doc: string }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
   | { page: "run"; project: string; run: string; msg?: number }
   | { page: "session"; project: string; session: string }
@@ -196,6 +200,11 @@ export function parse(path: string, search = ""): Route {
     const board = idOf(parts[3]);
     return board?.startsWith("brd_") ? { page: "board", project, board } : missing;
   }
+  if (parts[2] === "docs" && parts.length === 3) return { page: "docs", project };
+  if (parts[2] === "docs" && parts.length === 4) {
+    const doc = idOf(parts[3]);
+    return doc?.startsWith("pdc_") ? { page: "doc", project, doc } : missing;
+  }
   if (parts[2] === "runs" && parts.length === 3) {
     const word = (k: string, ok: RegExp) => {
       const v = q.get(k);
@@ -275,6 +284,10 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/p/${s(r.project)}/boards`;
     case "board":
       return `/p/${s(r.project)}/boards/${s(r.board)}`;
+    case "docs":
+      return `/p/${s(r.project)}/docs`;
+    case "doc":
+      return `/p/${s(r.project)}/docs/${s(r.doc)}`;
     case "runs": {
       const q = new URLSearchParams();
       if (r.state) q.set("state", r.state);

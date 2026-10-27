@@ -181,10 +181,7 @@ fn routes() -> Routes {
         .route(boards::AGENT_BOARD_ENTRY_MOVE, post(crate::boards::agent::move_entry))
         .route(boards::AGENT_BLOCK_STATE, put(crate::boards::agent::put_block_state))
         // Project Docs (aru-118), with chat.
-        .route(
-            project_docs::PROJECT_DOCS,
-            get(crate::project_docs::list_route).post(crate::project_docs::create_route),
-        )
+        .route(project_docs::PROJECT_DOCS, get(crate::project_docs::list_route).post(crate::project_docs::create_route))
         .route(
             project_docs::PROJECT_DOC,
             get(crate::project_docs::get_route)

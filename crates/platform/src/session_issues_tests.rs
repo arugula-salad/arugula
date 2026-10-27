@@ -306,7 +306,11 @@ fn new_doc(title: &str) -> arugula_control_wire::project_docs::NewDoc {
     NewDoc {
         title: title.into(),
         sections: vec![
-            NewSection { heading: "What was said".into(), intent: String::new(), markdown: Some("Copied over.".into()) },
+            NewSection {
+                heading: "What was said".into(),
+                intent: String::new(),
+                markdown: Some("Copied over.".into()),
+            },
             NewSection { heading: "Next".into(), intent: "what to do".into(), markdown: None },
         ],
     }
@@ -371,7 +375,8 @@ async fn a_sessions_docs_are_its_askers_rights_and_its_projects() {
     use crate::db::sql::{Sql as _, params};
     let (hub, app, base, t, u) = seeded().await;
     hub.flag("team:u", true);
-    let (_, v) = call(&base, "c", "POST", &format!("/api/projects/{u}/docs"), Some(json!({ "title": "u's secret" }))).await;
+    let (_, v) =
+        call(&base, "c", "POST", &format!("/api/projects/{u}/docs"), Some(json!({ "title": "u's secret" }))).await;
     let other = v["doc"]["id"].as_str().unwrap().to_owned();
     let m = machine(&t, "hw_1", "box1");
     let ses = session(&app, &t, "hw_1", "b");

@@ -139,7 +139,9 @@ pub const WORK_SESSION_PUSH: &str = "/api/hosted/work/session/push";
 
 /// `POST` [`SessionIssuesAsk`], signed as the hosted machine (aru-115,
 /// amended): a session's agent reads its own project's native issues,
-/// comments on them and opens them. Answered [`SessionIssuesGiven`].
+/// comments on them and opens them, and makes, writes and reads its Docs
+/// (aru-118). Answered [`SessionIssuesGiven`]. Named for its first tools,
+/// and kept so for the boxes that call it.
 pub const WORK_SESSION_ISSUES: &str = "/api/hosted/work/session/issues";
 
 /// The most sessions a box runs at once: a turn under way (`working`,

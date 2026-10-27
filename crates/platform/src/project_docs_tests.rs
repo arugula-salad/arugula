@@ -99,7 +99,8 @@ async fn another_projects_doc_is_never_reached() {
 async fn a_docs_size_is_capped() {
     let (_hub, _app, base, t, _u) = seeded().await;
     let big = "x".repeat(SECTION_MAX + 1);
-    let (st, v) = make(&base, "a", &t, json!({ "title": "big", "sections": [{ "heading": "A", "markdown": big }] })).await;
+    let (st, v) =
+        make(&base, "a", &t, json!({ "title": "big", "sections": [{ "heading": "A", "markdown": big }] })).await;
     assert!(st == 400 && v["error"].as_str().unwrap().contains("64 KB"), "{v}");
     let many: Vec<Value> = (0..=SECTIONS_MAX).map(|i| json!({ "heading": format!("S{i}") })).collect();
     let (st, _) = make(&base, "a", &t, json!({ "title": "many", "sections": many })).await;

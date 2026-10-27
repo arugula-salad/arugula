@@ -4,14 +4,15 @@
 // placeholder saying what it will hold. The block (doc.tsx: a daemon's
 // state, its pictures asked for by name) and the page behind a share link
 // (doc-view.tsx: a snapshot's) both draw it, each with its own picture
-// loader. Nothing here may reach the client: the share page imports this file
-// and must stay free of it.
+// loader, and so does a project Doc's page on the platform (aru-118, which
+// draws no pictures). Nothing here may reach the client: the share page
+// imports this file and must stay free of it.
 
 import { useEffect, useMemo, useState } from "preact/hooks";
-import type { PaneId } from "../../shared/proto";
-import { plain } from "../../shared/ui/embeds";
-import { Markdown } from "../../shared/ui/markdown";
-import { BlockError, BlockLoading } from "./block-states";
+import type { PaneId } from "../proto";
+import { plain } from "../ui/embeds";
+import { Markdown } from "../ui/markdown";
+import { BlockError, BlockLoading } from "../ui/block-states";
 
 export interface Section {
   id: string;

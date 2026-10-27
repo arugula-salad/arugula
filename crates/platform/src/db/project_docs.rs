@@ -190,7 +190,9 @@ impl Db {
     }
 
     pub fn project_doc(&self, id: &str) -> Result<Option<Stored>> {
-        self.c().query_row(&format!("SELECT {COLS} FROM project_docs d WHERE d.id = ?1"), params![id], doc_row).optional()
+        self.c()
+            .query_row(&format!("SELECT {COLS} FROM project_docs d WHERE d.id = ?1"), params![id], doc_row)
+            .optional()
     }
 
     /// A Doc's sections, in order.
@@ -223,11 +225,9 @@ impl Db {
         let mut c = self.c();
         let tx = c.immediate()?;
         let Some(doc) = tx
-            .query_row(
-                &format!("SELECT title FROM project_docs WHERE id = ?1{}", tx.for_update()),
-                params![id],
-                |r| r.get::<String>(0),
-            )
+            .query_row(&format!("SELECT title FROM project_docs WHERE id = ?1{}", tx.for_update()), params![id], |r| {
+                r.get::<String>(0)
+            })
             .optional()?
         else {
             return Ok(Err(Refused::Missing("no such Doc")));

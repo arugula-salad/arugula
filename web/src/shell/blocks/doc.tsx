@@ -14,11 +14,12 @@
 import { render, type ComponentChildren } from "preact";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
-import { DocBlock, markdown, type DocState } from "./doc-render";
+import { DocBlock, markdown, type DocState } from "../../shared/docs/doc-render";
 import { registerBlock, type BlockView } from "./view";
 
-// The renderer is doc-render.tsx's; the share page imports it from there.
-export { DocBlock, type DocState, type ImageLoader } from "./doc-render";
+// The renderer is shared/docs/doc-render.tsx's; the share page and the
+// platform page's project Docs import it from there.
+export { DocBlock, type DocState, type ImageLoader } from "../../shared/docs/doc-render";
 
 /** The pictures one Doc view has fetched, by `name/rev`, each as the data:
  * URL it is shown from. The view owns it and `dispose` empties it. A data:

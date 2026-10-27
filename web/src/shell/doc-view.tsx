@@ -13,7 +13,7 @@ import { render } from "preact";
 // here too, it becomes a chunk the app shares, linked after the app's own
 // CSS, which turns the app's cascade around.
 import "./doc-view.css";
-import { DocBlock, type DocState } from "./blocks/doc-render";
+import { DocBlock, type DocState } from "../shared/docs/doc-render";
 import { Broken, keyFromHash, openSnapshot, toBase64, type Opened } from "./doc-link";
 
 type View =

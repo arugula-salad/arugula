@@ -28,6 +28,8 @@ import { SettingsPage } from "./pages/settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
 import { BoardPage, BoardsPage } from "./pages/boards";
+import { DocPage, DocsPage } from "./pages/docs";
+import { projectDocs } from "../shared/docs/store";
 import { SessionPage } from "./pages/session";
 import { runs } from "./runs";
 import { runTitle } from "./runs-text";
@@ -72,6 +74,10 @@ function body(r: Route, lost: string | null) {
       return <BoardsPage project={r.project} />;
     case "board":
       return <BoardPage project={r.project} board={r.board} />;
+    case "docs":
+      return <DocsPage project={r.project} />;
+    case "doc":
+      return <DocPage project={r.project} doc={r.doc} />;
     case "runs":
       return <RunsPage project={r.project} filter={{ state: r.state, trigger: r.trigger, spec: r.spec }} />;
     case "run":
@@ -169,6 +175,7 @@ function useTitle(r: Route) {
   const title = titleOf(r, {
     project: (id) => session.project(id)?.name,
     issue: (id) => issues.known(id),
+    doc: (id) => projectDocs.title(id),
     run: (id) => {
       const x = runs.known(id);
       return x ? runTitle(x.op) : null;
