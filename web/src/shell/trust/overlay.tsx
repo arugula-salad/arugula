@@ -17,6 +17,7 @@ import { Modal } from "../../shared/ui/modal";
 import { ADD_PASSKEY_HASH, DEVICE_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
 import { SharedDocs } from "../ui/shared-docs";
 import { ACCOUNT_HASH, AccountPanel, GITHUB_LINK_HASH } from "./account";
+import { EMAIL_HASH } from "./email";
 import { DeviceLinkPrompt, DevicePrompt, JoinPrompt } from "./approve";
 import { DEPLOY_HASH, DeployPrompt } from "./deploy";
 import { openPanel, useControl, usedLink, type Panel } from "./common";
@@ -86,6 +87,20 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   if (s.joined) return <Joined s={s} />;
   const notice = s.notices[0];
   if (notice) return <Notice s={s} n={notice} />;
+  // Back from an email's verify link (#1609): Sign-in and account says how
+  // it went.
+  const emailBack = EMAIL_HASH.exec(hash)?.[1];
+  if (emailBack) {
+    const done = () => {
+      history.replaceState(history.state, "", location.pathname + location.search);
+      setHash("");
+    };
+    return (
+      <Modal close={done}>
+        <AccountPanel s={s} close={done} emailBack={emailBack} />
+      </Modal>
+    );
+  }
   // Back from linking GitHub (#208): Sign-in and account says how it went.
   const linked = GITHUB_LINK_HASH.exec(hash)?.[1];
   if (linked) {

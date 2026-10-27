@@ -328,6 +328,13 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   hub's copies stay only as long as a rollback to in process, or to a
   release before M161, may need them, and the hub logs at start that
   they're unused.
+- `ARUGULA_CONTROL_SMTP_URL`, `ARUGULA_CONTROL_MAIL_FROM` (`mail.rs`,
+  #1609): email for security notices and the link that verifies an
+  address. The URL is the provider's SMTP with its credentials
+  (`smtps://USER:PASS@HOST:465`); From is `Arugula <security@arugula.io>`.
+  Both or neither: unset, control sends no email and Account settings say
+  so. The domain needs the provider's SPF and DKIM records, and a DMARC
+  record (docs/design/control-email.md).
 - `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT` (`backup.rs`), and
   `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` (checked by
   `backup.rs`, read by Litestream from the environment it inherits).

@@ -1164,6 +1164,46 @@ test("the app's Link GitHub opens the browser, and the window asks again when it
   expect(new URL(laptop.url()).hash).toBe("");
 });
 
+// #1609: the account's email for security notices. This control sends no
+// email (no SMTP URL), so the real answer says so; then, as a control that
+// does, adding one sends a link and says it's waiting, and the link's way
+// back says it's verified.
+test("Sign-in and account has the account's email for notices (#1609)", async () => {
+  await controlPanel(laptop, "account");
+  await expect(laptop.locator("[data-email-address]")).toHaveText("No email");
+  await expect(laptop.locator("[data-email]")).toContainText("this control doesn't send email");
+  await expect(laptop.locator("[data-email-change]")).toHaveCount(0);
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+
+  let state = { email: null as string | null, source: null as string | null, verified: false, pending: null as string | null, sends: true };
+  let asked = "";
+  await laptop.route("**/api/me/email", async (r) => {
+    if (r.request().method() === "POST") {
+      asked = (r.request().postDataJSON() as { email: string }).email;
+      state = { ...state, pending: asked };
+      return r.fulfill({ json: { sent: true } });
+    }
+    return r.fulfill({ json: state });
+  });
+  await controlPanel(laptop, "account");
+  await expect(laptop.locator("[data-email]")).toContainText("add one so a reset of your devices reaches you");
+  await laptop.locator("[data-email-change]").click();
+  await laptop.locator("[data-email-input]").fill("lex@example.com");
+  await laptop.locator("[data-email-send]").click();
+  expect(asked).toBe("lex@example.com");
+  await expect(laptop.locator("[data-email-said]")).toContainText("A link went to lex@example.com");
+  await expect(laptop.locator("[data-email-pending]")).toContainText("lex@example.com");
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+
+  // Back from the link: the dialog opens and says so.
+  state = { email: "lex@example.com", source: "typed", verified: true, pending: null, sends: true };
+  await laptop.goto("/#email=verified");
+  await expect(laptop.locator("[data-email-said]")).toContainText("Your address is verified");
+  await expect(laptop.locator("[data-email]")).toContainText("security notices go here, typed here");
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+  await laptop.unroute("**/api/me/email");
+});
+
 test("the app's passkey buttons open the browser up front and never call their route; a plain browser keeps its dialog (#251)", async () => {
   // Two passkeys, so Remove is allowed; a third appears "in the browser".
   const key = (id: string) => ({ id, created: 1, agent: "", provider: `Key ${id}`, used: null });
