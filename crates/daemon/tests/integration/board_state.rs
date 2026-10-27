@@ -47,13 +47,8 @@ async fn told(f: &FakeControl, pane: u64, state: &str) -> Value {
     let pane = pane.to_string();
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
-        let found = f
-            .told
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|b| b["pane"] == pane.as_str() && b["block"]["state"] == state)
-            .cloned();
+        let found =
+            f.told.lock().unwrap().iter().find(|b| b["pane"] == pane.as_str() && b["block"]["state"] == state).cloned();
         if let Some(b) = found {
             return b;
         }
