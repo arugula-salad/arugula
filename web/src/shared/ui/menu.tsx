@@ -133,9 +133,10 @@ export function MenuLayer() {
   const [sub, setSub] = useState<number | null>(null);
   /** A key opened a submenu: its first item gets the keys once drawn. */
   const intoSub = useRef(false);
-  /** When a click opened the submenu: its rows ignore clicks for a moment,
-   * as it scrolls into view and rows slide under the pointer, so a
-   * double-click on its row doesn't choose one of them. */
+  /** When a click opened the submenu: for a moment, its rows ignore the
+   * second click of a double-click, as it scrolls into view and rows slide
+   * under the pointer, so a double-click on its row doesn't choose one of
+   * them. A single click on a row goes through at once. */
   const subOpenedAt = useRef(0);
   /** The row asking to be confirmed: its label, and when it asked. */
   const [armed, setArmed] = useState<{ label: string; at: number } | null>(null);
@@ -270,8 +271,8 @@ export function MenuLayer() {
         class={`menu-item${item.danger || (item.confirm && armed?.label === item.label) ? " danger" : ""}${item.faded ? " faded" : ""}`}
         disabled={item.disabled}
         title={item.hint}
-        onClick={() => {
-          if (inSub && Date.now() - subOpenedAt.current < CONFIRM_SETTLE_MS) return;
+        onClick={(e) => {
+          if (inSub && e.detail > 1 && Date.now() - subOpenedAt.current < CONFIRM_SETTLE_MS) return;
           if (item.confirm) {
             if (!armed || armed.label !== item.label) return setArmed({ label: item.label, at: Date.now() });
             if (Date.now() - armed.at < CONFIRM_SETTLE_MS) return;
