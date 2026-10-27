@@ -135,7 +135,8 @@ Once on, the preview looks like this:
   terminal, MCP), and which flags in Developer settings are on. Restored
   panes and blocks aren't counted again. `views` are the views the web client opened
   (swarm, chat, conversations, agents, palette, settings, getting started,
-  share), and `web_errors` how many errors our code hit there:
+  share; and hints shown, acted on and dismissed, every hint's together),
+  and `web_errors` how many errors our code hit there:
   the page sends what it counted to its daemon each minute and as it goes
   away (`telemetry.note`, owner only; nothing is kept while it's off, and
   one note adds at most 1,000 to a count). Control's page sends its own to

@@ -341,6 +341,15 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "account_prefs"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "An account's small preferences for its pages, as the page names them: which hints it has seen, whether tips are on, the last version What's new showed."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "settings"
 plane = "machine"
 process = "hub"

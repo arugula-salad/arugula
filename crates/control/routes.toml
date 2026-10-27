@@ -752,6 +752,21 @@ clients = ["page"]
 
 [[route]]
 method = "GET"
+path = "/api/me/prefs"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Hints seen, Tips and What's new (prefs.rs)"
+
+[[route]]
+method = "POST"
+path = "/api/me/prefs"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
 path = "/api/push/live/{id}"
 process = "hub"
 auth = "push_listen"

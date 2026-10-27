@@ -88,6 +88,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-081](docs/decisions/aru-081-push-stays-on-the-hub-s-app-a-push-opens-the-pla.md): Push stays on the hub's app; a push opens the platform page
 - [aru-082](docs/decisions/aru-082-platform-urls-are-ids-with-cosmetic-slugs.md): Platform URLs are ids with cosmetic slugs
 - [aru-083](docs/decisions/aru-083-secrets-stay-in-fragments.md): Secrets stay in fragments
+- [aru-118](docs/decisions/aru-118-hints-come-from-facts-once-per-account.md): Hints come from facts, once per account
 
 ## Agents and blocks
 
