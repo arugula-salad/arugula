@@ -23,7 +23,7 @@ where
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(io)).await?;
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let _ = conn.with_upgrades().await;
     });
     Ok(sender)
@@ -61,7 +61,7 @@ pub(crate) fn ends(
 /// Pass a switched exchange's bytes both ways until either end closes.
 pub(crate) fn splice(client: OnUpgrade, res: &mut Response<Incoming>) {
     let ends = ends(client, res);
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let Ok((mut a, mut b)) = ends.await else { return };
         let _ = tokio::io::copy_bidirectional(&mut a, &mut b).await;
     });

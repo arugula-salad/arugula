@@ -76,7 +76,7 @@ pub fn consent_settled(_app: &Arc<App>) {
     if let Some(b) = hub() {
         b.ctx.changed();
         let me = b.clone();
-        b.ctx.rt.spawn(async move { me.raise().await });
+        crate::task::spawn_on(&b.ctx.rt, async move { me.raise().await });
     }
 }
 
@@ -90,7 +90,7 @@ pub fn task_gone(id: &str) {
     }
     b.ctx.changed();
     let me = b.clone();
-    b.ctx.rt.spawn(async move { me.raise().await });
+    crate::task::spawn_on(&b.ctx.rt, async move { me.raise().await });
 }
 
 /// The card for a waiting task.
@@ -203,7 +203,7 @@ impl AgentsBlock {
             }
         }
         let me = b.clone();
-        b.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&b.ctx.rt, async move {
             me.raise().await;
             me.read(catalog::FRESH_MS).await;
             me.list_recipes();
@@ -234,7 +234,7 @@ impl AgentsBlock {
                 Ok((token, rx)) => {
                     *self.asking.lock().unwrap() = Some((t.id.clone(), token));
                     let Some(me) = self.me.upgrade() else { return };
-                    self.ctx.rt.spawn(async move {
+                    crate::task::spawn_on(&self.ctx.rt, async move {
                         let (reply, by) = rx.await.unwrap_or((AskReply::Withdrawn, None));
                         me.answered(&t.id, token, reply, by).await;
                     });
@@ -493,7 +493,7 @@ impl Block for AgentsBlock {
         if !tasks::waiting().is_empty()
             && let Ok(app) = self.app()
         {
-            self.ctx.rt.spawn(async move { consent_needed(&app).await });
+            crate::task::spawn_on(&self.ctx.rt, async move { consent_needed(&app).await });
         }
     }
 }

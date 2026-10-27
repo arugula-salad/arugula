@@ -443,7 +443,7 @@ pub async fn connect(State(app): State<Arc<App>>, mut req: Request) -> Response 
         return (StatusCode::BAD_REQUEST, format!("upgrade to {PROTOCOL}")).into_response();
     };
     let upgrade = hyper::upgrade::on(&mut req);
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         match upgrade.await {
             Ok(io) => serve(app, TokioIo::new(io)).await,
             Err(e) => debug!(error = %e, "editor upgrade failed"),

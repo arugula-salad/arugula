@@ -31,7 +31,7 @@ impl Handle for AgentsRefresh {
 impl Handle for AdaptersList {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Adapters, OpError> {
         let (home, env) = agent_env(cx.app).await?;
-        let list = tokio::task::spawn_blocking(move || crate::agent::adapters::all(&home, &env))
+        let list = crate::task::spawn_blocking(move || crate::agent::adapters::all(&home, &env))
             .await
             .map_err(|e| OpError::Failed(e.to_string()))?;
         Ok(Adapters { adapters: list })
@@ -44,7 +44,7 @@ impl Handle for AdapterInstall {
             serde_json::from_value(serde_json::json!(kind)).map_err(|_| bad(format!("no agent {kind}")))?;
         let a = crate::agent::adapters::of(kind).ok_or_else(|| bad("that agent has no adapter to install"))?;
         let (home, env) = agent_env(cx.app).await?;
-        let (st, home) = tokio::task::spawn_blocking(move || (crate::agent::adapters::status(a, &home, &env), home))
+        let (st, home) = crate::task::spawn_blocking(move || (crate::agent::adapters::status(a, &home, &env), home))
             .await
             .map_err(|e| OpError::Failed(e.to_string()))?;
         if let crate::agent::adapters::State::NoNode { .. } = st.state {

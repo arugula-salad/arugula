@@ -420,7 +420,7 @@ impl Hosts {
 
     pub fn spawn_probe(self: &Arc<Self>) {
         let me = Arc::downgrade(self);
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let mut tick = tokio::time::interval(PROBE_EVERY);
             loop {
                 tick.tick().await;
@@ -575,7 +575,7 @@ async fn join(State(app): AppState, Json(req): Json<JoinRequest>) -> Response {
     match app.hosts.join(req) {
         Ok((h, token)) => {
             let hosts = app.hosts.clone();
-            tokio::spawn(async move { hosts.probe().await });
+            crate::task::spawn(async move { hosts.probe().await });
             Json(Joined { host: h, owner: app.access.owner().map(str::to_owned), token }).into_response()
         }
         Err(e) => {

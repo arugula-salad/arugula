@@ -1646,7 +1646,7 @@ impl Agent {
         agent.begin();
         let actor =
             Agent { ctx: agent.ctx.clone(), inner: agent.inner.clone(), tx: agent.tx.clone(), chat: agent.chat };
-        ctx.rt.spawn(run(actor, rx));
+        crate::task::spawn_on(&ctx.rt, run(actor, rx));
         Ok(agent)
     }
 
@@ -2021,7 +2021,7 @@ impl Agent {
         inner.status = Status::Starting;
         inner.error = None;
         let agent = Agent { ctx: self.ctx.clone(), inner: self.inner.clone(), tx: self.tx.clone(), chat: self.chat };
-        self.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&self.ctx.rt, async move {
             agent.ctx.shell_env.local().await;
             let mut g = agent.inner.lock().unwrap();
             g.awaiting_shell = false;
@@ -2046,7 +2046,7 @@ impl Agent {
         let def = inner.cfg.def.clone();
         let cwd = inner.cfg.cwd.clone();
         let agent = Agent { ctx: self.ctx.clone(), inner: self.inner.clone(), tx: self.tx.clone(), chat: self.chat };
-        self.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&self.ctx.rt, async move {
             let which = def.as_managoat.clone().or_else(|| def.recipe.clone()).unwrap_or_default();
             let worn = match Runner::user(&agent.ctx).await {
                 // Saved wearing a Managoat agent (M44, retired).
@@ -2837,7 +2837,7 @@ fn start_run(ctx: &AgentCtx, g: &mut Inner, prompt: &str) {
 /// M185: say the platform's turn for the prompt that was out ended.
 fn end_hosted_turn(ctx: &AgentCtx, g: &mut Inner) {
     if let (Some(turn), Some(gate)) = (g.hosted_turn.take(), hosted::gate()) {
-        ctx.rt.spawn(async move { gate.end(turn).await });
+        crate::task::spawn_on(&ctx.rt, async move { gate.end(turn).await });
     }
 }
 
@@ -2859,7 +2859,7 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
             // A thread session's block (the daemon's own word, not the
             // block's config): its turns are its asker's (aru-115).
             let session = crate::work::sessions::session_of(ctx.id);
-            ctx.rt.spawn(async move {
+            crate::task::spawn_on(&ctx.rt, async move {
                 let _ = tx.send(Msg::Gated(gate.start(agent, session).await));
             });
         }

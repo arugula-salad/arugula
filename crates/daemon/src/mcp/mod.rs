@@ -176,7 +176,7 @@ pub fn pipe_server(app: &Arc<App>) -> relay::Serve {
         let Some(app) = app.upgrade() else { return };
         let caller = Caller::new(Scope::Block(id), Some(format!("%{id}")), None);
         let server = McpServer { app, fallback: Some(caller) };
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             match rmcp::ServiceExt::serve(server, tokio::io::split(io)).await {
                 Ok(running) => {
                     let _ = running.waiting().await;

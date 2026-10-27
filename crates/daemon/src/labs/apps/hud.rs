@@ -509,7 +509,7 @@ impl Drop for Follower {
 pub fn start(setup: Setup) -> Follower {
     let rt = setup.ctx.rt.clone();
     let (tx, rx) = mpsc::unbounded_channel();
-    Follower { task: rt.spawn(run(setup, tx.clone(), rx)), tx }
+    Follower { task: crate::task::spawn_on(&rt, run(setup, tx.clone(), rx)), tx }
 }
 
 /// The card on the block now.
@@ -586,7 +586,7 @@ impl Run {
         let mut tabs_due = tokio::time::Instant::now();
         // The live feed: each change reads the work board again (one read
         // at a time; a change meanwhile reads once more after it).
-        let feed = self.s.ctx.rt.spawn(live_feed(session.clone(), self.tx.clone()));
+        let feed = crate::task::spawn_on(&self.s.ctx.rt, live_feed(session.clone(), self.tx.clone()));
         let mut board = Board::default();
         let out = loop {
             if tokio::time::Instant::now() >= tabs_due {
@@ -596,7 +596,10 @@ impl Run {
                             if !streams.contains_key(t) {
                                 streams.insert(
                                     t.clone(),
-                                    self.s.ctx.rt.spawn(stream(session.clone(), t.clone(), self.tx.clone())),
+                                    crate::task::spawn_on(
+                                        &self.s.ctx.rt,
+                                        stream(session.clone(), t.clone(), self.tx.clone()),
+                                    ),
                                 );
                             }
                         }
@@ -674,7 +677,7 @@ impl Run {
                 Ev::Live | Ev::Reread => {
                     board.start();
                     let (session, tx, app) = (session.clone(), self.tx.clone(), self.s.app.clone());
-                    self.s.ctx.rt.spawn(async move {
+                    crate::task::spawn_on(&self.s.ctx.rt, async move {
                         let _ = tx.send(Ev::Board(session.work(&app).await));
                     });
                 }
@@ -750,7 +753,7 @@ impl Run {
                     self.raised = Some(Raised { id: q.id.clone(), token });
                     let tx = self.tx.clone();
                     let id = q.id.clone();
-                    self.s.ctx.rt.spawn(async move {
+                    crate::task::spawn_on(&self.s.ctx.rt, async move {
                         let (reply, by) = reply.await.unwrap_or((AskReply::Withdrawn, None));
                         let _ = tx.send(Ev::Replied { id, token, reply, by });
                     });
@@ -793,7 +796,7 @@ impl Run {
                     (self.s.log)(json!({ "e": "answered", "id": q.id, "option": option, "by": name }));
                     let (session, tx, app) = (session.clone(), self.tx.clone(), self.s.app.clone());
                     let sent = crate::store::now_ms();
-                    self.s.ctx.rt.spawn(async move {
+                    crate::task::spawn_on(&self.s.ctx.rt, async move {
                         let r = session.answer(&body).await;
                         let ms = crate::store::now_ms().saturating_sub(sent);
                         let v = match r {

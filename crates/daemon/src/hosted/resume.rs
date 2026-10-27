@@ -58,7 +58,7 @@ pub fn watch(resumed: Arc<dyn Fn() + Send + Sync>) {
 }
 
 fn watch_file(resumed: Arc<dyn Fn() + Send + Sync>, file: PathBuf) {
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let (mut mono, mut wall, mut init) = (Instant::now(), SystemTime::now(), stamp(&file));
         loop {
             tokio::time::sleep(TICK).await;

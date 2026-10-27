@@ -340,7 +340,7 @@ impl Workspace {
             graph: Arc::default(),
         });
         let me = w.clone();
-        w.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&w.ctx.rt, async move {
             me.load().await;
             me.idle().await;
         });
@@ -431,7 +431,7 @@ impl Workspace {
     /// Reads what's wanted, apart from the full read.
     fn read_why(&self) {
         if let Some(me) = self.me.upgrade() {
-            self.ctx.rt.spawn(async move { me.read_intents().await });
+            crate::task::spawn_on(&self.ctx.rt, async move { me.read_intents().await });
         }
     }
 
@@ -576,7 +576,7 @@ impl Workspace {
     /// this host the lifecycle ref every [`REF_POLL`] between ([`look`]).
     fn watch(&self, round: u64) {
         let Some(me) = self.me.upgrade() else { return };
-        self.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&self.ctx.rt, async move {
             let quick = me.local();
             let mut tick = 0u32;
             while me.live.on(round) {

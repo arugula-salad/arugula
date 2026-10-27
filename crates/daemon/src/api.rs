@@ -655,7 +655,7 @@ async fn capture(State(app): AppState, Path(id): Path<PaneId>, Query(q): Query<C
         "last-command" => CaptureScope::LastCommand,
         s => return Err(bad(format!("scope {s}: screen, scrollback or last-command"))),
     };
-    let text = tokio::task::spawn_blocking(move || p.capture(format, scope))
+    let text = crate::task::spawn_blocking(move || p.capture(format, scope))
         .await
         .ok()
         .flatten()
@@ -767,7 +767,7 @@ pub async fn list_conversations(app: &App, q: ConversationsQuery) -> Result<Conv
     let ours: std::collections::HashSet<PaneId> =
         app.mux.api(Api::Panes).await.unwrap_or_default().into_iter().map(|p| p.info.id).collect();
     let pids = our_pids(app).await;
-    let list = tokio::task::spawn_blocking(move || {
+    let list = crate::task::spawn_blocking(move || {
         let mut ix = crate::conversations::Index::global().lock().unwrap();
         ix.set_ours(pids);
         ix.scan()
@@ -818,7 +818,7 @@ pub async fn open_conversation_as(
     req: OpenConversationRequest,
 ) -> Result<OpenConversationResponse, ApiError> {
     let id = req.id.clone();
-    let c = tokio::task::spawn_blocking(move || crate::conversations::Index::global().lock().unwrap().find(&id))
+    let c = crate::task::spawn_blocking(move || crate::conversations::Index::global().lock().unwrap().find(&id))
         .await
         .map_err(|e| bad(e.to_string()))?
         .map_err(|e| ApiError(StatusCode::NOT_FOUND, e))?;
@@ -1008,7 +1008,7 @@ async fn call(
             Ok(Json(serde_json::json!({})))
         }
         "capture" => {
-            let text = tokio::task::spawn_blocking(move || p.capture(CaptureFormat::Text, CaptureScope::Screen))
+            let text = crate::task::spawn_blocking(move || p.capture(CaptureFormat::Text, CaptureScope::Screen))
                 .await
                 .ok()
                 .flatten()
@@ -1331,7 +1331,7 @@ async fn export(State(app): AppState, Path(id): Path<PaneId>) -> Res<Response> {
         .find(|(p, _, _)| *p == id)
         .map(|(_, _, d)| d)
         .ok_or(ApiError(StatusCode::NOT_FOUND, format!("no history for pane %{id}")))?;
-    let cast = tokio::task::spawn_blocking(move || history::export_cast(&dir, &format!("Arugula pane %{id}")))
+    let cast = crate::task::spawn_blocking(move || history::export_cast(&dir, &format!("Arugula pane %{id}")))
         .await
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -1485,7 +1485,7 @@ async fn events(
     if q.follow != Some(1) {
         let since = now_ms().saturating_sub(q.since.unwrap_or(3600) * 1000);
         let store = app.mux.store.clone();
-        let (mut all, kept): (Vec<arugula_proto::Event>, _) = tokio::task::spawn_blocking(move || {
+        let (mut all, kept): (Vec<arugula_proto::Event>, _) = crate::task::spawn_blocking(move || {
             let index = store
                 .pane_dirs()
                 .into_iter()
@@ -1618,7 +1618,7 @@ async fn secrets(State(app): AppState, Path(id): Path<SessionId>) -> Res<Respons
     let mut found: Vec<SecretFinding> = Vec::new();
     for p in panes.keys() {
         let Ok(h) = pane(&app, *p).await else { continue };
-        let text = tokio::task::spawn_blocking(move || h.capture(CaptureFormat::Text, CaptureScope::Scrollback))
+        let text = crate::task::spawn_blocking(move || h.capture(CaptureFormat::Text, CaptureScope::Scrollback))
             .await
             .ok()
             .flatten()
@@ -1669,7 +1669,7 @@ async fn history_(
     let store = app.mux.store.clone();
     let limit = q.limit.unwrap_or(100);
     let synced = app.synced.clone();
-    let list = tokio::task::spawn_blocking(move || match &q.host {
+    let list = crate::task::spawn_blocking(move || match &q.host {
         Some(host) => synced.history(host, &filter, limit),
         None => history::history(&store, &filter, limit),
     })
@@ -1699,7 +1699,7 @@ async fn search(State(app): AppState, Query(q): Query<SearchQuery>) -> Res<Respo
     let synced = app.synced.clone();
     let docs_re = re.clone();
     let host = q.host.clone();
-    let mut hits = tokio::task::spawn_blocking(move || match &q.host {
+    let mut hits = crate::task::spawn_blocking(move || match &q.host {
         Some(host) => synced.search(host, &re, since, limit),
         None => history::search(&store, &kinds, &re, since, limit),
     })
@@ -1720,7 +1720,7 @@ async fn tail_synced(app: &App, id: PaneId, host: String, q: &TailQuery) -> Res<
         None => None,
         Some(n) => Some(n.parse::<u64>().map_err(|_| bad("a synced pane's from takes an offset"))?),
     };
-    let read = tokio::task::spawn_blocking(move || {
+    let read = crate::task::spawn_blocking(move || {
         let from = from.unwrap_or_else(|| synced.pane(&host, id).log_end.saturating_sub(64 * 1024));
         synced.read_from(&host, id, from)
     })

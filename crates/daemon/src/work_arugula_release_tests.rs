@@ -262,10 +262,10 @@ async fn gh() -> Gh {
         tag: "v0.1.1".into(),
     }));
     let (lg, st) = (log.clone(), state.clone());
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         while let Ok((mut s, _)) = l.accept().await {
             let (lg, st) = (lg.clone(), st.clone());
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let mut buf = vec![0u8; 8192];
                 let got = s.read(&mut buf).await.unwrap_or(0);
                 let req = String::from_utf8_lossy(&buf[..got]).into_owned();

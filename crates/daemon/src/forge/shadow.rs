@@ -30,7 +30,7 @@ pub fn start() {
     let Some(every) = every(std::env::var("ARUGULA_INBOX_SHADOW").ok().as_deref()) else { return };
     let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
     info!(minutes = every.as_secs() / 60, "inbox shadow: reporting forge blocks' attention to control");
-    rt.spawn(async move {
+    crate::task::spawn_on(&rt, async move {
         loop {
             tokio::time::sleep(every).await;
             report().await;

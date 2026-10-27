@@ -40,7 +40,7 @@ impl Handle for HostAdd {
     async fn handle(cx: &Cx<'_>, _: (), req: AddHost) -> Result<Host, OpError> {
         let h = cx.app.hosts.add(req).map_err(|e| OpError::Status(StatusCode::BAD_REQUEST, e))?;
         let hosts = cx.app.hosts.clone();
-        tokio::spawn(async move { hosts.probe().await });
+        crate::task::spawn(async move { hosts.probe().await });
         Ok(h)
     }
 }

@@ -121,7 +121,7 @@ impl FileView {
         });
         if !restoring {
             let me = f.clone();
-            f.ctx.rt.spawn(async move { me.load(true).await });
+            crate::task::spawn_on(&f.ctx.rt, async move { me.load(true).await });
         }
         Ok(f)
     }
@@ -207,7 +207,7 @@ impl FileView {
         let Some(me) = self.me.upgrade() else { return };
         let local = matches!(self.files, Ok(Target::Local(_)));
         let every = super::every(local, POLL);
-        self.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&self.ctx.rt, async move {
             while me.live.on(round) {
                 me.load(false).await;
                 tokio::time::sleep(every).await;

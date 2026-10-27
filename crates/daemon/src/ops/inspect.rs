@@ -71,7 +71,7 @@ impl Handle for PanePorts {
             }
             None => {
                 let root = if on.is_none() { p.pid_now() } else { None };
-                tokio::task::spawn_blocking(move || crate::listening::local(root))
+                crate::task::spawn_blocking(move || crate::listening::local(root))
                     .await
                     .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
             }
@@ -87,7 +87,7 @@ impl Handle for PaneDetection {
     async fn handle(cx: &Cx<'_>, id: PaneId, _: Empty) -> Result<DetectionAnswer, OpError> {
         let app = cx.app;
         let p = pane(app, id).await?;
-        let (found, command) = tokio::task::spawn_blocking(move || (p.detection(), p.command()))
+        let (found, command) = crate::task::spawn_blocking(move || (p.detection(), p.command()))
             .await
             .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         Ok(match found {
@@ -141,6 +141,6 @@ impl Handle for PaneDiffOf {
 impl Handle for PaneDrivers {
     async fn handle(cx: &Cx<'_>, id: PaneId, _: Empty) -> Result<Vec<DriverEntry>, OpError> {
         let dir = cx.app.mux.store.pane_dir(id);
-        Ok(tokio::task::spawn_blocking(move || history::drivers(&dir)).await.unwrap_or_default())
+        Ok(crate::task::spawn_blocking(move || history::drivers(&dir)).await.unwrap_or_default())
     }
 }

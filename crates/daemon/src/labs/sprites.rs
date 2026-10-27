@@ -298,7 +298,7 @@ impl Sprites {
         let (ws, _) = tokio_tungstenite::connect_async(self.request(url)?).await?;
         let (ev_tx, events) = mpsc::unbounded_channel();
         let (stdin, mut in_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let mut ws = ws;
             loop {
                 tokio::select! {
@@ -553,7 +553,7 @@ impl Provider for Sprites {
         sink: ExecSink,
     ) -> Exec {
         let (tx, rx) = mpsc::unbounded_channel();
-        rt.spawn(drive(self, name, begin, size, rx, sink));
+        crate::task::spawn_on(rt, drive(self, name, begin, size, rx, sink));
         Exec { tx }
     }
 
@@ -799,7 +799,7 @@ async fn drive(
                         hung_up = true;
                         if let Ok(id) = &session {
                             let (sp, s, id) = (sp.clone(), sprite.clone(), id.clone());
-                            tokio::spawn(async move {
+                            crate::task::spawn(async move {
                                 if let Err(e) = sp.do_kill(&s, &id, "HUP").await {
                                     info!(sprite = s, error = %e, "hang up");
                                 }
@@ -883,7 +883,7 @@ where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     let (ours, theirs) = tokio::io::duplex(64 * 1024);
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let (mut from_us, mut to_us) = tokio::io::split(theirs);
         let (mut sink, mut stream) = ws.split();
         let up = async {

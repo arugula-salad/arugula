@@ -427,7 +427,7 @@ pub async fn serve(sites: Arc<Sites>, listener: TcpListener, tls: Option<Arc<tok
             }
         };
         let (sites, acceptor) = (sites.clone(), acceptor.clone());
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let _ = tcp.set_nodelay(true);
             let admitted = sites.admit(peer).await;
             if let Err(why) = &admitted {

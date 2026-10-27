@@ -182,7 +182,7 @@ async fn tunnel(app: Arc<App>, host: String, path: String, mut req: Request) -> 
     if upgraded && let Some(client) = client_upgrade {
         let ends = crate::http1::ends(client, &mut res);
         let host = host.clone();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let (mut a, mut b) = match ends.await {
                 Ok(ends) => ends,
                 Err((client, server)) => {

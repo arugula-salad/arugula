@@ -34,7 +34,7 @@ const CHAT: &str = "chat";
 /// Run beside the control loop: after each refresh, keep control's reader
 /// lists current.
 pub fn start(control: Arc<Control>, app: Arc<App>) {
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let mut refreshed = control.on_refresh();
         let mut sync = Sync::default();
         while refreshed.changed().await.is_ok() {

@@ -1047,7 +1047,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
     // output, which is already redacted. The box is deleted after, so this
     // is the only copy.
     let (done, follow) = tokio::sync::watch::channel(false);
-    let follower = tokio::spawn(crate::run_logs::follow(app.clone(), l.run.clone(), pane, epoch, follow));
+    let follower = crate::task::spawn(crate::run_logs::follow(app.clone(), l.run.clone(), pane, epoch, follow));
     let said = |why: &str| format!("arugula: {}\n", printable(why));
     // The short-lived tokens it was given, to revoke when its driver ends.
     let mut revocable: Vec<(String, String)> = Vec::new();
@@ -1104,7 +1104,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
         {
             let mut r = Redactor::new(&given);
             let tx = tx.clone();
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let mut stream = stream;
                 let mut buf = vec![0u8; 8192];
                 loop {

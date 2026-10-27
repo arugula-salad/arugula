@@ -201,7 +201,7 @@ impl Editor {
             }
             None => {
                 let (e, path) = (ed.clone(), config.path.clone().unwrap_or_default());
-                ed.ctx.rt.spawn(async move {
+                crate::task::spawn_on(&ed.ctx.rt, async move {
                     let found = resolve_vm(&e.ctx, &path).await;
                     if let Err(why) = found.and_then(|(folder, file, project)| e.locate(folder, file, None, project)) {
                         e.failed(why);
@@ -214,9 +214,9 @@ impl Editor {
         // when someone looks (or finds the one the last daemon left).
         let s = ed.server.clone();
         if ed.ctx.restoring {
-            ed.ctx.rt.spawn(async move { s.check().await });
+            crate::task::spawn_on(&ed.ctx.rt, async move { s.check().await });
         } else {
-            ed.ctx.rt.spawn(async move {
+            crate::task::spawn_on(&ed.ctx.rt, async move {
                 let _ = s.ensure().await;
             });
         }
@@ -346,7 +346,7 @@ impl Editor {
     fn watch_server(&self) {
         let mut rx = self.server.subscribe();
         let me = self.me.clone();
-        self.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&self.ctx.rt, async move {
             loop {
                 let status = rx.borrow_and_update().clone();
                 let Some(e) = me.upgrade() else { return };
@@ -515,7 +515,7 @@ impl Block for Editor {
             // Try again after a failed start (offline, say).
             "start" => {
                 let s = self.server.clone();
-                self.ctx.rt.spawn(async move {
+                crate::task::spawn_on(&self.ctx.rt, async move {
                     let _ = s.ensure().await;
                 });
                 Ok(json!({}))

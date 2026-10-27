@@ -385,7 +385,7 @@ async fn open(control: &Control, m: &Machine) -> anyhow::Result<Arc<Conn>> {
     // goes or the channel has been idle a while.
     let c = conn.clone();
     let machine = m.name.clone();
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(30));
         loop {
             tokio::select! {

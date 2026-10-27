@@ -491,7 +491,7 @@ pub fn spawn_vm(
 ) -> Link {
     let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (stop_tx, stop_rx) = mpsc::unbounded_channel::<()>();
-    rt.spawn(drive_vm(provider, sprite, dir, begin, rx, stop_rx, sink));
+    crate::task::spawn_on(rt, drive_vm(provider, sprite, dir, begin, rx, stop_rx, sink));
     Link {
         tx,
         stop: Box::new(move || {

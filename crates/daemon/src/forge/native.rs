@@ -194,7 +194,7 @@ impl NativeIssue {
         });
         // Read once, drawn or not: `show` answers with it.
         let me = b.clone();
-        b.ctx.rt.spawn(async move { me.read().await });
+        crate::task::spawn_on(&b.ctx.rt, async move { me.read().await });
         Ok(b)
     }
 
@@ -272,7 +272,7 @@ impl NativeIssue {
     fn watch(&self, round: u64) {
         let Some(me) = self.me.upgrade() else { return };
         let every = EVERY.min(intervals().0 * 12);
-        self.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&self.ctx.rt, async move {
             while me.live.on(round) {
                 me.read().await;
                 tokio::time::sleep(every).await;

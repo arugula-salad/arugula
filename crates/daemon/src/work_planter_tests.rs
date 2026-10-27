@@ -224,7 +224,7 @@ async fn fake_api() -> Api {
         .with_state(state.clone());
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(l, r).await.unwrap() });
+    crate::task::spawn(async move { axum::serve(l, r).await.unwrap() });
     Api { base, state }
 }
 
@@ -417,7 +417,7 @@ async fn ship_commits_the_source_planters_way_and_waits_for_the_pin() {
 
     // shipped's build, pinning the image after the ship's commit lands.
     let bare = f.bare("arugula-salad/shipped");
-    let builder = tokio::task::spawn_blocking({
+    let builder = crate::task::spawn_blocking({
         let (bare, root) = (bare.clone(), f.root.clone());
         move || {
             for _ in 0..200 {

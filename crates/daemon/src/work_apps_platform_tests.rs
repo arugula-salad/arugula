@@ -236,10 +236,10 @@ async fn health(fails: usize) -> Health {
     let revision = Arc::new(Mutex::new(None::<String>));
     let asked = Arc::new(AtomicUsize::new(0));
     let (lg, rv) = (log.clone(), revision.clone());
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         while let Ok((mut s, _)) = l.accept().await {
             let (lg, rv, asked) = (lg.clone(), rv.clone(), asked.clone());
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let mut buf = vec![0u8; 4096];
                 let got = s.read(&mut buf).await.unwrap_or(0);
                 let req = String::from_utf8_lossy(&buf[..got]).into_owned();

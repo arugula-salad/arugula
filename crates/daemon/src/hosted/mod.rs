@@ -160,7 +160,7 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
     let ticket = std::env::var(TICKET_ENV).ok().filter(|t| !t.is_empty());
     let url = std::env::var(CONTROL_ENV).ok().filter(|u| !u.is_empty()).unwrap_or(control_url);
     let url = url.trim_end_matches('/').to_owned();
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         // In the snapshot (or the template's build): wait for a box of our
         // own, then start over in it.
         if ticket.is_none() && own_box(&state_dir, &id_file) == Some(false) {

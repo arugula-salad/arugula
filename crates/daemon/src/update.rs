@@ -74,7 +74,7 @@ pub fn start(s: Settings) {
     }
     let cached = read_cache(&s.state_dir, &s.url);
     *LAST.lock().unwrap() = cached.clone();
-    tokio::spawn(run(s, cached));
+    crate::task::spawn(run(s, cached));
 }
 
 async fn run(s: Settings, cached: Option<Checked>) {
@@ -349,7 +349,7 @@ mod tests {
             .route("/loop/releases/latest", get(|| async { Redirect::to("/loop/releases/latest") }));
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        crate::task::spawn(async move { axum::serve(l, app).await.unwrap() });
         let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
         assert_eq!(latest(&client, &format!("{base}/old/releases/latest")).await.unwrap(), "9.8.7");
         assert_eq!(latest(&client, &format!("{base}/new/releases/latest")).await.unwrap(), "9.8.7");

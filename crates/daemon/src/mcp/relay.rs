@@ -75,7 +75,7 @@ pub fn start(
     let (stop, stop_rx) = mpsc::unbounded_channel();
     let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let d = done.clone();
-    rt.spawn(async move {
+    crate::task::spawn_on(rt, async move {
         drive(provider, sprite, id, serve, stop_rx).await;
         d.store(true, std::sync::atomic::Ordering::Relaxed);
     });
@@ -211,7 +211,7 @@ fn on_line(
             let (r, mut w) = tokio::io::split(ours);
             let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
             conns.insert(n, tx);
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 while let Some(mut line) = rx.recv().await {
                     line.push(b'\n');
                     if w.write_all(&line).await.is_err() {
@@ -221,7 +221,7 @@ fn on_line(
                 let _ = w.shutdown().await;
             });
             let back = back.clone();
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let mut lines = BufReader::new(r).split(b'\n');
                 while let Ok(Some(line)) = lines.next_segment().await {
                     if line.iter().all(u8::is_ascii_whitespace) {
@@ -265,7 +265,7 @@ mod tests {
     fn toy(count: Arc<std::sync::atomic::AtomicU64>) -> impl Fn(DuplexStream) -> bool {
         move |io| {
             let k = count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let (r, mut w) = tokio::io::split(io);
                 let mut lines = BufReader::new(r).lines();
                 while let Ok(Some(l)) = lines.next_line().await {
@@ -363,7 +363,7 @@ mod tests {
 
         let (mut relay, pipe) = local_relay(&sock, "arugula-mcp-relay");
         let c = count.clone();
-        let first = tokio::spawn(async move { carry(pipe, toy(c), &mut None).await });
+        let first = crate::task::spawn(async move { carry(pipe, toy(c), &mut None).await });
 
         let client = |sock: &str| {
             let mut child = Command::new("python3")
@@ -403,7 +403,7 @@ mod tests {
         }
         let (mut relay2, pipe) = local_relay(&sock, "arugula-mcp-relay");
         let c = count.clone();
-        tokio::spawn(async move { carry(pipe, toy(c), &mut None).await });
+        crate::task::spawn(async move { carry(pipe, toy(c), &mut None).await });
         let e = a.recv();
         assert_eq!(e["id"], 2, "{e}");
         assert!(e["error"]["message"].as_str().unwrap().contains("call again"), "{e}");

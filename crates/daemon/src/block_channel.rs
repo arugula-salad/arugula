@@ -210,7 +210,7 @@ pub(crate) fn frame(
         wire::END => {
             if let Some(Stream::Http(head, body)) = streams.remove(&sid) {
                 let (sites, site, up, out) = (sites.clone(), site.clone(), up.clone(), out.clone());
-                let h = tokio::spawn(async move {
+                let h = crate::task::spawn(async move {
                     if let Err(e) = request(&sites, &site, &up, &out, sid, head, body, via).await {
                         failed(out, e).await;
                     }
@@ -222,7 +222,7 @@ pub(crate) fn frame(
             let open: WsOpen = serde_json::from_slice(payload)?;
             let (tx, rx) = mpsc::unbounded_channel();
             let (site, out) = (site.clone(), out.clone());
-            let h = tokio::spawn(async move {
+            let h = crate::task::spawn(async move {
                 if let Err(e) = websocket(&site, &out, sid, open, rx).await {
                     failed(out, e).await;
                 }

@@ -1701,7 +1701,7 @@ impl Control {
     ) {
         let Some((e, subs, payload)) = self.to_push(pane, title, body, extra, to) else { return };
         let me = self.clone();
-        tokio::spawn(async move { me.relay_push(&e, subs, &payload).await });
+        crate::task::spawn(async move { me.relay_push(&e, subs, &payload).await });
     }
 
     /// [`Control::push`], waited for (#232): how many subscriptions `to`
@@ -1756,7 +1756,7 @@ impl Control {
         payload["daemon"] = e.saved.cert.device.clone().into();
         let payload = payload.to_string();
         let me = self.clone();
-        tokio::spawn(async move { me.relay_push(&e, subs, &payload).await });
+        crate::task::spawn(async move { me.relay_push(&e, subs, &payload).await });
         true
     }
 
@@ -1996,7 +1996,7 @@ impl Control {
         let (a, r) = (app.clone(), app.clone());
         self.run(
             move || app.mux.send(crate::mux::Cmd::AclChanged),
-            move |me| tokio::spawn(keep_relay(me, a.clone())),
+            move |me| crate::task::spawn(keep_relay(me, a.clone())),
             move |url| crate::setup::rejoin(r.clone(), url),
         );
     }
@@ -2011,7 +2011,7 @@ impl Control {
         rejoin: impl Fn(String) + Send + 'static,
     ) {
         let me = self.clone();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let mut stamp = file_stamp(&me.state_dir);
             // When certificates were last fetched; `None`: fetch now.
             let mut last_refresh: Option<std::time::Instant> = None;
@@ -2061,7 +2061,7 @@ impl Control {
                                 });
                                 acl_changed();
                                 let m = me.clone();
-                                tokio::spawn(async move { m.retry_invites().await });
+                                crate::task::spawn(async move { m.retry_invites().await });
                             }
                             // Removed from a browser (#330): dropped (#325),
                             // and a new key asks to join the same control
@@ -2132,16 +2132,16 @@ const RESUME_QUIET: Duration = Duration::from_secs(2);
 async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
     let (accept, mut streams) = mpsc::unbounded_channel();
     let a = app.clone();
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         while let Some(s) = streams.recv().await {
-            tokio::spawn(crate::e2e::serve_stream(a.clone(), s));
+            crate::task::spawn(crate::e2e::serve_stream(a.clone(), s));
         }
     });
     // Raw streams: a guest's ssh connection through control's jump host
     // (M65), which ends here.
     let (raw, mut raws) = mpsc::unbounded_channel::<(Vec<u8>, tokio::io::DuplexStream)>();
     let a = app.clone();
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         while let Some((kind, s)) = raws.recv().await {
             if kind == crate::labs::GUEST_STREAM_KIND {
                 a.guests.serve_relayed(&a, s);
@@ -3106,7 +3106,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let dir = std::env::temp_dir().join(format!("arugula-docinfo-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -3163,7 +3163,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let dir = std::env::temp_dir().join(format!("arugula-maintenance-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -3297,7 +3297,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let dir = std::env::temp_dir().join(format!("arugula-join-fp-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
 
@@ -3375,7 +3375,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         (url, fake)
     }
 
@@ -3575,7 +3575,7 @@ pub(crate) mod tests {
             .with_state((fake.clone(), hold.clone(), hit));
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
 
         let dir = std::env::temp_dir().join(format!("arugula-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -3609,7 +3609,7 @@ pub(crate) mod tests {
         /// its first refreshes over: none left to refresh by chance.
         async fn daemon(&self) -> Arc<Control> {
             let c = Control::new(&self.dir, vec![], String::new(), self.acl.clone(), false);
-            c.run(|| {}, |_| tokio::spawn(std::future::pending()), |_| {});
+            c.run(|| {}, |_| crate::task::spawn(std::future::pending()), |_| {});
             assert!(c.refresh_now(REFRESH_WAIT).await, "the first refresh");
             tokio::time::sleep(Duration::from_millis(300)).await;
             c
@@ -3788,7 +3788,7 @@ pub(crate) mod tests {
         r.at_peers.recv().await.unwrap();
         r.grant();
         let c2 = c.clone();
-        let waiting = tokio::spawn(async move { c2.refresh_now(REFRESH_WAIT).await });
+        let waiting = crate::task::spawn(async move { c2.refresh_now(REFRESH_WAIT).await });
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(!waiting.is_finished());
         drop(held);
@@ -3850,7 +3850,7 @@ pub(crate) mod tests {
         c.reload();
         assert!(c.refresh().await.is_err());
         assert_eq!(*c.refreshed.borrow(), 1);
-        c.run(|| {}, |_| tokio::spawn(std::future::pending()), |_| {});
+        c.run(|| {}, |_| crate::task::spawn(std::future::pending()), |_| {});
         let t = std::time::Instant::now();
         assert!(!c.refresh_now(Duration::from_millis(500)).await);
         assert!(t.elapsed() >= Duration::from_millis(500));
@@ -3983,7 +3983,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let mut s = read_saved(&dir).unwrap().unwrap();
         s.url = url.clone();
         write_saved(&dir, &s).unwrap();
@@ -4040,7 +4040,7 @@ pub(crate) mod tests {
         );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let dir = std::env::temp_dir().join(format!("arugula-join-lock-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
 
@@ -4723,7 +4723,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let saved = saved_for(&url, "");
         let keys = DeviceKeys::generate();
         let said_of = |f: Option<Forgot>| match f {

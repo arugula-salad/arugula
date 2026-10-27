@@ -2415,7 +2415,7 @@ impl<'a> Call<'a> {
     /// Why a pane isn't there, as specifically as history can say.
     pub(crate) async fn gone(&self, pane: PaneId) -> String {
         let store = self.app.mux.store.clone();
-        let last = tokio::task::spawn_blocking(move || {
+        let last = crate::task::spawn_blocking(move || {
             history::history(
                 &store,
                 &Filter { pane: Some(pane), kind: Some(HistoryKind::Command), ..Default::default() },
@@ -2925,7 +2925,7 @@ impl<'a> Call<'a> {
         let text = if p.info.kind == BlockType::Terminal {
             let h =
                 self.app.mux.api(|r| Api::Pane(pane, r)).await.flatten().ok_or_else(|| format!("no pane %{pane}"))?;
-            tokio::task::spawn_blocking(move || h.capture(CaptureFormat::Text, CaptureScope::Screen))
+            crate::task::spawn_blocking(move || h.capture(CaptureFormat::Text, CaptureScope::Screen))
                 .await
                 .ok()
                 .flatten()
@@ -3049,7 +3049,7 @@ impl<'a> Call<'a> {
         };
         let store = self.app.mux.store.clone();
         let all =
-            tokio::task::spawn_blocking(move || history::history(&store, &filter, 100_000)).await.unwrap_or_default();
+            crate::task::spawn_blocking(move || history::history(&store, &filter, 100_000)).await.unwrap_or_default();
         let cut = before.map(|b| now_ms().saturating_sub(b * 1000));
         let mut hits: Vec<HistoryEntry> = all
             .into_iter()
@@ -3097,7 +3097,7 @@ impl<'a> Call<'a> {
         let kinds = self.app.mux.kinds.clone();
         let want = if only.is_some() { 2000 } else { limit };
         let docs_re = re.clone();
-        let mut hits = tokio::task::spawn_blocking(move || history::search(&store, &kinds, &re, since, want))
+        let mut hits = crate::task::spawn_blocking(move || history::search(&store, &kinds, &re, since, want))
             .await
             .unwrap_or_default();
         // The Doc library's lines (#1493), for an agent that reaches the machine.
@@ -3293,7 +3293,7 @@ impl<'a> Call<'a> {
         let title = a.title.clone();
         let meta = {
             let state = state.clone();
-            tokio::task::spawn_blocking(move || crate::docs::library::make(&state, &title, &by))
+            crate::task::spawn_blocking(move || crate::docs::library::make(&state, &title, &by))
                 .await
                 .map_err(|e| e.to_string())??
         };
@@ -4051,7 +4051,7 @@ impl Call<'_> {
         }
         // Its block was closed: what it said then.
         let root = self.app.mux.store.root().to_owned();
-        let kept = tokio::task::spawn_blocking(move || crate::invite::card::closed(&root)).await.unwrap_or_default();
+        let kept = crate::task::spawn_blocking(move || crate::invite::card::closed(&root)).await.unwrap_or_default();
         if let Some(c) = kept.into_iter().rev().find(|c| c.drafter == drafter && c.draft.id == id) {
             let status = serde_json::to_value(&c.draft).unwrap_or_default()["status"].as_str().unwrap_or("").to_owned();
             let block = c.block;

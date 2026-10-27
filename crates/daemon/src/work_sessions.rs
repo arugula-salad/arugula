@@ -1038,7 +1038,7 @@ fn follow(app: &Arc<App>, id: &str) {
     }
     let app = app.clone();
     let id = id.to_owned();
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let mut missing: Option<std::time::Instant> = None;
         while step(&app, &id, &mut missing).await {
             tokio::time::sleep(FOLLOW).await;
@@ -1879,7 +1879,7 @@ async fn send(app: &Arc<App>, id: &str) {
             let app = app.clone();
             let id = id.to_owned();
             // Not under the sender's lock: stopping sends nothing.
-            tokio::spawn(async move { end(&app, &id, &format!("control says it's {s}")).await });
+            crate::task::spawn(async move { end(&app, &id, &format!("control says it's {s}")).await });
             return;
         }
     }

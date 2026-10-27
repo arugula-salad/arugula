@@ -302,7 +302,7 @@ impl Server {
         }
         // It stops itself when idle: then the next use starts it again.
         let me = self.me.clone();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let st = child.wait().await;
             info!(pid, status = ?st, "code-server stopped");
             if let Some(me) = me.upgrade()
@@ -763,11 +763,11 @@ mod tests {
         let sum = hex::encode(Sha256::digest(&body));
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             loop {
                 let Ok((mut s, _)) = l.accept().await else { return };
                 let body = body.clone();
-                tokio::spawn(async move {
+                crate::task::spawn(async move {
                     let mut buf = [0u8; 2048];
                     let _ = tokio::io::AsyncReadExt::read(&mut s, &mut buf).await;
                     let head =
