@@ -80,15 +80,17 @@ async fn timed(runner: &Runner, script: &str, args: &[String]) -> Option<(Vec<u8
     tokio::time::timeout(TIMEOUT, runner.sh(script, args)).await.ok()?.ok()
 }
 
-/// `message` cut to [`TurnResult::MESSAGE_MAX`] characters, and marked.
+/// `message` cut to its last [`TurnResult::MESSAGE_MAX`] characters, and
+/// marked: a final message ends with its summary and caveats (Arugula
+/// #215).
 fn cut(message: String) -> String {
-    match message.char_indices().nth(TurnResult::MESSAGE_MAX) {
-        Some((at, _)) => {
-            let more = message[at..].chars().count();
-            format!("{}\n\n[cut: {more} more characters]", &message[..at])
-        }
-        None => message,
+    let n = message.chars().count();
+    if n <= TurnResult::MESSAGE_MAX {
+        return message;
     }
+    let more = n - TurnResult::MESSAGE_MAX;
+    let at = message.char_indices().nth(more).map_or(0, |(at, _)| at);
+    format!("[cut: {more} characters before this]\n\n…{}", &message[at..])
 }
 
 fn parse(out: &str) -> Option<Work> {
@@ -144,10 +146,10 @@ mod tests {
 
     #[test]
     fn a_long_message_is_cut_on_a_char_boundary_and_marked() {
-        let long = "é".repeat(TurnResult::MESSAGE_MAX + 5);
+        let long = format!("{}{}", "a".repeat(5), "é".repeat(TurnResult::MESSAGE_MAX));
         let c = cut(long);
-        assert!(c.starts_with(&"é".repeat(TurnResult::MESSAGE_MAX)));
-        assert!(c.ends_with("[cut: 5 more characters]"));
+        assert!(c.starts_with("[cut: 5 characters before this]\n\n…"), "{c}");
+        assert!(c.ends_with(&format!("…{}", "é".repeat(TurnResult::MESSAGE_MAX))), "the end is kept");
         assert_eq!(cut("short".into()), "short");
     }
 

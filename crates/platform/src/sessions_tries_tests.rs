@@ -427,7 +427,8 @@ async fn codex_review_reviews_what_was_pushed() {
 
 /// Each turn's last message is posted in the session's thread (only), as
 /// its asker's `via` the session, once however often the box sends the
-/// report; a long one is cut with the session's link; an empty one, or a
+/// report; a long one keeps its end, after the session's link; a pushed
+/// one ends saying how many commits went to which branch; an empty one, or a
 /// turn from a box that sends none, posts nothing. What the agent wrote
 /// is text: its `@`s name nobody, and it neither prompts the session nor
 /// starts one.
@@ -474,19 +475,25 @@ async fn each_turns_answer_is_posted_in_its_thread() {
     assert_eq!(w.app.db.session_prompts(&s.id).unwrap().len(), 1, "it isn't a prompt to the session");
     assert_eq!(crate::sessions_hydrate_tests::sessions(&w.app, &w.project).len(), 1, "and starts none");
 
-    // A person's reply prompts it; the next turn's answer is long: cut
-    // with the session's link.
+    // A person's reply prompts it; the next turn's answer is long and
+    // pushed: its end (where the caveats are) after the session's link,
+    // then what it pushed (Arugula #215).
     post_in(&w.base, "ch_general", "b", "and the changelog?", Some(p)).await;
     next().await;
-    let long = format!("{}THE END", "words ".repeat(1000));
-    assert_eq!(w.says(&s.id, Kind::Turn, None, turn(Some(&long))).await, Reported::Taken);
+    let long = format!("THE START {}Caveat: THE END", "words ".repeat(1000));
+    let mut d = turn(Some(&long));
+    d["pushed"] = json!(true);
+    d["commits"] = json!(["abc1234 the changelog", "def5678 the readme"]);
+    assert_eq!(w.says(&s.id, Kind::Turn, None, d).await, Reported::Taken);
     let got = answers().await;
     assert_eq!(got.len(), 2, "{got:?}");
-    let (kept, rest) = got[1].1.split_once("\n\n").unwrap();
-    assert_eq!(kept.chars().count(), crate::sessions::answer::ANSWER_MAX);
-    assert!(long.starts_with(kept) && !kept.contains("THE END"));
+    let (head, rest) = got[1].1.split_once("\n\n").unwrap();
     let link = format!("https://control.example/p/{}/sessions/{}", w.project, s.id);
-    assert_eq!(rest, format!("{} {link}", crate::sessions::answer::THE_REST));
+    assert_eq!(head, format!("{} {link}", crate::sessions::answer::THE_START));
+    let (kept, line) = rest.rsplit_once("\n\n").unwrap();
+    assert!(kept.chars().count() <= crate::sessions::answer::ANSWER_MAX + 1, "{}", kept.chars().count());
+    assert!(kept.starts_with("…words") && kept.ends_with("Caveat: THE END") && !kept.contains("THE START"), "{kept}");
+    assert_eq!(line, format!("Pushed 2 commits to `{}`.", s.branch));
     assert_eq!(w.says(&s.id, Kind::State, Some(State::Done), json!({})).await, Reported::Taken);
 
     // An empty reply, and an older box's turn with none: nothing.

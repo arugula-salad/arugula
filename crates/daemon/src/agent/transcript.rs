@@ -296,20 +296,37 @@ impl Transcript {
         }
     }
 
-    /// What the agent said in the last turn: its replies after the last
-    /// prompt, joined, with no thoughts, tool calls or notes (AR-1, #1475).
-    /// `None` before any prompt, or when the turn said nothing.
+    /// What the agent said last in the last turn: its final message, and
+    /// only it (AR-1, #1475; Arugula #215). That's the last agent message
+    /// after the last prompt, all of its chunks by its ACP `messageId`,
+    /// wherever thoughts, tool calls or a mid-turn user chunk split them,
+    /// and none of the turn's earlier messages. An agent that gives no ids
+    /// (Codex's adapter) streams one message as one run of chunks, so it's
+    /// the last run. No thoughts, tool calls or notes. `None` before any
+    /// prompt, or when the turn said nothing.
     pub fn last_message(&self) -> Option<String> {
-        let from = self.entries.iter().rposition(|e| matches!(e, Entry::User { .. }))? + 1;
-        let said: Vec<&str> = self.entries[from..]
-            .iter()
-            .filter_map(|e| match e {
-                Entry::Agent { text, forgotten: false, .. } => Some(text.trim()),
+        fn said(e: &Entry) -> Option<(&str, Option<&str>)> {
+            match e {
+                Entry::Agent { text, id, forgotten: false } => Some((text, id.as_deref())),
                 _ => None,
-            })
-            .filter(|t| !t.is_empty())
-            .collect();
-        (!said.is_empty()).then(|| said.join("\n\n"))
+            }
+        }
+        let from = self.entries.iter().rposition(|e| matches!(e, Entry::User { .. }))? + 1;
+        let (last, (text, id)) = (from..self.entries.len())
+            .rev()
+            .find_map(|i| said(&self.entries[i]).filter(|(t, _)| !t.trim().is_empty()).map(|s| (i, s)))?;
+        let message = match id {
+            // Claude's ids are the API's, unique to a message: its chunks
+            // before the prompt too (a mid-turn user chunk splits a turn).
+            Some(id) => self.entries[..=last]
+                .iter()
+                .filter_map(said)
+                .filter(|(_, x)| *x == Some(id))
+                .map(|(t, _)| t)
+                .collect::<String>(),
+            None => text.to_owned(),
+        };
+        Some(message.trim().to_owned())
     }
 
     /// The transcript as Markdown: `capture --text`.
@@ -563,5 +580,25 @@ mod tests {
         assert!(matches!(&ours.entries[1], Entry::Agent { text, .. } if text == "Hello"));
         assert_eq!(ours.tool("t1").unwrap().status, "completed");
         assert!(matches!(&ours.entries[3], Entry::Agent { text, .. } if text == "Done."));
+    }
+
+    /// Codex's adapter gives no message ids: its last message is the last
+    /// run of chunks, after the turn's last tool call or thought.
+    #[test]
+    fn without_ids_the_last_message_is_the_last_run() {
+        let mut t = Transcript::default();
+        t.user("fix it", vec![], 1);
+        let said = |t: &mut Transcript, text: &str| {
+            t.apply(&json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}), 2)
+        };
+        said(&mut t, "Looking.");
+        t.apply(&json!({"sessionUpdate":"tool_call","toolCallId":"t1","title":"ls","status":"completed"}), 3);
+        said(&mut t, "Found it.");
+        t.apply(&json!({"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"ok"}}), 4);
+        said(&mut t, "Fixed ");
+        said(&mut t, "it.");
+        assert_eq!(t.last_message().as_deref(), Some("Fixed it."));
+        t.user("thanks", vec![], 5);
+        assert_eq!(t.last_message(), None, "the new turn has said nothing yet");
     }
 }

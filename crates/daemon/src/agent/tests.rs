@@ -485,3 +485,80 @@ fn a_queued_prompt_is_credited_to_its_author_as_it_is_sent() {
     assert_eq!(said(&g).last().map(String::as_str), Some("> mine"));
     assert_eq!(said(&g).len(), 5);
 }
+
+/// Arugula #215: a turn's result is its final message, exactly, though the
+/// turn said a lot before it. As claude-agent-acp streams one long turn
+/// (session 44abb505's shape): a status line, a tool, a plan, a question
+/// answered on its card (whose answer comes back as a user chunk), the
+/// build's tools, and the summary, whose chunks thoughts split. The turn
+/// before it says nothing of this turn's.
+#[test]
+fn a_turns_result_is_its_last_message_only() {
+    let u = |update: Value| {
+        frame(
+            "in",
+            json!({ "jsonrpc": "2.0", "method": "session/update", "params": { "sessionId": "s1", "update": update } }),
+        )
+    };
+    let said = |id: &str, text: &str| {
+        u(
+            json!({ "sessionUpdate": "agent_message_chunk", "messageId": id, "content": { "type": "text", "text": text } }),
+        )
+    };
+    let thought = |id: &str, text: &str| {
+        u(
+            json!({ "sessionUpdate": "agent_thought_chunk", "messageId": id, "content": { "type": "text", "text": text } }),
+        )
+    };
+    let tool = |id: &str, title: &str| {
+        [
+            u(
+                json!({ "sessionUpdate": "tool_call", "toolCallId": id, "title": title, "kind": "execute", "status": "pending" }),
+            ),
+            u(json!({ "sessionUpdate": "tool_call_update", "toolCallId": id, "status": "completed" })),
+        ]
+    };
+    let prompt = |id: u64, text: &str| {
+        frame(
+            "out",
+            json!({ "jsonrpc": "2.0", "id": id, "method": "session/prompt", "params": { "sessionId": "s1", "prompt": [{ "type": "text", "text": text }] } }),
+        )
+    };
+    let ended = |id: u64| frame("in", json!({ "jsonrpc": "2.0", "id": id, "result": { "stopReason": "end_turn" } }));
+    let mut lines = log_lines()[..5].to_vec();
+    lines.extend([prompt(3, "hi"), said("msg_0", "Hello."), ended(3), prompt(4, "add the issue tools")]);
+    lines.extend([said("msg_1", "Status: I'm checking the session tools."), thought("msg_1", "Where…")]);
+    lines.extend(tool("toolu_1", "rg session"));
+    lines.push(said("msg_2", "Status: I've finished investigating.\n\n**Plan**\n1. Add the tools."));
+    lines.extend(tool("toolu_2", "AskUserQuestion"));
+    lines.push(u(json!({ "sessionUpdate": "user_message_chunk", "content": { "type": "text", "text": "Go ahead." } })));
+    lines.push(said("msg_3", "I'll start by finding the tool code."));
+    lines.extend(tool("toolu_3", "cargo build"));
+    lines.extend(tool("toolu_4", "git commit"));
+    let before_summary = lines.len();
+    lines.extend([
+        thought("msg_4", "Summing up."),
+        said("msg_4", "Done: the issue tools are in, "),
+        thought("msg_4", "and the caveat."),
+        said("msg_4", "committed on the branch.\n\nCaveat: the web page isn't updated."),
+        u(json!({ "sessionUpdate": "usage_update", "used": 10, "size": 1000 })),
+        ended(4),
+    ]);
+    let replay = |lines: &[Vec<u8>]| {
+        let mut g = Inner::new(Config::default(), None);
+        for l in lines {
+            g.rebuild_line(l);
+        }
+        assert!(g.prompt_id.is_none() && g.turns.last().is_some_and(|t| t.ended_ms.is_some()), "the turn ended");
+        g.t.last_message()
+    };
+    assert_eq!(
+        replay(&lines).as_deref(),
+        Some("Done: the issue tools are in, committed on the branch.\n\nCaveat: the web page isn't updated.")
+    );
+    // Ended on a tool, with nothing said after it: the message before it.
+    let mut quiet = lines[..before_summary].to_vec();
+    quiet.extend(tool("toolu_5", "git status"));
+    quiet.push(ended(4));
+    assert_eq!(replay(&quiet).as_deref(), Some("I'll start by finding the tool code."));
+}
