@@ -343,7 +343,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                   </button>
                   {owner && <button onClick={act(() => openMachineTelemetry(client))}>Usage and crash reports</button>}
                   {owner && <button onClick={act(() => openSharing(client))}>Guest SSH access</button>}
-                  {owner && client.hasDev() && <button onClick={act(() => openDeveloper(client))}>Developer settings</button>}
+                  {owner && <button onClick={act(() => openDeveloper(client))}>Developer settings</button>}
                 </div>
               </section>
             </>

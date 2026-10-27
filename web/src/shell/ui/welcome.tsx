@@ -1,7 +1,10 @@
 // Getting started (#110): what isn't on the first screen, one step at a
 // time: welcome, the phone (Tailscale), the cloud (Arugula control),
-// agents, and a summary. Opens by itself once per browser, then from the
-// account menu (top right) and the phone's sheet, and says so when it closes.
+// agents, and Things to try (buttons that each do one thing here, each
+// marked done once used). Opens by itself once per account on control's
+// page, once per browser on a daemon's own (the seen store, shared/seen.ts),
+// then from the account menu (top right) and the phone's sheet, and says
+// so when it closes.
 //
 // The steps that used to be commands to copy are buttons: the daemon runs
 // them for its owner (`/api/setup`, crates/daemon/src/setup.rs) and says
@@ -27,7 +30,15 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { useModal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { CopyText } from "../../shared/ui/copy";
-import { notifyBlocker, pushNow, serveCommand, subscribePush } from "./notify";
+import { notifyBlocker, pushNow, serveCommand, subscribePush, turnOnPush } from "./notify";
+import { markSeen, seen, seenReady, subscribeSeen } from "../../shared/seen";
+import { currentAccount } from "./app-bar";
+import { keyHint } from "./keys";
+import { openPanel } from "../trust/common";
+import { shareSession } from "./people";
+import { openSwarm } from "../swarm/route";
+import { openPalette } from "./palette";
+import { openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import type { ControlState, HostInfo } from "../../shared/proto";
 import { placeOf, refreshControlState } from "./control-state";
@@ -38,7 +49,10 @@ import { AdapterHelp, adapterLine, adapterReady, installAdapter, type Adapter } 
 const DOCS = "https://docs.arugula.io";
 /** Arugula cloud, unless the daemon was started with `--control` (#207). */
 const CONTROL = "https://control.arugula.io";
-const SEEN_KEY = "arugula.getting-started";
+/** In the seen store: it opened by itself once. */
+const SEEN = "getting-started";
+/** Where a browser remembered that before the seen store. */
+const OLD_KEY = "arugula.getting-started";
 
 /** What `/api/host` says about this daemon (the parts for this panel). */
 type HostSays = Pick<HostInfo, "name" | "tailnet_url" | "tailnet_seen" | "control" | "team"> & {
@@ -105,12 +119,12 @@ const STEPS = [
   { id: "phone", label: "Phone" },
   { id: "cloud", label: "Cloud" },
   { id: "agents", label: "Agents" },
-  { id: "ready", label: "Ready" },
+  { id: "try", label: "Things to try" },
 ] as const;
 type StepId = (typeof STEPS)[number]["id"];
 
 /** Older names for steps, from callers that open it at one. */
-export type Section = StepId | "control";
+export type Section = StepId | "control" | "ready";
 
 let shown: { client: Client | null; section?: Section } | null = null;
 const listeners = new Set<() => void>();
@@ -125,34 +139,33 @@ export function openGettingStarted(section?: Section, client?: Client) {
   changed();
 }
 
-function seen(): boolean {
+/** It opened by itself before: in the seen store (true until it has
+ * loaded), or in this browser's old key. */
+function greeted(): boolean {
+  if (seen(SEEN)) return true;
   try {
-    return localStorage.getItem(SEEN_KEY) !== null;
+    return localStorage.getItem(OLD_KEY) !== null;
   } catch {
-    // No storage (a private window, blocked): don't greet every time.
-    return true;
+    // No storage (a private window, blocked): this browser's seen store
+    // forgets, so don't greet every time; the account's remembers.
+    return !currentAccount();
   }
 }
 
-function markSeen() {
-  try {
-    localStorage.setItem(SEEN_KEY, "seen");
-  } catch {
-    // Nothing to remember it in.
-  }
-}
-
-/** Open it the first time this browser sees its own daemon: not on a page
- * from control, not for a guest, and not under automation (tests expect a
- * clean first screen; welcome.spec.ts turns it back on). */
+/** Open it the first time: once per account on control's page, once per
+ * browser on a daemon's own. Not for a guest, and not under automation
+ * (tests expect a clean first screen; welcome.spec.ts turns it back on). */
 export function useFirstRun(client: Client) {
   lastClient = client;
   const ready = !!client.state && client.state.sessions.length > 0;
+  // The seen store loads after the page does.
+  const [loaded, setLoaded] = useState(seenReady());
+  useEffect(() => subscribeSeen(() => setLoaded(seenReady())), []);
   useEffect(() => {
-    if (!ready || client.e2e || client.state?.roles || navigator.webdriver || seen()) return;
-    markSeen();
+    if (!ready || !loaded || client.state?.roles || navigator.webdriver || greeted()) return;
+    markSeen(SEEN);
     openGettingStarted(undefined, client);
-  }, [client, ready]);
+  }, [client, ready, loaded]);
 }
 
 export function GettingStartedLayer() {
@@ -168,7 +181,7 @@ export function GettingStartedLayer() {
         client={shown.client}
         section={shown.section}
         close={() => {
-          markSeen();
+          if (seenReady()) markSeen(SEEN);
           shown = null;
           closedOnce = true;
           changed();
@@ -202,7 +215,7 @@ async function post(path: string, body?: unknown): Promise<Outcome & Record<stri
 }
 
 function stepFor(section?: Section): number {
-  const id = section === "control" ? "cloud" : section;
+  const id = section === "control" ? "cloud" : section === "ready" ? "try" : section;
   const i = STEPS.findIndex((s) => s.id === id);
   return i < 0 ? 0 : i;
 }
@@ -274,7 +287,7 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
     phone: !!(setup?.tailscale.serving || host?.tailnet_seen),
     cloud: !!(setup?.control.joined || (host?.control && host.control_state?.state !== "dropped")),
     agents: claudeReady(agents),
-    ready: false,
+    try: false,
   };
   const id = STEPS[step].id;
   const last = step === STEPS.length - 1;
@@ -328,10 +341,21 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
           {id === "welcome" && <Welcome name={name} client={client} setup={agents} manual={manual} refresh={refreshAgents} />}
           {id === "phone" && <Phone name={name} setup={setup} host={host} manual={manual} refresh={refresh} />}
           {id === "cloud" && (
-            <Cloud name={name} setup={setup} early={early} host={host} manual={manual} refresh={refresh} setSetup={setSetup} onConfirmed={() => setConfirmed(true)} />
+            <Cloud
+              name={name}
+              client={client}
+              setup={setup}
+              early={early}
+              host={host}
+              manual={manual}
+              refresh={refresh}
+              setSetup={setSetup}
+              onConfirmed={() => setConfirmed(true)}
+              close={close}
+            />
           )}
           {id === "agents" && <Agents client={client} setup={agents} manual={manual} refresh={refreshAgents} close={close} />}
-          {id === "ready" && <Ready done={done} go={go} />}
+          {id === "try" && <Try client={client} done={done} go={go} close={close} />}
         </div>
 
         <footer class="start-foot">
@@ -571,6 +595,7 @@ function WholeCode({ code }: { code: string }) {
  * machines from it, and joining doesn't need it: the step says so. */
 function Cloud({
   name,
+  client,
   setup,
   early,
   host,
@@ -578,8 +603,10 @@ function Cloud({
   refresh,
   setSetup,
   onConfirmed,
+  close,
 }: {
   name: string;
+  client: Client | null;
   setup: Setup | null;
   early: Setup["control"] | null;
   host: HostSays | null;
@@ -587,6 +614,7 @@ function Cloud({
   refresh: () => Promise<void>;
   setSetup: (fn: (s: Setup | null) => Setup | null) => void;
   onConfirmed: () => void;
+  close: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -660,6 +688,7 @@ function Cloud({
               </a>
             </Check>
           </ul>
+          <Together joined={joined} client={client} close={close} />
           <p class="start-dim" data-start-next-device>
             {desktopApp()
               ? "Next, if you like: sign the app in and approve it as a device, so this window reaches your other machines too. It's optional: this machine is in already."
@@ -874,29 +903,158 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
   );
 }
 
-function Ready({ done, go }: { done: Record<StepId, boolean>; go: (i: number) => void }) {
+/** The Cloud step's, once joined: a team to share with, and a session to
+ * share. Teams are the account's: its panel on control's page, else the
+ * cloud's own page, where they're in the account menu. */
+function Together({ joined, client, close }: { joined: string; client: Client | null; close: () => void }) {
+  const session = client?.session ?? null;
+  const owner = !!client?.state && !client.state.roles;
+  return (
+    <div class="start-together" data-start-together>
+      <p>Share with people: make a team, then share a session with it, or with one person.</p>
+      <div class="start-confirm">
+        {currentAccount() ? (
+          <button
+            class="secondary"
+            data-start-make-team
+            onClick={() => {
+              close();
+              openPanel("teams")();
+            }}
+          >
+            Make a team
+          </button>
+        ) : (
+          <a class="secondary" href={joined} target="_blank" rel="noreferrer" title="Teams are in the cloud's account menu" data-start-make-team>
+            Make a team ↗
+          </a>
+        )}
+        {client && owner && session !== null && (
+          <button
+            class="secondary"
+            data-start-share
+            onClick={() => {
+              close();
+              shareSession(session);
+            }}
+          >
+            Share a session
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One of Things to try: what it does, why it can't here, and what to do. */
+interface TryItem {
+  id: string;
+  label: string;
+  what: string;
+  /** Done already, whatever was clicked (push that's on). */
+  already?: boolean;
+  refusal?: string | null;
+  /** Leave Getting started open (a browser's own prompt comes next). */
+  stay?: boolean;
+  run: () => void;
+}
+
+/** The seen store's name for a thing tried. */
+const tried = (id: string) => `getting-started.try.${id}`;
+
+/** The last step: a button for each thing, on this machine, each marked
+ * done once used (in the seen store), and what's still to set up. */
+function Try({ client, done, go, close }: { client: Client | null; done: Record<StepId, boolean>; go: (i: number) => void; close: () => void }) {
+  const [, setTick] = useState(0);
+  useEffect(() => subscribeSeen(() => setTick((t) => t + 1)), []);
+  const owner = !!client?.state && !client.state.roles;
+  const session = client?.session ?? null;
+  const active = client?.active();
+  const mine = active === undefined ? undefined : client?.machine(active);
+  const blocked = notifyBlocker();
+  const items: TryItem[] = [
+    { id: "swarm", label: "Open the swarm", what: "Every pane on every machine at once, what needs you first", run: () => openSwarm() },
+    {
+      id: "agent",
+      label: "Start an agent",
+      what: "Give Claude or Codex a task in a pane of its own",
+      refusal: session === null ? "No session to start it in" : null,
+      run: () => client && session !== null && startAgent(client, { session, from: client.active() }),
+    },
+    {
+      id: "port",
+      label: "Open a port",
+      what: "Preview an app running here, in a pane beside this one",
+      refusal: !client?.showsBlocks() ? "This page can't show block sites" : null,
+      run: () => client && void openPort(client, { split: active, host: mine?.id, local: !mine }),
+    },
+    {
+      id: "pr",
+      label: "Open a pull request",
+      what: "Its checks, reviews and timeline, read with your gh login",
+      refusal: !owner ? "Pull requests open with the machine owner's login" : session === null ? "No session to open it in" : null,
+      run: () => client && session !== null && void openPr(client, { session }),
+    },
+    {
+      id: "push",
+      label: "Get push",
+      what: "This device is told when a pane or an agent needs you",
+      already: pushNow() === "on",
+      refusal: blocked,
+      stay: true,
+      run: () => client && void turnOnPush(client),
+    },
+    {
+      id: "search",
+      label: "Open command search",
+      what: `Every command, session, tab and pane: ${keyHint("palette") ?? "Ctrl+Shift+P"}`,
+      run: () => client && openPalette(client),
+    },
+  ];
   const rows: [StepId, string, string][] = [
     ["phone", "On your phone", "Not yet: Tailscale"],
     ["cloud", "In Arugula cloud", "Not yet: connect"],
     ["agents", "Claude Code works with Arugula", "Not yet: set up Claude Code"],
   ];
-  const all = rows.every(([id]) => done[id]);
+  const todo = rows.filter(([id]) => !done[id]);
   return (
     <section class="start-step">
-      <h2>{all ? "You're set" : "Almost there"}</h2>
-      <ul class="start-checks">
-        {rows.map(([id, yes, no]) => (
-          <Check key={id} state={done[id] ? "done" : "todo"}>
-            {done[id] ? (
-              yes
-            ) : (
+      <h2>Things to try</h2>
+      <p class="start-lede">Each of these does the thing, here and now. Try them in any order.</p>
+      <ul class="start-tries" data-start-tries>
+        {items.map((t) => {
+          const isDone = t.already || (seenReady() && seen(tried(t.id)));
+          return (
+            <li key={t.id} class={`start-try${isDone ? " done" : ""}`} data-start-try={t.id} data-done={isDone ? "" : undefined}>
+              <button
+                class="secondary"
+                disabled={!client || !!t.refusal}
+                title={t.refusal ?? undefined}
+                onClick={() => {
+                  markSeen(tried(t.id));
+                  if (!t.stay) close();
+                  t.run();
+                }}
+              >
+                {isDone && <span class="start-try-mark" aria-label="done">✓ </span>}
+                {t.label}
+              </button>
+              <span class="start-dim">{t.refusal ?? t.what}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {todo.length > 0 && (
+        <ul class="start-checks" data-start-todo>
+          {todo.map(([id, , no]) => (
+            <Check key={id} state="todo">
               <button class="link" onClick={() => go(STEPS.findIndex((s) => s.id === id))}>
                 {no} ›
               </button>
-            )}
-          </Check>
-        ))}
-      </ul>
+            </Check>
+          ))}
+        </ul>
+      )}
       <p class="start-lede">
         Anything you skipped is a click away: this is <b>Getting started</b> in the account menu, top right (and the ☰ sheet on a phone), any time.
       </p>

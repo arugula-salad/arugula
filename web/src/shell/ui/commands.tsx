@@ -355,7 +355,8 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
 
 /** The shown machine's settings: its standing permission rules (#166), its
  * usage and crash reports (M103) and its Labs flags (#665), the owner's.
- * In the machine menu. */
+ * In the machine menu. Developer settings are there whether or not the
+ * machine has a `flags.json` yet: the dialog is how a flag gets turned on. */
 export function machineSettingsItems(client: Client): MenuItem[] {
   if (!client.state || client.state.roles) return [];
   return [
@@ -363,7 +364,7 @@ export function machineSettingsItems(client: Client): MenuItem[] {
     { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
     // Native #205: a sharing setting, which was the `guest-ssh` flag.
     { label: "Guest SSH access…", run: () => openSharing(client) },
-    ...(client.hasDev() ? [{ label: "Developer settings…", run: () => openDeveloper(client) } as MenuItem] : []),
+    { label: "Developer settings…", run: () => openDeveloper(client) },
   ];
 }
 
