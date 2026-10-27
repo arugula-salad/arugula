@@ -58,10 +58,13 @@ export function subscribeHints(fn: () => void) {
   return () => void listeners.delete(fn);
 }
 
-/** Someone types: in this page lately, or (the daemon says) in a pane. */
+/** Someone types: in this page lately, or (the daemon says) someone else
+ * in a pane. This person's own keys are the page's: the daemon's `typing`
+ * holds for 5 s after them, so a dev server started with Enter would wait
+ * that long for its chip. */
 function typing(client: Client): boolean {
   if (Date.now() - lastKey < TYPING_MS) return true;
-  return !!client.state?.panes.some((p) => p.typing);
+  return !!client.state?.panes.some((p) => p.typing && client.drivenBy(p.id));
 }
 
 /** The places drawn now (`chip:<pane>`, `toast`, `empty`): a hint is

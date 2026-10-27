@@ -82,8 +82,10 @@ the hints it's drawn, and a hint is shown (and so seen) only where one is:
 a phone has no pane headers, so a chip hint waits for a computer.
 
 **Pacing:** at most one hint on screen. None new while someone types: a key
-in the page in the last 1.5 s, or the daemon's `typing` on any pane (its
-driver typed in it lately). One on screen stays while its fact holds, until
+in the page in the last 1.5 s, or the daemon's `typing` on a pane someone
+else drives (its driver typed in it lately). This person's own keys are the
+page's alone: the daemon's `typing` lasts 5 s after the last key, so a dev
+server started with Enter would wait that long for its chip. One on screen stays while its fact holds, until
 it's acted on or dismissed; when the fact goes (the server stops, the tab
 changes), so does it.
 
