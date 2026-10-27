@@ -49,11 +49,15 @@ webkit2gtk-sys = "2"
 windows = { version = "0.61", features = ["Data_Xml_Dom", "UI_Notifications"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# Notifications and their clicks (notify_mac.rs, #234); mac-notification-sys
+# only outside an app bundle, where there's no notification center.
 mac-notification-sys = "0.6"
+objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "block2", "UNNotification", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationTrigger", "UNUserNotificationCenter"] }
+block2 = "0.6"
 # SMAppService for the daemon's launch agent, and NSWindow tabs (M46) and
 # their tab bar (#323).
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSError", "NSArray", "NSURL"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSError", "NSArray", "NSURL", "NSBundle"] }
 # Finder's service (M47): the provider and its pasteboard. The Dock's menu
 # and Stop's question (#322).
 objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSWindowTabGroup", "NSResponder", "NSApplication", "NSPasteboard", "NSPasteboardItem", "NSMenu", "NSMenuItem", "NSAlert", "NSButton", "NSControl", "NSView"] }
