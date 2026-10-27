@@ -917,6 +917,14 @@ note = "A token for one push of an agent session's branch (M259): the platform m
 
 [[route]]
 method = "POST"
+path = "/api/hosted/work/session/issues"  # wire::work::WORK_SESSION_ISSUES
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "An agent session reading and commenting on its own project's native issues (aru-115): the platform checks the session is the machine's own and live, takes the project from the session, and reads or comments as the session's asker (PlatformPort::hosted_session_issues)."
+
+[[route]]
+method = "POST"
 path = "/api/hosted/work/secrets"  # wire::work::WORK_SECRETS
 process = "hub"
 auth = "hosted"

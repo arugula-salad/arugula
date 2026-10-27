@@ -727,6 +727,15 @@ struct Shower {
     reader: (String, String),
 }
 
+/// `ms` as `reader` reads them, with their authors' names and the agents
+/// or products they were posted by: for a session reading an issue's
+/// thread as its asker ([`crate::sessions::issues`]).
+pub(crate) async fn show_messages(app: &Platform, reader: &str, ms: &[Message]) -> anyhow::Result<Vec<ChatMessage>> {
+    let refs: Vec<&Message> = ms.iter().collect();
+    let shower = Shower::of(app, reader, &refs).await?;
+    Ok(ms.iter().map(|m| shower.show(m)).collect())
+}
+
 impl Shower {
     async fn of(app: &Platform, reader: &str, ms: &[&Message]) -> anyhow::Result<Self> {
         let hub = &*app.hub;

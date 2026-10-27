@@ -36,6 +36,7 @@ pub mod answer;
 pub mod asks;
 pub mod feedback;
 pub mod hydrate;
+pub mod issues;
 pub mod job;
 pub mod merged;
 pub mod moves;

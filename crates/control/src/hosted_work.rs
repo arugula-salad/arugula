@@ -12,7 +12,10 @@ use std::sync::Arc;
 
 use arugula_control_wire::{
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{ArtifactGiven, PushAsk, PushGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionReport, Work},
+    work::{
+        ArtifactGiven, PushAsk, PushGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionIssuesAsk,
+        SessionIssuesGiven, SessionReport, Work,
+    },
 };
 use arugula_platform::{PlatformPort as _, work::HostedMachine};
 use axum::{
@@ -73,6 +76,17 @@ pub async fn session_push(
     Json(a): Json<PushAsk>,
 ) -> Result<Json<PushGiven>, ApiError> {
     Ok(Json(app.platform.hosted_session_push(&machine(&h.0), &a).await?))
+}
+
+/// `POST /api/hosted/work/session/issues`: a session's agent reading and
+/// commenting on its own project's native issues. The platform checks the
+/// session is this machine's, and answers as the session's asker.
+pub async fn session_issues(
+    State(app): State<Arc<App>>,
+    h: HostedAuth,
+    Json(a): Json<SessionIssuesAsk>,
+) -> Result<Json<SessionIssuesGiven>, ApiError> {
+    Ok(Json(app.platform.hosted_session_issues(&machine(&h.0), &a).await?))
 }
 
 /// `POST /api/hosted/work/upload`: a URL to put one of its run's log
@@ -258,5 +272,11 @@ mod tests {
         assert_eq!(c.signed(&mine, "POST", "/api/hosted/work/report", Some(&report)).await.0, 401);
         assert_eq!(c.signed(&mine, "POST", "/api/hosted/work/upload", Some(&up)).await.0, 401);
         assert_eq!(c.signed(&mine, "POST", "/api/hosted/work/uploaded", Some(&up)).await.0, 401);
+        let issues = json!({ "session": "ses_x", "op": "list", "query": {} });
+        assert_eq!(c.signed(&mine, "POST", "/api/hosted/work/session/issues", Some(&issues)).await.0, 401);
+        // The hosted machine's own is let through to the platform, which
+        // refuses a session that isn't there.
+        let (st, v) = c.signed(&k, "POST", "/api/hosted/work/session/issues", Some(&issues)).await;
+        assert_eq!((st, v["kind"].as_str()), (200, Some("refused")), "{v}");
     }
 }
