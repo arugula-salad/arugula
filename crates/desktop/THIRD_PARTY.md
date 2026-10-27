@@ -15,7 +15,7 @@ Arugula is MIT OR Apache-2.0. Its binaries include the software below.
   It also carries the swarm's fonts, Big Shoulders Display, Instrument Sans and JetBrains Mono (Fontsource's builds, SIL Open Font License 1.1, below).
 - **Rust crates**, by license:
 
-- Apache License 2.0 (296)
+- Apache License 2.0 (297)
 - MIT License (107)
 - ISC License (19)
 - Unicode License v3 (19)
@@ -8447,6 +8447,7 @@ Used by:
 - [objc2-quartz-core 0.3.2](https://github.com/madsmtm/objc2)
 - [objc2-security 0.3.2](https://github.com/madsmtm/objc2)
 - [objc2-service-management 0.3.2](https://github.com/madsmtm/objc2)
+- [objc2-user-notifications 0.3.2](https://github.com/madsmtm/objc2)
 - [objc2-web-kit 0.3.2](https://github.com/madsmtm/objc2)
 - [osakit 0.3.1](https://github.com/mdevils/rust-osakit)
 - [pin-project-lite 0.2.17](https://github.com/taiki-e/pin-project-lite)
