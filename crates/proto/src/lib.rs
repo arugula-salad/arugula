@@ -1094,6 +1094,16 @@ pub struct PaneInfo {
     /// Getting started's "Use Claude Code with Arugula").
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unhooked: bool,
+    /// The last link to a pull request or an issue it printed (`gh pr
+    /// create`'s), by its shape (`arugula_mux::osc::forge_link`): the web
+    /// client's hint that a click opens it as a block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    /// The daemon brought it back when it started, and its process didn't
+    /// survive the restart (a reboot): its restart policy ran. For as long
+    /// as this daemon runs.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub restored: bool,
     /// Who is driving it (M13): only their typing reaches it, unless it's
     /// in pair mode. `None`: nobody yet (the next to type drives).
     #[serde(default, skip_serializing_if = "Option::is_none")]

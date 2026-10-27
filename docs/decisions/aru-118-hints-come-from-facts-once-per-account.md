@@ -45,6 +45,7 @@ constrains:
   - "path:web/src/shell/hints/index.ts"
   - "path:web/src/shell/hints/list.ts"
   - "path:web/src/shell/hints/ports.ts"
+  - "path:crates/mux/src/osc.rs"
   - "path:web/src/shell/ui/hints.tsx"
   - "path:web/src/shell/ui/commands.tsx"
   - "path:web/src/shared/seen.ts"
@@ -128,15 +129,30 @@ counting on its own adds its own variant.
   listens), at most every 2 s a pane, on this host, for someone who may type
   there and where blocks can show (`web/src/shell/hints/ports.ts`). If that
   ever costs too much, the daemon can push ports in `PaneInfo`.
-- *A second person joins*, *an agent waiting while the tab is hidden*:
-  the client alone (presence, attention and `document.visibilityState`).
-- *A PR URL printed*: needs the daemon, which sees the output; a fact in
-  `PaneInfo` (the link, once), as the forge blocks read them.
-- *Panes come back after a restart*: needs the daemon to mark the panes it
-  restored at startup (a restored pane's policy and `running` are close,
+- *A second person joins*, *an agent waiting while the tab is hidden*,
+  *a path pasted or files dragged over a pane*, *`cd` in a fresh pane*
+  (the shell integration's command line), *a Doc block*, *a team made*
+  (what control tells the page, `ControlSession.teams`): the client alone.
+- *A PR URL printed*: the daemon sees the output; the page never scans
+  it. The pane's output scanner (`crates/mux/src/osc.rs`, beside OSC 133)
+  picks out links shaped like a PR's or an issue's, the web client's
+  `forgePr`/`forgeIssue` shapes, printed or in OSC 8, and `PaneInfo.link`
+  is the last one. The client opens it as its click does (`forgeLink`).
+- *Panes come back after a restart*: the daemon marks the terminals it
+  restored at startup whose process didn't survive (`PaneInfo.restored`,
+  for as long as it runs; a restored pane's policy and `running` are close,
   not the fact).
+- *A Claude Code conversation on this machine, none open*: the daemon's
+  index already knows (`conversations.list`, what `arugula claude ls`
+  reads); the client asks once a page, while the hint is unseen.
+- *Push*: only where this device's push is `off`: never on plain http, a
+  browser without it, notifications blocked, or where it's on already.
 
-Where: `web/src/shell/hints/` (the registry, the engine, the port fact),
+**Under a test runner** (`navigator.webdriver`) hints keep quiet unless the
+page sets `window.__arugulaHints`, as telemetry's ask does: a toast would
+land on what other specs click. The hints' own specs set it.
+
+Where: `web/src/shell/hints/` (the registry, the engine, a module per fact),
 `web/src/shell/ui/hints.tsx` (the three places), `web/src/shell/ui/commands.tsx`
 (`COMMANDS`, *Tips*), `web/src/shared/seen.ts`, `web/src/shell/main.tsx`
 (which store), `crates/control/src/prefs.rs` and `db.rs` (`account_prefs`).

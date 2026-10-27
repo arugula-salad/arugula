@@ -1,7 +1,8 @@
 //! Picks the structure out of a pane's output: where prompts and commands
 //! begin and end (OSC 133, and VS Code's OSC 633 with the command line), the
 //! working directory (OSC 7), notifications (OSC 9, OSC 777, OSC 99), the
-//! bell, program status reports (OSC 7501, #720) and a full reset (RIS). The
+//! bell, program status reports (OSC 7501, #720), a full reset (RIS), and a
+//! link to a pull request or an issue printed in it (plain, or OSC 8). The
 //! bytes themselves pass through untouched; this only watches.
 //!
 //! It is a small state machine that survives sequences split across reads,
@@ -38,6 +39,11 @@ pub enum Signal {
     Status(Status),
     /// A full reset (RIS, `ESC c`): it clears every status record.
     Reset,
+    /// A link shaped like a pull request's or an issue's was printed
+    /// (`gh pr create`'s): see [`forge_link`].
+    Link {
+        url: String,
+    },
 }
 
 /// What a program reports in OSC 7501 (#720, the spec:
@@ -99,7 +105,13 @@ pub struct Scanner {
     state: State,
     buf: Vec<u8>,
     overflow: bool,
+    /// The printable run so far outside any sequence, while it may hold a
+    /// link: a word ends at a space, a control byte or a sequence.
+    word: Vec<u8>,
 }
+
+/// A word longer than this isn't a link we read.
+const MAX_WORD: usize = 2048;
 
 impl Default for Scanner {
     fn default() -> Self {
@@ -109,7 +121,7 @@ impl Default for Scanner {
 
 impl Scanner {
     pub fn new() -> Self {
-        Self { state: State::Ground, buf: Vec::new(), overflow: false }
+        Self { state: State::Ground, buf: Vec::new(), overflow: false, word: Vec::new() }
     }
 
     /// Feed output that starts at stream offset `base`; returns each signal
@@ -118,6 +130,16 @@ impl Scanner {
         let mut out = Vec::new();
         for (i, &b) in data.iter().enumerate() {
             let at = base + i as u64 + 1;
+            if self.state == State::Ground {
+                if b > b' ' && b != 0x7f {
+                    if self.word.len() < MAX_WORD {
+                        self.word.push(b);
+                    }
+                } else if !self.word.is_empty() {
+                    // Just before the byte that ended it.
+                    self.word_ends(at - 1, &mut out);
+                }
+            }
             self.state = match (self.state, b) {
                 (State::Ground, 0x1b) => State::Esc,
                 (State::Ground, 0x07) => {
@@ -173,6 +195,20 @@ impl Scanner {
         out
     }
 
+    /// A printed word ended: a link to a PR or an issue in it.
+    fn word_ends(&mut self, at: u64, out: &mut Vec<(u64, Signal)>) {
+        let word = std::mem::take(&mut self.word);
+        if word.len() >= MAX_WORD {
+            return;
+        }
+        let text = String::from_utf8_lossy(&word);
+        let Some(from) = text.find("https://").or_else(|| text.find("http://")) else { return };
+        let url = text[from..].trim_end_matches(['.', ',', ';', ':', ')', ']', '>', '\'', '"', '!', '?']);
+        if forge_link(url) {
+            out.push((at, Signal::Link { url: url.to_owned() }));
+        }
+    }
+
     /// An OSC ended, with a terminator `term` bytes long.
     fn finish(&mut self, at: u64, term: usize, out: &mut Vec<(u64, Signal)>) {
         if self.overflow {
@@ -211,6 +247,12 @@ fn parse_osc(payload: &[u8]) -> Option<Signal> {
                 _ => None,
             }
         }
+        // OSC 8 ; params ; URI: a hyperlink's target, when it's a PR's or
+        // an issue's.
+        "8" => {
+            let (_, uri) = rest.split_once(';')?;
+            forge_link(uri).then(|| Signal::Link { url: uri.to_owned() })
+        }
         "7" => {
             let url = rest.strip_prefix("file://")?;
             let path = &url[url.find('/')?..];
@@ -243,6 +285,32 @@ fn parse_osc(payload: &[u8]) -> Option<Signal> {
         }
         _ => None,
     }
+}
+
+/// Whether `url` is shaped like a link to a pull request or an issue: the
+/// web client's `forgePr` and `forgeIssue` (web/src/shell/client.ts), the
+/// shapes its links open as blocks. GitHub's `OWNER/REPO/pull/N`, Forgejo's
+/// `…/OWNER/REPO/pulls/N`, a GitLab merge request's `…/-/merge_requests/N`,
+/// and `…/OWNER/REPO/issues/N`. Only the shape: the client says which of
+/// these it opens (`Client.forgeLink`, which knows the Labs flags).
+pub fn forge_link(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")) else { return false };
+    let path = match rest.find('/') {
+        Some(i) if i > 0 => &rest[i + 1..],
+        _ => return false,
+    };
+    let path = path.split(['?', '#']).next().unwrap_or("");
+    let segs: Vec<&str> = path.split('/').collect();
+    let number = |i: usize| segs.get(i).is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()));
+    let named = |range: std::ops::Range<usize>| range.into_iter().all(|i| segs.get(i).is_some_and(|s| !s.is_empty()));
+    segs.iter().enumerate().any(|(i, s)| match *s {
+        // OWNER/REPO/pull/N: right after the host.
+        "pull" => i == 2 && named(0..2) && number(3),
+        "pulls" | "issues" => i >= 2 && named(0..i) && number(i + 1),
+        // GROUP/[SUB/…]PROJECT/-/merge_requests/N
+        "merge_requests" => i >= 3 && segs[i - 1] == "-" && named(0..i - 1) && number(i + 1),
+        _ => false,
+    })
 }
 
 /// OSC 7501's body, by the spec's parsing rules.
@@ -564,6 +632,29 @@ mod tests {
             base += c.len() as u64;
         }
         out
+    }
+
+    #[test]
+    fn links_to_prs_and_issues() {
+        let link = |u: &str| Signal::Link { url: u.into() };
+        // gh pr create's last line, split across reads, then colored ones.
+        let s = scan(&[b"Creating pull request\r\nhttps://github.com/o/r/pu", b"ll/12\r\n"]);
+        assert_eq!(s, vec![link("https://github.com/o/r/pull/12")]);
+        let s = scan(&[b"see \x1b[4mhttps://forgejo.example/o/r/issues/3\x1b[0m.\n(https://gitlab.com/g/s/p/-/merge_requests/9).\n"]);
+        assert_eq!(
+            s,
+            vec![link("https://forgejo.example/o/r/issues/3"), link("https://gitlab.com/g/s/p/-/merge_requests/9")]
+        );
+        // OSC 8's target, as a link.
+        let s = scan(&[b"\x1b]8;;https://codeberg.org/o/r/pulls/4\x1b\\#4\x1b]8;;\x1b\\ "]);
+        assert_eq!(s, vec![link("https://codeberg.org/o/r/pulls/4")]);
+        // Other links, and words that only look like one, aren't.
+        let s = scan(&[b"https://github.com/o/r https://github.com/o/pull/1 https://x.io/pull/1/2 github.com/o/r/pull/1 ftp://a/o/r/pull/1\n"]);
+        assert_eq!(s, vec![]);
+        assert!(forge_link("https://ghe.example.com/o/r/pull/3/files?x=1"));
+        assert!(forge_link("http://127.0.0.1:3000/o/r/issues/7#c"));
+        assert!(!forge_link("https://github.com/o/r/pull/x"));
+        assert!(!forge_link("https://gitlab.com/p/-/merge_requests/3"));
     }
 
     #[test]
