@@ -1,6 +1,6 @@
 # Design: resetting your own devices
 
-Status: proposed, for review. Builds what aru-119 decided ("An account can
+Status: built (#1582's PR). The table is `reset_requests`, one row per reset, which also counts starts a day. Builds what aru-119 decided ("An account can
 reset its devices from a fresh GitHub sign-in, after a wait"). Issue #1582,
 epic #1599. The support reset it shares a step with is
 `arugula-control account-reset` (#1608).

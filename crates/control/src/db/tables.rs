@@ -75,7 +75,8 @@ enum WithAccount {
 }
 
 /// The parties in the order the doc names them.
-const PARTIES: [&str; 8] = ["litestream", "run_logs", "e2b", "anthropic", "posthog", "github", "infisical", "stripe"];
+const PARTIES: [&str; 9] =
+    ["litestream", "run_logs", "e2b", "anthropic", "posthog", "github", "infisical", "stripe", "mail"];
 
 const BEGIN: &str = "<!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->";
 const END: &str = "<!-- End of what `just control-tables` writes. -->";

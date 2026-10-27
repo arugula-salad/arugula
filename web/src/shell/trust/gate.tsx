@@ -13,6 +13,7 @@ import { AddedAt, Center, QrCode, useControl, WaitingLine } from "./common";
 import { Mark } from "../ui/shell/icons";
 import { DeviceDetails } from "./devices";
 import { RecoveryForm } from "./recovery";
+import { ResetOffer } from "./reset";
 
 /** The hosted control's terms (#172); a control you run yourself has its
  * own, or none. */
@@ -303,6 +304,7 @@ function Waiting({ s }: { s: ControlSession }) {
       </p>
       <PasskeyInstead s={s} />
       <RecoveryForm s={s} open={recovering()} />
+      {inApp() ? null : <ResetOffer />}
       <SignOuts s={s} />
     </Center>
   );

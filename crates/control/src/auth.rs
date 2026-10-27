@@ -505,7 +505,14 @@ pub async fn github_start(State(app): State<Arc<App>>, headers: HeaderMap, Query
         return crate::github_link::start(&app, &headers, gh, next, callback);
     }
     let state = token();
-    let mut params = vec![("client_id", gh.client_id.as_str()), ("redirect_uri", &callback), ("state", &state)];
+    // `user:email`: the primary verified address, kept for security notices
+    // when the account has none (#1609).
+    let mut params = vec![
+        ("client_id", gh.client_id.as_str()),
+        ("redirect_uri", &callback),
+        ("state", &state),
+        ("scope", "user:email"),
+    ];
     if q.reauth {
         params.push(("prompt", "select_account"));
     }
@@ -610,7 +617,42 @@ async fn github_finish(app: &App, headers: &HeaderMap, q: Callback) -> Result<(S
         .account_for("github", &user.id.to_string(), &user.login, &new_id, now_ms())
         .map_err(|e| e.to_string())?;
     app.analytics.signed_in(&account, "github", account == new_id);
+    // Its address for security notices (#1609), best-effort: a sign-in
+    // never fails over it, nor waits on more than GitHub's one answer.
+    if let Some(email) = github_email(app, gh, &access).await {
+        match app.db.email_from_github(&account, &email, now_ms()) {
+            Ok(true) => info!(%account, "kept GitHub's address for notices"),
+            Ok(false) => {}
+            Err(e) => warn!(%account, "couldn't keep GitHub's address: {e}"),
+        }
+    }
     Ok((account, next))
+}
+
+/// The user's primary verified address on GitHub, when the token has
+/// `user:email` and there is one.
+async fn github_email(app: &App, gh: &crate::Github, access: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Address {
+        email: String,
+        primary: bool,
+        verified: bool,
+    }
+    let all: Vec<Address> = app
+        .http
+        .get(format!("{}/user/emails", gh.api))
+        .bearer_auth(access)
+        .header(header::USER_AGENT, "arugula-control")
+        .header(header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    all.into_iter().find(|a| a.primary && a.verified).map(|a| a.email).filter(|e| crate::mail::plausible(e))
 }
 
 /// Who a user token is on GitHub.
@@ -752,6 +794,15 @@ mod tests {
             )
             .route("/user", get(|| async { Json(json!({ "id": 7, "login": "jake-gh" })) }))
             .route(
+                "/user/emails",
+                get(|| async {
+                    Json(json!([
+                        { "email": "old@example.com", "primary": false, "verified": true },
+                        { "email": "jake@example.com", "primary": true, "verified": true },
+                    ]))
+                }),
+            )
+            .route(
                 "/applications/cid/token",
                 delete(move || async move {
                     s3.lock().unwrap().revoked += 1;
@@ -776,6 +827,7 @@ mod tests {
         let r = start("?reauth=true&next=/%23add-passkey").await.unwrap();
         let to = r.headers()[header::LOCATION].to_str().unwrap().to_owned();
         assert!(to.contains("prompt=select_account"), "{to}");
+        assert!(to.contains("scope=user%3Aemail"), "asks for the address (#1609): {to}");
         let state_cookie = r.headers()[header::SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_owned();
         let state = state_cookie.split_once('=').unwrap().1.split_once('.').unwrap().0.to_owned();
         assert!(!start("").await.unwrap().headers()[header::LOCATION].to_str().unwrap().contains("prompt="));
@@ -810,7 +862,10 @@ mod tests {
                 v.strip_prefix(&format!("{SESSION_COOKIE}=")).map(|v| v.split(';').next().unwrap().to_owned())
             })
             .unwrap();
-        assert_eq!(app.db.session_info(&hash(&token), now_ms()).unwrap().unwrap().via.as_deref(), Some("github"));
+        let info = app.db.session_info(&hash(&token), now_ms()).unwrap().unwrap();
+        assert_eq!(info.via.as_deref(), Some("github"));
+        // GitHub's primary verified address, kept for notices (#1609).
+        assert_eq!(app.db.verified_email(&info.account).unwrap().as_deref(), Some("jake@example.com"));
     }
 
     #[test]

@@ -1648,9 +1648,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 146 tables in two planes ("Two planes, two trust rules"):
+Control's database has 150 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (46 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (50 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (100 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1675,6 +1675,10 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |
 | `account_resets` | **plaintext** | An account's devices reset (aru-119): when, who ran it, the reason support wrote, and the certificates and revocations it archived. | yes |  |
+| `reset_requests` | metadata | A reset of an account's devices its person asked for (aru-119, #1582): when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device) or done. | yes |  |
+| `account_emails` | **plaintext** | An account's email address for security notices (#1609): GitHub's primary verified one, or one typed and verified by a link, and when. | yes | The email provider |
+| `email_tokens` | **plaintext** | A typed address waiting for its verify link (#1609): the link's token by its hash, the address, and when it expires (a day). | yes | The email provider |
+| `email_sends` | metadata | That control emailed an account (#1609): which kind of notice and when, never its body. Kept 90 days, for the daily limit. | yes |  |
 | `revocations` | metadata | A signed revocation of a device's or machine's key. | yes |  |
 | `joins` | metadata | A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval. | yes |  |
 | `daemons` | metadata | The directory: a joined machine's id, name, addresses, team, last seen, and the version, OS and arch it runs. | yes | PostHog |
@@ -1821,6 +1825,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 - **GitHub:** GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it makes every token control mints and sees each one used, every draft sent goes to it, and it sends the webhooks.
 - **Infisical (the operator's):** The operator's Infisical, which materializes secrets into home-cloud's Kubernetes, gets the values of the project secrets the platform projects there (M235): an app's secrets, set through the platform, written as redone's writer identity into the app's folder, when the projection is on. The platform's sealed copy is the truth; Infisical's is a copy the operator holds.
 - **Stripe:** Stripe bills, when control has a key for it: it holds the customers and subscriptions control keeps ids for, and gets sandbox minutes.
+- **The email provider:** When control sends email (#1609: security notices, and the link that verifies an address), the provider behind its SMTP URL (Postmark or Resend for the hosted control) sees the address and the email: a short notice, never a terminal's or chat's content. Off when no SMTP URL is set.
 
 ### Never stored
 

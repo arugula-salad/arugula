@@ -9168,6 +9168,23 @@ input.chat-search {
   flex-shrink: 0;
 }
 
+/* #1609: typing an address for security notices. */
+.control-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.control-email-form {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.control-email-form input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* #1580: the desktop app isn't signed in to the machine's control. */
 .control-dropped.app-signin {
   border-bottom-color: var(--line);

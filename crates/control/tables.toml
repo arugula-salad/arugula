@@ -52,6 +52,10 @@ sees = "Litestream copies the whole database to a bucket (Cloudflare R2, for the
 name = "The run-log bucket"
 sees = "Runs on hosted workspaces (and only those) send their logs, the whole of their pane's output, and the files they leave as artifacts to a bucket in Cloudflare R2 (M213), through URLs the platform signs for one run at a time. The platform reads them and serves them to the project's members, with every machine asleep. The bucket deletes them after 30 days, and the platform forgets their rows then. A person's own machines never send any."
 
+[parties.mail]
+name = "The email provider"
+sees = "When control sends email (#1609: security notices, and the link that verifies an address), the provider behind its SMTP URL (Postmark or Resend for the hosted control) sees the address and the email: a short notice, never a terminal's or chat's content. Off when no SMTP URL is set."
+
 [parties.e2b]
 name = "E2B"
 sees = "E2B runs hosted workspaces' boxes, so it processes their contents: it holds each box's disk and memory (the repos, files, terminals and agent conversations in it) while the box lives, paused too, the env and metadata each is made with (the workspace, project, release and template ids), its egress rules (which hold projects' own inference keys, and name the platform's), and the platform's inference keys in its secrets broker. It records each box's runs (when, how long, its size), which it bills by and the platform reads back to check its own usage."
@@ -219,6 +223,42 @@ plane = "machine"
 process = "hub"
 holds = "plaintext"
 what = "An account's devices reset (aru-119): when, who ran it, the reason support wrote, and the certificates and revocations it archived."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "reset_requests"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A reset of an account's devices its person asked for (aru-119, #1582): when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device) or done."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "account_emails"
+plane = "machine"
+process = "hub"
+holds = "plaintext"
+what = "An account's email address for security notices (#1609): GitHub's primary verified one, or one typed and verified by a link, and when."
+with_account = "deleted"
+seen_by = ["litestream", "mail"]
+
+[[table]]
+name = "email_tokens"
+plane = "machine"
+process = "hub"
+holds = "plaintext"
+what = "A typed address waiting for its verify link (#1609): the link's token by its hash, the address, and when it expires (a day)."
+with_account = "deleted"
+seen_by = ["litestream", "mail"]
+
+[[table]]
+name = "email_sends"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "That control emailed an account (#1609): which kind of notice and when, never its body. Kept 90 days, for the daily limit."
 with_account = "deleted"
 seen_by = ["litestream"]
 

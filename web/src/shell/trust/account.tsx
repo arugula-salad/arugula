@@ -12,6 +12,7 @@ import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
 import { NameLine, RecoveryLeft } from "./recovery";
+import { EmailSection } from "./email";
 
 export interface SessionRow {
   id: string;
@@ -97,7 +98,7 @@ const LINKED: Record<string, string> = {
   failed: "Linking GitHub failed: try again.",
 };
 
-export function AccountPanel({ s, close, linked }: { s: ControlSession; close: () => void; linked?: string }) {
+export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSession; close: () => void; linked?: string; emailBack?: string }) {
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [keys, setKeys] = useState<Passkeys | null>(null);
   const [err, setErr] = useState("");
@@ -254,6 +255,7 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
           ) : null}
         </>
       ) : null}
+      <EmailSection back={emailBack} />
       {s.info.github || keys?.github ? (
         <>
           <h3 class="control-group">GitHub</h3>

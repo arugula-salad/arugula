@@ -1,6 +1,6 @@
 # Design: control sends email
 
-Status: proposed, for review. Issue #1609, epic #1599. Needed first by the
+Status: built in #1609's PR (SMTP, so the provider is the hosted control's choice). Proposed first for review. Issue #1609, epic #1599. Needed first by the
 reset (aru-119, docs/design/self-service-reset.md): when a reset of an
 account's devices starts, its email hears about it.
 
@@ -40,12 +40,13 @@ email so a reset of your devices reaches you."
 
 ## What control keeps
 
-- `accounts.email` (text, null), `accounts.email_verified_at` (ms, null),
-  `accounts.email_from` (`github` or `typed`)
-- `tables.toml`: `accounts` gains `plaintext` (an address is personal data);
-  deleted with the account
-- `email_sends` (account, kind, at, provider_id), for "did it go out" and
-  rate limits; kept 90 days
+As built (#1609), in tables of their own rather than on `accounts`, which
+PostHog sees by id:
+
+- `account_emails` (account, email, source `github` or `typed`,
+  verified_at): `plaintext`, deleted with the account
+- `email_tokens`: a typed address's verify link, by its hash, for a day
+- `email_sends` (account, kind, at), for the daily limit; kept 90 days
 - Never: an email's body after it's sent
 
 ## The provider

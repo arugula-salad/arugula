@@ -328,6 +328,13 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   hub's copies stay only as long as a rollback to in process, or to a
   release before M161, may need them, and the hub logs at start that
   they're unused.
+- `ARUGULA_CONTROL_SMTP_URL`, `ARUGULA_CONTROL_MAIL_FROM` (`mail.rs`,
+  #1609): email for security notices and the link that verifies an
+  address. The URL is the provider's SMTP with its credentials
+  (`smtps://USER:PASS@HOST:465`); From is `Arugula <security@arugula.io>`.
+  Both or neither: unset, control sends no email and Account settings say
+  so. The domain needs the provider's SPF and DKIM records, and a DMARC
+  record (docs/design/control-email.md).
 - `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT` (`backup.rs`), and
   `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` (checked by
   `backup.rs`, read by Litestream from the environment it inherits).
@@ -1056,6 +1063,12 @@ cleared. Then tell the person:
 - Anything end to end encrypted to the old devices can't be read.
 
 A second reset within a week is refused unless `--again`.
+
+People can also start one themselves, from *Approve this browser*: a
+fresh GitHub sign-in, then a 48-hour wait that any device or recovery code
+can cancel (`reset.rs`, docs/design/self-service-reset.md). It's the same
+step when it's done, logged as `by = self-service`. Support's is for
+someone who can't wait or lost GitHub too.
 
 ### Deploys
 
