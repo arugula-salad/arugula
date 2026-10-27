@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use crate::db::sql::{Sql as _, params};
 use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
@@ -240,9 +239,6 @@ async fn a_board_from_creation_to_a_stale_write() {
     assert_eq!(open("c").await.0, 404, "a stranger doesn't find it");
 }
 
-/// With the flag off for an account (chat on doesn't turn it on), every
-/// route answers 404 as if boards weren't there, a board that exists
-/// included.
 /// A row whose pointer a newer build wrote (a kind this one doesn't know,
 /// after a rollback) reads as no pointer, and the board still reads; a note
 /// edit or a status change leaves the stored pointer as it was.
@@ -268,7 +264,7 @@ async fn a_pointer_from_a_newer_build_reads_as_none_and_is_kept() {
             c.execute_batch("PRAGMA ignore_check_constraints = ON").unwrap();
         }
         c.execute(
-            "UPDATE board_entries SET target_kind = 'link', target = 'https://example.com/proof' WHERE id = ?1",
+            "UPDATE board_entries SET target_kind = 'from_a_newer_build', target = 'x_1' WHERE id = ?1",
             params![row],
         )
         .unwrap();
@@ -290,9 +286,12 @@ async fn a_pointer_from_a_newer_build_reads_as_none_and_is_kept() {
             Ok((r.get(0)?, r.get(1)?))
         })
         .unwrap();
-    assert_eq!(kept, ("link".to_owned(), "https://example.com/proof".to_owned()));
+    assert_eq!(kept, ("from_a_newer_build".to_owned(), "x_1".to_owned()));
 }
 
+/// With the flag off for an account (chat on doesn't turn it on), every
+/// route answers 404 as if boards weren't there, a board that exists
+/// included.
 #[tokio::test]
 async fn with_the_flag_off_there_are_no_boards() {
     let hub = Arc::new(TestHub::default());
