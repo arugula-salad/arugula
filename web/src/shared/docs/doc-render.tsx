@@ -8,6 +8,7 @@
 // draws no pictures). Nothing here may reach the client: the share page
 // imports this file and must stay free of it.
 
+import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { PaneId } from "../proto";
 import { plain } from "../ui/embeds";
@@ -87,8 +88,24 @@ function DocImage({ load, cached, name, alt, rev }: { load: ImageLoader; cached?
 /** The Doc, drawn. The block (a daemon's state, its pictures asked for by
  * name) and the viewer behind a share link (a snapshot's, #1066) both draw
  * it, each with its own `load`; `cached` is the block's pictures already
- * here, so a redraw doesn't flash. */
-export function DocBlock({ id, s, fresh, load, cached }: { id: PaneId; s: DocState | null; fresh: Map<string, number>; load: ImageLoader; cached?: ImageCache }) {
+ * here, so a redraw doesn't flash. `byline` is who made it and when, for
+ * the header (#253), from a view that knows: the block's state and a
+ * share's snapshot don't say, so only a project Doc's page passes one. */
+export function DocBlock({
+  id,
+  s,
+  fresh,
+  load,
+  cached,
+  byline,
+}: {
+  id: PaneId;
+  s: DocState | null;
+  fresh: Map<string, number>;
+  load: ImageLoader;
+  cached?: ImageCache;
+  byline?: ComponentChildren;
+}) {
   // Drawn again when a picture is added or replaced, and not otherwise.
   const kept = JSON.stringify(s?.assets ?? []);
   const image = useMemo(() => {
@@ -104,13 +121,19 @@ export function DocBlock({ id, s, fresh, load, cached }: { id: PaneId; s: DocSta
   return (
     <div class="doc" data-doc-block={id}>
       <div class="doc-page">
-        <h1 class="doc-title">{s.title || "Untitled"}</h1>
-        {s.entries.length === 0 && <p class="dim doc-wait">Waiting for the outline…</p>}
-        {s.entries.length > 0 && (
-          <p class="dim doc-progress" data-doc-progress>
-            {done} of {s.entries.length} sections written
+        <header class="doc-head">
+          <h1 class="doc-title">{s.title || "Untitled"}</h1>
+          <p class="doc-meta">
+            {byline && <>{byline} · </>}
+            {s.entries.length === 0 ? (
+              <span class="doc-wait">Waiting for the outline…</span>
+            ) : (
+              <span class="doc-progress" data-doc-progress>
+                {done} of {s.entries.length} sections written
+              </span>
+            )}
           </p>
-        )}
+        </header>
         {s.entries.map((e) => (
           <section key={e.id} class="doc-section" data-section={e.id} data-pending={e.body === null ? "" : undefined}>
             <h2 class="doc-heading">{e.heading}</h2>

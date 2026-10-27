@@ -1,7 +1,8 @@
 /* The page behind a share link (#1066, doc-view.tsx). style.css is the
    app's, with its dark palette in :root; this is the light one for a reader
    whose system is light (Latte, as the app's "system" palette), and the
-   column the Doc fills. */
+   column the Doc fills. The Doc itself wears its own look in either
+   (style.css's `.doc`, by the `data-scheme` doc-view.tsx sets). */
 @import "../shared/style.css";
 
 /* `:root:root`, to win over style.css's `:root` whatever the order. The

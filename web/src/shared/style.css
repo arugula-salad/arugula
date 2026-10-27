@@ -5327,55 +5327,122 @@ button.diff-why-run {
   }
 }
 
-/* Doc blocks (#963): one scrolling column, title and sections. */
+/* Doc blocks (#963): one scrolling column, title and sections.
+
+   A Doc wears Arugula's own look (#253), not the reader's app theme, so a
+   shared Doc reads the same for everyone: the site's warm paper and ink,
+   and leaf as its one accent. Two sets, dark here and light below; the
+   app's scheme picks (`html[data-scheme]`), and the share viewer sets that
+   from `prefers-color-scheme` (doc-view.tsx). The hues (leaf, pepper, sky,
+   plum) are a chart's series, `--c1..c4`, checked with the dataviz palette
+   validator against `--doc-paper` in each set; named colours (#256) build
+   on these names. */
 .doc {
+  /* The page and its text. */
+  --doc-paper: #1a1b18;
+  --doc-sunken: #141512;
+  --doc-tint: #23241f;
+  --doc-ink: #ecebe4;
+  --doc-ink-soft: #b5b3a9;
+  --doc-ink-faint: #918f85;
+  --doc-line: #383a34;
+  --doc-line-quiet: #2e302b;
+  /* The accent: links, list markers, the header's rule, a fresh fill. */
+  --doc-link: #a9cf7a;
+  --doc-rule: #9cc36b;
+  /* The series hues, in their order. */
+  --doc-leaf: #7ca34d;
+  --doc-pepper: #a85a35;
+  --doc-sky: #4d97de;
+  --doc-plum: #9b5aa0;
+  /* What a drawing sits on in either scheme: the light set's paper. */
+  --doc-drawing: #f8f6f0;
+  --c1: var(--doc-leaf);
+  --c2: var(--doc-pepper);
+  --c3: var(--doc-sky);
+  --c4: var(--doc-plum);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  background: var(--doc-paper);
+  color: var(--doc-ink);
+  color-scheme: dark;
+  font: 15px/1.6 var(--f-ui);
 }
 
+html[data-scheme="light"] .doc {
+  --doc-paper: #f8f6f0;
+  --doc-sunken: #efebe1;
+  --doc-tint: #ebe7dc;
+  --doc-ink: #161a13;
+  --doc-ink-soft: #45483f;
+  --doc-ink-faint: #5d5c54;
+  --doc-line: #d6d0bd;
+  --doc-line-quiet: #e2ddcf;
+  --doc-link: #325a20;
+  --doc-rule: #3f6b2a;
+  --doc-leaf: #3f6b2a;
+  --doc-pepper: #c2714a;
+  --doc-sky: #2f7fc8;
+  --doc-plum: #80458a;
+  color-scheme: light;
+}
+
+/* The measure: about 68 characters of body text, and a 16px gutter. */
 .doc-page {
-  max-width: 760px;
+  max-width: calc(68ch + 32px);
   margin: 0 auto;
-  padding: 14px 16px 28px;
+  padding: 36px 16px 64px;
+}
+
+.doc-head {
+  margin: 0 0 36px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--doc-rule);
 }
 
 .doc-title {
-  margin: 0 0 4px;
-  font-size: 20px;
-  line-height: 1.25;
+  margin: 0;
+  font: 800 38px/1.02 var(--f-display);
+  letter-spacing: 0.005em;
+  text-wrap: balance;
 }
 
-.doc-progress,
-.doc-wait {
-  margin: 0 0 14px;
-  font-size: 12px;
+.doc-meta {
+  margin: 10px 0 0;
+  color: var(--doc-ink-faint);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
-.doc-section {
-  margin-top: 14px;
+.doc-section + .doc-section {
+  margin-top: 40px;
 }
 
 .doc-heading {
-  margin: 0 0 6px;
-  font-size: 16px;
-  line-height: 1.3;
+  margin: 0 0 12px;
+  font: 700 26px/1.1 var(--f-display);
+  letter-spacing: 0.005em;
+  text-wrap: balance;
 }
 
 .doc-body {
-  border-radius: var(--field-radius);
+  margin: 0 -8px;
+  padding: 0 8px;
+  border-radius: 6px;
 }
 
 .doc-pending {
-  padding: 8px 10px;
-  border: 1px dashed var(--line);
-  border-radius: var(--field-radius);
-  color: var(--dim);
-  font-size: 13px;
+  padding: 12px 14px;
+  border: 1px dashed var(--doc-line);
+  border-radius: 6px;
+  color: var(--doc-ink-faint);
+  font-size: 14px;
 }
 
 .doc-coming {
   font-weight: 600;
+  color: var(--doc-ink-soft);
 }
 
 /* A section filled while you watch. */
@@ -5385,7 +5452,7 @@ button.diff-why-run {
 
 @keyframes doc-fresh {
   from {
-    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    background: color-mix(in srgb, var(--doc-rule) 22%, transparent);
   }
   to {
     background: transparent;
@@ -5537,7 +5604,8 @@ button.diff-why-run {
 }
 
 /* Charts and drawings in a Doc (#964). A chart's series take the palette's
-   colors, so both themes read; its text and axes are currentColor. */
+   colors, so both themes read (in a Doc, its own: `.doc` above); its text
+   and axes are currentColor. */
 :root {
   --c1: var(--info);
   --c2: var(--peach);
@@ -5558,13 +5626,14 @@ button.diff-why-run {
 }
 
 /* An SVG in an <img> has no background of its own, and what an agent draws
-   is meant for white: so it sits on white in either theme. */
+   is meant for a light page: so it sits on one in either scheme, a Doc's
+   light paper (#253), and white anywhere else. */
 .md .doc-drawing {
   display: block;
   max-width: 100%;
   height: auto;
   margin: 0 0 0.7em;
-  background: #fff;
+  background: var(--doc-drawing, #fff);
   border-radius: var(--field-radius);
 }
 
@@ -5580,6 +5649,154 @@ button.diff-why-run {
 .md .doc-image-missing {
   color: var(--dim, inherit);
   font-style: italic;
+}
+
+/* A Doc's Markdown (#253): set for reading, in the Doc's own tokens. Only
+   under `.doc`, so chat's and the forge blocks' `.md` stay as they are. */
+.doc .md {
+  line-height: 1.6;
+}
+
+.doc .md p,
+.doc .md ul,
+.doc .md ol,
+.doc .md blockquote,
+.doc .md pre,
+.doc .md details,
+.doc .md .md-table,
+.doc .md .chart-box,
+.doc .md .chart-note,
+.doc .md .doc-drawing {
+  margin: 0 0 1em;
+}
+
+.doc .md h1,
+.doc .md h2,
+.doc .md h3 {
+  margin: 1.6em 0 0.5em;
+  text-wrap: balance;
+}
+
+.doc .md h1 {
+  font: 700 22px/1.15 var(--f-display);
+}
+
+.doc .md h2 {
+  font: 700 19px/1.2 var(--f-display);
+}
+
+.doc .md h3 {
+  font: 600 15px/1.35 var(--f-ui);
+}
+
+.doc .md ul,
+.doc .md ol {
+  padding-left: 1.5em;
+}
+
+.doc .md li {
+  margin: 0.3em 0;
+}
+
+.doc .md li::marker {
+  color: var(--doc-rule);
+}
+
+.doc .md ol > li::marker {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.doc .md strong {
+  font-weight: 600;
+}
+
+.doc .md a {
+  color: var(--doc-link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.doc .md a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.doc .md code {
+  font: 0.87em var(--f-mono);
+  background: var(--doc-sunken);
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+}
+
+.doc .md pre {
+  padding: 14px 16px;
+  background: var(--doc-sunken);
+  border: 1px solid var(--doc-line-quiet);
+  border-radius: 8px;
+  font: 13px/1.55 var(--f-mono);
+}
+
+.doc .md pre code {
+  font: inherit;
+  background: none;
+  padding: 0;
+}
+
+.doc .md blockquote {
+  padding-left: 14px;
+  border-left: 3px solid var(--doc-line);
+  color: var(--doc-ink-soft);
+}
+
+.doc .md hr {
+  border-top-color: var(--doc-line);
+  margin: 2em 0;
+}
+
+/* A table: a tinted header row and hairlines between rows, no grid. */
+.doc .md .md-table {
+  border: 1px solid var(--doc-line);
+  border-radius: 8px;
+}
+
+.doc .md table {
+  width: 100%;
+  font-size: 14px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.doc .md th,
+.doc .md td {
+  border: 0;
+  border-top: 1px solid var(--doc-line-quiet);
+  padding: 8px 12px;
+  vertical-align: top;
+}
+
+.doc .md th {
+  border-top: 0;
+  background: var(--doc-tint);
+  color: var(--doc-ink-soft);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.doc .md details {
+  border-color: var(--doc-line);
+  border-radius: 8px;
+}
+
+.doc .md summary,
+.doc .md .dim,
+.doc .md .doc-image-wait,
+.doc .md .doc-image-missing {
+  color: var(--doc-ink-faint);
+}
+
+.doc .md .doc-drawing,
+.doc .md .doc-image {
+  border-radius: 8px;
 }
 
 .forge-dot {

@@ -117,7 +117,7 @@ test("a picture shows, a replaced one shows with no reload, and other images sta
   await imagesInPlace(page, post(page), doc);
 });
 
-// What a person reads: colours the page's palette gives, in both.
+// What a person reads: the Doc's own colours (#253), in both schemes.
 test("charts read in the light theme and the dark", async ({ page }) => {
   await reset(page);
   const [term] = await panes(page);
@@ -125,10 +125,11 @@ test("charts read in the light theme and the dark", async ({ page }) => {
   await fillEmbeds(post(page), doc);
   const look = () =>
     page.evaluate((d) => {
+      const block = document.querySelector(`[data-doc-block="${d}"]`)!;
       const probe = (c: string) => {
         const i = document.createElement("i");
         i.style.color = c;
-        document.body.append(i);
+        block.append(i);
         const v = getComputedStyle(i).color;
         i.remove();
         return v;
@@ -144,7 +145,8 @@ test("charts read in the light theme and the dark", async ({ page }) => {
         text,
         textLum: lum(text),
         bar: getComputedStyle(svg.querySelector("rect[data-bar]")!).fill,
-        series: probe("var(--info)"),
+        series: probe("var(--doc-leaf)"),
+        app: probe("var(--info)"),
         grid: getComputedStyle(svg.querySelector("line")!).stroke,
         color: getComputedStyle(svg).color,
       };
@@ -156,6 +158,7 @@ test("charts read in the light theme and the dark", async ({ page }) => {
   expect(dark.text).toBe(dark.color);
   expect(dark.grid).toBe(dark.color);
   expect(dark.bar).toBe(dark.series);
+  expect(dark.bar, "the Doc's colours, not the app's").not.toBe(dark.app);
 
   await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "latte", finish: "flat", corners: "square" })));
   await page.reload();
@@ -166,7 +169,7 @@ test("charts read in the light theme and the dark", async ({ page }) => {
   expect(light.textLum, "dark text on the light page").toBeLessThan(0.5);
   expect(light.text).toBe(light.color);
   expect(light.bar).toBe(light.series);
-  expect(light.bar, "the series has its own colour in each palette").not.toBe(dark.bar);
+  expect(light.bar, "the series has its own colour in each scheme").not.toBe(dark.bar);
 });
 
 test.describe("a viewer", () => {

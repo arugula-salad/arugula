@@ -10,10 +10,12 @@
   min-width: 0;
 }
 
-/* The block fills its pane; on the page it's as tall as what it says. */
+/* The block fills its pane; on the page it's as tall as what it says, a
+   sheet of the Doc's own paper (#253). */
 .project-doc .doc {
   flex: none;
   overflow: visible;
+  border-radius: 10px;
 }
 
 .project-doc-head {
@@ -23,10 +25,6 @@
   padding: 0 16px;
   box-sizing: border-box;
   overflow-wrap: anywhere;
-}
-
-.project-doc .doc-page {
-  padding-top: 0;
 }
 
 .project-doc-row {
