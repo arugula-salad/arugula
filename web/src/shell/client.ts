@@ -51,6 +51,7 @@ import { E2ESocket, type DaemonClock, type DaemonRef } from "./e2e/channel.ts";
 import type { WakeSaid } from "./e2e/relaymux.ts";
 import type { DeviceKeys } from "./e2e/keys.ts";
 import { pick, upload } from "./upload";
+import { offered } from "./hints/attach";
 import { desktopApp } from "../shared/desktop";
 
 /** Ack about this often (bytes drawn); the daemon allows 512 KB. */
@@ -1457,19 +1458,23 @@ export class Client {
     }
   }
 
+  /** A PR's or an issue's link from `pane` as a block beside it; false
+   * when it isn't one (or isn't ours to open), for the browser to have. */
+  openForgeLink(pane: PaneId, uri: string): boolean {
+    if (this.state?.roles) return false;
+    const what = this.forgeLink(uri);
+    if (!what) return false;
+    const failure = what === "pr" ? "couldn't open the pull request" : "couldn't open the issue";
+    void this.openBlock({ type: "forge", config: { [what]: uri, dir: this.cwd(pane) ?? undefined }, split: pane, from_pane: pane }, failure);
+    return true;
+  }
+
   private newPane(id: PaneId, epoch: number): PaneEntry {
     // M36: a pull request's link (Forgejo's; M38: GitHub's; M39: a GitLab
     // merge request's) opens as a PR block beside the terminal (Shift: in
     // the browser, as any other link).
     // M37: an issue's link opens as an issue block.
-    const view = new TerminalView((uri, e) => {
-      if (e.shiftKey || this.state?.roles) return false;
-      const what = this.forgeLink(uri);
-      if (!what) return false;
-      const failure = what === "pr" ? "couldn't open the pull request" : "couldn't open the issue";
-      void this.openBlock({ type: "forge", config: { [what]: uri, dir: this.cwd(id) ?? undefined }, split: id, from_pane: id }, failure);
-      return true;
-    });
+    const view = new TerminalView((uri, e) => !e.shiftKey && this.openForgeLink(id, uri));
     const entry: PaneEntry = { view, epoch, offset: null, title: "" };
     view.onInput((data) => this.input(id, data));
     view.onTitle((t) => {
@@ -1478,6 +1483,8 @@ export class Client {
     });
     view.onFocus(() => this.setActive(id));
     view.onFiles((files) => void this.sendFiles(id, files));
+    // Hints (./hints/attach): a path pasted, or files dragged over it.
+    view.onOffered((what) => offered(id, what));
     this.panes.set(id, entry);
     return entry;
   }

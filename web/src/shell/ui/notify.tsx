@@ -80,6 +80,11 @@ export async function turnOnPush(client: Client) {
   if (push !== "on") await toggleNotify(client);
 }
 
+/** Turn this device's notifications on (a hint's action, shell/hints). */
+export function notifyThisDevice(client: Client) {
+  if (push === "off") void toggleNotify(client);
+}
+
 /** The kinds of push an account chooses on control, as the menu says them. */
 const KINDS: { key: keyof PushPrefs; label: string; hint: string }[] = [
   { key: "chat", label: "Chat", hint: "Messages in team channels, DMs and pane threads" },

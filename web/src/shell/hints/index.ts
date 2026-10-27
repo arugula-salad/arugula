@@ -85,18 +85,25 @@ export function mountPlace(key: string): () => void {
   };
 }
 
+/** Under a test runner (Playwright sets `navigator.webdriver`) hints keep
+ * quiet, so a toast never lands on what another spec clicks; the hints'
+ * own specs ask for them (`window.__arugulaHints`). */
+function quiet(): boolean {
+  return !!navigator.webdriver && !(window as { __arugulaHints?: boolean }).__arugulaHints;
+}
+
 /** Look again: keep the shown hint while its fact holds, else show the
  * first unseen one whose fact does. */
 export function evaluate(client: Client, list: Hint[] = HINTS) {
   const was = shown;
-  if (!seenReady() || !tipsOn() || !client.state) shown = null;
+  if (!seenReady() || !tipsOn() || !client.state || quiet()) shown = null;
   else if (shown) {
     const fact = shown.hint.fact(client);
     shown = fact && mounted.has(placeOf(shown.hint, fact)) ? { hint: shown.hint, fact } : null;
     // The same as it was: nothing to draw again.
     if (was && shown && JSON.stringify(was.fact) === JSON.stringify(shown.fact)) shown = was;
   }
-  if (!shown && seenReady() && tipsOn() && client.state && !typing(client)) {
+  if (!shown && seenReady() && tipsOn() && client.state && !quiet() && !typing(client)) {
     for (const hint of list) {
       if (seen(hint.id)) continue;
       const fact = hint.fact(client);

@@ -6,7 +6,7 @@ import { hostMenuShown } from "./hosts";
 import { opPath } from "../ops";
 import { paneIds, type Client } from "../client";
 import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from "../../shared/proto";
-import { askText, type MenuItem } from "../../shared/ui/menu";
+import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, shareSession } from "./people";
 import { hasChat } from "./places";
@@ -15,7 +15,7 @@ import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { openPicker } from "./picker";
 import { openPalette } from "./palette";
-import { agentNotifyItems, notificationItems } from "./notify";
+import { agentNotifyItems, notificationItems, notifyThisDevice } from "./notify";
 import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
@@ -30,6 +30,7 @@ import { focusItems } from "./panes/layout";
 import { watchingNote } from "./shell/live";
 import { setTips, tipsOn } from "../../shared/seen";
 import { openWhatsNew } from "./whats-new";
+import { openPanel } from "../trust/common";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -362,6 +363,23 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
     const pane = client.tab === null ? undefined : client.activePane.get(client.tab);
     if (pane !== undefined) void pinBoard(client, { from: pane });
     else client.toast("Open a pane first: a board pins beside one");
+  },
+  /** A PR's or an issue's link it printed, as a block beside it. */
+  "forge.open-link": (client, { pane, url }) => void client.openForgeLink(Number(pane), String(url)),
+  /** Pane settings › After a restart, under the pane's header. */
+  "pane.restart-settings": (client, { pane }) => {
+    const at = document.querySelector(`[data-pane-header="${pane}"]`)?.getBoundingClientRect();
+    openMenu({ clientX: at ? at.left + 8 : innerWidth / 2, clientY: at ? at.bottom : innerHeight / 3, preventDefault() {} }, restartItems(client, Number(pane)));
+  },
+  "pane.attach": (client, { pane }) => void client.attachFiles(Number(pane)),
+  "pane.picker": (client, { pane }) => openPicker(client, Number(pane)),
+  "push.enable": (client) => notifyThisDevice(client),
+  /** Follow someone in the session (their client). */
+  "people.follow": (client, { client: them }) => client.follow(Number(them)),
+  "control.teams": () => openPanel("teams")(),
+  "conversations.pick": (client) => {
+    const pane = client.active();
+    pickConversation(client, pane === undefined ? { session: client.session ?? undefined } : { split: pane, cwd: client.cwd(pane) ?? undefined });
   },
 };
 
