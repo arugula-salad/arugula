@@ -132,7 +132,7 @@ export function ProjectsLink() {
       title="Your projects, their issues, runs and chat, on the platform page"
       data-open-projects
       onClick={(e) => {
-        // Its own tab, or this window in the app (openPlatform); a modified
+        // Its own tab, or its own window in the app (openPlatform); a modified
         // click is the browser's.
         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();

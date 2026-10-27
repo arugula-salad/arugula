@@ -155,6 +155,20 @@ test("the rail's Chat opens the platform page, where Alice makes #general and me
   await expect(quoted.locator(".thread-quote pre")).toHaveText("MEAN-TEST-FAILED");
 });
 
+// #1596: in the desktop app, Chat opens the platform page in a window of its
+// own (the app reuses one), and the terminals stay where they were.
+test("in the app, the rail's Chat opens a window of its own, beside the terminals", async () => {
+  const shell = await alice.context().newPage();
+  await shell.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac", signedIn: true } }));
+  await shell.goto(`${t.base}/`);
+  const [opened] = await Promise.all([alice.context().waitForEvent("page"), shell.locator(".ws-rail [data-open-chat]").click()]);
+  await expect(opened).toHaveURL(new RegExp(`^${app}/`), { timeout: 15_000 });
+  // The terminals' window is still Control's page.
+  expect(new URL(shell.url()).origin).toBe(new URL(t.base).origin);
+  await opened.close();
+  await shell.close();
+});
+
 test("Bob has it live, mentioned; the chip doesn't open for him", async () => {
   await expect.poll(() => roomsOf(bob), { timeout: 15_000 }).toContainEqual(expect.objectContaining({ id: general, unread: 2, mentions: 1 }));
   // A push's tap opens the room (sw.ts makes this address on control's
