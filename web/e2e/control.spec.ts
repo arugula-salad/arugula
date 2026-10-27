@@ -1161,7 +1161,9 @@ test("the app's passkey buttons open the browser up front and never call their r
   // Two passkeys, so Remove is allowed; a third appears "in the browser".
   const key = (id: string) => ({ id, created: 1, agent: "", provider: `Key ${id}`, used: null });
   let browser = [key("pk1"), key("pk2")];
+  let reads = 0;
   await laptop.route("**/api/me/passkeys", async (r) => {
+    reads++;
     const real = await (await r.fetch()).json();
     await r.fulfill({ json: { ...real, passkeys: browser, ways: browser.length + 1 } });
   });
@@ -1194,7 +1196,10 @@ test("the app's passkey buttons open the browser up front and never call their r
   await laptop.locator("[data-browser-step-open]").click();
   expect(await opened()).toEqual([[`${base}/#account`, "_blank", "noopener"]]);
   // Back with nothing changed: still waiting. Changed: the panel is fresh.
+  const read = reads;
   await laptop.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => reads).toBeGreaterThan(read);
+  await expect(laptop.locator("[data-browser-step-again]")).toBeEnabled();
   await expect(laptop.locator("[data-browser-step-waiting]")).toBeVisible();
   browser = [...browser, key("pk3")];
   await laptop.evaluate(() => window.dispatchEvent(new Event("focus")));
