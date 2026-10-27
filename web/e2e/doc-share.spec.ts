@@ -21,6 +21,7 @@ import { dirname, join } from "node:path";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { Device } from "../fixtures/device.ts";
 import { fakeGithub } from "../fixtures/fakes.ts";
+import { hex } from "../src/shared/docs/colours";
 import { example } from "./doc-examples";
 import { newDoc, png, putAsset, fill, seeEmbeds, type Post } from "./doc-steps";
 import { closeContexts, menu, reset, panes, paneEl } from "./helpers";
@@ -203,7 +204,7 @@ async function seeTheDoc(page: Page, drawing = false) {
   await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth)).toBe(40);
   await expect(block.locator('[data-section="s2"] svg.chart rect[data-bar]')).toHaveCount(3);
   if (drawing) {
-    const d = block.locator('[data-section="s3"] img.doc-drawing');
+    const d = block.locator('[data-section="s3"] img.doc-drawing').first();
     await expect(d).toBeVisible();
     await expect.poll(() => d.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
   }
@@ -225,7 +226,8 @@ for (const mode of [DOMAIN, null] as const) {
 
     test("the link opens in a fresh context with no session: text, picture, chart and drawing, light and dark", async ({ browser }) => {
       const d = await doc(r);
-      await fill(r.post, d, "s3", example("drawing.md"));
+      // An old drawing in hex, and one in the named colours (#256).
+      await fill(r.post, d, "s3", `${example("drawing.md")}\n${example("named-drawing.md")}`);
       const url = await share(r, d);
       expect(url).toMatch(new RegExp(`^${r.viewer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/[0-9a-f]{32}#k=[A-Za-z0-9_-]{43}$`));
       const origin = new URL(url).origin;
@@ -242,6 +244,14 @@ for (const mode of [DOMAIN, null] as const) {
           // The Doc wears its own paper in each (#253).
           const paper = await v.page.evaluate(() => getComputedStyle(document.querySelector(".doc")!).backgroundColor);
           expect(paper, scheme).toBe(scheme === "light" ? "rgb(248, 246, 240)" : "rgb(26, 27, 24)");
+          // The named drawing in this scheme's colours, on that paper; the hex one on its light backing (#256).
+          const [old, named] = await v.page.locator('[data-section="s3"] img.doc-drawing').evaluateAll((is) =>
+            is.map((i) => ({ src: decodeURIComponent((i as HTMLImageElement).src), named: i.hasAttribute("data-named"), bg: getComputedStyle(i).backgroundColor })),
+          );
+          expect(old, scheme).toMatchObject({ named: false, bg: "rgb(248, 246, 240)" });
+          expect(old.src).toContain('fill="#e8f0fe"');
+          expect(named, scheme).toMatchObject({ named: true, bg: "rgba(0, 0, 0, 0)" });
+          expect(named.src).toContain(`fill="${hex("leaf-soft", scheme)}" stroke="${hex("leaf", scheme)}"`);
           // Fresh: no cookie came or was set, and it asked only its own origin
           // for the page, its files and its parts.
           expect(await v.ctx.cookies(), `${name} ${scheme}`).toEqual([]);

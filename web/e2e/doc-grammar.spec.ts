@@ -3,8 +3,14 @@
 // client's are run over the same files (crates/daemon/tests/fixtures/docs/),
 // and then the chart is laid out: a bar a row, from zero, with axes, labels
 // and a text alternative; a line a path a series.
+//
+// #256: the named colours' table (shared/docs/colours.json, which the
+// daemon reads too) holds what style.css's `--doc-*` tokens hold, and a
+// drawing's names become the scheme's values.
 
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+import { cssVar, HUES, hex, NAMES, resolve, usesNames } from "../src/shared/docs/colours";
 import { buildChart, checkChart, checkSpec, niceTicks, parseChart, summary, type El, type Spec } from "../src/shared/ui/chart";
 import { assetName, checkEmbeds, checkSvg, fences, imageRefs, plain, svgUrl } from "../src/shared/ui/embeds";
 import { checkStats, statsSummary, toneOf } from "../src/shared/ui/stats";
@@ -240,4 +246,71 @@ test("each stats rule is enforced, as the daemon says it", () => {
   // A delta with no tone takes its sign's; the arrow is drawn either way.
   expect(["+3", "-3", "−3", "3"].map((delta) => toneOf({ label: "a", value: "1", delta }))).toEqual(["up", "down", "down", "flat"]);
   expect(toneOf({ label: "a", value: "1", delta: "+3", tone: "down" })).toBe("down");
+});
+
+/** The custom properties a rule in style.css sets, by its selector. */
+function tokens(selector: string): Record<string, string> {
+  const css = readFileSync(new URL("../src/shared/style.css", import.meta.url), "utf8");
+  const at = css.indexOf(`\n${selector} {\n`);
+  expect(at, selector).toBeGreaterThan(-1);
+  const body = css.slice(at, css.indexOf("\n}", at));
+  return Object.fromEntries([...body.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)].map((m) => [m[1], m[2].trim()]));
+}
+
+test("the named colours are style.css's Doc tokens, in both schemes", () => {
+  expect(NAMES).toHaveLength(16);
+  expect(HUES).toEqual(["leaf", "pepper", "sky", "plum", "sun", "stone"]);
+  const dark = tokens(".doc");
+  const light = { ...dark, ...tokens('html[data-scheme="light"] .doc') };
+  for (const name of NAMES) {
+    expect(dark[cssVar(name)], `${name} dark`).toBe(hex(name, "dark"));
+    expect(light[cssVar(name)], `${name} light`).toBe(hex(name, "light"));
+  }
+  // A chart's default series are the first four hues.
+  expect(["--c1", "--c2", "--c3", "--c4"].map((c) => dark[c])).toEqual(HUES.slice(0, 4).map((h) => `var(--doc-${h})`));
+});
+
+test("a drawing's names become the scheme's values; a hex drawing stays as it was", () => {
+  const named = fences(example("named-drawing.md"))[0].code;
+  expect(usesNames(named)).toBe(true);
+  for (const scheme of ["light", "dark"] as const) {
+    const out = resolve(named, scheme);
+    expect(out).toContain(`fill="${hex("leaf-soft", scheme)}" stroke="${hex("leaf", scheme)}"`);
+    expect(out).toContain(`stroke="${hex("ink", scheme)}"`);
+    // What it doesn't paint, like the second label, is ink.
+    expect(out).toMatch(new RegExp(`^<svg fill="${hex("ink", scheme)}" xmlns=`));
+    expect(out).not.toMatch(/"(?:leaf|stone|ink)(?:-soft)?"/);
+  }
+  expect(resolve(named, "light")).not.toBe(resolve(named, "dark"));
+  // A root with a fill of its own keeps it, and a name in text is text.
+  const own = `<svg xmlns="http://www.w3.org/2000/svg" fill='sky'><text>leaf</text></svg>`;
+  expect(resolve(own, "dark")).toBe(`<svg xmlns="http://www.w3.org/2000/svg" fill='${hex("sky", "dark")}'><text>leaf</text></svg>`);
+  const old = fences(example("drawing.md"))[0].code;
+  expect(usesNames(old)).toBe(false);
+  // Bad words, as the daemon says them.
+  for (const [bad, says] of [
+    [`<svg xmlns="http://www.w3.org/2000/svg"><rect fill="leafy"/></svg>`, 'fill="leafy" is not a colour'],
+    [`<svg xmlns="http://www.w3.org/2000/svg"><rect stroke='green-soft'/></svg>`, 'stroke="green-soft" is not a colour'],
+    [`<svg xmlns="http://www.w3.org/2000/svg"><stop stop-color="#12"/></svg>`, 'stop-color="#12" is not a colour'],
+  ]) {
+    expect(checkSvg(bad), bad).toContain(says);
+  }
+  for (const good of [`<rect fill="none" stroke="currentColor" color=" Leaf "/>`, `<rect fill="url(#g)" stroke="rgb(1, 2, 3)"/><text fill="white">plum</text>`, `<rect fill-opacity="0.5" fill=""/>`]) {
+    expect(checkSvg(`<svg xmlns="http://www.w3.org/2000/svg">${good}</svg>`), good).toBeNull();
+  }
+});
+
+test("a chart's colors name a hue for each series; without them, the brand order", () => {
+  const svg = buildChart(chart("chart-colours.md"));
+  const paths = all(svg, "path");
+  expect(paths[0].attrs.style).toBe(`stroke:var(--doc-leaf, ${hex("leaf", "light")})`);
+  expect(paths[1].attrs.style).toBe(`stroke:var(--doc-stone, ${hex("stone", "light")})`);
+  for (const [colors, says] of [
+    [["leaf"], "colors must name one colour for each y series, from leaf, pepper, sky, plum, sun, stone"],
+    ["leaf", "one colour for each y series"],
+    [["leaf", "ink"], 'colors: "ink" is not one of'],
+    [["leaf-soft", "sky"], 'colors: "leaf-soft" is not one of'],
+  ] as const) {
+    expect(checkSpec({ type: "bar", x: "m", y: ["a", "b"], colors, rows: [{ m: 1, a: 1, b: 2 }] })).toContain(says);
+  }
 });

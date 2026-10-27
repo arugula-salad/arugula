@@ -22,10 +22,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
+import { hex, type Scheme } from "../src/shared/docs/colours";
+import { example } from "./doc-examples";
 import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, placedEmbeds, png, putAsset, seeEmbeds, type Post, widths } from "./doc-steps";
 import { closeContexts, open, panes, ready, reset } from "./helpers";
 import { daemon, pixel7 } from "./phones";
-import { example } from "./doc-examples";
 
 const SHOTS = process.env.DOC_SHOTS;
 const ALERTS = ["note", "tip", "important", "warning", "caution"];
@@ -277,6 +278,51 @@ test.describe("callouts and tiles on a Pixel 7", () => {
     await shoot(page, doc, "block-pixel7-callouts-dark", "[data-section=s1]");
     await shoot(page, doc, "block-pixel7-stats-dark", "[data-section=s2]");
   });
+});
+
+// #256: a drawing that names the Doc's colours has them resolved for the
+// scheme, and redrawn when it changes, on the page's own paper; one in hex
+// looks as it did; a chart's `colors` pick its series.
+test("named colours resolve for Mocha and Latte, and an old hex drawing looks as it did", async ({ page }) => {
+  await reset(page);
+  const [term] = await panes(page);
+  const doc = await newDoc(post(page), term);
+  await fill(post(page), doc, "s1", example("named-drawing.md"));
+  await fill(post(page), doc, "s2", example("drawing.md"));
+  await fill(post(page), doc, "s3", example("chart-colours.md"));
+  const block = page.locator(`[data-doc-block="${doc}"]`);
+  const named = block.locator('[data-section="s1"] img.doc-drawing');
+  const old = block.locator('[data-section="s2"] img.doc-drawing');
+  const look = async (scheme: Scheme) => {
+    await expect(named).toHaveAttribute("data-named", "");
+    await expect.poll(() => named.evaluate((i: HTMLImageElement) => decodeURIComponent(i.src))).toContain(`fill="${hex("leaf-soft", scheme)}" stroke="${hex("leaf", scheme)}"`);
+    await expect.poll(() => named.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth)).toBe(260);
+    expect(await named.evaluate((i) => getComputedStyle(i).backgroundColor), "on the page's paper").toBe("rgba(0, 0, 0, 0)");
+    // The hex drawing: its own text, on the light backing.
+    await expect(old).not.toHaveAttribute("data-named");
+    expect(await old.evaluate((i: HTMLImageElement) => decodeURIComponent(i.src))).toContain('fill="#e8f0fe" stroke="#335"');
+    expect(await old.evaluate((i) => getComputedStyle(i).backgroundColor)).toBe("rgb(248, 246, 240)");
+    const strokes = await block.locator('[data-section="s3"] svg.chart path[data-line]').evaluateAll((ps) => ps.map((p) => getComputedStyle(p).stroke));
+    const rgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(", ")})`;
+    expect(strokes).toEqual([rgb(hex("leaf", scheme)!), rgb(hex("stone", scheme)!)]);
+  };
+  await expect(named).toBeVisible({ timeout: 15_000 });
+  expect(await page.evaluate(() => document.documentElement.dataset.scheme)).toBe("dark");
+  await look("dark");
+  await shoot(page, doc, "block-named-colours-mocha");
+
+  // The scheme changes under it: the drawing is redrawn, no reload.
+  await page.evaluate(() => (document.documentElement.dataset.scheme = "light"));
+  await look("light");
+  await page.evaluate(() => (document.documentElement.dataset.scheme = "dark"));
+  await look("dark");
+
+  await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "latte", finish: "flat", corners: "square" })));
+  await page.reload();
+  await expect(named).toBeVisible({ timeout: 15_000 });
+  expect(await page.evaluate(() => document.documentElement.dataset.scheme)).toBe("light");
+  await look("light");
+  await shoot(page, doc, "block-named-colours-latte");
 });
 
 test.describe("a viewer", () => {

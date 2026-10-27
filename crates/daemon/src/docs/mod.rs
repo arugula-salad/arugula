@@ -48,7 +48,7 @@
 
 mod ask;
 mod assets;
-mod embeds;
+pub(crate) mod embeds;
 pub mod library;
 pub mod link;
 
