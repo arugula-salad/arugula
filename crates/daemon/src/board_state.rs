@@ -115,6 +115,9 @@ pub async fn keep_reporting(app: Arc<App>) {
     // The newest word for each pane not yet sent.
     let mut pending: HashMap<PaneId, BlockWord> = HashMap::new();
     let mut agents: HashSet<PaneId> = HashSet::new();
+    // Panes known not to be agent blocks (a pane's kind never changes), so
+    // a terminal's events don't ask the mux for its panes each time.
+    let mut others: HashSet<PaneId> = HashSet::new();
     let mut repos: HashMap<PaneId, Repo> = HashMap::new();
     let mut quiet_until: Option<Instant> = None;
     let mut tick = tokio::time::interval(EVERY);
@@ -133,7 +136,15 @@ pub async fn keep_reporting(app: Arc<App>) {
                     continue;
                 }
                 if !agents.contains(&id) {
-                    if word == BlockWord::Closed || !is_agent(&app, id).await {
+                    if word == BlockWord::Closed {
+                        others.remove(&id);
+                        continue;
+                    }
+                    if others.contains(&id) {
+                        continue;
+                    }
+                    if !is_agent(&app, id).await {
+                        others.insert(id);
                         continue;
                     }
                     agents.insert(id);
@@ -148,7 +159,8 @@ pub async fn keep_reporting(app: Arc<App>) {
                 quiet_until = None;
                 let mut batch: Vec<_> = pending.drain().collect();
                 batch.sort_by_key(|(id, _)| *id);
-                for (id, word) in batch {
+                let mut batch = batch.into_iter();
+                while let Some((id, word)) = batch.next() {
                     let repo = repos.entry(id).or_default();
                     if word == BlockWord::Idle
                         && let Some(w) = crate::ops::prompt::turn_result(&app, id).await.and_then(|t| t.work)
@@ -165,8 +177,11 @@ pub async fn keep_reporting(app: Arc<App>) {
                         Err(Wait::For(d, why)) => {
                             warn!(pane = id, "not telling control about a block for a while: {why}");
                             quiet_until = Some(Instant::now() + d);
-                            if d == TROUBLE && word != BlockWord::Closed {
-                                pending.entry(id).or_insert(word);
+                            // A transient failure keeps this pane's word and
+                            // the rest of the batch's, for after the wait.
+                            if d == TROUBLE {
+                                pending.insert(id, word);
+                                pending.extend(batch);
                             }
                             break;
                         }
