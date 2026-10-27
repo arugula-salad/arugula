@@ -15,7 +15,7 @@
 #     (`just test-platform-postgres`, M143), beside test;
 #   - core: the daemon and the CLI without Labs (`just check-core`, #452);
 #   - testnet: the test stack's claims (ssh, then control);
-#   - e2e: the Playwright specs in six shards; stack: those on the test
+#   - e2e: the Playwright specs in seven shards; stack: those on the test
 #     stack; perf: the specs that time things, once the shards are done;
 #   - desktop-xvfb: the Linux desktop app's claims under Xvfb, against
 #     static's binaries, in a test image kept on GHCR;
@@ -432,7 +432,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -446,13 +446,17 @@ jobs:
         run: just browsers
       # Shards by recorded time (web/scripts/e2e-shard.mjs, e2e/durations.json),
       # not Playwright's --shard by count: six of those ran 155-316 s (#868).
+      # Seven since #259: six ran ~280 s of specs each, seven ~240 s, and a
+      # shard more costs ~0.5 pod CPU-min of setup. A stale durations.json
+      # unbalances them (a 125 s spec weighed as 7 s held one 2 min longer):
+      # refresh it when a shard runs well over the rest.
       # Each keeps its JSON report so `just e2e-durations RUN` can refresh
       # the times.
-      - name: The Playwright specs, shard ${{ matrix.shard }} of 6
+      - name: The Playwright specs, shard ${{ matrix.shard }} of 7
         run: |
           port=$(scripts/free-port)
           cd web
-          mapfile -t files < <(node scripts/e2e-shard.mjs ${{ matrix.shard }} 6)
+          mapfile -t files < <(node scripts/e2e-shard.mjs ${{ matrix.shard }} 7)
           # No files would run every spec in every shard.
           [ ${#files[@]} -gt 0 ] || { echo "e2e-shard listed nothing" >&2; exit 1; }
           E2E_PORT=$port pnpm exec playwright test "${files[@]}"

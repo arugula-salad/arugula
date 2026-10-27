@@ -67,7 +67,7 @@ once (#287); a new push to a branch cancels that branch's run:
   - **test-postgres**: the platform's tests again on Postgres
     (`just test-platform-postgres`), beside test and test-2;
   - **testnet**: the test stack's ssh and control profiles;
-  - **e2e**: the specs (`E2E_SET=rest`) in six shards split by recorded
+  - **e2e**: the specs (`E2E_SET=rest`) in seven shards split by recorded
     time (`web/scripts/e2e-shard.mjs` from `web/e2e/durations.json`; refresh
     it with `just e2e-durations RUN` after a main run), each with its own
     test daemon on a free port; **stack**: those on the test stack
