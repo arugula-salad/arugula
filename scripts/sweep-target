@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Delete the builds in cargo target dirs that nothing uses any more.
+
+Cargo keys every build of a crate by a hash of its version, features,
+profile and whether it's a test, and never deletes the old ones. Each
+release bump, feature combination (`just check-features`, `-p` against
+`--workspace`) and clippy run leaves a full copy behind: about 1 GB of
+incremental cache for arugulad alone. A worktree used for four days
+reached 40 GB, 31 GB of it dead incremental caches.
+
+For each crate this keeps its newest build and any other touched in the
+last HOURS, and deletes the rest: incremental caches, the artifacts in
+deps/ and build-script output. Cargo rebuilds anything it then misses.
+
+usage: scripts/sweep-target [--hours N] [--dry-run] TARGET_DIR...
+"""
+
+import argparse
+import os
+import re
+import shutil
+import sys
+import time
+
+# deps/libtokio-1a2b3c4d5e6f7a8b.rlib, build/aws-lc-sys-1a2b3c4d5e6f7a8b,
+# and incremental/arugulad-0opyu2yce56z3 (base 36).
+HASHED = {
+    "deps": re.compile(r"^(?P<stem>.+)-(?P<hash>[0-9a-f]{16})(?:\..*)?$"),
+    "build": re.compile(r"^(?P<stem>.+)-(?P<hash>[0-9a-f]{16})$"),
+    "incremental": re.compile(r"^(?P<stem>.+)-(?P<hash>[0-9a-z]{10,16})$"),
+}
+
+
+def stamp(st):
+    # A file's atime is a read: rustc linking it, where the mount keeps
+    # atimes. A directory's is any listing, `du` included, so not that.
+    if os.path.stat.S_ISREG(st.st_mode):
+        return max(st.st_mtime, st.st_atime)
+    return st.st_mtime
+
+
+def last_used(path):
+    """When path was last used, one level down: a crate's incremental dir
+    gets a new session dir on every compile."""
+    t = stamp(os.stat(path, follow_symlinks=False))
+    if os.path.isdir(path) and not os.path.islink(path):
+        for e in os.scandir(path):
+            t = max(t, stamp(e.stat(follow_symlinks=False)))
+    return t
+
+
+def size(path):
+    if os.path.islink(path) or not os.path.isdir(path):
+        return os.lstat(path).st_size
+    total = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.lstat(os.path.join(root, f)).st_size
+            except FileNotFoundError:
+                pass
+    return total
+
+
+def units(dir_, kind):
+    """{(stem, hash): [paths]} for one of a profile's hashed directories."""
+    out = {}
+    for e in os.scandir(dir_):
+        m = HASHED[kind].match(e.name)
+        if m:
+            out.setdefault((m["stem"], m["hash"]), []).append(e.path)
+    return out
+
+
+def profiles(target):
+    """target/debug, target/release, target/<triple>/debug, ...: every
+    directory cargo keeps deps/ in."""
+    for root, dirs, _ in os.walk(target):
+        if "deps" in dirs:
+            yield root
+            dirs.clear()
+        elif root.count(os.sep) - target.count(os.sep) >= 2:
+            dirs.clear()
+
+
+def sweep(target, cutoff, dry_run):
+    freed = 0
+    for profile in profiles(target):
+        for kind in ("incremental", "deps", "build"):
+            d = os.path.join(profile, kind)
+            if not os.path.isdir(d):
+                continue
+            by_stem = {}
+            for (stem, _), paths in units(d, kind).items():
+                used = max(last_used(p) for p in paths)
+                by_stem.setdefault(stem, []).append((used, paths))
+            for builds in by_stem.values():
+                builds.sort(reverse=True)
+                for used, paths in builds[1:]:
+                    if used >= cutoff:
+                        continue
+                    for p in paths:
+                        freed += size(p)
+                        if dry_run:
+                            continue
+                        if os.path.isdir(p) and not os.path.islink(p):
+                            shutil.rmtree(p, ignore_errors=True)
+                        else:
+                            os.unlink(p)
+    return freed
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--hours", type=float, default=48)
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("targets", nargs="+")
+    args = ap.parse_args()
+    cutoff = time.time() - args.hours * 3600
+    status = 0
+    for target in args.targets:
+        target = os.path.abspath(target)
+        if not os.path.isdir(target):
+            continue
+        # Only cargo's own directories: it writes this tag into every one.
+        if not os.path.exists(os.path.join(target, "CACHEDIR.TAG")):
+            print(f"{target}: not a cargo target dir (no CACHEDIR.TAG), skipped", file=sys.stderr)
+            status = 1
+            continue
+        freed = sweep(target, cutoff, args.dry_run)
+        verb = "would free" if args.dry_run else "freed"
+        print(f"{target}: {verb} {freed / 2**30:.1f} GB")
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())
