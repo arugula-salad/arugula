@@ -99,6 +99,9 @@ mod resident;
 mod resume;
 mod review;
 mod session_history;
+// Stand-in shell scripts for Claude Code, Node and npm.
+#[cfg(unix)]
+mod setup;
 mod share;
 mod sites;
 mod ssh;

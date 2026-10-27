@@ -383,6 +383,7 @@ impl Daemon {
                     self.status_shown.remove(&pane);
                     self.status_pushed.remove(&pane);
                     self.turn_typed.remove(&pane);
+                    self.hooked.remove(&pane);
                     if let Some(a) = self.asks.remove(&pane) {
                         let _ = a.reply.send((AskReply::Withdrawn, None));
                     }
@@ -703,6 +704,7 @@ impl Daemon {
                 editor: None,
                 diff: None,
                 resumes: None,
+                unhooked: false,
                 ..info
             };
         }

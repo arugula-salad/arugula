@@ -430,6 +430,9 @@ struct Daemon {
     /// Panes typed in since their agent was last idle: its next idle ends
     /// a turn someone started (a spinner at startup doesn't).
     turn_typed: std::collections::HashSet<PaneId>,
+    /// Terminals one of Arugula's Claude Code hooks has spoken from, while
+    /// Claude Code runs there (`PaneInfo.unhooked`).
+    hooked: std::collections::HashSet<PaneId>,
     /// Who's been typing in the tabs whose size they own: another client's
     /// typing waits for them to stop before taking the size (#333).
     hold: arugula_core::SizeHold,
@@ -615,6 +618,7 @@ pub fn start(
         status_shown: Default::default(),
         status_pushed: Default::default(),
         turn_typed: Default::default(),
+        hooked: Default::default(),
         hold: Default::default(),
         clients: HashMap::new(),
         focus: HashMap::new(),

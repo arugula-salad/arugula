@@ -76,6 +76,13 @@ impl Daemon {
         for id in changed_running {
             self.mark(id);
         }
+        // A hook heard from a Claude Code that has since gone says nothing
+        // about the next one.
+        for (id, agent) in &agents {
+            if agent.as_deref() != Some("claude") && self.hooked.remove(id) {
+                self.mark(*id);
+            }
+        }
         // Claude Code without hooks: its session files say which
         // conversation each holds (#146).
         if agents.iter().any(|(_, a)| a.as_deref() == Some("claude")) {
@@ -172,6 +179,10 @@ impl Daemon {
             _ => typed.or(seen.as_ref().map(|s| s.work)).unwrap_or(WorkKind::Shell),
         };
         let command = if running { seen.and_then(|s| s.command) } else { meta.command };
+        // Claude Code in the foreground, and none of its hooks heard here.
+        let unhooked = running
+            && !self.hooked.contains(&p.id)
+            && command.as_deref().and_then(agent_in).as_deref() == Some("claude");
         let project = cwd.as_deref().and_then(crate::classify::project);
         PaneInfo {
             resumes,
@@ -202,6 +213,7 @@ impl Daemon {
             ask: self.asks.get(&p.id).map(|a| a.ask.clone()),
             answered: self.answered.get(&p.id).cloned(),
             inbox: self.inbox.contains_key(&p.id),
+            unhooked,
             driver: self.drivers.get(&p.id).cloned(),
             typing: self.typing.contains(&p.id),
             pair: self.pair.contains(&p.id),
@@ -246,6 +258,7 @@ impl Daemon {
             ask: self.asks.get(&id).map(|a| a.ask.clone()),
             answered: self.answered.get(&id).cloned(),
             inbox: false,
+            unhooked: false,
             driver: None,
             typing: false,
             pair: false,

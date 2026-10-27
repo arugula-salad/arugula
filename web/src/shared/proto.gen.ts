@@ -2704,12 +2704,19 @@ claude_ide?: boolean,
  * Claude Code in this terminal waits for a follow-up (its `arugula
  * inbox` hook, M29): one sent now goes straight in.
  */
-inbox?: boolean, 
+inbox?: boolean,
+/**
+ * Claude Code runs in this terminal and none of Arugula's hooks has
+ * spoken from it: its questions and permission prompts stay on its
+ * screen, not on cards or the phone (`arugula hooks install`, or
+ * Getting started's "Use Claude Code with Arugula").
+ */
+unhooked?: boolean,
 /**
  * Who is driving it (M13): only their typing reaches it, unless it's
  * in pair mode. `None`: nobody yet (the next to type drives).
  */
-driver?: Driver | null, 
+driver?: Driver | null,
 /**
  * Its driver typed in it in the last few seconds (#118).
  */

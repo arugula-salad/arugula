@@ -1088,6 +1088,12 @@ pub struct PaneInfo {
     /// inbox` hook, M29): one sent now goes straight in.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub inbox: bool,
+    /// Claude Code runs in this terminal and none of Arugula's hooks has
+    /// spoken from it: its questions and permission prompts stay on its
+    /// screen, not on cards or the phone (`arugula hooks install`, or
+    /// Getting started's "Use Claude Code with Arugula").
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unhooked: bool,
     /// Who is driving it (M13): only their typing reaches it, unless it's
     /// in pair mode. `None`: nobody yet (the next to type drives).
     #[serde(default, skip_serializing_if = "Option::is_none")]

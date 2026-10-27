@@ -15,8 +15,10 @@
 //! - `POST /api/setup/claude`: `claude mcp add arugula -- arugula mcp`.
 //! - `POST /api/setup/agents/{kind}` (#335), "Use Claude Code with
 //!   Arugula": installs (or updates) the agent's ACP adapter, waiting for
-//!   npm, and for Claude Code adds the MCP server too; the answer says what
-//!   changed (`done`). `arugula setup claude` asks the same.
+//!   npm, and for Claude Code adds its hooks (`arugula hooks install`, so a
+//!   terminal Claude's questions and permission prompts come to cards) and
+//!   the MCP server too; the answer says what changed (`done`), naming the
+//!   settings file. `arugula setup claude` asks the same.
 //!
 //! When control says this machine's key was removed from its account
 //! (#330), the daemon makes a new key and starts a join itself; `GET
@@ -25,7 +27,7 @@
 //!
 //! `GET /api/setup` says how far along each one is; `?part=agents`, only
 //! the agents' (each adapter's state, whether its agent's CLI is on this
-//! machine, and whether Claude Code has the MCP server), with `cli`: how a
+//! machine, and whether Claude Code has the MCP server and the hooks), with `cli`: how a
 //! new terminal runs `arugula` (#883). When a step needs
 //! something only a person can do (a one-time sudo, a switch in
 //! Tailscale's admin console, a sign-in), the error says so, with the
@@ -190,6 +192,9 @@ struct ClaudeStatus {
     installed: bool,
     /// `claude mcp get arugula` finds it.
     tools: bool,
+    /// `arugula hooks status` says Arugula's hooks are there (or its
+    /// plugin's): a terminal Claude's questions come to cards.
+    hooks: bool,
 }
 
 /// The join in flight, if any, and the last one's failure.
@@ -561,8 +566,59 @@ fn scope_of(out: &str) -> Option<&'static str> {
 }
 
 async fn claude_status(app: &App) -> ClaudeStatus {
-    let Some(c) = claude(app).await else { return ClaudeStatus::default() };
-    ClaudeStatus { installed: true, tools: mcp_scope(app, &c, MCP_NAME).await.is_some() }
+    let hooks = hooks_status(app).await;
+    let Some(c) = claude(app).await else { return ClaudeStatus { hooks, ..Default::default() } };
+    ClaudeStatus { installed: true, tools: mcp_scope(app, &c, MCP_NAME).await.is_some(), hooks }
+}
+
+/// `arugula --json hooks status`: whether the settings.json Claude Code
+/// reads has Arugula's hooks, or the plugin brings them.
+async fn hooks_status(app: &App) -> bool {
+    let Some(cli) = cli(app).await else { return false };
+    match run(app, &cli, &["--json", "hooks", "status"], Duration::from_secs(10)).await {
+        Ok((true, out, _)) => serde_json::from_str::<Value>(&out).is_ok_and(|v| v["installed"] == true),
+        _ => false,
+    }
+}
+
+/// Claude Code's hooks for Arugula, added by `arugula hooks install` (the
+/// one installer): what changed in its settings.json, a line each (none:
+/// they were there already).
+async fn add_hooks(app: &App) -> Result<Vec<String>, Outcome> {
+    let Some(cli) = cli(app).await else {
+        return Err(Outcome::err("Can't find the Arugula CLI next to the daemon."));
+    };
+    match run(app, &cli, &["--json", "hooks", "install"], Duration::from_secs(20)).await {
+        Ok((true, out, _)) => Ok(hooks_lines(&serde_json::from_str(&out).unwrap_or_default())),
+        Ok((false, out, err)) => {
+            let said = if err.is_empty() { out.trim().to_owned() } else { err };
+            Err(Outcome::err(format!("arugula hooks install: {said}")).fix(format!("{} hooks install", cli.display())))
+        }
+        Err(e) => Err(Outcome::err(e)),
+    }
+}
+
+/// What `hooks install --json` said it did, in the done lines: the
+/// settings file by name, under `~` when it's there.
+fn hooks_lines(said: &Value) -> Vec<String> {
+    let path = said["settings"].as_str().unwrap_or("settings.json");
+    let home = std::env::var("HOME").unwrap_or_default();
+    let file = match Path::new(path).strip_prefix(&home) {
+        Ok(rest) if !home.is_empty() => format!("~/{}", rest.display()),
+        _ => path.to_owned(),
+    };
+    let mut lines = vec![];
+    if said["hooks_added"] == true {
+        lines.push(format!(
+            "Added Arugula's hooks to {file}: a terminal Claude's questions and permission prompts come to cards here and on your phone, from its next start."
+        ));
+    }
+    if said["rules_added"] == true {
+        lines.push(format!(
+            "Allowed Arugula's read-only commands and tools in {file} (permissions.allow), so Claude Code uses them without asking."
+        ));
+    }
+    lines
 }
 
 pub(crate) async fn claude_mcp(app: &Arc<App>) -> Outcome {
@@ -697,7 +753,7 @@ async fn install(app: &App, a: &'static Adapter) -> Result<Option<String>, Outco
 
 /// `POST /api/setup/agents/{kind}`: "Use Claude Code with Arugula" (or
 /// Codex): its adapter installed or brought up to the pin, and for Claude
-/// Code Arugula's MCP server added. Run by the person, never by itself.
+/// Code Arugula's MCP server and hooks added. Run by the person, never by itself.
 pub(crate) async fn use_agent(app: &Arc<App>, kind: String) -> Outcome {
     let Some(a) = ADAPTERS.iter().find(|a| a.dir == kind || a.cli == kind) else {
         return Outcome::err(format!("no agent {kind} to set up (claude or codex)"));
@@ -716,10 +772,18 @@ pub(crate) async fn use_agent(app: &Arc<App>, kind: String) -> Outcome {
                 return Outcome { done, ..o };
             }
         }
+        // After the MCP server, which finds Claude Code first: no
+        // settings.json made where there's no Claude Code to read it.
+        match add_hooks(app).await {
+            Ok(lines) => done.extend(lines),
+            Err(o) => return Outcome { done, ..o },
+        }
     }
     if done.is_empty() {
         done.push(match a.kind {
-            Kind::Claude => "Already set up: agent panes work, and Claude Code has Arugula's MCP server.".into(),
+            Kind::Claude => {
+                "Already set up: agent panes work, and Claude Code has Arugula's hooks and MCP server.".into()
+            }
             _ => format!("Already set up: {} runs as agent panes here.", a.label),
         });
     }
@@ -761,6 +825,20 @@ mod tests {
         assert!(o.get("done").is_none());
         let o = serde_json::to_value(Outcome { done: vec![fresh], ..Outcome::ok() }).unwrap();
         assert_eq!(o["done"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn what_a_hooks_install_says_it_did() {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let said = serde_json::json!({
+            "settings": format!("{home}/.claude/settings.json"), "hooks_added": true, "rules_added": false,
+        });
+        let lines = hooks_lines(&said);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].starts_with("Added Arugula's hooks to ~/.claude/settings.json: "), "{lines:?}");
+        let said = serde_json::json!({ "settings": "/x/settings.json", "hooks_added": false, "rules_added": true });
+        assert!(hooks_lines(&said)[0].contains(" in /x/settings.json "));
+        assert!(hooks_lines(&serde_json::json!({ "settings": "/x", "hooks_added": false })).is_empty());
     }
 
     #[test]

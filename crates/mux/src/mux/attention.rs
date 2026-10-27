@@ -727,7 +727,16 @@ impl Daemon {
         self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
     }
 
+    /// One of Arugula's Claude Code hooks spoke from a terminal: its
+    /// questions come to cards (`PaneInfo.unhooked` is false).
+    pub(super) fn heard_hook(&mut self, pane: PaneId) {
+        if self.panes.contains_key(&pane) && self.hooked.insert(pane) {
+            self.mark(pane);
+        }
+    }
+
     pub(super) fn hook(&mut self, pane: PaneId, hook: &serde_json::Value) {
+        self.heard_hook(pane);
         self.note_session(pane, hook);
         let event = hook["hook_event_name"].as_str().unwrap_or_default();
         let session = session_key(hook);
