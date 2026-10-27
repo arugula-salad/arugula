@@ -35,7 +35,7 @@ impl Call<'_> {
         let signed: Vec<&str> = forges.iter().filter(|f| f.signed_in).map(|f| f.forge.as_str()).collect();
         let summary = format!(
             "Arugula {}: hooks {}; forges signed in: {}; control: {}; Cloud workspaces: {}; conversations: {}; runs: {}",
-            env!("CARGO_PKG_VERSION"),
+            arugula_core::version::get(),
             match hooks.live {
                 Some(true) => "live",
                 Some(false) => "not live",
@@ -50,7 +50,7 @@ impl Call<'_> {
         done(
             summary,
             Capabilities {
-                version: env!("CARGO_PKG_VERSION").into(),
+                version: arugula_core::version::get().into(),
                 flags: on.names().map(str::to_owned).collect(),
                 blocks: tools::block_offers(on),
                 tools,

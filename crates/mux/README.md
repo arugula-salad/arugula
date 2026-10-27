@@ -38,9 +38,9 @@ on a PTY and its VT thread) and `src/block.rs`.
 
 The `labs` feature carries what Labs puts inside the mux task (threads and
 VM machines, `src/labs/`), with a twin for each item when it's off, so call sites
-have no `cfg`. `arugulad`'s `labs` forwards it (`labs = ["arugula-mux/labs", …]`),
+have no `cfg`. `arugulad-base`'s `labs` (which `arugulad`'s turns on) forwards it (`labs = ["arugula-mux/labs", …]`),
 so the two are on together.
 
 Its tests are unit tests beside the code; the daemon's integration tests
-(`crates/daemon/tests/`) cover it from outside. `just check-core` clippies and
+(`crates/arugulad/tests/`) cover it from outside. `just check-core` clippies and
 runs both without Labs, and `just check` with.

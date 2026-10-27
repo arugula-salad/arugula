@@ -3883,7 +3883,7 @@ A project's runs and deploys (platform step 7) are background jobs in
   with no job.
 
 The tests in `crates/platform/src/failure_tests.rs` and
-`crates/daemon/tests/integration/hosted_work.rs` make each failure below
+`crates/arugulad/tests/integration/hosted_work.rs` make each failure below
 happen, in CI.
 
 **Seeing it.**

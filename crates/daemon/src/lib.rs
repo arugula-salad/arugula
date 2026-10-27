@@ -1,4 +1,6 @@
-//! arugulad: owns the terminals; clients attach over WebSocket.
+//! arugulad-base: the daemon, as a library. `arugulad` (crates/arugulad)
+//! is its binary: it calls [`main`] with its version. The daemon owns the
+//! terminals; clients attach over WebSocket.
 
 mod access;
 mod acl {
@@ -32,6 +34,7 @@ mod editors;
 mod forge;
 mod forges;
 mod fs;
+mod git_remote;
 // The gates a forge block and Labs' blocks raise.
 #[cfg(feature = "forge")]
 mod gate;
@@ -478,16 +481,13 @@ fn log_to_file(argv: &[String]) {
     unsafe { std::env::remove_var("ARUGULA_LOG_FILE") };
 }
 
-/// The version, findable in the binary's bytes: the testnet tests read it
-/// from a box's static build they can't run here (#259).
-#[used]
-static VERSION_MARK: &str = concat!("\0arugula-version=", env!("CARGO_PKG_VERSION"), "\0");
-
-fn main() -> anyhow::Result<()> {
+/// The daemon: the binary's `main`, given the release it is (its
+/// `CARGO_PKG_VERSION`).
+pub fn main(version: &'static str) -> anyhow::Result<()> {
     // The libraries are 0.0.0 (a release rebuilds only the binaries): what
-    // they report as the version is ours.
-    arugula_core::version::set(env!("CARGO_PKG_VERSION"));
-    arugula_vt::set_version(env!("CARGO_PKG_VERSION"));
+    // they report as the version is the binary's.
+    arugula_core::version::set(version);
+    arugula_vt::set_version(version);
     // A closed pipe (`| head`) ends the process quietly, not with a panic
     // from `println!` (#682): Rust starts with SIGPIPE ignored.
     // SAFETY: nothing else runs yet, and SIG_DFL is no handler.
@@ -565,7 +565,7 @@ fn main() -> anyhow::Result<()> {
     // A panic is written down as a crash, if telemetry is on (M102).
     use arugula_proto::telemetry::crash;
     let crash_dir = args.run.state_dir.clone().unwrap_or_else(default_state_dir);
-    crash::install_hook(crash::Process::Daemon, env!("CARGO_PKG_VERSION"), &crash_dir);
+    crash::install_hook(crash::Process::Daemon, version, &crash_dir);
     // A debug build crashes as it starts, for the live check (M106).
     #[cfg(debug_assertions)]
     if args.command.is_none() && std::env::var_os(crash::TEST_PANIC_ENV).is_some_and(|v| !v.is_empty() && v != "0") {

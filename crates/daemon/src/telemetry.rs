@@ -528,7 +528,7 @@ impl Telemetry {
     fn report(&self, kept: &Kept, crashes: Vec<Crash>) -> Report {
         Report {
             install: kept.install.clone(),
-            version: env!("CARGO_PKG_VERSION").into(),
+            version: arugula_core::version::get().into(),
             os: match std::env::consts::OS {
                 "linux" => Os::Linux,
                 "macos" => Os::Macos,

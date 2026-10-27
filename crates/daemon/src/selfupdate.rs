@@ -385,7 +385,7 @@ pub fn cli(yes: bool, latest_url: &str) -> anyhow::Result<()> {
     }
     let rt = tokio::runtime::Runtime::new()?;
     let latest = rt.block_on(crate::update::latest_once(latest_url))?;
-    let current = env!("CARGO_PKG_VERSION");
+    let current = arugula_core::version::get();
     if !crate::update::newer(&latest, current) {
         println!("Arugula {current} is the latest release.");
         return Ok(());
@@ -426,7 +426,7 @@ pub fn hand_on() {
     let in_bundle = std::env::current_exe().is_ok_and(|e| e.ends_with("Contents/MacOS/arugulad"));
     let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return };
     let newer = home.join(".local/bin/arugulad");
-    if !in_bundle || !version_of(&newer).is_some_and(|v| crate::update::newer(&v, env!("CARGO_PKG_VERSION"))) {
+    if !in_bundle || !version_of(&newer).is_some_and(|v| crate::update::newer(&v, arugula_core::version::get())) {
         return;
     }
     let err = Command::new(&newer).args(std::env::args_os().skip(1)).exec();

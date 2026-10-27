@@ -58,7 +58,7 @@ impl Drop for Daemon {
 impl Daemon {
     fn new(name: &str, idle: Option<&'static str>) -> Self {
         let dir = Scratch::new(&format!("editors-{name}"));
-        let fake = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fake_code_server.py");
+        let fake = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon")).join("tests/fake_code_server.py");
         let mut b = arugulad!("editors")
             .state_dir(dir.join("state"))
             .block_listen()

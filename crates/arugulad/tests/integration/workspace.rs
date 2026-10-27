@@ -63,8 +63,9 @@ fn daemon_without_chant(scratch: &Scratch) -> Daemon {
 /// stand-in chant installed, and a gate waiting if `gated`.
 fn workspace(d: &Daemon, name: &str, gated: bool) -> PathBuf {
     let ws = d.sessions.join(name);
-    let fixtures = format!("{}/tests/fixtures/chant", env!("CARGO_MANIFEST_DIR"));
-    let points = format!("{}/src/labs/workspace/fixtures/points-open.json", env!("CARGO_MANIFEST_DIR"));
+    let fixtures = format!("{}/tests/fixtures/chant", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
+    let points =
+        format!("{}/src/labs/workspace/fixtures/points-open.json", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
     std::fs::create_dir_all(ws.join("node_modules/.bin")).unwrap();
     for m in ["app", "delivery", "design-client", "design"] {
         std::fs::create_dir_all(ws.join(m)).unwrap();

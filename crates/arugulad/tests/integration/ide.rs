@@ -27,7 +27,7 @@ const OWNER: &str = "me@example.com";
 const FRIEND: &str = "friend@example.com";
 
 fn fake_claude() -> String {
-    format!("{}/tests/fake_claude.py", env!("CARGO_MANIFEST_DIR"))
+    format!("{}/tests/fake_claude.py", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"))
 }
 
 struct Setup {
