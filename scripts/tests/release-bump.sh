@@ -60,6 +60,8 @@ echo four >src/code && git commit -qam four
 four=$(git rev-parse HEAD)
 # A daemon release's notes have a headline section (What's new); the app's
 # needn't. 0.1.3's has none.
+# The backticks are the notes' fence, not a command (SC2016).
+# shellcheck disable=SC2016
 for n in 0.1.1 0.1.2; do printf 'notes %s\n\n```whats-new\n[]\n```\n' "$n" >"docs/releases/$n.md"; done
 for n in 0.1.3 app-0.2.0; do echo "notes $n" >"docs/releases/$n.md"; done
 git add -A && git commit -qm notes
