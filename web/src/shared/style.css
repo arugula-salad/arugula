@@ -12529,3 +12529,30 @@ html[data-workspace="new"] .thread-panel {
     width: auto;
   }
 }
+
+/* The Share dialog's live links and guests (native #245): what, when it
+   ends, Revoke. */
+.share-links h3 {
+  margin: 12px 0 0;
+  font-size: inherit;
+}
+
+.share-list.share-live li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.access-log {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+  max-height: 10rem;
+  overflow: auto;
+  display: grid;
+  gap: 2px;
+}
+
+.access-log li {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}

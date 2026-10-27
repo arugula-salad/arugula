@@ -17,6 +17,7 @@ import { countView } from "../../shared/telemetry";
 import { canScan, Scanner } from "./scan";
 import { useEscape } from "./keys";
 import { colorOf } from "../../shared/chat/avatar";
+import { ShareLinks } from "./share-links";
 
 /** Control mode (M19): people are accounts there, and links go through it. */
 let control: ControlSession | null = null;
@@ -738,6 +739,7 @@ export function ShareDialog({ client }: { client: Client }) {
           </p>
         ) : null}
         {link ? <CopyText text={link} share data-link /> : null}
+        <ShareLinks client={client} session={session} />
         {err ? <p class="control-error">{err}</p> : null}
         <div class="prompt-buttons">
           <button class="secondary" onClick={() => setSession(null)}>Done</button>
