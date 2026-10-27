@@ -608,10 +608,14 @@ export class TerminalView {
     if (e.key === "Enter" && chord && !e.metaKey && !e.isComposing && this.kittyFlags) {
       const mods = 1 + (e.shiftKey ? 1 : 0) + (e.altKey ? 2 : 0) + (e.ctrlKey ? 4 : 0);
       if (e.type === "keydown") this.term.input(`\x1b[13;${mods}u`, true);
+      // Left to the browser, Ctrl+Enter can still act as a Ctrl+click and
+      // open the pane's context menu.
+      e.preventDefault();
       return false;
     }
     if (e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing) {
       if (e.type === "keydown") this.term.input("\x1b\r", true);
+      e.preventDefault();
       return false;
     }
     if (e.type !== "keydown" || !e.ctrlKey || !e.shiftKey) return true;
