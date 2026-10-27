@@ -180,7 +180,8 @@ test("a path pasted into a pane, or files dragged over it: Attach file…", asyn
   const chooser = page.waitForEvent("filechooser");
   await chip.locator("[data-hint-act]").click();
   await (await chooser).setFiles({ name: "hint.txt", mimeType: "text/plain", buffer: Buffer.from("hi") });
-  await expect.poll(() => text(page, term)).toContain("hint.txt");
+  // Its path on the pane's machine, under a name the daemon chose (upload.rs).
+  await expect.poll(() => text(page, term)).toMatch(/arugula-uploads\/\d+\/\w+\.txt/);
   await expect(page.locator("[data-hint]")).toHaveCount(0);
 
   // A new browser: dragging files over the pane is the same fact.
