@@ -1034,9 +1034,11 @@ A chart: a ```chart fence holding a JSON spec. type is "bar" or "line"; title is
 ```chart
 {"type": "bar", "title": "Sales by month", "x": "month", "y": ["sales"], "rows": [{"month": "Jan", "sales": 12}, {"month": "Feb", "sales": 19}]}
 ```
-A drawing: a ```svg fence holding one <svg> element, with xmlns="http://www.w3.org/2000/svg" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run. For example:
+A drawing: a ```svg fence holding one <svg> element, with xmlns="http://www.w3.org/2000/svg" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run.
+Colours are named, so a Doc reads in light and dark: leaf, pepper, sky, plum, sun, stone, ink (text) and paper (the page), each with a soft fill (leaf-soft, stone-soft, …). In a drawing, fill, stroke, stop-color and color take a name; a chart's optional "colors" names one of the six hues for each y series ("colors": ["leaf", "stone"]).
+Grey first (stone and ink), one accent per figure. Text stays ink. For example:
 ```svg Idea to app
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40"><rect x="2" y="8" width="60" height="24" fill="#e8f0fe" stroke="#335"/><path d="M62 20 H98" stroke="#335"/><rect x="98" y="8" width="60" height="24" fill="#e6f4ea" stroke="#335"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40" font-size="11" text-anchor="middle"><rect x="2" y="8" width="60" height="24" rx="4" fill="stone-soft" stroke="stone"/><text x="32" y="24" fill="ink">Idea</text><path d="M62 20 H98" stroke="ink"/><rect x="98" y="8" width="60" height="24" rx="4" fill="leaf-soft" stroke="leaf"/><text x="128" y="24" fill="ink">App</text></svg>
 ```
 Every fence is checked before anything is written: a bad chart, tile or drawing is refused with one line saying what to fix, and the section stays as it was."##,
         schema: schema_for_type::<DocFillArgs>,
@@ -5138,6 +5140,20 @@ mod tests {
         assert!(schema.contains("heading") && schema.contains("intent") && schema.contains("markdown"), "{schema}");
         // ...and the picture's: a file or its bytes.
         assert!(schema.contains("\"path\"") && schema.contains("\"data\""), "{schema}");
+    }
+
+    /// #256: `doc fill`'s guide names the Doc's colours, and its drawing,
+    /// which uses them, passes the check.
+    #[test]
+    fn doc_fill_teaches_the_named_colours() {
+        let fill = DOC.iter().find(|k| k.name == "fill").unwrap().description;
+        for name in ["leaf", "pepper", "sky", "plum", "sun", "stone", "ink", "paper", "leaf-soft", "\"colors\""] {
+            assert!(fill.contains(name), "{name}");
+        }
+        assert!(fill.contains("Grey first (stone and ink), one accent per figure") && fill.contains("Text stays ink"));
+        let svg = fill.split("```svg Idea to app\n").nth(1).and_then(|s| s.split("\n```").next()).unwrap();
+        assert_eq!(crate::docs::embeds::check_svg(svg), Ok(()));
+        assert!(svg.contains("fill=\"leaf-soft\"") && !svg.contains('#'), "{svg}");
     }
 
     /// docs/mcp-permissions.json allows the read-only tools and asks for the

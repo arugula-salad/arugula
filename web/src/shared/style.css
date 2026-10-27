@@ -5335,8 +5335,10 @@ button.diff-why-run {
    app's scheme picks (`html[data-scheme]`), and the share viewer sets that
    from `prefers-color-scheme` (doc-view.tsx). The hues (leaf, pepper, sky,
    plum) are a chart's series, `--c1..c4`, checked with the dataviz palette
-   validator against `--doc-paper` in each set; named colours (#256) build
-   on these names. */
+   validator against `--doc-paper` in each set. The named colours an agent
+   writes (#256: leaf, pepper, sky, plum, sun, stone, each with a `-soft`
+   fill, and ink and paper) are these tokens; their values are
+   shared/docs/colours.json's, which a spec holds equal to these. */
 .doc {
   /* The page and its text. */
   --doc-paper: #1a1b18;
@@ -5355,6 +5357,15 @@ button.diff-why-run {
   --doc-pepper: #a85a35;
   --doc-sky: #4d97de;
   --doc-plum: #9b5aa0;
+  --doc-sun: #b0801c;
+  --doc-stone: #68665e;
+  /* Each hue's soft fill, for a box with ink on it. */
+  --doc-leaf-soft: #354127;
+  --doc-pepper-soft: #422d20;
+  --doc-sky-soft: #283e4f;
+  --doc-plum-soft: #3e2d3e;
+  --doc-sun-soft: #443719;
+  --doc-stone-soft: #30302c;
   /* What a drawing sits on in either scheme: the light set's paper. */
   --doc-drawing: #f8f6f0;
   --c1: var(--doc-leaf);
@@ -5385,6 +5396,14 @@ html[data-scheme="light"] .doc {
   --doc-pepper: #c2714a;
   --doc-sky: #2f7fc8;
   --doc-plum: #80458a;
+  --doc-sun: #9a6e10;
+  --doc-stone: #525049;
+  --doc-leaf-soft: #dae0d0;
+  --doc-pepper-soft: #efe1d5;
+  --doc-sky-soft: #d8e3ea;
+  --doc-plum-soft: #e5dae0;
+  --doc-sun-soft: #e9e0cc;
+  --doc-stone-soft: #dddbd5;
   color-scheme: light;
 }
 
@@ -5626,8 +5645,10 @@ html[data-scheme="light"] .doc {
 }
 
 /* An SVG in an <img> has no background of its own, and what an agent draws
-   is meant for a light page: so it sits on one in either scheme, a Doc's
-   light paper (#253), and white anywhere else. */
+   in raw hex is meant for a light page: so it sits on one in either scheme,
+   a Doc's light paper (#253), and white anywhere else. One that names the
+   Doc's colours (#256) has them resolved for the scheme, and sits on the
+   page's own paper. */
 .md .doc-drawing {
   display: block;
   max-width: 100%;
@@ -5635,6 +5656,10 @@ html[data-scheme="light"] .doc {
   margin: 0 0 0.7em;
   background: var(--doc-drawing, #fff);
   border-radius: var(--field-radius);
+}
+
+.md .doc-drawing[data-named] {
+  background: none;
 }
 
 /* A picture the agent saved (#965): as wide as it is, no wider than the page. */
@@ -5841,8 +5866,8 @@ html[data-scheme="light"] .doc {
   margin-bottom: 0;
 }
 
-/* In a Doc: a tinted card in the Doc's hues. Warning takes the brand's sun
-   once #256 names it, and an amber of its own until then. The label is ink,
+/* In a Doc: a tinted card in the Doc's hues (#256's named colours, so a
+   pepper caution and a pepper series match). The label is ink,
    so it reads on every tint; the tone is the rule, the fill and the icon. */
 .doc .md .md-callout {
   --tone: var(--doc-sky);
@@ -5862,11 +5887,7 @@ html[data-scheme="light"] .doc {
 }
 
 .doc .md .md-callout-warning {
-  --tone: var(--doc-sun, #c9a03f);
-}
-
-html[data-scheme="light"] .doc .md .md-callout-warning {
-  --tone: var(--doc-sun, #8f6a12);
+  --tone: var(--doc-sun);
 }
 
 .doc .md .md-callout-caution {

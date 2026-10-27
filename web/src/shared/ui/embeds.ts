@@ -7,6 +7,7 @@
 // same things, and a spec runs both over the same files
 // (`tests/fixtures/docs/`).
 
+import { checkPaint } from "../docs/colours";
 import { checkChart, summary } from "./chart";
 import { checkStats, statsSummary } from "./stats";
 
@@ -174,7 +175,7 @@ export function checkSvg(svg: string): string | null {
   if (!tag.includes(`xmlns="${SVG_NS}"`) && !tag.includes(`xmlns='${SVG_NS}'`)) {
     return bad(`the <svg> needs xmlns="${SVG_NS}", or the picture shows nothing`);
   }
-  return null;
+  return checkPaint(svg);
 }
 
 /** The URL an <img> shows a drawing from. A data: URL and not a blob: URL:

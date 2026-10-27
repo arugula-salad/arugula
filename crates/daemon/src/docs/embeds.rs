@@ -20,6 +20,13 @@
 //!   and a `value` as text, with an optional `delta` and its `tone` (`up`,
 //!   `down` or `flat`) and no other keys.
 //!
+//! Both may name the Doc's colours (#256): a drawing's `fill`, `stroke`,
+//! `stop-color` and `color` take `leaf`, `leaf-soft`, … `paper-soft` (or a
+//! hex value, a function like `url(#g)`, or a CSS keyword), and a chart's
+//! optional `colors` names one of the six hues for each `y` series. The
+//! names and values are `web/src/shared/docs/colours.json`, which the client
+//! reads too (`web/src/shared/docs/colours.ts`).
+//!
 //! And the pictures (#965): `![alt](assets/<name>)` in a line of text. The
 //! client draws one as an `<img>` when the target is `assets/` and a plain
 //! file name ending in a picture extension, and everywhere else (`http://`,
@@ -36,6 +43,8 @@
 //! has them in TypeScript for a chart that arrives some other way. Both run over the files in
 //! `tests/fixtures/docs/` (`expect.json` says what each one must say), so
 //! they can't drift.
+
+use std::sync::LazyLock;
 
 use serde_json::Value;
 
@@ -54,6 +63,60 @@ pub const MAX_TILES: usize = 6;
 const TILE_TEXT: [(&str, usize); 3] = [("label", 40), ("value", 24), ("delta", 16)];
 /// The namespace an SVG needs to show in an `<img>`.
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
+
+/// The Doc's named colours (#256), the table the web client reads too.
+struct Colours {
+    /// A chart's six hues, in order.
+    hues: Vec<String>,
+    /// Every name a drawing may use: each colour and its `-soft` form.
+    names: Vec<String>,
+    /// The CSS keywords a drawing may use as well.
+    css: Vec<String>,
+}
+
+static COLOURS: LazyLock<Colours> = LazyLock::new(|| {
+    let t: Value = serde_json::from_str(include_str!("../../../../web/src/shared/docs/colours.json"))
+        .expect("colours.json is JSON");
+    let list = |k: &str| -> Vec<String> {
+        t[k].as_array().expect(k).iter().map(|v| v.as_str().expect(k).to_owned()).collect()
+    };
+    let names = list("names").iter().flat_map(|n| [n.clone(), format!("{n}-soft")]).collect();
+    Colours { hues: list("hues"), names, css: list("css") }
+});
+
+/// Whether a paint attribute's value is a colour a drawing can use: a name,
+/// a hex value, a function (`url(#g)`, `rgb(…)`) or a CSS keyword.
+fn is_colour(value: &str) -> bool {
+    let v = value.trim().to_ascii_lowercase();
+    let hex = v
+        .strip_prefix('#')
+        .is_some_and(|h| matches!(h.len(), 3 | 4 | 6 | 8) && h.bytes().all(|c| c.is_ascii_hexdigit()));
+    let function = v.ends_with(')')
+        && v.find('(').is_some_and(|at| at > 0 && v[..at].bytes().all(|c| c.is_ascii_lowercase() || c == b'-'));
+    v.is_empty() || hex || function || COLOURS.names.contains(&v) || COLOURS.css.contains(&v)
+}
+
+/// Each `fill`, `stroke`, `stop-color` and `color` attribute in a drawing's
+/// text, as `(attribute, value)`: an attribute is one of them after
+/// whitespace, then `=` and a quoted value.
+fn paints(svg: &str) -> Vec<(&str, &str)> {
+    let mut out = Vec::new();
+    for (at, ws) in svg.match_indices(char::is_whitespace) {
+        let rest = &svg[at + ws.len()..];
+        let Some(attr) = ["fill", "stroke", "stop-color", "color"].into_iter().find(|a| rest.starts_with(a)) else {
+            continue;
+        };
+        let Some(after) = rest[attr.len()..].trim_start().strip_prefix('=') else { continue };
+        let after = after.trim_start();
+        // The value runs to the next quote, which has to be the one it opened with.
+        let Some(q) = after.chars().next().filter(|c| matches!(c, '"' | '\'')) else { continue };
+        let value = &after[1..];
+        if let Some(end) = value.find(['"', '\'']).filter(|e| value[*e..].starts_with(q)) {
+            out.push((attr, &value[..end]));
+        }
+    }
+    out
+}
 
 /// A fence found in a body: `lang` is the first word after the mark (a
 /// drawing's alt text, the rest of that line, is only the client's), `code`
@@ -283,6 +346,19 @@ pub fn check_chart(source: &str) -> Result<Value, String> {
     let y_ok = (1..=MAX_SERIES).contains(&ys.len()) && ys.iter().all(|y| y.as_str().is_some_and(|s| !s.is_empty()));
     if !y_ok {
         return Err(bad(format!("y must be a key, or a list of 1 to {MAX_SERIES} keys")));
+    }
+    if let Some(colors) = obj.get("colors") {
+        let hues = COLOURS.hues.join(", ");
+        match colors.as_array() {
+            Some(c) if c.len() == ys.len() => {
+                if let Some(bad_one) =
+                    c.iter().find(|c| !c.as_str().is_some_and(|c| COLOURS.hues.iter().any(|h| h == c)))
+                {
+                    return Err(bad(format!("colors: {} is not one of {hues}", one_line(&bad_one.to_string()))));
+                }
+            }
+            _ => return Err(bad(format!("colors must name one colour for each y series, from {hues}"))),
+        }
     }
     let rows = match obj.get("rows").and_then(Value::as_array) {
         Some(r) if !r.is_empty() => r,
@@ -526,6 +602,13 @@ pub fn check_svg(svg: &str) -> Result<(), String> {
     if !tag.contains(&format!("xmlns=\"{SVG_NS}\"")) && !tag.contains(&format!("xmlns='{SVG_NS}'")) {
         return Err(bad(format!("the <svg> needs xmlns=\"{SVG_NS}\", or the picture shows nothing")));
     }
+    if let Some((attr, value)) = paints(svg).into_iter().find(|(_, v)| !is_colour(v)) {
+        return Err(bad(format!(
+            "{attr}=\"{}\" is not a colour: use one of {}, or a hex value like #3f6b2a",
+            value.trim(),
+            COLOURS.names.join(", ")
+        )));
+    }
     Ok(())
 }
 
@@ -721,6 +804,57 @@ mod tests {
         // Through a fence, with its alt text after the language.
         assert_eq!(check(&format!("```svg A box\n{}\n```", svg("<rect/>"))), Ok(()));
         assert!(check("```svg\n<p>hi</p>\n```").is_err());
+    }
+
+    #[test]
+    fn a_drawing_takes_the_named_colours_and_refuses_other_words() {
+        let svg = |inner: &str| format!("<svg xmlns=\"{SVG_NS}\" viewBox=\"0 0 10 10\">{inner}</svg>");
+        // Every name and its soft form, raw hex as before, and what CSS takes.
+        let names = COLOURS.names.iter().map(|n| format!("<rect fill=\"{n}\" stroke='{n}'/>")).collect::<String>();
+        for good in [
+            svg(&names),
+            svg("<rect fill=\"#e8f0fe\" stroke=\"#335\"/><stop stop-color=\"#11223344\"/>"),
+            svg("<rect fill=\"none\" stroke=\"currentColor\" color=\" Leaf \"/>"),
+            svg("<rect fill=\"url(#g)\" stroke=\"rgb(1, 2, 3)\"/><text fill=\"white\">plum</text>"),
+            svg("<rect fill-opacity=\"0.5\" stroke-width=\"2\" fill=\"\"/>"),
+        ] {
+            assert_eq!(check_svg(&good), Ok(()), "{good}");
+        }
+        for (bad, says) in [
+            (svg("<rect fill=\"leafy\"/>"), "fill=\"leafy\" is not a colour"),
+            (svg("<rect stroke='green-soft'/>"), "stroke=\"green-soft\" is not a colour"),
+            (svg("<stop stop-color=\"#12\"/>"), "stop-color=\"#12\" is not a colour"),
+            (svg("<g\n  color=\"pepper-strong\"/>"), "color=\"pepper-strong\""),
+        ] {
+            let e = check_svg(&bad).expect_err(&bad);
+            assert!(
+                e.starts_with("svg: ")
+                    && e.contains(says)
+                    && e.contains("leaf, leaf-soft, pepper")
+                    && !e.contains('\n'),
+                "{e}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_chart_names_a_hue_for_each_series() {
+        let spec = |colors: Value| json!({ "type": "bar", "x": "m", "y": ["a", "b"], "colors": colors, "rows": [{ "m": 1, "a": 1, "b": 2 }] });
+        assert_eq!(check(&chart(&spec(json!(["leaf", "stone"])))), Ok(()));
+        for (colors, says) in [
+            (
+                json!(["leaf"]),
+                "colors must name one colour for each y series, from leaf, pepper, sky, plum, sun, stone",
+            ),
+            (json!("leaf"), "one colour for each y series"),
+            (json!(["leaf", "green"]), "colors: \"green\" is not one of leaf, pepper"),
+            (json!(["leaf", "ink"]), "colors: \"ink\" is not one of"),
+            (json!(["leaf-soft", "sky"]), "colors: \"leaf-soft\" is not one of"),
+            (json!(["leaf", 3]), "colors: 3 is not one of"),
+        ] {
+            let e = check(&chart(&spec(colors.clone()))).expect_err(&colors.to_string());
+            assert!(e.starts_with("chart: ") && e.contains(says) && !e.contains('\n'), "{colors}: {e}");
+        }
     }
 
     #[test]
