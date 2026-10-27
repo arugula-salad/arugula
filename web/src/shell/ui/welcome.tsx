@@ -152,6 +152,13 @@ function greeted(): boolean {
   }
 }
 
+/** Getting started opened by itself on this page load. */
+let greetedNow = false;
+
+/** Getting started opens by itself on this load (or did): What's new
+ * stays shut then, so a first visit gets one panel, not two. */
+export const greetingDue = (client: Client) => greetedNow || (!client.state?.roles && !greeted());
+
 /** Open it the first time: once per account on control's page, once per
  * browser on a daemon's own. Not for a guest, and not under automation
  * (tests expect a clean first screen; welcome.spec.ts turns it back on). */
@@ -164,6 +171,7 @@ export function useFirstRun(client: Client) {
   useEffect(() => {
     if (!ready || !loaded || client.state?.roles || navigator.webdriver || greeted()) return;
     markSeen(SEEN);
+    greetedNow = true;
     openGettingStarted(undefined, client);
   }, [client, ready, loaded]);
 }

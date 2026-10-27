@@ -77,7 +77,7 @@ export async function toggleNotify(client: Client) {
 /** Notify this device, unless it is already (Getting started's Things to
  * try). */
 export async function turnOnPush(client: Client) {
-  if (push !== "on") await toggle(client);
+  if (push !== "on") await toggleNotify(client);
 }
 
 /** The kinds of push an account chooses on control, as the menu says them. */
