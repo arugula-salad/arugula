@@ -1978,6 +1978,17 @@ export class ControlSession {
     return api<PushPrefs>("/api/push/prefs", prefs);
   }
 
+  /** The account's prefs for its pages (hints seen, Tips, What's new:
+   * shared/seen.ts). */
+  async prefs() {
+    return api<Record<string, unknown>>("/api/me/prefs");
+  }
+
+  /** Set some (`null` takes one back); the rest stay. */
+  async setPrefs(changes: Record<string, unknown>) {
+    return api<Record<string, unknown>>("/api/me/prefs", changes);
+  }
+
   /** How a Client reaches daemon `id`. */
   target(id: string): E2ETarget | undefined {
     const d = this.daemons.find((x) => x.id === id);

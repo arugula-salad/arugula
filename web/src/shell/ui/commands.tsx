@@ -10,7 +10,7 @@ import { askText, type MenuItem } from "../../shared/ui/menu";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, shareSession } from "./people";
 import { hasChat } from "./places";
-import { newRemote, openChanges, openEditor, openIssue, openPort, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat, remoteHosts } from "../blocks";
+import { newRemote, openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat, remoteHosts } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { openPicker } from "./picker";
@@ -28,6 +28,7 @@ import { sessionThreadItems, threadItems } from "./threads";
 import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
 import { watchingNote } from "./shell/live";
+import { setTips, tipsOn } from "../../shared/seen";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -325,6 +326,13 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
     { header: "This device" },
     ...(client?.state ? notificationItems(client) : []),
     { label: "Appearance…", run: openAppearance },
+    // Hints from facts (shell/hints): the account's, through control.
+    {
+      label: "Tips",
+      hint: "A one-time mention when something you can use turns up, like a port listening in a pane",
+      checked: tipsOn(),
+      run: () => setTips(!tipsOn()),
+    },
     ...(client?.state
       ? [
           "separator" as const,
@@ -334,6 +342,16 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
       : []),
   ];
 }
+
+/** What a hint's action may name (shell/hints), by id: each takes what
+ * the hint's fact says. */
+export const COMMANDS: Record<string, (client: Client, args: Record<string, string | number>) => void> = {
+  /** A port listening in a pane, opened beside it with nothing asked. */
+  "port.open-beside": (client, { pane, port }) => {
+    const mine = client.machine(Number(pane));
+    openPortAt(client, { split: Number(pane), host: mine?.id, local: !mine }, Number(port));
+  },
+};
 
 /** The shown machine's settings: its standing permission rules (#166), its
  * usage and crash reports (M103) and its Labs flags (#665), the owner's.

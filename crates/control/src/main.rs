@@ -80,6 +80,7 @@ mod planter_import;
 mod platform_host;
 #[cfg(test)]
 mod platform_host_wire;
+mod prefs;
 mod previews;
 #[cfg(test)]
 mod previews_wire;
@@ -670,6 +671,7 @@ fn routes() -> Routes {
         .route("/api/push/subscribe", post(push::subscribe))
         .route("/api/push/unsubscribe", post(push::unsubscribe))
         .route("/api/push/prefs", get(push::prefs).post(push::set_prefs))
+        .route("/api/me/prefs", get(prefs::get).post(prefs::set))
         .route("/api/push/live/{id}", get(push_live::live))
         .route(wire::PUSH_SUBS, get(push::daemon_subs))
         .route(wire::PUSH, post(push::daemon_send))

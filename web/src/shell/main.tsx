@@ -49,6 +49,7 @@ import { setupDesktop, tauriInvoke } from "../shared/desktop";
 import { installKeys } from "./ui/keys";
 import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
+import { accountBackend, localBackend, setSeenBackend } from "../shared/seen";
 import { followMachine, machineTelemetryChanged, MachineTelemetryLayer } from "./ui/machine-telemetry";
 
 // Served by Arugula control (M17), not a daemon: sign in, enroll this
@@ -94,6 +95,9 @@ if (info && linkMatch) {
 }
 // S33: lend this device's tools to agents, if it was turned on.
 setLending(session);
+// What this person has seen (hints, What's new): the account's once it's
+// signed in on control's page, else this browser's.
+if (!session) setSeenBackend(localBackend());
 if (session) {
   setHostMenuExtras(() => controlMenuItems(session));
   setAccount({
@@ -134,6 +138,7 @@ if (session) {
         ),
       () => {},
     );
+  let seenAccount = "";
   session.subscribe(() => {
     directory.setControl(
       session.daemons.map((d) => ({
@@ -149,6 +154,10 @@ if (session) {
     );
     // M123: chat is control's, once the account is in (it asks whether
     // control's `chat` flag is on for it).
+    if (session.phase === "ready" && session.account && seenAccount !== session.account) {
+      seenAccount = session.account;
+      setSeenBackend(accountBackend(() => session.prefs(), (c) => session.setPrefs(c)));
+    }
     if (session.phase === "ready" && session.account) {
       const roster = session.teams.flatMap((t) => t.roster.members.filter((m) => m.account === session.account).map((m) => m.name));
       chat.start(session.account, [session.login, session.name, ...roster]);
