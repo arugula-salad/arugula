@@ -880,7 +880,8 @@ session's thread starts a read-only session that's given the session's
 pushed diff (read from GitHub with the App's read token) and the thread,
 both fenced as data: its box runs no finish step and pushes nothing, the
 platform mints it no push token, and its reply is posted in the thread as
-its asker's, after which it ends.
+the review session's own message (no author, `via` `said:<ses>`: not its
+asker's words, Arugula #215), after which it ends.
 
 **What control can do with sessions:** what it can with runs, on that
 project's hosted box: it chooses what each turn is told. **What it can't:**

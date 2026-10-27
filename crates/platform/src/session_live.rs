@@ -132,6 +132,10 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &SessionReport) -> any
             if let Err(e) = crate::sessions::answer::reported(app, &s, &events) {
                 warn!(session = s.id, error = %format!("{e:#}"), "a turn's answer");
             }
+            // A turn typed in its block says so in its thread (Arugula #215).
+            if let Err(e) = crate::sessions::typed::reported(app, &s, &events).await {
+                warn!(session = s.id, error = %format!("{e:#}"), "a turn typed in its block");
+            }
             // What its agent asks now is an ask for its asker (Arugula #214).
             crate::sessions::asks::opened(app, &s, &events).await;
             Ok(Reported::Taken)

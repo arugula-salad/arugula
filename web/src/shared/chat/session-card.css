@@ -544,3 +544,50 @@ a.session-card-id:hover {
   padding: 3px 8px;
   font-family: inherit;
 }
+
+/* What an agent session said in its thread (Arugula #215): a turn's answer
+   or a review, the session's own message, never a person's. Each channel
+   says it's the session's, not the asker's:
+
+   element      what it shows
+   ------------ ---------------------------------------------------------
+   rule         an agent session wrote it (the accent its card works in)
+   mark         its agent, on the session's tone: CC Claude Code, Cx Codex
+   mono name    its agent and short id, linked to its page
+   badge        "agent session", or "review" for a review */
+
+.thread-msg.by-session .msg-body {
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+}
+
+.thread-msg.by-session .said-name {
+  color: var(--accent);
+  font-family: var(--f-mono, ui-monospace, Menlo, monospace);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.thread-msg.by-session a.said-name:hover {
+  text-decoration: underline;
+}
+
+.msg-avatar.said-avatar {
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font: 700 11px var(--f-mono, ui-monospace, Menlo, monospace);
+  box-sizing: border-box;
+}
+
+.msg-badge.said-badge {
+  white-space: nowrap;
+  padding: 0 var(--space-1);
+  border-radius: var(--tag-radius);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

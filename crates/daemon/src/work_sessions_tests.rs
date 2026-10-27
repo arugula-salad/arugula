@@ -464,3 +464,27 @@ fn a_questions_choices_go_to_the_card() {
     let s = seen(&json!({ "asks": [one] }));
     assert_eq!(s.open, Some(("question", "q1".into(), "Which colour?".into(), vec!["Red".into(), "Blue".into()])));
 }
+
+/// A turn typed in the block (Arugula #215): who typed it and what, cut,
+/// by the block's turn number, or its queue's head before it starts; a
+/// turn the agent woke for typed nothing.
+#[test]
+fn what_was_typed_in_the_block_is_its_turns() {
+    let long = "x".repeat(TYPED_MAX + 50);
+    // `recent_turns` is newest first: turns 3, 2 and 1 of 4 (0 is gone).
+    let s = seen(&json!({
+        "turns": 4,
+        "recent_turns": [
+            { "prompt": crate::agent::WOKEN },
+            { "prompt": long, "by": "ann" },
+            { "prompt": "  fix the README \n", "by": "bo" },
+        ],
+        "queued": ["and the changelog"],
+    }));
+    assert_eq!((s.by_at(1), s.typed_at(1).as_deref()), (Some("bo".into()), Some("fix the README")));
+    assert_eq!(s.typed_at(2).map(|t| t.chars().count()), Some(TYPED_MAX), "cut");
+    assert_eq!(s.typed_at(3), None, "the agent woke itself");
+    assert_eq!(s.typed_at(0), None, "too old to say");
+    assert_eq!(s.typed_at(4).as_deref(), Some("and the changelog"), "not started: the queue's head");
+    assert_eq!(s.typed_at(5), None);
+}

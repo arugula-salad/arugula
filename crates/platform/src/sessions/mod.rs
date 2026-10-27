@@ -13,6 +13,8 @@
 //! - [`review`]: `@codex review`, a read-only session that reviews one's
 //!   pushed diff and posts what it found in the thread (M264).
 //! - [`answer`]: each turn's last message, posted in its thread.
+//! - [`typed`]: a turn someone typed in its block, said in its thread
+//!   (Arugula #215).
 //! - [`merged`]: its PR merged, so its thread is done (M265).
 //! - [`pool`]: which of the project's workspaces it runs on (Arugula
 //!   #214), and [`moves`], Move to… another.
@@ -42,3 +44,4 @@ pub mod pr;
 pub mod push;
 pub mod review;
 pub mod tries;
+pub mod typed;

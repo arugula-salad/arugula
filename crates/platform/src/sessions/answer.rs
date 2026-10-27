@@ -13,9 +13,12 @@
 //! - **In the thread only**: a reply in the session's thread, not also
 //!   sent to the channel; in an object's thread (an issue's), a message in
 //!   its list.
-//! - **Whose:** its asker's, `via` `session:<ses>`, as a review's post is
-//!   its asker's (aru-115: a session's turns are its asker's). With an
-//!   author it isn't drawn as the session's card, which has none.
+//! - **Whose:** the session's, not a person's (Arugula #215): no author,
+//!   `via` `said:<ses>` (`said_via`), as a review's post is. The page
+//!   draws it with the session's look, apart from people's and from the
+//!   session's card (`via` `session:<ses>`). Its turns are still its
+//!   asker's (aru-115), but the words are the agent's: they aren't
+//!   counted as the asker's own anywhere (`chat::sessions::own`).
 //! - **Cut from its start** to its last [`ANSWER_MAX`] characters (Arugula
 //!   #215): a final message ends with its summary and caveats, which are
 //!   what the thread must not lose. It starts with a line linking the
@@ -34,7 +37,7 @@
 //!   prompts a session (`chat::sessions::posted` isn't called for it).
 
 use anyhow::Result;
-use arugula_control_wire::sessions::card_via;
+use arugula_control_wire::sessions::said_via;
 use tracing::info;
 
 use crate::{
@@ -112,7 +115,7 @@ pub fn reported(app: &Platform, s: &Session, events: &[Event]) -> Result<()> {
         let Some(text) = answer(&d, &link) else { continue };
         let Some(room) = app.db.chat_room(&s.room)? else { continue };
         let thread = if threaded(&room.kind) { s.parent_seq } else { 0 };
-        let seq = super::review::post(app, &room, thread, &s.asker, &card_via(&s.id), &text)?;
+        let seq = super::review::post(app, &room, thread, "", &said_via(&s.id), &text)?;
         info!(session = s.id, n = ?e.daemon_n, seq, "a session's turn: its answer posted in its thread");
     }
     Ok(())
