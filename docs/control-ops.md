@@ -1033,6 +1033,30 @@ give. It prints account ids, device ids and names only:
 fly ssh console -a illogical-control -C "/arugula-control device-review --db /data/control.db"
 ```
 
+### Resetting an account's devices (aru-119)
+
+For someone none of whose devices can approve and who has no recovery code
+left (#1582): support checks who's asking by its own means, then resets
+the account's devices. Read what it would do first:
+
+```
+fly ssh console -a illogical-control -C "/arugula-control account-reset --account ACCOUNT --by NAME --why 'ticket N: how we checked' --db /data/control.db"
+```
+
+It lists the devices the account loses and changes nothing. Add `--yes`
+to do it. In one transaction every device and revocation of the account
+is archived in `account_resets` (with `--by` and `--why`) and its root is
+cleared. Then tell the person:
+
+- Sign in at control in a browser: it becomes the account's first device
+  and shows new recovery codes to keep.
+- Each machine is dropped (it keeps its pin of the old root) and shows
+  *Join again*: approve its code from the new browser.
+- Teammates see that your key changed, and check it again.
+- Anything end to end encrypted to the old devices can't be read.
+
+A second reset within a week is refused unless `--again`.
+
 ### Deploys
 
 Each release tag deploys control (M133, #1129). It's automatic, with no

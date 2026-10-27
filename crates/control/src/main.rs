@@ -12,6 +12,7 @@
 //! (`arugula_platform::chat`, M138), behind this hub's gate.
 
 mod account;
+mod account_reset;
 mod activity;
 #[cfg(test)]
 mod activity_wire;
@@ -904,7 +905,8 @@ pub fn origin_of(url: &str) -> anyhow::Result<String> {
 fn main() -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
     // database (census.rs), with no server; `device-review` another
-    // (device_review.rs). `maintenance`: the switch
+    // (device_review.rs). `account-reset`: support's reset of an account's
+    // devices (account_reset.rs, aru-119). `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
     // `notice`: a notice for every account (notice.rs). `issuer`: the
     // issuer's keys and clients (issuer.rs). `import planter`: planter's
@@ -917,6 +919,9 @@ fn main() -> anyhow::Result<()> {
     }
     if argv.peek().is_some_and(|a| a == "device-review") {
         return device_review::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "account-reset") {
+        return account_reset::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "maintenance") {
         return maintenance::run(argv.skip(1));
