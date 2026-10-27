@@ -5,10 +5,18 @@
 // "Use Claude Code with Arugula"). Only the owner's own daemon is asked
 // (`/api/setup?part=agents`), once per page; each adapter's pin is said
 // once per browser, so a release that moves the pin says it again.
+//
+// And a terminal's: Claude Code waits in it for you, and none of Arugula's
+// hooks has spoken from it (`PaneInfo.unhooked`, the daemon's word), so its
+// questions stay on its screen. A one-line chip on the pane says they could
+// be cards, with Set up: the same one click (`POST
+// /api/setup/agents/claude`, which installs the hooks too). A one-off for
+// now, kept apart so it can move into the hints when they come.
 
 import { opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
+import type { PaneId } from "../../shared/proto";
 import { adapterReady, type Adapter } from "./adapter";
 import { openGettingStarted } from "./welcome";
 
@@ -16,7 +24,13 @@ const SAID_KEY = "arugula.agents-nudge";
 
 /** `GET /api/setup?part=agents`. */
 interface AgentsSetup {
-  claude: { installed: boolean; tools: boolean; /** #505: registered as `illogical` (works until set up again). */ old?: boolean };
+  claude: {
+    installed: boolean;
+    tools: boolean;
+    /** #505: registered as `illogical` (works until set up again). */ old?: boolean;
+    /** Arugula's hooks are in Claude Code's settings (absent: an older daemon). */
+    hooks?: boolean;
+  };
   adapters?: Adapter[];
 }
 
@@ -43,8 +57,15 @@ export function nudged(s: AgentsSetup | null): Adapter[] {
   return (s?.adapters ?? []).filter((a) => a.found && !adapterReady(a));
 }
 
-function line(a: Adapter, tools: boolean): string {
-  const mcp = a.kind === "claude" && !tools ? ", and Arugula's MCP server lets it start its helpers as panes" : "";
+function line(a: Adapter, tools: boolean, hooks: boolean): string {
+  const mcp =
+    a.kind !== "claude"
+      ? ""
+      : !tools
+        ? `, and Arugula's MCP server lets it start its helpers as panes${hooks ? "" : " (its hooks put its questions on cards)"}`
+        : !hooks
+          ? ", and its hooks put its questions on cards"
+          : "";
   if (a.state === "installed") return `${a.label}'s adapter here is ${a.version}, older than this Arugula's (${a.pinned})${mcp}.`;
   if (a.state === "no_node") return `${a.label} is on this machine, but agent panes can't run it: ${a.why ?? `its adapter needs Node ${a.node_major}+`}.`;
   return `${a.label} is on this machine, but agent panes need its adapter${mcp}.`;
@@ -71,11 +92,12 @@ export function AgentsNudge({ client }: { client: Client }) {
   }, [mine]);
   if (!shown.length || !setup) return null;
   const tools = setup.claude.tools;
+  const hooks = setup.claude.hooks !== false;
   return (
     <div class="agents-nudge" role="status" data-agents-nudge={shown.map((a) => a.kind).join(" ")}>
       <p>
         {shown.map((a) => (
-          <span key={a.kind}>{line(a, tools)} </span>
+          <span key={a.kind}>{line(a, tools, hooks)} </span>
         ))}
       </p>
       <div class="agents-nudge-actions">
@@ -93,6 +115,85 @@ export function AgentsNudge({ client }: { client: Client }) {
           Not now
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Whether Claude Code's settings have Arugula's hooks, as the daemon last
+ * said (`/api/setup?part=agents`): asked once per page, when a chip would
+ * show. */
+let hooksHere: Promise<boolean> | null = null;
+
+function hooksInstalled(): Promise<boolean> {
+  hooksHere ??= fetch(`${opPath("setup.get")}?part=agents`)
+    .then((r) => (r.ok ? (r.json() as Promise<AgentsSetup>) : null))
+    .then((s) => s?.claude.hooks !== false)
+    .catch(() => true);
+  return hooksHere;
+}
+
+/** Panes whose chip was put away, for this page. */
+const putAway = new Set<PaneId>();
+
+/** The chip on a terminal where Claude Code waits for you and no hook has
+ * spoken from it: only the owner's own daemon can set it up, and only
+ * while its settings lack the hooks (a Claude started before them needs a
+ * restart, which Set up can't do). */
+export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
+  const info = client.info(id);
+  const mine = !client.e2e && !client.state?.roles;
+  const wants = mine && !!info?.unhooked && info.attention === "needs_input" && !putAway.has(id);
+  const [missing, setMissing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => {
+    if (!wants) return;
+    let live = true;
+    void hooksInstalled().then((has) => live && setMissing(!has));
+    return () => {
+      live = false;
+    };
+  }, [wants]);
+  if (!wants || (!missing && !said)) return null;
+  const setUp = async () => {
+    setBusy(true);
+    const o = await fetch(opPath("setup.agent", { kind: "claude" }), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+      .then((r) => r.json() as Promise<{ ok: boolean; error?: string; done?: string[] }>)
+      .catch((e: unknown) => ({ ok: false, error: String(e), done: [] }));
+    setBusy(false);
+    if (o.ok) {
+      hooksHere = Promise.resolve(true);
+      setMissing(false);
+    }
+    const hooks = o.done?.find((d) => d.includes("hooks")) ?? o.done?.[0];
+    setSaid({ ok: o.ok, text: o.ok ? `${hooks ?? "Set up."} Start Claude again here to use them.` : (o.error ?? "Setting it up didn't work.") });
+  };
+  return (
+    <div class="hooks-chip" role="status" data-hooks-chip={said ? (said.ok ? "done" : "failed") : "offer"} onPointerDown={(e) => e.stopPropagation()}>
+      <span>{said ? said.text : "Its questions could be cards here and on your phone."}</span>
+      {!said && (
+        <button class="primary" disabled={busy} onClick={() => void setUp()} data-hooks-chip-setup>
+          {busy ? "Setting up…" : "Set up"}
+        </button>
+      )}
+      {said && !said.ok && (
+        <button class="link" onClick={() => openGettingStarted("agents", client)}>
+          Getting started…
+        </button>
+      )}
+      <button
+        class="link"
+        aria-label="Hide"
+        title="Hide"
+        onClick={() => {
+          putAway.add(id);
+          setSaid(null);
+          setMissing(false);
+        }}
+        data-hooks-chip-hide
+      >
+        ✕
+      </button>
     </div>
   );
 }

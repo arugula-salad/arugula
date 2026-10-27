@@ -13,7 +13,7 @@ import { render } from "preact";
 // here too, it becomes a chunk the app shares, linked after the app's own
 // CSS, which turns the app's cascade around.
 import "./doc-view.css";
-import { DocBlock, type DocState } from "./blocks/doc-render";
+import { DocBlock, type DocState } from "../shared/docs/doc-render";
 import { Broken, keyFromHash, openSnapshot, toBase64, type Opened } from "./doc-link";
 
 type View =
@@ -111,6 +111,13 @@ function Page({ view }: { view: View }) {
   }
   return <DocBlock id={0} s={view.state} fresh={new Map()} load={view.load} />;
 }
+
+// The Doc's own look (#253) has a light set and a dark one, which style.css
+// picks by `data-scheme`, as in the app; here the reader's system decides.
+const light = matchMedia("(prefers-color-scheme: light)");
+const scheme = () => (document.documentElement.dataset.scheme = light.matches ? "light" : "dark");
+scheme();
+light.addEventListener("change", scheme);
 
 const root = document.getElementById("root")!;
 const draw = (view: View) => {

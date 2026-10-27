@@ -1,4 +1,4 @@
--- 0064: a board row may point at a link (boards, evidence on PROOFS rows,
+-- 0065: a board row may point at a link (boards, evidence on PROOFS rows,
 -- Arugula #191). `target_kind` gains `link`, and `target` holds the URL
 -- (`https` only, at most 2048 bytes, no userinfo: `boards::pointer_ok`
 -- has the rules). Nothing else changes.

@@ -1510,6 +1510,10 @@ anyone. Never from the desktop app's window (`sessions.via = app`), and:
   signed in and its User-Agent (what a session says its device is is a
   claim), and the passkey keeps both.
 
+Linking GitHub adds a way to sign in the same way, so it is never from the
+desktop app's window either (`github_link::start` answers 403 to a
+`via = app` session, #235): link it in a browser or on a phone.
+
 Sessions made before `via` that look like the app's window (they said
 they're one of its devices, or their User-Agent names it) are marked
 `app` when the column comes.
@@ -1587,6 +1591,14 @@ sleeps, and control pushes and searches them itself.
   roster); owners and editors open, edit and close them, and viewers read
   and comment. Anyone who reads a project exports its issues as JSON or
   Markdown.
+- **Project Docs (aru-118):** a project's own Docs, a title and sections
+  of Markdown, in plain text on the platform, like its issues: control
+  reads them. Unlike a machine's Doc and its share link (#1064), which stay
+  on the machine and reach control only encrypted, a project Doc never was
+  on a machine. The project's members read them; owners and editors make,
+  write and delete them, viewers read. An agent session on a Cloud workspace
+  makes them with its asker's rights and writes only its own. Nothing
+  shares one outside its project.
 - **Threads on objects (M196):** a room on one object, in the object's
   project: a native issue, or a linked repo's mirrored PR or issue. Those
   who read the object read its thread (for a private repo's item, only
@@ -1627,17 +1639,19 @@ sleeps, and control pushes and searches them itself.
   reactions and pin; a room's go with the room. Nobody deletes a single
   issue: a project's issues and their threads go when the project does
   (with its account, or its disbanded team). The issues an account opened
-  in a project that stays keep their text, naming no author.
+  in a project that stays keep their text, naming no author. A project
+  Doc goes when an owner or editor deletes it, or with its project; one
+  an account made in a project that stays keeps its text, naming no maker.
   Litestream's copies age out with the rest of control's backups.
 
 ## What control stores
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 142 tables in two planes ("Two planes, two trust rules"):
+Control's database has 145 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (44 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (98 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The machine plane** (45 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The platform plane** (100 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1674,6 +1688,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `hosted_machines` | metadata | A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), its addresses, when it was last seen and removed. | yes |  |
 | `push_subs` | metadata | A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to. The desktop app's is at control's own live endpoint, with the hash of the token it listens with and when it last did. | yes |  |
 | `push_prefs` | metadata | Which kinds of push an account turned off: chat, its machines, or its projects. | yes |  |
+| `account_prefs` | metadata | An account's small preferences for its pages, as the page names them: which hints it has seen, whether tips are on, the last version What's new showed. | yes |  |
 | `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation. | nothing of one |  |
 | `notices` | metadata | A notice for an account with no push, made from names control holds ("Ada left Acme"). | yes |  |
 | `labs_flags` | metadata | The Labs flags an account or a team turned on for its machines. | yes: a team's go when the team does. | PostHog |
@@ -1765,6 +1780,8 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `session_feedback_items` | **plaintext** | What a session's feedback gathered (M260), each once: a failed check's name, conclusion, link, the GitHub App that ran it and the end of its output, or a review's text and its inline comments' text with their file and line, as GitHub's webhook brought them. | A session's CI round or review is gathered from GitHub's webhooks with every person's machine asleep. | nothing of one: gitHub's text, not an account's. Those of sessions that go, go. | E2B, Anthropic |
 | `boards` | **plaintext** | A project's live status board: its title, who made it and when. | A board shows on a teammate's phone with every machine asleep. | partly: those of projects that go with it go. The rest stay, with no creator. |  |
 | `board_entries` | **plaintext** | A board's zones and rows, in order: a zone's title and kind (proofs is last); a row's one-line note, its status, and what it points at (a forge item, an issue, a run or a Cloud workspace by id, or an agent block by machine and pane); each with its rev, which a write must name; and, for a row an agent added, its machine. | A board's rows are read and edited from a phone with every machine asleep. | partly: those of projects that go with it go. The rest stay: they name no account. |  |
+| `project_docs` | **plaintext** | A project's own Doc (aru-118): its title, who made it (a person, or an agent session by its id), how many times it changed, and when it was made and last changed. | A teammate reads a project's Doc on their phone with every machine asleep, and a session's agent on a Cloud workspace writes one. | partly: those of projects that go with it go. The rest stay, with no maker. |  |
+| `project_doc_sections` | **plaintext** | A project Doc's sections, in order: each one's heading, its intent while it's pending, its Markdown once it's written, and how many times it was written. | A project's Docs are read and written with every machine asleep. | partly: those of projects that go with it go. The rest stay: they name no account. |  |
 | `board_block_states` | **plaintext** | What a machine says of one of its own agent blocks, for the board rows that point at it: the state word (working, needs input, idle or closed), the branch, the short HEAD, whether it is pushed, the number of uncommitted files and the diffstat as three numbers. Never message text, file names, prompts or a transcript (aru-116). Set under the machine's boards.write grant, and shown only on boards of a project that grant covers. | A board shows what an agent was doing on a teammate's phone with its machine asleep. | yes: those of its machines. |  |
 | `deploy_approvals` | metadata | A deploy's approvals and denies (M218): S37's work approval over the deploy's operation (its environment, plan's digest, source and planned event's hash), signed by a project owner's device. Which deploy, its event in the log, the decision, the operation's hash, the approver's account, the device that signed and its name then, by when the apply must start, the signature, the passkey assertion the hub checked over the approval (credential id, clientDataJSON, authenticatorData, signature), and when; and when a start used it up, by which run (M219). | An owner approves a deploy from their phone and a driver run checks it, with every machine asleep. | partly: those of projects that go with it go. The rest are kept as signed, the account's id in them included, as its events are: rewriting one would break its signature. |  |
 | `deploy_runs` | metadata | The run that applies an approved deploy (M219): which deploy and run, the approval it applies, the hosted workspace it runs on, the environment's driver then, when it was made, when its machine was given the environment's secrets (once), and when the project's owners were told its apply failed (once). No secret: those are sealed in project_secrets and given only to the run's machine, while it runs. | A deploy's run applies it on the project's hosted workspace, and its log takes the deploy's start only from that run, with every owner's device asleep. | partly: those of deploys that go with its projects go. |  |

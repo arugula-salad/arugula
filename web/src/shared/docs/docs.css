@@ -1,0 +1,82 @@
+/* A project's Docs (aru-118) on the platform page (platform/pages/docs.tsx).
+   The Doc itself is drawn by the Doc block's renderer, with its styles
+   (../style.css's .doc); this is the page around it and the writer's form.
+   It fits a phone. */
+
+.project-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* The block fills its pane; on the page it's as tall as what it says, a
+   sheet of the Doc's own paper (#253). */
+.project-doc .doc {
+  flex: none;
+  overflow: visible;
+  border-radius: 10px;
+}
+
+.project-doc-head {
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 16px;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+.project-doc-row {
+  font-size: 12px;
+}
+
+.project-doc-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 760px;
+  min-width: 0;
+  margin-top: 14px;
+}
+
+.project-doc-form input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.project-doc-writer {
+  width: 100%;
+  margin: 0 auto;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  flex-direction: column;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.project-doc-writer textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono, monospace);
+}
+
+.project-doc-writer select {
+  max-width: 100%;
+}
+
+.project-doc-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.project-doc-confirm {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  background: var(--surface);
+}

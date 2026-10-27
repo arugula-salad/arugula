@@ -247,6 +247,8 @@ impl Daemon {
                 let _ = reply.send(self.guest_behind(pane));
             }
             Api::Ask(pane, ask, reply) => {
+                // A terminal's question comes from `arugula ask`, a hook.
+                self.heard_hook(pane);
                 let _ = reply.send(self.ask(pane, *ask));
             }
             Api::Holds(pane, reply) => {

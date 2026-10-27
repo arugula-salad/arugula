@@ -341,6 +341,15 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "account_prefs"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "An account's small preferences for its pages, as the page names them: which hints it has seen, whether tips are on, the last version What's new showed."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "settings"
 plane = "machine"
 process = "hub"
@@ -1246,6 +1255,28 @@ process = "platform"
 holds = "plaintext"
 what = "A board's zones and rows, in order: a zone's title and kind (proofs is last); a row's one-line note, its status, and what it points at (a forge item, an issue, a run or a Cloud workspace by id, or an agent block by machine and pane); each with its rev, which a write must name; and, for a row an agent added, its machine."
 why_asleep = "A board's rows are read and edited from a phone with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest stay: they name no account."
+seen_by = ["litestream"]
+
+[[table]]
+name = "project_docs"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A project's own Doc (aru-118): its title, who made it (a person, or an agent session by its id), how many times it changed, and when it was made and last changed."
+why_asleep = "A teammate reads a project's Doc on their phone with every machine asleep, and a session's agent on a Cloud workspace writes one."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest stay, with no maker."
+seen_by = ["litestream"]
+
+[[table]]
+name = "project_doc_sections"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A project Doc's sections, in order: each one's heading, its intent while it's pending, its Markdown once it's written, and how many times it was written."
+why_asleep = "A project's Docs are read and written with every machine asleep."
 with_account = "partly"
 note = "Those of projects that go with it go. The rest stay: they name no account."
 seen_by = ["litestream"]

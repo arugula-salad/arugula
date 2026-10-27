@@ -271,10 +271,17 @@ pub fn moves(
 }
 
 /// Whether `url` is control's own sign-in, which can't finish in the
-/// window (GitHub's pages, passkeys): the app's sign-in takes over.
+/// window (GitHub's pages, passkeys): the app's sign-in takes over. Not a
+/// link (`link=1`, as control reads it): that is the signed-in account
+/// adding GitHub, not signing in (#235).
 pub fn is_control_signin(url: &tauri::Url) -> bool {
     let Some(c) = control() else { return false };
-    url.as_str().starts_with(&format!("{c}/auth/github"))
+    signs_in_at(&c, url)
+}
+
+fn signs_in_at(control: &str, url: &tauri::Url) -> bool {
+    let link = url.query_pairs().any(|(k, v)| k == "link" && matches!(&*v, "1" | "true"));
+    url.as_str().starts_with(&format!("{control}/auth/github")) && !link
 }
 
 /// The app's own window dragging (#316), on every page in its windows.
@@ -650,6 +657,18 @@ mod tests {
         assert!(!associated_with("", &d));
         let script = init_script();
         assert!(script.contains("if (true && "), "the button stays hidden: {script}");
+    }
+
+    /// Sign-in leaves the window; a link of the signed-in account's GitHub
+    /// doesn't (#235).
+    #[test]
+    fn a_github_link_is_not_a_sign_in() {
+        let c = "https://control.test";
+        assert!(signs_in_at(c, &url("https://control.test/auth/github")));
+        assert!(signs_in_at(c, &url("https://control.test/auth/github?next=/a%3Flink%3D1")));
+        assert!(!signs_in_at(c, &url("https://control.test/auth/github?link=1&next=/")));
+        assert!(!signs_in_at(c, &url("https://control.test/auth/github?next=/&link=true")));
+        assert!(!signs_in_at(c, &url("https://elsewhere.test/")));
     }
 
     #[test]

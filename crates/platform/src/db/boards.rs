@@ -183,6 +183,9 @@ fn pointer_cols(p: &Pointer) -> (Option<&'static str>, Option<&str>, Option<&str
     }
 }
 
+/// A kind this build doesn't know (one a newer build wrote, before a
+/// rollback) reads as no pointer, so the board still reads; its row keeps
+/// the stored columns, which a status change or a move leaves alone.
 fn pointer_of(kind: Option<String>, target: Option<String>, pane: Option<String>) -> Result<Pointer> {
     Ok(match (kind.as_deref(), target, pane) {
         (None, ..) => Pointer::None,
@@ -192,7 +195,10 @@ fn pointer_of(kind: Option<String>, target: Option<String>, pane: Option<String>
         (Some("workspace"), Some(id), _) => Pointer::Workspace { id },
         (Some("block"), Some(machine), Some(pane)) => Pointer::Block { machine, pane },
         (Some("link"), Some(url), _) => Pointer::Link { url },
-        (Some(k), ..) => bail!("a board row pointing at {k:?}"),
+        (Some("forge_item" | "issue" | "run" | "workspace" | "block" | "link"), ..) => {
+            bail!("a board row's pointer is missing its target")
+        }
+        (Some(_), ..) => Pointer::None,
     })
 }
 
@@ -393,13 +399,21 @@ impl Db {
                     if rev != old.rev {
                         return Ok(Err(Refused::Stale { rev: old.rev }));
                     }
-                    let (kind, target, pane) =
-                        p.pointer.map(pointer_cols).unwrap_or_else(|| pointer_cols(&old.pointer));
-                    tx.execute(
-                        "UPDATE board_entries SET rev = rev + 1, title = ?2, note = ?3, target_kind = ?4, target = ?5, pane = ?6,
-                             updated_at = ?7 WHERE id = ?1",
-                        params![id, p.title.unwrap_or(&old.title), p.note.unwrap_or(&old.note), kind, target, pane, at],
-                    )?;
+                    let (title, note) = (p.title.unwrap_or(&old.title), p.note.unwrap_or(&old.note));
+                    // Without a new pointer, the stored one is left as it is
+                    // (one this build can't read included).
+                    if let Some((kind, target, pane)) = p.pointer.map(pointer_cols) {
+                        tx.execute(
+                            "UPDATE board_entries SET rev = rev + 1, title = ?2, note = ?3, target_kind = ?4, target = ?5, pane = ?6,
+                                 updated_at = ?7 WHERE id = ?1",
+                            params![id, title, note, kind, target, pane, at],
+                        )?;
+                    } else {
+                        tx.execute(
+                            "UPDATE board_entries SET rev = rev + 1, title = ?2, note = ?3, updated_at = ?4 WHERE id = ?1",
+                            params![id, title, note, at],
+                        )?;
+                    }
                 }
                 if let Some(s) = p.status {
                     tx.execute(

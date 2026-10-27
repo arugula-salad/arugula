@@ -158,3 +158,57 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
 @container (max-width: 420px) {
   .grid.pane-chrome .pane-header-sized-what { display: none; }
 }
+
+/* A hint about the pane (shell/hints): one line, its action and ×. */
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--chip-radius);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--fg);
+  font-size: 11px;
+  cursor: default;
+}
+.hint button {
+  height: 18px;
+  padding: 0 8px;
+  border-radius: var(--chip-radius);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hint .hint-act {
+  background: var(--accent);
+  color: var(--on-color);
+  font-weight: 600;
+}
+.hint .hint-dismiss {
+  padding: 0 4px;
+  background: none;
+  color: var(--dim);
+}
+.hint .hint-dismiss:hover { color: var(--fg); }
+.grid.pane-chrome .hint-chip {
+  flex: none;
+  height: 22px;
+  padding: 0 2px 0 8px;
+}
+@container (max-width: 420px) {
+  .grid.pane-chrome .hint-chip .hint-copy { display: none; }
+}
+.hint-toast {
+  position: fixed;
+  z-index: 70;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  padding: 6px 6px 6px 12px;
+  box-shadow: 0 8px 28px #0006;
+}
+.hint-empty {
+  margin-top: 12px;
+  padding: 4px 4px 4px 10px;
+}

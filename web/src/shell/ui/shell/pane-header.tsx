@@ -12,6 +12,7 @@ import { drop } from "../panes/drop";
 import { len } from "../panes/geometry";
 import { layoutRefusal, ordinal, toggleFocus } from "../panes/layout";
 import { BranchIcon, MoreIcon } from "./icons";
+import { HintChip } from "../hints";
 
 /** What kind of pane it is, in a word. */
 export function paneType(info: PaneInfo | undefined): string {
@@ -163,6 +164,7 @@ export function PaneHeader({
         </span>
       )}
       <span class="pane-header-fill" />
+      <HintChip client={client} pane={id} />
       {sizedElsewhere && (
         <span class="pane-header-sized" data-sized-elsewhere title="Another window set this tab's size">
           <span class="pane-header-sized-what">Sized by another window</span>

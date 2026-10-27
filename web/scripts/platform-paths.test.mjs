@@ -147,3 +147,12 @@ test("an agent session (M257)", () => {
   assert.deepEqual(parse(pathOf({ page: "session", project: P, session: S })), { page: "session", project: P, session: S });
   for (const p of [`/p/${P}/sessions`, `/p/${P}/sessions/run_00ff11ee`, `/p/${P}/sessions/${S}/x`]) assert.equal(parse(p).page, "missing", p);
 });
+
+test("a project's Docs and one Doc (aru-118)", () => {
+  const D = "pdc_0123456789abcdef0123456789abcdef";
+  assert.deepEqual(parse(`/p/${P}/docs`), { page: "docs", project: P });
+  assert.deepEqual(parse(`/p/${P}/docs/${D}`), { page: "doc", project: P, doc: D });
+  assert.deepEqual(parse(`/p/${P}/docs/${D}-release-plan`), { page: "doc", project: P, doc: D });
+  assert.equal(pathOf({ page: "doc", project: P, doc: D }, (id) => (id === D ? "Release plan" : undefined)), `/p/${P}/docs/${D}-release-plan`);
+  for (const p of [`/p/${P}/docs/brd_00ff11ee`, `/p/${P}/docs/${D}/x`]) assert.equal(parse(p).page, "missing", p);
+});

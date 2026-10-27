@@ -111,9 +111,11 @@ pub struct Issue {
     /// A closed one's: `completed`, `not_planned` or `duplicate`.
     pub close_reason: Option<String>,
     /// The account that opened it (an agent's owner's), or "" once it's
-    /// deleted.
+    /// deleted, or for one an agent session opened.
     pub author: String,
-    /// The agent that opened it for its owner.
+    /// The agent that opened it for its owner; or the agent session that
+    /// opened it as itself (aru-115), its `machine` the session's id
+    /// (`ses_…`) and its name `Agent session <id>`.
     pub agent: Option<ChatAgent>,
     pub labels: Vec<String>,
     /// Accounts.

@@ -15,7 +15,7 @@ import "./board";
 export { pinBoard } from "./board";
 
 export { makeBlockView, type BlockView } from "./view";
-export { openPort } from "./browser";
+export { openPort, openPortAt } from "./browser";
 export { openEditor } from "./editor";
 export { newRemote, remoteHosts, remotes } from "./remote";
 export { openChanges, openFile } from "./diff";

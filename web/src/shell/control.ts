@@ -1581,12 +1581,6 @@ export class ControlSession {
     );
   }
 
-  /** Off to Stripe Checkout to upgrade (a team, or this account). */
-  async upgrade(team?: string) {
-    const r = await api<{ url: string }>("/api/billing/checkout", { team }, platformFetch);
-    location.href = r.url;
-  }
-
   // ---- teams and people (M19)
 
   teams: Team[] = [];
@@ -1976,6 +1970,17 @@ export class ControlSession {
   /** Turn some kinds on or off; the rest stay. */
   async setPushPrefs(prefs: Partial<PushPrefs>) {
     return api<PushPrefs>("/api/push/prefs", prefs);
+  }
+
+  /** The account's prefs for its pages (hints seen, Tips, What's new:
+   * shared/seen.ts). */
+  async prefs() {
+    return api<Record<string, unknown>>("/api/me/prefs");
+  }
+
+  /** Set some (`null` takes one back); the rest stay. */
+  async setPrefs(changes: Record<string, unknown>) {
+    return api<Record<string, unknown>>("/api/me/prefs", changes);
   }
 
   /** How a Client reaches daemon `id`. */

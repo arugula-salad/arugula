@@ -3,6 +3,7 @@
 // a read-only terminal, and the composer. The agent is the scripted fake
 // ACP server the daemon's tests use, so nothing here costs anything.
 
+import { execFileSync } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -299,6 +300,35 @@ test("Getting started: each adapter's state, and one click that installs or upda
   // No such agent: said.
   const bad = await page.evaluate(async () => (await fetch("/api/setup/agents/nope", { method: "POST" })).json());
   expect(bad.ok).toBe(false);
+});
+
+// Discovery 1: the Agents step checks "Questions on cards" beside the
+// adapter and the MCP server, read from `arugula hooks status` (the run's
+// own CLAUDE_CONFIG_DIR, playwright.config.ts): not yet, then there once
+// `arugula hooks install` has written that settings.json.
+test("Getting started: the Agents step checks Claude Code's hooks", async ({ page }) => {
+  const settings = join(process.env.CLAUDE_CONFIG_DIR!, "settings.json");
+  rmSync(settings, { force: true });
+  try {
+    await reset(page);
+    const panel = page.getByRole("dialog", { name: "Getting started" });
+    const open = () => page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "agents" })));
+    await open();
+    const hooks = panel.locator("[data-start-hooks]");
+    // `has` is relative to the row, so it takes a locator not rooted at the panel.
+    const hooksRow = panel.locator(".start-check", { has: page.locator("[data-start-hooks]") });
+    await expect(hooks).toHaveText("Questions on cards: Arugula's hooks aren't in Claude Code's settings yet");
+    await expect(hooksRow).toHaveAttribute("data-check", "todo");
+    await panel.getByRole("button", { name: "Close" }).click();
+
+    execFileSync("../target/debug/arugula", ["hooks", "install"], { env: process.env, stdio: "ignore" });
+    await open();
+    await expect(hooks).toHaveText("Questions on cards: Claude Code has Arugula's hooks");
+    await expect(hooksRow).toHaveAttribute("data-check", "done");
+    await panel.getByRole("button", { name: "Close" }).click();
+  } finally {
+    rmSync(settings, { force: true });
+  }
 });
 
 test.describe("phone", () => {

@@ -25,6 +25,13 @@ test("an agent token's agent reads as a token, never a machine (UI audit #192)",
   assert.equal(whoShort("a1", token, nameOf), "agent token · redone: claude code");
 });
 
+test("an agent session's issue is its own, with no owner (aru-115)", () => {
+  const ses = { machine: "ses_0123456789abcdef0123456789abcdef", machine_name: "Agent session 01234567" };
+  assert.equal(whoLabel("", ses, nameOf), "Agent session 01234567");
+  assert.equal(whoShort("", ses, nameOf), "Agent session 01234567");
+  assert.equal(whoLabel("", { machine: ses.machine, machine_name: "" }, nameOf), "Agent session 01234567", "named from its id");
+});
+
 test("a list's row: who opened it, or who closed it and why (UI audit #163)", () => {
   const geek = { machine: "d1", machine_name: "geek" };
   assert.equal(whoShort("a1", geek, nameOf), "agent · geek");

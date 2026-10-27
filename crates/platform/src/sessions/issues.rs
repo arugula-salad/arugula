@@ -1,7 +1,8 @@
-//! A session's agent and its project's native issues (aru-115, amended):
+//! A session's agent and its project's native issues and Docs (aru-115):
 //! the route the box's session-scoped MCP tools call, through the hub's
 //! `POST /api/hosted/work/session/issues` (`WORK_SESSION_ISSUES`), signed
-//! as the hosted machine. Read and comment, nothing else.
+//! as the hosted machine: its issues (read, comment and open) and its Docs
+//! (make, write its own, read), nothing else.
 //!
 //! A hosted box has no account and no machine grants (aru-091 is for
 //! machines of a person), so the session is what authorises it:
@@ -18,13 +19,25 @@
 //!   the issue's thread with no mentions (nobody is pushed for it). The
 //!   words are the agent's, not its asker's, though the asker's role is
 //!   what lets it comment; a review session (M264) reads and comments on
-//!   nothing.
+//!   nothing;
+//! - an issue it opens is the session's own too
+//!   ([`issues::create_as_session`]): no author, the session as its agent
+//!   (shown as `Agent session <id>`), and no mentions or assignees, so
+//!   nobody is pushed. It takes the asker's write rights (a viewer's
+//!   session opens nothing), and its labels are from those the project's
+//!   issues already have;
+//! - its project's Docs ([`project_docs`], aru-118): it makes them with the
+//!   asker's rights, as its own (no maker, the session as its agent), writes
+//!   only the ones it made, and reads any of the project's; a review session
+//!   only reads. Each answer has the Doc's page link, for the agent to post.
 //!
-//! What this doesn't give: edits, labels, closing, other projects, chat
-//! rooms other than an issue's thread.
+//! Every call counts against the box's limit ([`CALLS`]).
+//!
+//! What this doesn't give: edits, new labels, assigning, closing, deleting
+//! Docs, other projects, chat rooms other than an issue's thread.
 
 use arugula_control_wire::{
-    issues::IssueQuery,
+    issues::{self as wire, IssueQuery},
     sessions::said_via,
     work::{SessionIssuesAsk, SessionIssuesGiven, SessionIssuesOp},
 };
@@ -38,7 +51,7 @@ use crate::{
         issues::Actor,
         sessions::{Role, Session, State},
     },
-    issues,
+    issues, project_docs,
     work::HostedMachine,
 };
 
@@ -94,7 +107,59 @@ pub async fn answer(app: &Platform, m: &HostedMachine, a: &SessionIssuesAsk) -> 
             }
             comment(app, by, &s, *number, text).await
         }
+        SessionIssuesOp::Create { title, body, labels } => {
+            if s.role == Role::Review {
+                return Ok(refused(m, a, "a review session reads and opens nothing"));
+            }
+            let new =
+                wire::NewIssue { title: title.clone(), body: body.clone(), labels: labels.clone(), assignees: vec![] };
+            match issues::create_as_session(app, &s.asker, &s.id, &s.project, &new).await {
+                Ok(issue) => {
+                    let url = format!("{}/issues/{}", app.cfg.page(), issue.id);
+                    SessionIssuesGiven::Created { issue, url }
+                }
+                Err(e) => said(e),
+            }
+        }
+        SessionIssuesOp::DocCreate { doc } => {
+            if s.role == Role::Review {
+                return Ok(refused(m, a, "a review session reads and makes nothing"));
+            }
+            docs_view(app, &s, project_docs::create(app, as_session(&s), &s.project, doc).await)
+        }
+        SessionIssuesOp::DocWrite { id, write } => {
+            if s.role == Role::Review {
+                return Ok(refused(m, a, "a review session reads and writes nothing"));
+            }
+            docs_view(app, &s, project_docs::write(app, as_session(&s), &s.project, id, write).await)
+        }
+        SessionIssuesOp::DocRead { id: Some(id) } => {
+            docs_view(app, &s, project_docs::get(app, as_session(&s), &s.project, id).await)
+        }
+        SessionIssuesOp::DocRead { id: None } => match project_docs::list(app, as_session(&s), &s.project).await {
+            Ok(list) => SessionIssuesGiven::Docs { list },
+            Err(e) => said(e),
+        },
     })
+}
+
+/// Session `s` on its project's Docs: its asker's rights, as itself.
+fn as_session(s: &Session) -> project_docs::By<'_> {
+    project_docs::By::Session { asker: &s.asker, session: &s.id }
+}
+
+fn docs_view(
+    app: &Platform,
+    s: &Session,
+    r: Result<arugula_control_wire::project_docs::DocView, arugula_control_common::ApiError>,
+) -> SessionIssuesGiven {
+    match r {
+        Ok(view) => {
+            let url = project_docs::link(app, &s.project, &view.doc.id);
+            SessionIssuesGiven::Doc { view, url }
+        }
+        Err(e) => said(e),
+    }
 }
 
 async fn list(app: &Platform, by: Actor<'_>, s: &Session, q: &IssueQuery) -> SessionIssuesGiven {

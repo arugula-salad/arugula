@@ -476,8 +476,14 @@ const SQLITE: &[Migration] = &[
     },
     Migration {
         version: 64,
+        name: "project_docs",
+        sql: include_str!("../../migrations/sqlite/0064_project_docs.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 65,
         name: "board_links",
-        sql: include_str!("../../migrations/sqlite/0064_board_links.sql"),
+        sql: include_str!("../../migrations/sqlite/0065_board_links.sql"),
         additive: true,
     },
 ];
@@ -866,8 +872,14 @@ const POSTGRES: &[Migration] = &[
     },
     Migration {
         version: 64,
+        name: "project_docs",
+        sql: include_str!("../../migrations/postgres/0064_project_docs.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 65,
         name: "board_links",
-        sql: include_str!("../../migrations/postgres/0064_board_links.sql"),
+        sql: include_str!("../../migrations/postgres/0065_board_links.sql"),
         additive: true,
     },
 ];

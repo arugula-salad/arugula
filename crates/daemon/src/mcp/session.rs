@@ -1,12 +1,14 @@
-//! A hosted session's MCP (aru-115, amended): the two tools a session's
-//! agent has for its project's native issues, on a listener of their own.
+//! A hosted session's MCP (aru-115, amended): the tools a session's agent
+//! has for its project's native issues and Docs (aru-118), on a listener of
+//! their own.
 //!
 //! A session's agent runs as one of the box's session users, behind the
 //! firewall that keeps it off the daemon's ports (`work::firewall`), and
 //! gets none of `/mcp`'s tools: those start and drive panes as the daemon.
 //! What it gets instead is this: a loopback listener that serves only
-//! [`READ`] and [`COMMENT`], each a call to control's
-//! `POST /api/hosted/work/session/issues` for the agent's session.
+//! [`READ`], [`COMMENT`], [`CREATE`], [`CREATE_DOC`], [`FILL_DOC`] and
+//! [`READ_DOC`], each a call to control's `POST
+//! /api/hosted/work/session/issues` for the agent's session.
 //!
 //! - **Who is calling is the socket's owner, not a secret.** The listener
 //!   finds the uid that owns the client end of the connection
@@ -18,7 +20,7 @@
 //! - **The session is the authority, not this listener.** Control checks
 //!   the session is this box's and live, takes the project from it, and
 //!   acts as its asker: here the session id is all that is sent, with an
-//!   issue's number in the project, never a project.
+//!   issue's number or a Doc's id in the project, never a project.
 //! - **Not `/mcp`.** The main server keeps refusing a session's agent (its
 //!   port is fenced, and its block token isn't given out); this one has no
 //!   other tools to add to by accident.
@@ -31,7 +33,10 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use arugula_control_wire::work::{SessionIssuesAsk, SessionIssuesGiven, SessionIssuesOp, WORK_SESSION_ISSUES};
+use arugula_control_wire::{
+    project_docs::{DocView, DocWrite, NewDoc, NewSection},
+    work::{SessionIssuesAsk, SessionIssuesGiven, SessionIssuesOp, WORK_SESSION_ISSUES},
+};
 use axum::{
     Json, Router,
     extract::{ConnectInfo, Request, State},
@@ -61,8 +66,12 @@ use crate::server::App;
 
 pub const READ: &str = "read_session_issues";
 pub const COMMENT: &str = "comment_session_issue";
+pub const CREATE: &str = "create_session_issue";
+pub const CREATE_DOC: &str = "create_session_doc";
+pub const FILL_DOC: &str = "fill_session_doc";
+pub const READ_DOC: &str = "read_project_doc";
 
-const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one. They act with the rights of the person who asked you, in this project only, and a comment is this session's own; an issue is its number, #N.";
+const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one; create_session_issue opens one and returns its link. create_session_doc makes a Doc in the project (a title and its sections, each a heading and its markdown, or an intent for later) and returns its link; fill_session_doc writes a section of a Doc you made, or adds one; read_project_doc lists the project's Docs or reads one. When someone asks for a native Doc, make one with create_session_doc and post its link. They act with the rights of the person who asked you, in this project only, and a comment, issue or Doc you make is this session's own; an issue is its number, #N, and a Doc its id, pdc_ and 32 hex digits.";
 
 static URL: OnceLock<String> = OnceLock::new();
 
@@ -102,10 +111,71 @@ pub struct CommentArgs {
     pub text: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct CreateArgs {
+    /// The issue's title: one line, at most 256 characters.
+    pub title: String,
+    /// Its body, in markdown (at most 64 KB).
+    #[serde(default)]
+    pub body: String,
+    /// Labels, each one the project's issues already have (a label that isn't is refused, with the ones there are).
+    #[serde(default)]
+    pub labels: Vec<String>,
+}
+
+/// One section of a new Doc.
+#[derive(Deserialize, JsonSchema)]
+pub struct DocSection {
+    /// The section's heading.
+    pub heading: String,
+    /// One line on what it will hold, shown while it's pending.
+    #[serde(default)]
+    pub intent: String,
+    /// Its body now, in Markdown (at most 64 KB): headings, lists, tables, ```chart and ```svg fences, as a Doc's. Leave it out to fill it later with fill_session_doc.
+    #[serde(default)]
+    pub markdown: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct CreateDocArgs {
+    /// The Doc's title: one line.
+    pub title: String,
+    /// Every section, in order (at most 40; the Doc at most 1 MiB).
+    #[serde(default)]
+    pub sections: Vec<DocSection>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct FillDocArgs {
+    /// The Doc's id (pdc_...), one this session made.
+    pub doc: String,
+    /// The section's id (s1, s2, ...): its body is replaced. Leave it out, and give heading, to add a section at the end.
+    #[serde(default)]
+    pub section: Option<String>,
+    /// A new section's heading, or a new heading for the section.
+    #[serde(default)]
+    pub heading: Option<String>,
+    /// The section's body, in Markdown (at most 64 KB).
+    #[serde(default)]
+    pub markdown: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ReadDocArgs {
+    /// The Doc's id (pdc_...). Without it: a list of the project's Docs.
+    #[serde(default)]
+    pub doc: Option<String>,
+}
+
 fn tools() -> Vec<Tool> {
     let read = ToolAnnotations::with_title("Read the project's issues").read_only(true).open_world(false);
     let comment =
         ToolAnnotations::with_title("Comment on an issue").read_only(false).destructive(false).open_world(false);
+    let create = ToolAnnotations::with_title("Open an issue").read_only(false).destructive(false).open_world(false);
+    let create_doc = ToolAnnotations::with_title("Make a Doc").read_only(false).destructive(false).open_world(false);
+    let fill_doc =
+        ToolAnnotations::with_title("Write a section of a Doc").read_only(false).destructive(false).open_world(false);
+    let read_doc = ToolAnnotations::with_title("Read the project's Docs").read_only(true).open_world(false);
     vec![
         Tool::new(
             READ,
@@ -121,6 +191,34 @@ fn tools() -> Vec<Tool> {
         )
         .with_title("Comment on an issue")
         .with_annotations(comment),
+        Tool::new(
+            CREATE,
+            "Open a new issue in this project (title, a markdown body, labels the project already uses). It is this agent session's own issue, made with the rights of the person who asked you; nobody is assigned or notified. Returns its number and link, to post.",
+            schema_for_type::<CreateArgs>(),
+        )
+        .with_title("Open an issue")
+        .with_annotations(create),
+        Tool::new(
+            CREATE_DOC,
+            "Make a Doc in this project, a report, plan or write-up that its members read on Arugula's page: a title and every section in order, each a heading with its markdown, or an intent to fill later. It is this agent session's own Doc, made with the rights of the person who asked you. Returns its id, its sections' ids and its link, to post.",
+            schema_for_type::<CreateDocArgs>(),
+        )
+        .with_title("Make a Doc")
+        .with_annotations(create_doc),
+        Tool::new(
+            FILL_DOC,
+            "Write one section of a Doc this session made (doc: pdc_..., section: s1, s2, ..., markdown): filling a section again replaces it. With no section and a heading, add a section at the end. You can't write other people's Docs, or delete one.",
+            schema_for_type::<FillDocArgs>(),
+        )
+        .with_title("Write a section of a Doc")
+        .with_annotations(fill_doc),
+        Tool::new(
+            READ_DOC,
+            "List this project's Docs, the latest changed first, or read one (doc: pdc_...) as markdown. Only this project's.",
+            schema_for_type::<ReadDocArgs>(),
+        )
+        .with_title("Read the project's Docs")
+        .with_annotations(read_doc),
     ]
 }
 
@@ -221,6 +319,95 @@ impl Server {
             _ => Err("control answered something else".into()),
         }
     }
+
+    async fn create(&self, session: &str, args: Value) -> Out {
+        let a: CreateArgs = parse(args)?;
+        let op = SessionIssuesOp::Create { title: a.title, body: a.body, labels: a.labels };
+        match self.ask(session, op).await? {
+            SessionIssuesGiven::Created { issue, url } => done(
+                format!("Opened #{}: {} ({url})", issue.number, issue.title),
+                json!({ "issue": issue.number, "id": issue.id, "url": url }),
+            ),
+            _ => Err("control answered something else".into()),
+        }
+    }
+
+    async fn create_doc(&self, session: &str, args: Value) -> Out {
+        let a: CreateDocArgs = parse(args)?;
+        let sections = a
+            .sections
+            .into_iter()
+            .map(|s| NewSection { heading: s.heading, intent: s.intent, markdown: s.markdown })
+            .collect();
+        let doc = NewDoc { title: a.title, sections };
+        let (view, url) = self.doc(session, SessionIssuesOp::DocCreate { doc }).await?;
+        doc_done("Made", &view, &url)
+    }
+
+    async fn fill_doc(&self, session: &str, args: Value) -> Out {
+        let a: FillDocArgs = parse(args)?;
+        let write = DocWrite { section: a.section, heading: a.heading, markdown: a.markdown, ..Default::default() };
+        let (view, url) = self.doc(session, SessionIssuesOp::DocWrite { id: a.doc, write }).await?;
+        doc_done("Wrote", &view, &url)
+    }
+
+    async fn read_doc(&self, session: &str, args: Value) -> Out {
+        let a: ReadDocArgs = parse(args)?;
+        if let Some(id) = a.doc.filter(|d| !d.trim().is_empty()) {
+            let (view, url) = self.doc(session, SessionIssuesOp::DocRead { id: Some(id) }).await?;
+            let text = doc_text(&view);
+            let sections = json!(view.sections);
+            return done(
+                format!("Doc {} ({} sections), {url}", view.doc.title, view.sections.len()),
+                json!({ "doc": view.doc.id, "title": view.doc.title, "url": url, "writer": view.writer, "sections": sections, "text": text }),
+            );
+        }
+        let SessionIssuesGiven::Docs { list } = self.ask(session, SessionIssuesOp::DocRead { id: None }).await? else {
+            return Err("control answered something else".into());
+        };
+        let text = list
+            .docs
+            .iter()
+            .map(|d| format!("{} {} ({} of {} sections written)", d.id, d.title, d.written, d.sections))
+            .collect::<Vec<_>>()
+            .join("\n");
+        done(
+            format!("{} Doc(s) in project {}", list.docs.len(), list.project),
+            json!({ "docs": json!(list.docs), "text": text }),
+        )
+    }
+
+    async fn doc(&self, session: &str, op: SessionIssuesOp) -> Result<(DocView, String), String> {
+        match self.ask(session, op).await? {
+            SessionIssuesGiven::Doc { view, url } => Ok((view, url)),
+            _ => Err("control answered something else".into()),
+        }
+    }
+}
+
+/// A made or written Doc's answer: its id, sections and link.
+fn doc_done(what: &str, view: &DocView, url: &str) -> Out {
+    let ids: Vec<&str> = view.sections.iter().map(|s| s.id.as_str()).collect();
+    let pending: Vec<&str> = view.sections.iter().filter(|s| s.body.is_none()).map(|s| s.id.as_str()).collect();
+    let left = if pending.is_empty() { String::new() } else { format!("; to fill: {}", pending.join(", ")) };
+    done(
+        format!("{what} Doc {} ({}), sections {}{left}: {url}", view.doc.title, view.doc.id, ids.join(", ")),
+        json!({ "doc": view.doc.id, "url": url, "sections": ids, "pending": pending }),
+    )
+}
+
+/// A Doc as markdown: its title, then each section's heading and body.
+fn doc_text(view: &DocView) -> String {
+    let mut out = format!("# {}\n", view.doc.title);
+    for s in &view.sections {
+        let body = match &s.body {
+            Some(b) => b.trim_end().to_owned(),
+            None if s.intent.is_empty() => "_(pending)_".to_owned(),
+            None => format!("_(pending: {})_", s.intent),
+        };
+        out.push_str(&format!("\n## {} [{}]\n\n{body}\n", s.heading, s.id));
+    }
+    out
 }
 
 impl ServerHandler for Server {
@@ -254,6 +441,10 @@ impl ServerHandler for Server {
         let out = match &*request.name {
             READ => self.read(&session, args).await,
             COMMENT => self.comment(&session, args).await,
+            CREATE => self.create(&session, args).await,
+            CREATE_DOC => self.create_doc(&session, args).await,
+            FILL_DOC => self.fill_doc(&session, args).await,
+            READ_DOC => self.read_doc(&session, args).await,
             other => Err(format!("no tool {other}")),
         };
         let res = match out {
@@ -418,10 +609,20 @@ mod tests {
     }
 
     #[test]
-    fn exactly_two_tools_and_no_project_argument() {
+    fn exactly_the_session_tools_and_no_project_argument() {
         let t = tools();
         let names: Vec<&str> = t.iter().map(|t| &*t.name).collect();
-        assert_eq!(names, [READ, COMMENT]);
+        assert_eq!(
+            names,
+            [
+                "read_session_issues",
+                "comment_session_issue",
+                "create_session_issue",
+                "create_session_doc",
+                "fill_session_doc",
+                "read_project_doc",
+            ]
+        );
         for t in &t {
             let schema = serde_json::to_value(&t.input_schema).unwrap();
             let props = schema["properties"].as_object().unwrap();
