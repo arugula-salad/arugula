@@ -2441,11 +2441,13 @@ state: string,
 close_reason: string | null, 
 /**
  * The account that opened it (an agent's owner's), or "" once it's
- * deleted.
+ * deleted, or for one an agent session opened.
  */
 author: string, 
 /**
- * The agent that opened it for its owner.
+ * The agent that opened it for its owner; or the agent session that
+ * opened it as itself (aru-115), its `machine` the session's id
+ * (`ses_…`) and its name `Agent session <id>`.
  */
 agent: ChatAgent | null, labels: Array<string>, 
 /**
@@ -2495,6 +2497,17 @@ export type NewNativeIssue = { title: string, body: string, labels: Array<string
  * Accounts, each a member of the project.
  */
 assignees: Array<string>, };
+
+/**
+ * `POST` [`PROJECT_DOCS`]: make a Doc.
+ */
+export type NewProjectDoc = { title: string, sections: Array<NewProjectDocSection>, };
+
+/**
+ * A new Doc's section: a heading, and its Markdown now or an intent for
+ * later.
+ */
+export type NewProjectDocSection = { heading: string, intent: string, markdown: string | null, };
 
 export type Node = { "type": "pane", pane: number, } | { "type": "split", id: number, dir: Dir, children: Array<Child>, };
 
@@ -2889,6 +2902,80 @@ export type ProjectBoard = { id: string, project: string, title: string,
  * The account that made it; empty once that account is deleted.
  */
 created_by: string, created_at: number, updated_at: number, };
+
+/**
+ * A Doc, without its sections: a list's row, and a view's head.
+ */
+export type ProjectDoc = { 
+/**
+ * `pdc_` and 32 hex characters.
+ */
+id: string, project: string, title: string, 
+/**
+ * The account that made it, or "" once it's deleted, or for one an
+ * agent session made.
+ */
+author: string, 
+/**
+ * The agent session that made it as itself (aru-115): its `machine`
+ * the session's id (`ses_…`), its name `Agent session <id>`.
+ */
+agent: ChatAgent | null, 
+/**
+ * How many sections it has, and how many are written.
+ */
+sections: number, written: number, 
+/**
+ * Counts its changes.
+ */
+rev: number, created_at: number, updated_at: number, };
+
+/**
+ * `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.
+ */
+export type ProjectDocList = { project: string, docs: Array<ProjectDoc>, 
+/**
+ * Whether the reader may make one.
+ */
+writer: boolean, };
+
+/**
+ * One section: pending (`body` null) until it's written.
+ */
+export type ProjectDocSection = { 
+/**
+ * The Doc's own: `s1`, `s2`, … in the order they were added.
+ */
+id: string, heading: string, 
+/**
+ * One line on what it will hold, shown while it's pending.
+ */
+intent: string, 
+/**
+ * Its Markdown (the machine Doc's: `chart` and `svg` fences draw).
+ */
+body: string | null, 
+/**
+ * Counts the writes to its body.
+ */
+rev: number, };
+
+/**
+ * `GET` [`PROJECT_DOC`]: a Doc with its sections, in order.
+ */
+export type ProjectDocView = { doc: ProjectDoc, sections: Array<ProjectDocSection>, 
+/**
+ * Whether the reader may write it.
+ */
+writer: boolean, };
+
+/**
+ * `PUT` [`PROJECT_DOC`]: what changes. `title` renames it. With `section`,
+ * that section's body becomes `markdown` (and its heading `heading`, when
+ * given); with no `section` but a `heading`, a section is added at the
+ * end, written when `markdown` is given and pending otherwise.
+ */
+export type ProjectDocWrite = { title: string | null, section: string | null, heading: string | null, intent: string | null, markdown: string | null, };
 
 export type ProjectMember = { account: string, 
 /**

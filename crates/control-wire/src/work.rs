@@ -138,8 +138,10 @@ pub const WORK_SESSION_REPORT: &str = "/api/hosted/work/session";
 pub const WORK_SESSION_PUSH: &str = "/api/hosted/work/session/push";
 
 /// `POST` [`SessionIssuesAsk`], signed as the hosted machine (aru-115,
-/// amended): a session's agent reads its own project's native issues and
-/// comments on them. Answered [`SessionIssuesGiven`].
+/// amended): a session's agent reads its own project's native issues,
+/// comments on them and opens them, and makes, writes and reads its Docs
+/// (aru-118). Answered [`SessionIssuesGiven`]. Named for its first tools,
+/// and kept so for the boxes that call it.
 pub const WORK_SESSION_ISSUES: &str = "/api/hosted/work/session/issues";
 
 /// The most sessions a box runs at once: a turn under way (`working`,
@@ -695,8 +697,10 @@ pub struct SessionIssuesAsk {
     pub op: SessionIssuesOp,
 }
 
-/// What a session's agent does with its project's native issues: read and
-/// comment, nothing else.
+/// What a session's agent does in its project: read, comment on and open
+/// its native issues, and make, write and read its Docs (aru-118), nothing
+/// else. The route kept its first name, `session/issues`, for the boxes
+/// already calling it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum SessionIssuesOp {
@@ -708,6 +712,25 @@ pub enum SessionIssuesOp {
     /// A comment on one, as the session's asker, labelled as posted by the
     /// session.
     Comment { number: u64, text: String },
+    /// A new issue, with the asker's rights, opened as the session's own;
+    /// its labels from those the project's issues already have.
+    Create {
+        title: String,
+        #[serde(default)]
+        body: String,
+        #[serde(default)]
+        labels: Vec<String>,
+    },
+    /// A new Doc in the project, with the asker's rights, as the session's
+    /// own.
+    DocCreate { doc: crate::project_docs::NewDoc },
+    /// A write to one of the project's Docs that this session made.
+    DocWrite { id: String, write: crate::project_docs::DocWrite },
+    /// One of the project's Docs, or with no `id` the list of them.
+    DocRead {
+        #[serde(default)]
+        id: Option<String>,
+    },
 }
 
 /// [`WORK_SESSION_ISSUES`]'s answer.
@@ -729,6 +752,20 @@ pub enum SessionIssuesGiven {
     /// Posted, as this message of the issue's thread.
     Commented {
         seq: i64,
+    },
+    /// Opened: the issue, and its page's link.
+    Created {
+        issue: crate::issues::Issue,
+        url: String,
+    },
+    /// A Doc, as made, written or read, and its page's link.
+    Doc {
+        view: crate::project_docs::DocView,
+        url: String,
+    },
+    /// The project's Docs.
+    Docs {
+        list: crate::project_docs::DocList,
     },
     /// Not done, and why (the agent reads it).
     Refused {

@@ -22,6 +22,8 @@
 //!   the one it was asked in; this is the thread on the session as an
 //!   object, for a link to it to name and preview.
 //! - `brd_`: a board (live status board), in its project.
+//! - `pdc_`: a project Doc (aru-118), in its project: its thread is what a
+//!   write pushes an object change on.
 //! - Anything else: no such object.
 //!
 //! **Who sees one:** the third rule beside a team's roster and a machine's
@@ -82,6 +84,7 @@ enum Prefix {
     Run,
     Session,
     Board,
+    Doc,
 }
 
 fn prefix(target: &str) -> Option<Prefix> {
@@ -96,12 +99,13 @@ fn prefix(target: &str) -> Option<Prefix> {
         "run" => Some(Prefix::Run),
         "ses" => Some(Prefix::Session),
         "brd" => Some(Prefix::Board),
+        "pdc" => Some(Prefix::Doc),
         _ => None,
     }
 }
 
 /// Whether `target` is an object's global id by its shape (`iss_…`,
-/// `fi_…`, `hw_…`, `run_…`, `ses_…`, `brd_…`), not a room's: an agent names an object's
+/// `fi_…`, `hw_…`, `run_…`, `ses_…`, `brd_…`, `pdc_…`), not a room's: an agent names an object's
 /// thread by it (M198).
 pub(super) fn is_object(target: &str) -> bool {
     prefix(target).is_some()
@@ -147,6 +151,10 @@ pub(super) fn find(app: &Platform, targets: &[&str]) -> anyhow::Result<HashMap<S
     let boards: Vec<&str> = of(Prefix::Board).collect();
     for (id, project, title) in app.db.board_places(&boards)? {
         out.insert(id, Object { project, name: format!("board {title}"), guard: Guard::Members });
+    }
+    let docs: Vec<&str> = of(Prefix::Doc).collect();
+    for (id, project, title) in app.db.project_doc_places(&docs)? {
+        out.insert(id, Object { project, name: format!("Doc {title}"), guard: Guard::Members });
     }
     Ok(out)
 }

@@ -1251,6 +1251,28 @@ note = "Those of projects that go with it go. The rest stay: they name no accoun
 seen_by = ["litestream"]
 
 [[table]]
+name = "project_docs"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A project's own Doc (aru-118): its title, who made it (a person, or an agent session by its id), how many times it changed, and when it was made and last changed."
+why_asleep = "A teammate reads a project's Doc on their phone with every machine asleep, and a session's agent on a Cloud workspace writes one."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest stay, with no maker."
+seen_by = ["litestream"]
+
+[[table]]
+name = "project_doc_sections"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A project Doc's sections, in order: each one's heading, its intent while it's pending, its Markdown once it's written, and how many times it was written."
+why_asleep = "A project's Docs are read and written with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest stay: they name no account."
+seen_by = ["litestream"]
+
+[[table]]
 name = "board_block_states"
 plane = "platform"
 process = "platform"

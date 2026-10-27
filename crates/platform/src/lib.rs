@@ -98,6 +98,7 @@ mod object_threads_tests;
 pub mod page;
 pub mod planter;
 mod port;
+pub mod project_docs;
 pub mod projects;
 pub mod redone;
 pub mod remote;
