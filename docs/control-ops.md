@@ -1486,6 +1486,42 @@ What it writes, and never:
 - **In process** (`arugula-control --platform in-process`) the projection
   is off: production runs the platform as its own app.
 
+### Moving control to a new address
+
+Device keys and approvals are kept per origin, in each browser and each
+desktop app window. A browser approved at the old address has nothing at
+the new one: there it's a new browser, asking to be approved. The move
+from `control.illogical.widgets.wtf` to `control.arugula.io` (#507) left
+accounts whose every approval was on the old address, with nothing that
+could approve on the new one but a recovery code (#1581).
+
+What went wrong then: `--also-redirect` (0.36.0) sent every browser that
+opened the old address to the new one, so a browser approved there never
+stayed long enough to approve its replacement, and the old address was
+later taken down.
+
+For the next move:
+
+1. **Run both** with `--also-url` (the old one), without
+   `--also-redirect`. The old page shows *Arugula control is moving* with
+   the way across: sign in at the new address, then approve that browser
+   from this one (`MovingNote`, `web/src/shell/ui/moving-note.tsx`).
+2. **Announce it** in a release note and on the old page, with the date
+   the old address stops.
+3. **Watch who's left.** Before turning on `--also-redirect`, find the
+   accounts with no device approved since the move started (control
+   doesn't count this by origin yet, #1581). Those people need the old
+   page to approve, so tell them directly.
+4. **Only then** turn on `--also-redirect`, and keep the old address
+   answering for at least as long again. Never take the old name's DNS
+   down while accounts are stranded on it.
+5. **Desktop apps** keep their sign-in per control URL (`cloud.json`); after
+   the move their windows show the local page with *Sign the app in*
+   (#1580), and the app needs approving at the new address too.
+
+An account stranded anyway has the reset (aru-119, "An account can reset
+its devices from a fresh GitHub sign-in, after a wait").
+
 ### Retired domains (M239)
 
 A product the platform absorbed keeps its domain as a redirect to

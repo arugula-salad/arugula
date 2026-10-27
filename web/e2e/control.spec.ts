@@ -330,6 +330,8 @@ test("a phone needs the laptop's approval", async ({ browser }) => {
   await expect(phone.locator("[data-control-url]")).toHaveText(base);
   await expect(phone.locator("[data-waiting-machine]")).toContainText("doesn't need this one");
   await expect(phone.locator("[data-sign-out]")).toBeVisible();
+  // #1581: the account has a device already, so it says why this one is asked.
+  await expect(phone.locator("[data-why-again]")).toContainText("Approve it from a device that opens");
   // #761: it shows a code, as a QR code and as text, and its fingerprint
   // only for an older approving page, a click away.
   const code = await deviceCode(phone);
@@ -655,6 +657,11 @@ test("with every device lost, a recovery code lets a new browser in, once", asyn
   const fresh = await (await browser.newContext()).newPage();
   await signIn(fresh);
   await expect(fresh.getByText("Approve this browser")).toBeVisible();
+  // #1581: the laptop is a browser of the same name, so it's named, and why
+  // this one is asked again.
+  await expect(fresh.locator("[data-why-again]")).toHaveAttribute("data-why-again", "same-name");
+  await expect(fresh.locator("[data-why-again]")).toContainText("Your account already has");
+  await expect(fresh.locator("[data-why-again]")).toContainText("its approval is saved for one address");
   await fresh.locator("[data-use-recovery]").click();
   await fresh.getByLabel("Recovery code").fill(recoveryCodes[0]);
   await fresh.getByRole("button", { name: "Use it" }).click();

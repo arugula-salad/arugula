@@ -1426,6 +1426,15 @@ export class ControlSession {
     this.emit();
   }
 
+  /** #1581: while waiting, the account's other browsers and apps
+   * as control lists them (not revoked), for the page to say why this one
+   * is asked again. Control's word: for showing, never for trust. */
+  async otherDevices(): Promise<Cert[]> {
+    const devs = await api<{ certs: Cert[]; revocations: Revocation[] }>("/api/devices");
+    const gone = new Set(devs.revocations.map((r) => r.device));
+    return devs.certs.filter((c) => (c.kind === "browser" || c.kind === "app") && !gone.has(c.device) && c.device !== this.keys?.id);
+  }
+
   /** While waiting for approval: approve this browser with a recovery
    * code instead, then retire the code. */
   async useRecoveryCode(code: string) {
