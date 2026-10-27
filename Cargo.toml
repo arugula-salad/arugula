@@ -38,6 +38,7 @@ arugula-vt = { path = "crates/vt" }
 # The daemon's crates (#232). The binary, crates/arugulad, picks their
 # features, so their defaults are off here.
 arugulad-base = { path = "crates/daemon", default-features = false }
+arugulad-editor = { path = "crates/arugulad-editor" }
 aes-gcm = "0.11.1"
 anyhow = "1.0.104"
 axum = "0.8.9"

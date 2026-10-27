@@ -4,48 +4,22 @@
 //! an editor may send to a pane they can type in.
 
 use arugula_proto::{
-    PaneId,
-    api::{Empty, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, IdeOther},
+    api::{Empty, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned},
     op::ops::{IdeGet, IdeMention, IdeSet},
 };
 use axum::http::StatusCode;
 
 use crate::{
     api::bad,
-    mux::{Api, MuxHandle},
+    mux::Api,
     ops::{Cx, Handle, OpError},
 };
 
-/// The IDE connections of Claude Code in a pane.
-async fn ide_conns(mux: &MuxHandle, pane: PaneId) -> Vec<u64> {
-    mux.api(|r| {
-        Api::Cards(Box::new(move |cards, _| {
-            if let Some(c) = super::Cards::of(cards) {
-                let _ = r.send(c.conns_of(pane));
-            }
-        }))
-    })
-    .await
-    .unwrap_or_default()
-}
-
 impl Handle for IdeGet {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<IdeInfo, OpError> {
-        let Some(ide) = &cx.app.ide else {
-            return Ok(IdeInfo { on: false, name: None, port: None, lock_dir: None, diffs: None, others: None });
-        };
-        let others = ide
-            .others()
-            .into_iter()
-            .map(|o| IdeOther { name: o.name, port: o.port, pid: o.pid, folders: o.folders, alive: o.alive })
-            .collect();
-        Ok(IdeInfo {
-            on: true,
-            name: Some(crate::ide::NAME.into()),
-            port: Some(ide.port),
-            lock_dir: Some(ide.lock_dir.clone()),
-            diffs: Some(ide.diffs_to().unwrap_or_else(|| crate::ide::NAME.into())),
-            others: Some(others),
+        Ok(match &cx.app.ide {
+            Some(ide) => ide.info(),
+            None => IdeInfo { on: false, name: None, port: None, lock_dir: None, diffs: None, others: None },
         })
     }
 }
@@ -54,7 +28,7 @@ impl Handle for IdeSet {
     async fn handle(cx: &Cx<'_>, _: (), req: IdeDiffsRequest) -> Result<IdeDiffs, OpError> {
         let ide = cx.app.ide.as_ref().ok_or_else(|| bad("arugulad isn't Claude Code's IDE here (--no-claude-ide)"))?;
         ide.set_diffs_to(Some(req.diffs)).map_err(|e| OpError::Failed(e.to_string()))?;
-        Ok(IdeDiffs { diffs: ide.diffs_to().unwrap_or_else(|| crate::ide::NAME.into()) })
+        Ok(IdeDiffs { diffs: ide.diffs_to() })
     }
 }
 
@@ -69,7 +43,7 @@ impl Handle for IdeMention {
             }
         }
         let ide = cx.app.ide.as_ref().ok_or_else(|| bad("arugulad isn't Claude Code's IDE here"))?;
-        let conns = ide_conns(&cx.app.mux, m.pane).await;
+        let conns = ide.conns_of(&cx.app.mux, m.pane).await;
         if conns.is_empty() {
             return Err(OpError::Status(
                 StatusCode::CONFLICT,

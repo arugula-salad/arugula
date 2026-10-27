@@ -66,7 +66,7 @@ impl crate::mux::Notify for Notifier {
     }
 }
 
-pub(crate) fn random<const N: usize>() -> [u8; N] {
+pub fn random<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
     getrandom::fill(&mut b).expect("the OS's random source");
     b

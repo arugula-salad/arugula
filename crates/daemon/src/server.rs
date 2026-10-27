@@ -50,8 +50,7 @@ pub struct App {
     pub mux: MuxHandle,
     pub push: Option<crate::push::Push>,
     /// Claude Code's IDE (M28), if on.
-    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
-    pub ide: Option<Arc<crate::editors::Ide>>,
+    pub ide: Option<Arc<dyn crate::editors::Ide>>,
     pub hosts: Arc<Hosts>,
     /// The static binaries a daemon made resident in a sandbox runs.
     #[cfg_attr(not(feature = "labs"), allow(dead_code))]
@@ -90,7 +89,7 @@ impl App {
         identify: Identify,
         mux: MuxHandle,
         push: Option<crate::push::Push>,
-        ide: Option<Arc<crate::editors::Ide>>,
+        ide: Option<Arc<dyn crate::editors::Ide>>,
         hosts: Arc<Hosts>,
         shares: Arc<crate::share::Shares>,
         synced: Arc<crate::sync::Synced>,
@@ -189,12 +188,12 @@ pub fn local_router(app: Arc<App>) -> Router {
         .with_state(app)
 }
 
-#[cfg(all(unix, feature = "editor"))]
+#[cfg(unix)]
 /// Editors only (M28): `<state>/editors/sock`, the one socket a dev
 /// container gets (its directory mounted): joining the swarm as an editor
 /// is all it can do there, not drive the daemon.
 pub fn editors_router(app: Arc<App>) -> Router {
-    Router::new().route("/api/editors/connect", get(crate::editor::link::connect)).with_state(app)
+    crate::editors::local_routes(Router::new()).with_state(app)
 }
 
 /// Over the tunnel to the home daemon (a dial-out host): the home daemon

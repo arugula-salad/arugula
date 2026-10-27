@@ -18,6 +18,7 @@ mod flags;
 mod fs;
 mod hosted;
 mod hosts;
+mod ide;
 mod input;
 mod inspect;
 mod invite;
@@ -424,10 +425,11 @@ const ROUTERS: &[(&str, &str)] = &[
     ("src/invite/mod.rs", "pub fn routes()"),
     ("src/mcp/tokens.rs", "pub fn api_routes()"),
     ("src/labs/guest_ssh.rs", "pub fn routes()"),
-    // The editor's: the extension's download and the IDE's operations, and
-    // the socket's route editors join on.
+    // The editor's: the IDE's operations here, and from its own crate the
+    // extension's download and the socket's route editors join on.
     ("src/editors.rs", "pub fn routes("),
-    ("src/editors.rs", "pub fn local_routes("),
+    ("../arugulad-editor/src/lib.rs", "    fn routes(&self"),
+    ("../arugulad-editor/src/lib.rs", "    fn local_routes(&self"),
     // The Unix socket's router: the only one with the sign-in link.
     ("src/server.rs", "pub fn local_router("),
     // #578 part c.
