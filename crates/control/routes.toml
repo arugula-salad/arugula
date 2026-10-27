@@ -2695,6 +2695,14 @@ auth = "daemon"
 clients = ["daemon"]
 note = "Move a row, within its zone or to another (`boards.write`)."
 
+[[route]]
+method = "PUT"
+path = "/api/daemon/block-state"  # wire::boards::AGENT_BLOCK_STATE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The state of one of the signing machine's own agent blocks, for the board rows that point at it (aru-116): the state word, branch, short HEAD, pushed, uncommitted count and diffstat, nothing else. The machine is the signer, never the body. Needs `boards.write` over a project; 403 without."
+
 # ---- platform: deploys and their approval (M218, platform step 7)
 # A project's environments and deploys (M217's storage). Members read; owners
 # and editors (or their agents) plan and ask; only an owner approves or

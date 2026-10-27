@@ -378,3 +378,72 @@ async fn an_agent_finds_no_boards_with_the_flag_off() {
     let (st, v) = geek(&base, "GET", &agent_project_boards(&t), None).await;
     assert_eq!(st, 404, "{v}");
 }
+
+/// A machine with `boards.write` reports its block's state and a board row
+/// pointing at the block shows it. Without the grant the report is refused,
+/// and a machine reports only its own blocks: the body names no machine.
+#[tokio::test]
+async fn a_machine_reports_its_blocks_and_the_row_shows_it() {
+    use crate::{agents_tests::give, grants::AGENT_UNGRANTED};
+    use arugula_control_wire::boards::AGENT_BLOCK_STATE;
+
+    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.flag_named("team:t", FLAG, true);
+
+    // A board with a row on geek's pane 7.
+    let (_, b) =
+        call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let (_, v) = put(&base, "a", &id, json!({ "entry": "zone", "title": "Now" })).await;
+    let now = v["zones"][0]["id"].as_str().unwrap().to_owned();
+    let pointer = json!({ "kind": "block", "machine": "geek", "pane": "7" });
+    put(&base, "a", &id, json!({ "entry": "row", "zone": now, "note": "parser", "pointer": pointer })).await;
+
+    let report = json!({ "pane": "7", "block": {
+        "state": "needs_input", "branch": "feat/parser", "head": "abc1234", "pushed": false,
+        "uncommitted": 2, "diffstat": { "files": 3, "added": 40, "removed": 2 } } });
+    let (st, v) = geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report.clone())).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(AGENT_UNGRANTED)), "no grant: {v}");
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(v["zones"][0]["rows"][0]["block"], Value::Null, "nothing was kept: {v}");
+
+    let (st, granted) =
+        call(&base, "a", "POST", "/api/grants", give("geek", "boards.write", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{granted}");
+    let (st, v) = geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report)).await;
+    assert_eq!(st, 200, "{v}");
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(
+        v["zones"][0]["rows"][0]["block"],
+        json!({ "state": "needs_input", "branch": "feat/parser", "head": "abc1234", "pushed": false,
+                "uncommitted": 2, "diffstat": { "files": 3, "added": 40, "removed": 2 } }),
+        "the row shows the state: {v}"
+    );
+
+    // Another machine with the grant sets its own pane 7, not geek's; a body
+    // with a field the ruling doesn't list is refused.
+    hub.daemon("other", "a", Some("t"));
+    let (st, _) =
+        call(&base, "a", "POST", "/api/grants", give("other", "boards.write", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200);
+    let idle = json!({ "pane": "7", "block": { "state": "idle" } });
+    let (st, v) = signed(&base, "a other", "PUT", AGENT_BLOCK_STATE, Some(idle)).await;
+    assert_eq!(st, 200, "{v}");
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(v["zones"][0]["rows"][0]["block"]["state"], json!("needs_input"), "geek's block is geek's: {v}");
+    let spoof = json!({ "pane": "7", "machine": "geek", "block": { "state": "idle" } });
+    let (st, _) = signed(&base, "a other", "PUT", AGENT_BLOCK_STATE, Some(spoof)).await;
+    assert!(st == 400 || st == 422, "no machine in the body: {st}");
+    let said = json!({ "pane": "7", "block": { "state": "idle", "message": "all done" } });
+    let (st, _) = geek(&base, "PUT", AGENT_BLOCK_STATE, Some(said)).await;
+    assert!(st == 400 || st == 422, "no message text: {st}");
+
+    // Revoking the grant hides what it reported.
+    let (st, _) =
+        call(&base, "a", "POST", &format!("/api/grants/{}/revoke", granted["id"].as_str().unwrap()), None).await;
+    assert_eq!(st, 200);
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(v["zones"][0]["rows"][0]["block"], Value::Null, "{v}");
+}

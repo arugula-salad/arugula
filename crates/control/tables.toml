@@ -1251,6 +1251,17 @@ note = "Those of projects that go with it go. The rest stay: they name no accoun
 seen_by = ["litestream"]
 
 [[table]]
+name = "board_block_states"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "What a machine says of one of its own agent blocks, for the board rows that point at it: the state word (working, needs input, idle or closed), the branch, the short HEAD, whether it is pushed, the number of uncommitted files and the diffstat as three numbers. Never message text, file names, prompts or a transcript (aru-116). Set under the machine's boards.write grant, and shown only on boards of a project that grant covers."
+why_asleep = "A board shows what an agent was doing on a teammate's phone with its machine asleep."
+with_account = "deleted"
+note = "Those of its machines."
+seen_by = ["litestream"]
+
+[[table]]
 name = "deploy_approvals"
 plane = "platform"
 process = "platform"

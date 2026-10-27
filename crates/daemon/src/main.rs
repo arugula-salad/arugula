@@ -75,6 +75,7 @@ mod public_preview;
 use arugula_mux::procinfo;
 use arugula_mux::provider;
 mod board_block;
+mod board_state;
 mod push;
 mod remote;
 mod review;
@@ -245,6 +246,8 @@ fn start_reach(r: &ReachArgs, app: &std::sync::Arc<server::App>, name: String) -
         info!(to = opts.origin, live = opts.live, "syncing history to the home daemon");
         tokio::spawn(sync::keep_pushing(opts, app.mux.store.clone()));
     }
+    // Control hears what the agent blocks' rows on a board should say.
+    tokio::spawn(board_state::keep_reporting(app.clone()));
     // M70: uploads older than a day go, from now.
     #[cfg(unix)]
     tokio::spawn(upload::keep_sweeping());

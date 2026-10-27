@@ -179,6 +179,7 @@ fn routes() -> Routes {
         .route(boards::AGENT_BOARD_ENTRIES, put(crate::boards::agent::put))
         .route(boards::AGENT_BOARD_ENTRY, axum::routing::delete(crate::boards::agent::delete))
         .route(boards::AGENT_BOARD_ENTRY_MOVE, post(crate::boards::agent::move_entry))
+        .route(boards::AGENT_BLOCK_STATE, put(crate::boards::agent::put_block_state))
         // Deploys and their approval (M218).
         .route(deploys::ENVIRONMENTS, get(deploys::environments).post(deploys::create_environment))
         .route(deploys::PROJECT_DEPLOYS, get(deploys::list).post(deploys::plan_route))

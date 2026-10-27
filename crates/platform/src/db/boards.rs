@@ -15,9 +15,12 @@
 //! - A pointer is stored, not resolved. A row's `note` and `status` are
 //!   separate columns.
 //! - Deleting a project (or its account) takes its boards.
+//! - A machine's report of one of its own agent blocks (`board_block_states`,
+//!   [`BlockState`]) is kept apart from the rows that point at it: one per
+//!   (machine, pane), set by the machine and read through a row's pointer.
 
 use anyhow::{Context as _, Result, bail};
-use arugula_control_wire::boards::{Board, EntryKind, Pointer, Status, ZoneKind};
+use arugula_control_wire::boards::{BlockState, BlockWord, Board, Diffstat, EntryKind, Pointer, Status, ZoneKind};
 
 use super::{
     Db,
@@ -133,6 +136,25 @@ fn status_str(s: Status) -> Option<&'static str> {
         Status::NeedsInput => "needs_input",
         Status::Done => "done",
         Status::Failed => "failed",
+    })
+}
+
+fn word_str(w: BlockWord) -> &'static str {
+    match w {
+        BlockWord::Working => "working",
+        BlockWord::NeedsInput => "needs_input",
+        BlockWord::Idle => "idle",
+        BlockWord::Closed => "closed",
+    }
+}
+
+fn word_of(s: &str) -> Result<BlockWord> {
+    Ok(match s {
+        "working" => BlockWord::Working,
+        "needs_input" => BlockWord::NeedsInput,
+        "idle" => BlockWord::Idle,
+        "closed" => BlockWord::Closed,
+        other => bail!("unknown block state {other}"),
     })
 }
 
@@ -642,6 +664,90 @@ impl Db {
         )
     }
 
+    /// The projects over which `machine` holds a live `boards.write` grant,
+    /// each with the account that gave it: whether the owner still reads the
+    /// project is for [`crate::grants::agent_may`].
+    pub fn machine_write_projects(&self, machine: &str, power: &str) -> Result<Vec<(String, String)>> {
+        self.c().query_map(
+            "SELECT scope_id, granted_by FROM grants WHERE subject_kind = ?3 AND subject_id = ?1 AND power = ?2
+             AND scope_kind = 'project' AND revoked_at IS NULL",
+            params![machine, power, super::projects::subject_kind(machine)],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
+    /// Keep what `machine` says of its block `pane`, replacing the last.
+    pub fn put_block_state(&self, machine: &str, account: &str, pane: &str, b: &BlockState, at: u64) -> Result<()> {
+        let d = b.diffstat;
+        self.c().execute(
+            "INSERT INTO board_block_states (machine, pane, account, state, branch, head, pushed, uncommitted,
+                 diff_files, diff_added, diff_removed, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT (machine, pane) DO UPDATE SET account = excluded.account, state = excluded.state,
+                 branch = excluded.branch, head = excluded.head, pushed = excluded.pushed,
+                 uncommitted = excluded.uncommitted, diff_files = excluded.diff_files,
+                 diff_added = excluded.diff_added, diff_removed = excluded.diff_removed,
+                 updated_at = excluded.updated_at",
+            params![
+                machine,
+                pane,
+                account,
+                word_str(b.state),
+                b.branch,
+                b.head,
+                b.pushed,
+                b.uncommitted,
+                d.map(|d| d.files),
+                d.map(|d| d.added),
+                d.map(|d| d.removed),
+                at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// What `machine` last said of these `panes`, by pane.
+    pub fn block_states(&self, machine: &str, panes: &[&str]) -> Result<Vec<(String, BlockState)>> {
+        if panes.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT pane, state, branch, head, pushed, uncommitted, diff_files, diff_added, diff_removed
+                 FROM board_block_states WHERE machine = ?1 AND {}",
+                in_json(&c, "pane", 2)
+            ),
+            params![machine, json_list(panes)?],
+            |r| {
+                let files: Option<u32> = r.get(6)?;
+                let state = BlockState {
+                    state: word_of(&r.get::<String>(1)?)?,
+                    branch: r.get(2)?,
+                    head: r.get(3)?,
+                    pushed: r.get(4)?,
+                    uncommitted: r.get(5)?,
+                    diffstat: match (files, r.get(7)?, r.get(8)?) {
+                        (Some(files), Some(added), Some(removed)) => Some(Diffstat { files, added, removed }),
+                        _ => None,
+                    },
+                };
+                Ok((r.get(0)?, state))
+            },
+        )
+    }
+
+    /// The boards (id, project) with a row that points at `machine`'s block
+    /// `pane`: who to tell that it changed.
+    pub fn boards_on_block(&self, machine: &str, pane: &str) -> Result<Vec<(String, String)>> {
+        self.c().query_map(
+            "SELECT DISTINCT b.id, b.project_id FROM board_entries e JOIN boards b ON b.id = e.board_id
+             WHERE e.target_kind = 'block' AND e.target = ?1 AND e.pane = ?2",
+            params![machine, pane],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
     pub fn board_places(&self, ids: &[&str]) -> Result<Vec<(String, String, String)>> {
         if ids.is_empty() {
             return Ok(vec![]);
@@ -667,5 +773,6 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     )?;
     c.execute("DELETE FROM boards WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("UPDATE boards SET created_by = '' WHERE created_by = ?1", params![d.account])?;
+    c.execute("DELETE FROM board_block_states WHERE account = ?1", params![d.account])?;
     Ok(())
 }

@@ -21,6 +21,8 @@ mod attach;
 mod attention;
 mod block_channels;
 mod blocks;
+#[cfg(all(unix, feature = "labs"))]
+mod board_state;
 mod chat_blocks;
 #[cfg(unix)]
 mod client_fixtures;

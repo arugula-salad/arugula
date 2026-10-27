@@ -7,6 +7,11 @@
 //! change), asked again on every call. What an agent writes is its owner's,
 //! and a row it adds says which machine's agent added it.
 //!
+//! A machine also reports the state of its own agent blocks
+//! ([`put_block_state`]), for the rows that point at them: the machine is
+//! the one that signed the request, and it needs `boards.write` over at
+//! least one project of its owner's.
+//!
 //! There is no route to make a board, and a zone can't be made, changed,
 //! moved or deleted from here (see [`super`]).
 
@@ -19,13 +24,23 @@ use axum::{
 };
 
 use super::J;
-use crate::{Platform, auth::Machine, db::issues::Actor};
+use crate::{
+    Platform,
+    auth::Machine,
+    db::{issues::Actor, projects::BOARDS_WRITE},
+    grants::{AGENT_UNGRANTED, AgentScope, agent_may},
+};
+use arugula_control_common::{ApiError, err, refusal};
+use axum::http::StatusCode;
 
 /// Reads a machine's agents make, per hour (a list, a board).
 const AGENT_BOARD_READS: (&str, usize) = ("board-agent-read", 3_600);
 /// Writes a machine's agents make, per hour: each lands at once and shows
 /// on everyone's board, so fewer than reads.
 const AGENT_BOARD_WRITES: (&str, usize) = ("board-agent-write", 600);
+/// Block reports a machine makes, per hour: its daemon sends a block's
+/// changes a few seconds apart at most.
+const AGENT_BLOCK_REPORTS: (&str, usize) = ("board-block-state", 2_400);
 
 fn actor(d: &Machine) -> Actor<'_> {
     Actor { account: &d.account, agent: Some(&d.daemon) }
@@ -75,4 +90,56 @@ pub async fn delete(
 ) -> J<wire::BoardView> {
     app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
     Ok(Json(super::delete(&app, actor(&d), &id, &entry).await?))
+}
+
+/// `PUT /api/daemon/block-state`: the state of one of the signing machine's
+/// own agent blocks. The machine is the signer's, never the body's, so one
+/// machine can't set another's block. Refused (403) unless the machine holds
+/// `boards.write` over a project of its owner's; 404 with the `boards` flag
+/// off for the owner.
+pub async fn put_block_state(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Json(p): Json<wire::PutBlockState>,
+) -> J<serde_json::Value> {
+    app.limits.check_daemon(AGENT_BLOCK_REPORTS, &d.daemon)?;
+    super::gate(&app, &d.account).await?;
+    may_report(&app, &d).await?;
+    super::name_ok(&p.pane, "pane")?;
+    state_ok(&p.block)?;
+    app.db.put_block_state(&d.daemon, &d.account, &p.pane, &p.block, arugula_e2e::now_ms())?;
+    match app.db.boards_on_block(&d.daemon, &p.pane) {
+        Ok(boards) => boards.iter().for_each(|(b, project)| super::changed(&app, project, b)),
+        Err(e) => tracing::warn!(error = %e, "boards: finding those on a block"),
+    }
+    Ok(Json(serde_json::json!({})))
+}
+
+/// The machine holds `boards.write` over at least one project, as
+/// [`agent_may`] reads it now.
+async fn may_report(app: &Platform, d: &Machine) -> Result<(), ApiError> {
+    for (project, owner) in app.db.machine_write_projects(&d.daemon, BOARDS_WRITE)? {
+        if owner == d.account && agent_may(app, d, BOARDS_WRITE, &AgentScope::Project(project)).await.is_ok() {
+            return Ok(());
+        }
+    }
+    Err(refusal(
+        StatusCode::FORBIDDEN,
+        AGENT_UNGRANTED,
+        "this machine has no boards.write grant over a project, so it may not report its agent blocks: its owner \
+         gives one with `arugula grants add <machine> boards.write --project <name>`",
+    ))
+}
+
+/// A report is short facts: a branch on one line, an abbreviated HEAD.
+fn state_ok(b: &wire::BlockState) -> Result<(), ApiError> {
+    let line = |s: &str| !s.is_empty() && s.chars().count() <= 200 && !s.chars().any(char::is_control);
+    if b.branch.as_deref().is_some_and(|s| !line(s)) {
+        return Err(err(StatusCode::BAD_REQUEST, "a branch is 1 to 200 characters, on one line"));
+    }
+    if b.head.as_deref().is_some_and(|h| h.is_empty() || h.len() > 40 || !h.chars().all(|c| c.is_ascii_alphanumeric()))
+    {
+        return Err(err(StatusCode::BAD_REQUEST, "a head is an abbreviated commit id"));
+    }
+    Ok(())
 }

@@ -150,6 +150,33 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
 export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat" | "board";
 
 /**
+ * What a daemon says of one of its own agent blocks, and all it says
+ * (aru-116's second ruling): the state word, the branch, the short HEAD,
+ * whether it is pushed, how many files are uncommitted and the diffstat.
+ * No message text, no file names, no prompts: the type has no field that
+ * could carry them, and a body with another field is refused.
+ */
+export type BoardBlockState = { state: BoardBlockWord, branch?: string | null, 
+/**
+ * HEAD, abbreviated.
+ */
+head?: string | null, pushed?: boolean | null, 
+/**
+ * How many files are uncommitted.
+ */
+uncommitted?: number | null, diffstat?: BoardDiffstat | null, };
+
+/**
+ * What an agent block is doing (aru-116's second ruling).
+ */
+export type BoardBlockWord = "working" | "needs_input" | "idle" | "closed";
+
+/**
+ * A `git diff --stat` summary line as numbers: nothing of the files.
+ */
+export type BoardDiffstat = { files: number, added: number, removed: number, };
+
+/**
  * Zone or row.
  */
 export type BoardEntryKind = "zone" | "row";
@@ -222,6 +249,11 @@ export type BoardRow = { id: string, rev: number, pointer: BoardPointer, note: s
  * item ([`BoardView`] is read with it; a write's answer has it too).
  */
 live?: BoardLive | null, 
+/**
+ * A `Block` pointer's block as its machine last reported it, when that
+ * machine holds `boards.write` over the board's project.
+ */
+block?: BoardBlockState | null, 
 /**
  * The machine whose agent added the row, if one did (it may remove
  * it; nobody else's agent may).
