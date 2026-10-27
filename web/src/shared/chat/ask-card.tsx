@@ -14,6 +14,8 @@
 //   the session's card's own form (`SessionAskForm`, `./session-card`), a
 //   button per choice, and the agent's question in words where it takes
 //   them. Its project's owners and editors answer it, as on the card.
+//   Answered there, its text gains a line, "<name> answered: <choice>"
+//   (Arugula #215), drawn after the question.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../maintenance";
@@ -126,10 +128,17 @@ function SessionAsk({ ses, m }: { ses: string; m: ChatMessage }) {
   const c = view?.card;
   const open = m.mentions.length > 0 && !!c?.open && !c.answered;
   if (!view || !c || !open) {
+    // Answered from its form or the card, its text says by whom and what
+    // under the question (Arugula #215).
+    const [question, ...answer] = m.text.split("\n");
     return (
       <p class="session-ask-done dim" data-ask={m.seq} data-ask-state={view && !open ? "answered" : "loading"}>
-        {m.text}
-        {view && !open && <span> Answered.</span>}
+        {question}
+        {answer.length > 0 ? (
+          <span data-ask-answer> · {answer.join(" ")}</span>
+        ) : (
+          view && !open && <span> Answered.</span>
+        )}
       </p>
     );
   }

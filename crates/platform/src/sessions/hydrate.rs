@@ -50,9 +50,11 @@
 //!   `#N`, which on GitHub is another), to ask with the agent's tool for
 //!   asking (AskUserQuestion in Claude Code; a Try 3's Codex runs the same
 //!   prompt, M264), since a question only in its reply ends the turn
-//!   unanswered, that its turn's last message is its answer in the thread
-//!   (so the summary goes there), how GitHub's text is to be read, and
-//!   that replies come as prompts. The repo's own `CLAUDE.md` and `AGENTS.md` are the box's to
+//!   unanswered, that the answer comes back as the tool's result and is
+//!   the person's to give (Arugula #215), that its turn's last message is
+//!   its answer in the thread (so the summary goes there), how GitHub's
+//!   text is to be read, and that replies come as prompts. The repo's own
+//!   `CLAUDE.md` and `AGENTS.md` are the box's to
 //!   read from the checkout (M255), not this prompt's.
 //! - **At most [`MAX_PROMPT`]** bytes. Past that the oldest messages go
 //!   first (the newest, the ask itself, always stays), then the thread
@@ -160,6 +162,11 @@ fn rules(t: &Thread) -> String {
     out.push_str(
         "- To ask the person something, use your tool for asking (AskUserQuestion in Claude Code): they answer on \
          the card in the thread. A question written only in your reply ends your turn without an answer.\n",
+    );
+    // Arugula #215: what the answer is, and that it's theirs to give.
+    out.push_str(
+        "- A question you ask waits for the person: their answer comes back as the tool's result. It's what they \
+         chose, so do what it says; if it doesn't settle what to do, ask again, don't pick for them.\n",
     );
     out.push_str(
         "- Your last message of each turn is posted in this thread as your answer, and your earlier ones aren't: \

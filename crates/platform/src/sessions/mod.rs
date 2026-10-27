@@ -16,6 +16,7 @@
 //! - [`typed`]: a turn someone typed in its block, said in its thread
 //!   (Arugula #215).
 //! - [`merged`]: its PR merged, so its thread is done (M265).
+//! - [`model`]: which model its agent uses (Arugula #215).
 //! - [`pool`]: which of the project's workspaces it runs on (Arugula
 //!   #214), and [`moves`], Move to… another.
 //! - [`asks`]: what still needs its asker, as a form and a mention of them
@@ -39,6 +40,7 @@ pub mod hydrate;
 pub mod issues;
 pub mod job;
 pub mod merged;
+pub mod model;
 pub mod moves;
 pub mod pool;
 pub mod pr;

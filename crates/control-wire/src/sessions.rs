@@ -24,6 +24,8 @@
 //! | `POST` [`SESSION_TRY`] [`SessionTryAsk`]: [`SessionView`] | owners and editors who may start one |
 //! | `POST` [`SESSION_PICK`] [`SessionPick`]: [`SessionView`] | owners and editors |
 //! | `GET` [`PROJECT_SESSION_STATS`]: [`SessionStats`] | the project's members |
+//! | `GET` [`PROJECT_SESSION_SETTINGS`]: [`SessionSettings`] | the project's members |
+//! | `PUT` [`PROJECT_SESSION_SETTINGS`] [`SessionSettings`]: [`SessionSettings`] | owners and editors |
 //! | `POST` [`ISSUE_AGENT`]: [`IssueAgent`] | the project's owners and editors, as `@arugula` |
 //! | `POST` [`SESSION_MOVE`] [`SessionMove`]: [`SessionView`] | its asker, owners and editors |
 //! | `GET` [`ASK`]: [`ChatAsk`] | whoever reads its room |
@@ -43,6 +45,11 @@
 //! nobody's words: never a prompt, never a mention, never the asker's.
 //! A turn someone typed in the session's block itself gets the platform's
 //! line in the thread, saying who asked what there.
+//!
+//! **Which model** (Arugula #215). The ask's own word ("use sonnet"), else
+//! the project's "agents use model" setting ([`SessionSettings`]), else the
+//! strongest: Opus for Claude Code. The card says which its box runs it on
+//! ([`SessionCard::model`]).
 //!
 //! **Asks** (Arugula #214). What still needs the asker is a message in the
 //! thread, also sent to the channel, that mentions them, so it's an unread
@@ -98,6 +105,9 @@ pub const SESSION_PICK: &str = "/api/sessions/{ses}/pick";
 
 /// `GET`: a project's agent sessions in numbers ([`SessionStats`], M265).
 pub const PROJECT_SESSION_STATS: &str = "/api/projects/{project}/sessions/stats";
+/// `GET` [`SessionSettings`]: what a project's sessions use (Arugula
+/// #215); `PUT` [`SessionSettings`]: change it, for its owners and editors.
+pub const PROJECT_SESSION_SETTINGS: &str = "/api/projects/{project}/sessions/settings";
 /// `POST`: "Agent on this" on a native issue ([`IssueAgent`], M265).
 pub const ISSUE_AGENT: &str = "/api/issues/{issue}/agent";
 
@@ -226,6 +236,13 @@ pub struct SessionCard {
     /// it on, once it took it (`claude` when the other isn't there).
     pub harness: String,
     pub ran: Option<String>,
+    /// The model it was asked to use (Arugula #215): its ask's word ("use
+    /// sonnet"), else its project's setting, else `None` (the strongest).
+    #[serde(default)]
+    pub model_asked: Option<String>,
+    /// The model its agent runs on, as its box last said (`Opus 5.5`).
+    #[serde(default)]
+    pub model: Option<String>,
     /// A Try 3's sessions, on its parent's card: the parent first, then its
     /// siblings, oldest first. Empty for every other session.
     pub tries: Vec<SessionTry>,
@@ -523,6 +540,19 @@ pub struct SessionPrSent {
     pub via: Option<String>,
     /// The machine that sent it.
     pub machine: Option<String>,
+}
+
+/// [`PROJECT_SESSION_SETTINGS`]: "agents use model …" (Arugula #215), one
+/// of [`crate::work::MODELS`], or `None` for the strongest. An ask's own
+/// word ("use sonnet") wins for its session.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionSettings {
+    #[serde(default)]
+    pub model: Option<String>,
+    /// What it may be, in a `GET`'s answer: [`crate::work::MODELS`].
+    #[serde(default)]
+    pub models: Vec<String>,
 }
 
 /// [`PROJECT_SESSION_STATS`]'s answer: of the project's sessions asked for

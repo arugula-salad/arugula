@@ -157,6 +157,21 @@ impl Fake {
         harness: Option<&str>,
         review: bool,
     ) {
+        self.start_on(id, slug, prompt, finish, harness, review, None);
+    }
+
+    /// [`Fake::start_as`], on `model` (Arugula #215).
+    #[allow(clippy::too_many_arguments)]
+    fn start_on(
+        &self,
+        id: &str,
+        slug: &str,
+        prompt: SessionPrompt,
+        finish: Option<FinishStep>,
+        harness: Option<&str>,
+        review: bool,
+        model: Option<&str>,
+    ) {
         let work = SessionWork {
             session: id.into(),
             project: PROJECT.into(),
@@ -171,6 +186,7 @@ impl Fake {
             finish,
             harness: harness.map(str::to_owned),
             review,
+            model: model.map(str::to_owned),
         };
         self.sessions.lock().unwrap().insert(id.into(), Ses { work, stopped: false });
     }
@@ -685,6 +701,11 @@ fn a_hosted_machine_runs_sessions() {
     let lines = transcript(&d, block);
     let at = lines.iter().position(|l| l.starts_with("user: hello")).unwrap();
     assert_eq!(lines[at - 1], "note: A follow-up from jhgaylor", "{lines:#?}");
+    // Arugula #215: on the strongest model, said outright as the session
+    // opened, and its reports say which.
+    let models: Vec<String> = f.of(&a).into_iter().filter_map(|(_, d)| d.model).collect();
+    assert!(models.first().is_some_and(|m| m == "Opus 5.5"), "{models:?}");
+    assert!(f.turn_reports(&a).iter().all(|d| d.model.as_deref() == Some("Opus 5.5")), "each turn's says it");
 
     // A follow-up queued mid-turn waits for the turn, then goes as its own
     // author's (by id, with no login); a cancel stops the turn.
@@ -725,6 +746,14 @@ fn a_hosted_machine_runs_sessions() {
     let (_, asked_d) = f.of(&a).into_iter().rfind(|(r, _)| r.to == "needs_input").unwrap();
     assert_eq!(asked_d.ask.as_deref(), Some("question"));
     assert!(asked_d.question.as_deref().is_some_and(|q| q.contains("colour")), "{asked_d:?}");
+    // Arugula #215: the question holds the turn until it's answered. The
+    // agent waits on it: nothing ends, and nothing goes on, unasked.
+    let turns = f.turn_reports(&a).len();
+    let p = f.pulls();
+    wait(&marks, &f, "pulls while it waits", || f.pulls() > p + 10);
+    assert_eq!(f.state(&a), "needs_input", "still waiting on its answer");
+    assert_eq!(f.turn_reports(&a).len(), turns, "no turn ended without it");
+    assert!(!transcript(&d, block).iter().any(|l| l.contains("You answered")), "the agent didn't go on");
     // As its asker's login, which the platform sends (else the account id).
     let mut answer = action(2, "acct2", "answer");
     answer.by_name = "ann".into();
@@ -752,6 +781,7 @@ fn a_hosted_machine_runs_sessions() {
         .map(|e| std::fs::read_to_string(e.path()).unwrap())
         .collect();
     assert!(modes.contains(r#""mode": "bypassPermissions""#), "its session's mode: {modes}");
+    assert!(modes.contains(r#""model": "opus""#), "its session's model, set as it opened: {modes}");
 
     // A restart between turns: what was queued while the daemon was down
     // runs once, and the agent's conversation goes on, as the same user.
@@ -790,8 +820,12 @@ fn a_hosted_machine_runs_sessions() {
     // until one is stopped.
     let (b, c, e) = (ses('b'), ses('c'), ses('e'));
     f.start(&b, "one", prompt(10, "acct1", "slow"));
-    f.start(&c, "two", prompt(11, "acct1", "slow"));
+    // c on the model its ask named (Arugula #215).
+    f.start_on(&c, "two", prompt(11, "acct1", "slow"), None, None, false, Some("haiku"));
     wait(&marks, &f, "b and c working", || f.state(&b) == "working" && f.state(&c) == "working");
+    wait(&marks, &f, "c says its model", || f.of(&c).iter().any(|(_, d)| d.model.is_some()));
+    let said: Vec<String> = f.of(&c).into_iter().filter_map(|(_, d)| d.model).collect();
+    assert_eq!(said, ["Haiku 4.5"], "the one asked for, by its name");
     f.start(&e, "three", prompt(12, "acct2", "hello"));
     let p = f.pulls();
     wait(&marks, &f, "more pulls", || f.pulls() > p + 10);

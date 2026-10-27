@@ -57,6 +57,9 @@ fn each_report_is_the_sessions_next_signed() {
         turns_seen: Some(0),
         harness: None,
         review: false,
+        model: None,
+        model_now: None,
+        model_said: None,
     };
     l.push(
         &keys,
@@ -151,6 +154,9 @@ fn a_turns_report_carries_its_last_message() {
         turns_seen: Some(0),
         harness: None,
         review: false,
+        model: None,
+        model_now: None,
+        model_said: None,
     };
     // Quotes and newlines double in JSON: a full reply beside a full
     // diffstat would be past 16 KiB.
@@ -438,6 +444,9 @@ async fn a_push_back_after_an_end_cleans_again() {
         turns_seen: None,
         harness: None,
         review: false,
+        model: None,
+        model_now: None,
+        model_said: None,
     };
     assert!(claim(&dir, &l));
     let place = dir.join(super::super::DIR).join(DIR).join(format!("{}.push", l.session));
@@ -487,4 +496,44 @@ fn what_was_typed_in_the_block_is_its_turns() {
     assert_eq!(s.typed_at(0), None, "too old to say");
     assert_eq!(s.typed_at(4).as_deref(), Some("and the changelog"), "not started: the queue's head");
     assert_eq!(s.typed_at(5), None);
+}
+
+/// Which model a session's block opens with (Arugula #215): the one control
+/// asked for, else the strongest, said outright; Codex picks its own. Its
+/// reports say the one its agent is on when that changes, and each turn's.
+#[test]
+fn a_session_runs_on_the_model_asked_for() {
+    let w = |model: Option<&str>| -> SessionWork {
+        serde_json::from_value(json!({ "session": format!("ses_{}", "f".repeat(32)), "project": "prj_1",
+            "workspace": "hw_1", "asker": "acct1", "branch": "arugula/x", "state": "queued", "n": 0, "model": model }))
+        .unwrap()
+    };
+    assert_eq!(model_for(&w(None), None).as_deref(), Some(DEFAULT_MODEL), "the strongest, said outright");
+    assert_eq!(DEFAULT_MODEL, "opus");
+    assert_eq!(model_for(&w(Some("sonnet")), None).as_deref(), Some("sonnet"));
+    assert_eq!(model_for(&w(Some("gpt-9")), None).as_deref(), Some("opus"), "not one of ours: the default");
+    assert_eq!(model_for(&w(Some("sonnet")), Some("codex")), None, "Codex picks its own");
+
+    let keys = arugula_e2e::DeviceKeys::generate();
+    let me = keys.id();
+    let mut l: Session = serde_json::from_value(json!({
+        "session": format!("ses_{}", "f".repeat(32)), "project": "prj_1", "workspace": "hw_1", "asker": "acct1",
+        "branch": "arugula/x", "user": { "user": "ses1", "home": "/home/ses1" }, "checkout": "/home/ses1/work/x",
+        "taken_at": 1, "n": 0, "state": "queued", "model": "opus" }))
+    .unwrap();
+    let model = |l: &Session, i: usize| -> Option<String> {
+        serde_json::from_str::<SessionDetail>(&l.events[i].report.detail).unwrap().model
+    };
+    l.push(&keys, &me, Kind::State, State::Working, SessionDetail::default());
+    assert_eq!(model(&l, 0), None, "not known yet");
+    l.model_now = Some("Opus 5.5".into());
+    l.push(&keys, &me, Kind::Heartbeat, State::Working, SessionDetail::default());
+    l.push(&keys, &me, Kind::Heartbeat, State::Working, SessionDetail::default());
+    l.push(&keys, &me, Kind::Turn, State::Working, SessionDetail::default());
+    assert_eq!(
+        (model(&l, 1).as_deref(), model(&l, 2), model(&l, 3).as_deref()),
+        (Some("Opus 5.5"), None, Some("Opus 5.5")),
+        "once it's known, again on each turn"
+    );
+    assert_eq!(agent_config(&l)["model"], "opus", "the block switches to it as the session opens");
 }

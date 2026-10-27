@@ -879,6 +879,8 @@ mod tests {
             picked_by: None,
             picked_at: None,
             merged_at: None,
+            model: None,
+            ran_model: None,
         }
     }
 

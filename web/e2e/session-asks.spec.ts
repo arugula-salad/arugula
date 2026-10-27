@@ -10,7 +10,9 @@
 // mention of Bob, and its buttons are his. He presses one in the channel
 // and the session starts on a box with that repo. Its agent asks a
 // question with choices: the card in the channel has a button each, and
-// Bob's press is the answer. Done, Move to… sends it to the other box.
+// Bob's press is the answer, which the ask then says (Arugula #215). The
+// card says the model its agent runs on. Done, Move to… sends it to the
+// other box. Alice chooses the model the project's agents use.
 
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
@@ -70,11 +72,27 @@ function boxSays(ses: string, to: string, detail: Record<string, unknown>) {
     ).run(ses, seq, s.state, to, now, JSON.stringify(detail), machine, n);
     db.prepare(
       `UPDATE agent_sessions SET state = ?, last_seq = ?, daemon_n = ?, heard_at = ?, updated_at = ?, machine = ?,
-         block = COALESCE(?, block) WHERE id = ?`,
-    ).run(to, seq, n, now, now, machine, typeof detail.block === "string" ? detail.block : null, ses);
+         block = COALESCE(?, block), ran_model = COALESCE(?, ran_model) WHERE id = ?`,
+    ).run(to, seq, n, now, now, machine, typeof detail.block === "string" ? detail.block : null, typeof detail.model === "string" ? detail.model : null, ses);
     const prompts = Array.isArray(detail.prompts) ? (detail.prompts as string[]) : [];
     for (const p of prompts) db.prepare("UPDATE session_prompts SET state = 'sent', sent_at = ? WHERE id = ?").run(now, p);
     db.prepare("INSERT INTO chat_events (kind, body, to_account, at) VALUES ('live', ?, NULL, ?)").run(JSON.stringify({ type: "session", room: s.room_id, ses }), now);
+  });
+}
+
+/** The ask the platform posts when the box says its agent asks (its
+ * report route, which takes only the box's signature): in the session's
+ * thread and the channel, mentioning `who`. */
+function platformAsks(ses: string, who: string, text: string) {
+  sql((db) => {
+    const s = db.prepare("SELECT room_id, parent_seq FROM agent_sessions WHERE id = ?").get(ses) as unknown as { room_id: string; parent_seq: number };
+    const now = Date.now();
+    const { last_seq: seq } = db.prepare("UPDATE chat_rooms SET last_seq = last_seq + 1 WHERE id = ? RETURNING last_seq").get(s.room_id) as { last_seq: number };
+    db.prepare(
+      `INSERT INTO chat_messages (room, seq, author, at, text, mentions, via, parent, also)
+       VALUES (?, ?, '', ?, ?, ?, ?, ?, 1)`,
+    ).run(s.room_id, seq, now, text, JSON.stringify([who]), `ask:${ses}`, s.parent_seq);
+    db.prepare("INSERT INTO chat_events (kind, body, to_account, at) VALUES ('live', ?, NULL, ?)").run(JSON.stringify({ type: "message", room: s.room_id, seq }), now);
   });
 }
 
@@ -186,14 +204,21 @@ test("the which-repo ask is in the channel, Bob's mention, and his press starts 
 test("the agent's question has a button per choice on its card in the channel", async () => {
   test.setTimeout(60_000);
   const prompt = sql((db) => (db.prepare("SELECT id FROM session_prompts WHERE session_id = ?").get(ses) as { id: string }).id);
-  boxSays(ses, "working", { prompts: [prompt], block: "3" });
+  boxSays(ses, "working", { prompts: [prompt], block: "3", model: "Opus 5.5" });
   boxSays(ses, "needs_input", { question: "Which colour?", request: "req_1", ask: "question", options: ["Red", "Blue"] });
+  platformAsks(ses, bobAccount, "@arugula asks bob: Which colour?");
   const card = channel(bob).locator(`[data-session-card="${ses}"]`);
+  // The model its agent runs on, as its box said (Arugula #215).
+  await expect(card.locator("[data-session-model]")).toHaveText("· Opus 5.5", { timeout: 15_000 });
   await expect(card.locator("[data-session-label]")).toHaveText("needs input", { timeout: 15_000 });
   await expect(card.locator("[data-ask-choice]")).toHaveText(["Red", "Blue"]);
   await expect(card.locator("[data-ask-words]")).toBeVisible();
   await card.locator('[data-ask-choice="Blue"]').click();
   await expect(card.locator("[data-session-answered]")).toContainText("Answered by bob", { timeout: 15_000 });
+  // Its ask in the channel says who answered and what: the agent's next
+  // words aren't it answering itself (Arugula #215).
+  await expect(channel(bob).locator("[data-ask-answer]")).toHaveText("· bob answered: Blue", { timeout: 15_000 });
+  await expect(channel(alice).locator("[data-ask-answer]")).toHaveText("· bob answered: Blue", { timeout: 15_000 });
   const action = sql((db) => db.prepare("SELECT kind, by_account, request, answer FROM session_actions WHERE session_id = ?").get(ses) as Record<string, string>);
   expect([action.kind, action.by_account, action.request, JSON.parse(action.answer)]).toEqual(["answer", bobAccount, "req_1", { question_0: "Blue" }]);
 });
@@ -211,4 +236,17 @@ test("done, Move to… sends it to the other box with its repo", async () => {
   expect(sessionOn(parent)?.state).toBe("queued");
   await expect(card.locator("[data-session-label]")).toHaveText("queued", { timeout: 15_000 });
   await expect(card).toContainText("on web");
+});
+
+test("Alice chooses the model the project's agents use", async () => {
+  test.setTimeout(60_000);
+  await alice.bringToFront();
+  await alice.goto(`${app}/p/${project}/settings`);
+  const pick = alice.locator("[data-agent-model-select]");
+  await expect(pick).toBeVisible({ timeout: 15_000 });
+  await expect(pick.locator("option")).toHaveText(["The strongest (Opus)", "Opus", "Fable", "Sonnet", "Haiku"]);
+  await pick.selectOption("sonnet");
+  await expect(alice.locator("[data-agent-model]")).toContainText("Saved", { timeout: 15_000 });
+  const kept = sql((db) => (db.prepare("SELECT agents_model FROM projects WHERE id = ?").get(project) as { agents_model: string | null }).agents_model);
+  expect(kept).toBe("sonnet");
 });

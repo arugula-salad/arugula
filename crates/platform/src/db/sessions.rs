@@ -78,7 +78,7 @@
 
 use anyhow::{Context as _, Result, bail};
 pub use arugula_control_wire::work::{
-    MAX_SESSIONS_PER_BOX, SessionAction, SessionDetail, SessionPrompt, SessionWork, TYPED_MAX,
+    MAX_SESSIONS_PER_BOX, MODEL_MAX, MODELS, SessionAction, SessionDetail, SessionPrompt, SessionWork, TYPED_MAX,
 };
 pub use arugula_e2e::session::{Kind, QUIET_MS, State};
 
@@ -267,6 +267,10 @@ pub struct Session {
     pub picked_at: Option<u64>,
     /// When the mirror saw its PR merged (M265): its thread is done.
     pub merged_at: Option<u64>,
+    /// The model its ask named (Arugula #215): `None` takes its project's.
+    pub model: Option<String>,
+    /// The model its box last said its agent runs on (`Opus 5.5`).
+    pub ran_model: Option<String>,
 }
 
 impl Session {
@@ -663,7 +667,7 @@ impl AgentsOn {
 pub(super) const COLS: &str = "id, project_id, room_id, parent_seq, asker, workspace_id, machine, block, repo, \
                                branch, state, was_state, last_seq, daemon_n, heard_at, last_tool, last_error, pr, \
                                ci_rounds, created_at, updated_at, role, parent_session, harness, picked, \
-                               picked_by, picked_at, merged_at";
+                               picked_by, picked_at, merged_at, model, ran_model";
 const EVENT_COLS: &str = "session_id, seq, kind, from_state, to_state, at, detail, daemon, daemon_n, sig";
 const PROMPT_COLS: &str = "id, session_id, author, source, association, text, state, created_at, sent_at, dropped_at";
 const ACTION_COLS: &str =
@@ -706,6 +710,8 @@ pub(super) fn session_row(r: &Row) -> Result<Session> {
         picked_by: r.get(25)?,
         picked_at: r.get(26)?,
         merged_at: r.get(27)?,
+        model: r.get(28)?,
+        ran_model: r.get(29)?,
     })
 }
 
@@ -1054,6 +1060,16 @@ fn make_in(
     Ok(Some((session, prompt)))
 }
 
+/// Session `id` uses `model` (Arugula #215): one of [`MODELS`], or `None`
+/// for its project's. Anything else is left as it was.
+pub fn set_model_in(c: &impl Sql, id: &str, model: Option<&str>) -> Result<()> {
+    if model.is_some_and(|m| !MODELS.contains(&m)) {
+        return Ok(());
+    }
+    c.execute("UPDATE agent_sessions SET model = ?2 WHERE id = ?1", params![id, model])?;
+    Ok(())
+}
+
 /// The slug of session `s`'s branch (`arugula/<8 hex>-<slug>`).
 pub fn slug_of(s: &Session) -> &str {
     let short = s.id.strip_prefix("ses_").unwrap_or(&s.id);
@@ -1129,6 +1145,8 @@ pub fn start_tries_in(
         let Some((sib, _)) = make_in(c, &new, Role::Try, Some(&p.id), h, at + i as u64)? else {
             return Ok(Err(Refused::Detail("its workspace is gone")));
         };
+        // On the model the thread's asked for (Arugula #215).
+        set_model_in(c, &sib.id, p.model.as_deref())?;
         dispatch(c, &sib.id, at)?;
         out.push(sib);
     }
@@ -1501,7 +1519,8 @@ pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(Sessi
                 "UPDATE agent_sessions SET machine = ?2, daemon_n = ?3, heard_at = ?4,
                      block = COALESCE(?5, block),
                      last_tool = CASE WHEN ?6 THEN ?7 ELSE last_tool END,
-                     last_error = COALESCE(?8, last_error)
+                     last_error = COALESCE(?8, last_error),
+                     ran_model = COALESCE(?9, ran_model)
                  WHERE id = ?1",
                 params![
                     s.id,
@@ -1511,7 +1530,8 @@ pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(Sessi
                     d.block.filter(|_| r.kind == Kind::State && r.from == State::Queued),
                     r.kind == Kind::Heartbeat,
                     d.tool.map(|t| clip(&t, TOOL_MAX)),
-                    d.error.filter(|_| r.kind == Kind::Error)
+                    d.error.filter(|_| r.kind == Kind::Error),
+                    d.model.map(|m| clip(&m, MODEL_MAX))
                 ],
             )?;
             for p in &prompts {
@@ -1904,6 +1924,12 @@ impl Db {
             .optional()?
             .and_then(|spec| serde_json::from_str::<crate::hosted::Spec>(&spec).ok())
             .and_then(|spec| spec.finish_step());
+        // Which model its agents use, unless a session's ask said (Arugula
+        // #215).
+        let model = match live.first() {
+            Some(s) => agents_model_in(&c, &s.project)?,
+            None => None,
+        };
         // Every live session but a queued one holds a slot, a done one too.
         let busy = live.iter().filter(|s| s.state != State::Queued);
         let mut room = MAX_SESSIONS_PER_BOX.saturating_sub(busy.count());
@@ -1938,6 +1964,7 @@ impl Db {
                 finish: finish.clone().filter(|_| s.role != Role::Review),
                 harness: Some(s.harness.clone()),
                 review: s.role == Role::Review,
+                model: s.model.clone().or_else(|| model.clone()),
             });
         }
         Ok(out)
@@ -1986,6 +2013,23 @@ impl Db {
         })
     }
 
+    /// The model `project`'s agents use (Arugula #215): one of [`MODELS`],
+    /// or `None` for the strongest.
+    pub fn agents_model(&self, project: &str) -> Result<Option<String>> {
+        agents_model_in(&self.c(), project)
+    }
+
+    /// Choose the model `project`'s agents use, or `None` for the strongest
+    /// again: false when it isn't one of [`MODELS`] (or there's no such
+    /// project), and nothing changed.
+    pub fn set_agents_model(&self, project: &str, model: Option<&str>) -> Result<bool> {
+        if model.is_some_and(|m| !MODELS.contains(&m)) {
+            return Ok(false);
+        }
+        let n = self.c().execute("UPDATE projects SET agents_model = ?2 WHERE id = ?1", params![project, model])?;
+        Ok(n == 1)
+    }
+
     /// Choose the workspace `project`'s agents run on, or `None` for the
     /// default again: false when it isn't one of the project's live
     /// workspaces (or there's no such project), and nothing changed.
@@ -2002,6 +2046,12 @@ impl Db {
         };
         Ok(n == 1)
     }
+}
+
+fn agents_model_in(c: &impl Sql, project: &str) -> Result<Option<String>> {
+    let m: Option<Option<String>> =
+        c.query_row("SELECT agents_model FROM projects WHERE id = ?1", params![project], |r| r.get(0)).optional()?;
+    Ok(m.flatten().filter(|m| MODELS.contains(&m.as_str())))
 }
 
 /// What deleting an account takes from here, inside the platform's

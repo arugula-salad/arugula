@@ -700,7 +700,10 @@ def handle(m):
         if s is not None and p.get("configId") == "model":
             s["model"] = p.get("value")
             save(p["sessionId"], s)
-        send({"id": mid, "result": {"configOptions": CONFIG_OPTIONS}})
+        # As claude-agent-acp answers: the options, on the one chosen.
+        now = [dict(o, currentValue=s.get("model", o["currentValue"])) if s is not None and o["id"] == "model" else o
+               for o in CONFIG_OPTIONS]
+        send({"id": mid, "result": {"configOptions": now}})
     elif method == "session/set_mode":
         s = load(p.get("sessionId", ""))
         if s is None or p.get("modeId") not in MODES:
