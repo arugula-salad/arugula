@@ -506,6 +506,20 @@ export class TerminalView {
     return this.term.getSelection();
   }
 
+  selectAll() {
+    this.term.selectAll();
+  }
+
+  /** Text into the program as a paste (bracketed when it asked for that). */
+  paste(text: string) {
+    this.term.paste(text);
+  }
+
+  /** Empty the scrollback; the program's screen is its own. */
+  clearScrollback() {
+    this.term.clear();
+  }
+
   /** M61: find text quoted from this terminal (the newest place its lines
    * appear), scroll to it and select it. False when it's no longer in the
    * scrollback. */

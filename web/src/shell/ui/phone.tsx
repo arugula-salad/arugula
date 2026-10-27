@@ -260,7 +260,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                       owner &&
                       client.info(active)?.type === "doc" &&
                       docShareItems(client, active).map((i) =>
-                        typeof i === "string" || "header" in i ? null : (
+                        typeof i === "string" || !("run" in i) ? null : (
                           <button key={i.label} data-doc-share={i.label} disabled={i.disabled} title={i.hint} onClick={act(i.run)}>
                             {i.label}
                           </button>

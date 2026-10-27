@@ -127,18 +127,27 @@ function remember(key: string) {
 
 /** A menu's items as commands: headers name the items after them, up to
  * the next separator; a header that opens the menu says what it's for. */
-function fromMenu(group: string, items: MenuItem[], about?: string): Command[] {
+function fromMenu(group: string, items: MenuItem[], about?: string, heading: string | null = null, top = true): Command[] {
   const out: Command[] = [];
-  let under: string | null = null;
+  let under: string | null = heading;
   let detail: string | undefined = about;
   items.forEach((item, i) => {
-    if (item === "separator") under = null;
+    if (typeof item === "object" && "submenu" in item) {
+      // Listed as if it were in the menu, by their own names.
+      out.push(...fromMenu(group, item.submenu, detail, under, false));
+    } else if (item === "separator") under = null;
     else if ("header" in item) {
-      if (i === 0) detail = item.header;
+      if (top && i === 0) detail = item.header;
       else under = item.header;
     } else {
       const label = under ? `${under}: ${item.label}` : item.label;
-      out.push({ key: `${group}/${label}`, group, detail, ...item, label });
+      // A row that asks first in the menu asks here too, in a prompt.
+      const run = item.confirm
+        ? async () => {
+            if ((await askText(`${item.label}? Type yes to confirm`, ""))?.trim().toLowerCase() === "yes") item.run();
+          }
+        : item.run;
+      out.push({ key: `${group}/${label}`, group, detail, ...item, label, run });
     }
   });
   return out;

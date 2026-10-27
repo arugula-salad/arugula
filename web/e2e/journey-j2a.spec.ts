@@ -17,7 +17,7 @@ import type { App } from "./journey/app";
 import { clickTerminal, onboarded, screenText } from "./journey/first-run";
 import { Journey, type Surface } from "./journey/record";
 import { World } from "./journey/world";
-import { closeContexts } from "./helpers";
+import { closeContexts, menuItem } from "./helpers";
 
 test.afterAll(closeContexts);
 test.use({ actionTimeout: 20_000 });
@@ -152,7 +152,7 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
       async (p) => {
         const v = p.viewportSize()!;
         await p.mouse.click(v.width / 2, v.height / 2, { button: "right" });
-        await p.getByRole("menuitem", { name: "Ask the owner to let me drive it" }).click();
+        await (await menuItem(p, "Ask the owner to let me drive it")).click();
       },
     );
 

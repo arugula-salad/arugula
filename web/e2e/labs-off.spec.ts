@@ -16,7 +16,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, open, paneEl, ready, sheetTab } from "./helpers";
+import { closeContexts, menuItem, menuItems, open, paneEl, ready, sheetTab } from "./helpers";
 import { labs } from "./labs";
 import { ANY, daemonPort } from "./ports";
 
@@ -63,18 +63,13 @@ const features = async () => ((await (await api("/api/host")).json()) as { featu
 /** What this page shows to a stranger's eye, wherever labs would put it. */
 const MENU_HIDDEN = [/^Thread\b/, /^Session thread/, /\bVM\b/, /^Sandboxes/, /studio app/i, /^Invite over ssh/, /^Developer settings/];
 
-async function menuItems(page: Page) {
-  const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
-  expect(items.length).toBeGreaterThan(3);
-  return items;
-}
-
 async function noLabsItems(page: Page, pane: number) {
   // The pane's menu: still the usual, and still the read-only link.
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
-  await expect(page.getByRole("menuitem", { name: "Share read-only link…" })).toBeVisible();
-  for (const item of await menuItems(page)) for (const h of MENU_HIDDEN) expect(item, `pane menu: ${item}`).not.toMatch(h);
-  await expect(page.getByRole("menuitem", { name: "Invite over ssh…" })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "Split right" })).toBeVisible();
+  const shown = await menuItems(page);
+  expect(shown).toContain("Share read-only link…");
+  for (const item of shown) for (const h of MENU_HIDDEN) expect(item, `pane menu: ${item}`).not.toMatch(h);
   await page.keyboard.press("Escape");
   // The session menu and the + button's.
   for (const [where, button] of [
@@ -295,7 +290,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   expect(asked.filter((u) => LABS_CHUNK.test(u)).length).toBeGreaterThan(0);
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
   for (const name of ["Invite over ssh…", "New VM pane on the right", "Open a studio app…"]) {
-    await expect(page.getByRole("menuitem", { name })).toBeVisible();
+    await expect(await menuItem(page, name)).toBeVisible();
   }
   await page.keyboard.press("Escape");
 

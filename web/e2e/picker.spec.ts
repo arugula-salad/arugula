@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { paneEl, ready, text, type as typeIn, sheetTab } from "./helpers";
+import { menuItem, paneEl, ready, text, type as typeIn, sheetTab } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 import type { PaneId } from "../src/shared/proto";
 import { labs } from "./labs";
@@ -148,7 +148,7 @@ test("desktop: browse from the pane's directory, new pane there, cd there", asyn
 
   // From the pane's menu: it starts where the pane is.
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
-  await page.getByRole("menuitem", { name: "Go to directory…" }).click();
+  await (await menuItem(page, "Go to directory…")).click();
   await expect(page.locator(".picker")).toBeVisible();
   await expect.poll(() => pickerPath(page)).toBe(root);
   await expect(row(page, join(root, "alpha"))).toBeVisible();

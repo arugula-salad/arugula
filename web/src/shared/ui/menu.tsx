@@ -28,20 +28,34 @@ export type MenuItem =
        * and the tab's Go to directory…): the command palette lists it
        * once (UI audit #195). */
       id?: string;
+      /** For what can't be undone: the first click keeps the menu open and
+       * shows this in the row's place ("Forget history? Click again to
+       * confirm"); the second runs it. A second click straight after the
+       * first (a double-click) is ignored (#328). */
+      confirm?: string;
     }
   /** `name`: the header holds a name (a channel's, a login), shown as
    * written rather than in capitals (UI audit #169). `note`: a line under
    * it saying what the items do (UI audit #163). */
   | { header: string; name?: boolean; note?: string }
+  /** A row that opens its items under it, indented, rather than a flyout:
+   * a long menu stays short, and a phone has no hover. The command palette
+   * lists them as if they were in the menu. */
+  | { label: string; submenu: MenuItem[]; id?: string }
   | "separator";
 
 interface OpenMenu {
   x: number;
   y: number;
   items: MenuItem[];
-  /** Opened from a menu button: the keys go into it (UI audit #171). */
+  /** The keys go into it: its first row has the focus once it's shown
+   * (UI audit #171). */
   focus: boolean;
 }
+
+/** How long a row asking to be confirmed ignores clicks: the second click
+ * of a double-click lands here (the same as the confirm dialog's). */
+const CONFIRM_SETTLE_MS = 500;
 
 let current: OpenMenu | null = null;
 /** What had the focus when the menu opened: an item gives it back before it
@@ -65,7 +79,7 @@ export function openMenu(e: { clientX: number; clientY: number; preventDefault()
   if (opts instanceof HTMLElement) opts = { from: opts };
   if (!current) opener = opts.from ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   expanded(opts.from ?? null);
-  current = { x: e.clientX, y: e.clientY, items, focus: !!opts.from };
+  current = { x: e.clientX, y: e.clientY, items, focus: true };
   changed();
 }
 
@@ -115,6 +129,16 @@ export function MenuLayer() {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const [me] = useState(() => ({}));
+  /** The submenu open, by its row's index: one at a time. */
+  const [sub, setSub] = useState<number | null>(null);
+  /** A key opened a submenu: its first item gets the keys once drawn. */
+  const intoSub = useRef(false);
+  /** When a click opened the submenu: its rows ignore clicks for a moment,
+   * as it scrolls into view and rows slide under the pointer, so a
+   * double-click on its row doesn't choose one of them. */
+  const subOpenedAt = useRef(0);
+  /** The row asking to be confirmed: its label, and when it asked. */
+  const [armed, setArmed] = useState<{ label: string; at: number } | null>(null);
 
   useEffect(() => {
     const fn = () => setTick((t) => t + 1);
@@ -151,15 +175,39 @@ export function MenuLayer() {
     // right edge it wrapped ("Command palette… Ctrl+Shift+P") and then sat
     // flush with the edge, wider than measured (UI audit #174).
     const was = ref.current.style.left;
+    const wasMax = ref.current.style.maxHeight;
     ref.current.style.left = "0px";
+    ref.current.style.maxHeight = `${window.innerHeight - 16}px`;
     const r = ref.current.getBoundingClientRect();
     ref.current.style.left = was;
+    ref.current.style.maxHeight = wasMax;
     focusIn.current = current.focus;
     setPos({
       left: Math.max(8, Math.min(current.x, window.innerWidth - r.width - 8)),
       top: Math.max(8, Math.min(current.y, window.innerHeight - r.height - 8)),
     });
   }, [current, top]);
+  useEffect(() => {
+    setSub(null);
+    setArmed(null);
+  }, [current]);
+  // An opened submenu is scrolled into view, by the least that shows it,
+  // and never past its own row: that stays shown.
+  useLayoutEffect(() => {
+    const menu = ref.current;
+    const rows = menu?.querySelector<HTMLElement>(".menu-sub");
+    if (sub === null || !menu || !rows) return;
+    const m = menu.getBoundingClientRect();
+    const pad = parseFloat(getComputedStyle(menu).paddingBottom) || 0;
+    const need = rows.getBoundingClientRect().bottom - (m.bottom - pad);
+    const row = rows.previousElementSibling?.getBoundingClientRect().top ?? m.top;
+    if (need > 0) menu.scrollTop += Math.max(0, Math.min(need, row - m.top));
+  }, [sub]);
+  useEffect(() => {
+    if (sub === null || !intoSub.current) return;
+    intoSub.current = false;
+    ref.current?.querySelector<HTMLElement>(".menu-sub .menu-item:not(:disabled)")?.focus({ preventScroll: true });
+  }, [sub]);
   // From a menu button, the first item has the keys once it's shown.
   useEffect(() => {
     if (!pos || !focusIn.current) return;
@@ -177,11 +225,82 @@ export function MenuLayer() {
       : e.key === "Home" ? 0
       : e.key === "End" ? items.length - 1
       : null;
+    const at = document.activeElement as HTMLElement | null;
+    // → opens a submenu and goes in; ← shuts it and goes back to its row.
+    if (e.key === "ArrowRight" && at?.getAttribute("aria-haspopup")) {
+      e.preventDefault();
+      e.stopPropagation();
+      const n = Number(at.dataset.sub);
+      if (sub === n) at.nextElementSibling?.querySelector<HTMLElement>(".menu-item:not(:disabled)")?.focus();
+      else {
+        intoSub.current = true;
+        setSub(n);
+      }
+      return;
+    }
+    if (e.key === "ArrowLeft" && at?.closest(".menu-sub")) {
+      e.preventDefault();
+      e.stopPropagation();
+      const row = at.closest(".menu-sub")?.previousElementSibling as HTMLElement | null;
+      setSub(null);
+      row?.focus();
+      return;
+    }
     if (to === null) return;
     e.preventDefault();
     e.stopPropagation();
     items[to].focus();
   };
+
+  const renderItem = (item: MenuItem, i: number, inSub = false) =>
+    item === "separator" ? (
+      <div key={i} class="menu-sep" />
+    ) : "header" in item ? (
+      <Fragment key={i}>
+        <div class={item.name ? "menu-header named" : "menu-header"}>{item.header}</div>
+        {item.note && <div class="menu-note">{item.note}</div>}
+      </Fragment>
+    ) : "submenu" in item ? null : (
+      <button
+        key={i}
+        role={item.checked === undefined ? "menuitem" : "menuitemradio"}
+        aria-checked={item.checked}
+        aria-current={item.current || undefined}
+        aria-keyshortcuts={item.shortcut?.replace("Ctrl", "Control")}
+        class={`menu-item${item.danger || (item.confirm && armed?.label === item.label) ? " danger" : ""}${item.faded ? " faded" : ""}`}
+        disabled={item.disabled}
+        title={item.hint}
+        onClick={() => {
+          if (inSub && Date.now() - subOpenedAt.current < CONFIRM_SETTLE_MS) return;
+          if (item.confirm) {
+            if (!armed || armed.label !== item.label) return setArmed({ label: item.label, at: Date.now() });
+            if (Date.now() - armed.at < CONFIRM_SETTLE_MS) return;
+          }
+          // Shut for good before the item runs: a dialog it opens finds
+          // no menu left over, and the focus where the menu was opened.
+          closeAndReturn();
+          item.run();
+        }}
+      >
+        {(item.checked ?? item.current) !== undefined && (
+          <span class="menu-check" aria-hidden="true">
+            {item.checked || item.current ? "●" : ""}
+          </span>
+        )}
+        {item.confirm && armed?.label === item.label ? item.confirm : item.label}
+        {item.detail && (
+          <>
+            {" "}
+            <span class="menu-detail">{item.detail}</span>
+          </>
+        )}
+        {item.shortcut && (
+          <kbd class="menu-key" aria-hidden="true">
+            {item.shortcut}
+          </kbd>
+        )}
+      </button>
+    );
 
   if (!current || !top) return null;
   return (
@@ -193,53 +312,41 @@ export function MenuLayer() {
         left: `${pos?.left ?? current.x}px`,
         top: `${pos?.top ?? current.y}px`,
         visibility: pos ? "visible" : "hidden",
+        // Where it was placed it stays: a submenu opening under the pointer
+        // makes it scroll, never move (and a gutter of 8px below it).
+        boxSizing: "border-box",
+        maxHeight: `${window.innerHeight - (pos?.top ?? 8) - 8}px`,
       }}
       onContextMenu={(e) => e.preventDefault()}
       onKeyDown={onKey}
     >
       {current.items.map((item, i) =>
-        item === "separator" ? (
-          <div key={i} class="menu-sep" />
-        ) : "header" in item ? (
+        typeof item === "object" && "submenu" in item ? (
           <Fragment key={i}>
-            <div class={item.name ? "menu-header named" : "menu-header"}>{item.header}</div>
-            {item.note && <div class="menu-note">{item.note}</div>}
+            <button
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={sub === i}
+              data-sub={i}
+              class="menu-item menu-parent"
+              onClick={(e) => {
+                subOpenedAt.current = sub !== i && e.detail > 0 ? Date.now() : 0;
+                setSub(sub === i ? null : i);
+              }}
+            >
+              {item.label}
+              <span class="menu-chevron" aria-hidden="true">
+                {sub === i ? "▾" : "▸"}
+              </span>
+            </button>
+            {sub === i && (
+              <div class="menu-sub" role="group" aria-label={item.label}>
+                {item.submenu.map((it, j) => renderItem(it, j, true))}
+              </div>
+            )}
           </Fragment>
         ) : (
-          <button
-            key={i}
-            role={item.checked === undefined ? "menuitem" : "menuitemradio"}
-            aria-checked={item.checked}
-            aria-current={item.current || undefined}
-            aria-keyshortcuts={item.shortcut?.replace("Ctrl", "Control")}
-            class={`menu-item${item.danger ? " danger" : ""}${item.faded ? " faded" : ""}`}
-            disabled={item.disabled}
-            title={item.hint}
-            onClick={() => {
-              // Shut for good before the item runs: a dialog it opens finds
-              // no menu left over, and the focus where the menu was opened.
-              closeAndReturn();
-              item.run();
-            }}
-          >
-            {(item.checked ?? item.current) !== undefined && (
-              <span class="menu-check" aria-hidden="true">
-                {item.checked || item.current ? "●" : ""}
-              </span>
-            )}
-            {item.label}
-            {item.detail && (
-              <>
-                {" "}
-                <span class="menu-detail">{item.detail}</span>
-              </>
-            )}
-            {item.shortcut && (
-              <kbd class="menu-key" aria-hidden="true">
-                {item.shortcut}
-              </kbd>
-            )}
-          </button>
+          renderItem(item, i)
         ),
       )}
     </div>
