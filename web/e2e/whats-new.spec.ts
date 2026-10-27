@@ -7,20 +7,25 @@
 // Which headlines there are is the release notes' (docs/releases), so
 // these read them from the page.
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { menuItem, open, reset } from "./helpers";
 
 const panel = (page: Page) => page.locator("[data-whats-new]");
+/** This build's version, as web/vite.config.ts reads it. */
+const built = readFileSync(resolve("../Cargo.toml"), "utf8").match(/^\[workspace\.package\][^[]*?^version = "([^"]+)"/m)![1];
 const shown = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem("arugula.seen") ?? "{}")["whats-new"] ?? null);
 
-/** As after an update from an old version: it opens by itself only for a
+/** As after an update from an old version, in a browser that was here
+ * before (Getting started greeted it then): it opens by itself only for a
  * browser that isn't automation's. */
 async function updatedFrom(page: Page, version: string) {
   await page.addInitScript((v) => {
     Object.defineProperty(navigator, "webdriver", { get: () => false });
     if (!sessionStorage.getItem("e2e.whats-new")) {
       sessionStorage.setItem("e2e.whats-new", "1");
-      localStorage.setItem("arugula.seen", JSON.stringify({ "whats-new": v }));
+      localStorage.setItem("arugula.seen", JSON.stringify({ "whats-new": v, "seen:getting-started": 1 }));
     }
   }, version);
 }
@@ -32,14 +37,24 @@ test("after an update: the panel opens once, with the new headlines", async ({ p
   const newest = await panel(page).locator("[data-whats-new-release]").first().getAttribute("data-whats-new-release");
   expect(newest).toMatch(/^\d+\.\d+\.\d+$/);
   await expect(panel(page).locator("[data-whats-new-notes]").first()).toHaveAttribute("href", `https://github.com/arugula-salad/arugula/releases/tag/v${newest}`);
-  // Seen when shown: the pref moved on to this build.
-  await expect.poll(() => shown(page)).toBe(newest);
+  // Seen when shown: the pref moved on to this build (whose own headlines
+  // may all need control, so it isn't always the newest one listed).
+  await expect.poll(() => shown(page)).toBe(built);
   // A daemon's own page isn't signed in to control: what needs it is left out.
   await expect(panel(page).locator('[data-whats-new-item="project-docs"], [data-whats-new-item="board-pin"]')).toHaveCount(0);
 
   await page.reload();
   await open(page);
   await page.waitForTimeout(1000);
+  await expect(panel(page)).toHaveCount(0);
+});
+
+test("a first visit gets Getting started, not What's new too", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, "webdriver", { get: () => false }));
+  await reset(page);
+  await expect(page.getByRole("dialog", { name: "Getting started" })).toBeVisible();
+  // Moved on all the same: the next update's panel starts from this build.
+  await expect.poll(() => shown(page)).not.toBeNull();
   await expect(panel(page)).toHaveCount(0);
 });
 
