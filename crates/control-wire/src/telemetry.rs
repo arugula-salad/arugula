@@ -243,6 +243,11 @@ pub enum View {
     Settings,
     GettingStarted,
     Share,
+    /// A hint shown, acted on or dismissed (DECISIONS.md "Hints come from
+    /// facts, once per account"): every hint's together.
+    HintShown,
+    HintActed,
+    HintDismissed,
     #[serde(other)]
     Other,
 }

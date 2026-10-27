@@ -1648,9 +1648,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 144 tables in two planes ("Two planes, two trust rules"):
+Control's database has 145 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (44 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (45 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (100 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1688,6 +1688,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `hosted_machines` | metadata | A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), its addresses, when it was last seen and removed. | yes |  |
 | `push_subs` | metadata | A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to. The desktop app's is at control's own live endpoint, with the hash of the token it listens with and when it last did. | yes |  |
 | `push_prefs` | metadata | Which kinds of push an account turned off: chat, its machines, or its projects. | yes |  |
+| `account_prefs` | metadata | An account's small preferences for its pages, as the page names them: which hints it has seen, whether tips are on, the last version What's new showed. | yes |  |
 | `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation. | nothing of one |  |
 | `notices` | metadata | A notice for an account with no push, made from names control holds ("Ada left Acme"). | yes |  |
 | `labs_flags` | metadata | The Labs flags an account or a team turned on for its machines. | yes: a team's go when the team does. | PostHog |

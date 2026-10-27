@@ -2719,6 +2719,13 @@ claude_ide?: boolean,
  */
 inbox?: boolean, 
 /**
+ * Claude Code runs in this terminal and none of Arugula's hooks has
+ * spoken from it: its questions and permission prompts stay on its
+ * screen, not on cards or the phone (`arugula hooks install`, or
+ * Getting started's "Use Claude Code with Arugula").
+ */
+unhooked?: boolean, 
+/**
  * Who is driving it (M13): only their typing reaches it, unless it's
  * in pair mode. `None`: nobody yet (the next to type drives).
  */
