@@ -12,8 +12,12 @@
 // no blob:), a name written again shows the new one with no reload, any other
 // image target stays text and is never fetched, a viewer's page shows it, and
 // closing the block empties the page's cache.
+//
+// #254: GitHub's five alerts draw as callouts, each with its label, icon
+// and tone, a plain quote stays a quote, and a stats fence draws tiles,
+// light and dark, two columns on a phone. DOC_SHOTS=<dir> saves pictures.
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
@@ -21,6 +25,63 @@ import { expect, test, type Page } from "@playwright/test";
 import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, placedEmbeds, png, putAsset, seeEmbeds, type Post, widths } from "./doc-steps";
 import { closeContexts, open, panes, ready, reset } from "./helpers";
 import { daemon, pixel7 } from "./phones";
+import { example } from "./doc-examples";
+
+const SHOTS = process.env.DOC_SHOTS;
+const ALERTS = ["note", "tip", "important", "warning", "caution"];
+const CALLOUTS = [...ALERTS.map((a) => `> [!${a.toUpperCase()}]\n> The ${a} callout, with **bold** in it.`), "> A plain quote stays a quote."].join("\n\n");
+
+/** Callouts in s1 and the grammar's tiles in s2, as the agent sends them. */
+async function fillCallouts(post: Post, doc: number) {
+  await fill(post, doc, "s1", CALLOUTS);
+  await fill(post, doc, "s2", example("stats.md"));
+}
+
+/** What `fillCallouts` shows, and each callout's tone and each delta's. */
+async function seeCallouts(page: Page, doc: number) {
+  const block = page.locator(`[data-doc-block="${doc}"]`);
+  const callouts = block.locator("[data-section=s1] [data-callout]");
+  await expect(callouts).toHaveCount(5, { timeout: 15_000 });
+  for (const [i, a] of ALERTS.entries()) {
+    const c = callouts.nth(i);
+    await expect(c).toHaveAttribute("data-callout", a);
+    await expect(c.locator(".md-callout-title")).toHaveText(a[0].toUpperCase() + a.slice(1));
+    await expect(c.locator("svg.md-callout-icon")).toHaveCount(1);
+    await expect(c.locator("strong")).toHaveText("bold");
+    await expect(c).not.toContainText("[!");
+  }
+  await expect(block.locator("[data-section=s1] blockquote")).toHaveText("A plain quote stays a quote.");
+  const tiles = block.locator("[data-section=s2] .doc-stat");
+  await expect(tiles).toHaveCount(3);
+  await expect(tiles.nth(0)).toContainText("Sessions1,284↑ +12%");
+  await expect(tiles.nth(1).locator("[data-tone]")).toHaveAttribute("data-tone", "down");
+  await expect(tiles.nth(1).locator("[role=img]")).toHaveAttribute("aria-label", "down");
+  await expect(tiles.nth(2).locator("[data-tone]")).toHaveCount(0);
+  await expect(block.locator("[data-section=s2] [data-chart-note]")).toHaveCount(0);
+  return page.evaluate((d) => {
+    const q = (s: string) => document.querySelector(`[data-doc-block="${d}"] ${s}`)!;
+    const style = (s: string) => getComputedStyle(q(s));
+    return {
+      tones: [...document.querySelectorAll(`[data-doc-block="${d}"] [data-callout]`)].map((c) => getComputedStyle(c).borderLeftColor),
+      fill: style("[data-callout=note]").backgroundColor,
+      paper: getComputedStyle(q(".doc-page").closest(".doc")!).backgroundColor,
+      up: style(".doc-stat-delta.up [role=img]").color,
+      down: style(".doc-stat-delta.down [role=img]").color,
+      valueFont: style(".doc-stat-value").fontFamily,
+      labelCase: style(".doc-stat dt").textTransform,
+      top: [...document.querySelectorAll(`[data-doc-block="${d}"] .doc-stat`)].map((t) => Math.round(t.getBoundingClientRect().top)),
+    };
+  }, doc);
+}
+
+/** The Doc's page, or one section of it (a phone's pane scrolls), once a
+ * fresh fill's highlight has faded. */
+async function shoot(page: Page, doc: number, name: string, part = ".doc-page") {
+  if (!SHOTS) return;
+  mkdirSync(SHOTS, { recursive: true });
+  await page.waitForFunction(() => !document.getAnimations().some((a) => (a as CSSAnimation).animationName === "doc-fresh" && a.playState === "running"));
+  await page.locator(`[data-doc-block="${doc}"] ${part}`).screenshot({ path: join(SHOTS, `${name}.png`) });
+}
 
 const post = (page: Page): Post => async (path, data) => {
   const r = await page.request.post(path, { data });
@@ -170,6 +231,52 @@ test("charts read in the light theme and the dark", async ({ page }) => {
   expect(light.text).toBe(light.color);
   expect(light.bar).toBe(light.series);
   expect(light.bar, "the series has its own colour in each scheme").not.toBe(dark.bar);
+});
+
+test("callouts and stat tiles draw in the Doc's tones, light and dark", async ({ page }) => {
+  // Wide enough that the Doc beside the pane has room for a row of tiles, tall enough to see it all.
+  await page.setViewportSize({ width: 1600, height: 1800 });
+  await reset(page);
+  const [term] = await panes(page);
+  const doc = await newDoc(post(page), term);
+  await fillCallouts(post(page), doc);
+  await bring(page, doc);
+  const dark = await seeCallouts(page, doc);
+  expect(new Set(dark.tones).size, "five tones").toBe(5);
+  expect(dark.fill, "a tinted fill, not the paper").not.toBe(dark.paper);
+  expect(dark.up).not.toBe(dark.down);
+  expect(dark.valueFont).toContain("Big Shoulders Display");
+  expect(dark.labelCase).toBe("uppercase");
+  expect(new Set(dark.top).size, "one row on a desktop").toBe(1);
+  await shoot(page, doc, "block-desktop-dark");
+
+  await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "latte", finish: "flat", corners: "square" })));
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => !!window.__arugula?.client.state)).toBe(true);
+  await bring(page, doc);
+  const light = await seeCallouts(page, doc);
+  expect(new Set(light.tones).size).toBe(5);
+  expect(light.tones, "each scheme has its own tones").not.toEqual(dark.tones);
+  expect(light.fill).not.toBe(light.paper);
+  await shoot(page, doc, "block-desktop-light");
+});
+
+test.describe("callouts and tiles on a Pixel 7", () => {
+  test.use(pixel7);
+  test("tiles wrap to two columns", async ({ page }) => {
+    await open(page);
+    const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
+    await ready(page, term);
+    const doc = await newDoc(post(page), term);
+    await bring(page, doc);
+    await fillCallouts(post(page), doc);
+    const seen = await seeCallouts(page, doc);
+    // Three tiles: two in the first row, one in the second.
+    expect(seen.top[0]).toBe(seen.top[1]);
+    expect(seen.top[2]).toBeGreaterThan(seen.top[0]);
+    await shoot(page, doc, "block-pixel7-callouts-dark", "[data-section=s1]");
+    await shoot(page, doc, "block-pixel7-stats-dark", "[data-section=s2]");
+  });
 });
 
 test.describe("a viewer", () => {

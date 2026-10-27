@@ -265,6 +265,29 @@ for (const mode of [DOMAIN, null] as const) {
       }
     });
 
+    // #254: callouts and stat tiles, through the link, light and dark.
+    test("the link draws callouts and stat tiles in either scheme", async ({ browser }) => {
+      const d = await doc(r);
+      await fill(r.post, d, "s3", `> [!TIP]\n> Share it.\n\n> [!CAUTION]\n> Not the key.\n\n${example("stats.md")}`);
+      const url = await share(r, d);
+      for (const scheme of ["light", "dark"] as const) {
+        const v = await visitor(browser, { colorScheme: scheme });
+        await v.page.goto(url);
+        await seeTheDoc(v.page);
+        const s3 = v.page.locator('[data-section="s3"]');
+        await expect(s3.locator("[data-callout]")).toHaveCount(3);
+        await expect(s3.locator("[data-callout=tip] .md-callout-title")).toHaveText("Tip");
+        await expect(s3.locator(".doc-stat")).toHaveCount(3);
+        await expect(s3.locator(".doc-stat").first()).toContainText("1,284");
+        expect(v.violations, "the page's CSP refused nothing").toEqual([]);
+        if (SHOTS && mode) {
+          mkdirSync(SHOTS, { recursive: true });
+          await s3.screenshot({ path: join(SHOTS, `viewer-callouts-${scheme}.png`) });
+        }
+        await v.ctx.close();
+      }
+    });
+
     test("the Doc's drawing and its script never run on the page", async ({ browser }) => {
       const d = await doc(r);
       await fill(r.post, d, "s3", example("script-drawing.md"));

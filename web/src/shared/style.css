@@ -5799,6 +5799,158 @@ html[data-scheme="light"] .doc {
   border-radius: 8px;
 }
 
+/* A callout (#254): GitHub's alerts, anywhere a body is Markdown. Its tone
+   is a rule down the side and the icon's stroke; the label says it too. */
+.md .md-callout {
+  --tone: var(--info);
+  margin: 0 0 0.7em;
+  padding-left: 10px;
+  border-left: 3px solid var(--tone);
+}
+
+.md .md-callout-tip {
+  --tone: var(--ok);
+}
+
+.md .md-callout-important {
+  --tone: var(--accent);
+}
+
+.md .md-callout-warning {
+  --tone: var(--warn);
+}
+
+.md .md-callout-caution {
+  --tone: var(--danger);
+}
+
+.md .md-callout-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 0.3em;
+  font-weight: 600;
+}
+
+.md .md-callout-icon {
+  flex: none;
+  color: var(--tone);
+}
+
+.md .md-callout > :last-child {
+  margin-bottom: 0;
+}
+
+/* In a Doc: a tinted card in the Doc's hues. Warning takes the brand's sun
+   once #256 names it, and an amber of its own until then. The label is ink,
+   so it reads on every tint; the tone is the rule, the fill and the icon. */
+.doc .md .md-callout {
+  --tone: var(--doc-sky);
+  margin: 0 0 1em;
+  padding: 12px 16px;
+  border-left-width: 4px;
+  border-radius: 4px 8px 8px 4px;
+  background: color-mix(in srgb, var(--tone) 12%, var(--doc-paper));
+}
+
+.doc .md .md-callout-tip {
+  --tone: var(--doc-leaf);
+}
+
+.doc .md .md-callout-important {
+  --tone: var(--doc-plum);
+}
+
+.doc .md .md-callout-warning {
+  --tone: var(--doc-sun, #c9a03f);
+}
+
+html[data-scheme="light"] .doc .md .md-callout-warning {
+  --tone: var(--doc-sun, #8f6a12);
+}
+
+.doc .md .md-callout-caution {
+  --tone: var(--doc-pepper);
+}
+
+.doc .md .md-callout-title {
+  color: var(--doc-ink);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Stat tiles (#254): one row of up to six, two columns when the Doc is
+   phone-narrow. The value in the display face, the label in small caps,
+   the delta an arrow and its tone. */
+.doc .md .doc-stats-box {
+  container-type: inline-size;
+  margin: 0 0 1em;
+}
+
+.doc .md .doc-stats {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+}
+
+@container (max-width: 480px) {
+  .doc .md .doc-stats {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.doc .md .doc-stat {
+  padding: 12px 14px;
+  background: var(--doc-tint);
+  border: 1px solid var(--doc-line-quiet);
+  border-top: 2px solid var(--doc-rule);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.doc .md .doc-stat dt {
+  color: var(--doc-ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.doc .md .doc-stat dd {
+  margin: 0;
+}
+
+.doc .md .doc-stat-value {
+  margin-top: 2px;
+  font: 700 30px/1.1 var(--f-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.doc .md .doc-stat-delta {
+  --tone: var(--doc-ink-faint);
+  margin-top: 4px;
+  color: color-mix(in srgb, var(--tone) 60%, var(--doc-ink));
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.doc .md .doc-stat-delta > [role="img"] {
+  color: var(--tone);
+}
+
+.doc .md .doc-stat-delta.up {
+  --tone: var(--doc-leaf);
+}
+
+.doc .md .doc-stat-delta.down {
+  --tone: var(--doc-pepper);
+}
+
 .forge-dot {
   display: inline-block;
   width: 8px;

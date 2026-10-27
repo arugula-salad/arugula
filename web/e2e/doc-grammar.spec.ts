@@ -1,4 +1,4 @@
-// #964, #965: the grammar of a Doc's charts, drawings and pictures, with no page. The
+// #964, #965, #254: the grammar of a Doc's charts, tiles, drawings and pictures, with no page. The
 // daemon's validator (crates/daemon/src/docs/embeds.rs) and the web
 // client's are run over the same files (crates/daemon/tests/fixtures/docs/),
 // and then the chart is laid out: a bar a row, from zero, with axes, labels
@@ -7,6 +7,7 @@
 import { expect, test } from "@playwright/test";
 import { buildChart, checkChart, checkSpec, niceTicks, parseChart, summary, type El, type Spec } from "../src/shared/ui/chart";
 import { assetName, checkEmbeds, checkSvg, fences, imageRefs, plain, svgUrl } from "../src/shared/ui/embeds";
+import { checkStats, statsSummary, toneOf } from "../src/shared/ui/stats";
 import { example, examples, expected } from "./doc-examples";
 
 const all = (el: El, tag: string): El[] => [...(el.tag === tag ? [el] : []), ...el.kids.flatMap((k) => all(k, tag))];
@@ -205,4 +206,38 @@ test("a line over dates draws, long labels thin out, and 200 rows draw", () => {
   expect(all(line, "path")).toHaveLength(4);
   expect(all(line, "circle"), "no dots on a long series").toHaveLength(0);
   expect(niceTicks(0, 25)).toEqual([0, 10, 20, 30]);
+});
+
+// The daemon's each_stats_rule_is_enforced, in TypeScript.
+test("each stats rule is enforced, as the daemon says it", () => {
+  const tile = { label: "Sessions", value: "1,284", delta: "+12%", tone: "up" };
+  for (const [tiles, says] of [
+    [[], "0 tiles; a stats fence holds 1 to 6"],
+    [Array(7).fill(tile), "7 tiles; a stats fence holds 1 to 6"],
+    [tile, "must be a JSON list of 1 to 6 tiles"],
+    [["Sessions"], "tile 1 must be an object"],
+    [[tile, { value: "3" }], "tile 2 has no label"],
+    [[{ label: "Errors" }], "tile 1 has no value"],
+    [[{ label: "Errors", value: 3 }], 'value must be text ("1,284", not 1284)'],
+    [[{ label: " ", value: "3" }], "label must be text"],
+    [[{ label: "x".repeat(41), value: "3" }], "at most 40 characters"],
+    [[{ label: "Errors", value: "3", delta: -2 }], "delta must be text"],
+    [[{ label: "Errors", value: "3", tone: "up" }], "tone needs a delta"],
+    [[{ label: "Errors", value: "3", delta: "-2", tone: "red" }], 'tone must be "up", "down" or "flat", got "red"'],
+    [[{ label: "Errors", value: "3", color: "leaf" }], 'unknown key "color"'],
+  ] as const) {
+    const why = checkStats(JSON.stringify(tiles));
+    expect(why, JSON.stringify(tiles)).toMatch(/^stats: /);
+    expect(why, JSON.stringify(tiles)).toContain(says);
+    expect(why).not.toContain("\n");
+  }
+  expect(checkStats("nope")).toMatch(/^stats: not JSON \(/);
+  expect(checkStats(JSON.stringify(Array(6).fill(tile)))).toBeNull();
+  // Caps are characters, not UTF-16 units: an emoji is one.
+  expect(checkStats(JSON.stringify([{ label: "é".repeat(40), value: "📈".repeat(24), delta: "↑".repeat(16), tone: "flat" }]))).toBeNull();
+  expect(statsSummary('[{"label": "Sessions", "value": "1,284", "delta": "+12%"}, {"label": "Errors", "value": "3"}]')).toBe("[stats: Sessions 1,284 (+12%); Errors 3]");
+  expect(statsSummary("nope")).toBe("[stats]");
+  // A delta with no tone takes its sign's; the arrow is drawn either way.
+  expect(["+3", "-3", "−3", "3"].map((delta) => toneOf({ label: "a", value: "1", delta }))).toEqual(["up", "down", "down", "flat"]);
+  expect(toneOf({ label: "a", value: "1", delta: "+3", tone: "down" })).toBe("down");
 });

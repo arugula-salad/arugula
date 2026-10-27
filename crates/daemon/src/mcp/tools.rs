@@ -1023,7 +1023,13 @@ const DOC: &[Kind] = &[
         name: "fill",
         description: r##"Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.
 
-Two kinds of fenced block draw as more than code, in the section that talks about them.
+A callout is a quote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION], as on GitHub: "> [!TIP]" then "> Run it twice." Keep them for what the reader mustn't miss.
+
+Three kinds of fenced block draw as more than code, in the section that talks about them.
+Stat tiles: a ```stats fence holding a list of 1 to 6 tiles; label and value are text, delta and its tone (up, down or flat) are optional. For example:
+```stats
+[{"label": "Sessions", "value": "1,284", "delta": "+12%", "tone": "up"}, {"label": "Errors", "value": "3"}]
+```
 A chart: a ```chart fence holding a JSON spec. type is "bar" or "line"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with "order": [...]. For example:
 ```chart
 {"type": "bar", "title": "Sales by month", "x": "month", "y": ["sales"], "rows": [{"month": "Jan", "sales": 12}, {"month": "Feb", "sales": 19}]}
@@ -1032,7 +1038,7 @@ A drawing: a ```svg fence holding one <svg> element, with xmlns="http://www.w3.o
 ```svg Idea to app
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40"><rect x="2" y="8" width="60" height="24" fill="#e8f0fe" stroke="#335"/><path d="M62 20 H98" stroke="#335"/><rect x="98" y="8" width="60" height="24" fill="#e6f4ea" stroke="#335"/></svg>
 ```
-Every fence is checked before anything is written: a bad chart or drawing is refused with one line saying what to fix, and the section stays as it was."##,
+Every fence is checked before anything is written: a bad chart, tile or drawing is refused with one line saying what to fix, and the section stays as it was."##,
         schema: schema_for_type::<DocFillArgs>,
         flag: None,
     },
