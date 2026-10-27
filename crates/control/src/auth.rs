@@ -154,15 +154,15 @@ impl FromRequestParts<Arc<App>> for PageSession {
 }
 
 impl PageSession {
-    /// Not the desktop app's window (`via = app`): what it can't do, a
-    /// browser's or a phone's page can (deleting the account, removing a
-    /// passkey, signing out everywhere). Refused with what to do.
     /// Whether this is the desktop app's window (`via = app`).
     pub fn is_app(&self, app: &App) -> Result<bool, ApiError> {
         let via = app.db.session_info(&self.token_hash, now_ms())?.and_then(|i| i.via);
         Ok(via.as_deref() == Some(Via::App.as_str()))
     }
 
+    /// Not the desktop app's window (`via = app`): what it can't do, a
+    /// browser's or a phone's page can (deleting the account, removing a
+    /// passkey, signing out everywhere). Refused with what to do.
     pub fn not_app(&self, app: &App) -> Result<(), ApiError> {
         if self.is_app(app)? {
             return Err(refusal(
