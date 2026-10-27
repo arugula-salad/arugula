@@ -191,12 +191,13 @@ impl Db {
 
     /// Who replied in threads `from..=to` of a room: each thread's
     /// repliers, the newest first, at most [`REPLIERS_SHOWN`]. Deleted
-    /// replies don't count.
+    /// replies don't count. A thread whose replies are all the platform's
+    /// (no author, like a session's card) is there with nobody in it.
     pub fn chat_thread_repliers(&self, room: &str, from: i64, to: i64) -> Result<HashMap<i64, Vec<String>>> {
         let rows: Vec<(i64, String)> = self.c().query_map(
             "SELECT parent, author FROM (
                  SELECT parent, author, max(seq) AS newest FROM chat_messages
-                 WHERE room = ?1 AND parent >= ?2 AND parent <= ?3 AND deleted IS NULL AND author != ''
+                 WHERE room = ?1 AND parent >= ?2 AND parent <= ?3 AND deleted IS NULL
                  GROUP BY parent, author
              ) t ORDER BY parent, newest DESC",
             params![room, from, to],
@@ -205,7 +206,7 @@ impl Db {
         let mut out: HashMap<i64, Vec<String>> = HashMap::new();
         for (parent, author) in rows {
             let v = out.entry(parent).or_default();
-            if v.len() < REPLIERS_SHOWN {
+            if !author.is_empty() && v.len() < REPLIERS_SHOWN {
                 v.push(author);
             }
         }
