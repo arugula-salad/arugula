@@ -51,6 +51,13 @@ build-cache:
     printf 'LIBGHOSTTY_VT_SYS_CACHE_DIR = "%s/libghostty-vt-sys"\n' "$caches"
     printf 'SCCACHE_CACHE_SIZE = "20G"\n'
 
+# Delete the builds in target dirs that nothing has used in HOURS, keeping
+# each crate's newest (scripts/sweep-target). Cargo never deletes a build
+# whose version or features changed: a worktree reached 40 GB, 31 GB of it
+# dead caches. With no DIRS, this checkout's.
+sweep hours="48" *dirs:
+    scripts/sweep-target --hours {{hours}} {{ if dirs == "" { quote(target_dir) } else { dirs } }}
+
 # Build the web client into web/dist (embedded into the daemon).
 web:
     cd web && pnpm run build

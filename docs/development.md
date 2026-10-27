@@ -172,6 +172,24 @@ about 270 MB. The Zig cache has no cap: it grows by
 about 550 MB for each Ghostty commit and Zig optimize mode, and is safe to
 delete. Windows isn't covered (the wrapper is a shell script).
 
+### Sweeping target directories
+
+Cargo keys each build of a crate by its version, features, profile and
+whether it's a test, and never deletes a build that a change of those
+left behind. Every release bump leaves the daemon's and the CLI's
+behind, and so does each feature combination: `just check-features`,
+`cargo build -p arugulad` against `--workspace`, clippy. Each daemon build
+is about 1 GB of incremental cache and a 270 MB binary. On geek a
+worktree used for four days reached 40 GB, 31 GB of it incremental caches
+nothing would use again (2026-10-27).
+
+`just sweep` deletes them: for each crate it keeps the newest build and
+any other used in the last 48 hours (`just sweep 12` for 12), in
+incremental/, deps/ and build/ of every profile. Cargo rebuilds whatever
+it then misses. `just sweep 48 DIR...` sweeps other target directories
+(they must have cargo's `CACHEDIR.TAG`); a machine with many worktrees
+can run that daily over all of them.
+
 ## Releasing
 
 The daemon and the desktop app release apart (#388): a daemon or web change
