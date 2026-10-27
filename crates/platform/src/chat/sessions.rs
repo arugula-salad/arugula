@@ -77,7 +77,7 @@ use crate::{
         Taken,
         chat::{Message, NewMessage, Room},
         hosted::HostedWorkspace,
-        sessions::{NewPrompt, NewSession, Source, create_session_in, dispatch, issue_slug, slug},
+        sessions::{NewPrompt, NewSession, Source, create_session_in, dispatch, issue_slug, set_model_in, slug},
     },
     sessions::{asks, hydrate, pool},
     triggers::{Cannot, may_start},
@@ -556,6 +556,8 @@ async fn launch(
         let tx = c.immediate()?;
         match create_session_in(&tx, &new, now) {
             Ok(Some((s, _))) => {
+                // The model its ask named, if it did (Arugula #215).
+                set_model_in(&tx, &s.id, crate::sessions::model::asked_in(&ask))?;
                 dispatch(&tx, &s.id, now)?;
                 tx.commit()?;
                 Some(s)

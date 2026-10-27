@@ -262,6 +262,24 @@ new branch whose workflow files differ from the default branch's without
 `workflows`, as a session's do once main changed CI after it began. So a
 session's branch can change `.github/workflows/`, and whoever reviews its
 PR checks those changes.
+
+**A question holds the turn** until it's answered (Arugula #215): the agent
+waits on its question tool, and the answer comes back as the tool's result.
+Answered from its card or its ask in the channel, the ask's line in the
+thread says who answered and what (`jhgaylor answered: CLI can't read
+native issues`), so the agent's next words don't read as it answering
+itself.
+
+**Which model** (Arugula #215). A session's agent runs on the strongest
+model unless the project says otherwise: the box asks Claude Code's
+adapter for Opus outright, since the adapter's own `default` depends on
+the account (a box's sessions ran Sonnet). The project's **Agent model**
+setting (`GET`/`PUT /api/projects/{project}/sessions/settings`, owners and
+editors) chooses Opus, Fable, Sonnet or Haiku for its sessions from the
+next on, and an ask's own words win for its session ("use sonnet,
+…", or "using", "on", "with"). Codex picks its own model whatever these
+say. The card shows the model the box says its agent runs on (`Opus 5.5`).
+
 A turn someone types in the session's block (the card's **Open**) is the
 session's too: the card shows it working, and it ends the same way, with
 the finish step, the push and the turn's report. The thread gets one

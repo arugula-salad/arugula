@@ -321,11 +321,29 @@ pub struct SessionWork {
     /// thread.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub review: bool,
+    /// The model its agent uses (Arugula #215), one of [`MODELS`]: the
+    /// one its ask named ("use sonnet"), else its project's setting. `None`:
+    /// the strongest, which the box picks ([`DEFAULT_MODEL`] for Claude
+    /// Code, Codex's own choice for Codex). The box reports the one it runs
+    /// on ([`SessionDetail::model`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// The agents a session runs on (M264): Claude Code and Codex, through
 /// their ACP adapters.
 pub const HARNESSES: &[&str] = &["claude", "codex"];
+
+/// The models a project's sessions may use (Arugula #215), by the word
+/// Claude Code's adapter matches to one of its model options (by value, or
+/// the start of its name): the strongest first. Codex offers its own models
+/// and takes none of these: it runs on its own choice.
+pub const MODELS: &[&str] = &["opus", "fable", "sonnet", "haiku"];
+
+/// The model a Claude Code session uses when nothing says (Arugula #215):
+/// the strongest, said outright, since the adapter's own `default` depends
+/// on the account (a box's ran Sonnet).
+pub const DEFAULT_MODEL: &str = "opus";
 
 /// The most of the agent's reply a turn's report carries, in bytes.
 pub const REPLY_MAX: usize = 10 * 1024;
@@ -571,7 +589,15 @@ pub struct SessionDetail {
     /// it sends it for reviews only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply: Option<String>,
+    /// The model its agent runs on (Arugula #215), as the agent names it
+    /// (`Opus 5.5`), once the box knows it and whenever it changes; each
+    /// turn's report says it again. At most [`MODEL_MAX`] bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
+
+/// The most of a model's name a report carries, in bytes.
+pub const MODEL_MAX: usize = 120;
 
 /// [`WORK_SESSION_PUSH`]'s body: which session, and the ref it pushes,
 /// which must be the session's own branch exactly.

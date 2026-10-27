@@ -562,3 +562,36 @@ fn a_turns_result_is_its_last_message_only() {
     quiet.push(ended(4));
     assert_eq!(replay(&quiet).as_deref(), Some("I'll start by finding the tool code."));
 }
+
+/// Arugula #215: a model word names one of the session's models (by value,
+/// or the start of its name), and the state says the model it's on in
+/// words, as claude-agent-acp names them.
+#[test]
+fn a_model_word_names_one_of_its_models() {
+    let opts = json!([{ "id": "model", "currentValue": "default", "options": [
+        { "value": "default", "name": "Default (recommended)", "description": "Opus" },
+        { "value": "opus", "name": "Opus 5.5" },
+        { "value": "claude-fable-5-1", "name": "Fable 5.1" },
+        { "value": "sonnet", "name": "Sonnet 5.5" },
+    ] }]);
+    assert_eq!(model_value(&opts, "opus"), "opus");
+    assert_eq!(model_value(&opts, "fable"), "claude-fable-5-1");
+    assert_eq!(model_value(&opts, "Sonnet"), "sonnet");
+    assert_eq!(model_value(&opts, "claude-sonnet-5-5"), "sonnet", "a model id, by its name");
+    assert_eq!(model_value(&opts, "gpt-9"), "gpt-9", "not one: the agent takes it or says no");
+
+    let mut g = rebuilt();
+    let u = |update: Value| json!({ "jsonrpc": "2.0", "method": "session/update", "params": { "update": update } });
+    assert_eq!(g.model_name(), None);
+    g.config_options = opts.clone();
+    assert_eq!(g.model_name().as_deref(), Some("Opus"), "the adapter's default, as it says it is");
+    g.on_in(
+        &u(json!({ "sessionUpdate": "usage_update", "used": 5, "_meta": { "_claude/model": "claude-sonnet-5-5" } })),
+        2000,
+    );
+    assert_eq!(g.model_name().as_deref(), Some("claude-sonnet-5-5"), "what it answers with, over what it says");
+    let mut now = opts.clone();
+    now[0]["currentValue"] = json!("opus");
+    g.on_in(&u(json!({ "sessionUpdate": "config_option_update", "configOptions": now })), 2100);
+    assert_eq!(g.model_name().as_deref(), Some("Opus 5.5"), "switched");
+}

@@ -180,6 +180,8 @@ fn generate() -> String {
         c.visit::<SessionMove>();
         c.visit::<ChatAsk>();
         c.visit::<ChatAskAnswer>();
+        // Which model its agents use (Arugula #215).
+        c.visit::<SessionSettings>();
     }
     // Native issues (M195).
     {

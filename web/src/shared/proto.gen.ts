@@ -3367,6 +3367,15 @@ role: string, parent_session: string | null,
  */
 harness: string, ran: string | null, 
 /**
+ * The model it was asked to use (Arugula #215): its ask's word ("use
+ * sonnet"), else its project's setting, else `None` (the strongest).
+ */
+model_asked: string | null, 
+/**
+ * The model its agent runs on, as its box last said (`Opus 5.5`).
+ */
+model: string | null, 
+/**
  * A Try 3's sessions, on its parent's card: the parent first, then its
  * siblings, oldest first. Empty for every other session.
  */
@@ -3528,6 +3537,17 @@ via: string | null,
  * The machine that sent it.
  */
 machine: string | null, };
+
+/**
+ * [`PROJECT_SESSION_SETTINGS`]: "agents use model …" (Arugula #215), one
+ * of [`crate::work::MODELS`], or `None` for the strongest. An ask's own
+ * word ("use sonnet") wins for its session.
+ */
+export type SessionSettings = { model: string | null, 
+/**
+ * What it may be, in a `GET`'s answer: [`crate::work::MODELS`].
+ */
+models: Array<string>, };
 
 /**
  * [`PROJECT_SESSION_STATS`]'s answer: of the project's sessions asked for

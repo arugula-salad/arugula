@@ -98,8 +98,9 @@ use std::{
 };
 
 use arugula_control_wire::work::{
-    FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, REPLY_MAX, Reported, SESSION_DETAIL_MAX,
-    SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork, TYPED_MAX, WORK_SESSION_REPORT,
+    DEFAULT_MODEL, FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, MODEL_MAX, MODELS, REPLY_MAX,
+    Reported, SESSION_DETAIL_MAX, SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork, TYPED_MAX,
+    WORK_SESSION_REPORT,
 };
 use arugula_e2e::{
     now_ms,
@@ -333,6 +334,15 @@ pub struct Session {
     /// A review (M264): no finish step and no push.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub review: bool,
+    /// The model its block was opened with (Arugula #215, [`model_for`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The model its agent says it's on now, and the last a report said:
+    /// a report says it again when the two differ ([`Session::push`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_now: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_said: Option<String>,
 }
 
 impl Session {
@@ -351,6 +361,15 @@ impl Session {
             return;
         }
         d.actions.append(&mut self.unnamed);
+        // The model it's on (Arugula #215): when it changed, and on each
+        // turn's report.
+        if d.model.is_none() && (self.model_now != self.model_said || kind == Kind::Turn) {
+            d.model = self.model_now.clone();
+        }
+        if let Some(m) = &mut d.model {
+            cut(m, MODEL_MAX);
+            self.model_said = self.model_now.clone();
+        }
         for t in [&mut d.question, &mut d.error, &mut d.reason, &mut d.diffstat].into_iter().flatten() {
             cut(t, TEXT_MAX);
         }
@@ -622,6 +641,19 @@ fn harness_for(w: &SessionWork) -> Option<String> {
     w.harness.clone().filter(|h| h != "claude" && has_harness(h))
 }
 
+/// The model session `w`'s block opens with, on `harness` (`None`: Claude
+/// Code), Arugula #215: the one control asked for, else the strongest,
+/// said outright ([`DEFAULT_MODEL`]), since the adapter's own `default`
+/// depends on the account. Codex picks its own: Claude's words aren't its
+/// models.
+fn model_for(w: &SessionWork, harness: Option<&str>) -> Option<String> {
+    if harness.is_some_and(|h| h != "claude") {
+        return None;
+    }
+    let asked = w.model.as_deref().map(str::trim).filter(|m| MODELS.contains(m));
+    Some(asked.unwrap_or(DEFAULT_MODEL).to_owned())
+}
+
 /// A free slot: a session user no session this box runs holds.
 fn free_slot(dir: &Path) -> Option<(AsUser, bool)> {
     let slots = slots()?;
@@ -677,7 +709,11 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         turns_seen: Some(0),
         harness: harness_for(w),
         review: w.review,
+        model: None,
+        model_now: None,
+        model_said: None,
     };
+    l.model = model_for(w, l.harness.as_deref());
     if let Some(h) = w.harness.as_deref().filter(|h| *h != "claude" && l.harness.is_none()) {
         info!(session = l.session, harness = h, "hosted: this box hasn't that agent; the session runs on Claude Code");
     }
@@ -870,8 +906,8 @@ fn notes(repo: &Path) -> Option<String> {
     })
 }
 
-/// The agent a session's block runs: Claude Code in `bypassPermissions`,
-/// or Codex, when it runs on it (M264), in `full-access`, unless a test
+/// The agent a session's block runs: Claude Code in `bypassPermissions` on
+/// its model, or Codex, when it runs on it (M264), in `full-access`, unless a test
 /// names a command (`ARUGULA_HOSTED_SESSION_AGENT`), which still runs as
 /// that kind, under M185's gate.
 fn agent_config(l: &Session) -> Value {
@@ -890,6 +926,11 @@ fn agent_config(l: &Session) -> Value {
         // review read-only is that its box pushes nothing for it.
         "permission_mode": mode_of(agent),
     });
+    // Its model (Arugula #215), which the block switches to as the session
+    // opens, before the mode.
+    if let Some(m) = &l.model {
+        c["model"] = json!(m);
+    }
     if let Some(cmd) = std::env::var("ARUGULA_HOSTED_SESSION_AGENT").ok().filter(|c| !c.trim().is_empty()) {
         c["command"] = json!(crate::agent::defs::split_command(&cmd));
     }
@@ -954,6 +995,8 @@ struct Seen {
     open: Option<(&'static str, String, String, Vec<String>)>,
     tool: Option<String>,
     error: Option<String>,
+    /// The model its agent is on, in words (Arugula #215).
+    model: Option<String>,
     /// Whose each turn's prompt was, oldest first, of the last few
     /// (`None`: the block's owner's, or the agent's own).
     by: Vec<Option<String>>,
@@ -1009,6 +1052,7 @@ fn seen(s: &Value) -> Seen {
         open: perm.or_else(ask),
         tool: s["current_tool"]["title"].as_str().map(str::to_owned),
         error: s["error"].as_str().map(str::to_owned),
+        model: s["model_name"].as_str().map(str::to_owned),
         // `recent_turns` is newest first.
         by: s["recent_turns"]
             .as_array()
@@ -1074,8 +1118,12 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
             });
         }
     }
-    let Ok(Some(l)) = read(&dir, id) else { return false };
     let s = seen(&b.state());
+    if s.model.is_some() && s.model != l.model_now {
+        let m = s.model.clone();
+        update(&dir, id, |now| now.model_now = m);
+    }
+    let Ok(Some(l)) = read(&dir, id) else { return false };
     let say = |f: Box<dyn FnOnce(&mut Session) + Send>| {
         update(&dir, id, f);
     };
@@ -1224,6 +1272,7 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 say(Box::new(move |now| now.push(&k, &m, Kind::State, State::Working, SessionDetail::default())));
             } else if now_ms().saturating_sub(l.last_at) >= heartbeat_every().as_millis() as u64
                 || !l.unnamed.is_empty()
+                || l.model_now != l.model_said
             {
                 let (k, m, tool) = (keys.clone(), me.clone(), s.tool.clone());
                 say(Box::new(move |now| {

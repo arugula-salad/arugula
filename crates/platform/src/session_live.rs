@@ -410,6 +410,11 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         parent_session: s.parent_session.clone(),
         harness: s.harness.clone(),
         ran: ran_on(&events),
+        model_asked: match &s.model {
+            Some(m) => Some(m.clone()),
+            None => app.db.agents_model(&s.project)?,
+        },
+        model: s.ran_model.clone(),
         tries,
         picked,
         moves: vec![],
@@ -511,7 +516,11 @@ pub async fn act(
             let after = app.db.session(&id)?.ok_or_else(no_session)?;
             app.chat.session(&app.db, &after);
             if kind.answers() {
-                crate::sessions::asks::close_session(&app, &after)?;
+                // Its ask says who answered, and what (Arugula #215).
+                let n = app.cache.accounts(&*app.hub, std::slice::from_ref(&account)).await?;
+                let who = n.get(&account).map(|a| a.name.clone()).unwrap_or_default();
+                let said = crate::sessions::asks::said(kind.as_str(), b.answer.as_ref(), reason);
+                crate::sessions::asks::answered(&app, &after, &who, &said)?;
             }
             Ok(Json(view(&app, &after, true, &account).await?))
         }
