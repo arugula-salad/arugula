@@ -1581,12 +1581,6 @@ export class ControlSession {
     );
   }
 
-  /** Off to Stripe Checkout to upgrade (a team, or this account). */
-  async upgrade(team?: string) {
-    const r = await api<{ url: string }>("/api/billing/checkout", { team }, platformFetch);
-    location.href = r.url;
-  }
-
   // ---- teams and people (M19)
 
   teams: Team[] = [];
