@@ -1545,7 +1545,7 @@ impl Control {
         let pq = format!(
             "{}&version={}&os={}&arch={}",
             wire::Features::path(&self.features()),
-            env!("CARGO_PKG_VERSION").replace('+', "%2B"),
+            arugula_core::version::get().replace('+', "%2B"),
             std::env::consts::OS,
             std::env::consts::ARCH,
         );

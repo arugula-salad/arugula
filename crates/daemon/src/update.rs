@@ -99,7 +99,7 @@ async fn run(s: Settings, cached: Option<Checked>) {
                 if let Ok(json) = serde_json::to_vec(&c) {
                     let _ = crate::store::write_atomic(&s.state_dir.join(CACHE), &json);
                 }
-                if newer(&v, env!("CARGO_PKG_VERSION")) {
+                if newer(&v, arugula_core::version::get()) {
                     info!(latest = %v, "a newer Arugula is out");
                 }
                 *LAST.lock().unwrap() = Some(c);
@@ -273,7 +273,7 @@ fn this_kind() -> Kind {
 }
 
 fn status() -> Status {
-    let current = env!("CARGO_PKG_VERSION");
+    let current = arugula_core::version::get();
     let latest = LAST.lock().unwrap().as_ref().and_then(|c| c.latest.clone());
     let kind = this_kind();
     Status {
@@ -317,7 +317,7 @@ pub fn other_command() -> Option<&'static str> {
 /// The latest release found, when it's newer than this.
 pub fn newer_release() -> Option<String> {
     let latest = LAST.lock().unwrap().as_ref().and_then(|c| c.latest.clone())?;
-    newer(&latest, env!("CARGO_PKG_VERSION")).then_some(latest)
+    newer(&latest, arugula_core::version::get()).then_some(latest)
 }
 
 /// The daemon's state directory (an update is unpacked there).

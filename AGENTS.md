@@ -37,8 +37,13 @@ Each has a `README.md` with where to start reading.
   `mux/outside.rs`, `Config::at_exit` and `MuxHandle`; `just mux-guard` checks
   its dependency tree (see [its README](crates/mux/README.md)). Its `labs`
   feature is on when the daemon's is.
-- `crates/daemon`: `arugulad`, the binary: the edge and the integrations
-  around `arugula-mux`, wired together in `main.rs`.
+- `crates/daemon`: `arugulad-base`, the daemon as a library: the edge and
+  the integrations around `arugula-mux`, wired together in `lib.rs`'s
+  `main`. It's being split into feature crates (`arugulad-<area>`, #232),
+  each named `arugulad…` so `RUST_LOG=arugulad=…` reaches it.
+- `crates/arugulad`: `arugulad`, the binary on `arugulad-base`, and the
+  daemon's integration tests (`tests/integration/`; their fixtures stay in
+  `crates/daemon/tests/`).
 - `crates/cli`: `arugula`, the CLI. It doesn't link `arugula-vt`, so it
   builds without libghostty and Zig.
 The server crates (`crates/control`, `crates/platform`,
@@ -123,7 +128,7 @@ nothing marked `mux:` names the edge or the block kinds.
   Sprites adapter, `labs/provider_tunnel.rs`, `labs/resident.rs` and
   `labs/sandbox.rs` in Labs), synced history (`sync.rs`, `seal.rs`),
   tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
-- **Lifecycle:** the command line (`args.rs`), startup (`main.rs`), a
+- **Lifecycle:** the command line (`args.rs`), startup (`lib.rs`), a
   hosted workspace's box (`hosted/`: `--hosted`, its own keys per box,
   enrolling, redialling on resume, busy and idle for control), `install`
   (`install.rs`), Getting started (`setup.rs`), updates (`update.rs`,

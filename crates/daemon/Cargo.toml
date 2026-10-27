@@ -1,6 +1,9 @@
 [package]
-name = "arugulad"
-version.workspace = true
+name = "arugulad-base"
+description = "The daemon arugulad is built on (crates/arugulad is its binary)"
+# Not the workspace's version: a release bump would rebuild this crate and
+# everything on it. The binary carries the release (arugula_core::version).
+version = "0.0.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

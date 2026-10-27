@@ -650,7 +650,7 @@ fn rig_with(tag: &str, more: &[(&str, &str)]) -> Rig {
     // What the setup adds to session users' environment (Arugula #215).
     let session_env = marks.join("tools-env");
     std::fs::write(&session_env, "CARGO_TARGET_DIR=~/.cache/arugula/cargo-target\n").unwrap();
-    let fake = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fake_acp.py");
+    let fake = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon")).join("tests/fake_acp.py");
     let agent = format!("sh -c 'FAKE_ACP_DIR=$HOME/.fake-acp exec python3 {}'", fake.display());
 
     let mut b = arugulad!(tag);

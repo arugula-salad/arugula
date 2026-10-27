@@ -333,7 +333,7 @@ fn cli_bin() -> PathBuf {
 }
 
 fn fixture() -> String {
-    format!("{}/tests/fixtures/s13-hook-ask.json", env!("CARGO_MANIFEST_DIR"))
+    format!("{}/tests/fixtures/s13-hook-ask.json", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"))
 }
 
 /// Runs `arugula ask` in a new pane as Claude Code's hook would (the

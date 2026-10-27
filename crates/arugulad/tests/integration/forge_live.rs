@@ -49,7 +49,7 @@ const FJ_TOKEN: &str = "fake-forgejo-token-m40";
 const N: u64 = 13788;
 
 fn fixture(dir: &str, f: &str) -> Value {
-    let p = format!("{}/tests/fixtures/{dir}/{f}", env!("CARGO_MANIFEST_DIR"));
+    let p = format!("{}/tests/fixtures/{dir}/{f}", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
     serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
 }
 

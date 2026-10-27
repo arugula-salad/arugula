@@ -275,7 +275,7 @@ impl Chant {
     }
 
     fn recorded() -> Value {
-        let f = format!("{}/tests/fixtures/chant/audit-agents.json", env!("CARGO_MANIFEST_DIR"));
+        let f = format!("{}/tests/fixtures/chant/audit-agents.json", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
         serde_json::from_str(&std::fs::read_to_string(f).unwrap()).unwrap()
     }
 

@@ -455,7 +455,10 @@ fn a_closed_doc_is_kept_for_history_and_search() {
 /// A file from `tests/fixtures/docs/`, the same ones the web client's
 /// `doc-grammar.spec.ts` reads.
 fn example(name: &str) -> String {
-    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docs").join(name)).unwrap()
+    std::fs::read_to_string(
+        Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon")).join("tests/fixtures/docs").join(name),
+    )
+    .unwrap()
 }
 
 #[test]

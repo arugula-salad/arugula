@@ -46,7 +46,7 @@ const REPO: &str = "group/sub/proj";
 const N: u64 = 3941;
 
 fn fixture(f: &str) -> Value {
-    let p = format!("{}/tests/fixtures/gitlab/gitlab-cli-3941/{f}", env!("CARGO_MANIFEST_DIR"));
+    let p = format!("{}/tests/fixtures/gitlab/gitlab-cli-3941/{f}", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
     serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
 }
 
