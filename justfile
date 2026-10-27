@@ -772,6 +772,7 @@ macos cmd="tools" *args:
 # per workspace size (M266); and its tools for session users (Arugula #215).
 test-scripts:
     scripts/tests/ci-red.sh
+    scripts/tests/ci-nightly-red.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
     scripts/tests/notices.sh

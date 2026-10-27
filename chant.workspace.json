@@ -222,12 +222,13 @@
       "phases": {
         "lint": ["lint", "changes", "suite-changed"],
         "build": { "runs": ["build", "static", "clippy"], "skipped": "pass" },
-        "test": { "runs": ["test", "test-2", "test-postgres"], "skipped": "pass" },
+        "test": { "runs": ["test", "test-2", "test-postgres", "core"], "skipped": "pass" },
         "e2e": { "runs": ["e2e*"], "skipped": "pass" },
+        "claims": { "runs": ["testnet", "stack", "desktop-xvfb"], "skipped": "pass" },
         "macos": { "runs": ["macos*"], "skipped": "pass" },
         "windows": { "runs": ["workspace", "workspace-clippy", "desktop"], "skipped": "pass" }
       },
-      "require": ["lint", "build", "test", "e2e", "macos", "windows"]
+      "require": ["lint", "build", "test", "e2e", "claims", "macos", "windows"]
     }
   },
   "agents": [
