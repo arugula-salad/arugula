@@ -169,19 +169,27 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
         <a href={all} onClick={(e) => follow(e, all)}>
           {p.name}'s Docs
         </a>
-        {view && (
-          <>
-            {" · "}
-            <span data-doc-maker>made by {whoLabel(view.doc.author, view.doc.agent, nameOf(p))}</span> · changed <Time at={view.doc.updated_at} />
-          </>
-        )}
       </p>
       {missing && !view && (
         <p class="dim" data-doc-missing>
           That Doc can't be read: {missing}.
         </p>
       )}
-      {!missing || view ? <DocBlock id={0} s={state} fresh={fresh} load={noImages} /> : null}
+      {!missing || view ? (
+        <DocBlock
+          id={0}
+          s={state}
+          fresh={fresh}
+          load={noImages}
+          byline={
+            view && (
+              <>
+                <span data-doc-maker>made by {whoLabel(view.doc.author, view.doc.agent, nameOf(p))}</span> · changed <Time at={view.doc.updated_at} />
+              </>
+            )
+          }
+        />
+      ) : null}
       {view?.writer && <DocWriter project={project} view={view} wrote={show} />}
     </section>
   );

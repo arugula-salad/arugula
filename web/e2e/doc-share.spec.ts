@@ -239,6 +239,9 @@ for (const mode of [DOMAIN, null] as const) {
           // The page follows the system's colors.
           const bg = await v.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
           expect(bg, scheme).toBe(scheme === "light" ? "rgb(239, 241, 245)" : "rgb(17, 17, 27)");
+          // The Doc wears its own paper in each (#253).
+          const paper = await v.page.evaluate(() => getComputedStyle(document.querySelector(".doc")!).backgroundColor);
+          expect(paper, scheme).toBe(scheme === "light" ? "rgb(248, 246, 240)" : "rgb(26, 27, 24)");
           // Fresh: no cookie came or was set, and it asked only its own origin
           // for the page, its files and its parts.
           expect(await v.ctx.cookies(), `${name} ${scheme}`).toEqual([]);
