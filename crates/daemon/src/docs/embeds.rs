@@ -16,6 +16,9 @@
 //! - ```` ```svg [alt] ````: one drawing, as SVG text. Its root is `<svg`
 //!   with the `xmlns` an `<img>` needs. The client shows it only through
 //!   `<img>`, which runs no script, so nothing here sanitises it.
+//! - ```` ```stats ````: a JSON list of 1 to 6 tiles (#254), each a `label`
+//!   and a `value` as text, with an optional `delta` and its `tone` (`up`,
+//!   `down` or `flat`) and no other keys.
 //!
 //! And the pictures (#965): `![alt](assets/<name>)` in a line of text. The
 //! client draws one as an `<img>` when the target is `assets/` and a plain
@@ -29,8 +32,8 @@
 //! what is in it all the same.
 //!
 //! The rules are `deploy/machine/doc.mjs`'s (`checkChart`, `checkOrdered`,
-//! `checkImage`) in Rust, and `web/src/shared/ui/chart.tsx` has them in TypeScript for a chart
-//! that arrives some other way. Both run over the files in
+//! `checkImage`) in Rust, and `web/src/shared/ui/chart.tsx` (and `stats.tsx`)
+//! has them in TypeScript for a chart that arrives some other way. Both run over the files in
 //! `tests/fixtures/docs/` (`expect.json` says what each one must say), so
 //! they can't drift.
 
@@ -45,6 +48,10 @@ use super::{
 pub const MAX_ROWS: usize = 200;
 /// Series in a chart.
 pub const MAX_SERIES: usize = 4;
+/// Tiles in a stats fence.
+pub const MAX_TILES: usize = 6;
+/// The longest a tile's label, value and delta may be, in characters.
+const TILE_TEXT: [(&str, usize); 3] = [("label", 40), ("value", 24), ("delta", 16)];
 /// The namespace an SVG needs to show in an `<img>`.
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
 
@@ -109,6 +116,7 @@ pub fn check(md: &str, assets: &[Asset]) -> Result<(), String> {
         match f.lang.as_str() {
             "chart" => check_chart(&f.code).map(|_| ())?,
             "svg" => check_svg(&f.code)?,
+            "stats" => check_stats(&f.code).map(|_| ())?,
             _ => {}
         }
     }
@@ -212,6 +220,7 @@ pub fn plain(md: &str) -> String {
         match f.lang.as_str() {
             "chart" => out.push(summary(&f.code)),
             "svg" => out.push("[drawing]".to_owned()),
+            "stats" => out.push(stats_summary(&f.code)),
             // Code is as it was written, pictures in it included.
             _ => out.extend(lines[f.lines.clone()].iter().map(|l| (*l).to_owned())),
         }
@@ -421,6 +430,69 @@ fn iso_instant(s: &str) -> Option<f64> {
     Some(secs)
 }
 
+/// A stats fence's tiles, if they can be drawn; else one line saying what to
+/// fix. A value is text, so the agent says how it reads (`1,284`, `4.2 s`).
+pub fn check_stats(source: &str) -> Result<Vec<Value>, String> {
+    let bad = |why: String| format!("stats: {why}");
+    let tiles: Value =
+        serde_json::from_str(source).map_err(|e| bad(format!("not JSON ({})", one_line(&e.to_string()))))?;
+    let tiles = match tiles {
+        Value::Array(t) if (1..=MAX_TILES).contains(&t.len()) => t,
+        Value::Array(t) => return Err(bad(format!("{} tiles; a stats fence holds 1 to {MAX_TILES}", t.len()))),
+        _ => return Err(bad(format!("must be a JSON list of 1 to {MAX_TILES} tiles"))),
+    };
+    for (i, tile) in tiles.iter().enumerate() {
+        let n = i + 1;
+        let Some(tile) = tile.as_object() else { return Err(bad(format!("tile {n} must be an object"))) };
+        if let Some(k) = tile.keys().find(|k| !["label", "value", "delta", "tone"].contains(&k.as_str())) {
+            return Err(bad(format!(
+                "tile {n}: unknown key {}; a tile has label, value, delta and tone",
+                Value::from(k.as_str())
+            )));
+        }
+        for (key, max) in TILE_TEXT {
+            let Some(v) = tile.get(key) else {
+                if key == "delta" {
+                    continue;
+                }
+                return Err(bad(format!("tile {n} has no {key}")));
+            };
+            if !v.as_str().is_some_and(|s| !s.trim().is_empty() && s.chars().count() <= max) {
+                return Err(bad(format!(
+                    "tile {n}: {key} must be text (\"1,284\", not 1284), at most {max} characters"
+                )));
+            }
+        }
+        match tile.get("tone") {
+            None => {}
+            Some(_) if !tile.contains_key("delta") => return Err(bad(format!("tile {n}: tone needs a delta"))),
+            Some(Value::String(t)) if ["up", "down", "flat"].contains(&t.as_str()) => {}
+            Some(t) => {
+                return Err(bad(format!(
+                    "tile {n}: tone must be \"up\", \"down\" or \"flat\", got {}",
+                    one_line(&t.to_string())
+                )));
+            }
+        }
+    }
+    Ok(tiles)
+}
+
+/// `[stats: Sessions 1,284 (+12%); Errors 3]`; `[stats]` for one that can't
+/// be read.
+fn stats_summary(code: &str) -> String {
+    let Ok(tiles) = check_stats(code) else { return "[stats]".into() };
+    let text = |t: &Value, k: &str| one_line(t[k].as_str().unwrap_or_default());
+    let tiles: Vec<String> = tiles
+        .iter()
+        .map(|t| match t.get("delta") {
+            Some(_) => format!("{} {} ({})", text(t, "label"), text(t, "value"), text(t, "delta")),
+            None => format!("{} {}", text(t, "label"), text(t, "value")),
+        })
+        .collect();
+    format!("[stats: {}]", tiles.join("; "))
+}
+
 /// A drawing's text, if it can be shown through `<img>`; else one line
 /// saying what to fix.
 pub fn check_svg(svg: &str) -> Result<(), String> {
@@ -579,6 +651,47 @@ mod tests {
         ok(
             json!({ "type": "line", "x": "m", "y": "a", "order": ["2026-13-01", "2026-13-02"], "rows": [{ "m": "2026-13-01", "a": 1 }, { "m": "2026-13-02", "a": 2 }] }),
         );
+    }
+
+    #[test]
+    fn each_stats_rule_is_enforced() {
+        let stats = |tiles: &Value| format!("```stats\n{tiles}\n```\n");
+        let tile = json!({ "label": "Sessions", "value": "1,284", "delta": "+12%", "tone": "up" });
+        for (tiles, says) in [
+            (json!([]), "0 tiles; a stats fence holds 1 to 6"),
+            (Value::Array(vec![tile.clone(); 7]), "7 tiles; a stats fence holds 1 to 6"),
+            (tile.clone(), "must be a JSON list of 1 to 6 tiles"),
+            (json!(["Sessions"]), "tile 1 must be an object"),
+            (json!([tile, { "value": "3" }]), "tile 2 has no label"),
+            (json!([{ "label": "Errors" }]), "tile 1 has no value"),
+            (json!([{ "label": "Errors", "value": 3 }]), "value must be text (\"1,284\", not 1284)"),
+            (json!([{ "label": " ", "value": "3" }]), "label must be text"),
+            (json!([{ "label": "x".repeat(41), "value": "3" }]), "at most 40 characters"),
+            (json!([{ "label": "Errors", "value": "3", "delta": -2 }]), "delta must be text"),
+            (json!([{ "label": "Errors", "value": "3", "tone": "up" }]), "tone needs a delta"),
+            (
+                json!([{ "label": "Errors", "value": "3", "delta": "-2", "tone": "red" }]),
+                "tone must be \"up\", \"down\" or \"flat\", got \"red\"",
+            ),
+            (json!([{ "label": "Errors", "value": "3", "color": "leaf" }]), "unknown key \"color\""),
+        ] {
+            let e = check(&stats(&tiles)).expect_err(&tiles.to_string());
+            assert!(e.starts_with("stats: ") && e.contains(says) && !e.contains('\n'), "{tiles}: {e}");
+        }
+        assert!(check("```stats\nnope\n```").unwrap_err().starts_with("stats: not JSON ("));
+        // What passes: six tiles, no delta, a delta with no tone, the caps
+        // counted in characters, not bytes.
+        let ok = |tiles: Value| assert_eq!(check(&stats(&tiles)), Ok(()), "{tiles}");
+        ok(Value::Array(vec![tile; 6]));
+        ok(json!([{ "label": "Errors", "value": "3" }, { "label": "p95", "value": "4.2 s", "delta": "−0.3 s" }]));
+        ok(json!([{ "label": "é".repeat(40), "value": "日".repeat(24), "delta": "↑".repeat(16), "tone": "flat" }]));
+        assert_eq!(
+            plain(
+                "```stats\n[{\"label\": \"Sessions\", \"value\": \"1,284\", \"delta\": \"+12%\"}, {\"label\": \"Errors\", \"value\": \"3\"}]\n```"
+            ),
+            "[stats: Sessions 1,284 (+12%); Errors 3]"
+        );
+        assert_eq!(plain("```stats\nnope\n```"), "[stats]");
     }
 
     #[test]

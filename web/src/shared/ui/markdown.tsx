@@ -7,9 +7,12 @@
 // only http(s) hrefs become links). The one exception is GitHub's folding:
 // a `<details>` line, an optional `<summary>…</summary>` and `</details>`
 // on lines of their own fold the blocks between them, still drawn as these
-// blocks, never as HTML. A Doc (`embeds`) also draws a ```chart
-// fence as a chart and shows a ```svg fence as a picture, through <img>
-// only (`drawing.tsx`); everywhere else those are code. With `image` it draws
+// blocks, never as HTML. GitHub's alerts (`> [!NOTE]`, TIP, IMPORTANT,
+// WARNING, CAUTION on a quote's first line) are callouts, with an icon and
+// a label so the colour isn't all that says which (#254); not in chat. A
+// Doc (`embeds`) also draws a ```chart fence as a chart, a ```stats fence
+// as tiles (`stats.tsx`) and shows a ```svg fence as a picture, through
+// <img> only (`drawing.tsx`); everywhere else those are code. With `image` it draws
 // `![alt](assets/<name>)` too (#965): the Doc's own pictures, wherever a line
 // of text is (a quote's included), and no other image target.
 
@@ -19,6 +22,7 @@ import { Chart } from "./chart";
 import { Drawing } from "./drawing";
 import { bodyLines, readFence } from "./embeds";
 import { inline, type ForgeInline, type IsMe } from "./markup";
+import { Stats } from "./stats";
 
 const ITEM = /^( *)([-*+]|\d+[.)])\s+(.*)$/;
 const FENCE = /^ *(```|~~~)/;
@@ -29,6 +33,7 @@ const TABLE_SEP = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const DETAILS = /^ {0,3}<details( open)?>\s*(?:<summary>(.*?)<\/summary>\s*)?$/i;
 const DETAILS_END = /^ {0,3}<\/details>\s*$/i;
 const SUMMARY = /^ {0,3}<summary>(.*?)<\/summary>\s*$/i;
+const ALERT = /^\s*\[!(note|tip|important|warning|caution)\]\s*$/i;
 
 const indentOf = (l: string) => l.length - l.trimStart().length;
 const startsBlock = (l: string) => DETAILS.test(l) || DETAILS_END.test(l) || FENCE.test(l) || HEADING.test(l) || RULE.test(l) || QUOTE.test(l) || ITEM.test(l);
@@ -89,6 +94,7 @@ function fenced(lines: string[], i: number, strip: number, k: number, fx: Ctx): 
   const f = readFence(lines, i, strip);
   const code = f.code.join("\n");
   if (fx.embeds && f.lang === "chart") return { node: <Chart key={k} source={code} />, next: f.next };
+  if (fx.embeds && f.lang === "stats") return { node: <Stats key={k} source={code} />, next: f.next };
   if (fx.embeds && f.lang === "svg") return { node: <Drawing key={k} svg={code} alt={f.alt} />, next: f.next };
   if (fx.chat) return { node: <fx.chat.Code key={k} code={code} lang={f.lang ?? ""} />, next: f.next };
   return { node: <pre key={k}>{code}</pre>, next: f.next };
@@ -130,7 +136,19 @@ function blocks(lines: string[], fx: Ctx): ComponentChildren[] {
       while (i < lines.length && QUOTE.test(lines[i])) q.push(lines[i++].replace(/^ {0,3}> ?/, ""));
       // A quote's fences stay code: the daemon checks fences that start a
       // line (lists reach theirs, a quote's lines start with ">").
-      out.push(<blockquote key={k++}>{blocks(q, { ...fx, embeds: false })}</blockquote>);
+      const alert = fx.chat ? null : q[0].match(ALERT);
+      if (alert) {
+        const kind = alert[1].toLowerCase() as Alert;
+        out.push(
+          <div key={k++} class={`md-callout md-callout-${kind}`} role="note" data-callout={kind}>
+            <p class="md-callout-title">
+              {glyph(ALERT_ICON[kind])}
+              {kind[0].toUpperCase() + kind.slice(1)}
+            </p>
+            {blocks(q.slice(1), { ...fx, embeds: false })}
+          </div>,
+        );
+      } else out.push(<blockquote key={k++}>{blocks(q, { ...fx, embeds: false })}</blockquote>);
     } else if (l.includes("|") && i + 1 < lines.length && lines[i + 1].includes("-") && TABLE_SEP.test(lines[i + 1])) {
       const head = cells(l);
       i += 2;
@@ -175,6 +193,26 @@ function blocks(lines: string[], fx: Ctx): ComponentChildren[] {
   }
   return out;
 }
+
+type Alert = "note" | "tip" | "important" | "warning" | "caution";
+
+/** A callout's 16px glyph, stroked in its tone. */
+const glyph = (d: string[]) => (
+  <svg class="md-callout-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    {d.map((p) => (
+      <path key={p} d={p} />
+    ))}
+  </svg>
+);
+
+const ALERT_ICON: Record<Alert, string[]> = {
+  // An i in a circle, a bulb, a speech bubble with a mark, a triangle and an octagon.
+  note: ["M8 1.75a6.25 6.25 0 1 0 0 12.5a6.25 6.25 0 1 0 0-12.5", "M8 7.25v4", "M8 4.75v.01"],
+  tip: ["M5.5 10.5a4.25 4.25 0 1 1 5 0c-.6.45-.75 1-.75 1.75h-3.5c0-.75-.15-1.3-.75-1.75", "M6.5 14.25h3"],
+  important: ["M2 3.25c0-.7.55-1.25 1.25-1.25h9.5c.7 0 1.25.55 1.25 1.25v7c0 .7-.55 1.25-1.25 1.25H7l-3 2.5v-2.5h-.75C2.55 11.5 2 10.95 2 10.25z", "M8 4.5v3", "M8 9.5v.01"],
+  warning: ["M7.13 2.5a1 1 0 0 1 1.74 0l5.5 9.75a1 1 0 0 1-.87 1.5h-11a1 1 0 0 1-.87-1.5z", "M8 6v3.25", "M8 11.5v.01"],
+  caution: ["M5.4 1.75h5.2l3.65 3.65v5.2l-3.65 3.65H5.4l-3.65-3.65V5.4z", "M8 4.75v3.75", "M8 10.75v.01"],
+};
 
 /** A `<details>` from `i` to its `</details>` (nested ones counted;
  * unclosed, to the end), with its `<summary>`, on its line or the next. */

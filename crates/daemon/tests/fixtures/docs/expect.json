@@ -13,7 +13,8 @@
     "line-chart.md": "Weekly sign-ups, two series:\n\n[chart: Sign-ups by month (line, 4 rows)]\n",
     "line-dates.md": "[chart: line, 3 rows]\n",
     "quoted-chart.md": "A chart in a quote is only code, here and on the page:\n\n> ```chart\n> {\"type\": \"pie\"}\n> ```\n",
-    "script-drawing.md": "[drawing]\n"
+    "script-drawing.md": "[drawing]\n",
+    "stats.md": "This week at a glance:\n\n[stats: Sessions 1,284 (+12%); Errors 3 (-2); p95 4.2 s]\n\n> [!NOTE]\n> A callout is a quote to the daemon: its text stays as written.\n"
   },
   "bad": {
     "bad/backwards-dates.md": "chart: a line chart's x must go up: row 2",
@@ -33,6 +34,9 @@
     "bad/label-not-in-order.md": "chart: row 2 (\"Mar\") is not in order",
     "bad/no-rows.md": "chart: rows must be a non-empty list",
     "bad/numbers-down.md": "chart: a line chart's x must go up: row 2 (2024) does not come after row 1 (numbers)",
+    "bad/stats-number-value.md": "stats: tile 1: value must be text (\"1,284\", not 1284)",
+    "bad/stats-tone.md": "stats: tile 1: tone must be \"up\", \"down\" or \"flat\", got \"good\"",
+    "bad/stats-too-many.md": "stats: 7 tiles; a stats fence holds 1 to 6",
     "bad/string-value.md": "chart: row 1: \"sales\" must be a number",
     "bad/svg-empty.md": "svg: the fence is empty",
     "bad/svg-no-namespace.md": "svg: the <svg> needs xmlns=",
