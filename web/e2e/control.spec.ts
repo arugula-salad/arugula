@@ -1122,6 +1122,43 @@ test("a waiting browser that follows another machine's link brings that one inst
   await visitor.context().close();
 });
 
+test("the app's Link GitHub shows a device code and polls it, without leaving the page (#235)", async () => {
+  // The hub's device flow is control's tests'; this is the window's half,
+  // with the account shown as one that has no GitHub linked.
+  let polls = 0;
+  await laptop.route("**/api/me/passkeys", async (r) => {
+    const real = await (await r.fetch()).json();
+    await r.fulfill({ json: { ...real, github: polls > 1 ? "stranger" : null } });
+  });
+  await laptop.route("**/api/me/github/device", (r) =>
+    r.fulfill({ json: { id: "d1", user_code: "WDJB-MJHT", verification_uri: "https://github.com/login/device", interval: 1, expires_in: 900 } }),
+  );
+  await laptop.route("**/api/me/github/device/d1", (r) => r.fulfill({ json: { state: ++polls > 1 ? "linked" : "pending" } }));
+  await laptop.evaluate(() => {
+    Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac" }, opened: [] as unknown[][] });
+    window.open = (...a: unknown[]) => ((window as unknown as { opened: unknown[][] }).opened.push(a), null);
+  });
+  await controlPanel(laptop, "account");
+  await laptop.locator("[data-link-github]").click();
+  await expect(laptop.locator("[data-github-code]")).toHaveText("WDJB-MJHT");
+  await laptop.locator("[data-open-github]").click();
+  expect(await laptop.evaluate(() => (window as unknown as { opened: unknown[][] }).opened)).toEqual([
+    ["https://github.com/login/device", "_blank", "noopener"],
+  ]);
+  // Pending once, then linked: the code goes and the panel says so.
+  await expect(laptop.locator("[data-github-link=linked]")).toBeVisible({ timeout: 10_000 });
+  await expect(laptop.locator("[data-github-device]")).toHaveCount(0);
+  await expect(laptop.locator("[data-github-login]")).toHaveText("stranger");
+  expect(new URL(laptop.url()).pathname).toBe("/");
+  await laptop.unroute("**/api/me/passkeys");
+  await laptop.unroute("**/api/me/github/device");
+  await laptop.unroute("**/api/me/github/device/d1");
+  await laptop.evaluate(() => {
+    delete (window as unknown as { __arugulaApp?: unknown }).__arugulaApp;
+  });
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+});
+
 test("sessions: where you're signed in, and signing out everywhere (#173)", async () => {
   await controlPanel(laptop, "account");
   await expect(laptop.getByRole("heading", { name: "Sign-in and account" })).toBeVisible();

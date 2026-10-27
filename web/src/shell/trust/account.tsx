@@ -6,6 +6,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { UsageReports } from "../../shared/ui/account-telemetry";
 import { agentName, api, shownName, type ControlSession } from "../control";
+import { desktopApp } from "../../shared/desktop";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
@@ -79,8 +80,17 @@ const LINKED: Record<string, string> = {
   elsewhere: "That link was started in another browser or sign-in: press Link GitHub again here.",
   expired: "That link took too long or was used already: press Link GitHub again.",
   declined: "GitHub didn't link: it was declined on GitHub.",
+  disabled: "GitHub linking from the app isn't turned on yet: link GitHub from Arugula in your browser.",
   failed: "Linking GitHub failed: try again.",
 };
+
+/** The code GitHub's device flow gave this window to type on GitHub (#235). */
+interface DeviceCode {
+  id: string;
+  user_code: string;
+  verification_uri: string;
+  interval: number;
+}
 
 export function AccountPanel({ s, close, linked }: { s: ControlSession; close: () => void; linked?: string }) {
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
@@ -96,6 +106,53 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
     api<Passkeys>("/api/me/passkeys").then(setKeys, (e: Error) => setErr(e.message));
   };
   useEffect(load, []);
+  // The desktop app links GitHub by device code (#235): its window can't
+  // take the redirect's callback. `device` is the code on show, polled
+  // until GitHub says something final; closing the panel stops it.
+  const [device, setDevice] = useState<DeviceCode | null>(null);
+  const [outcome, setOutcome] = useState("");
+  const startDevice = async () => {
+    setErr("");
+    setOutcome("");
+    try {
+      const r = await api<DeviceCode & { state?: string }>("/api/me/github/device", {});
+      if (r.state) setOutcome(r.state);
+      else setDevice(r);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  useEffect(() => {
+    if (!device) return;
+    let live = true;
+    let every = device.interval;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const r = await api<{ state: string; interval?: number }>(`/api/me/github/device/${device.id}`, {});
+        if (!live) return;
+        if (r.state === "slow_down") every = r.interval ?? every + 5;
+        if (r.state !== "pending" && r.state !== "slow_down") {
+          setDevice(null);
+          setOutcome(r.state);
+          load();
+          void s.refreshMe();
+          return;
+        }
+      } catch (e) {
+        if (!live) return;
+        setDevice(null);
+        setErr((e as Error).message);
+        return;
+      }
+      timer = setTimeout(poll, every * 1000);
+    };
+    timer = setTimeout(poll, every * 1000);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [device?.id]);
   const act = (f: () => Promise<unknown>) => {
     setErr("");
     setConfirming(null);
@@ -215,9 +272,9 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
       {s.info.github || keys?.github ? (
         <>
           <h3 class="control-group">GitHub</h3>
-          {linked ? (
-            <p class={linked === "linked" ? "dim" : "control-error"} data-github-link={linked}>
-              {LINKED[linked] ?? LINKED.failed}
+          {outcome || linked ? (
+            <p class={(outcome || linked) === "linked" ? "dim" : "control-error"} data-github-link={outcome || linked}>
+              {LINKED[outcome || linked || ""] ?? LINKED.failed}
             </p>
           ) : null}
           <ul class="control-devices control-rows" data-github>
@@ -240,13 +297,34 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
                 <button
                   class="secondary small"
                   data-link-github
-                  onClick={() => location.assign(`/auth/github?link=1&next=${encodeURIComponent(location.pathname + location.search)}`)}
+                  disabled={!!device}
+                  onClick={() =>
+                    desktopApp()
+                      ? void startDevice()
+                      : location.assign(`/auth/github?link=1&next=${encodeURIComponent(location.pathname + location.search)}`)
+                  }
                 >
                   Link GitHub
                 </button>
               )}
             </li>
           </ul>
+          {device ? (
+            <div data-github-device>
+              <p class="dim">Enter this code on GitHub to link your account:</p>
+              <p>
+                <b data-github-code style={{ fontSize: "1.6em", letterSpacing: "0.1em", userSelect: "all" }}>{device.user_code}</b>
+              </p>
+              <div class="prompt-buttons">
+                <button class="secondary small" data-copy-code onClick={() => void navigator.clipboard?.writeText(device.user_code)}>
+                  Copy
+                </button>
+                <button class="primary small" data-open-github onClick={() => window.open(device.verification_uri, "_blank", "noopener")}>
+                  Open GitHub
+                </button>
+              </div>
+            </div>
+          ) : null}
           {unlinking ? (
             <ConfirmRemove
               title={`Unlink GitHub (${keys?.github ?? ""})?`}

@@ -393,6 +393,22 @@ clients = ["page"]
 note = "Unlinking the account's GitHub identity (#208): the cookie alone, never the desktop app's window, and refused (409) when it's the last way to sign in."
 
 [[route]]
+method = "POST"
+path = "/api/me/github/device"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Linking GitHub by device code, for the desktop app's window (#235): GitHub's user code, with the code itself kept here for this sign-in."
+
+[[route]]
+method = "POST"
+path = "/api/me/github/device/{id}"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "One poll of that device code (#235): only the sign-in that started it, and on a token it links like the callback does."
+
+[[route]]
 method = "GET"
 path = "/api/me/delete"
 process = "hub"
