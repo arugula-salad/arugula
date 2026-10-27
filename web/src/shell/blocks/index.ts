@@ -12,6 +12,7 @@ import "./invite";
 import "./doc";
 import "./team-chat";
 import "./board";
+export { pinBoard } from "./board";
 
 export { makeBlockView, type BlockView } from "./view";
 export { openPort } from "./browser";

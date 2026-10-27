@@ -2853,6 +2853,7 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     let names = |tools: Vec<rmcp::model::Tool>| tools.into_iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let off = names(s.list_all_tools().await.unwrap());
     assert!(!off.iter().any(|n| n.starts_with("board_")), "{off:?}");
+    assert!(!kinds(&s.list_all_tools().await.unwrap(), "show").contains(&"board".to_owned()));
     assert!(refused(&s, "board_read", json!({ "project": "prj_1" })).await.contains("boards"));
 
     arugula_proto::flags::set(&d.state, "boards", true).unwrap();
@@ -2865,6 +2866,11 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     let tools = s.list_all_tools().await.unwrap();
     assert!(names(tools.clone()).iter().any(|n| n == "board_read"));
     assert_eq!(kinds(&tools, "board_write"), ["add_row", "set", "move", "remove_row"]);
+    // show's board kind pins one beside the caller, by its id.
+    assert!(kinds(&tools, "show").contains(&"board".to_owned()));
+    let shown = call(&s, "show", json!({ "kind": "board", "board": "brd_1" })).await;
+    assert!(shown["summary"].as_str().unwrap().contains("Showing board brd_1 in block %"), "{shown}");
+    assert!(refused(&s, "show", json!({ "kind": "board", "board": "not a board" })).await.contains("brd_"));
 
     let listed = call(&s, "board_read", json!({ "project": "prj_1" })).await;
     assert_eq!(listed["boards"][0]["id"], "brd_1", "{listed}");

@@ -12,8 +12,11 @@
 
 import { render } from "preact";
 import type { Client } from "../client";
-import type { PaneId } from "../../shared/proto";
+import type { PaneId, PlatformProjects } from "../../shared/proto";
 import { BoardPanel } from "../../shared/boards/view";
+import { boards } from "../../shared/boards/store";
+import { platformFetch } from "../../shared/maintenance";
+import { askText, type PromptChoice } from "../../shared/ui/menu";
 import { PlatformApiContext } from "../../shared/platform-api";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { shellPlatformApi } from "../platform-api";
@@ -45,6 +48,43 @@ function BoardBlock({ client, s, shown }: { client: Client; s: BoardState | null
       </div>
     </PlatformApiContext.Provider>
   );
+}
+
+/** A board's id in what was typed: `brd_…` alone, or in a board page's
+ * link. */
+export function boardIdIn(typed: string): string | null {
+  return /\bbrd_[0-9a-f]{32}\b/i.exec(typed)?.[0].toLowerCase() ?? null;
+}
+
+/** Every board in the reader's projects, as choices: "Project · Board". */
+async function boardChoices(): Promise<PromptChoice[]> {
+  const r = await platformFetch("/api/projects", { credentials: "same-origin" });
+  if (!r.ok) return [];
+  const { projects } = (await r.json()) as PlatformProjects;
+  const lists = await Promise.all(
+    projects.map((p) =>
+      boards
+        .list(p.id)
+        .then((l) => l.boards.map((b) => ({ value: b.id, label: `${p.name} · ${b.title}` })))
+        .catch(() => []),
+    ),
+  );
+  return lists.flat();
+}
+
+/** "Pin a board…": a block for one of the reader's boards, beside `from`. */
+export async function pinBoard(client: Client, o: { from: PaneId }) {
+  if (getControlSession()?.phase !== "ready") {
+    return client.toast("A board is read as you, through Arugula control: open this machine through control's page, signed in");
+  }
+  const choices = boardChoices();
+  const v = (await askText("Pin a board", "", "board, or its link", choices))?.trim();
+  if (!v) return;
+  const typed = v.toLowerCase();
+  const all = await choices.catch(() => []);
+  const board = boardIdIn(v) ?? all.find((c) => c.label.toLowerCase() === typed || c.label.toLowerCase().endsWith(`· ${typed}`))?.value;
+  if (!board) return client.toast(`No board of yours is called ${v}`);
+  await client.openBlock({ type: "board", config: { board }, local: true, split: o.from, from_pane: o.from }, "couldn't pin that board");
 }
 
 registerBlock("board", (client: Client, _id: PaneId): BlockView => {

@@ -651,6 +651,15 @@ pub struct ShowChatArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct ShowBoardArgs {
+    /// The board: its id (brd_..., board_read lists a project's boards).
+    pub board: String,
+    /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
+    #[serde(default)]
+    pub beside: Option<PaneArg>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct OpenPrArgs {
     /// The pull request: its link (a Forgejo PR's or a GitLab MR's),
     /// OWNER/REPO#N, GROUP/PROJECT!N (GitLab), or N (in dir's repository).
@@ -946,6 +955,12 @@ const SHOW: &[Kind] = &[
         description: "Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
         schema: schema_for_type::<ShowChatArgs>,
         flag: None,
+    },
+    Kind {
+        name: "board",
+        description: "A project's status board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
+        schema: schema_for_type::<ShowBoardArgs>,
+        flag: Some(flags::BOARDS),
     },
     Kind {
         name: "app",
@@ -2181,6 +2196,10 @@ impl<'a> Call<'a> {
                 Ok(a) => self.show_chat(a).await,
                 Err(e) => Err(e),
             },
+            ("show", Some("board")) => match parse(args) {
+                Ok(a) => self.show_board(a).await,
+                Err(e) => Err(e),
+            },
             ("show", Some("app")) => match parse(args) {
                 Ok(a) => self.open_app(a).await,
                 Err(e) => Err(e),
@@ -3236,6 +3255,24 @@ impl<'a> Call<'a> {
             _ => "on the newest unread room".into(),
         };
         done(format!("Showing team chat {what} in block %{block}"), results::BlockOnly { block })
+    }
+
+    async fn show_board(&self, a: ShowBoardArgs) -> Out {
+        let board = a.board.trim().to_owned();
+        let (beside, host) = self.beside(a.beside.as_ref()).await?;
+        let req = OpenRequest {
+            kind: BlockType::Board,
+            config: json!({ "board": board }),
+            session: None,
+            split: beside,
+            from_pane: beside,
+            vm: false,
+            image: None,
+            host,
+            local: host.is_none(),
+        };
+        let block = self.open(req).await?;
+        done(format!("Showing board {board} in block %{block}"), results::BlockOnly { block })
     }
 
     /// `doc new`: a Doc in the library, its block beside the caller's pane,
