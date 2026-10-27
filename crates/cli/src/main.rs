@@ -480,11 +480,12 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::forge_ops::DraftCmd,
     },
-    /// What wants you on your linked repos' PRs and issues, on Arugula control.
+    /// Your inbox of PRs and issues on linked repos, on Arugula control.
     ///
-    /// A review requested, your checks failed, changes requested, a
-    /// mention, assigned, merged or ready, a draft waiting: `queue` lists
-    /// it, `seen` and `done` mark an item's entries. Needs `arugula login`.
+    /// What wants you there (a review requested, your checks failed,
+    /// changes requested, a mention, assigned, merged or ready, a draft
+    /// waiting): `inbox` lists it, `seen` and `done` mark an item's
+    /// entries. Needs `arugula login`.
     Forge {
         #[command(subcommand)]
         cmd: cmd::forge_ops::ForgeCmd,
@@ -1213,7 +1214,7 @@ mod tests {
     }
 
     /// The names hooks and scripts already use still parse: Claude Code's
-    /// hooks as installed, and `forge inbox` from before `forge queue`.
+    /// hooks as installed, and `forge inbox`.
     #[test]
     fn old_names_still_parse() {
         use clap::Parser;
@@ -1230,7 +1231,7 @@ mod tests {
                 &["arugula", "forge", "inbox", "--all"],
                 matches!(
                     parse(&["arugula", "forge", "inbox", "--all"]),
-                    Ok(super::Command::Forge { cmd: crate::cmd::forge_ops::ForgeCmd::Queue { all: true, .. } })
+                    Ok(super::Command::Forge { cmd: crate::cmd::forge_ops::ForgeCmd::Inbox { all: true, .. } })
                 ),
             ),
         ] {

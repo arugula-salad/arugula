@@ -1,8 +1,7 @@
 //! PRs and issues on linked repos through Arugula control (M169): `pr
 //! view|list|checks`, `issue view|list|create`, `pr comment|review` and
 //! `issue comment` on `OWNER/REPO#N`, `arugula draft`, and `arugula forge
-//! queue|seen|done` (M171; `forge inbox` was `queue`'s name, kept as an
-//! alias: `arugula inbox` is Claude Code's follow-up hook). No block opens
+//! inbox|seen|done` (M171). No block opens
 //! and no daemon is asked: each is one typed operation
 //! (`arugula_control_wire::forge_ops`) on control's platform, as this
 //! CLI's account (`arugula login`).
@@ -49,12 +48,11 @@ pub enum DraftCmd {
     Send { draft: String },
 }
 
-/// `arugula forge`: the queue (M171).
+/// `arugula forge`: the inbox (M171).
 #[derive(clap::Subcommand)]
 pub enum ForgeCmd {
     /// What wants you on your linked repos, newest first.
-    #[command(alias = "inbox")]
-    Queue {
+    Inbox {
         /// What you called done too.
         #[arg(long)]
         all: bool,
@@ -71,7 +69,7 @@ pub enum ForgeCmd {
         #[arg(long)]
         undo: bool,
     },
-    /// Mark an item's entries done: out of the queue while the reason
+    /// Mark an item's entries done: out of the inbox while the reason
     /// holds (`--undo`: back in).
     Done {
         target: String,
@@ -354,7 +352,7 @@ pub fn draft(cmd: DraftCmd, json_out: bool) -> anyhow::Result<i32> {
 pub fn forge(cmd: ForgeCmd, json_out: bool) -> anyhow::Result<i32> {
     let target = |t: &str| item(t).ok_or_else(|| anyhow::anyhow!("OWNER/REPO#N, or its link on github.com, not {t:?}"));
     let (op, mark) = match cmd {
-        ForgeCmd::Queue { all, limit } => (Op::InboxList(InboxQuery { done: all, limit }), false),
+        ForgeCmd::Inbox { all, limit } => (Op::InboxList(InboxQuery { done: all, limit }), false),
         ForgeCmd::Seen { target: t, reason, undo } => {
             let at = target(&t)?;
             let m = InboxMarkOn { repo: at.repo, number: at.number, reason, seen: Some(!undo), done: None };
@@ -374,7 +372,7 @@ pub fn forge(cmd: ForgeCmd, json_out: bool) -> anyhow::Result<i32> {
     } else {
         let entries = v["entries"].as_array().cloned().unwrap_or_default();
         if entries.is_empty() {
-            println!("Nothing in your queue.");
+            println!("Nothing in your inbox.");
         }
         for e in &entries {
             println!("{}", inbox_line(e));
@@ -450,10 +448,8 @@ mod tests {
             &["arugula", "draft", "show", "dft_1"],
             &["arugula", "draft", "discard", "dft_1"],
             &["arugula", "draft", "send", "dft_1"],
-            &["arugula", "forge", "queue"],
-            &["arugula", "forge", "queue", "--all"],
-            // The old name, kept.
             &["arugula", "forge", "inbox"],
+            &["arugula", "forge", "inbox", "--all"],
             &["arugula", "forge", "seen", "acme/app#7"],
             &["arugula", "forge", "done", "acme/app#7", "--reason", "checks_failed", "--undo"],
         ] {

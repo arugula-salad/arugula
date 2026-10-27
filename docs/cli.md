@@ -8,6 +8,5 @@ on [docs.arugula.io/mcp](https://docs.arugula.io/mcp/), and Claude Code's hooks 
 `crates/cli/src/main.rs`): Panes, Blocks, Agents, Sharing, Machines and
 control, Cloud and projects, Setup. What Claude Code's hooks and the clients
 run (`ask`, `hook`, `inbox`, `bridge`, `attention STATE`) is left out of it
-and listed by `arugula help plumbing`. `arugula inbox` is the follow-up hook;
-what wants you on linked repos is `arugula forge queue` (`forge inbox` still
-works).
+and listed by `arugula help plumbing`. `arugula inbox` is the follow-up hook
+(hidden); what wants you on linked repos is `arugula forge inbox`.
