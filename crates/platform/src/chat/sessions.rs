@@ -343,7 +343,9 @@ async fn waiting_ask(app: &Platform, room: &Room, thread: u64, before: i64) -> R
 }
 
 /// Whether `m` is its author's own words: not their agent's, nor a
-/// product's for them (a session's answer is its asker's, `via` it).
+/// product's for them. A session's answer is neither: it has no author
+/// (`via` `said:<ses>`, Arugula #215), or before that was its asker's
+/// `via` the session.
 fn own(m: &Message) -> bool {
     m.agent.is_none() && m.via.is_none()
 }

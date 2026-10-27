@@ -62,7 +62,7 @@ async fn follow(base: &str, who: &str, parent: i64, on: bool) -> Value {
     v
 }
 
-async fn pushed(hub: &crate::chat_tests::TestHub) -> Vec<(String, Value)> {
+pub(crate) async fn pushed(hub: &crate::chat_tests::TestHub) -> Vec<(String, Value)> {
     // They go out in the background.
     tokio::time::sleep(Duration::from_millis(150)).await;
     hub.pushes().into_iter().map(|(to, msg, _)| (to, msg)).collect()

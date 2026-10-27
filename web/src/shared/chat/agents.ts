@@ -15,6 +15,8 @@ export function isSystemLine(m: ChatMessage): boolean {
  * agent on <machine>" for one an agent wrote (M197), everywhere it shows. */
 export function authorLabel(m: ChatMessage): string {
   if (isSystemLine(m)) return "Arugula";
+  // What an agent session said in its thread (Arugula #215): the session's.
+  if (!m.author && m.via?.startsWith("said:ses_")) return `Agent session ${m.via.slice("said:ses_".length, "said:ses_".length + 8)}`;
   const name = m.author ? m.name || "someone" : "a deleted account";
   return m.agent ? `${name}'s agent on ${m.agent.machine_name || "a machine that left"}` : name;
 }

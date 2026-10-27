@@ -944,6 +944,8 @@ fn a_turn_typed_in_the_block_is_the_sessions() {
     );
     let (_, start) = f.of(&s).into_iter().rfind(|(r, _)| r.to == "working" && r.from == "done").unwrap();
     assert!(start.in_block && start.prompts.is_empty(), "{start:?}");
+    // What was typed goes with it, for the thread's line (Arugula #215).
+    assert_eq!(start.typed.as_deref(), Some("work README.md NOTES.md"), "{start:?}");
     assert!(f.refused.lock().unwrap().is_empty(), "{:?}", f.refused.lock().unwrap());
     let turn = f.turn_reports(&s).pop().unwrap();
     assert_eq!(turn.finish, Some(FinishResult { ok: true, command: step.command.clone(), output_tail: String::new() }));

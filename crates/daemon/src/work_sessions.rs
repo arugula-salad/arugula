@@ -30,7 +30,8 @@
 //! - **Its block is followed, not only what it hands in** ([`step`]). A
 //!   turn started in the block itself (someone typed there from the card's
 //!   Open, or the agent woke itself) is reported as a turn's start
-//!   (`in_block`, with who typed it when the block says), and goes to the
+//!   (`in_block`, with who typed it when the block says, and the start of
+//!   what they typed, for the thread's line), and goes to the
 //!   same end as the box's own: the finish step, the push, the turn's
 //!   report. A question it asks goes out as `needs_input`; one answered in
 //!   the block moves it back with no action named. The thread's prompts
@@ -96,7 +97,7 @@ use std::{
 
 use arugula_control_wire::work::{
     FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, REPLY_MAX, Reported, SESSION_DETAIL_MAX,
-    SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork, WORK_SESSION_REPORT,
+    SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork, TYPED_MAX, WORK_SESSION_REPORT,
 };
 use arugula_e2e::{
     now_ms,
@@ -954,6 +955,11 @@ struct Seen {
     /// Whose each turn's prompt was, oldest first, of the last few
     /// (`None`: the block's owner's, or the agent's own).
     by: Vec<Option<String>>,
+    /// Each of those turns' prompt, as far as the block keeps it (`None`:
+    /// the agent woke itself).
+    prompt: Vec<Option<String>>,
+    /// The first prompt waiting in the block's queue.
+    next: Option<String>,
 }
 
 impl Seen {
@@ -961,6 +967,20 @@ impl Seen {
     fn by_at(&self, n: u64) -> Option<String> {
         let from = self.turns.saturating_sub(self.by.len() as u64);
         n.checked_sub(from).and_then(|i| self.by.get(i as usize).cloned().flatten())
+    }
+
+    /// What was typed for the block's turn number `n` (from 0), or for the
+    /// next when it hasn't started (its prompt is still queued): at most
+    /// [`TYPED_MAX`] characters, and none for a turn the agent woke for.
+    fn typed_at(&self, n: u64) -> Option<String> {
+        let from = self.turns.saturating_sub(self.prompt.len() as u64);
+        let p = match n.checked_sub(from) {
+            Some(i) if n < self.turns => self.prompt.get(i as usize).cloned().flatten(),
+            _ if n == self.turns => self.next.clone(),
+            _ => None,
+        }?;
+        let p = p.trim();
+        (!p.is_empty()).then(|| p.chars().take(TYPED_MAX).collect())
     }
 }
 
@@ -992,6 +1012,14 @@ fn seen(s: &Value) -> Seen {
             .as_array()
             .map(|t| t.iter().rev().map(|t| t["by"].as_str().map(str::to_owned)).collect())
             .unwrap_or_default(),
+        prompt: s["recent_turns"]
+            .as_array()
+            .map(|t| {
+                let typed = |t: &Value| t["prompt"].as_str().filter(|p| *p != crate::agent::WOKEN).map(str::to_owned);
+                t.iter().rev().map(typed).collect()
+            })
+            .unwrap_or_default(),
+        next: s["queued"][0].as_str().map(str::to_owned),
     }
 }
 
@@ -1216,7 +1244,7 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 // or the agent woke itself): followed like the box's own,
                 // to the same end (finish step, push, turn report). The
                 // thread's prompts wait for it.
-                let by = s.by_at(seen_turns);
+                let (by, typed) = (s.by_at(seen_turns), s.typed_at(seen_turns));
                 let (k, m) = (keys.clone(), me.clone());
                 info!(session = id, "hosted: a turn started in the session's block");
                 say(Box::new(move |now| {
@@ -1228,7 +1256,7 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                         fix: None,
                         cancelled: false,
                     });
-                    let d = SessionDetail { in_block: true, by, ..Default::default() };
+                    let d = SessionDetail { in_block: true, by, typed, ..Default::default() };
                     now.push(&k, &m, Kind::State, State::Working, d);
                 }));
             } else if let Some(p) = next {
