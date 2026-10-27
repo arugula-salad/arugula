@@ -412,7 +412,6 @@ pub struct App {
     pub sends: forge_send::Starts,
     /// Links of GitHub to a signed-in account under way (#208).
     pub github_links: github_link::Starts,
-    pub github_devices: github_link::Devices,
     pub limits: limit::Limits,
     pub vapid: push::Vapid,
     /// Live push endpoints' open streams (`push_live.rs`).
@@ -545,7 +544,6 @@ impl App {
             app_codes: Default::default(),
             sends: Default::default(),
             github_links: Default::default(),
-            github_devices: Default::default(),
             limits: limit::Limits::new(None),
             vapid,
             live: Default::default(),
@@ -622,8 +620,6 @@ fn routes() -> Routes {
         .route("/api/me/passkeys", get(account::passkeys))
         .route("/api/me/passkeys/{id}/remove", post(account::remove_passkey))
         .route("/api/me/github/unlink", post(github_link::unlink))
-        .route("/api/me/github/device", post(github_link::device_start))
-        .route("/api/me/github/device/{id}", post(github_link::device_poll))
         .route("/api/me/delete", get(account::preview).post(account::delete))
         .route("/api/me/notices/{id}/seen", post(teams::notice_seen))
         .route("/api/devices", get(api::devices).post(api::enroll))
@@ -1161,7 +1157,6 @@ async fn run() -> anyhow::Result<()> {
         app_codes: Default::default(),
         sends: Default::default(),
         github_links: Default::default(),
-        github_devices: Default::default(),
         limits: limit::Limits::new(a.trust_proxy_header),
         vapid,
         live: Default::default(),

@@ -1510,6 +1510,10 @@ anyone. Never from the desktop app's window (`sessions.via = app`), and:
   signed in and its User-Agent (what a session says its device is is a
   claim), and the passkey keeps both.
 
+Linking GitHub adds a way to sign in the same way, so it is never from the
+desktop app's window either (`github_link::start` answers 403 to a
+`via = app` session, #235): link it in a browser or on a phone.
+
 Sessions made before `via` that look like the app's window (they said
 they're one of its devices, or their User-Agent names it) are marked
 `app` when the column comes.
