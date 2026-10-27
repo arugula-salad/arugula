@@ -22,15 +22,21 @@ import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { InboxCount } from "./inbox-count";
 
-/** The bar's place a route is under (UI audit #159): a project's workspaces
- * are its home's, and its settings, Deploy… and a deploy are Settings. */
-type Section = "home" | "issues" | "runs" | "chat" | "inbox" | "settings";
+/** The bar's place a route is under (UI audit #159): a project's cloud
+ * workspaces and its deploys (Deploy… and a deploy) have places of their
+ * own (Discovery 5). */
+type Section = "home" | "issues" | "runs" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
 function sectionOf(r: Route): Section | null {
   switch (r.page) {
     case "project":
+      return "home";
     case "workspaces":
     case "workspace":
-      return "home";
+      return "workspaces";
+    case "deploys":
+    case "new-deploy":
+    case "deploy":
+      return "deploys";
     case "issues":
     case "issue":
     case "new-issue":
@@ -46,8 +52,6 @@ function sectionOf(r: Route): Section | null {
       return "inbox";
     case "settings":
     case "project-settings":
-    case "new-deploy":
-    case "deploy":
     case "installed":
       return "settings";
     default:
@@ -160,6 +164,17 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
           <Place to={pathOf({ page: "runs", project }, names)} here={here === "runs"} data="runs">
             Runs
             <PlaceUnread project={project} prefix="run_" />
+          </Place>
+        )}
+        {/* Where the reader may have them (the beta's list), or is in one. */}
+        {project && (session.hosted || here === "workspaces") && (
+          <Place to={pathOf({ page: "workspaces", project }, names)} here={here === "workspaces"} data="workspaces">
+            Workspaces
+          </Place>
+        )}
+        {project && (
+          <Place to={pathOf({ page: "deploys", project }, names)} here={here === "deploys"} data="deploys">
+            Deploys
           </Place>
         )}
         <Place to={chatTo} here={here === "chat"} data="chat">

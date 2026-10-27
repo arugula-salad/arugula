@@ -6414,6 +6414,10 @@ html[data-scheme="light"] .doc {
   color: var(--dim);
 }
 
+.agents-empty button {
+  margin-top: 10px;
+}
+
 .agents-empty b,
 .agents-none b {
   color: var(--fg);
@@ -10864,6 +10868,31 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* The empty drawer's steps (Discovery 5): Set up, Notify this device. */
+.ws-att-empty p {
+  margin: 0 0 6px;
+}
+
+.ws-att-empty .ws-att-acts {
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.ws-att-empty .ws-att-acts .primary {
+  color: var(--on-color);
+}
+
+.ws-att-empty .ws-att-acts .secondary {
+  color: var(--fg);
+}
+
+/* The activity drawer's first-open line: what it keeps. */
+.ws-activity-intro {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
 }
 
 .ws-att-foot {

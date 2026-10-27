@@ -10,6 +10,7 @@
 // (#1035), with the ids `follow=1` streams them with, so the stream (where
 // a plain fetch reaches the daemon) only makes them show sooner. A daemon
 // from before #1035 keeps none: its System is what the stream brought.
+// The first time it's open for someone, a line says what it keeps.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../../client";
@@ -19,6 +20,7 @@ import { openMenu } from "../../../shared/ui/menu";
 import { Time } from "../../../shared/ui/time";
 import { closePlace, currentPlace } from "../places";
 import { MoreIcon } from "./icons";
+import { markSeen, seen, seenReady, subscribeSeen, tipsOn } from "../../../shared/seen";
 
 // ---- what this device remembers
 
@@ -78,6 +80,28 @@ function usePrefs(): Prefs {
 /** Open or collapse the drawer (the footer's toggle, and its own menu). */
 export function setActivityOpen(open: boolean) {
   setPrefs({ open });
+}
+
+/** What the drawer keeps, said the first time it's open for this person
+ * (shared/seen: per account through control, else per browser), unless
+ * they turned Tips off. */
+export const INTRO =
+  "Activity keeps what happened in this session: commands and how they ended, agents' turns and answers, and panes opening, closing and exiting. Click a row to go to its pane.";
+const INTRO_ID = "activity-intro";
+
+/** Whether the first-open line shows: from the first time the drawer is
+ * open, until it's closed. */
+function useIntro(open: boolean): boolean {
+  useSubscribe(subscribeSeen);
+  const [showing, setShowing] = useState(false);
+  const ready = seenReady();
+  useEffect(() => {
+    if (!open) return setShowing(false);
+    if (!ready || !tipsOn() || seen(INTRO_ID)) return;
+    markSeen(INTRO_ID);
+    setShowing(true);
+  }, [open, ready]);
+  return showing;
 }
 
 /** Daemons that answered without ids: too old for the drawer. It hides. */
@@ -376,6 +400,7 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
   const [frozen, setFrozen] = useState(0);
   const list = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
+  const intro = useIntro(p.open);
 
   useEffect(() => {
     setCleared(0);
@@ -506,6 +531,11 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
             atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
           }}
         >
+          {intro && (
+            <div class="ws-activity-note ws-activity-intro" role="note" data-activity-intro>
+              {INTRO}
+            </div>
+          )}
           {feed.status === "loading" && shown.length === 0 ? (
             <div class="ws-activity-empty">Reading the session's history…</div>
           ) : feed.status === "denied" ? (

@@ -33,6 +33,7 @@
 //   /p/:project/workspaces/:id     a hosted workspace (`hw_…`)
 //   /p/:project/settings           its settings: linked repos (`?link=OWNER/REPO`
 //                                  fills in one to link), environments (M252)
+//   /p/:project/deploys            its deploys, newest first (Discovery 5)
 //   /p/:project/deploys/new        "Deploy…" (M252): plan a deploy and ask for
 //                                  its approval (`?env=env_…` picks one)
 //   /installed?state=…             back from installing the GitHub App (its
@@ -80,6 +81,7 @@ export type Route =
   | { page: "workspaces"; project: string }
   | { page: "workspace"; project: string; workspace: string }
   | { page: "project-settings"; project: string; link?: string }
+  | { page: "deploys"; project: string }
   | { page: "new-deploy"; project: string; env?: string }
   | { page: "installed"; project?: string; repo?: string }
   | { page: "inbox" }
@@ -178,6 +180,7 @@ export function parse(path: string, search = ""): Route {
     const link = q.get("link");
     return { page: "project-settings", project, ...(link && REPO.test(link) ? { link } : {}) };
   }
+  if (parts.length === 3 && parts[2] === "deploys") return { page: "deploys", project };
   if (parts.length === 4 && parts[2] === "deploys" && parts[3] === "new") {
     const env = q.get("env");
     return { page: "new-deploy", project, ...(env && /^env_[0-9a-f]{32}$/.test(env) ? { env } : {}) };
@@ -310,6 +313,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/p/${s(r.project)}/workspaces/${s(r.workspace)}`;
     case "project-settings":
       return `/p/${s(r.project)}/settings${r.link ? `?link=${encodeURIComponent(r.link)}` : ""}`;
+    case "deploys":
+      return `/p/${s(r.project)}/deploys`;
     case "new-deploy":
       return `/p/${s(r.project)}/deploys/new${r.env ? `?env=${r.env}` : ""}`;
     case "installed":

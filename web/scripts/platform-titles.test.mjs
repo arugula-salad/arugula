@@ -27,6 +27,7 @@ test("each route has a title of its own", () => {
   assert.equal(t("/p/prj_aaaa/issues/iss_bbbb-m265"), "#142 M265 the bar · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/issues/new"), "New issue · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/settings"), "Settings · Acme · Arugula");
+  assert.equal(t("/p/prj_aaaa/deploys"), "Deploys · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/deploys/new"), "Deploy… · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/workspaces"), "Cloud workspaces · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/chat/ch_dddd-general"), "#general · Acme · Arugula");

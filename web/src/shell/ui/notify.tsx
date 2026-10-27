@@ -57,7 +57,8 @@ export function notifyBlocker(s: PushState = push): string | null {
   }
 }
 
-async function toggle(client: Client) {
+/** Turn this device's notifications on or off, as the menu's switch does. */
+export async function toggleNotify(client: Client) {
   try {
     if (push === "on") push = await disablePush();
     else {
@@ -97,7 +98,7 @@ export function notificationItems(client: Client): MenuItem[] {
   if (blocked) return [{ label: blocked, disabled: true, run: () => {} }];
   // The desktop app's: only while it runs (crates/desktop/src/notices.rs).
   const note = pushNote();
-  const device: MenuItem = { label: note ? `Notify this device (${note})` : "Notify this device", checked: push === "on", run: () => void toggle(client) };
+  const device: MenuItem = { label: note ? `Notify this device (${note})` : "Notify this device", checked: push === "on", run: () => void toggleNotify(client) };
   // On control, what to push about, for every device that's on. Notices
   // about the account (a device waiting, a new agent token) always go.
   const p = push === "on" ? prefs : null;
