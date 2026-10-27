@@ -4677,6 +4677,7 @@ A team should be able to talk about a pane, about a session and about everything
 - **Agents are in the conversation.** MCP `read_thread` / `post_thread`, and an @mention in a pane's thread goes to that pane's agent.
 - **TURN: Cloudflare Realtime TURN for the hosted control** (Jake, 2026-10-05, after S30). Control holds the API key as a Fly secret and hands devices short-lived credentials. The privacy notice names Cloudflare. Self-hosted controls document coturn.
 - **Not Slack.** No reactions, file uploads, video or screen share: everyone in a session already sees its panes.
+  - *Later (2026-10-27):* this changed. Chat has reactions, file uploads and DMs since 0.60.20 (#1484); see `docs/labs.md`.
 
 **Order:** S30 (#239) first. M61 (#240) after it. M62 (#241) after S30 and M61. M63 (#242) after S30, in parallel with M62. M64 (#243) is gated. Tracker #244.
 
@@ -4947,6 +4948,7 @@ The phone keeps today's list-then-thread flow, styled to match.
 
 - **Slack's layout and density, illogical's colors.** No aubergine sidebar and no Slack marks: the page uses our theme tokens in light and dark.
 - **The talk track's "Not Slack" still holds.** It looks like Slack, but there are no reactions, file uploads, video or screen share, and no DMs. If DMs come, they come with M62's MLS channels.
+  - *Later (2026-10-27):* this changed. Chat has reactions, file uploads and DMs since 0.60.20 (#1484); see `docs/labs.md`.
 - **The mapping:**
   - a session is a channel (`#name`);
   - a pane's thread sits under its session's channel, as now;
