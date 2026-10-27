@@ -26,6 +26,8 @@
 # ARUGULAD is another daemon (scripts/tests/hosted-supervisor.sh).
 set -u
 daemon=${ARUGULAD:-/usr/local/bin/arugulad}
+# The setup's tools (Arugula #215) first, as arugulad.service has them.
+case ":${PATH:-}:" in *:/opt/arugula/tools/bin:*) ;; *) PATH=/opt/arugula/tools/bin:${PATH:-/usr/local/bin:/usr/bin:/bin}; export PATH ;; esac
 say() { echo "arugula-hosted-start: $*" >&2; }
 
 if [ "$#" -eq 0 ] && [ -d /run/systemd/system ] && sudo -n systemctl start --no-block arugulad.service 2>/dev/null; then

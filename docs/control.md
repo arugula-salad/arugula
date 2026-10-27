@@ -151,6 +151,54 @@ daemon), and stops unless `--download FILE` saves them first (a tarball of
 those repos' files that aren't ignored and their `.git`, `GET
 /api/hosted/setup/archive`) or `--force`.
 
+<a id="session-tools"></a>**Session users' tools (Arugula #215).** The
+setup runs as `user`, and a session's agent and its finish step run as a
+session user (`ses1` to `ses3`), who can't enter `/home/user`: a tool the
+setup installs there, or links into there from `/usr/local/bin`, is
+"Permission denied" to every session. The template's place for what
+sessions run is `/opt/arugula/tools`, owned by `user`, which everyone can
+read and run and nobody else can write. Its `bin` comes first on a session
+user's `PATH` (the daemon's `SESSION_PATH`, which the agent, the finish
+step and the daemon's git in the checkout all get) and on `user`'s. The
+template's `arugula-tools` publishes a tool there (`packaging/hosted/tools`):
+
+```
+arugula-tools link zig "$(mise which zig)"    # a binary: a link in bin
+arugula-tools rustup                          # rustup's proxies: wrappers that set RUSTUP_HOME
+arugula-tools wrap NAME TARGET VAR=VALUE      # any tool that needs a variable set
+arugula-tools env 'CARGO_TARGET_DIR=~/target' # every session user's environment
+arugula-tools as ses1 cargo --version         # as a session sees it
+```
+
+It refuses a binary in a home or behind a directory other users can't
+search, and writes each file beside the old one and renames it over, so a
+link already there (into `~user`, say) is replaced, never written through.
+Install into the prefix (rustup with `RUSTUP_HOME=/opt/arugula/tools/rustup`
+and `CARGO_HOME=/opt/arugula/tools/cargo`, mise with
+`MISE_DATA_DIR=/opt/arugula/tools/mise`) or anywhere outside `/home`.
+rustup's proxies get wrappers, not a `RUSTUP_HOME` in the session's
+environment, so they work wherever they're run from, a script that clears
+its environment included; each user keeps a `~/.cargo` of their own for
+the registry. `env` keeps `/opt/arugula/tools/env`, a `NAME=VALUE` a line
+that the daemon adds to a session user's environment, with a leading `~/`
+as that user's home. It can't set `HOME`, `USER`, `LOGNAME`, `PATH`, `LANG`
+or `GIT_*`, and it goes on sudo's command line, so nothing secret.
+`packaging/hosted/examples/arugula-dev-setup.sh` is this repo's own
+workspaces' setup, built that way.
+
+A session's checkout is new, so its build starts cold. The example gives
+each session user a build cache of their own instead: sccache (its cache
+in `~/.cache/sccache`, 2 GB at most; its server on a socket in the
+user's home, since on sccache's default port one user's server would
+compile another's) and libghostty-vt-sys's Ghostty checkout and Zig
+caches. A slot's next session finds its dependencies and Ghostty built;
+its own crates build again, as the checkout's path is new. A cache all
+session users wrote to would let one session plant what another links.
+A slot's caches outlive its sessions, like the rest of the slot user's
+home but `~/.claude` and the checkout. sccache over a kept target
+directory, because its size has a cap: an Arugula target directory is
+8 to 40 GB, and a box has three slots.
+
 **Snapshots (M263, Arugula #140).** Once a workspace's box has set up all
 right, the platform builds the workspace a snapshot, and its new boxes and
 rebuilds start from it, set up, instead of running setup again. One per

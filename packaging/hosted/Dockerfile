@@ -137,6 +137,25 @@ RUN chmod 0755 /usr/local/bin/arugula-hosted-start && chmod 0644 /etc/systemd/sy
  && ln -sf /etc/systemd/system/arugulad.service /etc/systemd/system/multi-user.target.wants/arugulad.service
 # ---- end M258 ------------------------------------------------------------
 
+# ---- Arugula #215: the setup's tools, for every session user ------------
+# The setup runs as `user`, whose home (0750) session users can't enter, so
+# what it installs there is "Permission denied" to them. /opt/arugula/tools
+# is where it puts what they run instead: owned by `user`, open to all to
+# read and run, written by nobody else (one session can't plant a tool for
+# the next). Its bin is first on a session user's PATH (the daemon's
+# SESSION_PATH) and on `user`'s (arugulad.service, the start command, login
+# shells), and `env` in it is what the daemon adds to a session user's
+# environment. `arugula-tools` publishes a tool there (packaging/hosted/tools,
+# checked by scripts/tests/hosted-tools.sh). Other blocks go above or below
+# this one, not in it.
+COPY tools /usr/local/bin/arugula-tools
+RUN chmod 0755 /usr/local/bin/arugula-tools \
+ && install -d -o user -g user -m 0755 /opt/arugula/tools /opt/arugula/tools/bin \
+ && printf '%s\n' 'case ":$PATH:" in *:/opt/arugula/tools/bin:*) ;; *) PATH=/opt/arugula/tools/bin:$PATH ;; esac' \
+      > /etc/profile.d/arugula-tools.sh \
+ && chmod 0644 /etc/profile.d/arugula-tools.sh
+# ---- end Arugula #215 ---------------------------------------------------
+
 # The adapters where the daemon looks first (agent/adapters.rs).
 USER user
 WORKDIR /home/user

@@ -205,8 +205,58 @@ pub fn unprotect_oom(c: &mut tokio::process::Command) {
     let _ = c;
 }
 
-/// The `PATH` a session user's processes get.
-pub const SESSION_PATH: &str = "/usr/local/bin:/usr/bin:/bin";
+/// The `PATH` a session user's processes get, the setup's tools first
+/// (Arugula #215): `/opt/arugula/tools/bin`, which the template makes,
+/// owned by `user`, so session users run what's there and can't change
+/// it, and where `arugula-tools` (`packaging/hosted/tools`) publishes a
+/// tool. What the setup installs under `/home/user` is closed to them.
+pub const SESSION_PATH: &str = "/opt/arugula/tools/bin:/usr/local/bin:/usr/bin:/bin";
+
+/// What the setup adds to every session user's environment
+/// (`arugula-tools env`): a `NAME=VALUE` a line, where a value's leading
+/// `~/` is that user's home. Nothing secret: it goes on sudo's command
+/// line. `ARUGULA_HOSTED_SESSION_ENV` names another file (a test's).
+pub const SESSION_ENV: &str = "/opt/arugula/tools/env";
+
+/// The names [`SESSION_ENV`] can't set: what [`AsUser::wrap`] sets itself,
+/// and git's (the daemon's own git in a checkout runs as the session user
+/// too).
+fn reserved(name: &str) -> bool {
+    matches!(name, "HOME" | "USER" | "LOGNAME" | "PATH" | "LANG") || name.starts_with("GIT_")
+}
+
+/// [`SESSION_ENV`]'s text as the variables a user whose home is `home`
+/// gets: blank lines, `#` comments, names that aren't plain and
+/// [`reserved`] ones left out, and the last of a name kept.
+pub fn session_env(text: &str, home: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = vec![];
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('#') {
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else { continue };
+        let plain = !k.is_empty()
+            && !k.starts_with(|c: char| c.is_ascii_digit())
+            && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+        if !plain || reserved(k) {
+            continue;
+        }
+        let v = match v.strip_prefix('~') {
+            Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("{}{rest}", home.trim_end_matches('/')),
+            _ => v.to_owned(),
+        };
+        out.retain(|(o, _)| o != k);
+        out.push((k.to_owned(), v));
+    }
+    out
+}
+
+/// This box's [`SESSION_ENV`]: empty without one.
+fn session_env_text() -> String {
+    let file =
+        std::env::var_os("ARUGULA_HOSTED_SESSION_ENV").filter(|f| !f.is_empty()).unwrap_or_else(|| SESSION_ENV.into());
+    std::fs::read_to_string(file).unwrap_or_default()
+}
 
 /// One of a hosted box's session users (M255, S42 q1): a hosted session's
 /// agent runs as it, and so does all of the daemon's git in the session's
@@ -238,9 +288,15 @@ impl AsUser {
     }
 
     /// The command line that runs `argv` as this user, with `env` (nothing
-    /// secret: [`env`]'s placeholder and the proxy's CA are fine) and the
-    /// user's own `HOME`, `USER`, `LOGNAME` and [`SESSION_PATH`].
+    /// secret: [`env`]'s placeholder and the proxy's CA are fine), the
+    /// user's own `HOME`, `USER`, `LOGNAME` and [`SESSION_PATH`], and the
+    /// setup's [`SESSION_ENV`] (`env`'s where both name a variable).
     pub fn wrap(&self, env: &[(String, String)], argv: &[String]) -> Vec<String> {
+        self.wrap_with(&session_env_text(), env, argv)
+    }
+
+    /// [`AsUser::wrap`], with `setup` as [`SESSION_ENV`]'s text.
+    fn wrap_with(&self, setup: &str, env: &[(String, String)], argv: &[String]) -> Vec<String> {
         let mut out = vec![Self::sudo(), "-n".into(), "-u".into(), self.user.clone(), "--".into(), "env".into()];
         out.push("-i".into());
         out.push(format!("HOME={}", self.home));
@@ -248,6 +304,9 @@ impl AsUser {
         out.push(format!("LOGNAME={}", self.user));
         out.push(format!("PATH={SESSION_PATH}"));
         out.push("LANG=C.UTF-8".into());
+        for (k, v) in session_env(setup, &self.home).into_iter().filter(|(k, _)| !env.iter().any(|(e, _)| e == k)) {
+            out.push(format!("{k}={v}"));
+        }
         for (k, v) in
             env.iter().filter(|(k, _)| !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
         {
@@ -327,16 +386,52 @@ mod tests {
     fn a_session_user_runs_with_only_what_is_named() {
         let u = AsUser { user: "ses1".into(), home: "/home/ses1".into() };
         let env = [("ANTHROPIC_API_KEY".to_owned(), PLACEHOLDER.to_owned()), ("BAD KEY".to_owned(), "x".to_owned())];
-        let argv = u.wrap(&env, &["/opt/arugula/agents/claude/acp".into()]);
+        let argv = u.wrap_with("", &env, &["/opt/arugula/agents/claude/acp".into()]);
         assert_eq!(
             argv[1..].join(" "),
-            "-n -u ses1 -- env -i HOME=/home/ses1 USER=ses1 LOGNAME=ses1 PATH=/usr/local/bin:/usr/bin:/bin \
+            "-n -u ses1 -- env -i HOME=/home/ses1 USER=ses1 LOGNAME=ses1 \
+             PATH=/opt/arugula/tools/bin:/usr/local/bin:/usr/bin:/bin \
              LANG=C.UTF-8 ANTHROPIC_API_KEY=arugula-brokered /opt/arugula/agents/claude/acp"
         );
         for bad in ["", "-u", "ses 1", "ses1;id", "../x"] {
             assert!(!AsUser::plain(bad), "{bad}");
         }
         assert!(AsUser::plain("ses1"));
+    }
+
+    /// Arugula #215: the setup's tools come first on a session user's
+    /// `PATH`, and its environment file is each user's, `~/` their home;
+    /// it can't change what the daemon sets, nor what the daemon names.
+    #[test]
+    fn a_session_user_gets_the_setups_tools_and_env() {
+        assert!(SESSION_PATH.starts_with("/opt/arugula/tools/bin:"));
+        assert!(SESSION_ENV.starts_with("/opt/arugula/tools/"));
+        let setup = "# the setup's\n\
+                     CARGO_TARGET_DIR=~/.cache/arugula/cargo-target\n\
+                     SCCACHE_CACHE_SIZE=2G\n\
+                     SCCACHE_CACHE_SIZE=3G\n\
+                     WHERE=~\n\
+                     NOT_HOME=~ses2/x\n\
+                     PATH=/tmp/evil\n\
+                     HOME=/tmp\n\
+                     GIT_DIR=/tmp/x\n\
+                     ANTHROPIC_API_KEY=not-the-placeholder\n\
+                     BAD NAME=x\n\
+                     1X=y\n\
+                     no equals sign\n\
+                     \n\
+                     EMPTY=\n";
+        let u = AsUser { user: "ses1".into(), home: "/home/ses1".into() };
+        let env = [("ANTHROPIC_API_KEY".to_owned(), PLACEHOLDER.to_owned())];
+        let argv = u.wrap_with(setup, &env, &["acp".into()]);
+        assert_eq!(
+            argv[6..].join(" "),
+            "-i HOME=/home/ses1 USER=ses1 LOGNAME=ses1 PATH=/opt/arugula/tools/bin:/usr/local/bin:/usr/bin:/bin \
+             LANG=C.UTF-8 CARGO_TARGET_DIR=/home/ses1/.cache/arugula/cargo-target SCCACHE_CACHE_SIZE=3G \
+             WHERE=/home/ses1 NOT_HOME=~ses2/x EMPTY= ANTHROPIC_API_KEY=arugula-brokered acp"
+        );
+        let two = AsUser { user: "ses2".into(), home: "/home/ses2/".into() };
+        assert_eq!(session_env(setup, &two.home)[0].1, "/home/ses2/.cache/arugula/cargo-target", "each user's own");
     }
 
     #[test]

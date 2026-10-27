@@ -78,7 +78,7 @@ fi
 here=$root/packaging/hosted
 if [ -n "$real_node" ] && [ -d "$here/node_modules/e2b" ] && command -v jq >/dev/null; then
   mkdir -p "$work/ctx"
-  cp "$here/Dockerfile" "$here/ready" "$here/start" "$here/arugulad.service" "$here/arugulad.json" "$work/ctx"/
+  cp "$here/Dockerfile" "$here/ready" "$here/start" "$here/arugulad.service" "$here/arugulad.json" "$here/tools" "$work/ctx"/
   cp "$work/dist/arugulad" "$work/dist/arugula" "$work/ctx"/
   got=$(env -u E2B_API_KEY "$real_node" "$here/template.mjs" "$work/ctx" arugula-workspace-large v0.0.1 \
     --cpus 8 --memory-mb 8192 --dry-run | jq -c '[.name, .tag, .cpuCount, .memoryMB, (.steps | type)]')
