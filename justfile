@@ -502,9 +502,12 @@ server_test_bins := server_cargo + " build --workspace --bins --tests"
 
 # PART (check.yml's test and test-2, 1 or 2) runs half the Rust tests of
 # each workspace, nextest's count:PART/2; only the first half runs the
-# doctests and control-smoke after them.
+# doctests and control-smoke after them. WHICH splits a run in two:
+# `server`, only the server workspace's suite, which needs none of
+# static's binaries (ARUGULA_SSH_BINARIES), so check.yml runs it while
+# static builds them; `rest`, everything else (#259).
 [private]
-test-run part="":
+test-run part="" which="":
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{part}}" in
@@ -512,9 +515,14 @@ test-run part="":
       1|2) part=(--partition "count:{{part}}/2") ;;
       *) echo "test-run: PART is 1 or 2" >&2; exit 2 ;;
     esac
+    case "{{which}}" in
+      ''|server|rest) ;;
+      *) echo "test-run: WHICH is server or rest" >&2; exit 2 ;;
+    esac
     # ${part[@]+…}: macOS bash 3.2 calls an empty array unbound.
-    {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"}
-    {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"}
+    if [ "{{which}}" != server ]; then {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
+    if [ "{{which}}" != rest ]; then {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
+    [ "{{which}}" != server ] || exit 0
     [ "{{part}}" != 2 ] || exit 0
     {{cargo}} test --workspace --doc
     {{server_cargo}} test --workspace --doc
@@ -522,8 +530,8 @@ test-run part="":
 
 # The platform's suite on Postgres (M143), as hosted control runs it: a
 # postgres:17 container of its own on a free port, removed after. The same
-# tests as on SQLite (`Db::test`); check.yml's test-2 job runs it after
-# `test-run 2`, on what test-build built.
+# tests as on SQLite (`Db::test`); check.yml runs it in a job of its own
+# (test-postgres), beside test and test-2.
 test-platform-postgres:
     #!/usr/bin/env bash
     set -euo pipefail
