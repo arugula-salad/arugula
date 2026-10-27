@@ -1384,7 +1384,10 @@ Only what no test can do:
      is copied.
   2. Send the link to a laptop, and open it in a private window with no Arugula
      account. Expect the Doc in the system's light or dark, all four kinds of
-     content, and nothing asking you to sign in.
+     content, "Made with Arugula" under it, the leaf as the tab's icon, and
+     nothing asking you to sign in. Paste the link in Slack or iMessage: the
+     preview is "A shared Doc" with the leaf card (#255; the spec checks the
+     tags and the card, not a real preview bot).
   3. On the phone, change a section and **Update shared copy**; reload the
      laptop's window: the new text, at the same address. **Unshare**; reload:
      "This Doc isn't shared any more".

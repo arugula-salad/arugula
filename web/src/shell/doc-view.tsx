@@ -4,11 +4,11 @@
 // is in the fragment, which the browser never sends.
 //
 // Nothing here may reach the app: no client, no telemetry, no service
-// worker, no socket. The page's CSP allows scripts and requests from its
-// own origin only, and images as data: URLs. Its import graph is checked
-// from the build (docs/testing.md, "Shared Docs").
+// worker, no socket. The page's CSP allows scripts, requests and fonts
+// from its own origin only, and images as data: URLs. Its import graph is
+// checked from the build (docs/testing.md, "Shared Docs").
 
-import { render } from "preact";
+import { render, type ComponentChildren } from "preact";
 // The app's style.css comes in through doc-view.css's @import: imported
 // here too, it becomes a chunk the app shares, linked after the app's own
 // CSS, which turns the app's cascade around.
@@ -98,18 +98,63 @@ const NOTICE: Record<string, [string, string]> = {
   offline: ["Couldn't load this Doc", "Reload to try again."],
 };
 
+/** The site's leaf (its `#leaf` symbol), in the Doc's rule colour. */
+function Leaf() {
+  return (
+    <svg class="doc-made-leaf" viewBox="0 0 40 40" aria-hidden="true">
+      <path d="M20 38 L20 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" />
+      <ellipse cx="20" cy="8.5" rx="6.2" ry="7" fill="currentColor" />
+      <ellipse cx="14" cy="18" rx="5" ry="3" transform="rotate(-28 14 18)" fill="currentColor" />
+      <ellipse cx="26" cy="18" rx="5" ry="3" transform="rotate(28 26 18)" fill="currentColor" />
+      <ellipse cx="15.2" cy="25.5" rx="3.8" ry="2.3" transform="rotate(-28 15.2 25.5)" fill="currentColor" />
+      <ellipse cx="24.8" cy="25.5" rx="3.8" ry="2.3" transform="rotate(28 24.8 25.5)" fill="currentColor" />
+      <ellipse cx="16.8" cy="31.5" rx="2.6" ry="1.6" transform="rotate(-28 16.8 31.5)" fill="currentColor" />
+      <ellipse cx="23.2" cy="31.5" rx="2.6" ry="1.6" transform="rotate(28 23.2 31.5)" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Under a shared Doc and its notices, not in the block (#255). */
+function Made() {
+  return (
+    <footer class="doc-made" data-doc-made>
+      <a href="https://arugula.io" rel="noopener">
+        <Leaf />
+        Made with Arugula
+      </a>
+    </footer>
+  );
+}
+
+/** A page with no Doc on it, on the Doc's own paper. */
+function Paper({ children }: { children: ComponentChildren }) {
+  return (
+    <div class="doc doc-paper-only">
+      <div class="doc-page">{children}</div>
+    </div>
+  );
+}
+
 function Page({ view }: { view: View }) {
-  if (view.kind === "loading") return <p class="dim doc-notice">Loading…</p>;
+  if (view.kind === "loading")
+    return (
+      <Paper>
+        <p class="doc-loading">Loading…</p>
+      </Paper>
+    );
   if (view.kind !== "doc") {
     const [title, more] = NOTICE[view.kind]!;
     return (
-      <main class="doc-notice" data-doc-notice={view.kind}>
-        <h1>{title}</h1>
-        <p class="dim">{more}</p>
-      </main>
+      <Paper>
+        <main class="doc-notice" data-doc-notice={view.kind}>
+          <h1 class="doc-notice-title">{title}</h1>
+          <p class="doc-notice-more">{more}</p>
+        </main>
+        <Made />
+      </Paper>
     );
   }
-  return <DocBlock id={0} s={view.state} fresh={new Map()} load={view.load} />;
+  return <DocBlock id={0} s={view.state} fresh={new Map()} load={view.load} foot={<Made />} />;
 }
 
 // The Doc's own look (#253) has a light set and a dark one, which style.css
@@ -121,7 +166,9 @@ light.addEventListener("change", scheme);
 
 const root = document.getElementById("root")!;
 const draw = (view: View) => {
-  if (view.kind === "doc") document.title = view.state.title || "Doc";
+  // The Doc's title, or what the notice says; a preview bot reads the
+  // page's own, "A shared Doc", which control can't do better than.
+  document.title = view.kind === "doc" ? view.state.title || "Untitled" : view.kind === "loading" ? document.title : NOTICE[view.kind]![0];
   render(<Page view={view} />, root);
 };
 draw({ kind: "loading" });

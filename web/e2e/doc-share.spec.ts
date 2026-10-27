@@ -212,6 +212,27 @@ async function seeTheDoc(page: Page, drawing = false) {
 
 const noticeOf = (page: Page, kind: string) => page.locator(`[data-doc-notice="${kind}"]`);
 
+/** It says it's Arugula (#255): "Made with Arugula" under the last section
+ * (or the notice), linking to the site; the leaf as its icon; the tab
+ * named for the Doc; and the title in the Doc's display face, which the
+ * page's CSP lets it load from its own origin. */
+async function branded(page: Page, title: string) {
+  const made = page.locator("[data-doc-made]");
+  await expect(made).toHaveText("Made with Arugula");
+  await expect(made.locator("a")).toHaveAttribute("href", "https://arugula.io");
+  await expect(made.locator("svg.doc-made-leaf ellipse")).toHaveCount(7);
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", /^data:image\/svg\+xml,.*%239cc36b/);
+  await expect(page).toHaveTitle(title);
+  const face = await page.evaluate(async () => {
+    await document.fonts.ready;
+    const h = document.querySelector(".doc-title, .doc-notice-title")!;
+    const loaded = [...document.fonts].some((f) => f.family.includes("Big Shoulders Display") && f.status === "loaded");
+    return { family: getComputedStyle(h).fontFamily, loaded };
+  });
+  expect(face.family).toMatch(/^"Big Shoulders Display"/);
+  expect(face.loaded, "the display face loaded").toBe(true);
+}
+
 for (const mode of [DOMAIN, null] as const) {
   test.describe(mode ? "on the docs host of a control with a block domain" : "on /d/ of a control with none", () => {
     test.describe.configure({ mode: "serial" });
@@ -238,6 +259,7 @@ for (const mode of [DOMAIN, null] as const) {
           await v.page.goto(url);
           await seeTheDoc(v.page, true);
           await expect(v.page.locator("[data-doc-progress]")).toContainText("3 of 3 sections written");
+          await branded(v.page, `Report ${MARK}`);
           // The page follows the system's colors.
           const bg = await v.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
           expect(bg, scheme).toBe(scheme === "light" ? "rgb(239, 241, 245)" : "rgb(17, 17, 27)");
@@ -298,6 +320,49 @@ for (const mode of [DOMAIN, null] as const) {
       }
     });
 
+    // #255: a notice wears the Doc's look and its footer, light and dark, on
+    // a desktop and a phone; and the page tells a link preview what it can,
+    // the same for any id, with a card on the viewer's origin.
+    test("a notice is on the Doc's paper with its footer, and the page carries a link preview", async ({ browser }) => {
+      const id = randomBytes(16).toString("hex");
+      const url = `${r.viewer}/${id}#k=${randomBytes(32).toString("base64url")}`;
+      for (const scheme of ["light", "dark"] as const) {
+        for (const [name, opts] of [["desktop", {}], ["pixel7", pixel7]] as const) {
+          const v = await visitor(browser, { colorScheme: scheme, ...opts });
+          await v.page.goto(url);
+          await expect(noticeOf(v.page, "gone")).toContainText("This Doc isn't shared any more");
+          await branded(v.page, "This Doc isn't shared any more");
+          const paper = await v.page.evaluate(() => getComputedStyle(document.querySelector(".doc")!).backgroundColor);
+          expect(paper, scheme).toBe(scheme === "light" ? "rgb(248, 246, 240)" : "rgb(26, 27, 24)");
+          expect(v.violations, "the page's CSP refused nothing").toEqual([]);
+          expect(v.seen.some((u) => u.endsWith("/card.png")), "the page never loads the card").toBe(false);
+          if (SHOTS && mode) {
+            mkdirSync(SHOTS, { recursive: true });
+            await v.page.screenshot({ path: join(SHOTS, `notice-gone-${name}-${scheme}.png`) });
+          }
+          await v.ctx.close();
+        }
+      }
+      // Read as a bot would, from the page's origin (Chromium resolves *.localhost; Node needn't).
+      const v = await visitor(browser);
+      await v.page.goto(url);
+      const { html, type, magic } = await v.page.evaluate(async (at) => {
+        const html = await (await fetch(at)).text();
+        const image = html.match(/<meta property="og:image" content="([^"]*)"/)![1]!;
+        const card = await fetch(new URL(image).pathname);
+        return { html, type: card.headers.get("content-type"), magic: new TextDecoder().decode(new Uint8Array(await card.arrayBuffer()).subarray(1, 4)) };
+      }, `${r.viewer}/${id}`);
+      await v.ctx.close();
+      const og = (p: string) => html.match(new RegExp(`<meta property="og:${p}" content="([^"]*)"`))?.[1];
+      expect(og("site_name")).toBe("Arugula");
+      expect(og("title")).toBe("A shared Doc");
+      expect(og("url")).toMatch(new RegExp(`/${id}$`));
+      expect(og("image")).toMatch(/\/card\.png$/);
+      expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
+      expect([type, magic]).toEqual(["image/png", "PNG"]);
+      if (SHOTS && mode) console.log(`the link preview's tags:\n${html.match(/<meta (?:property="og|name="twitter)[^>]*>/g)!.join("\n")}`);
+    });
+
     test("the Doc's drawing and its script never run on the page", async ({ browser }) => {
       const d = await doc(r);
       await fill(r.post, d, "s3", example("script-drawing.md"));
@@ -347,6 +412,7 @@ for (const mode of [DOMAIN, null] as const) {
         await route?.(v.page);
         await v.page.goto(to);
         await expect(noticeOf(v.page, "broken")).toContainText("This link is broken");
+        await expect(v.page.locator("[data-doc-made]")).toBeVisible();
         // Nothing of the Doc: no block, no title, no text, no picture, no partial render.
         await expect(v.page.locator("[data-doc-block], .doc-title, img")).toHaveCount(0);
         await expect(v.page.locator("body")).not.toContainText(MARK);

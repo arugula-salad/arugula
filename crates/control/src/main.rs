@@ -39,6 +39,7 @@ mod db;
 #[cfg(test)]
 mod device_kinds_wire;
 mod device_review;
+mod doc_card;
 mod doc_links;
 #[cfg(test)]
 mod doc_links_wire;
