@@ -67,7 +67,7 @@ pub async fn set_name(State(app): State<Arc<App>>, s: Session, Json(b): Json<Nam
 }
 
 /// What the account trusts now, by control's own reckoning.
-fn trusted(app: &App, account: &str) -> anyhow::Result<(Option<Trust>, Vec<Cert>, Vec<Revocation>)> {
+pub(crate) fn trusted(app: &App, account: &str) -> anyhow::Result<(Option<Trust>, Vec<Cert>, Vec<Revocation>)> {
     let root = app.db.account(account)?.and_then(|a| a.root);
     let (certs, _) = app.db.devices(account)?;
     let revs = app.db.revocations(account)?;
@@ -224,6 +224,9 @@ pub async fn enroll(State(app): State<Arc<App>>, s: PageSession, Json(b): Json<E
         refused("enroll", &s.account, &c, "the desktop app's sign-in asked as another kind");
         return Err(err(StatusCode::BAD_REQUEST, "the desktop app's window joins as an app device"));
     }
+    // A reset of the account's devices that's due is done now (#1582), so
+    // this browser can be the first.
+    app.db.finish_due_reset(&s.account, now_ms())?;
     let account = app.db.account(&s.account)?.ok_or_else(|| err(StatusCode::UNAUTHORIZED, "no such account"))?;
     if let Some((have, true)) = app.db.device(&s.account, &c.device)? {
         return Ok(Json(json!({ "approved": true, "cert": have, "root": account.root })));

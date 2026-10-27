@@ -4,6 +4,7 @@
 // team (*Move to…*, #100), and removing one. Also adding a phone or
 // browser, the passkey nudge, and the words someone verifying you reads.
 
+import { ResetWarning } from "./reset";
 import { useEffect, useState } from "preact/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
@@ -263,6 +264,7 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
   return (
     <Modal close={close}>
       <h2>Devices and machines</h2>
+      <ResetWarning s={s} />
       <p class="dim">
         Signed in as <b data-account={s.account}>{s.login}</b>.
       </p>

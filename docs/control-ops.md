@@ -1064,6 +1064,12 @@ cleared. Then tell the person:
 
 A second reset within a week is refused unless `--again`.
 
+People can also start one themselves, from *Approve this browser*: a
+fresh GitHub sign-in, then a 48-hour wait that any device or recovery code
+can cancel (`reset.rs`, docs/design/self-service-reset.md). It's the same
+step when it's done, logged as `by = self-service`. Support's is for
+someone who can't wait or lost GitHub too.
+
 ### Deploys
 
 Each release tag deploys control (M133, #1129). It's automatic, with no

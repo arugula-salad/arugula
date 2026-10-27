@@ -1648,9 +1648,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 149 tables in two planes ("Two planes, two trust rules"):
+Control's database has 150 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (49 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (50 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (100 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1675,6 +1675,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |
 | `account_resets` | **plaintext** | An account's devices reset (aru-119): when, who ran it, the reason support wrote, and the certificates and revocations it archived. | yes |  |
+| `reset_requests` | metadata | A reset of an account's devices its person asked for (aru-119, #1582): when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device) or done. | yes |  |
 | `account_emails` | **plaintext** | An account's email address for security notices (#1609): GitHub's primary verified one, or one typed and verified by a link, and when. | yes | The email provider |
 | `email_tokens` | **plaintext** | A typed address waiting for its verify link (#1609): the link's token by its hash, the address, and when it expires (a day). | yes | The email provider |
 | `email_sends` | metadata | That control emailed an account (#1609): which kind of notice and when, never its body. Kept 90 days, for the daily limit. | yes |  |

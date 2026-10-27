@@ -137,6 +137,18 @@ pub fn send(app: &Arc<App>, account: &str, to: &str, kind: &'static str, subject
     true
 }
 
+/// A security notice to the account's verified address, if it has one.
+pub fn notice(app: &Arc<App>, account: &str, kind: &'static str, subject: String, body: String) -> bool {
+    match app.db.verified_email(account) {
+        Ok(Some(to)) => send(app, account, &to, kind, subject, body),
+        Ok(None) => false,
+        Err(e) => {
+            warn!(account, kind, "not emailed: {e}");
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

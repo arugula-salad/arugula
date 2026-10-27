@@ -227,6 +227,15 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "reset_requests"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A reset of an account's devices its person asked for (aru-119, #1582): when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device) or done."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "account_emails"
 plane = "machine"
 process = "hub"
