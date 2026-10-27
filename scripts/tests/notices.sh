@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests scripts/notices with a stand-in cargo: without cargo-about it must
-# leave both THIRD_PARTY.md files as they were and say how to install it;
+# leave the THIRD_PARTY.md files as they were and say how to install it;
 # when a step fails partway it must also leave them; on success it replaces
 # them.
 #
@@ -16,12 +16,13 @@ bad() { printf 'FAIL  %s\n' "$*"; fail=1; }
 # A copy of the tree's shape: the script, a stand-in web-notices, and old
 # notices to keep or replace.
 tree=$work/tree
-mkdir -p "$tree/scripts" "$tree/crates/desktop"
+mkdir -p "$tree/scripts" "$tree/server" "$tree/crates/desktop"
 cp "$root/scripts/notices" "$tree/scripts/notices"
 printf '#!/bin/sh\necho web-notices\n' >"$tree/scripts/web-notices"
 chmod +x "$tree/scripts/web-notices"
 reset() {
   echo old-root >"$tree/THIRD_PARTY.md"
+  echo old-server >"$tree/server/THIRD_PARTY.md"
   echo old-desktop >"$tree/crates/desktop/THIRD_PARTY.md"
 }
 
@@ -47,6 +48,8 @@ for mode in missing fail; do
   if run "$mode"; then bad "$mode: notices succeeded"; fi
   [ "$(cat "$tree/THIRD_PARTY.md")" = old-root ] || bad "$mode: THIRD_PARTY.md changed"
   [ "$(cat "$tree/crates/desktop/THIRD_PARTY.md")" = old-desktop ] || bad "$mode: desktop THIRD_PARTY.md changed"
+  [ "$(cat "$tree/server/THIRD_PARTY.md")" = old-server ] || bad "$mode: server THIRD_PARTY.md changed"
+  [ ! -e "$tree/server/THIRD_PARTY.md.tmp" ] || bad "$mode: left server THIRD_PARTY.md.tmp"
   [ ! -e "$tree/THIRD_PARTY.md.tmp" ] || bad "$mode: left THIRD_PARTY.md.tmp"
   [ ! -e "$tree/crates/desktop/THIRD_PARTY.md.tmp" ] || bad "$mode: left desktop THIRD_PARTY.md.tmp"
 done
@@ -59,6 +62,8 @@ run ok || bad "ok: notices failed: $(cat "$work/err")"
 grep -q '^web-notices$' "$tree/THIRD_PARTY.md" || bad "ok: THIRD_PARTY.md lacks the web notices"
 grep -q '^generated ' "$tree/THIRD_PARTY.md" || bad "ok: THIRD_PARTY.md lacks the crate notices"
 grep -q "^generated .*crates/desktop$" "$tree/crates/desktop/THIRD_PARTY.md" || bad "ok: desktop THIRD_PARTY.md not generated in crates/desktop"
+grep -q "^generated .*/server$" "$tree/server/THIRD_PARTY.md" || bad "ok: server THIRD_PARTY.md not generated in server"
+grep -q '^web-notices$' "$tree/server/THIRD_PARTY.md" || bad "ok: server THIRD_PARTY.md lacks the web notices (control serves the web client)"
 
 [ "$fail" = 0 ] && echo "notices: ok"
 exit "$fail"

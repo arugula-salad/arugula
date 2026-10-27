@@ -19,6 +19,26 @@ builds static Linux binaries (musl, with Zig as the C compiler);
 `just static aarch64` builds them for arm64. `just dist` makes the
 release tarballs in `dist/`.
 
+Two Cargo workspaces, so daemon work never compiles the hosted server and
+server work never compiles the daemon or Ghostty: the root's
+(`Cargo.toml`: the daemon, the CLI, the mux, the VT engine and the crates
+both sides share, `arugula-control-wire`, `arugula-e2e`,
+`arugula-forge-github`, `arugula-proto` and `arugula-core`), and the
+server's (`server/Cargo.toml`: `arugula-control`, `arugula-platform` and
+`arugula-control-common`, which stay in `crates/` and reach the shared
+crates by path). Each has its own `Cargo.lock`; both carry the release's
+version, which `just release` bumps together. `cargo` at the root works on
+the root's; for the server's, `scripts/server-cargo build -p
+arugula-control` (or any cargo command) from anywhere in the checkout, or
+plain `cargo` in `server/` or a server crate. `scripts/server-cargo` and the
+justfile build it into the root's target dir (`CARGO_TARGET_DIR`, else
+`target/`), so its binaries sit beside arugulad's; a plain `cargo` in
+`server/` uses `server/target` unless `CARGO_TARGET_DIR` is set. `just
+test`, `just check`, `just static` and the recipes that start control
+cover both; `just workspace-guard` checks that neither builds the other's
+crates. A dependency's version goes in both workspaces'
+`[workspace.dependencies]` when both use it.
+
 The repository is a chant workspace too (`chant.workspace.json`: its
 members, decision records and CI's green tags). `npm install` at the root
 installs the chant it pins (`package.json`) at `node_modules/.bin/chant`,
@@ -171,7 +191,7 @@ daemon's update check read it.
    #200; the release fails without them), tags it `vX.Y.Z` and pushes the
    tag with main, the bump merged in. `just release --dry-run` shows the
    commit, the version and the bump, and stops. By hand instead: set the
-   version in the workspace `Cargo.toml`, run `just release-fixtures` and
+   version in the workspace `Cargo.toml` and in `server/Cargo.toml`, run `just release-fixtures` and
    commit (`just notices` if dependencies changed; CI fails if
    THIRD_PARTY.md is stale), push it to main, wait for CI to pass on it, and
    tag the commit `chant ci last-green` names: `git tag -a vX.Y.Z -m

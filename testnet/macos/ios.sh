@@ -16,7 +16,7 @@
 # session hosts"). It needs the Xcode 26 base (vm.sh's default image) and
 # hasn't passed yet.
 #
-# Needs `cargo build -p arugula-control` and web/dist (`just macos ios`
+# Needs `scripts/server-cargo build -p arugula-control` and web/dist (`just macos ios`
 # does both). s27 needs ARUGULA_S27_DIR: spikes/s27-blocks in a worktree of
 # archive/spikes, built (`pnpm install`, `cargo build --release`, `node
 # build.mjs`, `target/release/s27 cert .run/cert`). ARUGULA_IOS_DEVICE

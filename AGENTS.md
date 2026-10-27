@@ -41,6 +41,13 @@ Each has a `README.md` with where to start reading.
   around `arugula-mux`, wired together in `main.rs`.
 - `crates/cli`: `arugula`, the CLI. It doesn't link `arugula-vt`, so it
   builds without libghostty and Zig.
+The server crates (`crates/control`, `crates/platform`,
+`crates/control-common`) are a Cargo workspace of their own,
+`server/Cargo.toml`, so daemon work never compiles them and server work
+never compiles the daemon, the mux or Ghostty: build them with
+`scripts/server-cargo` (or `cargo` in `server/`), as the justfile does
+([docs/development.md](docs/development.md), "Build from source").
+
 - `crates/control`: Arugula control's hub: accounts, devices, the directory
   and the relay. It runs the platform in process, or is its gateway when
   the platform runs as its own (`arugula-platform`, M140).
@@ -209,7 +216,8 @@ lints the daemon with neither, and with each alone.
   build the daemon embeds.
 - `just check`: what CI runs: `just test` (nextest, doctests, the web
   typecheck), then the web import rule and its tests (`just web-imports`),
-  the `proto-ts` check, fmt and clippy.
+  the `proto-ts` check, fmt and clippy, for both workspaces (the root's
+  and the server's).
 - `just e2e`: the browser specs. `just e2e-webkit`: WebKit's.
 - `just dev`: a dev daemon on 7682 (state in `~/.local/state/arugula-dev`)
   and Vite on 5173, leaving your daily daemon alone.

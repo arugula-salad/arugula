@@ -220,9 +220,9 @@ vers() {
 # The files a bump may change, and how vers reads each.
 vers_kind() {
   case "$1" in
-    Cargo.lock|crates/*/Cargo.lock) echo lock ;;
-    Cargo.toml|crates/*/Cargo.toml) echo toml ;;
-    THIRD_PARTY.md|crates/*/THIRD_PARTY.md) echo notices ;;
+    Cargo.lock|server/Cargo.lock|crates/*/Cargo.lock) echo lock ;;
+    Cargo.toml|server/Cargo.toml|crates/*/Cargo.toml) echo toml ;;
+    THIRD_PARTY.md|server/THIRD_PARTY.md|crates/*/THIRD_PARTY.md) echo notices ;;
     *) return 1 ;;
   esac
 }
@@ -267,15 +267,19 @@ next_version() {
 }
 
 # apply_bump LANE OLD NEW: in the current directory, every file a bump may
-# change. The daemon's lane is every arugula crate in Cargo.lock but the
-# app; the app's is arugula-desktop.
+# change. The daemon's lane is every arugula crate in Cargo.lock and
+# server/Cargo.lock (the server's workspace, whose [workspace.package]
+# version moves with the root's) but the app; the app's is arugula-desktop.
 apply_bump() {
   local lane=$1 old=$2 new=$3 names f k
   if [ "$lane" = app ]; then names=" arugula-desktop "
   else
-    names=" $(awk 'BEGIN { RS = "" } /^\[\[package\]\]/ && !/\nsource = / { n = $0; sub(/^[^\n]*\nname = "/, "", n); sub(/".*/, "", n); if (n ~ /^arugula/ && n != "arugula-desktop") printf "%s ", n }' Cargo.lock)"
+    # Not mapfile: macOS's bash 3.2 has none.
+    local locks=() l
+    while IFS= read -r l; do locks+=("$l"); done < <(git ls-files Cargo.lock server/Cargo.lock)
+    names=" $(awk 'BEGIN { RS = "" } /^\[\[package\]\]/ && !/\nsource = / { n = $0; sub(/^[^\n]*\nname = "/, "", n); sub(/".*/, "", n); if (n ~ /^arugula/ && n != "arugula-desktop") printf "%s ", n }' "${locks[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' ')"
   fi
-  for f in $(git ls-files Cargo.toml Cargo.lock THIRD_PARTY.md 'crates/*/Cargo.toml' 'crates/*/Cargo.lock' 'crates/*/THIRD_PARTY.md'); do
+  for f in $(git ls-files Cargo.toml Cargo.lock THIRD_PARTY.md server/Cargo.toml server/Cargo.lock server/THIRD_PARTY.md 'crates/*/Cargo.toml' 'crates/*/Cargo.lock' 'crates/*/THIRD_PARTY.md'); do
     k=$(vers_kind "$f") || continue
     vers bump "$k" "$names" "$old" "$new" <"$f" >"$f.bump"
     mv "$f.bump" "$f"
@@ -295,6 +299,9 @@ case "${1:-}" in
   check-version)
     v=$(version)
     [ "$2" = "v$v" ] || { echo "tag $2 doesn't match the workspace version $v" >&2; exit 1; }
+    # The server's workspace (server/Cargo.toml) carries the same version.
+    sv=$(mise exec -- scripts/server-cargo pkgid -p arugula-control | sed 's/.*[#@]//')
+    [ "$sv" = "$v" ] || { echo "server/Cargo.toml's version $sv isn't the workspace version $v" >&2; exit 1; }
     # What this release's clients send and see, for later daemons to replay
     # (#200).
     [ -n "$(ls crates/proto/fixtures/releases/"$v"/*.jsonl 2>/dev/null)" ] \
