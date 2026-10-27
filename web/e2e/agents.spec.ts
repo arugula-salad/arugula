@@ -315,14 +315,16 @@ test("Getting started: the Agents step checks Claude Code's hooks", async ({ pag
     const open = () => page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "agents" })));
     await open();
     const hooks = panel.locator("[data-start-hooks]");
+    // `has` is relative to the row, so it takes a locator not rooted at the panel.
+    const hooksRow = panel.locator(".start-check", { has: page.locator("[data-start-hooks]") });
     await expect(hooks).toHaveText("Questions on cards: Arugula's hooks aren't in Claude Code's settings yet");
-    await expect(panel.locator(".start-check", { has: hooks })).toHaveAttribute("data-check", "todo");
+    await expect(hooksRow).toHaveAttribute("data-check", "todo");
     await panel.getByRole("button", { name: "Close" }).click();
 
     execFileSync("../target/debug/arugula", ["hooks", "install"], { env: process.env, stdio: "ignore" });
     await open();
     await expect(hooks).toHaveText("Questions on cards: Claude Code has Arugula's hooks");
-    await expect(panel.locator(".start-check", { has: hooks })).toHaveAttribute("data-check", "done");
+    await expect(hooksRow).toHaveAttribute("data-check", "done");
     await panel.getByRole("button", { name: "Close" }).click();
   } finally {
     rmSync(settings, { force: true });
