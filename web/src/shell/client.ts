@@ -779,8 +779,8 @@ export class Client {
     return f?.labs === true && (!f.flags || f.flags.includes("guest-ssh"));
   }
 
-  /** Whether this machine has asked for Developer settings (`arugulad flags`),
-   * so the menus offer them. */
+  /** Whether this machine has asked for Developer settings (`arugulad flags`).
+   * The machine menu offers them to the owner either way. */
   hasDev(): boolean {
     return this.features?.dev === true;
   }

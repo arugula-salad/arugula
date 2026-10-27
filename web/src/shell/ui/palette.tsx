@@ -260,8 +260,7 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   }
 
   // The swarm, and the next pane that wants you after the active one.
-  const wanting = state.panes.filter(needsYou).map((p) => p.id);
-  const next: PaneId | undefined = wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
+  const next = nextNeedingYou(client);
   // "Go to Swarm" and "Go to Chat" are the places' (UI audit #176: each
   // was here twice).
   out.push({
@@ -270,6 +269,7 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     kind: "Panes",
     place: true,
     label: "Go to the next pane that needs you",
+    shortcut: keyHint("pane.next-needs-you"),
     disabled: next === undefined,
     detail: next === undefined ? "nothing needs you" : client.title(next) || `pane %${next}`,
     run: () => next !== undefined && client.setActive(next),
@@ -292,6 +292,14 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     const k = c.id ? `id/${c.id}` : c.key;
     return !seen.has(k) && !!seen.add(k);
   });
+}
+
+/** The next pane that needs you after the active one, wrapping round:
+ * the palette's *Go to the next pane that needs you* and its key. */
+export function nextNeedingYou(client: Client): PaneId | undefined {
+  const pane = client.active();
+  const wanting = (client.state?.panes ?? []).filter(needsYou).map((p) => p.id);
+  return wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
 }
 
 /** Where the palette was opened: the panes, or a place over them. */

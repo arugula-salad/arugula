@@ -861,6 +861,9 @@ test("Getting started joins as soon as a device approves: nothing to compare (#7
   // Straight to joined: no fingerprint to check.
   await expect(start.locator("[data-start-joined]")).toHaveText("Joined to your account", { timeout: 20_000 });
   await expect(start.locator("[data-start-confirm]")).toHaveCount(0);
+  // Joined: sharing next, a team to share with and a session to share.
+  await expect(start.locator("[data-start-make-team]")).toBeVisible();
+  await expect(start.locator("[data-start-share]")).toBeVisible();
   await page.context().close();
   await laptop.goto("/");
   await expect.poll(() => hostNames(laptop), { timeout: 20_000 }).toContain("sealed");

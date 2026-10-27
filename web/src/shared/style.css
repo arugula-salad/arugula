@@ -6289,6 +6289,45 @@ html[data-scheme="light"] .doc .md .md-callout-warning {
   margin-top: 0;
 }
 
+/* Joined: a team to share with, a session to share. */
+.start-together {
+  margin: 14px 0;
+}
+
+.start-together p {
+  margin: 0 0 10px;
+  color: #c4cbd8;
+  font-size: 13px;
+}
+
+.start-together .start-confirm {
+  justify-content: flex-start;
+}
+
+/* Things to try: a button each, and what it does beside it. */
+.start-tries {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.start-try {
+  display: grid;
+  grid-template-columns: minmax(170px, auto) 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.start-try .start-dim {
+  margin: 0;
+}
+
+.start-try-mark {
+  color: var(--s-done);
+}
+
 /* #335: Claude Code is here and not set up: the first screen offers it. */
 .start-offer {
   margin: 14px 0;
