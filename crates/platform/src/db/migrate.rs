@@ -478,7 +478,7 @@ const SQLITE: &[Migration] = &[
         version: 64,
         name: "board_links",
         sql: include_str!("../../migrations/sqlite/0064_board_links.sql"),
-        additive: false,
+        additive: true,
     },
 ];
 
@@ -868,7 +868,7 @@ const POSTGRES: &[Migration] = &[
         version: 64,
         name: "board_links",
         sql: include_str!("../../migrations/postgres/0064_board_links.sql"),
-        additive: false,
+        additive: true,
     },
 ];
 

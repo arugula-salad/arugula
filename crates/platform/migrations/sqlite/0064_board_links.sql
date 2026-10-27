@@ -3,9 +3,9 @@
 -- (`https` only, at most 2048 bytes, no userinfo: `boards::pointer_ok`
 -- has the rules). Nothing else changes.
 --
--- Not additive: an older build reads a `link` row as a pointer it doesn't
--- know and fails to read the board, so it can't be rolled back to once one
--- is written. SQLite changes a `CHECK` by making the table again, with
+-- Additive: the build before this one reads a `link` row as no pointer
+-- and leaves its columns alone when the row is written (Arugula #1588),
+-- so control can still roll back past it. SQLite changes a `CHECK` by making the table again, with
 -- every column it has now (0058, and `agent` from 0059).
 CREATE TABLE board_entries_new (
     id TEXT PRIMARY KEY,
