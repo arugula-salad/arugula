@@ -2510,6 +2510,52 @@ auth = "session"
 clients = ["page", "cli"]
 note = "Reorders a row or a zone, within or between zones: owners and editors."
 
+# ---- platform: project Docs (aru-118)
+# A project's own Docs, for its members: a team's owners and editors make,
+# write and delete them, its viewers read them; anyone else gets 404. With
+# chat, as native issues are. `{project}` is a project's id or `personal`;
+# a Doc of another project is no Doc at all.
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/docs"  # wire::project_docs::PROJECT_DOCS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's Docs, the latest changed first."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/docs"  # wire::project_docs::PROJECT_DOCS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Makes a Doc, with its outline (written sections and pending ones): owners and editors."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/docs/{id}"  # wire::project_docs::PROJECT_DOC
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A Doc with its sections in order: any member."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/docs/{id}"  # wire::project_docs::PROJECT_DOC
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Renames a Doc, writes a section (its body replaced) or adds one at the end: owners and editors. Capped at 64 KB a section, 40 sections and 1 MiB a Doc."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/docs/{id}"  # wire::project_docs::PROJECT_DOC
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Deletes a Doc: owners and editors."
+
 # ---- platform: native issues (M195, platform step 6)
 # A project's own issues, for its members: a team's owners and editors
 # change them, its viewers read them; anyone else gets 404. Behind chat's

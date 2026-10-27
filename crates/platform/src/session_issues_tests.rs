@@ -300,3 +300,104 @@ async fn a_session_opens_issues_only_with_its_askers_rights() {
     assert!(why(&ask(&app, &m, &ses, new(&[])).await).contains("stopped"));
     assert_eq!(app.db.issue_count(&t).unwrap(), 2, "only the one it was allowed");
 }
+
+fn new_doc(title: &str) -> arugula_control_wire::project_docs::NewDoc {
+    use arugula_control_wire::project_docs::{NewDoc, NewSection};
+    NewDoc {
+        title: title.into(),
+        sections: vec![
+            NewSection { heading: "What was said".into(), intent: String::new(), markdown: Some("Copied over.".into()) },
+            NewSection { heading: "Next".into(), intent: "what to do".into(), markdown: None },
+        ],
+    }
+}
+
+fn fill(section: &str, markdown: &str) -> arugula_control_wire::project_docs::DocWrite {
+    arugula_control_wire::project_docs::DocWrite {
+        section: Some(section.into()),
+        markdown: Some(markdown.into()),
+        ..Default::default()
+    }
+}
+
+/// A session's agent makes a Doc in its project as itself, with a link to
+/// its page; writes it; reads any of the project's Docs; and writes no Doc
+/// it didn't make. People who may write may write its Doc too.
+#[tokio::test]
+async fn a_sessions_agent_makes_writes_and_reads_its_projects_docs() {
+    let (_hub, app, base, t, _u) = seeded().await;
+    let ses = session(&app, &t, "hw_1", "b");
+    let m = machine(&t, "hw_1", "box1");
+
+    let Given::Doc { view, url } = ask(&app, &m, &ses, Op::DocCreate { doc: new_doc("From #general") }).await else {
+        panic!()
+    };
+    let id = view.doc.id.clone();
+    assert_eq!(url, format!("{}/p/{t}/docs/{id}", app.cfg.page()));
+    assert_eq!((view.doc.project.as_str(), view.doc.author.as_str(), view.writer), (t.as_str(), "", true));
+    let agent = view.doc.agent.clone().expect("the session as its maker");
+    assert_eq!(agent.machine, ses);
+    let bodies: Vec<_> = view.sections.iter().map(|s| s.body.as_deref()).collect();
+    assert_eq!(bodies, [Some("Copied over."), None]);
+
+    let w = Op::DocWrite { id: id.clone(), write: fill("s2", "Ship it.") };
+    let Given::Doc { view, .. } = ask(&app, &m, &ses, w).await else { panic!() };
+    assert_eq!((view.sections[1].body.as_deref(), view.doc.written), (Some("Ship it."), 2));
+
+    // A person's Doc: the session reads it, and doesn't write it.
+    let body = json!({ "title": "a's", "sections": [{ "heading": "One" }] });
+    let (st, v) = call(&base, "a", "POST", &format!("/api/projects/{t}/docs"), Some(body)).await;
+    assert_eq!(st, 200, "{v}");
+    let theirs = v["doc"]["id"].as_str().unwrap().to_owned();
+    let Given::Doc { view, .. } = ask(&app, &m, &ses, Op::DocRead { id: Some(theirs.clone()) }).await else { panic!() };
+    assert!(!view.writer, "not the session's to write");
+    let w = Op::DocWrite { id: theirs.clone(), write: fill("s1", "mine now") };
+    assert!(why(&ask(&app, &m, &ses, w).await).contains("only the Docs it made"));
+    let Given::Docs { list } = ask(&app, &m, &ses, Op::DocRead { id: None }).await else { panic!() };
+    assert_eq!(list.docs.len(), 2);
+
+    // An editor may change the session's Doc.
+    let edit = json!({ "section": "s1", "markdown": "Edited." });
+    let (st, v) = call(&base, "a", "PUT", &format!("/api/projects/{t}/docs/{id}"), Some(edit)).await;
+    assert_eq!((st, &v["sections"][0]["body"], &v["doc"]["agent"]["machine"]), (200, &json!("Edited."), &json!(ses)));
+}
+
+/// A session's Doc calls are checked as its asker's and against the
+/// session: a viewer's session reads and makes nothing; a review session
+/// reads only; an ended one, another machine's call and another project's
+/// Doc reach nothing.
+#[tokio::test]
+async fn a_sessions_docs_are_its_askers_rights_and_its_projects() {
+    use crate::db::sql::{Sql as _, params};
+    let (hub, app, base, t, u) = seeded().await;
+    hub.flag("team:u", true);
+    let (_, v) = call(&base, "c", "POST", &format!("/api/projects/{u}/docs"), Some(json!({ "title": "u's secret" }))).await;
+    let other = v["doc"]["id"].as_str().unwrap().to_owned();
+    let m = machine(&t, "hw_1", "box1");
+    let ses = session(&app, &t, "hw_1", "b");
+    assert!(why(&ask(&app, &m, &ses, Op::DocRead { id: Some(other.clone()) }).await).contains("no such Doc"));
+    let w = Op::DocWrite { id: other, write: fill("s1", "hi") };
+    assert!(why(&ask(&app, &m, &ses, w).await).contains("no such Doc"));
+    let elsewhere = machine(&u, "hw_1", "box1");
+    let g = ask(&app, &elsewhere, &ses, Op::DocCreate { doc: new_doc("x") }).await;
+    assert!(why(&g).contains("isn't this machine's"));
+
+    let viewer = session(&app, &t, "hw_2", "x");
+    let mv = machine(&t, "hw_2", "box1");
+    assert!(why(&ask(&app, &mv, &viewer, Op::DocCreate { doc: new_doc("x") }).await).contains("viewer"));
+    assert!(matches!(ask(&app, &mv, &viewer, Op::DocRead { id: None }).await, Given::Docs { .. }));
+
+    let Given::Doc { view, .. } = ask(&app, &m, &ses, Op::DocCreate { doc: new_doc("mine") }).await else { panic!() };
+    let id = view.doc.id;
+    app.db.c().execute("UPDATE agent_sessions SET role = 'review' WHERE id = ?1", params![ses]).unwrap();
+    assert!(why(&ask(&app, &m, &ses, Op::DocCreate { doc: new_doc("x") }).await).contains("review"));
+    let w = Op::DocWrite { id: id.clone(), write: fill("s2", "hi") };
+    assert!(why(&ask(&app, &m, &ses, w).await).contains("review"));
+    let read = ask(&app, &m, &ses, Op::DocRead { id: Some(id.clone()) }).await;
+    assert!(matches!(read, Given::Doc { .. }), "a review reads");
+    app.db
+        .c()
+        .execute("UPDATE agent_sessions SET role = 'thread', state = 'stopped' WHERE id = ?1", params![ses])
+        .unwrap();
+    assert!(why(&ask(&app, &m, &ses, Op::DocRead { id: Some(id) }).await).contains("stopped"));
+}

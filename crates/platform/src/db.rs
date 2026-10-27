@@ -61,6 +61,7 @@ pub mod pg;
 pub mod planter;
 pub mod pr_drafts;
 pub mod previews;
+pub mod project_docs;
 pub mod projects;
 pub mod redone;
 pub mod run_grants;

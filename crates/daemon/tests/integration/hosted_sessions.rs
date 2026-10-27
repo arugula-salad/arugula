@@ -428,9 +428,41 @@ async fn issues(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
             },
             "url": "https://app.example/issues/iss_00000000000000000000000000000004",
         }),
+        Some("doc_create" | "doc_write" | "doc_read") if !b["id"].is_null() || b["op"] == "doc_create" => {
+            let sections: Vec<Value> = match b["op"].as_str() {
+                Some("doc_create") => b["doc"]["sections"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| {
+                        json!({ "id": format!("s{}", i + 1), "heading": s["heading"], "intent": s["intent"], "body": s["markdown"], "rev": 0 })
+                    })
+                    .collect(),
+                _ => vec![json!({ "id": "s1", "heading": "Said", "intent": "", "body": "filled", "rev": 1 })],
+            };
+            let title = b["doc"]["title"].as_str().unwrap_or("From the thread");
+            json!({
+                "kind": "doc",
+                "view": {
+                    "doc": {
+                        "id": DOC, "project": PROJECT, "title": title, "author": "",
+                        "agent": { "machine": b["session"], "machine_name": "Agent session" },
+                        "sections": sections.len(), "written": 1, "rev": 1, "created_at": 1, "updated_at": 1,
+                    },
+                    "sections": sections,
+                    "writer": true,
+                },
+                "url": format!("https://app.example/p/{PROJECT}/docs/{DOC}"),
+            })
+        }
+        Some("doc_read") => json!({ "kind": "docs", "list": { "project": PROJECT, "docs": [], "writer": true } }),
         _ => json!({ "kind": "refused", "why": "no such issue" }),
     })
 }
+
+/// The project Doc the fake platform makes.
+const DOC: &str = "pdc_00000000000000000000000000000005";
 
 fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
     rt.block_on(async {
@@ -1174,15 +1206,15 @@ fn a_codex_session_asks_nobody_but_its_questions_reach_the_card() {
     assert!(transcript(&d, block).iter().any(|l| l.starts_with("agent: ") && l.contains("Blue")));
 }
 
-/// A session's agent has three tools for its project's issues, on a server
-/// of its own: a list, a comment and a new issue go to control as the
-/// session's, with an issue's number and no project, signed by the box; and
-/// nothing else of
+/// A session's agent has tools for its project's issues and Docs, on a
+/// server of its own: a list, a comment, a new issue, and a Doc made,
+/// written and read go to control as the session's, with an issue's number
+/// or a Doc's id and no project, signed by the box; and nothing else of
 /// Arugula's is there to call. Linux only: the server knows its caller by
 /// the socket's owner in `/proc/net/tcp`, and boxes run Linux.
 #[cfg(target_os = "linux")]
 #[test]
-fn a_sessions_agent_reads_comments_on_and_opens_its_projects_issues() {
+fn a_sessions_agent_works_with_its_projects_issues_and_docs() {
     let Rig { _rt, f, marks, d, .. } = rig("issues");
     let a = ses('a');
     f.start(&a, "look", prompt(1, "acct1", "hello"));
@@ -1207,14 +1239,41 @@ fn a_sessions_agent_reads_comments_on_and_opens_its_projects_issues() {
         call(r##"mcp create_session_issue {"title": "the canary flakes", "body": "twice", "labels": ["bug"]}"##);
     assert!(opened.contains("Opened #4") && opened.contains("/issues/iss_"), "its number and link: {opened}");
 
+    // Its project's Docs (aru-118): made, written and read, by id.
+    let made = call(
+        r##"mcp create_session_doc {"title": "From the thread", "sections": [{"heading": "Said", "markdown": "copied"}, {"heading": "Next", "intent": "what to do"}]}"##,
+    );
+    assert!(made.contains("Made Doc From the thread") && made.contains(&format!("/docs/{DOC}")), "its link: {made}");
+    assert!(made.contains("to fill: s2"), "{made}");
+    let filled = call(&format!(r##"mcp fill_session_doc {{"doc": "{DOC}", "section": "s1", "markdown": "filled"}}"##));
+    assert!(filled.contains("Wrote Doc"), "{filled}");
+    let read = call(&format!(r##"mcp read_project_doc {{"doc": "{DOC}"}}"##));
+    assert!(read.contains("## Said [s1]") && read.contains("filled"), "as markdown: {read}");
+    let none = call("mcp read_project_doc {}");
+    assert!(none.contains("0 Doc(s) in project prj_1"), "{none}");
+
     let asks = f.issue_asks.lock().unwrap().clone();
-    assert_eq!(asks.len(), 4, "{asks:#?}");
+    assert_eq!(asks.len(), 8, "{asks:#?}");
     for ask in &asks {
         assert_eq!(ask["session"], json!(a));
         assert!(ask.get("project").is_none() && !ask.to_string().contains(PROJECT), "never a project: {ask}");
     }
     let ops: Vec<_> = asks.iter().map(|a| a["op"].as_str()).collect();
-    assert_eq!(ops, [Some("list"), Some("comment"), Some("show"), Some("create")]);
+    assert_eq!(
+        ops,
+        [
+            Some("list"),
+            Some("comment"),
+            Some("show"),
+            Some("create"),
+            Some("doc_create"),
+            Some("doc_write"),
+            Some("doc_read"),
+            Some("doc_read")
+        ]
+    );
+    assert_eq!(asks[4]["doc"]["sections"][1]["intent"], json!("what to do"));
+    assert_eq!((&asks[5]["id"], &asks[5]["write"]["section"]), (&json!(DOC), &json!("s1")));
     assert_eq!((asks[1]["number"].as_u64(), asks[1]["text"].as_str()), (Some(3), Some("bisected it")));
     assert_eq!(
         (asks[3]["title"].as_str(), asks[3]["body"].as_str(), &asks[3]["labels"]),
@@ -1224,7 +1283,7 @@ fn a_sessions_agent_reads_comments_on_and_opens_its_projects_issues() {
     // The daemon's own tools aren't there, nor `/mcp` for it.
     let other = call(r##"mcp run {"command": "touch x"}"##);
     assert!(other.contains("no tool run"), "{other}");
-    assert_eq!(f.issue_asks.lock().unwrap().len(), 4, "and nothing reached control");
+    assert_eq!(f.issue_asks.lock().unwrap().len(), 8, "and nothing reached control");
 }
 
 /// Before a rebuild (Arugula #209): control asks the box `hosted.archive`

@@ -179,7 +179,7 @@ async fn machine_names(
 /// What an agent session's id starts with.
 const SESSION: &str = "ses_";
 
-fn session_name(id: &str) -> String {
+pub(crate) fn session_name(id: &str) -> String {
     let hex = id.strip_prefix(SESSION).unwrap_or(id);
     format!("Agent session {}", &hex[..hex.len().min(crate::db::sessions::BRANCH_HEX)])
 }

@@ -206,6 +206,14 @@ fn generate() -> String {
         c.visit::<PutEntry>();
         c.visit::<MoveEntry>();
     }
+    // A project's Docs (aru-118).
+    {
+        use arugula_control_wire::project_docs::*;
+        c.visit::<DocList>();
+        c.visit::<DocView>();
+        c.visit::<NewDoc>();
+        c.visit::<DocWrite>();
+    }
     c.decls.sort();
     let mut out = String::from(
         "// Generated from crates/proto by `just proto-ts`: don't edit. Change the\n\
