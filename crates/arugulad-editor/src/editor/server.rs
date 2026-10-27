@@ -36,7 +36,6 @@ use tokio::{io::AsyncWriteExt, sync::watch};
 use tracing::{info, warn};
 
 use crate::{
-    pane::Launcher,
     ports::{Conn, Service},
     provider::{Provider, ServiceDef},
     store,
@@ -91,24 +90,9 @@ const SETTINGS: &str = r#"{
 }
 "#;
 
-/// How editor blocks get their servers (`--code-server`, `--editor-idle`).
-pub struct Settings {
-    /// `<state>/editor`: settings, extensions, workspaces, logs.
-    pub dir: PathBuf,
-    /// This host's server's socket (kept short: Unix socket paths are).
-    pub socket: PathBuf,
-    /// A code-server to run instead of the pinned release.
-    pub binary: Option<PathBuf>,
-    /// Where releases are unpacked.
-    pub cache: PathBuf,
-    /// Where releases come from (tests point it elsewhere).
-    pub releases: String,
-    /// Seconds without a client before a server stops (at least 60).
-    pub idle: u64,
-    /// Seconds a window may be away and still reconnect to its session.
-    pub grace: u64,
-    pub launch: Launcher,
-}
+/// How editor blocks get their servers (`--code-server`, `--editor-idle`):
+/// the daemon's, from its command line.
+pub use crate::editors::Settings;
 
 static SETTINGS_: OnceLock<Arc<Settings>> = OnceLock::new();
 

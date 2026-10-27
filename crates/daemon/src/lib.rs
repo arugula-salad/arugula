@@ -15,7 +15,7 @@ mod args;
 mod authz;
 use arugula_mux::block;
 mod block_channel;
-mod browser;
+pub mod browser;
 mod callers;
 mod chat_readers;
 use arugula_mux::classify;
@@ -27,9 +27,7 @@ mod conversations;
 mod dial;
 mod docs;
 mod e2e;
-#[cfg(feature = "editor")]
-mod editor;
-mod editors;
+pub mod editors;
 #[cfg(feature = "forge")]
 mod forge;
 mod forges;
@@ -49,8 +47,6 @@ use arugula_mux::host;
 mod hosted;
 mod hosts;
 mod http1;
-#[cfg(feature = "editor")]
-mod ide;
 mod install;
 mod run_logs;
 mod work;
@@ -73,28 +69,28 @@ use arugula_mux::perm;
 // The local socket on Windows: a named pipe (M56).
 #[cfg(windows)]
 mod pipe;
-mod ports;
+pub mod ports;
 mod public_preview;
 use arugula_mux::procinfo;
 use arugula_mux::provider;
 mod board_block;
 mod board_state;
-mod push;
+pub mod push;
 mod remote;
 mod review;
-mod roots;
+pub mod roots;
 mod rules;
 mod seal;
 mod selfupdate;
-mod server;
+pub mod server;
 mod setup;
 mod share;
 mod team_chat;
 use arugula_mux::shellenv;
 use arugula_mux::shellint;
 use arugula_mux::shim;
-mod sites;
-mod task;
+pub mod sites;
+pub mod task;
 use arugula_mux::store;
 mod sync;
 use arugula_mux::sys;
@@ -407,7 +403,7 @@ fn daemon_running(state_dir: &std::path::Path) -> bool {
 
 /// `<state>/editors/sock`, in a 0700 directory with nothing else in it, for
 /// a dev container to mount (M28).
-#[cfg(all(unix, feature = "editor"))]
+#[cfg(unix)]
 fn editors_socket(state_dir: &std::path::Path) -> std::io::Result<tokio::net::UnixListener> {
     use std::os::unix::fs::PermissionsExt;
     let dir = state_dir.join("editors");
@@ -546,19 +542,11 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
                 .unwrap_or_else(|_| "arugulad=info,arugula_mux=info".into()),
         )
         .init();
-    // `just vsix`: Arugula's VS Code extension, for the marketplaces.
-    #[cfg(feature = "editor")]
-    if argv.get(1).map(String::as_str) == Some("_vsix") && argv.len() >= 3 {
-        let out = std::path::Path::new(&argv[2]).join(editor::vsix::file_name());
-        std::fs::write(&out, editor::vsix::build())?;
-        println!("{}", out.display());
-        return Ok(());
-    }
-    // Claude Code's IDE connections, kept across daemon restarts (M28).
-    #[cfg(all(unix, feature = "editor"))]
-    if argv.get(1).map(String::as_str) == Some("_ide_relay") && argv.len() >= 4 {
-        let args = ide::relay::Args { dir: argv[2].clone().into(), lock_dir: argv[3].clone().into() };
-        return Ok(tokio::runtime::Runtime::new()?.block_on(ide::relay::run(args))?);
+    // The editor's own (`_vsix`, Arugula's VS Code extension for the
+    // marketplaces; `_ide_relay`, Claude Code's IDE connections, kept
+    // across daemon restarts, M28).
+    if let Some(r) = editors::subcommand(&argv) {
+        return r;
     }
     let args = Args::from_arg_matches(&args::labs_command(args::labs_here()).get_matches_from(&argv))
         .unwrap_or_else(|e| e.exit());
@@ -927,8 +915,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         }
     };
     let socket = socket_path(&state_dir)?;
-    #[cfg(feature = "editor")]
-    editor::server::install(editor::server::Settings {
+    editors::install(editors::Settings {
         dir: state_dir.join("editor"),
         // Beside the CLI's socket, which is kept short enough.
         socket: PathBuf::from(format!("{}-code", socket.display())),
@@ -1171,12 +1158,13 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         }
         crate::task::spawn(axum::serve(local, server::local_router(app.clone())).into_future());
         // Editors in dev containers join here (M28): a directory of its own.
-        #[cfg(feature = "editor")]
-        match editors_socket(&state_dir) {
-            Ok(l) => {
-                crate::task::spawn(axum::serve(l, server::editors_router(app.clone())).into_future());
+        if editors::joinable() {
+            match editors_socket(&state_dir) {
+                Ok(l) => {
+                    crate::task::spawn(axum::serve(l, server::editors_router(app.clone())).into_future());
+                }
+                Err(e) => warn!(error = %e, "no socket for editors in containers"),
             }
-            Err(e) => warn!(error = %e, "no socket for editors in containers"),
         }
     }
     // Windows: a named pipe this user alone can open. Another daemon on

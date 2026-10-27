@@ -10,7 +10,8 @@ The daemon is being split into crates so an edit to one feature doesn't
 recompile the rest (#232). This crate is what hasn't moved out yet. Feature
 crates go on top of it, `arugulad-<area>`, and the binary wires them in.
 Each new crate's name starts with `arugulad`, so `RUST_LOG=arugulad=…` still
-reaches its log lines (log targets are module paths, matched by prefix).
+reaches its log lines (log targets are module paths, matched by prefix). The first
+is `arugulad-editor` ([crates/arugulad-editor](../arugulad-editor/README.md)).
 Like every library here it's version 0.0.0: what it reports as the version
 comes from `arugula_core::version`, which the binary sets.
 

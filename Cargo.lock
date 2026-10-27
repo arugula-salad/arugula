@@ -310,6 +310,7 @@ dependencies = [
  "arugula-testkit",
  "arugula-vt",
  "arugulad-base",
+ "arugulad-editor",
  "axum",
  "base64 0.23.1",
  "futures-util",
@@ -384,6 +385,29 @@ dependencies = [
  "windows-sys 0.60.2",
  "x509-parser",
  "zstd",
+]
+
+[[package]]
+name = "arugulad-editor"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "arugula-core",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "axum",
+ "futures-util",
+ "hex",
+ "hyper",
+ "hyper-util",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tracing",
+ "url",
 ]
 
 [[package]]

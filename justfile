@@ -657,7 +657,7 @@ publish-vsix to="both":
     want vsce && [ -z "${VSCE_PAT:-}" ] && { echo "VSCE_PAT isn't set" >&2; exit 1; }
     want ovsx && [ -z "${OVSX_PAT:-}" ] && { echo "OVSX_PAT isn't set" >&2; exit 1; }
     {{just_executable()}} vsix
-    version=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' crates/daemon/src/editor/ext/package.json)
+    version=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' crates/arugulad-editor/src/editor/ext/package.json)
     f="{{target_dir}}/arugula-editor-$version.vsix"
     want vsce && npx -y @vscode/vsce@4.0.0 publish --skip-duplicate --packagePath "$f"
     want ovsx && npx -y ovsx@1.2.0 publish --skip-duplicate --packagePath "$f"
@@ -834,10 +834,10 @@ check: test mux-guard workspace-guard
     {{cargo}} clippy --workspace --all-targets -- -D warnings
     {{server_cargo}} clippy --workspace --all-targets -- -D warnings
 
-# The daemon's crates (#232): the binary, arugulad, and the library it's
-# built on, whose tests are the unit tests. `--features arugulad/…` reaches
-# them all.
-daemon_crates := "-p arugulad -p arugulad-base"
+# The daemon's crates (#232): the binary, arugulad, the library it's built
+# on and the feature crates on that, whose tests are the unit tests.
+# `--features arugulad/…` reaches them all.
+daemon_crates := "-p arugulad -p arugulad-base -p arugulad-editor"
 
 # The daemon and the CLI without Labs (#452): clippy and the tests with the
 # `labs` feature off, which CI runs as the `core` job. Run it after touching
