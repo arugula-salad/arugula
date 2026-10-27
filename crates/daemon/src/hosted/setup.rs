@@ -120,7 +120,7 @@ impl Saved {
 
 /// Run this box's setup once it's in control, unless it ran already.
 pub fn start(app: Arc<App>, state_dir: PathBuf) {
-    tokio::spawn(async move { run(app, state_dir).await });
+    crate::task::spawn(async move { run(app, state_dir).await });
 }
 
 /// Whether control enrolled this box to build a workspace's snapshot.
@@ -620,7 +620,7 @@ pub async fn archive(state_dir: &Path) -> anyhow::Result<Option<tokio::process::
         .spawn()
         .context("tar")?;
     let mut stdin = child.stdin.take().context("tar's stdin")?;
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         use tokio::io::AsyncWriteExt as _;
         let _ = stdin.write_all(&list).await;
     });

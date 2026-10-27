@@ -287,7 +287,7 @@ impl Graph {
         self.set(ctx, Status::Running { src: src.clone(), run });
         // It goes when told to, or by itself (then the next Graph starts it).
         let me = Arc::downgrade(self);
-        ctx.rt.spawn(async move {
+        crate::task::spawn_on(&ctx.rt, async move {
             tokio::select! {
                 st = child.wait() => {
                     info!(pid, status = ?st, "behold stopped");
@@ -345,7 +345,7 @@ impl Graph {
             }
             told.clone_from(&print);
         }
-        ctx.rt.spawn(async move {
+        crate::task::spawn_on(&ctx.rt, async move {
             if let Err(e) = refresh(port).await {
                 warn!(port, error = %e, "telling behold the workspace changed");
             }
@@ -491,7 +491,7 @@ mod tests {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
-        let got = tokio::spawn(async move {
+        let got = crate::task::spawn(async move {
             let (mut s, _) = l.accept().await.unwrap();
             let mut buf = vec![0u8; 1024];
             let n = s.read(&mut buf).await.unwrap();
@@ -508,7 +508,7 @@ mod tests {
         use tokio::io::AsyncWriteExt;
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let (mut s, _) = l.accept().await.unwrap();
             s.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").await.unwrap();
         });

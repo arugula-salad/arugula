@@ -47,7 +47,7 @@ async fn rig(name: &str) -> Rig {
         .with_state((got.clone(), status.clone()));
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", l.local_addr().unwrap());
-    tokio::spawn(axum::serve(l, app).into_future());
+    crate::task::spawn(axum::serve(l, app).into_future());
     Rig { dir, got, status, url }
 }
 

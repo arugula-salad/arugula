@@ -247,7 +247,7 @@ impl Doc {
     /// The Doc changed on disk: its `meta.json` says when (and its title).
     async fn touched(&self, title: Option<String>) {
         let dir = self.dir.clone();
-        let _ = tokio::task::spawn_blocking(move || library::touch(&dir, title.as_deref())).await;
+        let _ = crate::task::spawn_blocking(move || library::touch(&dir, title.as_deref())).await;
     }
 
     /// `doc_outline`: the sections, once.
@@ -546,7 +546,7 @@ impl Doc {
 /// Write `name` in the Doc's folder, off the async threads.
 async fn write(dir: PathBuf, name: &str, bytes: Vec<u8>) -> Result<(), String> {
     let name = name.to_owned();
-    tokio::task::spawn_blocking(move || {
+    crate::task::spawn_blocking(move || {
         private_dir(&dir).map_err(|e| format!("can't make the Doc's folder: {e}"))?;
         write_atomic(&dir.join(&name), &bytes).map_err(|e| format!("can't write {name}: {e}"))
     })

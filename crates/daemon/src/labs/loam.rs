@@ -437,7 +437,7 @@ impl Loam {
         let mut ws = self.connect(url).await.map_err(|e| anyhow::anyhow!("exec in {name}: {e}"))?;
         let (ev_tx, events) = mpsc::unbounded_channel();
         let (stdin, mut in_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let mut skip = 0u64;
             loop {
                 tokio::select! {
@@ -730,7 +730,7 @@ impl Provider for Loam {
         sink: ExecSink,
     ) -> Exec {
         let (tx, rx) = mpsc::unbounded_channel();
-        rt.spawn(drive(self, name, begin, size, rx, sink));
+        crate::task::spawn_on(rt, drive(self, name, begin, size, rx, sink));
         Exec { tx }
     }
 
@@ -1419,7 +1419,7 @@ mod tests {
             .with_state(f.clone());
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(axum::serve(l, app).into_future());
+        crate::task::spawn(axum::serve(l, app).into_future());
         (base, f)
     }
 

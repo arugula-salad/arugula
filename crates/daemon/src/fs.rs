@@ -222,7 +222,7 @@ pub(crate) async fn recent(app: &App, q: &FsQuery) -> Res<Vec<String>> {
     let mut dirs: Vec<(u64, String)> =
         panes.iter().filter(|s| s.info.host == host).filter_map(|s| Some((u64::MAX, s.info.cwd.clone()?))).collect();
     let store = app.mux.store.clone();
-    let commands = tokio::task::spawn_blocking(move || history::history(&store, &Filter::default(), 2000))
+    let commands = crate::task::spawn_blocking(move || history::history(&store, &Filter::default(), 2000))
         .await
         .unwrap_or_default();
     // A closed pane's host isn't kept: only this host takes its directories

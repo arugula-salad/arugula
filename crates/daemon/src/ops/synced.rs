@@ -20,7 +20,7 @@ impl Handle for SyncedList {
 impl Handle for SyncedRotate {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<SyncedRotated, OpError> {
         let synced = cx.app.synced.clone();
-        match tokio::task::spawn_blocking(move || synced.rotate()).await {
+        match crate::task::spawn_blocking(move || synced.rotate()).await {
             Ok(Ok(key)) => Ok(SyncedRotated { key }),
             Ok(Err(e)) => Err(OpError::Failed(e.to_string())),
             Err(e) => Err(OpError::Failed(e.to_string())),

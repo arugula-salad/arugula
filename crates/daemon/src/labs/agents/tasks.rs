@@ -179,11 +179,11 @@ pub fn resume(app: &Arc<App>) {
         match t.state.as_str() {
             SUBMITTED => {
                 let app = app.clone();
-                tokio::spawn(async move { after_consent(app, t.id.clone(), t.text.clone()).await });
+                crate::task::spawn(async move { after_consent(app, t.id.clone(), t.text.clone()).await });
             }
             WORKING => {
                 let app = app.clone();
-                tokio::spawn(async move { follow(app, t.id).await });
+                crate::task::spawn(async move { follow(app, t.id).await });
             }
             _ => {}
         }
@@ -405,7 +405,7 @@ pub async fn rpc(app: Arc<App>, name: &str, dir: &str, caller: Asker, req: Value
             };
             if TERMINAL.contains(&t.state.as_str()) && !t.collected && caller.account == t.caller.account {
                 update(&t.id, |x| x.collected = true);
-                tokio::spawn(clean_up(app.clone(), t.id.clone()));
+                crate::task::spawn(clean_up(app.clone(), t.id.clone()));
             }
             ok(&id, t.json(p["historyLength"].as_u64().map(|n| n as usize)))
         }
@@ -481,7 +481,7 @@ async fn send(app: Arc<App>, id: Value, name: &str, dir: &str, caller: Asker, p:
             x.status = None;
         });
         let answering = task.state == INPUT_REQUIRED;
-        tokio::spawn(turn(app.clone(), t.to_owned(), text, answering));
+        crate::task::spawn(turn(app.clone(), t.to_owned(), text, answering));
         t.to_owned()
     } else {
         let t = format!("t{}{:04x}", now_ms(), rand_u16());
@@ -503,7 +503,7 @@ async fn send(app: Arc<App>, id: Value, name: &str, dir: &str, caller: Asker, p:
         STORE.lock().unwrap().tasks.insert(t.clone(), Live { task: task.clone(), tx });
         save(&task);
         info!(task = t, agent = name, caller = caller.name, account = caller.account, "A2A task");
-        tokio::spawn(after_consent(app.clone(), t.clone(), text));
+        crate::task::spawn(after_consent(app.clone(), t.clone(), text));
         t
     };
     // Until it ends or waits on someone, unless asked not to wait (and at

@@ -483,7 +483,7 @@ impl Guests {
             tokio::net::TcpListener::bind(want).await.map_err(|e| anyhow::anyhow!("can't listen on {want}: {e}"))?;
         let addr = listener.local_addr()?;
         let (stop, stopped) = oneshot::channel();
-        tokio::spawn(serve(self.clone(), app.clone(), listener, stopped, key));
+        crate::task::spawn(serve(self.clone(), app.clone(), listener, stopped, key));
         info!(%addr, "guest ssh listening");
         *l = Some(Listening { addr, stop });
         Ok(addr)
@@ -504,7 +504,7 @@ impl Guests {
     /// listening again after a restart while invites are still good.
     pub fn run(self: &Arc<Self>, app: &Arc<App>) {
         let (me, app) = (self.clone(), app.clone());
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             me.prune();
             if me.any()
                 && let Err(e) = me.ensure_listening(&app).await
@@ -595,7 +595,7 @@ where
         authed: authed.clone(),
         _slot: Slot(guests.connections.clone()),
     };
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let s = match tokio::time::timeout(LOGIN_WITHIN, russh::server::run_stream(config, io, conn)).await {
             Ok(Ok(s)) => s,
             Ok(Err(e)) => return debug!(%peer, error = %e, "guest ssh handshake"),
@@ -603,7 +603,7 @@ where
         };
         let handle = s.handle();
         let p = peer.clone();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             tokio::time::sleep(LOGIN_WITHIN).await;
             if !authed.load(Ordering::Relaxed) {
                 debug!(peer = %p, "guest ssh: no login in time");
@@ -731,7 +731,7 @@ impl Handler for Conn {
         session.channel_success(channel)?;
         debug!(invite = g.id, term = ?self.term, size = ?self.size, "guest ssh: shell");
         let (app, guests, handle, size) = (self.app.clone(), self.guests.clone(), session.handle(), self.size);
-        tokio::spawn(attach(app, guests, g, channel, handle, size, rx));
+        crate::task::spawn(attach(app, guests, g, channel, handle, size, rx));
         Ok(())
     }
 
@@ -921,7 +921,7 @@ async fn attach(
         let _ = out.eof(chan).await;
         let _ = out.close(chan).await;
         // A client that doesn't hang up when its only channel closes.
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             tokio::time::sleep(Duration::from_secs(2)).await;
             let _ = out.disconnect(russh::Disconnect::ByApplication, why.into(), String::new()).await;
         });

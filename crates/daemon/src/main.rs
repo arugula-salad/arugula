@@ -91,6 +91,7 @@ use arugula_mux::shellenv;
 use arugula_mux::shellint;
 use arugula_mux::shim;
 mod sites;
+mod task;
 use arugula_mux::store;
 mod sync;
 use arugula_mux::sys;
@@ -153,7 +154,7 @@ fn start_sites(
                 (Some(cert), Some(key), _) => {
                     let store = tls::CertStore::new(cert.clone(), key.clone());
                     store.load()?;
-                    tokio::spawn(store.clone().watch());
+                    crate::task::spawn(store.clone().watch());
                     store
                 }
                 (_, _, Some(token)) => {
@@ -169,7 +170,7 @@ fn start_sites(
                         dns: tls::Cloudflare::from_file(token)?,
                     };
                     let store = tls::CertStore::new(acme.cert_file(), acme.key_file());
-                    tokio::spawn(acme.run(store.clone()));
+                    crate::task::spawn(acme.run(store.clone()));
                     store
                 }
                 _ => anyhow::bail!(
@@ -186,7 +187,7 @@ fn start_sites(
         sites::Settings { scheme, owner, app_origins: app.origins(), reserved: vec![listen.port(), addr.port()] };
     // Known before any block is restored; served once the address is up.
     let sites = sites::install(settings);
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         // The tailnet address may not be up yet at boot.
         let listener = loop {
             if let Some(l) = bound.take() {
@@ -228,8 +229,8 @@ fn start_reach(r: &ReachArgs, app: &std::sync::Arc<server::App>, name: String) -
         let opts = dial::PeerOpts { url: peer.clone(), token_file: token_file.clone(), join: r.join.clone(), name };
         let (accept, streams) = tokio::sync::mpsc::unbounded_channel();
         info!(peer, "dialing out to the home daemon");
-        tokio::spawn(axum::serve(dial::Streams(streams), server::tunnel_router(app.clone())).into_future());
-        tokio::spawn(dial::keep_dialing(opts, accept));
+        crate::task::spawn(axum::serve(dial::Streams(streams), server::tunnel_router(app.clone())).into_future());
+        crate::task::spawn(dial::keep_dialing(opts, accept));
     }
     if r.sync {
         let origin = match (&r.sync_to, &r.peer) {
@@ -244,16 +245,16 @@ fn start_reach(r: &ReachArgs, app: &std::sync::Arc<server::App>, name: String) -
             every: std::time::Duration::from_secs(r.sync_every.max(1)),
         };
         info!(to = opts.origin, live = opts.live, "syncing history to the home daemon");
-        tokio::spawn(sync::keep_pushing(opts, app.mux.store.clone()));
+        crate::task::spawn(sync::keep_pushing(opts, app.mux.store.clone()));
     }
     // Control hears what the agent blocks' rows on a board should say.
-    tokio::spawn(board_state::keep_reporting(app.clone()));
+    crate::task::spawn(board_state::keep_reporting(app.clone()));
     // M70: uploads older than a day go, from now.
     #[cfg(unix)]
-    tokio::spawn(upload::keep_sweeping());
+    crate::task::spawn(upload::keep_sweeping());
     // Synced history expires a day at a time.
     let synced = app.synced.clone();
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let mut day = tokio::time::interval(std::time::Duration::from_secs(24 * 3600));
         day.tick().await;
         loop {
@@ -1139,7 +1140,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     // Read-only links end on time (M19).
     {
         let (acl, mux, control) = (acl.clone(), mux.clone(), control.clone());
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 if acl.prune_links() {
@@ -1168,12 +1169,12 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
         }
-        tokio::spawn(axum::serve(local, server::local_router(app.clone())).into_future());
+        crate::task::spawn(axum::serve(local, server::local_router(app.clone())).into_future());
         // Editors in dev containers join here (M28): a directory of its own.
         #[cfg(feature = "editor")]
         match editors_socket(&state_dir) {
             Ok(l) => {
-                tokio::spawn(axum::serve(l, server::editors_router(app.clone())).into_future());
+                crate::task::spawn(axum::serve(l, server::editors_router(app.clone())).into_future());
             }
             Err(e) => warn!(error = %e, "no socket for editors in containers"),
         }
@@ -1184,7 +1185,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     {
         let local = pipe::PipeListener::bind(&socket.display().to_string())
             .map_err(|e| anyhow::anyhow!("can't serve {} (another arugulad here?): {e}", socket.display()))?;
-        tokio::spawn(axum::serve(local, server::local_router(app.clone())).into_future());
+        crate::task::spawn(axum::serve(local, server::local_router(app.clone())).into_future());
     }
     info!(socket = %socket.display(), "listening");
     sys::notify("READY=1");

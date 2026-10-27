@@ -109,7 +109,7 @@ impl Doc {
         let at = asked.at_ms;
         *self.card.asked.lock().unwrap() = Some(asked);
         if waiting && let Some(me) = self.me.upgrade() {
-            self.ctx().expect("just set").rt.spawn(async move {
+            crate::task::spawn_on(&self.ctx().expect("just set").rt, async move {
                 me.raise(at).await;
                 me.expire(at).await;
             });
@@ -185,7 +185,7 @@ impl Doc {
         *self.card.asked.lock().unwrap() = Some(Asked { at_ms: at, by, outcome: Outcome::Waiting, why: None });
         self.changed();
         if let Some(me) = self.me.upgrade() {
-            ctx.rt.spawn(async move {
+            crate::task::spawn_on(&ctx.rt, async move {
                 me.raise(at).await;
                 me.expire(at).await;
             });
@@ -216,7 +216,7 @@ impl Doc {
                 Ok((token, rx)) => {
                     *self.card.token.lock().unwrap() = Some((card_id(at), token));
                     let Some(me) = self.me.upgrade() else { return };
-                    ctx.rt.spawn(async move {
+                    crate::task::spawn_on(&ctx.rt, async move {
                         let (reply, by) = rx.await.unwrap_or((AskReply::Withdrawn, None));
                         me.answered(at, token, reply, by).await;
                     });

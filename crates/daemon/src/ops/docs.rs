@@ -65,7 +65,7 @@ pub(crate) async fn search_library(
         return vec![];
     }
     let open = open_blocks(app).await;
-    tokio::task::spawn_blocking(move || library::search(&state, &open, &re, since_ms, limit)).await.unwrap_or_default()
+    crate::task::spawn_blocking(move || library::search(&state, &open, &re, since_ms, limit)).await.unwrap_or_default()
 }
 
 fn not_found(id: &str) -> OpError {
@@ -81,7 +81,7 @@ impl Handle for DocsList {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Vec<DocRow>, OpError> {
         let open = open_blocks(cx.app).await;
         let state = cx.app.control.state_dir().to_owned();
-        let (metas, links) = tokio::task::spawn_blocking(move || (library::list(&state), link::by_doc(&state)))
+        let (metas, links) = crate::task::spawn_blocking(move || (library::list(&state), link::by_doc(&state)))
             .await
             .map_err(|e| OpError::Failed(e.to_string()))?;
         Ok(metas
@@ -213,7 +213,7 @@ impl Handle for DocDelete {
             cx.app.mux.api(|r| Api::Close(b, r)).await;
         }
         let id = meta.id;
-        tokio::task::spawn_blocking(move || library::remove(&state, &id))
+        crate::task::spawn_blocking(move || library::remove(&state, &id))
             .await
             .map_err(|e| OpError::Failed(e.to_string()))?
             .map_err(OpError::Failed)?;

@@ -85,7 +85,7 @@ fn hosted() -> Option<Arc<Control>> {
 pub fn closed(rt: &tokio::runtime::Handle, c: Closed) {
     let Some(control) = hosted() else { return };
     let p = post(c, arugula_e2e::now_ms());
-    rt.spawn(async move {
+    crate::task::spawn_on(rt, async move {
         send(&control, &p, 4).await;
     });
 }

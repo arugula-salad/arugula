@@ -376,7 +376,7 @@ impl Diff {
         // after a restart, only once someone looks.
         if !restoring {
             let me = d.clone();
-            d.ctx.rt.spawn(async move { me.load().await });
+            crate::task::spawn_on(&d.ctx.rt, async move { me.load().await });
         }
         Ok(d)
     }
@@ -544,7 +544,7 @@ impl Diff {
         };
         for path in want {
             let Some(me) = self.me.upgrade() else { return };
-            self.ctx.rt.spawn(async move {
+            crate::task::spawn_on(&self.ctx.rt, async move {
                 let _one = me.asking.lock().await;
                 let (last, gap) = me.whys.lock().unwrap().get(&path).map(|w| (w.last, w.gap)).unwrap_or_default();
                 let gap = gap.unwrap_or(WHY_GAP);
@@ -610,7 +610,7 @@ impl Diff {
     fn watch(&self, round: u64) {
         let Some(me) = self.me.upgrade() else { return };
         let every = super::every(self.runner.as_ref().is_ok_and(Runner::local), POLL);
-        self.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&self.ctx.rt, async move {
             while me.live.on(round) {
                 me.load().await;
                 tokio::time::sleep(every).await;

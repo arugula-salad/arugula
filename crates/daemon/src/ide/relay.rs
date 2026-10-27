@@ -136,10 +136,10 @@ pub async fn run(args: Args) -> io::Result<()> {
         tokio::select! {
             a = listener.accept() => if let Ok((tcp, _)) = a {
                 let _ = tcp.set_nodelay(true);
-                tokio::spawn(claude(st.clone(), tcp, token.clone()));
+                crate::task::spawn(claude(st.clone(), tcp, token.clone()));
             },
             a = local.accept() => if let Ok((unix, _)) = a {
-                tokio::spawn(daemon(st.clone(), unix, port));
+                crate::task::spawn(daemon(st.clone(), unix, port));
             },
             _ = tick.tick() => {
                 let s = st.lock().unwrap();
@@ -251,7 +251,7 @@ async fn claude(st: Shared, tcp: tokio::net::TcpStream, token: String) {
         n
     };
     info!(conn, "Claude Code connected");
-    let writer = tokio::spawn(async move {
+    let writer = crate::task::spawn(async move {
         while let Some(m) = rx.recv().await {
             if sink.send(m).await.is_err() {
                 break;
@@ -431,7 +431,7 @@ async fn daemon(st: Shared, unix: UnixStream, port: u16) {
         me
     };
     info!("the daemon connected");
-    let writer = tokio::spawn(async move {
+    let writer = crate::task::spawn(async move {
         while let Some(line) = rx.recv().await {
             if w.write_all(format!("{line}\n").as_bytes()).await.is_err() {
                 break;

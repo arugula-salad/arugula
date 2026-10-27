@@ -537,7 +537,7 @@ pub fn start(app: Arc<App>) {
     if !crate::work::sessions::takes() {
         return;
     }
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         if let Err(e) = serve(app).await {
             warn!(error = %format!("{e:#}"), "hosted: sessions' MCP isn't up; their agents have no issue tools");
         }

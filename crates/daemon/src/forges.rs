@@ -162,7 +162,7 @@ pub fn op_from_control(
     use arugula_control_wire::forge::{DaemonOp, OpAsk, OpDone};
     let Ok(ask) = serde_json::from_str::<OpAsk>(text) else { return false };
     let (app, answers) = (app.clone(), answers.clone());
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let answer = match ask.op {
             #[cfg(feature = "forge")]
             DaemonOp::ForgeSend(s) => crate::forge::send_op::forge_send(&app, s).await,

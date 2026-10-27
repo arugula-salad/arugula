@@ -171,7 +171,7 @@ impl InviteBlock {
             closed: Default::default(),
         });
         let me = b.clone();
-        b.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&b.ctx.rt, async move {
             me.raise().await;
             InviteBlock::expire(Arc::downgrade(&me)).await;
         });
@@ -206,7 +206,7 @@ impl InviteBlock {
         }
         self.ctx.changed();
         if let Some(me) = self.me.upgrade() {
-            self.ctx.rt.spawn(async move { me.raise().await });
+            crate::task::spawn_on(&self.ctx.rt, async move { me.raise().await });
         }
         Ok(json!({ "draft": id, "status": "waiting", "block": self.ctx.id }))
     }
@@ -242,7 +242,7 @@ impl InviteBlock {
                 Ok((token, rx)) => {
                     *self.asking.lock().unwrap() = Some((d.id.clone(), token));
                     let Some(me) = self.me.upgrade() else { return };
-                    self.ctx.rt.spawn(async move {
+                    crate::task::spawn_on(&self.ctx.rt, async move {
                         let (reply, by) = rx.await.unwrap_or((AskReply::Withdrawn, None));
                         me.answered(&d.id, token, reply, by).await;
                     });

@@ -559,7 +559,7 @@ pub async fn unpack(at: &Path, digest: &str) -> Result<Unpacked, String> {
         .map_err(|e| format!("gzip didn't start: {e}"))?;
     let mut stdin = gz.stdin.take().ok_or("gzip's input")?;
     let mut stdout = gz.stdout.take().ok_or("gzip's output")?;
-    let feed = tokio::spawn(async move {
+    let feed = crate::task::spawn(async move {
         let _ = stdin.write_all(&bytes).await;
     });
     // Its entries' headers and padding on top of the files' bytes.

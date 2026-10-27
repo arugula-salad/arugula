@@ -182,7 +182,7 @@ impl Ide {
     /// daemon runs; reach the relay again (or start one) if it goes.
     pub fn run(self: &Arc<Self>, mux: MuxHandle) {
         let me = self.clone();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let mut stream = me.first.lock().unwrap().take();
             loop {
                 let s = match stream.take() {
@@ -216,7 +216,7 @@ impl Ide {
         let (r, mut w) = s.into_split();
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
         *self.tx.lock().unwrap() = Some(tx);
-        let writer = tokio::spawn(async move {
+        let writer = crate::task::spawn(async move {
             while let Some(line) = rx.recv().await {
                 if w.write_all(format!("{line}\n").as_bytes()).await.is_err() {
                     break;
@@ -321,7 +321,7 @@ impl Ide {
         let tab = args["tab_name"].as_str().unwrap_or("").to_owned();
         self.forwarded.lock().unwrap().insert((conn, id.to_string()), (to.clone(), tab));
         let me = self.clone();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             info!(ide = to.name, port = to.port, "passing a diff on");
             let result = match call(&to, "openDiff", args.clone()).await {
                 Ok(r) => r,
@@ -344,7 +344,7 @@ impl Ide {
     pub fn closed(&self, conn: u64, ids: &[Value]) {
         for id in ids {
             let Some((to, tab)) = self.forwarded.lock().unwrap().remove(&(conn, id.to_string())) else { continue };
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let _ = call(&to, "close_tab", json!({ "tab_name": tab })).await;
             });
         }

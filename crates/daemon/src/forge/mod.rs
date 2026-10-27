@@ -513,7 +513,7 @@ impl ForgeBlock {
         b.sync_drafts();
         live::register(Arc::downgrade(&b));
         let me = b.clone();
-        b.ctx.rt.spawn(async move { me.run().await });
+        crate::task::spawn_on(&b.ctx.rt, async move { me.run().await });
         Ok(b)
     }
 
@@ -1084,7 +1084,7 @@ impl ForgeBlock {
             self.sync_drafts();
             self.ctx.changed();
             if let Some(me) = self.me.upgrade() {
-                self.ctx.rt.spawn(async move { me.raise_draft().await });
+                crate::task::spawn_on(&self.ctx.rt, async move { me.raise_draft().await });
             }
             let waiting = self.state.lock().unwrap().drafts.iter().filter(|d| d.status == DraftStatus::Waiting).count();
             return to_value(Drafted {
@@ -1116,7 +1116,7 @@ impl ForgeBlock {
         self.state.lock().unwrap().said = Some(format!("{} by {}", sent.said, by.unwrap_or("the owner")));
         // What it changed, read now.
         if let Some(me) = self.me.upgrade() {
-            self.ctx.rt.spawn(async move { me.read(true).await });
+            crate::task::spawn_on(&self.ctx.rt, async move { me.read(true).await });
         }
         Ok(sent)
     }
@@ -1164,7 +1164,7 @@ impl ForgeBlock {
             self.state.lock().unwrap().said = Some(format!("{} by {by}", sent.said));
         }
         if let Some(me) = self.me.upgrade() {
-            self.ctx.rt.spawn(async move { me.read(true).await });
+            crate::task::spawn_on(&self.ctx.rt, async move { me.read(true).await });
         }
     }
 
@@ -1202,7 +1202,7 @@ impl ForgeBlock {
                     let (reply, by) = rx.await.unwrap_or((AskReply::Withdrawn, None));
                     me.settle(&d.id, token, reply, by).await;
                 });
-                self.ctx.rt.spawn(settle);
+                crate::task::spawn_on(&self.ctx.rt, settle);
             }
             Err(e) => warn!(pane = self.ctx.id, error = e, "can't show the draft"),
         }

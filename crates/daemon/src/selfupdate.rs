@@ -260,7 +260,7 @@ fn start(to: String, releases: String, state_dir: PathBuf) -> Result<Applying, (
         *a = Some(Applying { to: to.clone(), stage: "downloading", error: None });
     }
     info!(to = %to, "updating Arugula");
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let dir = state_dir.join("update");
         let exe = match fetch(&releases, &to, &dir).await {
             Ok(exe) => exe,
@@ -486,7 +486,7 @@ mod tests {
             .route(&format!("/releases/download/v{version}/{name}"), get(move || async move { archive }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        crate::task::spawn(async move { axum::serve(listener, app).await.unwrap() });
         format!("http://{addr}/releases")
     }
 

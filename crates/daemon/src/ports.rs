@@ -143,7 +143,7 @@ mod tests {
     async fn local_ports_dial_and_refuse() {
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let (mut s, _) = l.accept().await.unwrap();
             s.write_all(b"hi").await.unwrap();
         });
@@ -155,7 +155,7 @@ mod tests {
         // Listening on ::1 only, as a dev server bound to "localhost" may.
         if let Ok(l6) = tokio::net::TcpListener::bind("[::1]:0").await {
             let port = l6.local_addr().unwrap().port();
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let _ = l6.accept().await;
             });
             assert!(Target::Local(port).dial().await.is_ok(), "::1 only");
