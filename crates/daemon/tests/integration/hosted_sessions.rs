@@ -418,6 +418,16 @@ async fn issues(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
     Json(match b["op"].as_str() {
         Some("list") => json!({ "kind": "list", "list": { "project": PROJECT, "issues": [], "more": false } }),
         Some("comment") => json!({ "kind": "commented", "seq": 7 }),
+        Some("create") => json!({
+            "kind": "created",
+            "issue": {
+                "id": "iss_00000000000000000000000000000004", "project": PROJECT, "number": 4,
+                "title": b["title"], "body": b["body"], "state": "open", "close_reason": null, "author": "",
+                "agent": { "machine": b["session"], "machine_name": "Agent session" }, "labels": b["labels"],
+                "assignees": [], "github": null, "created_at": 1, "updated_at": 1, "closed_at": null,
+            },
+            "url": "https://app.example/issues/iss_00000000000000000000000000000004",
+        }),
         _ => json!({ "kind": "refused", "why": "no such issue" }),
     })
 }
@@ -1164,14 +1174,15 @@ fn a_codex_session_asks_nobody_but_its_questions_reach_the_card() {
     assert!(transcript(&d, block).iter().any(|l| l.starts_with("agent: ") && l.contains("Blue")));
 }
 
-/// A session's agent has two tools for its project's issues, on a server of
-/// its own: a list and a comment go to control as the session's, with an
-/// issue's number and no project, signed by the box; and nothing else of
+/// A session's agent has three tools for its project's issues, on a server
+/// of its own: a list, a comment and a new issue go to control as the
+/// session's, with an issue's number and no project, signed by the box; and
+/// nothing else of
 /// Arugula's is there to call. Linux only: the server knows its caller by
 /// the socket's owner in `/proc/net/tcp`, and boxes run Linux.
 #[cfg(target_os = "linux")]
 #[test]
-fn a_sessions_agent_reads_and_comments_on_its_projects_issues() {
+fn a_sessions_agent_reads_comments_on_and_opens_its_projects_issues() {
     let Rig { _rt, f, marks, d, .. } = rig("issues");
     let a = ses('a');
     f.start(&a, "look", prompt(1, "acct1", "hello"));
@@ -1192,23 +1203,28 @@ fn a_sessions_agent_reads_and_comments_on_its_projects_issues() {
     assert!(commented.contains("Commented on #3"), "{commented}");
     let shown = call(r##"mcp read_session_issues {"issue": "#9"}"##);
     assert!(shown.contains("no such issue"), "control's refusal reaches the agent: {shown}");
+    let opened =
+        call(r##"mcp create_session_issue {"title": "the canary flakes", "body": "twice", "labels": ["bug"]}"##);
+    assert!(opened.contains("Opened #4") && opened.contains("/issues/iss_"), "its number and link: {opened}");
 
     let asks = f.issue_asks.lock().unwrap().clone();
-    assert_eq!(asks.len(), 3, "{asks:#?}");
+    assert_eq!(asks.len(), 4, "{asks:#?}");
     for ask in &asks {
         assert_eq!(ask["session"], json!(a));
         assert!(ask.get("project").is_none() && !ask.to_string().contains(PROJECT), "never a project: {ask}");
     }
-    assert_eq!(
-        (asks[0]["op"].as_str(), asks[1]["op"].as_str(), asks[2]["op"].as_str()),
-        (Some("list"), Some("comment"), Some("show"))
-    );
+    let ops: Vec<_> = asks.iter().map(|a| a["op"].as_str()).collect();
+    assert_eq!(ops, [Some("list"), Some("comment"), Some("show"), Some("create")]);
     assert_eq!((asks[1]["number"].as_u64(), asks[1]["text"].as_str()), (Some(3), Some("bisected it")));
+    assert_eq!(
+        (asks[3]["title"].as_str(), asks[3]["body"].as_str(), &asks[3]["labels"]),
+        (Some("the canary flakes"), Some("twice"), &json!(["bug"]))
+    );
 
     // The daemon's own tools aren't there, nor `/mcp` for it.
     let other = call(r##"mcp run {"command": "touch x"}"##);
     assert!(other.contains("no tool run"), "{other}");
-    assert_eq!(f.issue_asks.lock().unwrap().len(), 3, "and nothing reached control");
+    assert_eq!(f.issue_asks.lock().unwrap().len(), 4, "and nothing reached control");
 }
 
 /// Before a rebuild (Arugula #209): control asks the box `hosted.archive`

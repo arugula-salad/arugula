@@ -160,16 +160,28 @@ async fn issue_place(app: &Platform, by: Actor<'_>, id: &str, write: bool) -> Re
     Ok((issue, place))
 }
 
-/// Machines' names for the agents among these, by id.
+/// Machines' names for the agents among these, by id. An agent session
+/// (`ses_…`, aru-115) is named here, `Agent session <its first 8 hex>`, as
+/// chat names what one said.
 async fn machine_names(
     app: &Platform,
     agents: impl Iterator<Item = &String>,
 ) -> anyhow::Result<std::collections::HashMap<String, String>> {
-    let ids: Vec<String> = agents.cloned().collect::<BTreeSet<_>>().into_iter().collect();
-    if ids.is_empty() {
-        return Ok(Default::default());
+    let (sessions, ids): (Vec<String>, Vec<String>) =
+        agents.cloned().collect::<BTreeSet<_>>().into_iter().partition(|id| id.starts_with(SESSION));
+    let mut out: Names = sessions.iter().map(|id| (id.clone(), session_name(id))).collect();
+    if !ids.is_empty() {
+        out.extend(crate::grants::agent_names(app, &ids).await?.into_iter().map(|(id, d)| (id, d.name)));
     }
-    Ok(crate::grants::agent_names(app, &ids).await?.into_iter().map(|(id, d)| (id, d.name)).collect())
+    Ok(out)
+}
+
+/// What an agent session's id starts with.
+const SESSION: &str = "ses_";
+
+fn session_name(id: &str) -> String {
+    let hex = id.strip_prefix(SESSION).unwrap_or(id);
+    format!("Agent session {}", &hex[..hex.len().min(crate::db::sessions::BRANCH_HEX)])
 }
 
 type Names = std::collections::HashMap<String, String>;
@@ -362,6 +374,36 @@ pub async fn create(
     let n = db::NewIssue { project: &place.project.id, title, body, labels: &labels, assignees: &new.assignees };
     let issue = app.db.create_issue(&n, by, now_ms())?.ok_or_else(no_project)?;
     crate::inbox::issue_opened(app, by, &issue).await;
+    Ok(issues_wire(app, &[issue]).await?.remove(0))
+}
+
+/// Open an issue in `project` with `asker`'s rights, as agent session
+/// `session`'s own (aru-115): no author, the session as its agent, and its
+/// labels from those the project's issues have. Nobody is told: its body's
+/// mentions are text, and it has no assignees.
+pub(crate) async fn create_as_session(
+    app: &Platform,
+    asker: &str,
+    session: &str,
+    project: &str,
+    new: &wire::NewIssue,
+) -> Result<wire::Issue, ApiError> {
+    let place = place(app, Actor::person(asker), project, true).await?;
+    let title = title_ok(&new.title)?;
+    let body = body_ok(&new.body)?;
+    let labels = labels_ok(&new.labels)?;
+    list_ok(&wire::IssueListEdit::Set(labels.clone()), &[], &place, true)?;
+    let known = app.db.issue_labels(&place.project.id)?;
+    if let Some(l) = labels.iter().find(|l| !known.contains(l)) {
+        let have = if known.is_empty() { "none yet".to_owned() } else { known.join(", ") };
+        return Err(bad(&format!("{l:?} isn't one of this project's labels ({have})")));
+    }
+    if !new.assignees.is_empty() {
+        return Err(bad("an agent session assigns nobody"));
+    }
+    let n = db::NewIssue { project: &place.project.id, title, body, labels: &labels, assignees: &[] };
+    let by = Actor { account: "", agent: Some(session) };
+    let issue = app.db.create_issue(&n, by, now_ms())?.ok_or_else(no_project)?;
     Ok(issues_wire(app, &[issue]).await?.remove(0))
 }
 

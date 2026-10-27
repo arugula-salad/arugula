@@ -1,7 +1,7 @@
 //! A session's agent and its project's native issues (aru-115, amended):
 //! the route the box's session-scoped MCP tools call, through the hub's
 //! `POST /api/hosted/work/session/issues` (`WORK_SESSION_ISSUES`), signed
-//! as the hosted machine. Read and comment, nothing else.
+//! as the hosted machine. Read, comment and open, nothing else.
 //!
 //! A hosted box has no account and no machine grants (aru-091 is for
 //! machines of a person), so the session is what authorises it:
@@ -18,13 +18,21 @@
 //!   the issue's thread with no mentions (nobody is pushed for it). The
 //!   words are the agent's, not its asker's, though the asker's role is
 //!   what lets it comment; a review session (M264) reads and comments on
-//!   nothing.
+//!   nothing;
+//! - an issue it opens is the session's own too
+//!   ([`issues::create_as_session`]): no author, the session as its agent
+//!   (shown as `Agent session <id>`), and no mentions or assignees, so
+//!   nobody is pushed. It takes the asker's write rights (a viewer's
+//!   session opens nothing), and its labels are from those the project's
+//!   issues already have.
 //!
-//! What this doesn't give: edits, labels, closing, other projects, chat
-//! rooms other than an issue's thread.
+//! Every call counts against the box's limit ([`CALLS`]).
+//!
+//! What this doesn't give: edits, new labels, assigning, closing, other
+//! projects, chat rooms other than an issue's thread.
 
 use arugula_control_wire::{
-    issues::IssueQuery,
+    issues::{self as wire, IssueQuery},
     sessions::said_via,
     work::{SessionIssuesAsk, SessionIssuesGiven, SessionIssuesOp},
 };
@@ -93,6 +101,20 @@ pub async fn answer(app: &Platform, m: &HostedMachine, a: &SessionIssuesAsk) -> 
                 return Ok(refused(m, a, "a review session reads and comments on nothing"));
             }
             comment(app, by, &s, *number, text).await
+        }
+        SessionIssuesOp::Create { title, body, labels } => {
+            if s.role == Role::Review {
+                return Ok(refused(m, a, "a review session reads and opens nothing"));
+            }
+            let new =
+                wire::NewIssue { title: title.clone(), body: body.clone(), labels: labels.clone(), assignees: vec![] };
+            match issues::create_as_session(app, &s.asker, &s.id, &s.project, &new).await {
+                Ok(issue) => {
+                    let url = format!("{}/issues/{}", app.cfg.page(), issue.id);
+                    SessionIssuesGiven::Created { issue, url }
+                }
+                Err(e) => said(e),
+            }
         }
     })
 }

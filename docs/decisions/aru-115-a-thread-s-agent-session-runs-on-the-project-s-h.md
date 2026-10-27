@@ -27,7 +27,7 @@ options:
     tradeoff: "A machine would act on GitHub as the project with nobody sending it, against \"agents draft, people send\", and a token that pushes any ref can push to main."
 choice:
   option: "a"
-  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them. Amended again (Jake, 2026-10-27, Arugula #215): a box runs three sessions and holds six (or as many session users as it says it has, three when it doesn't say); a done one idle 30 minutes is parked (its agent closed, its user, checkout and conversation kept) and opens again on a reply when there's a running slot. Amended again (Jake, 2026-10-27, Arugula #216): a session's agent reads and comments on its own project's native issues, with its asker's rights and as the session itself, through a server of its own and a route that takes the session as the authority, not machine grants."
+  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them. Amended again (Jake, 2026-10-27, Arugula #215): a box runs three sessions and holds six (or as many session users as it says it has, three when it doesn't say); a done one idle 30 minutes is parked (its agent closed, its user, checkout and conversation kept) and opens again on a reply when there's a running slot. Amended again (Jake, 2026-10-27, Arugula #216): a session's agent reads and comments on its own project's native issues, with its asker's rights and as the session itself, through a server of its own and a route that takes the session as the authority, not machine grants. Amended again (Jake, 2026-10-27, the session Docs ask): it also opens issues in that project, as the session's own, telling nobody."
 rejected:
   - option: "b"
     why: "Agents on personal machines are never woken by other people's mentions: a person's machine runs what its person starts."
@@ -184,10 +184,11 @@ agents draft while people send".
     session's turns, and its asker edits them before sending. Once sent,
     the session links the PR, and the PR's thread says which session it
     came from.
-- **Its project's native issues** (amended 2026-10-27). The session's agent
-  can read its project's native issues and comment on them, and nothing
-  else of Arugula's: no edits, labels or closing, no other project, none of
-  `/mcp`'s tools (which start and drive panes as the daemon's user).
+- **Its project's native issues** (amended 2026-10-27, and again the same
+  day). The session's agent can read its project's native issues, comment
+  on them and open new ones, and nothing else of Arugula's: no edits, new
+  labels, assigning or closing, no other project, none of `/mcp`'s tools
+  (which start and drive panes as the daemon's user).
   - **Whose rights.** The asker's. Control's `POST
     /api/hosted/work/session/issues`, signed as the box, takes the session
     id and an issue's number: it checks that the session is this machine's
@@ -197,11 +198,17 @@ agents draft while people send".
     a review session comments on nothing). A comment is the session's
     own, as its answers in its thread are: no author, `via` `said:<ses>`,
     with no mentions, so nobody is pushed for it and it isn't counted as
-    the asker's words. This is not aru-091's machine grants: a
-    hosted box has no owner account to grant for, and the session is what
-    authorises it, as it is for the push token.
-  - **How the agent reaches it.** The daemon serves two tools,
-    `read_session_issues` and `comment_session_issue`, on a loopback
+    the asker's words. An issue it opens is the session's own the same
+    way: no author, the session's id where an agent's machine would be (the
+    page says `Agent session <id>`), its body's mentions text and nobody
+    assigned, so nobody is pushed; it needs the asker's right to open issues
+    (a viewer's session opens none, a review session none), and its labels
+    are ones the project's issues already have. This is not aru-091's
+    machine grants: a hosted box has no owner account to grant for, and the
+    session is what authorises it, as it is for the push token.
+  - **How the agent reaches it.** The daemon serves three tools,
+    `read_session_issues`, `comment_session_issue` and
+    `create_session_issue`, on a loopback
     listener of its own (`mcp/session.rs`), and gives the session's agent
     that as its `arugula` MCP server over HTTP. The agent's port to the
     daemon stays closed, and it gets nothing of `/mcp`. The listener knows
@@ -209,9 +216,10 @@ agents draft while people send".
     (`/proc/net/tcp`) and the session that uid runs, not by a token: a token
     would be on the command line of `sudo env -i …`, readable by the box's
     other session users, who are other sessions asked by other people.
-  - **What it doesn't stop.** A prompt-injected agent can comment, as its
-    asker, on the issues of the one project, as the session's thread
-    replies already can. An agent that gets from its session user to the
+  - **What it doesn't stop.** A prompt-injected agent can comment on and
+    open issues in the one project, with its asker's rights, as the
+    session's thread replies already can post; the box's hourly limit caps
+    how many. An agent that gets from its session user to the
     daemon's reaches the signing key, as it could before.
 - **Signed and append-only.** The box signs everything it reports of a
   session (`arugula session event v1`), numbered so a report can't be

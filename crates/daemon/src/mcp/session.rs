@@ -1,11 +1,11 @@
-//! A hosted session's MCP (aru-115, amended): the two tools a session's
-//! agent has for its project's native issues, on a listener of their own.
+//! A hosted session's MCP (aru-115, amended): the tools a session's agent
+//! has for its project's native issues, on a listener of their own.
 //!
 //! A session's agent runs as one of the box's session users, behind the
 //! firewall that keeps it off the daemon's ports (`work::firewall`), and
 //! gets none of `/mcp`'s tools: those start and drive panes as the daemon.
 //! What it gets instead is this: a loopback listener that serves only
-//! [`READ`] and [`COMMENT`], each a call to control's
+//! [`READ`], [`COMMENT`] and [`CREATE`], each a call to control's
 //! `POST /api/hosted/work/session/issues` for the agent's session.
 //!
 //! - **Who is calling is the socket's owner, not a secret.** The listener
@@ -61,8 +61,9 @@ use crate::server::App;
 
 pub const READ: &str = "read_session_issues";
 pub const COMMENT: &str = "comment_session_issue";
+pub const CREATE: &str = "create_session_issue";
 
-const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one. They act with the rights of the person who asked you, in this project only, and a comment is this session's own; an issue is its number, #N.";
+const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one; create_session_issue opens one and returns its link. They act with the rights of the person who asked you, in this project only, and a comment or issue is this session's own; an issue is its number, #N.";
 
 static URL: OnceLock<String> = OnceLock::new();
 
@@ -102,10 +103,23 @@ pub struct CommentArgs {
     pub text: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct CreateArgs {
+    /// The issue's title: one line, at most 256 characters.
+    pub title: String,
+    /// Its body, in markdown (at most 64 KB).
+    #[serde(default)]
+    pub body: String,
+    /// Labels, each one the project's issues already have (a label that isn't is refused, with the ones there are).
+    #[serde(default)]
+    pub labels: Vec<String>,
+}
+
 fn tools() -> Vec<Tool> {
     let read = ToolAnnotations::with_title("Read the project's issues").read_only(true).open_world(false);
     let comment =
         ToolAnnotations::with_title("Comment on an issue").read_only(false).destructive(false).open_world(false);
+    let create = ToolAnnotations::with_title("Open an issue").read_only(false).destructive(false).open_world(false);
     vec![
         Tool::new(
             READ,
@@ -121,6 +135,13 @@ fn tools() -> Vec<Tool> {
         )
         .with_title("Comment on an issue")
         .with_annotations(comment),
+        Tool::new(
+            CREATE,
+            "Open a new issue in this project (title, a markdown body, labels the project already uses). It is this agent session's own issue, made with the rights of the person who asked you; nobody is assigned or notified. Returns its number and link, to post.",
+            schema_for_type::<CreateArgs>(),
+        )
+        .with_title("Open an issue")
+        .with_annotations(create),
     ]
 }
 
@@ -221,6 +242,18 @@ impl Server {
             _ => Err("control answered something else".into()),
         }
     }
+
+    async fn create(&self, session: &str, args: Value) -> Out {
+        let a: CreateArgs = parse(args)?;
+        let op = SessionIssuesOp::Create { title: a.title, body: a.body, labels: a.labels };
+        match self.ask(session, op).await? {
+            SessionIssuesGiven::Created { issue, url } => done(
+                format!("Opened #{}: {} ({url})", issue.number, issue.title),
+                json!({ "issue": issue.number, "id": issue.id, "url": url }),
+            ),
+            _ => Err("control answered something else".into()),
+        }
+    }
 }
 
 impl ServerHandler for Server {
@@ -254,6 +287,7 @@ impl ServerHandler for Server {
         let out = match &*request.name {
             READ => self.read(&session, args).await,
             COMMENT => self.comment(&session, args).await,
+            CREATE => self.create(&session, args).await,
             other => Err(format!("no tool {other}")),
         };
         let res = match out {
@@ -418,10 +452,10 @@ mod tests {
     }
 
     #[test]
-    fn exactly_two_tools_and_no_project_argument() {
+    fn exactly_the_session_tools_and_no_project_argument() {
         let t = tools();
         let names: Vec<&str> = t.iter().map(|t| &*t.name).collect();
-        assert_eq!(names, [READ, COMMENT]);
+        assert_eq!(names, ["read_session_issues", "comment_session_issue", "create_session_issue"]);
         for t in &t {
             let schema = serde_json::to_value(&t.input_schema).unwrap();
             let props = schema["properties"].as_object().unwrap();

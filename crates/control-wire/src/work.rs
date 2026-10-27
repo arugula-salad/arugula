@@ -138,8 +138,8 @@ pub const WORK_SESSION_REPORT: &str = "/api/hosted/work/session";
 pub const WORK_SESSION_PUSH: &str = "/api/hosted/work/session/push";
 
 /// `POST` [`SessionIssuesAsk`], signed as the hosted machine (aru-115,
-/// amended): a session's agent reads its own project's native issues and
-/// comments on them. Answered [`SessionIssuesGiven`].
+/// amended): a session's agent reads its own project's native issues,
+/// comments on them and opens them. Answered [`SessionIssuesGiven`].
 pub const WORK_SESSION_ISSUES: &str = "/api/hosted/work/session/issues";
 
 /// The most sessions a box runs at once: a turn under way (`working`,
@@ -695,8 +695,8 @@ pub struct SessionIssuesAsk {
     pub op: SessionIssuesOp,
 }
 
-/// What a session's agent does with its project's native issues: read and
-/// comment, nothing else.
+/// What a session's agent does with its project's native issues: read,
+/// comment and open, nothing else.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum SessionIssuesOp {
@@ -708,6 +708,15 @@ pub enum SessionIssuesOp {
     /// A comment on one, as the session's asker, labelled as posted by the
     /// session.
     Comment { number: u64, text: String },
+    /// A new issue, with the asker's rights, opened as the session's own;
+    /// its labels from those the project's issues already have.
+    Create {
+        title: String,
+        #[serde(default)]
+        body: String,
+        #[serde(default)]
+        labels: Vec<String>,
+    },
 }
 
 /// [`WORK_SESSION_ISSUES`]'s answer.
@@ -729,6 +738,11 @@ pub enum SessionIssuesGiven {
     /// Posted, as this message of the issue's thread.
     Commented {
         seq: i64,
+    },
+    /// Opened: the issue, and its page's link.
+    Created {
+        issue: crate::issues::Issue,
+        url: String,
     },
     /// Not done, and why (the agent reads it).
     Refused {

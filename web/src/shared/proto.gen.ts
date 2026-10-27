@@ -2441,11 +2441,13 @@ state: string,
 close_reason: string | null, 
 /**
  * The account that opened it (an agent's owner's), or "" once it's
- * deleted.
+ * deleted, or for one an agent session opened.
  */
 author: string, 
 /**
- * The agent that opened it for its owner.
+ * The agent that opened it for its owner; or the agent session that
+ * opened it as itself (aru-115), its `machine` the session's id
+ * (`ses_…`) and its name `Agent session <id>`.
  */
 agent: ChatAgent | null, labels: Array<string>, 
 /**

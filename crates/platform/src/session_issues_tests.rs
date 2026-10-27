@@ -205,3 +205,98 @@ async fn an_agents_comment_mentions_and_pushes_nobody() {
     assert_eq!(hub.pushes().len(), pushed, "nobody was pushed");
     assert_eq!(sessions(), before, "and @arugula started no session");
 }
+
+/// A session's agent opens an issue in its project as itself: no author,
+/// the session as its agent (named as chat names what it said), its labels
+/// from the project's, and a link to its page. Its body's mentions are
+/// text: nobody gets an inbox entry or a push, and no session starts.
+#[tokio::test]
+async fn a_sessions_agent_opens_an_issue_as_itself_and_tells_nobody() {
+    use crate::db::sql::Sql as _;
+    let (hub, app, base, t, _u) = seeded().await;
+    let (st, v) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/projects/{t}/issues"),
+        Some(json!({ "title": "one", "labels": ["bug", "ci"] })),
+    )
+    .await;
+    assert_eq!(st, 200, "{v}");
+    let ses = session(&app, &t, "hw_1", "b");
+    let m = machine(&t, "hw_1", "box1");
+    let count =
+        |table: &str| app.db.c().query_row(&format!("SELECT COUNT(*) FROM {table}"), &[], |r| r.get::<i64>(0)).unwrap();
+    let (sessions, inbox, pushed) = (count("agent_sessions"), count("inbox_items"), hub.pushes().len());
+
+    let body = format!("@channel @here @a @b @{} the canary flakes", crate::chat::sessions::MENTION);
+    let new = Op::Create { title: "the canary flakes".into(), body: body.clone(), labels: vec!["ci".into()] };
+    let Given::Created { issue, url } = ask(&app, &m, &ses, new).await else { panic!() };
+    assert_eq!(
+        (issue.project.as_str(), issue.number, issue.author.as_str(), issue.body.as_str(), issue.labels.clone()),
+        (t.as_str(), 2, "", body.as_str(), vec!["ci".to_owned()]),
+        "the session's, not b's"
+    );
+    let agent = issue.agent.clone().expect("the session as its agent");
+    let short = &ses["ses_".len().."ses_".len() + 8];
+    assert_eq!((agent.machine.as_str(), agent.machine_name), (ses.as_str(), format!("Agent session {short}")));
+    assert!(issue.assignees.is_empty());
+    assert_eq!(url, format!("{}/issues/{}", app.cfg.page(), issue.id));
+
+    // People read it so, and its timeline's opening is the session's too.
+    let (st, v) = call(&base, "a", "GET", &format!("/api/issues/{}", issue.id), None).await;
+    assert_eq!((st, &v["author"], &v["agent"]["machine"]), (200, &json!(""), &json!(ses)), "{v}");
+    let (_, ev) = call(&base, "a", "GET", &format!("/api/issues/{}/events", issue.id), None).await;
+    let opened = &ev["events"][0];
+    assert_eq!(
+        (&opened["kind"], &opened["actor"], &opened["agent"]["machine"]),
+        (&json!("opened"), &json!(""), &json!(ses))
+    );
+
+    assert_eq!(count("inbox_items"), inbox, "nobody's inbox");
+    assert_eq!(hub.pushes().len(), pushed, "nobody was pushed");
+    assert_eq!(count("agent_sessions"), sessions, "and the mention started no session");
+}
+
+/// What a session opens is checked as its asker's write and against the
+/// session: a viewer's session opens nothing, nor a review, nor an ended
+/// one, nor another project's machine; labels are the project's; and it
+/// assigns nobody.
+#[tokio::test]
+async fn a_session_opens_issues_only_with_its_askers_rights() {
+    use crate::db::sql::{Sql as _, params};
+    let (_hub, app, base, t, u) = seeded().await;
+    let (st, _) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/projects/{t}/issues"),
+        Some(json!({ "title": "one", "labels": ["bug"] })),
+    )
+    .await;
+    assert_eq!(st, 200);
+    let new = |labels: &[&str]| Op::Create {
+        title: "two".into(),
+        body: String::new(),
+        labels: labels.iter().map(|l| (*l).to_owned()).collect(),
+    };
+    let m = machine(&t, "hw_1", "box1");
+    let ses = session(&app, &t, "hw_1", "b");
+
+    let w = why(&ask(&app, &m, &ses, new(&["urgent"])).await).to_owned();
+    assert!(w.contains("isn't one of this project's labels") && w.contains("bug"), "{w}");
+    assert!(matches!(ask(&app, &m, &ses, new(&[])).await, Given::Created { .. }), "no labels is fine");
+    assert!(why(&ask(&app, &machine(&u, "hw_1", "box1"), &ses, new(&[])).await).contains("isn't this machine's"));
+
+    let viewer = session(&app, &t, "hw_2", "x");
+    assert!(why(&ask(&app, &machine(&t, "hw_2", "box1"), &viewer, new(&[])).await).contains("viewer"));
+
+    app.db.c().execute("UPDATE agent_sessions SET role = 'review' WHERE id = ?1", params![ses]).unwrap();
+    assert!(why(&ask(&app, &m, &ses, new(&[])).await).contains("review"));
+    app.db
+        .c()
+        .execute("UPDATE agent_sessions SET role = 'thread', state = 'stopped' WHERE id = ?1", params![ses])
+        .unwrap();
+    assert!(why(&ask(&app, &m, &ses, new(&[])).await).contains("stopped"));
+    assert_eq!(app.db.issue_count(&t).unwrap(), 2, "only the one it was allowed");
+}

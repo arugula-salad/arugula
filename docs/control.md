@@ -263,6 +263,22 @@ new branch whose workflow files differ from the default branch's without
 session's branch can change `.github/workflows/`, and whoever reviews its
 PR checks those changes.
 
+**A session's agent has three Arugula tools** (aru-115, amended), and none
+of `/mcp`'s: `read_session_issues` lists its project's native issues or
+reads one, `comment_session_issue` comments on one, and
+`create_session_issue` opens one (a title, a markdown body, labels the
+project's issues already have) and returns its number and link. The box's
+daemon serves them on a loopback listener of their own, to Claude Code
+over HTTP (Codex has no HTTP MCP yet), and each is a call to `POST
+/api/hosted/work/session/issues` naming the session and never a project.
+They act in the session's project with its asker's rights: a viewer's
+session reads and comments and opens nothing, and a review session only
+reads. What the agent writes is the session's own: a comment has no
+author (`via` `said:<ses>`), and an issue has none either, with the
+session as its agent, so the page shows it as `Agent session <id>`. Its
+mentions are text and nobody is assigned, so nobody is pushed. Every call
+counts against the box's hourly limit.
+
 **A question holds the turn** until it's answered (Arugula #215): the agent
 waits on its question tool, and the answer comes back as the tool's result.
 Answered from its card or its ask in the channel, the ask's line in the
