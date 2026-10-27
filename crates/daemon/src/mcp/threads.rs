@@ -501,36 +501,31 @@ impl Call<'_> {
         };
         done(summary, json!({ "found": found }))
     }
+}
 
-    /// Whether thread tools are live here, for `capabilities`: joined, and
-    /// a live thread grant over something its owner reads.
-    pub(super) async fn threads_reach(&self) -> ThreadsReach {
-        let asked =
-            tokio::time::timeout(Duration::from_secs(3), self.app().control.cloud_now(Method::GET, AGENT_ROOMS, None));
-        let v = match asked.await {
-            Ok(Ok(v)) => v,
-            Ok(Err(e)) => return ThreadsReach { live: false, scopes: vec![], note: said(e) },
-            Err(_) => {
-                return ThreadsReach {
-                    live: false,
-                    scopes: vec![],
-                    note: "Arugula control didn't answer in time".into(),
-                };
-            }
-        };
-        let scopes: Vec<ThreadScope> = serde_json::from_value(v["reach"].clone()).unwrap_or_default();
-        let live = scopes.iter().any(|s| s.powers.iter().any(|p| p.starts_with("threads.")));
-        let mut note: String = if live {
-            "read_thread, search_threads and post_thread reach these (list kind threads lists the rooms). Your posts are labelled as your person's agent on this machine; nothing wakes you on a mention.".into()
-        } else {
-            "This machine's owner hasn't given its agents a thread grant: `arugula grants add <machine> threads.read --project <id>` (or --dms), or Settings, Agents in conversations, on the platform page.".into()
-        };
-        // M200: native issues, where issues.write reaches.
-        if scopes.iter().any(|s| s.powers.iter().any(|p| p == "issues.write")) {
-            note += " issue_write files and changes native issues where issues.write reaches, at once.";
+/// Whether thread tools are live here, for `capabilities`: joined, and
+/// a live thread grant over something its owner reads.
+pub(super) async fn threads_reach(app: &crate::server::App) -> ThreadsReach {
+    let asked = tokio::time::timeout(Duration::from_secs(3), app.control.cloud_now(Method::GET, AGENT_ROOMS, None));
+    let v = match asked.await {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => return ThreadsReach { live: false, scopes: vec![], note: said(e) },
+        Err(_) => {
+            return ThreadsReach { live: false, scopes: vec![], note: "Arugula control didn't answer in time".into() };
         }
-        ThreadsReach { live, scopes, note }
+    };
+    let scopes: Vec<ThreadScope> = serde_json::from_value(v["reach"].clone()).unwrap_or_default();
+    let live = scopes.iter().any(|s| s.powers.iter().any(|p| p.starts_with("threads.")));
+    let mut note: String = if live {
+        "read_thread, search_threads and post_thread reach these (list kind threads lists the rooms). Your posts are labelled as your person's agent on this machine; nothing wakes you on a mention.".into()
+    } else {
+        "This machine's owner hasn't given its agents a thread grant: `arugula grants add <machine> threads.read --project <id>` (or --dms), or Settings, Agents in conversations, on the platform page.".into()
+    };
+    // M200: native issues, where issues.write reaches.
+    if scopes.iter().any(|s| s.powers.iter().any(|p| p == "issues.write")) {
+        note += " issue_write files and changes native issues where issues.write reaches, at once.";
     }
+    ThreadsReach { live, scopes, note }
 }
 
 #[cfg(test)]

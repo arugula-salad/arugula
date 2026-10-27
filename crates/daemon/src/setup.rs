@@ -40,7 +40,7 @@ use std::{
 };
 
 use arugula_proto::{
-    op::ops::{SetupAgent, SetupClaude, SetupControl, SetupControlConfirm, SetupGet, SetupTailscale},
+    op::ops::{AgentCanGet, SetupAgent, SetupClaude, SetupControl, SetupControlConfirm, SetupGet, SetupTailscale},
     setup::{ControlConfirmRequest, ControlJoinRequest, Outcome, SetupQuery},
 };
 use axum::Router;
@@ -60,6 +60,7 @@ const TAILSCALE_DOWNLOAD: &str = "https://tailscale.com/download";
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
         .op::<SetupGet>()
+        .op::<AgentCanGet>()
         .op::<SetupTailscale>()
         .op::<SetupControl>()
         .op::<SetupControlConfirm>()

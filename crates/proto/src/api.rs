@@ -44,6 +44,7 @@
 //! | GET | `/api/docs` | | `[DocRow]`: the Docs in the library, newest first (#1493; the owner's) |
 //! | POST | `/api/docs/open` | `DocOpenRequest`: a Doc `id` or a shared `link`'s id | `DocOpened`: the Doc's block, the one that has it open or a new one |
 //! | DELETE | `/api/docs/ID` | | `Empty`: unshared first, then removed (the owner's, never an agent's) |
+//! | GET | `/api/agent-can` | | `[AgentCan]`: what an agent here can do for the person, in their words (the owner's) |
 //! | GET | `/api/fs/…`, POST `/api/panes/N/cd` | | files on a host: see [`crate::fs`] |
 //! | GET | `/api/host` | | `HostInfo`: this daemon's name and version, its tailnet URL, whether the tailnet has reached it, the control it joined |
 //! | GET | `/api/hosts/self/shell-env` | | `ShellEnv`: the shell environment blocks that run your tools get (#74) |
@@ -868,6 +869,22 @@ pub enum WorktreeFate {
     Removed,
     /// Both stay; `why` says what stopped it.
     Kept,
+}
+
+/// One line of the card *What your agent can do here*: `GET /api/agent-can`
+/// (the `agent_can.get` operation). The daemon's MCP tools each have one,
+/// or are part of another's, and only those this machine offers are sent:
+/// their Labs flags, a forge login here, control and its grants, as the
+/// agent's `capabilities` says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct AgentCan {
+    /// The MCP tool it is (`show`, `doc`).
+    pub tool: String,
+    /// The rest of "Ask it to …".
+    pub ask: String,
+    /// A prompt to copy.
+    pub example: String,
 }
 
 /// One Doc in the library (#1493): `GET /api/docs`. `open` is the block

@@ -1,12 +1,13 @@
 //! Getting started's buttons (#578): how far each part of setup is, and
 //! Tailscale serve, joining Arugula control, Claude Code's MCP server and an
-//! agent's adapter. HTTP only, on `setup.rs`'s router, all the owner's. The
-//! status and the control answers are built as JSON values (their keys
-//! depend on the call); a button's is an [`Outcome`].
+//! agent's adapter, and the card *What your agent can do here*. HTTP only,
+//! on `setup.rs`'s router, all the owner's. The status and the control
+//! answers are built as JSON values (their keys depend on the call); a
+//! button's is an [`Outcome`].
 
 use arugula_proto::{
-    api::Empty,
-    op::ops::{SetupAgent, SetupClaude, SetupControl, SetupControlConfirm, SetupGet, SetupTailscale},
+    api::{AgentCan, Empty},
+    op::ops::{AgentCanGet, SetupAgent, SetupClaude, SetupControl, SetupControlConfirm, SetupGet, SetupTailscale},
     setup::{ControlConfirmRequest, ControlJoinRequest, Outcome, SetupQuery},
 };
 use serde_json::Value;
@@ -46,5 +47,11 @@ impl Handle for SetupClaude {
 impl Handle for SetupAgent {
     async fn handle(cx: &Cx<'_>, kind: String, _: Empty) -> Result<Outcome, OpError> {
         Ok(crate::setup::use_agent(cx.app, kind).await)
+    }
+}
+
+impl Handle for AgentCanGet {
+    async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Vec<AgentCan>, OpError> {
+        Ok(crate::mcp::capabilities::can_do(cx.app).await)
     }
 }
