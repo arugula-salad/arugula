@@ -81,10 +81,10 @@ export const ACCOUNT_HASH = "#account";
  * them from it): each opens the browser step instead (#251). */
 type Away = "end-all" | "remove-passkey" | "add-passkey" | "link-github" | "unlink-github" | "delete";
 
-/** What the browser can change here, as one string: the passkeys, the GitHub
- * link and the sign-ins. */
-const fingerprint = (sessions: SessionRow[] | null, keys: Passkeys | null) =>
-  JSON.stringify([keys?.passkeys.map((k) => k.id), keys?.github ?? null, sessions?.map((x) => x.id)]);
+/** What the browser can change here, as one string: the passkeys and the
+ * GitHub link. Not the sign-ins: signing that browser in adds one, and
+ * signing out everywhere or deleting ends this window's too. */
+const fingerprint = (keys: Passkeys | null) => JSON.stringify([keys?.passkeys.map((k) => k.id), keys?.github ?? null]);
 
 /** What linking GitHub came back with, for the dialog to say. */
 const LINKED: Record<string, string> = {
@@ -116,9 +116,9 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
   const stepRef = useRef<HTMLDivElement>(null);
   const app = !!desktopApp();
   // Loaded, so what the browser changes is told from what was here.
-  const waiting = away !== null || (app && (!sessions || !keys));
+  const waiting = away !== null || (app && !keys);
   const toBrowser = (a: Away) => {
-    before.current = { print: fingerprint(sessions, keys), github: keys?.github ?? null };
+    before.current = { print: fingerprint(keys), github: keys?.github ?? null };
     setAway(a);
   };
   // The step is one, below the panel's buttons: bring it into view.
@@ -332,13 +332,13 @@ export function AccountPanel({ s, close, linked }: { s: ControlSession; close: (
           <BrowserStep
             url={`${location.origin}/${ACCOUNT_HASH}`}
             label="Open Sign-in and account in your browser"
-            // Done when the browser changed what this panel lists. A 401 (the
-            // browser signed this window out) throws: the directory poll then
-            // takes the window to signed-out.
+            // Done when the browser changed the passkeys or the GitHub link. A
+            // 401 (the browser signed this window out) throws: the directory
+            // poll then takes the window to signed-out.
             check={async () => {
-              const [ss, ks] = await Promise.all([api<{ sessions: SessionRow[] }>("/api/me/sessions"), api<Passkeys>("/api/me/passkeys")]);
+              const ks = await api<Passkeys>("/api/me/passkeys");
               seen.current = ks.github;
-              return fingerprint(ss.sessions, ks) !== before.current.print;
+              return fingerprint(ks) !== before.current.print;
             }}
             onDone={() => {
               if (!before.current.github && seen.current) setBrowserLinked(true);
