@@ -851,7 +851,14 @@ and prompts nothing.
 session runs on the workspace the project's agents run on, if someone
 chose one, else its only one. With several and none chosen, it picks one
 itself: of those whose spec has the repo, one that's awake (ready and
-online) with a free slot first, then the least busy, then by name. The
+online) with a free slot first, then one asleep with a free slot (woken
+for it), then the least busy: the fewest live sessions (queued, or a
+turn under way), then the fewest done ones, then by name. A box runs
+three sessions and holds six (no more than the session users it says it
+has on its pull; three when it doesn't say): a done one idle 30 minutes is parked (its
+box closes its agent, keeping its checkout and conversation; its card
+says so) and no longer runs, and a reply to it waits for a running slot,
+then opens it again (Arugula #215). The
 repo is the one the ask names (`owner/name`, or a name only one repo
 has), else the only one the boxes have. It asks only when it must: when
 the boxes have several repos and the ask names none, an ask lists them,

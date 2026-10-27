@@ -153,7 +153,7 @@ those repos' files that aren't ignored and their `.git`, `GET
 
 <a id="session-tools"></a>**Session users' tools (Arugula #215).** The
 setup runs as `user`, and a session's agent and its finish step run as a
-session user (`ses1` to `ses3`), who can't enter `/home/user`: a tool the
+session user (`ses1` to `ses6`), who can't enter `/home/user`: a tool the
 setup installs there, or links into there from `/usr/local/bin`, is
 "Permission denied" to every session. The template's place for what
 sessions run is `/opt/arugula/tools`, owned by `user`, which everyone can

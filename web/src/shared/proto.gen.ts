@@ -3302,7 +3302,13 @@ heard_at: number | null,
  * When it last stopped running (done, failed, stopped): the clock
  * stops there. `None` while a turn is under way or queued.
  */
-ended_at: number | null, last_tool: string | null, last_error: string | null, 
+ended_at: number | null, 
+/**
+ * Done and parked (Arugula #215): idle long enough that its box
+ * closed its agent, keeping its checkout and conversation. A reply
+ * opens it again.
+ */
+parked: boolean, last_tool: string | null, last_error: string | null, 
 /**
  * Why it failed or stopped, or why it's queued again (its box was
  * rebuilt).
@@ -3574,8 +3580,8 @@ turn: SessionTurn | null, pushed: boolean,
  */
 reason: string | null, updated_at: number, 
 /**
- * Queued with no slot on its box for it yet (the box holds three
- * sessions, done ones too).
+ * Queued with no slot on its box for it yet (the box runs three
+ * sessions, done ones not yet parked too, or holds six).
  */
 no_slot: boolean, };
 

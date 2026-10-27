@@ -73,7 +73,10 @@ use std::{
 
 use arugula_control_wire::{
     run_logs::ARTIFACTS_ENV,
-    work::{Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkItem, WorkQuery},
+    work::{
+        Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkItem, WorkQuery,
+        session_users_take,
+    },
 };
 use arugula_e2e::{
     now_ms,
@@ -1259,14 +1262,16 @@ pub fn start(app: Arc<App>) {
             if me(&app).is_some() && !builder {
                 // Only a deploy's own box (M219) takes deploys; a box with
                 // session users takes sessions (M255).
-                let takes: &[&str] = if deploy::deploy_box(&app) {
-                    &[TAKES_RUN, TAKES_DEPLOY]
-                } else if sessions::takes() {
-                    &[TAKES_RUN, TAKES_SESSION]
+                // With how many session users it has (Arugula #215): the
+                // most sessions control has it hold.
+                let takes: Vec<String> = if deploy::deploy_box(&app) {
+                    vec![TAKES_RUN.into(), TAKES_DEPLOY.into()]
+                } else if let Some(s) = sessions::slots() {
+                    vec![TAKES_RUN.into(), TAKES_SESSION.into(), session_users_take(s.users.len())]
                 } else {
-                    &[TAKES_RUN]
+                    vec![TAKES_RUN.into()]
                 };
-                match app.control.get_signed::<Work>(&WorkQuery::path(takes)).await {
+                match app.control.get_signed::<Work>(&WorkQuery::path(&takes)).await {
                     Ok(w) => {
                         // The project's revokes come with every pull: kept,
                         // then checked against the runs going.
