@@ -39,7 +39,10 @@
 # A release's bump changes only version numbers in manifests, lock files and
 # THIRD_PARTY.md, release notes and its copy of the client fixtures: `diff`
 # compares manifests and lock files with every arugula crate's version
-# blanked (`scripts/release blank`), and the rest aren't inputs. Without a
+# blanked (`scripts/release blank`), and the rest aren't inputs: the web
+# build reads the notes' headline sections and the version (What's new,
+# scripts/whats-new.mjs), but a hub that doesn't deploy keeps its page's,
+# which shows the newer releases' headlines once it does. Without a
 # dep-info, or with one that names none of crates/control/src, the inputs
 # are the whole tree (`.`): every release deploys.
 set -euo pipefail

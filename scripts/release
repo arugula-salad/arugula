@@ -67,6 +67,12 @@ app_latest=app-latest
 # files come too when TAURI_SIGNING_PRIVATE_KEY is set).
 app_downloads="arugula-desktop-linux-{x86_64,aarch64}.{deb,rpm,AppImage} arugula-desktop-macos-{arm64,x86_64}.{zip,dmg} arugula-desktop-windows-x86_64-setup.exe"
 
+# A daemon release's headline section in its notes (docs/releases/X.Y.Z.md):
+# a fenced block the web client's What's new is built from
+# (scripts/whats-new.mjs). It's left out of the GitHub release's body.
+headlines='```whats-new'
+without_headlines() { sed '/^```whats-new$/,/^```$/d'; }
+
 # The release for a tag, made if it isn't there yet (both build jobs may
 # race to make it; the loser finds the winner's).
 ensure_release() {
@@ -385,6 +391,12 @@ case "${1:-}" in
       if [ "$dry" = 1 ]; then have_notes=0; echo "main has no $notes: merge the release notes before the release"
       else echo "main has no $notes: merge the release notes first" >&2; exit 1; fi
     fi
+    # A daemon release's notes have a headline section: the web client's
+    # What's new (scripts/whats-new.mjs) reads it from the build.
+    if [ "$lane" = daemon ] && [ "$have_notes" = 1 ] && ! git show "$main:$notes" | grep -x "$headlines" >/dev/null; then
+      if [ "$dry" = 1 ]; then echo "$notes has no headline section (a \`\`\`whats-new block): add one before the release"
+      else echo "$notes has no headline section (a \`\`\`whats-new block, scripts/whats-new.mjs): add one first" >&2; exit 1; fi
+    fi
     echo "$tag: $at_sha -> $new on ${sha:0:12} ($(git log -1 --format=%s "$sha")), the newest green commit; main is at ${main:0:12}"
     wt=$(mktemp -d "${TMPDIR:-/tmp}/arugula-release.XXXXXX")
     top=$(git rev-parse --show-toplevel)
@@ -471,8 +483,14 @@ case "${1:-}" in
     ;;
   publish)
     # Last: the notes from docs/releases/X.md, then out of draft as latest.
+    # Without the headline section, which is the app's (What's new).
     tag=$2; notes=docs/releases/${tag#v}.md
-    if [ -f "$notes" ]; then gh release edit "$tag" -R "$repo" --notes-file "$notes"; fi
+    if [ -f "$notes" ]; then
+      body=$(mktemp)
+      without_headlines <"$notes" >"$body"
+      gh release edit "$tag" -R "$repo" --notes-file "$body"
+      rm -f "$body"
+    fi
     gh release edit "$tag" -R "$repo" --draft=false --latest
     check_latest
     ;;

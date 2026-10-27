@@ -1,6 +1,7 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, runnerImport, type Plugin } from "vite";
+import { releases } from "../scripts/whats-new.mjs";
 
 // `just dev` runs a dev daemon on 7682 that accepts this server's origin.
 // Three pages: the app, the read-only viewer behind share links, and the
@@ -45,8 +46,22 @@ function docPalette(): Plugin {
   };
 }
 
+/** This build's version, the workspace's (Cargo.toml): What's new shows
+ * the release notes' headlines (scripts/whats-new.mjs) up to it
+ * (shared/whats-new.ts). */
+function version(): string {
+  const toml = readFileSync(resolve(import.meta.dirname, "../Cargo.toml"), "utf8");
+  const v = toml.match(/^\[workspace\.package\][^[]*?^version = "([^"]+)"/m)?.[1];
+  if (!v) throw new Error("Cargo.toml: no [workspace.package] version");
+  return v;
+}
+
 export default defineConfig({
   plugins: [docPalette(), modules()],
+  define: {
+    "import.meta.env.VITE_ARUGULA_VERSION": JSON.stringify(version()),
+    "import.meta.env.VITE_WHATS_NEW": JSON.stringify(releases(resolve(import.meta.dirname, ".."))),
+  },
   server: {
     port: 5173,
     proxy: { "/ws": { target: "ws://127.0.0.1:7682", ws: true, changeOrigin: true } },
