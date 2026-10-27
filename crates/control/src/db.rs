@@ -16,6 +16,7 @@ pub mod email;
 pub mod hosted;
 pub mod issuer;
 pub mod platform;
+pub mod reset;
 #[cfg(test)]
 mod secrets_list;
 #[cfg(test)]
@@ -646,6 +647,7 @@ impl Db {
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(doc_links::SCHEMA)?;
         conn.execute_batch(email::SCHEMA)?;
+        conn.execute_batch(reset::SCHEMA)?;
         conn.execute_batch(hosted::SCHEMA)?;
         conn.execute_batch(changes::SCHEMA)?;
         conn.execute_batch(platform::SCHEMA)?;
@@ -662,6 +664,7 @@ impl Db {
         conn.execute_batch(SCHEMA).unwrap();
         conn.execute_batch(doc_links::SCHEMA).unwrap();
         conn.execute_batch(email::SCHEMA).unwrap();
+        conn.execute_batch(reset::SCHEMA).unwrap();
         conn.execute_batch(hosted::SCHEMA).unwrap();
         conn.execute_batch(changes::SCHEMA).unwrap();
         conn.execute_batch(platform::SCHEMA).unwrap();
@@ -2696,6 +2699,7 @@ impl Db {
             "DELETE FROM turned_down WHERE account = ?1",
             "DELETE FROM revocations WHERE account = ?1",
             "DELETE FROM account_resets WHERE account = ?1",
+            "DELETE FROM reset_requests WHERE account = ?1",
             "DELETE FROM account_emails WHERE account = ?1",
             "DELETE FROM email_tokens WHERE account = ?1",
             "DELETE FROM email_sends WHERE account = ?1",

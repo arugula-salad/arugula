@@ -94,6 +94,7 @@ mod push_live_tests;
 #[cfg(test)]
 mod push_notices;
 mod relay;
+mod reset;
 mod roots;
 #[cfg(test)]
 mod routes;
@@ -635,6 +636,8 @@ fn routes() -> Routes {
         .route("/api/me/passkeys/{id}/remove", post(account::remove_passkey))
         .route("/api/me/github/unlink", post(github_link::unlink))
         .route("/api/me/email", get(account_email::get).post(account_email::set).delete(account_email::remove))
+        .route("/api/me/reset", get(reset::status).post(reset::start))
+        .route("/api/me/reset/cancel", post(reset::cancel))
         .route("/auth/email/verify", get(account_email::verify))
         .route("/api/me/delete", get(account::preview).post(account::delete))
         .route("/api/me/notices/{id}/seen", post(teams::notice_seen))

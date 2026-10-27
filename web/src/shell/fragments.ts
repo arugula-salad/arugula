@@ -48,6 +48,8 @@ export const FRAGMENTS: Fragment[] = [
   { route: "#lend=", why: "Lending this device to an agent on or off (S33).", where: ["shell/hand.ts"] },
   { route: "#app-done", why: "The desktop app's sign-in finished (M48).", where: ["shell/trust/overlay.tsx"] },
   { route: "#github-link=", why: "Back from linking GitHub to the account signed in (#208): what happened, for Sign-in and account to say.", where: ["shell/trust/overlay.tsx", "shell/trust/account.tsx"] },
+  { route: "#email=", why: "Back from an email's verify link (#1609): what happened, for Sign-in and account to say.", where: ["shell/trust/overlay.tsx", "shell/trust/email.tsx"] },
+  { route: "#reset", why: "Back from the fresh GitHub sign-in a reset of your devices takes (#1582): the approval screen carries on with it.", where: ["shell/trust/reset.tsx"] },
   { route: "#add-passkey", why: "Back from signing in with GitHub again to add a passkey to an account with none: the page offers it.", where: ["shell/trust/overlay.tsx", "shell/control.ts"] },
 ];
 

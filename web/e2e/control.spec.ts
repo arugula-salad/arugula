@@ -653,6 +653,48 @@ test("a desktop app's keys swapped by control aren't signed for anyone else: the
   await app.context().close();
 });
 
+// #1582: a browser nothing can approve offers a reset of the account's
+// devices. The laptop was used just now, so control refuses and says to
+// approve from it. As a reset that's waiting, the browser shows when, with
+// Cancel; the laptop shows a warning whose cancel it signs with its key.
+test("a browser nothing approves offers a reset; a trusted device can cancel one (#1582)", async ({ browser }) => {
+  const fresh = await (await browser.newContext()).newPage();
+  await signIn(fresh);
+  await expect(fresh.getByText("Approve this browser")).toBeVisible();
+  await fresh.locator("[data-reset-open]").click();
+  await expect(fresh.locator("[data-reset-offer]")).toContainText("Every device and recovery code you have stops working");
+  await fresh.locator("[data-reset-start]").click();
+  await expect(fresh.locator("[data-reset-offer] .control-error")).toContainText("one of your devices was used in the last two days");
+
+  const due = Date.now() + 47 * 3600_000;
+  await fresh.route("**/api/me/reset", (r) => r.fulfill({ json: { pending: { started_at: Date.now(), due, mine: true }, done: false } }));
+  await fresh.reload();
+  await expect(fresh.locator("[data-reset-pending=mine]")).toContainText("this browser becomes your first device");
+  await expect(fresh.locator("[data-reset-cancel]")).toBeVisible();
+  // The laptop was asked to approve it: turned down, so the next test's
+  // browser is the one it's asked about.
+  await expect(laptop.locator("[data-pending]")).toBeVisible({ timeout: 20_000 });
+  await laptop.locator("[data-reject]").click();
+  await expect(laptop.locator("[data-pending]")).toHaveCount(0);
+  await fresh.context().close();
+
+  const startedAt = Date.now() - 3600_000;
+  let cancel: { device?: string; sig?: string } = {};
+  await laptop.route("**/api/me/reset", (r) => r.fulfill({ json: { pending: { started_at: startedAt, due, mine: false }, done: false } }));
+  await laptop.route("**/api/me/reset/cancel", (r) => {
+    cancel = r.request().postDataJSON();
+    return r.fulfill({ json: { cancelled: true } });
+  });
+  await controlPanel(laptop, "devices");
+  await expect(laptop.locator("[data-reset-warning]")).toContainText("A reset of your devices is waiting");
+  await laptop.locator("[data-reset-warning-cancel]").click();
+  await expect.poll(() => cancel.device).toBe(await laptop.evaluate(() => window.__arugula.control!.keys.id));
+  expect(cancel.sig).toMatch(/^[0-9a-f]{128}$/);
+  await laptop.unroute("**/api/me/reset");
+  await laptop.unroute("**/api/me/reset/cancel");
+  await laptop.getByRole("button", { name: "Done" }).click();
+});
+
 test("with every device lost, a recovery code lets a new browser in, once", async ({ browser }) => {
   const fresh = await (await browser.newContext()).newPage();
   await signIn(fresh);
