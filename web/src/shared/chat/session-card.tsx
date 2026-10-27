@@ -63,6 +63,15 @@ export const QUIET_MS = 60_000;
 
 const enc = encodeURIComponent;
 
+/** A URL's host, for saying where a link goes. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
 /** The session a message is the card of, if it's one. */
 export function sessionOf(m: ChatMessage): string | null {
   const v = m.via ?? "";
@@ -656,6 +665,9 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
     }
   };
   const open = (hash: string, inPage: () => void) => (api.controlHref ? window.open(api.controlHref(hash), "_blank", "noopener") : inPage());
+  // #1595: on the platform page, Open goes to Control, which holds the keys
+  // to your machines and approves each browser once. Say so before the click.
+  const onControl = api.controlHref ? hostOf(api.controlHref("")) : null;
   const block = c.block && /^\d+$/.test(c.block) ? c.block : null;
   const idle = idleOf(c);
   // The last turn's finish step failed (M261): it wasn't pushed. While the
@@ -792,8 +804,17 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
       {drafting && !c.pr && <PrEditor ses={c.session} onClose={() => setDrafting(false)} />}
       <div class="session-card-buttons">
         {c.machine && block && !parked && (
-          <button type="button" title="Its agent block, live on its box" data-session-open onClick={() => open(`pane=${c.machine}.${block}`, () => api.goToPane(c.machine!, block, null))}>
-            Open ↗
+          <button
+            type="button"
+            title={
+              onControl
+                ? `Its agent block, live on its box, on Control (${onControl}), where your machines are. A browser is approved there once before it reaches them.`
+                : "Its agent block, live on its box"
+            }
+            data-session-open
+            onClick={() => open(`pane=${c.machine}.${block}`, () => api.goToPane(c.machine!, block, null))}
+          >
+            {onControl ? "Open on Control ↗" : "Open ↗"}
           </button>
         )}
         {c.machine && port && (
