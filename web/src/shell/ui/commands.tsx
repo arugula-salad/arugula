@@ -29,6 +29,7 @@ import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
 import { watchingNote } from "./shell/live";
 import { setTips, tipsOn } from "../../shared/seen";
+import { openWhatsNew } from "./whats-new";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -337,19 +338,30 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
       ? [
           "separator" as const,
           { label: "Getting started", run: () => openGettingStarted(undefined, client) } as MenuItem,
+          { label: "What's new", hint: "The newest releases' headlines", run: () => void openWhatsNew(client) } as MenuItem,
           { label: "Command palette…", shortcut: keyHint("palette"), run: () => openPalette(client) } as MenuItem,
         ]
       : []),
   ];
 }
 
-/** What a hint's action may name (shell/hints), by id: each takes what
- * the hint's fact says. */
+/** What a hint's action (shell/hints) and What's new's *Try it*
+ * (docs/releases' headline sections) may name, by id: each takes what the
+ * hint's fact says; What's new gives none. */
 export const COMMANDS: Record<string, (client: Client, args: Record<string, string | number>) => void> = {
   /** A port listening in a pane, opened beside it with nothing asked. */
   "port.open-beside": (client, { pane, port }) => {
     const mine = client.machine(Number(pane));
     openPortAt(client, { split: Number(pane), host: mine?.id, local: !mine }, Number(port));
+  },
+  "palette.open": (client) => openPalette(client),
+  /** Getting started at its Agents step: Use Claude Code with Arugula. */
+  "getting-started.agents": (client) => openGettingStarted("agents", client),
+  /** Pin a board… beside the shown tab's pane. */
+  "board.pin": (client) => {
+    const pane = client.tab === null ? undefined : client.activePane.get(client.tab);
+    if (pane !== undefined) void pinBoard(client, { from: pane });
+    else client.toast("Open a pane first: a board pins beside one");
   },
 };
 

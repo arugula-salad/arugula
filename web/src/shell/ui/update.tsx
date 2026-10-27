@@ -1,12 +1,14 @@
 // A newer release is out (#176): a small chip in the top bar, and either
 // an Update now button (the daemon updates itself, #391:
 // crates/daemon/src/selfupdate.rs) or the command that updates this
-// install. The daemon checks, at most twice a day (`GET /api/update`,
+// install. Its What's new opens the panel (./whats-new), with a link to
+// the new release's notes. The daemon checks, at most twice a day (`GET /api/update`,
 // crates/daemon/src/update.rs).
 
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { CopyText } from "../../shared/ui/copy";
+import { openWhatsNew } from "./whats-new";
 
 /** `GET /api/update`. */
 export type UpdateStatus = {
@@ -92,9 +94,15 @@ export function UpdateChip({ client }: { client: Client }) {
           </p>
           {status.apply ? <UpdateNow status={status} /> : <How status={status} />}
           <div class="update-actions">
-            <a href={status.url} target="_blank" rel="noreferrer">
+            <button
+              data-update-whats-new
+              onClick={() => {
+                setOpen(false);
+                void openWhatsNew(client, { latest, url: status.url });
+              }}
+            >
               What's new
-            </a>
+            </button>
             <button onClick={dismiss} data-update-dismiss>
               Not now
             </button>

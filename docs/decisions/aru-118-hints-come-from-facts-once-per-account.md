@@ -71,7 +71,8 @@ a tour.
 - `copy(fact)`: one line.
 - `action`: a label, and a command id of `COMMANDS` in
   `web/src/shell/ui/commands.tsx` (given the fact's values) or a route
-  (`#swarm`). `COMMANDS` is new: the menus had no ids to name.
+  (`#swarm`). `COMMANDS` is new: the menus had no ids to name. What's
+  new's *Try it* names them too (Discovery 2, `shell/ui/whats-new.tsx`).
 - `place`: where it renders.
 
 **Three places only:** a chip in a pane's header (`HintChip`), a toast at
@@ -94,8 +95,8 @@ someone ignored doesn't come back either. Dismissing or acting closes it.
 
 **Seen, per account through control, else per browser.** One store,
 `web/src/shared/seen.ts`: `seen(id)`, `markSeen(id)`, `pref`/`setPref` for
-other keys (Tips, and What's new's last version for Discovery 2), loaded
-once. Until it has loaded, everything counts as seen, so nothing shows
+other keys (Tips, and `whats-new`, the last version What's new showed,
+Discovery 2), loaded once. Until it has loaded, everything counts as seen, so nothing shows
 before we know.
 - On control's page with an account signed in: the account's prefs on the
   hub, `GET /api/me/prefs` (all, as one object) and `POST` (some; `null`

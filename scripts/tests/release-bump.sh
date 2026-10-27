@@ -58,7 +58,10 @@ echo three >src/code && git commit -qam three
 three=$(git rev-parse HEAD)
 echo four >src/code && git commit -qam four
 four=$(git rev-parse HEAD)
-for n in 0.1.1 0.1.2 app-0.2.0; do echo "notes $n" >"docs/releases/$n.md"; done
+# A daemon release's notes have a headline section (What's new); the app's
+# needn't. 0.1.3's has none.
+for n in 0.1.1 0.1.2; do printf 'notes %s\n\n```whats-new\n[]\n```\n' "$n" >"docs/releases/$n.md"; done
+for n in 0.1.3 app-0.2.0; do echo "notes $n" >"docs/releases/$n.md"; done
 git add -A && git commit -qm notes
 notes=$(git rev-parse HEAD)
 # one and two passed CI; three passed and then failed a re-run; four and
@@ -163,5 +166,14 @@ run 1 "check-green: code on top of a red commit" check-green not-a-bump
 git tag -a notes-on-red -m x "$notes"
 run 1 "check-green: notes on top of a red commit" check-green notes-on-red
 has "notes-on-red: the parent's verdict" "is on ${four:0:12}, which has no ci/green tag"
+
+# Notes without a headline section: no release, but a dry run goes on.
+# (four passes CI after all, so there's something to release.)
+git tag -a "ci/green/$four" -m green "$four" && git push -q "$forge" --tags
+run 1 "v0.1.3: no headline section" bump "$four"
+has "v0.1.3: says so" "docs/releases/0.1.3.md has no headline section"
+if [ -z "$(remote refs/tags/v0.1.3)" ]; then ok "v0.1.3: nothing pushed"; else bad "v0.1.3 was pushed"; fi
+run 0 "v0.1.3: a dry run shows the rest" bump "$four" --dry-run
+has "v0.1.3: the dry run says so too" "docs/releases/0.1.3.md has no headline section"
 
 exit $fail
