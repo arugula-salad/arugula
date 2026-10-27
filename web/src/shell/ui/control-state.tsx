@@ -12,7 +12,7 @@
 // control's.
 
 import { opPath } from "../ops";
-import { useEffect } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { desktopApp } from "../../shared/desktop";
 import type { ControlState } from "../../shared/proto";
@@ -23,6 +23,7 @@ import { openGettingStarted } from "./welcome";
 
 const POLL_MS = 30 * 1000;
 const HIDDEN_KEY = "arugula.control-dropped.hidden";
+const SIGNIN_HIDDEN_KEY = "arugula.app-signin.hidden";
 const OPENED_KEY = "arugula.control-dropped.opened";
 
 let now: ControlState | null = null;
@@ -128,8 +129,50 @@ function hiddenFor(): string | null {
   }
 }
 
+/** #1580: in the desktop app, this machine is in control but the app isn't
+ * signed in there (it never was, it picked "Just this machine", or control
+ * moved), so this window has no chat and no other machines. Says so, with
+ * Sign the app in: control's own sign-in, which the app takes over
+ * (`is_control_signin` in crates/desktop/src/cloud.rs). "Not now" hides it
+ * for this tab. */
+function AppSignInBanner({ s }: { s: ControlState }) {
+  const [, redraw] = useState(0);
+  let hidden = false;
+  try {
+    hidden = sessionStorage.getItem(SIGNIN_HIDDEN_KEY) === s.url;
+  } catch {
+    // Shown each time; harmless.
+  }
+  if (hidden || !s.url) return null;
+  const control = s.url.replace(/\/+$/, "");
+  const hide = () => {
+    try {
+      sessionStorage.setItem(SIGNIN_HIDDEN_KEY, s.url ?? "");
+    } catch {
+      // Nothing to remember it in.
+    }
+    redraw((n) => n + 1);
+  };
+  return (
+    <div class="control-dropped app-signin" role="status" data-app-signin>
+      <p>
+        <b>This window shows only this machine.</b> It's in {placeOf(s)}, but the app isn't signed in there, so chat and your other machines aren't here.
+      </p>
+      <div class="control-dropped-actions">
+        <button class="primary" onClick={() => location.assign(`${control}/auth/github`)} data-app-signin-go>
+          Sign the app in
+        </button>
+        <button onClick={hide} data-app-signin-hide>
+          Not now
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Dropped by control: says so, with Join again. "Not now" hides it for
- * this tab until control says it again (another drop). */
+ * this tab until control says it again (another drop). In the desktop app,
+ * joined but not signed in: AppSignInBanner. */
 export function ControlBanner({ client }: { client: Client }) {
   const s = useControlState(client);
   const drop = s?.state === "dropped" ? String(s.dropped_ms ?? "") : null;
@@ -144,6 +187,7 @@ export function ControlBanner({ client }: { client: Client }) {
     }
     joinAgain();
   }, [drop]);
+  if (s?.state === "joined" && desktopApp()?.signedIn === false) return <AppSignInBanner s={s} />;
   if (!s || s.state !== "dropped") return null;
   const key = String(s.dropped_ms ?? "");
   if (hiddenFor() === key) return null;

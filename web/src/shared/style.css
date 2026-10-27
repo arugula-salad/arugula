@@ -8890,6 +8890,11 @@ input.chat-search {
   flex-shrink: 0;
 }
 
+/* #1580: the desktop app isn't signed in to the machine's control. */
+.control-dropped.app-signin {
+  border-bottom-color: var(--line);
+}
+
 .app.phone .control-dropped {
   flex-direction: column;
   align-items: stretch;

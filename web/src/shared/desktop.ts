@@ -14,7 +14,9 @@
 //   one has focus or is the active pane, else the active terminal's
 //   *Attach file…* (M70). They're in ui/keys.ts's table.
 
-type AppInfo = { name?: string; platform?: "macos" | "linux" };
+/** `signedIn`: whether the app is signed in to the machine's control
+ * (#1580); absent from apps before it. */
+type AppInfo = { name?: string; platform?: "macos" | "linux"; signedIn?: boolean };
 
 export function desktopApp(): AppInfo | null {
   return (globalThis as { __arugulaApp?: AppInfo }).__arugulaApp ?? null;
