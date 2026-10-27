@@ -1235,7 +1235,8 @@ test("Sign-in and account has the account's email for notices (#1609)", async ()
   await laptop.locator("[data-email-change]").click();
   await laptop.locator("[data-email-input]").fill("lex@example.com");
   await laptop.locator("[data-email-send]").click();
-  expect(asked).toBe("lex@example.com");
+  // The route answers after the click returns.
+  await expect.poll(() => asked).toBe("lex@example.com");
   await expect(laptop.locator("[data-email-said]")).toContainText("A link went to lex@example.com");
   await expect(laptop.locator("[data-email-pending]")).toContainText("lex@example.com");
   await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
