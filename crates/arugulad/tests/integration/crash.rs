@@ -43,7 +43,7 @@ fn a_test_panic_is_written_down_where_and_not_what() {
     assert!(!text.contains("crashing as asked") && !text.contains(crash::TEST_PANIC_ENV), "never the message: {text}");
     let c: crash::Crash = serde_json::from_str(&text).unwrap();
     assert_eq!((c.process, c.version.as_str()), (crash::Process::Daemon, env!("CARGO_PKG_VERSION")));
-    assert!(c.location.starts_with("crates/daemon/src/main.rs:"), "{c:?}");
+    assert!(c.location.starts_with("crates/daemon/src/lib.rs:"), "{c:?}");
     assert!(c.frames.iter().all(|f| f.starts_with("arugula")), "{c:?}");
     // Frames are best-effort: only a build whose backtraces name our
     // functions has them. The location always is.

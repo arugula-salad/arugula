@@ -339,7 +339,7 @@ impl ServerHandler for McpServer {
 
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
-            .with_server_info(Implementation::new("arugula", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("arugula", arugula_core::version::get()))
             .with_instructions(instructions())
     }
 

@@ -30,7 +30,7 @@ fn cli_bin() -> PathBuf {
 }
 
 fn fixture(name: &str) -> Value {
-    let p = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+    let p = format!("{}/tests/fixtures/{name}", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
     serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
 }
 

@@ -99,7 +99,7 @@ fn claude_codes_question_is_an_ask_answered_by_act() {
     let d = Daemon::child();
     let dir = d.sessions.join("hook");
     std::fs::create_dir_all(&dir).unwrap();
-    let input = format!("{}/tests/fixtures/s13-hook-ask.json", env!("CARGO_MANIFEST_DIR"));
+    let input = format!("{}/tests/fixtures/s13-hook-ask.json", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
     let cmd = format!(
         "{bin} ask < {input} > {dir}/out; echo done > {dir}/exit",
         bin = cli_bin().display(),

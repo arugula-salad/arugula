@@ -471,7 +471,7 @@ fn a_member_s_hunks_name_their_decision_and_run() {
     // Outside the member: not in its Changes.
     std::fs::write(ws.join("README.md"), "the toy, changed\n").unwrap();
 
-    let fixtures = format!("{}/tests/fixtures/chant/why", env!("CARGO_MANIFEST_DIR"));
+    let fixtures = format!("{}/tests/fixtures/chant/why", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
     let chant = d.sessions.join("chant");
     let asked = d.sessions.join("chant.asked");
     std::fs::write(

@@ -223,7 +223,7 @@ pub fn says_oauth(status: u16, www_authenticate: bool) -> bool {
 /// answer that doesn't come counts as no.
 async fn probe_oauth(url: &str) -> bool {
     let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-        "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "arugula", "version": env!("CARGO_PKG_VERSION") } } });
+        "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "arugula", "version": arugula_core::version::get() } } });
     let req = crate::forge::http()
         .post(url)
         .header("accept", "application/json, text/event-stream")

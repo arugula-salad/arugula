@@ -364,7 +364,11 @@ fn an_mcp_servers_form_and_sign_in_link() {
     let d = Daemon::child();
     let cwd = scratch(&d);
     let log = d.sessions.join("mcp.log");
-    let server = format!("fake=python3 {}/tests/fake_mcp.py {}", env!("CARGO_MANIFEST_DIR"), log.display());
+    let server = format!(
+        "fake=python3 {}/tests/fake_mcp.py {}",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"),
+        log.display()
+    );
     let prompt = "Call the mcp__fake__pick_size tool, then the mcp__fake__sign_in tool, then report both results \
                   in one line each and stop.";
     let config = json!({ "agent": "claude", "model": "haiku", "cwd": cwd, "prompt": prompt, "mcp_servers": [server] });

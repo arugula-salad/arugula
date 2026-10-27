@@ -17,7 +17,7 @@ pub use arugula_testkit::{Scratch, systemctl};
 use serde_json::{Value, json};
 
 pub fn fake() -> String {
-    format!("{}/tests/fake_acp.py", env!("CARGO_MANIFEST_DIR"))
+    format!("{}/tests/fake_acp.py", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"))
 }
 
 /// A testkit daemon with a sessions dir for the agents it runs

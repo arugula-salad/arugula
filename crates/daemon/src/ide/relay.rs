@@ -307,7 +307,7 @@ fn handle(st: &Shared, conn: u64, tx: &mpsc::UnboundedSender<Message>, v: Value)
             json!({
                 "protocolVersion": v["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18"),
                 "capabilities": { "tools": { "listChanged": false } },
-                "serverInfo": { "name": super::NAME, "version": env!("CARGO_PKG_VERSION") },
+                "serverInfo": { "name": super::NAME, "version": arugula_core::version::get() },
             }),
         ),
         "tools/list" => {

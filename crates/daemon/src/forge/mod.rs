@@ -307,7 +307,7 @@ pub(crate) fn http() -> reqwest::Client {
     C.get_or_init(|| {
         crate::roots::http()
             .timeout(Duration::from_secs(20))
-            .user_agent(concat!("arugula/", env!("CARGO_PKG_VERSION")))
+            .user_agent(format!("arugula/{}", arugula_core::version::get()))
             .build()
             .expect("an HTTP client")
     })

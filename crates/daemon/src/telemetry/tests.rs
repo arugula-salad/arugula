@@ -104,7 +104,7 @@ async fn the_preview_shows_what_a_yes_would_send() {
     let p = t.info().preview.expect("a preview while not asked");
     assert_eq!(p["preview_only"], true);
     assert_eq!(p["install"], PREVIEW_INSTALL);
-    assert_eq!(p["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(p["version"], arugula_core::version::get());
     assert_eq!((p["channel"].as_str(), p["control"].as_str()), (Some("source"), Some("none")));
     let report: Report = serde_json::from_value(p).unwrap();
     assert!(report.check().is_err(), "a preview can't be taken for a report");

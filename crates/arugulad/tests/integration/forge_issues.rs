@@ -45,7 +45,7 @@ const REPO: &str = "jhgaylor/illogical";
 const N: u64 = 14556;
 
 fn fixture(dir: &str, f: &str) -> Value {
-    let p = format!("{}/tests/fixtures/forgejo/{dir}/{f}", env!("CARGO_MANIFEST_DIR"));
+    let p = format!("{}/tests/fixtures/forgejo/{dir}/{f}", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
     serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
 }
 

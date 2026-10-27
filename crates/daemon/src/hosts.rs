@@ -526,7 +526,7 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
     let saved = joined.as_ref().map(|e| &e.saved);
     let info = HostInfo {
         name: app.hosts.name().to_owned(),
-        version: env!("CARGO_PKG_VERSION").to_owned(),
+        version: arugula_core::version::get().to_owned(),
         protocol: Some(arugula_proto::PROTOCOL),
         tailnet_url: app.access.tailnet_url(),
         tailnet_seen: app.tailnet_seen.load(std::sync::atomic::Ordering::Relaxed),

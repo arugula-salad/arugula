@@ -2007,7 +2007,7 @@ impl Agent {
                     // AskUserQuestion (S13).
                     "elicitation": { "form": {}, "url": {} },
                 },
-                "clientInfo": { "name": "arugula", "version": env!("CARGO_PKG_VERSION") },
+                "clientInfo": { "name": "arugula", "version": arugula_core::version::get() },
             }),
         );
     }

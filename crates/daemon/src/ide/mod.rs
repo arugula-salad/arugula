@@ -439,7 +439,7 @@ async fn call(to: &Other, tool: &str, args: Value) -> anyhow::Result<Value> {
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
     let send = |v: Value| Message::Text(v.to_string().into());
     ws.send(send(json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-        "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": NAME, "version": env!("CARGO_PKG_VERSION") },
+        "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": NAME, "version": arugula_core::version::get() },
     }})))
     .await?;
     wait(&mut ws, 1).await?;

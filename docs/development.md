@@ -404,7 +404,7 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   gave every thread a zeroed copy: 1.3 MB per pane. Check `readelf -S`
   for `.tbss` after a libghostty upgrade. glibc also kept about half a busy
   daemon's peak after panes closed, until `heap.rs` fixed the mmap
-  threshold. `crates/daemon/tests/integration/memory.rs` guards both.
+  threshold. `crates/arugulad/tests/integration/memory.rs` guards both.
 - **Offsets need an epoch.** A reconnecting client's offset is only valid for
   the stream it came from; the pane's epoch changes when the daemon restarts.
 - **Size travels in order with output.** A client must resize before drawing
@@ -567,5 +567,5 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   window storage in memory when it's refused (`editor/storage.js`), and
   `editors.spec.ts` runs a block in a Chrome profile that blocks
   third-party cookies (`sec-fetch-storage-access: none` says it's
-  refused). When a block's page fails in a frame, `RUST_LOG=arugulad::sites=debug`
+  refused). When a block's page fails in a frame, `RUST_LOG=arugulad_base::sites=debug`
   logs every request its site refuses, and why.

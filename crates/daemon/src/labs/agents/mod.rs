@@ -274,7 +274,7 @@ pub fn card(machine: &str, r: &Recipe) -> Value {
     json!({
         "name": r.name,
         "description": r.description,
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": arugula_core::version::get(),
         "supportedInterfaces": [{
             "url": format!("arugula://{machine}/api/a2a/agents/{}", r.name),
             "protocolBinding": "JSONRPC",

@@ -50,8 +50,8 @@ testnet/selfupdate.sh OLD NEW  # #391: the daemon updates itself (two `just stat
 ```
 
 The Rust tests that drive Arugula against the stack,
-`crates/daemon/tests/integration/ssh.rs` (M51, box-bare and git) and
-`crates/daemon/tests/integration/reboot.rs` (#26, box-systemd), bring the `ssh` profile
+`crates/arugulad/tests/integration/ssh.rs` (M51, box-bare and git) and
+`crates/arugulad/tests/integration/reboot.rs` (#26, box-systemd), bring the `ssh` profile
 up when it isn't. Both recreate the boxes they use and need `just static
 <arch>` for the box's binaries.
 

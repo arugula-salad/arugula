@@ -631,7 +631,7 @@ fn a_hosted_agent_holds_the_credential_its_turn_says() {
         .start();
     wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
 
-    let fake = format!("{}/tests/fake_acp.py", env!("CARGO_MANIFEST_DIR"));
+    let fake = format!("{}/tests/fake_acp.py", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
     let config = json!({ "agent": "claude", "command": ["python3", fake], "cwd": sessions, "prompt": "remember plum" });
     let id = d.post("/api/blocks", json!({ "type": "agent", "config": config }))["block"].as_u64().unwrap();
     let said = |prompt: &str| {
@@ -1222,7 +1222,7 @@ fn a_deploy_box_releases_arugula() {
     let marks: PathBuf = std::env::temp_dir().join(format!("arugula-release-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
-    let seed = include_str!("../../src/work_arugula_release_seed.sh");
+    let seed = include_str!("../../../daemon/src/work_arugula_release_seed.sh");
     let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/release");
     let out = std::process::Command::new("bash").args(["-c", seed, "seed"]).arg(&marks).arg(script).output().unwrap();
     assert!(out.status.success(), "seed: {}", String::from_utf8_lossy(&out.stderr));
