@@ -161,6 +161,7 @@ pub fn search(
                 command: None,
                 host: None,
                 doc: Some(meta.id.clone()),
+                at_ms: Some(meta.updated),
             });
             if hits.len() >= limit {
                 break;

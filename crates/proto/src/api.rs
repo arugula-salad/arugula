@@ -583,6 +583,10 @@ pub struct SearchHit {
     /// that shows it now, or 0 when none does; `offset` is the line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<String>,
+    /// About when the line was printed (the pane's last time mark before
+    /// it), or when the Doc last changed. None for an agent's lines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at_ms: Option<u64>,
 }
 
 /// `POST /api/shares`: a read-only link to one terminal pane.

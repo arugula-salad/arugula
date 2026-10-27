@@ -313,7 +313,7 @@ const fleetHosts = (): HostRef[] =>
       hosted: !!d?.hosted,
     };
   });
-fleet.onOpen = (host, pane, share, reveal) => {
+fleet.onOpen = (host, pane, share, reveal, missed) => {
   directory.select(host);
   // The host's client is made when the directory switches, then connects:
   // show the pane once it knows it.
@@ -323,7 +323,11 @@ fleet.onOpen = (host, pane, share, reveal) => {
       client.setActive(pane);
       if (share) shareFrom(pane);
       // A chat quote (M123): its lines in the pane, once it has drawn.
-      if (reveal) requestAnimationFrame(() => client.panes.get(pane)?.view.reveal(reveal));
+      // A search hit (native #245) says so when it's scrolled out.
+      if (reveal)
+        requestAnimationFrame(() => {
+          if (!client.panes.get(pane)?.view.reveal(reveal) && missed) client.toast(missed);
+        });
       return;
     }
     if (Date.now() < until) setTimeout(go, 100);
