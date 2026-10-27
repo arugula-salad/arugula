@@ -10,7 +10,7 @@ import { askText, type MenuItem } from "../../shared/ui/menu";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, shareSession } from "./people";
 import { hasChat } from "./places";
-import { newRemote, openChanges, openEditor, openIssue, openPort, openPr, openWorkspace, pinChatRoom, openTeamChat, remoteHosts } from "../blocks";
+import { newRemote, openChanges, openEditor, openIssue, openPort, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat, remoteHosts } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { openPicker } from "./picker";
@@ -124,6 +124,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
           { label: "Pin a chat room…", run: () => void pinChatRoom(client, { from: id }) } as MenuItem,
         ]
       : []),
+    // A project's board beside it (live status board), with the boards flag.
+    ...(!client.state?.roles && client.flag("boards") ? [{ label: "Pin a board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
     // M33: Claude Code conversations from terminals and the desktop app.
     ...(owner ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
     // M35: a studio app's box beside this pane.
