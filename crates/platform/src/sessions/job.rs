@@ -13,8 +13,11 @@
 //!   it's busy, which holds it (M181).
 //! - **Not taken:** a `queued` session no box took in [`work::TAKE_MS`]
 //!   while its box had room fails, saying so. One waiting for room (the
-//!   box holds [`MAX_SESSIONS_PER_BOX`] sessions, done ones too) waits,
-//!   and its wait is counted from when room was made.
+//!   box runs `MAX_SESSIONS_PER_BOX` sessions, done ones not yet parked
+//!   too, or holds `MAX_HELD_SESSIONS_PER_BOX`, parked ones too:
+//!   `Db::box_has_room`) waits, and its wait is counted from when room
+//!   was made. A parked one's reply waits the same way, listed to its box
+//!   without its prompts until there's room (`Db::session_work_at`).
 //! - **Gone quiet:** a turn under way whose box hasn't reported for
 //!   [`QUIET_MS`] is marked `unresponsive` (`Db::mark_unresponsive`'s
 //!   rule, for this one session).
@@ -22,8 +25,10 @@
 //!   ran is `stopped`, saying so (`db::session_merged::MERGED`).
 //! - **Idle:** a `done` session with nothing queued and no prompt for
 //!   [`idle_end_ms`] (a day, `ARUGULA_SESSION_IDLE_END` seconds) is
-//!   `stopped`, saying so ([`IDLE`]): a done session holds a slot on its
-//!   box, which this frees. `@arugula` again starts a new one.
+//!   `stopped`, saying so ([`IDLE`]): a done session holds a session user
+//!   and its checkout on its box (parked after `SESSION_PARK_MS`, Arugula
+//!   #215), which this frees.
+//!   `@arugula` again starts a new one.
 //!
 //! - **Feedback** (M260, [`crate::sessions::feedback::flush`]): CI's
 //!   failures and reviews on its branch that are due go to it as prompts,
@@ -50,7 +55,7 @@ use crate::{
         jobs::{JobKind, LeasedJob},
         session_merged::MERGED,
         session_threads::WORKSPACE_GONE,
-        sessions::{MAX_SESSIONS_PER_BOX, Move, PromptState, QUIET_MS, State},
+        sessions::{Move, PromptState, QUIET_MS, State},
     },
     jobs::{Clock, Handler, Step},
     work,
@@ -171,11 +176,7 @@ impl Follow {
             State::Done => queued,
             _ => false,
         };
-        let busy = db
-            .session_work(&s.workspace)?
-            .iter()
-            .filter(|x| x.session != s.id && x.state != State::Queued.as_str())
-            .count();
+        let room = db.box_has_room(&s.workspace, &s.id, now)?;
         let mut cp = job
             .checkpoint
             .as_ref()
@@ -184,7 +185,7 @@ impl Follow {
         // Not taken while its box had room: counted from its making, or
         // from when the job last saw the box full.
         if state == State::Queued {
-            if busy >= MAX_SESSIONS_PER_BOX {
+            if !room {
                 cp.full_at = Some(now);
                 job.checkpoint = Some(serde_json::to_value(&cp)?);
                 db.checkpoint_job(job, now)?;

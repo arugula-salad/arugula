@@ -48,10 +48,18 @@
 //!   starts with, which become `sent`; taking a session names its agent
 //!   block; `failed` says why; a `turn` names the session's own branch;
 //!   an `error` says what. The wire module's docs list them.
-//! - **At most [`MAX_SESSIONS_PER_BOX`]** sessions on a workspace hold a
-//!   slot on its box: taken and not ended (`working`, `needs_input`,
-//!   `unresponsive` or `done`; a done one keeps its checkout for its next
-//!   turn). A machine's take past that is refused ([`Refused::Busy`]) and
+//! - **At most [`MAX_SESSIONS_PER_BOX`]** sessions on a workspace run on
+//!   its box at once: a turn under way (`working`, `needs_input`,
+//!   `unresponsive`), or `done` for less than [`SESSION_PARK_MS`] (its
+//!   agent is still up, for its next turn). A done one idle that long is
+//!   **parked** ([`parked`], Arugula #215): its box closes its agent block
+//!   and keeps its user, checkout and conversation, and its next prompt
+//!   waits for a running slot. **At most [`MAX_HELD_SESSIONS_PER_BOX`]**
+//!   are held, running or parked: one session user each. Both are the
+//!   fewer of those and the session users its box says it has on each pull
+//!   (`session_users`, [`DEFAULT_SESSION_USERS`] when it hasn't said: a box
+//!   from before the six holds three, as it did): [`Caps`]. A machine's
+//!   take or turn's start past either is refused ([`Refused::Busy`]) and
 //!   may be sent again later.
 //! - **Prompts** are `queued` until a turn starts with them (`sent`), or
 //!   `dropped`: their author took them back, or the session ended first.
@@ -78,7 +86,8 @@
 
 use anyhow::{Context as _, Result, bail};
 pub use arugula_control_wire::work::{
-    MAX_SESSIONS_PER_BOX, MODEL_MAX, MODELS, SessionAction, SessionDetail, SessionPrompt, SessionWork, TYPED_MAX,
+    DEFAULT_SESSION_USERS, MAX_HELD_SESSIONS_PER_BOX, MAX_SESSIONS_PER_BOX, MODEL_MAX, MODELS, SESSION_PARK_MS,
+    SessionAction, SessionDetail, SessionPrompt, SessionWork, TYPED_MAX,
 };
 pub use arugula_e2e::session::{Kind, QUIET_MS, State};
 
@@ -614,7 +623,8 @@ pub enum Refused {
     OtherDaemon,
     /// A machine's report that isn't its next.
     Seq { next: u64 },
-    /// The box holds [`MAX_SESSIONS_PER_BOX`] sessions: later.
+    /// The box runs [`MAX_SESSIONS_PER_BOX`] sessions, or holds
+    /// [`MAX_HELD_SESSIONS_PER_BOX`]: later.
     Busy,
     /// The detail isn't a JSON object of at most [`MAX_DETAIL`] bytes, or
     /// doesn't fit the move.
@@ -632,13 +642,27 @@ impl std::fmt::Display for Refused {
             Refused::Reporter => f.write_str("not a move this reporter may make"),
             Refused::OtherDaemon => f.write_str("the report isn't from this session's machine"),
             Refused::Seq { next } => write!(f, "the machine's next report is {next}"),
-            Refused::Busy => write!(f, "the box holds {MAX_SESSIONS_PER_BOX} sessions"),
+            Refused::Busy => {
+                write!(f, "the box runs {MAX_SESSIONS_PER_BOX} sessions, or holds {MAX_HELD_SESSIONS_PER_BOX}")
+            }
             Refused::Detail(why) | Refused::Prompt(why) => f.write_str(why),
         }
     }
 }
 
 impl std::error::Error for Refused {}
+
+/// How many of a project's sessions a workspace's box has (Arugula #215):
+/// [`Db::workspace_load`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BoxLoad {
+    /// Queued, or with a turn under way.
+    pub live: u32,
+    /// Done, and not parked: its agent is up, in a running slot.
+    pub done: u32,
+    /// Done and parked ([`parked`]): its checkout held, its agent closed.
+    pub parked: u32,
+}
 
 /// Where a project's agents run (its setting "agents run on").
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -856,9 +880,62 @@ fn queued_among(c: &impl Sql, session: &str, ids: &[String]) -> Result<Result<()
     Ok(Ok(()))
 }
 
-/// How many sessions on `workspace` other than `but` hold a slot on its
-/// box: taken and not ended, a done one too.
-fn under_way(c: &impl Sql, workspace: &str, but: &str) -> Result<usize> {
+/// Whether `s` is parked at `now` (Arugula #215): done, with nothing
+/// from its box for [`SESSION_PARK_MS`] (`heard_at`: its last report,
+/// its turn's end). Its box closes its agent then, keeping its checkout.
+/// Not `updated_at`, which a sent PR or CI's feedback moves too: those
+/// don't wake its agent, and a prompt they queue waits for a slot.
+pub fn parked(s: &Session, now: u64) -> bool {
+    s.state == State::Done && now.saturating_sub(s.heard_at.unwrap_or(s.updated_at)) >= SESSION_PARK_MS
+}
+
+/// How many sessions on `workspace` other than `but` run on its box at
+/// `now`: a turn under way, or done and not parked ([`parked`]).
+fn under_way(c: &impl Sql, workspace: &str, but: &str, now: u64) -> Result<usize> {
+    let n: u64 = c.query_row(
+        "SELECT count(*) FROM agent_sessions
+         WHERE workspace_id = ?1 AND id <> ?2
+           AND (state IN ('working', 'needs_input', 'unresponsive')
+                OR (state = 'done' AND COALESCE(heard_at, updated_at) > ?3))",
+        params![workspace, but, now.saturating_sub(SESSION_PARK_MS)],
+        |r| r.get(0),
+    )?;
+    Ok(n as usize)
+}
+
+/// How many sessions `workspace`'s box may run and hold at once
+/// (Arugula #215): [`MAX_SESSIONS_PER_BOX`] and
+/// [`MAX_HELD_SESSIONS_PER_BOX`], or fewer when its box has fewer session
+/// users.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Caps {
+    pub run: usize,
+    pub hold: usize,
+}
+
+impl Caps {
+    /// For a box with `users` session users ([`DEFAULT_SESSION_USERS`]
+    /// when it hasn't said).
+    pub fn of(users: Option<u64>) -> Self {
+        let users = users.map_or(DEFAULT_SESSION_USERS, |n| n as usize);
+        Caps { run: users.min(MAX_SESSIONS_PER_BOX), hold: users.min(MAX_HELD_SESSIONS_PER_BOX) }
+    }
+}
+
+/// [`Caps`] for `workspace`, as its box last said.
+fn caps(c: &impl Sql, workspace: &str) -> Result<Caps> {
+    let users: Option<u64> = c
+        .query_row("SELECT session_users FROM hosted_workspaces WHERE id = ?1", params![workspace], |r| {
+            r.get::<Option<u64>>(0)
+        })
+        .optional()?
+        .flatten();
+    Ok(Caps::of(users))
+}
+
+/// How many sessions on `workspace` other than `but` its box holds:
+/// taken and not ended, running or parked, each in a session user's home.
+fn held(c: &impl Sql, workspace: &str, but: &str) -> Result<usize> {
     let n: u64 = c.query_row(
         "SELECT count(*) FROM agent_sessions
          WHERE workspace_id = ?1 AND id <> ?2 AND state IN ('working', 'needs_input', 'unresponsive', 'done')",
@@ -869,8 +946,8 @@ fn under_way(c: &impl Sql, workspace: &str, but: &str) -> Result<usize> {
 }
 
 /// Whether a machine's report fits its move, against the session as it
-/// is: `Ok` with the prompts a turn starts with.
-fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport) -> Result<Result<Vec<String>, Refused>> {
+/// is at `now`: `Ok` with the prompts a turn starts with.
+fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport, now: u64) -> Result<Result<Vec<String>, Refused>> {
     let d = match detail_of(&r.detail) {
         Ok(d) => d,
         Err(e) => return Ok(Err(e)),
@@ -916,13 +993,21 @@ fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport) -> Result<Result<Ve
                     if from == State::Queued && !d.block.as_deref().is_some_and(word) {
                         return refuse("taking a session names its agent block");
                     }
+                    // A parked one's next turn runs in a block opened again.
+                    if from == State::Done && d.block.as_deref().is_some_and(|b| !word(b)) {
+                        return refuse("a session's agent block is a word");
+                    }
                     if d.harness.as_deref().is_some_and(|h| from != State::Queued || !is_harness(h)) {
                         return refuse("taking a session names the agent it runs: claude or codex");
                     }
                     if let Err(e) = queued_among(c, &s.id, &d.prompts)? {
                         return Ok(Err(e));
                     }
-                    if starts && under_way(c, &s.workspace, &s.id)? >= MAX_SESSIONS_PER_BOX {
+                    let cap = caps(c, &s.workspace)?;
+                    if starts
+                        && (under_way(c, &s.workspace, &s.id, now)? >= cap.run
+                            || from == State::Queued && held(c, &s.workspace, &s.id)? >= cap.hold)
+                    {
                         return Ok(Err(Refused::Busy));
                     }
                 }
@@ -1477,7 +1562,7 @@ pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(Sessi
             if s.state.terminal() || r.from != seen {
                 return Ok(Err(Refused::Moved { now: seen }));
             }
-            let prompts = match check_daemon(c, &s, r)? {
+            let prompts = match check_daemon(c, &s, r, *now)? {
                 Ok(p) => p,
                 Err(e) => return Ok(Err(e)),
             };
@@ -1527,7 +1612,7 @@ pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(Sessi
                     r.daemon,
                     r.n,
                     *now,
-                    d.block.filter(|_| r.kind == Kind::State && r.from == State::Queued),
+                    d.block.filter(|_| r.kind == Kind::State && matches!(r.from, State::Queued | State::Done)),
                     r.kind == Kind::Heartbeat,
                     d.tool.map(|t| clip(&t, TOOL_MAX)),
                     d.error.filter(|_| r.kind == Kind::Error),
@@ -1892,23 +1977,69 @@ impl Db {
     }
 
     /// How many of `project`'s sessions each of its workspaces holds or
-    /// has queued (every one that hasn't ended), by workspace: how busy
-    /// its box is, for picking one (Arugula #214).
-    pub fn workspace_load(&self, project: &str) -> Result<std::collections::HashMap<String, u32>> {
-        let rows: Vec<(String, u64)> = self.c().query_map(
-            "SELECT workspace_id, count(*) FROM agent_sessions
-             WHERE project_id = ?1 AND state NOT IN ('failed', 'stopped') GROUP BY workspace_id",
-            params![project],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+    /// has queued (every one that hasn't ended), by workspace, at `now`:
+    /// how busy its box is, for picking one (Arugula #214, #215).
+    pub fn workspace_load(&self, project: &str, now: u64) -> Result<std::collections::HashMap<String, BoxLoad>> {
+        let rows: Vec<(String, String, u64)> = self.c().query_map(
+            "SELECT workspace_id,
+                    CASE WHEN state <> 'done' THEN 'live' WHEN COALESCE(heard_at, updated_at) > ?2 THEN 'done' ELSE 'parked' END,
+                    count(*)
+             FROM agent_sessions WHERE project_id = ?1 AND state NOT IN ('failed', 'stopped')
+             GROUP BY workspace_id, 2",
+            params![project, now.saturating_sub(SESSION_PARK_MS)],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?;
-        Ok(rows.into_iter().map(|(w, n)| (w, n as u32)).collect())
+        let mut out = std::collections::HashMap::<String, BoxLoad>::new();
+        for (w, kind, n) in rows {
+            let l = out.entry(w).or_default();
+            let n = n as u32;
+            match kind.as_str() {
+                "live" => l.live += n,
+                "done" => l.done += n,
+                _ => l.parked += n,
+            }
+        }
+        Ok(out)
     }
 
-    /// What a hosted machine on `workspace` pulls (M255): every session
-    /// there that hasn't ended, oldest first, with its queued prompts, as
-    /// the machine sees it. Queued ones only while the box has room
-    /// ([`MAX_SESSIONS_PER_BOX`]), the oldest first.
+    /// What a hosted machine on `workspace` pulls, now ([`Db::session_work_at`]).
     pub fn session_work(&self, workspace: &str) -> Result<Vec<SessionWork>> {
+        self.session_work_at(workspace, arugula_e2e::now_ms())
+    }
+
+    /// Whether `workspace`'s box has room at `now` for one more session to
+    /// run: fewer than its [`Caps`] running and held, not counting `but`.
+    pub fn box_has_room(&self, workspace: &str, but: &str, now: u64) -> Result<bool> {
+        let c = self.c();
+        let cap = caps(&c, workspace)?;
+        Ok(under_way(&c, workspace, but, now)? < cap.run && held(&c, workspace, but)? < cap.hold)
+    }
+
+    /// `workspace`'s [`Caps`], as its box last said.
+    pub fn session_caps(&self, workspace: &str) -> Result<Caps> {
+        caps(&self.c(), workspace)
+    }
+
+    /// Keep how many session users `workspace`'s box says it has (`None`:
+    /// it doesn't say), when that changed.
+    pub fn set_session_users(&self, workspace: &str, users: Option<u64>) -> Result<()> {
+        self.c().execute(
+            "UPDATE hosted_workspaces SET session_users = ?2
+             WHERE id = ?1 AND session_users IS DISTINCT FROM ?2",
+            params![workspace, users],
+        )?;
+        Ok(())
+    }
+
+    /// What a hosted machine on `workspace` pulls at `now` (M255): every
+    /// session there that hasn't ended, oldest first, with its queued
+    /// prompts, as the machine sees it. A parked one ([`parked`]) says so,
+    /// and its prompts are listed only while the box has a running slot
+    /// for it; then queued ones, while the box has room to run and hold
+    /// another ([`MAX_SESSIONS_PER_BOX`], [`MAX_HELD_SESSIONS_PER_BOX`]),
+    /// the oldest first. A parked one's reply goes before a new session:
+    /// its asker is waiting on a conversation the box already holds.
+    pub fn session_work_at(&self, workspace: &str, now: u64) -> Result<Vec<SessionWork>> {
         let c = self.c();
         let live = c.query_map(
             &format!(
@@ -1930,17 +2061,8 @@ impl Db {
             Some(s) => agents_model_in(&c, &s.project)?,
             None => None,
         };
-        // Every live session but a queued one holds a slot, a done one too.
-        let busy = live.iter().filter(|s| s.state != State::Queued);
-        let mut room = MAX_SESSIONS_PER_BOX.saturating_sub(busy.count());
-        let mut out = Vec::new();
-        for s in live {
-            if s.state == State::Queued {
-                if room == 0 {
-                    continue;
-                }
-                room -= 1;
-            }
+        let mut prompts_of = std::collections::HashMap::new();
+        for s in &live {
             let prompts = c.query_map(
                 &format!(
                     "SELECT {PROMPT_COLS} FROM session_prompts WHERE session_id = ?1 AND state = 'queued'
@@ -1949,6 +2071,36 @@ impl Db {
                 params![s.id],
                 prompt_row,
             )?;
+            prompts_of.insert(s.id.clone(), prompts);
+        }
+        let cap = caps(&c, workspace)?;
+        // Running: a turn under way, or done and not parked. Held: every
+        // one but a queued one.
+        let mut running = live.iter().filter(|s| s.state != State::Queued && !parked(s, now)).count();
+        let mut held = live.iter().filter(|s| s.state != State::Queued).count();
+        // A parked one with prompts runs again while there's a slot; else
+        // it stays parked, its prompts waiting here.
+        let mut wakes = std::collections::HashSet::new();
+        for s in live.iter().filter(|s| parked(s, now) && !prompts_of[&s.id].is_empty()) {
+            if running < cap.run {
+                running += 1;
+                wakes.insert(s.id.clone());
+            }
+        }
+        let mut out = Vec::new();
+        for s in live {
+            let mut prompts = prompts_of.remove(&s.id).unwrap_or_default();
+            let park = parked(&s, now) && !wakes.contains(&s.id);
+            if park {
+                prompts.clear();
+            }
+            if s.state == State::Queued {
+                if running >= cap.run || held >= cap.hold {
+                    continue;
+                }
+                running += 1;
+                held += 1;
+            }
             out.push(SessionWork {
                 session: s.id.clone(),
                 project: s.project.clone(),
@@ -1965,6 +2117,7 @@ impl Db {
                 harness: Some(s.harness.clone()),
                 review: s.role == Role::Review,
                 model: s.model.clone().or_else(|| model.clone()),
+                park,
             });
         }
         Ok(out)

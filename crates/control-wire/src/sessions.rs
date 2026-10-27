@@ -191,6 +191,11 @@ pub struct SessionCard {
     /// When it last stopped running (done, failed, stopped): the clock
     /// stops there. `None` while a turn is under way or queued.
     pub ended_at: Option<u64>,
+    /// Done and parked (Arugula #215): idle long enough that its box
+    /// closed its agent, keeping its checkout and conversation. A reply
+    /// opens it again.
+    #[serde(default)]
+    pub parked: bool,
     pub last_tool: Option<String>,
     pub last_error: Option<String>,
     /// Why it failed or stopped, or why it's queued again (its box was
@@ -324,8 +329,8 @@ pub struct SessionTry {
     /// Why it failed or stopped.
     pub reason: Option<String>,
     pub updated_at: u64,
-    /// Queued with no slot on its box for it yet (the box holds three
-    /// sessions, done ones too).
+    /// Queued with no slot on its box for it yet (the box runs three
+    /// sessions, done ones not yet parked too, or holds six).
     pub no_slot: bool,
 }
 

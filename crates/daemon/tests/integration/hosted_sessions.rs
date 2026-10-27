@@ -29,6 +29,11 @@
 //! - before a rebuild (Arugula #209), control's `hosted.archive` over the
 //!   relay sends each open agent block's transcript, a session's too, and
 //!   the blocks stay open.
+//! - a done session control says to park (Arugula #215) has its transcript
+//!   archived, then its block closed, keeping its checkout and
+//!   `~/.claude`; a reply opens a block again on the same user and
+//!   checkout, resuming its conversation; with three running, a parked
+//!   one's reply waits until one parks.
 
 use std::{
     collections::BTreeMap,
@@ -95,6 +100,8 @@ struct Fake {
     said: Arc<Mutex<Vec<Value>>>,
     /// The transcripts the box archived (M184).
     transcripts: Arc<Mutex<Vec<Value>>>,
+    /// What the box said it takes on its last pull.
+    takes: Arc<Mutex<String>>,
 }
 
 impl Fake {
@@ -130,6 +137,7 @@ impl Fake {
             relay: Default::default(),
             said: Default::default(),
             transcripts: Default::default(),
+            takes: Default::default(),
         }
     }
 
@@ -187,6 +195,7 @@ impl Fake {
             harness: harness.map(str::to_owned),
             review,
             model: model.map(str::to_owned),
+            park: false,
         };
         self.sessions.lock().unwrap().insert(id.into(), Ses { work, stopped: false });
     }
@@ -197,6 +206,11 @@ impl Fake {
 
     fn ask(&self, id: &str, a: SessionAction) {
         self.sessions.lock().unwrap().get_mut(id).unwrap().work.actions.push(a);
+    }
+
+    /// Control's word that `id` is parked, or not (Arugula #215).
+    fn park(&self, id: &str, on: bool) {
+        self.sessions.lock().unwrap().get_mut(id).unwrap().work.park = on;
     }
 
     fn stop(&self, id: &str) {
@@ -333,8 +347,9 @@ async fn archived(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
 
 /// Every session that hasn't ended, as the platform lists them (the box
 /// keeps to its own cap).
-async fn work(Axum(f): Axum<Fake>) -> Json<Work> {
+async fn work(Axum(f): Axum<Fake>, q: axum::extract::Query<BTreeMap<String, String>>) -> Json<Work> {
     *f.pulls.lock().unwrap() += 1;
+    *f.takes.lock().unwrap() = q.get("takes").cloned().unwrap_or_default();
     let sessions = f.sessions.lock().unwrap().values().filter(|s| !s.stopped).map(|s| s.work.clone()).collect();
     Json(Work { items: vec![], revokes: vec![], sessions })
 }
@@ -1225,4 +1240,90 @@ fn a_box_archives_its_open_agents_before_a_rebuild() {
     assert!(ours["closed_at"].as_u64().unwrap() > 0);
     // Still open: its transcript is there to read.
     assert!(transcript(&d, block).iter().any(|l| l.starts_with("user: hello")));
+}
+
+/// The blocks session `id`'s turns started in, in order: its first, then
+/// each one opened again after it was parked.
+fn blocks_of(f: &Fake, id: &str) -> Vec<u64> {
+    f.of(id).iter().filter(|(r, _)| r.to == "working").filter_map(|(_, d)| d.block.as_ref()?.parse().ok()).collect()
+}
+
+/// Arugula #215: parking closes a done session's block, its transcript
+/// archived first, and keeps its user's checkout and `~/.claude`; a reply
+/// opens a block again, as the same user in the same checkout, loading
+/// its conversation (the agent still knows what it was told), and its
+/// turn names the new block. With three running, a parked one's reply
+/// waits until one of them parks.
+#[test]
+fn a_parked_session_reopens_on_a_reply() {
+    let Rig { _rt, f, marks, homes, sudo_log, d, .. } = rig("park");
+    // It says how many session users it has: the template's six.
+    wait(&marks, &f, "a pull", || f.pulls() > 0);
+    assert_eq!(*f.takes.lock().unwrap(), "run,session,session_users:6");
+    let a = ses('a');
+    f.start(&a, "fix-readme", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
+    f.queue(&a, prompt(2, "acct1", "remember plum"));
+    wait(&marks, &f, "a's second turn", || f.turns(&a).len() == 2 && f.state(&a) == "done");
+    let first = block_of(&f, &a);
+    let checkout = homes.join("ses1").join("work").join(&a);
+    let claude = homes.join("ses1").join(".claude");
+    std::fs::create_dir_all(&claude).unwrap();
+    std::fs::write(claude.join("kept"), "its agent's state").unwrap();
+
+    f.park(&a, true);
+    wait(&marks, &f, "a's block closed", || d.raw("GET", &format!("/api/blocks/{first}"), None).0 == 404);
+    let kept = f.transcripts.lock().unwrap().clone();
+    assert!(
+        kept.iter().any(|t| t["block"] == first && t["text"].as_str().is_some_and(|x| x.contains("remember plum"))),
+        "its transcript: {kept:#?}"
+    );
+    let log = std::fs::read_to_string(marks.join("arugulad.log")).unwrap();
+    let archived = log.find("its transcript archived").expect("archived");
+    let closed = log.find("parked a session").expect("parked");
+    assert!(archived < closed, "archived before its block closed");
+    assert!(checkout.join(".git").exists(), "its checkout stays");
+    assert!(claude.join("kept").exists(), "its ~/.claude stays");
+    assert_eq!(f.state(&a), "done");
+    let agents = || {
+        let said = std::fs::read_to_string(&sudo_log).unwrap();
+        said.lines().filter(|l| l.starts_with("-n -u ses1 -- env -i") && l.contains("arugula-brokered sh -c")).count()
+    };
+    assert_eq!(agents(), 1);
+
+    // A reply: a block again, as ses1, in its checkout, on its
+    // conversation; the turn names it.
+    f.park(&a, false);
+    f.queue(&a, prompt(3, "acct1", "recall"));
+    wait(&marks, &f, "the reply's turn", || f.turns(&a).len() == 3 && f.state(&a) == "done");
+    let blocks = blocks_of(&f, &a);
+    assert_eq!(blocks.len(), 2, "{blocks:?}");
+    let second = blocks[1];
+    assert_ne!(second, first);
+    let lines = transcript(&d, second);
+    assert!(lines.iter().any(|l| l == "agent: You said plum."), "{lines:#?}");
+    let state = d.get(&format!("/api/blocks/{second}"))["state"].clone();
+    assert_eq!(state["cwd"].as_str(), Some(checkout.to_str().unwrap()));
+    assert_eq!(agents(), 2, "its agent, as ses1 again");
+
+    // Parked again; three others run (done, their agents up): a reply to
+    // it waits, until one of them parks.
+    f.park(&a, true);
+    wait(&marks, &f, "a parked again", || d.raw("GET", &format!("/api/blocks/{second}"), None).0 == 404);
+    let (b, c, e) = (ses('b'), ses('c'), ses('e'));
+    f.start(&b, "one", prompt(10, "acct1", "hello"));
+    f.start(&c, "two", prompt(11, "acct1", "hello"));
+    f.start(&e, "three", prompt(12, "acct1", "hello"));
+    wait(&marks, &f, "b, c and e done", || [&b, &c, &e].iter().all(|s| f.state(s) == "done"));
+    assert!(homes.join("ses4").join("work").join(&e).join(".git").exists(), "e has the fourth user");
+    f.park(&a, false);
+    f.queue(&a, prompt(4, "acct1", "recall"));
+    let p = f.pulls();
+    wait(&marks, &f, "more pulls", || f.pulls() > p + 10);
+    assert_eq!(f.turns(&a).len(), 3, "three run: the reply waits");
+    f.park(&b, true);
+    wait(&marks, &f, "a's reply once b parked", || f.turns(&a).len() == 4 && f.state(&a) == "done");
+    assert!(homes.join("ses2").join("work").join(&b).join(".git").exists(), "b keeps its checkout");
+    assert_eq!(blocks_of(&f, &a).len(), 3);
+    assert!(f.refused.lock().unwrap().is_empty(), "{:?}", f.refused.lock().unwrap());
 }

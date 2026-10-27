@@ -4,7 +4,7 @@
 # the toolchain docs/development.md asks for, where the box's session users
 # run it too (Arugula #215). It builds nothing.
 #
-# Setup runs as `user`, whose home session users (ses1..ses3, each
+# Setup runs as `user`, whose home session users (ses1..ses6, each
 # session's agent and its finish step) can't enter. So nothing a session
 # runs is installed under ~user or linked into it: it goes in
 # /opt/arugula/tools, and `arugula-tools` (the template's) publishes it in

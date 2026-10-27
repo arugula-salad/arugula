@@ -390,6 +390,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         updated_at: s.updated_at,
         heard_at: s.heard_at,
         ended_at: ended.then(|| last_state(s.state).map_or(s.updated_at, |e| e.at)),
+        parked: crate::db::sessions::parked(s, now_ms()),
         last_tool: s.last_tool.clone(),
         last_error: s.last_error.clone(),
         reason,

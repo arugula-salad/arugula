@@ -64,7 +64,7 @@ pub async fn places(app: &Platform, s: &Session) -> anyhow::Result<Vec<SessionPl
     Ok(pool::ranked(app, &s.project, others)
         .await?
         .into_iter()
-        .map(|(w, l)| SessionPlace { workspace: w.id, name: w.name, awake: l.awake, busy: l.busy })
+        .map(|(w, l)| SessionPlace { workspace: w.id, name: w.name, awake: l.awake, busy: l.busy() })
         .collect())
 }
 

@@ -44,6 +44,10 @@
 // session's own message, `via` `said:<ses>` with no author (Arugula #215):
 // the room draws it with the session's look (`SaidHead`, `SaidAvatar`),
 // its agent and short id linked to its page, apart from people.
+//
+// Parked (Arugula #215): a done session idle for 30 minutes has its agent
+// closed on its box, keeping its checkout and conversation. The card says
+// "parked", with no Open (its block is gone); a reply opens it again.
 
 import "./session-card.css";
 import { useEffect, useState } from "preact/hooks";
@@ -635,7 +639,8 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
     );
   }
   const quiet = isQuiet(c, now);
-  const { label, tone } = mergedOf(c) ?? triedAs(c.state, c.reason) ?? stateOf(c.state, quiet);
+  const parked = c.state === "done" && c.parked;
+  const { label, tone } = mergedOf(c) ?? triedAs(c.state, c.reason) ?? (parked ? { label: "parked", tone: "ok" as Tone } : stateOf(c.state, quiet));
   const short = c.session.replace(/^ses_/, "").slice(0, 8);
   const ended = c.state === "done" || c.state === "failed" || c.state === "stopped";
   const took = elapsed((c.ended_at ?? now) - c.created_at);
@@ -721,6 +726,10 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
         </p>
       ) : c.state === "queued" ? (
         <p class="session-card-line dim">Waiting for its box to take it.</p>
+      ) : parked ? (
+        <p class="session-card-line dim" data-session-parked>
+          Idle a while, so its agent was closed. Its work and conversation are kept: a reply opens it again.
+        </p>
       ) : null}
       <MergedLine c={c} />
       {c.last_error && (
@@ -782,7 +791,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
       {c.tries.length > 0 && c.role === "thread" && <TriesView c={c} may={view.may} busy={busy} pick={(ses) => void act("pick", { session: ses })} />}
       {drafting && !c.pr && <PrEditor ses={c.session} onClose={() => setDrafting(false)} />}
       <div class="session-card-buttons">
-        {c.machine && block && (
+        {c.machine && block && !parked && (
           <button type="button" title="Its agent block, live on its box" data-session-open onClick={() => open(`pane=${c.machine}.${block}`, () => api.goToPane(c.machine!, block, null))}>
             Open ↗
           </button>

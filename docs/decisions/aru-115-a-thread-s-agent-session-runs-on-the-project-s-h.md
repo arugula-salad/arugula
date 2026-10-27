@@ -27,7 +27,7 @@ options:
     tradeoff: "A machine would act on GitHub as the project with nobody sending it, against \"agents draft, people send\", and a token that pushes any ref can push to main."
 choice:
   option: "a"
-  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them. Amended (Jake, 2026-10-27): a session's agent reads and comments on its own project's native issues, with its asker's rights and as the session itself, through a server of its own and a route that takes the session as the authority, not machine grants."
+  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them. Amended again (Jake, 2026-10-27, Arugula #215): a box runs three sessions and holds six (or as many session users as it says it has, three when it doesn't say); a done one idle 30 minutes is parked (its agent closed, its user, checkout and conversation kept) and opens again on a reply when there's a running slot. Amended again (Jake, 2026-10-27, Arugula #216): a session's agent reads and comments on its own project's native issues, with its asker's rights and as the session itself, through a server of its own and a route that takes the session as the authority, not machine grants."
 rejected:
   - option: "b"
     why: "Agents on personal machines are never woken by other people's mentions: a person's machine runs what its person starts."
@@ -104,10 +104,38 @@ agents draft while people send".
   the least busy, then by name, and its card's Move to… sends it to
   another (amended, Arugula #214: it no longer asks which box). It asks
   only which repo, when the boxes have several and the ask names none,
-  as a form that mentions the asker until it's answered.
+  as a form that mentions the asker until it's answered. "Least busy"
+  is the fewest live sessions (queued, or a turn under way), then the
+  fewest done ones (Arugula #215): a done session still holds its slot
+  and its checkout, but it isn't working the box now, so asks in a row
+  spread over the awake boxes. A paused box is woken only when no awake
+  one has a free slot, and a box holding six is full (below).
 - **On the box:** an ACP agent block, as its own Unix user, in a worktree of
-  its own, at most three sessions with a turn under way per box. How the
-  user and the worktree are set up is the box's to settle (S42).
+  its own. How the user and the worktree are set up is the box's to settle
+  (S42).
+- **Three running, six held** (amended, Jake, 2026-10-27, Arugula #215).
+  A box runs at most three sessions at once: a turn under way, or done
+  less than 30 minutes ago, its agent still up for the next turn. Each
+  running agent takes the box's memory and CPU, and three is what a box is
+  sized for. It holds at most six: each keeps its own session user
+  (`ses1` to `ses6`), and that user's checkout and `~/.claude`, for its
+  next turn. A box says how many session users it has on each pull, and
+  holds no more than that. One that doesn't say has three: the template
+  from before this, on boxes their owners haven't rebuilt, which hold
+  three as they did.
+  - A done session idle 30 minutes is **parked**: its box archives its
+    transcript, then closes its agent block, keeping its user, checkout
+    and conversation. That frees the memory and a running slot, so a
+    fourth session can run while three wait for replies. Its card says
+    it's parked.
+  - A reply to a parked session waits, queued, until the box has a
+    running slot. Then the box opens a block on the same user and
+    checkout, loading the conversation, and the turn runs there.
+  - Before this, a done session held its slot until it ended, so a box
+    with three done sessions took no new one, and one box held every
+    recent checkout while the others slept.
+  - The day-long idle stop still ends a session for good, and its user
+    and checkout go then.
 - **Untrusted text.** A project member's text goes into a prompt plain.
   Text from GitHub (a review, a comment, a check's log) goes in fenced as
   quoted data, saying whose it is and its `author_association`, so the

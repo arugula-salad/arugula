@@ -460,6 +460,7 @@ fn a_pulled_prompt_names_its_author() {
         harness: None,
         review: false,
         model: None,
+        park: false,
     }];
     let account = |id: &str, login: &str, name: &str| {
         (id.to_owned(), crate::hub::Account { id: id.into(), login: login.into(), name: name.into() })

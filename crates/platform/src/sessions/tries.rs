@@ -13,9 +13,10 @@
 //!   the box has it; a box without it runs Claude Code and says so), or
 //!   `claude` twice. Each sibling's turns are the session's asker's, as
 //!   the session's are (aru-115), whoever clicked.
-//! - **The cap:** a box holds three sessions, done ones too
-//!   (`MAX_SESSIONS_PER_BOX`). A sibling with no slot waits queued, and the
-//!   card counts it as waiting for one.
+//! - **The cap:** a box runs three sessions, done ones not yet parked too
+//!   (`MAX_SESSIONS_PER_BOX`), and holds six (`MAX_HELD_SESSIONS_PER_BOX`).
+//!   A sibling with no slot waits queued, and the card counts it as
+//!   waiting for one.
 //! - **Pick** keeps one: the others that haven't ended stop, "not picked"
 //!   (`db::sessions::NOT_PICKED`), and their boxes clean their slots. What
 //!   they pushed stays on GitHub; what they didn't push goes with their

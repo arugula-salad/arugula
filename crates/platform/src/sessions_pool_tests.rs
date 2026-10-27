@@ -13,10 +13,10 @@ use crate::{
     Platform,
     chat_tests::{TestHub, call},
     db::{
-        sessions::{Kind, PromptState, Session, State},
+        sessions::{Kind, Move, PromptState, Session, State},
         sql::{Sql as _, params},
     },
-    sessions_hydrate_tests::{add_box, box_says, lines, platform, post_in, sessions},
+    sessions_hydrate_tests::{add_box, box_says, lines, platform, post_in, sessions, take},
     work::HostedMachine,
 };
 
@@ -114,6 +114,65 @@ async fn the_pool_prefers_awake_with_a_free_slot_then_least_busy() {
     hub.online_down(true);
     let (_, s) = ask(&app, &base, &t, "b", "@arugula task 8").await;
     assert_eq!(s.unwrap().workspace, "hw_dev");
+}
+
+/// `s` is in `state` (`done`, as its box's turn's end would leave it,
+/// its prompts sent; `stopped`, as a person would).
+fn set_state(app: &Platform, s: &Session, state: &str) {
+    app.db.c().execute("UPDATE agent_sessions SET state = ?2 WHERE id = ?1", params![s.id, state]).unwrap();
+    if state == "done" {
+        app.db.c().execute("UPDATE session_prompts SET state = 'sent' WHERE session_id = ?1", params![s.id]).unwrap();
+    }
+}
+
+/// Live sessions weigh more than done ones (Arugula #215, edge 3): asks
+/// in a row spread over the awake boxes whether the last one is still
+/// working or done, a box holding only done sessions beats one with a
+/// turn under way, and a paused box is woken only when no awake one has
+/// room. "Agents run on" still wins.
+#[tokio::test]
+async fn the_pool_spreads_by_live_sessions_then_done() {
+    let (hub, app, base, t, _u, _keys) = platform(&["https://github.com/o/app"]).await;
+    // dev is ready but off the relay: asleep.
+    add_box(&app, &t, "hw_b", "b-two", &["https://github.com/o/app"], Some("m_b"));
+    add_box(&app, &t, "hw_c", "c-three", &["https://github.com/o/app"], Some("m_c"));
+    hub.set_online("m_b", true);
+    hub.set_online("m_c", true);
+    let mut went = Vec::new();
+    let mut done = Vec::new();
+    for i in 0..3 {
+        let (_, s) = ask(&app, &base, &t, "b", &format!("@arugula task {i}")).await;
+        let s = s.expect("started");
+        set_state(&app, &s, "done");
+        went.push(s.workspace.clone());
+        done.push(s);
+    }
+    // Each done before the next: still spread, never piled on b.
+    assert_eq!(went, ["hw_b", "hw_c", "hw_b"]);
+
+    // c takes the next (one done to b's two), and its done one ends: c
+    // has one turn under way, b two done sessions and none live. b is
+    // the less busy now (by the old count it was c, one to two).
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 3").await;
+    assert_eq!(s.unwrap().workspace, "hw_c");
+    set_state(&app, &done[1], "stopped");
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 4").await;
+    assert_eq!(s.unwrap().workspace, "hw_b", "b: no live sessions, c: one");
+
+    // b is full (one live, two done); c, awake with room, takes the next
+    // two before dev is woken. Then both are full: dev, asleep with room,
+    // is woken for the next.
+    for i in 5..7 {
+        let (_, s) = ask(&app, &base, &t, "b", &format!("@arugula task {i}")).await;
+        assert_eq!(s.unwrap().workspace, "hw_c");
+    }
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 7").await;
+    assert_eq!(s.unwrap().workspace, "hw_dev");
+
+    // An explicit "agents run on" wins over the pool, full or not.
+    assert!(app.db.set_agents_run_on(&t, Some("hw_b")).unwrap());
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 8").await;
+    assert_eq!(s.unwrap().workspace, "hw_b");
 }
 
 /// It asks only when it must: which repo when the boxes have several and
@@ -321,6 +380,152 @@ async fn a_projects_model_goes_to_its_box_and_its_card() {
     let (st, v) = call(&base, "a", "PUT", &path, Some(json!({ "model": null }))).await;
     assert_eq!((st, v["model"].clone()), (200, Value::Null));
     assert_eq!(app.db.session_work("hw_dev").unwrap().iter().find(|w| w.session == s.id).unwrap().model, None);
+}
+
+/// Session `id`'s box last heard from it `ago` ms back: as if it had sat
+/// done that long.
+fn idle_for(app: &Platform, id: &str, ago: u64) {
+    let at = arugula_e2e::now_ms() - ago;
+    app.db.c().execute("UPDATE agent_sessions SET heard_at = ?2 WHERE id = ?1", params![id, at]).unwrap();
+}
+
+/// The box's pull for workspace `ws`: each session's id, whether it's to
+/// park, and how many prompts it lists.
+fn pull(app: &Platform, ws: &str) -> Vec<(String, bool, usize)> {
+    app.db.session_work(ws).unwrap().into_iter().map(|w| (w.session, w.park, w.prompts.len())).collect()
+}
+
+/// Parked sessions (Arugula #215): a box whose three done sessions sat
+/// idle past the park time takes a new one, from the pool's pick and its
+/// pull, and their cards say parked; within the park time a done one
+/// still counts. A reply to a parked one while three run waits for a
+/// slot, listed without its prompt, then goes to the box.
+#[tokio::test]
+async fn parked_sessions_free_their_running_slots() {
+    use crate::db::sessions::SESSION_PARK_MS;
+    let (hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
+    hub.set_online(&keys.id(), true);
+    // A second box, awake: the pool's other choice. Both on this
+    // template: six session users.
+    add_box(&app, &t, "hw_b", "b-two", &["https://github.com/o/app"], Some("m_b"));
+    hub.set_online("m_b", true);
+    app.db.set_session_users("hw_dev", Some(6)).unwrap();
+    app.db.set_session_users("hw_b", Some(6)).unwrap();
+    // All three on dev: agents run on dev.
+    assert!(app.db.set_agents_run_on(&t, Some("hw_dev")).unwrap());
+    let mut done = vec![];
+    for i in 0..3 {
+        let (p, s) = ask(&app, &base, &t, "b", &format!("@arugula task {i}")).await;
+        let s = s.expect("started");
+        assert_eq!(s.workspace, "hw_dev");
+        take(&app, &keys, &s.id);
+        box_says(&app, &keys, &s.id, 2, State::Working, State::Done, "{}");
+        done.push((p, s));
+    }
+    assert!(app.db.set_agents_run_on(&t, None).unwrap());
+    // Just done, within the park time: they still run, so dev is full
+    // and the pool picks b.
+    for (_, s) in &done {
+        idle_for(&app, &s.id, SESSION_PARK_MS - 60_000);
+    }
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 3").await;
+    assert_eq!(s.unwrap().workspace, "hw_b", "dev's three done ones still count");
+    assert!(pull(&app, "hw_dev").iter().all(|(_, park, _)| !park));
+
+    // Past the park time they're parked: dev, with none running and none
+    // live, is the pool's pick again (b has one), and its box is told to
+    // park them.
+    for (_, s) in &done {
+        idle_for(&app, &s.id, SESSION_PARK_MS + 60_000);
+    }
+    let (_, fourth) = ask(&app, &base, &t, "b", "@arugula task 4").await;
+    let fourth = fourth.unwrap();
+    assert_eq!(fourth.workspace, "hw_dev", "three parked leave room");
+    let work = pull(&app, "hw_dev");
+    for (_, s) in &done {
+        assert!(work.contains(&(s.id.clone(), true, 0)), "{work:?}");
+    }
+    assert!(work.contains(&(fourth.id.clone(), false, 1)), "the fourth is offered: {work:?}");
+    let (st, v) = call(&base, "b", "GET", &format!("/api/sessions/{}", done[0].1.id), None).await;
+    assert_eq!((st, &v["card"]["state"], &v["card"]["parked"]), (200, &json!("done"), &json!(true)), "{v}");
+    take(&app, &keys, &fourth.id);
+    let (st, v) = call(&base, "b", "GET", &format!("/api/sessions/{}", fourth.id), None).await;
+    assert_eq!((st, &v["card"]["parked"]), (200, &json!(false)));
+
+    // Two more run on dev beside the fourth: three live, three parked.
+    assert!(app.db.set_agents_run_on(&t, Some("hw_dev")).unwrap());
+    let mut live = vec![fourth.id.clone()];
+    for i in 5..7 {
+        let (_, s) = ask(&app, &base, &t, "b", &format!("@arugula task {i}")).await;
+        let s = s.unwrap();
+        take(&app, &keys, &s.id);
+        live.push(s.id);
+    }
+    // A reply to a parked one waits: listed parked, without its prompt.
+    let (p0, s0) = &done[0];
+    post_in(&base, ROOM, "b", "and the footer too", Some(*p0)).await;
+    let queued = app.db.session_prompts(&s0.id).unwrap().into_iter().filter(|p| p.state == PromptState::Queued);
+    assert_eq!(queued.count(), 1, "the reply is its prompt");
+    assert!(pull(&app, "hw_dev").contains(&(s0.id.clone(), true, 0)), "it waits for a slot");
+    // One of the three ends: the reply goes to the box, and its turn runs.
+    let stopped = live.pop().unwrap();
+    app.db
+        .move_session(
+            &stopped,
+            &Move::Control { from: State::Working, to: State::Stopped, at: arugula_e2e::now_ms(), detail: "{}" },
+        )
+        .unwrap()
+        .unwrap();
+    assert!(pull(&app, "hw_dev").contains(&(s0.id.clone(), false, 1)), "{:?}", pull(&app, "hw_dev"));
+    let prompts = app.db.session_prompts(&s0.id).unwrap().into_iter();
+    let prompts: Vec<String> = prompts.filter(|p| p.state == PromptState::Queued).map(|p| p.id).collect();
+    let reopen = json!({ "prompts": prompts, "block": "blk_7" }).to_string();
+    box_says(&app, &keys, &s0.id, 3, State::Done, State::Working, &reopen);
+    let s0 = app.db.session(&s0.id).unwrap().unwrap();
+    assert_eq!((s0.state, s0.block.as_deref()), (State::Working, Some("blk_7")), "in the block its box opened again");
+}
+
+/// A box says how many session users it has on its pull (Arugula #215):
+/// one that says three, or nothing (the template from before), is full at
+/// three held, parked ones too, and the pool goes past it to a box with
+/// six that has room; the one with six, whose three are parked, takes the
+/// next.
+#[tokio::test]
+async fn a_box_with_three_users_is_full_at_three_held() {
+    use crate::db::sessions::SESSION_PARK_MS;
+    let (hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
+    hub.set_online(&keys.id(), true);
+    add_box(&app, &t, "hw_b", "b-two", &["https://github.com/o/app"], Some("m_b"));
+    hub.set_online("m_b", true);
+    // dev's box says nothing on its pull: three users.
+    let m = HostedMachine { project: t.clone(), workspace: "hw_dev".into(), machine: keys.id(), sign: String::new() };
+    crate::work::work(&app, &m, &["run".into(), "session".into()]).await.unwrap();
+    assert_eq!(app.db.session_caps("hw_dev").unwrap().hold, 3);
+    // b's says six.
+    let mb = HostedMachine { project: t.clone(), workspace: "hw_b".into(), machine: "m_b".into(), sign: String::new() };
+    crate::work::work(&app, &mb, &["run".into(), "session".into(), "session_users:6".into()]).await.unwrap();
+    assert_eq!(app.db.session_caps("hw_b").unwrap().hold, 6);
+
+    // Three parked on each.
+    for ws in ["hw_dev", "hw_b"] {
+        assert!(app.db.set_agents_run_on(&t, Some(ws)).unwrap());
+        for i in 0..3 {
+            let (_, s) = ask(&app, &base, &t, "b", &format!("@arugula {ws} task {i}")).await;
+            let s = s.unwrap();
+            assert_eq!(s.workspace, ws);
+            set_state(&app, &s, "done");
+            idle_for(&app, &s.id, SESSION_PARK_MS + 60_000);
+        }
+    }
+    assert!(app.db.set_agents_run_on(&t, None).unwrap());
+    // dev ("dev") would come before b by load and name were it not full;
+    // b-two has room for three more.
+    for i in 0..3 {
+        let (_, s) = ask(&app, &base, &t, "b", &format!("@arugula more {i}")).await;
+        assert_eq!(s.unwrap().workspace, "hw_b", "dev holds three: full");
+    }
+    let dev = pull(&app, "hw_dev");
+    assert!(dev.len() == 3 && dev.iter().all(|(_, park, _)| *park), "dev's three, parked and listed: {dev:?}");
 }
 
 /// Move to…: a done session goes to another box with its repo, queued
