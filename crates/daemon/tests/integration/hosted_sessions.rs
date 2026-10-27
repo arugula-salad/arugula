@@ -1167,7 +1167,9 @@ fn a_codex_session_asks_nobody_but_its_questions_reach_the_card() {
 /// A session's agent has two tools for its project's issues, on a server of
 /// its own: a list and a comment go to control as the session's, with an
 /// issue's number and no project, signed by the box; and nothing else of
-/// Arugula's is there to call.
+/// Arugula's is there to call. Linux only: the server knows its caller by
+/// the socket's owner in `/proc/net/tcp`, and boxes run Linux.
+#[cfg(target_os = "linux")]
 #[test]
 fn a_sessions_agent_reads_and_comments_on_its_projects_issues() {
     let Rig { _rt, f, marks, d, .. } = rig("issues");
