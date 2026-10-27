@@ -25,6 +25,22 @@ fn a_session_names_only_its_own_branch() {
     }
 }
 
+/// The template makes the daemon's session users (Arugula #215): one per
+/// session a box holds, `ses1` to `ses6`, each in sudoers' `env_reset`,
+/// and more than the three that run at once.
+#[test]
+fn the_template_makes_a_user_for_each_session_held() {
+    let image = include_str!("../../../packaging/hosted/Dockerfile");
+    let users = default_users();
+    assert_eq!(users.len(), MAX_HELD_SESSIONS_PER_BOX);
+    const { assert!(MAX_HELD_SESSIONS_PER_BOX > MAX_SESSIONS_PER_BOX, "parked ones keep a user each") };
+    let ns: Vec<String> = users.iter().map(|u| u.trim_start_matches("ses").to_owned()).collect();
+    let made = format!(r#"RUN for n in {}; do {{ id -u "ses$n""#, ns.join(" "));
+    assert!(image.contains(&made), "packaging/hosted/Dockerfile: {made}");
+    let sudoers = format!(r"printf 'Defaults>ses%s env_reset\n' {} > /etc/sudoers.d/sessions", ns.join(" "));
+    assert!(image.contains(&sudoers), "packaging/hosted/Dockerfile: {sudoers}");
+}
+
 /// Each report is the session's next, signed, from the state the box last
 /// said, and names the actions done since the last.
 #[test]
@@ -60,6 +76,8 @@ fn each_report_is_the_sessions_next_signed() {
         model: None,
         model_now: None,
         model_said: None,
+        parked: None,
+        reopened: false,
     };
     l.push(
         &keys,
@@ -157,6 +175,8 @@ fn a_turns_report_carries_its_last_message() {
         model: None,
         model_now: None,
         model_said: None,
+        parked: None,
+        reopened: false,
     };
     // Quotes and newlines double in JSON: a full reply beside a full
     // diffstat would be past 16 KiB.
@@ -447,6 +467,8 @@ async fn a_push_back_after_an_end_cleans_again() {
         model: None,
         model_now: None,
         model_said: None,
+        parked: None,
+        reopened: false,
     };
     assert!(claim(&dir, &l));
     let place = dir.join(super::super::DIR).join(DIR).join(format!("{}.push", l.session));

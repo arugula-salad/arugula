@@ -10,11 +10,17 @@
 //!   session works in no repo. A repo the project linked that no candidate
 //!   has, named by `owner/name`, is said so ([`Settled::Missing`]);
 //!   several and named none, the asker is asked ([`Settled::Ambiguous`]).
-//! - **Then the box** ([`ranked`]): of the candidates that have the repo,
-//!   one that's awake (ready, and online at the hub; ready alone when the
-//!   hub can't say) with a free slot first ([`MAX_SESSIONS_PER_BOX`],
-//!   counting every session there that hasn't ended, queued and done ones
-//!   too), then the least busy, then by name.
+//! - **Then the box** ([`ranked`], [`Load::rank`]): of the candidates
+//!   that have the repo, one that's awake (ready, and online at the hub;
+//!   ready alone when the hub can't say) with a free slot first (fewer
+//!   than `MAX_SESSIONS_PER_BOX` running, counting queued ones and done
+//!   ones not yet parked, and fewer than `MAX_HELD_SESSIONS_PER_BOX`
+//!   held, parked ones too; fewer on a box with fewer session users, as
+//!   [`Caps`] says), then one asleep with a free slot (woken for
+//!   it), then a full one. Within each: the fewest live sessions (queued,
+//!   or a turn under way), then the fewest done ones, parked or not, then
+//!   by name. So asks in a row spread over the awake boxes, and a box is
+//!   woken only when no awake one has room.
 //! - **Move to…** lists the others that have the session's repo the same
 //!   way ([`crate::sessions::moves`]).
 
@@ -26,7 +32,7 @@ use crate::{
     Platform,
     db::{
         hosted::HostedWorkspace,
-        sessions::{AgentsOn, MAX_SESSIONS_PER_BOX},
+        sessions::{AgentsOn, BoxLoad, Caps},
     },
 };
 
@@ -167,20 +173,63 @@ pub fn linked(app: &Platform, project: &str) -> Result<Vec<String>> {
 pub struct Load {
     /// Ready, and online at the hub (or the hub can't say).
     pub awake: bool,
-    /// The project's sessions it holds or has queued.
-    pub busy: u32,
+    /// The project's sessions it has queued or with a turn under way.
+    pub live: u32,
+    /// The project's done sessions it holds with their agent up, each
+    /// waiting for its next prompt.
+    pub done: u32,
+    /// The project's parked sessions it holds: done, its agent closed, its
+    /// checkout kept (Arugula #215).
+    pub parked: u32,
+    /// How many it may run and hold: fewer than the most on a box with
+    /// fewer session users.
+    pub caps: Caps,
 }
 
 impl Load {
+    pub fn of(awake: bool, l: BoxLoad, caps: Caps) -> Self {
+        Load { awake, live: l.live, done: l.done, parked: l.parked, caps }
+    }
+
+    /// The sessions it holds or has queued, parked ones too: each has a
+    /// session user there (`MAX_HELD_SESSIONS_PER_BOX`).
+    pub fn busy(self) -> u32 {
+        self.live + self.done + self.parked
+    }
+
+    /// A slot for one more, awake or not: room to run it (live and done
+    /// ones; a parked one isn't running) and to hold it, by its [`Caps`].
+    pub fn room(self) -> bool {
+        ((self.live + self.done) as usize) < self.caps.run && (self.busy() as usize) < self.caps.hold
+    }
+
     /// Awake, with a slot for one more.
     pub fn free(self) -> bool {
-        self.awake && (self.busy as usize) < MAX_SESSIONS_PER_BOX
+        self.awake && self.room()
+    }
+
+    /// Where it goes in the pick, best first: awake with room, then asleep
+    /// with room (woken only when no awake one has room), then full;
+    /// within each, the fewest live sessions, then the fewest done ones,
+    /// parked or not. A live session works the box's CPU and memory now; a
+    /// done one only waits, and a parked one only keeps its checkout.
+    pub fn rank(self) -> (u8, u32, u32) {
+        let tier = match (self.free(), self.room()) {
+            (true, _) => 0,
+            (false, true) => 1,
+            (false, false) => 2,
+        };
+        (tier, self.live, self.done + self.parked)
     }
 }
 
 /// `ws`, best first, each with its load (the module's rule).
 pub async fn ranked(app: &Platform, project: &str, ws: Vec<HostedWorkspace>) -> Result<Vec<(HostedWorkspace, Load)>> {
-    let busy = app.db.workspace_load(project)?;
+    let held = app.db.workspace_load(project, arugula_e2e::now_ms())?;
+    let mut caps = std::collections::HashMap::new();
+    for w in &ws {
+        caps.insert(w.id.clone(), app.db.session_caps(&w.id)?);
+    }
     let machines: Vec<String> = ws.iter().filter_map(|w| w.machine.clone()).collect();
     // The hub not saying is "can't say", not "offline".
     let online: Option<HashSet<String>> = if machines.is_empty() {
@@ -193,12 +242,13 @@ pub async fn ranked(app: &Platform, project: &str, ws: Vec<HostedWorkspace>) -> 
         .map(|w| {
             let up = w.state == "ready"
                 && w.machine.as_ref().is_some_and(|m| online.as_ref().is_none_or(|on| on.contains(m)));
-            let load = Load { awake: up, busy: busy.get(&w.id).copied().unwrap_or(0) };
+            let caps = caps.get(&w.id).copied().unwrap_or(Caps::of(None));
+            let load = Load::of(up, held.get(&w.id).copied().unwrap_or_default(), caps);
             (w, load)
         })
         .collect();
     out.sort_by(|(a, la), (b, lb)| {
-        (!la.free(), la.busy, a.name.to_lowercase(), &a.id).cmp(&(!lb.free(), lb.busy, b.name.to_lowercase(), &b.id))
+        (la.rank(), a.name.to_lowercase(), &a.id).cmp(&(lb.rank(), b.name.to_lowercase(), &b.id))
     });
     Ok(out)
 }
@@ -235,6 +285,46 @@ mod tests {
         assert_eq!(named("app", &repos), Some("o/app"));
         assert_eq!(named("web", &repos), None, "two repos are called web");
         assert_eq!(named("use p/web.", &repos), Some("p/web"));
+    }
+
+    /// Awake with room first, then asleep with room, then full; within
+    /// each, fewest live, then fewest done. A box with three session users
+    /// (one from before Arugula #215, or that says nothing) is full at
+    /// three held.
+    #[test]
+    fn live_sessions_weigh_more_than_done() {
+        let l = |awake, live, done, parked| Load { awake, live, done, parked, caps: Caps::of(Some(6)) };
+        let mut boxes = [
+            ("full-awake", l(true, 0, 3, 0)),
+            ("asleep-empty", l(false, 0, 0, 0)),
+            ("one-live", l(true, 1, 0, 0)),
+            ("two-done", l(true, 0, 2, 0)),
+            ("one-each", l(true, 1, 1, 0)),
+            // Three parked: none running, so room, but last of the awake.
+            ("three-parked", l(true, 0, 0, 3)),
+            // Six held, though only two run: full.
+            ("six-held", l(true, 0, 2, 4)),
+            // Three users, three parked: full; and one that doesn't say
+            // is the same.
+            ("three-users", Load { caps: Caps::of(Some(3)), ..l(true, 0, 0, 3) }),
+            ("unsaid", Load { caps: Caps::of(None), ..l(true, 0, 0, 3) }),
+        ];
+        boxes.sort_by_key(|(name, load)| (load.rank(), *name));
+        let order: Vec<&str> = boxes.iter().map(|(n, _)| *n).collect();
+        assert_eq!(
+            order,
+            [
+                "two-done",
+                "three-parked",
+                "one-live",
+                "one-each",
+                "asleep-empty",
+                "full-awake",
+                "three-users",
+                "unsaid",
+                "six-held"
+            ]
+        );
     }
 
     /// The repo an ask is about: the one it names, the only one, none at

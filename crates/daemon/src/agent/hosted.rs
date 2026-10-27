@@ -262,7 +262,7 @@ fn session_env_text() -> String {
 /// agent runs as it, and so does all of the daemon's git in the session's
 /// checkout, never as the daemon's user or root (an agent's planted
 /// `core.fsmonitor` would run as them). The template makes them (`ses1` to
-/// `ses3`): no sudo, not in `user`'s group, homes 0700.
+/// `ses6`): no sudo, not in `user`'s group, homes 0700.
 ///
 /// Through `sudo -n -u USER -- env -i …`: an empty environment but for
 /// what's named, and nothing secret on that command line, which sudo logs

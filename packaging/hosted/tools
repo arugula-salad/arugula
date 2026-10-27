@@ -1,7 +1,7 @@
 #!/bin/sh
 # arugula-tools (Arugula #215): puts a workspace setup's tools where every
 # session user runs them. The setup runs as `user`, whose home is closed to
-# session users (ses1..ses3), so a tool installed there, or linked from
+# session users (ses1..ses6), so a tool installed there, or linked from
 # /usr/local/bin into there, is "Permission denied" to every session's
 # agent and its finish step. /opt/arugula/tools is the template's place for
 # them instead: owned by `user`, readable by all, writable by nobody else,

@@ -26,8 +26,10 @@
 //! - **Pulling.** A machine that says it takes sessions ([`TAKES_SESSION`])
 //!   gets, in [`Work::sessions`], every session on its workspace that
 //!   hasn't ended, on every pull: the queued ones to take (no more than
-//!   the box's [`MAX_SESSIONS_PER_BOX`] held), the rest so it sees
-//!   their new prompts, and its own last report number (`n`). One the
+//!   the box's [`MAX_SESSIONS_PER_BOX`] running and
+//!   [`MAX_HELD_SESSIONS_PER_BOX`] held), the rest so it sees their new
+//!   prompts and which to park ([`SessionWork::park`]), and its own last
+//!   report number (`n`). One the
 //!   machine runs that's no longer listed has ended (stopped, failed): it
 //!   stops the agent.
 //! - **Reporting.** Everything the machine says of a session goes to
@@ -102,6 +104,29 @@ pub const TAKES_DEPLOY: &str = "deploy";
 /// What a machine takes: agent sessions (M254). A machine that doesn't say
 /// so is never sent one.
 pub const TAKES_SESSION: &str = "session";
+/// How many session users a machine that takes sessions has (Arugula
+/// #215), said beside [`TAKES_SESSION`] as `session_users:N`
+/// ([`session_users_take`]). The platform holds at most the fewer of that
+/// and [`MAX_HELD_SESSIONS_PER_BOX`] there, and runs the fewer of that and
+/// [`MAX_SESSIONS_PER_BOX`]. A machine that doesn't say has
+/// [`DEFAULT_SESSION_USERS`]. A platform that doesn't know it ignores it.
+pub const TAKES_SESSION_USERS: &str = "session_users:";
+
+/// The session users of a machine that doesn't say how many it has: the
+/// template from before Arugula #215 made three.
+pub const DEFAULT_SESSION_USERS: usize = 3;
+
+/// What a machine with `n` session users says it takes, beside
+/// [`TAKES_SESSION`].
+pub fn session_users_take(n: usize) -> String {
+    format!("{TAKES_SESSION_USERS}{n}")
+}
+
+/// How many session users a machine that takes `takes` says it has, if
+/// it says.
+pub fn session_users_of(takes: &[String]) -> Option<usize> {
+    takes.iter().find_map(|t| t.strip_prefix(TAKES_SESSION_USERS)?.parse().ok())
+}
 
 /// `POST` [`SessionReport`], signed as the hosted machine: something it
 /// says of one of its sessions. Answered [`Reported`].
@@ -117,10 +142,29 @@ pub const WORK_SESSION_PUSH: &str = "/api/hosted/work/session/push";
 /// comments on them. Answered [`SessionIssuesGiven`].
 pub const WORK_SESSION_ISSUES: &str = "/api/hosted/work/session/issues";
 
-/// The most sessions a box holds at once: taken and not ended (`working`,
-/// `needs_input`, `unresponsive` or `done`; a done one keeps its slot and
-/// its checkout for its next turn). Another waits `queued`.
+/// The most sessions a box runs at once: a turn under way (`working`,
+/// `needs_input`, `unresponsive`), or `done` and not yet parked
+/// ([`SESSION_PARK_MS`]): a done one's agent is still up, for its next
+/// turn. Each running agent takes the box's memory and CPU, which is
+/// what three bounds. Another waits `queued`, and a parked one's next
+/// turn waits for room.
 pub const MAX_SESSIONS_PER_BOX: usize = 3;
+
+/// The most sessions a box holds at once: taken and not ended, running or
+/// parked. Each keeps its own session user, and that user's checkout and
+/// `~/.claude`, for its next turn: the template makes this many users
+/// (`ses1` to `ses6`). Another waits `queued`.
+pub const MAX_HELD_SESSIONS_PER_BOX: usize = 6;
+
+/// How long a done session waits for its next prompt before it's parked:
+/// 30 minutes. Its box closes its agent block (its transcript archived
+/// first), which frees the memory and the running slot, and keeps its
+/// user, checkout and conversation; its next prompt opens a block again,
+/// which loads the conversation. Long enough that a reply to a turn just
+/// read finds its agent up (the review of a turn's work takes minutes),
+/// short enough that a busy channel's sessions don't keep a box's three
+/// running slots for an afternoon. The day-long idle stop still ends it.
+pub const SESSION_PARK_MS: u64 = 30 * 60 * 1000;
 
 /// `POST` [`SecretsAsk`], signed as the hosted machine (M219): the
 /// environment's secrets for one of its deploy runs, while it runs, once.
@@ -138,7 +182,8 @@ pub const WORK_ARTIFACT: &str = "/api/hosted/work/artifact";
 pub struct WorkQuery;
 
 impl WorkQuery {
-    pub fn path(takes: &[&str]) -> String {
+    pub fn path<S: AsRef<str>>(takes: &[S]) -> String {
+        let takes: Vec<&str> = takes.iter().map(AsRef::as_ref).collect();
         format!("{WORK}?takes={}", takes.join(","))
     }
 }
@@ -328,6 +373,14 @@ pub struct SessionWork {
     /// on ([`SessionDetail::model`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Parked (Arugula #215): `done`, with no prompt listed, for at least
+    /// [`SESSION_PARK_MS`]. The box closes its agent block, keeping its
+    /// user, checkout and conversation; once it lists prompts again the
+    /// box opens a block on them, loading the conversation. The platform
+    /// lists a parked one's prompts only when the box has a running slot
+    /// for it ([`MAX_SESSIONS_PER_BOX`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub park: bool,
 }
 
 /// The agents a session runs on (M264): Claude Code and Codex, through
@@ -523,7 +576,8 @@ pub struct SessionDetail {
     /// #215), and it's never a prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub typed: Option<String>,
-    /// The agent block the session runs in, on taking it.
+    /// The agent block the session runs in, on taking it, and on a parked
+    /// one's next turn, which runs in a block opened again (Arugula #215).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block: Option<String>,
     /// What `needs_input` asks.
@@ -745,6 +799,11 @@ mod tests {
     #[test]
     fn sessions_on_the_wire() {
         assert_eq!(WorkQuery::path(&[TAKES_RUN, TAKES_SESSION]), "/api/hosted/work?takes=run,session");
+        // Arugula #215: how many session users, beside it.
+        let takes = [TAKES_RUN.to_owned(), TAKES_SESSION.to_owned(), session_users_take(6)];
+        assert_eq!(WorkQuery::path(&takes), "/api/hosted/work?takes=run,session,session_users:6");
+        assert_eq!(session_users_of(&takes), Some(6));
+        assert_eq!(session_users_of(&takes[..2]), None, "an older machine says nothing");
         assert!(!serde_json::to_string(&Work::default()).unwrap().contains("sessions"));
         let w: Work = serde_json::from_str(r#"{"sessions":[{"session":"ses_1","project":"prj_1","workspace":"hw_1","asker":"a","branch":"arugula/1","state":"queued","n":0}]}"#).unwrap();
         assert_eq!((w.sessions[0].repo.as_deref(), w.sessions[0].prompts.len()), (None, 0));
