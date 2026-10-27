@@ -86,12 +86,13 @@ test("a new project's home: each empty section's button does its step", async ({
   // Now there's a workspace, Runs' empty state starts one.
   await alice.locator("[data-platform-runs]").click();
   await alice.locator("[data-runs-none-start]").click();
-  await expect(alice.locator("[data-run-start-command-mode]")).toBeVisible();
+  // With no run spec, the form is a command's (no spec or command choice).
+  await expect(alice.locator("[data-run-start-command]")).toBeVisible();
   // And from the home, Start a run comes with the form open.
   await alice.goto(home$);
   await alice.locator("[data-project-start-run]").click();
   await expect(alice).toHaveURL(/\/runs#new-run$/);
-  await expect(alice.locator("[data-run-start-command-mode]")).toBeVisible();
+  await expect(alice.locator("[data-run-start-command]")).toBeVisible();
 
   // Deploys has a place in the bar; with no environment, its owner makes one.
   await alice.locator("[data-platform-deploys]").click();
