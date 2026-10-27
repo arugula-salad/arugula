@@ -2,7 +2,7 @@
 // badges, and the switches that go with them.
 
 import { devices, expect, test } from "@playwright/test";
-import { active, menu, panes, paneEl, ready, reset, tab, tabsInSession, text, type } from "./helpers";
+import { active, menu, menuItem, panes, paneEl, ready, reset, tab, tabsInSession, text, type } from "./helpers";
 
 test("finished commands get marks; a mark selects its output and runs again", async ({ page }) => {
   await reset(page);
@@ -65,7 +65,7 @@ test("shell integration can be switched off for a pane's new shells", async ({ p
   await reset(page);
   const pane = await active(page);
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
-  const item = page.getByRole("menuitemradio", { name: /Shell integration/ });
+  const item = await menuItem(page, /Shell integration/);
   await expect(item).toHaveAttribute("aria-checked", "true");
   await item.click();
   await expect

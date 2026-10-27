@@ -119,8 +119,12 @@ export async function menu(page: Page, target: Locator, item: string) {
 
 /** A row of the open menu, opening the submenu it is in when it isn't
  * shown (a pane's menu keeps most actions in Open beside, Share, …). */
-export async function menuItem(page: Page, name: string | RegExp) {
-  const item = page.getByRole("menuitem", { name });
+export async function menuItem(page: Page, name: string | RegExp, opts: { exact?: boolean } = {}) {
+  // Never a submenu's own row: "Thread" is that row and an item in it.
+  const item = page
+    .getByRole("menuitem", { name, ...opts })
+    .or(page.getByRole("menuitemradio", { name, ...opts }))
+    .and(page.locator(":not(.menu-parent)"));
   await expect(page.getByRole("menu")).toBeVisible();
   if ((await item.count()) > 0) return item.first();
   const parents = page.locator(".menu .menu-parent");
@@ -134,7 +138,7 @@ export async function menuItem(page: Page, name: string | RegExp) {
 /** Every row of the open menu, in its submenus too, trimmed. */
 export async function menuItems(page: Page): Promise<string[]> {
   await expect(page.getByRole("menu")).toBeVisible();
-  const text = async () => (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
+  const text = async () => (await page.locator(".menu > .menu-item:not(.menu-parent)").allInnerTexts()).map((s) => s.trim());
   const out = await text();
   const parents = page.locator(".menu .menu-parent");
   for (let i = 0; i < (await parents.count()); i++) {

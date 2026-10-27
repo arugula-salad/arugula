@@ -14,7 +14,7 @@
 // room at the message on the platform page.
 
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, paneEl } from "./helpers";
+import { closeContexts, menuItem, paneEl } from "./helpers";
 import { TeamControl, call, home, live, show } from "./team-fixture";
 import { pixel7 } from "./phones";
 
@@ -189,7 +189,7 @@ test("a pane's thread opens beside it, quotes its pane, and only its machine's o
   await alice.bringToFront();
   await alice.evaluate((p) => window.__arugula.client.setActive(p), quotedPane);
   await paneEl(alice, quotedPane).click({ button: "right", position: { x: 60, y: 60 } });
-  await alice.getByRole("menuitem", { name: "Thread", exact: true }).click();
+  await (await menuItem(alice, "Thread", { exact: true })).click();
   const drawer = alice.locator("[data-room-drawer]");
   await expect(drawer).toBeVisible();
   const room = (await drawer.getAttribute("data-room-drawer"))!;

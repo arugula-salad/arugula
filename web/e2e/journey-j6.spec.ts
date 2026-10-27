@@ -22,7 +22,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { clickTerminal, screenText } from "./journey/first-run";
 import { Journey, type Surface } from "./journey/record";
 import { asPerson, BIN } from "./journey/world";
-import { closeContexts } from "./helpers";
+import { closeContexts, menuItem } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 
 test.afterAll(closeContexts);
@@ -229,7 +229,7 @@ test("J6: two people on one tailnet, no control: share by login, watch, drive, a
       async (p) => {
         const v = p.viewportSize()!;
         await p.mouse.click(v.width / 2, v.height / 2, { button: "right" });
-        await p.getByRole("menuitem", { name: "Ask the owner to let me drive it" }).click();
+        await (await menuItem(p, "Ask the owner to let me drive it")).click();
       },
     );
 

@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItems, open, paneEl, ready } from "./helpers";
+import { closeContexts, menuItem, menuItems, open, paneEl, ready } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 
 const OWNER = "me@example.com";
@@ -261,7 +261,7 @@ test("an ssh invite from the pane's menu works with Guest SSH access on, and is 
   const pane = await start(page);
   await page.evaluate(() => window.__arugula.client.loadFeatures());
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
-  await page.getByRole("menuitem", { name: "Invite over ssh…" }).click();
+  await (await menuItem(page, "Invite over ssh…")).click();
   await expect(page.locator(".prompt-backdrop input")).toHaveValue(/^ssh -p \d+ .* g[0-9a-f]{32}@127\.0\.0\.1$/);
   await page.keyboard.press("Escape");
   for (const i of (await (await fetch(`${base}/api/guests`)).json()) as { id: number }[]) {

@@ -48,7 +48,8 @@ interface OpenMenu {
   x: number;
   y: number;
   items: MenuItem[];
-  /** Opened from a menu button: the keys go into it (UI audit #171). */
+  /** The keys go into it: its first row has the focus once it's shown
+   * (UI audit #171). */
   focus: boolean;
 }
 
@@ -78,7 +79,7 @@ export function openMenu(e: { clientX: number; clientY: number; preventDefault()
   if (opts instanceof HTMLElement) opts = { from: opts };
   if (!current) opener = opts.from ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   expanded(opts.from ?? null);
-  current = { x: e.clientX, y: e.clientY, items, focus: !!opts.from };
+  current = { x: e.clientX, y: e.clientY, items, focus: true };
   changed();
 }
 
@@ -170,15 +171,18 @@ export function MenuLayer() {
     // right edge it wrapped ("Command palette… Ctrl+Shift+P") and then sat
     // flush with the edge, wider than measured (UI audit #174).
     const was = ref.current.style.left;
+    const wasMax = ref.current.style.maxHeight;
     ref.current.style.left = "0px";
+    ref.current.style.maxHeight = `${window.innerHeight - 16}px`;
     const r = ref.current.getBoundingClientRect();
     ref.current.style.left = was;
+    ref.current.style.maxHeight = wasMax;
     focusIn.current = current.focus;
     setPos({
       left: Math.max(8, Math.min(current.x, window.innerWidth - r.width - 8)),
       top: Math.max(8, Math.min(current.y, window.innerHeight - r.height - 8)),
     });
-  }, [current, top, sub]);
+  }, [current, top]);
   useEffect(() => {
     setSub(null);
     setArmed(null);
@@ -291,6 +295,9 @@ export function MenuLayer() {
         left: `${pos?.left ?? current.x}px`,
         top: `${pos?.top ?? current.y}px`,
         visibility: pos ? "visible" : "hidden",
+        // Where it was placed it stays: a submenu opening under the pointer
+        // makes it scroll, never move (and a gutter of 8px below it).
+        maxHeight: `${window.innerHeight - (pos?.top ?? 8) - 8}px`,
       }}
       onContextMenu={(e) => e.preventDefault()}
       onKeyDown={onKey}

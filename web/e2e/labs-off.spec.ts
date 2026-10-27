@@ -16,7 +16,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItems, open, paneEl, ready, sheetTab } from "./helpers";
+import { closeContexts, menuItem, menuItems, open, paneEl, ready, sheetTab } from "./helpers";
 import { labs } from "./labs";
 import { ANY, daemonPort } from "./ports";
 
@@ -290,7 +290,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   expect(asked.filter((u) => LABS_CHUNK.test(u)).length).toBeGreaterThan(0);
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
   for (const name of ["Invite over ssh…", "New VM pane on the right", "Open a studio app…"]) {
-    await expect(page.getByRole("menuitem", { name })).toBeVisible();
+    await expect(await menuItem(page, name)).toBeVisible();
   }
   await page.keyboard.press("Escape");
 
