@@ -8,7 +8,9 @@
 // So + Agent and its panes open there (`#machine=<id>`, the shell's), and
 // this page shows what the platform keeps: the workspace, its machine, and
 // its closed agents' transcripts, read only (`/api/projects/…/transcripts`).
-// Opening one asks the platform to wake a paused box.
+// Opening one asks the platform to wake a paused box. Create a cloud
+// workspace makes one, a name and a size, as `arugula cloud create` does,
+// for those the platform lets.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
@@ -19,12 +21,14 @@ import { usePlatformApi } from "../../shared/platform-api";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
 import { names } from "../links";
-import { follow, pathOf } from "../router";
-import { controlOrigin, session } from "../session";
+import { follow, go, pathOf } from "../router";
+import { controlOrigin, session, type PlatformProject } from "../session";
+import { Modal } from "../../shared/ui/modal";
+import { useSubscribe } from "../../shared/ui/hooks";
 import { toneClass, workspaceTone, type Tone } from "../swarm";
 import { Missing } from "./project";
 import { Time } from "../../shared/ui/time";
-import { SIZES, sizeOf } from "../settings/workspace-size";
+import { SIZES, sizeOf, type Size } from "../settings/workspace-size";
 
 /** A hosted workspace, as the platform answers it. */
 interface HostedWorkspace {
@@ -199,23 +203,137 @@ function WorkspaceStats({ list }: { list: HostedWorkspace[] }) {
 
 /** `/p/:project/workspaces`: the project's hosted workspaces. */
 export function HostedWorkspaces({ project: id }: { project: string }) {
+  useSubscribe((fn) => session.subscribe(fn));
   const list = useHostedWorkspaces(id);
   return (
     <section class="platform-section sw-page hosted-list" data-hosted-workspaces>
-      <PageHeader title="Cloud workspaces" stats={list?.length ? <WorkspaceStats list={list} /> : null} />
+      <PageHeader
+        title="Cloud workspaces"
+        actions={!!list?.length && makesWorkspaces(session.project(id)) && <NewWorkspaceButton project={id} />}
+        stats={list?.length ? <WorkspaceStats list={list} /> : null}
+      />
       {list === null ? <p class="dim">Loading…</p> : list.length ? <HostedWorkspaceList project={id} list={list} /> : <NoWorkspaces project={id} />}
     </section>
   );
 }
 
-/** What a project with no cloud workspaces says: the command that makes
- * one on a line of its own, to copy (UI audit #162). */
+/** Whether the reader may make one of `p`'s cloud workspaces, as the
+ * platform's create route allows: an owner or an editor (not a team's
+ * viewer), on the cloud workspaces' list. */
+export function makesWorkspaces(p: PlatformProject | undefined): boolean {
+  return !!p && session.hosted && (!p.team || p.team.role !== "viewer");
+}
+
+/** What a project with no cloud workspaces says: what one is, and Create a
+ * cloud workspace where the reader may make one, else why not; the
+ * command that makes one from a terminal on a line of its own, to copy
+ * (UI audit #162). */
 export function NoWorkspaces({ project: id }: { project: string }) {
+  const p = session.project(id);
+  const makes = makesWorkspaces(p);
   return (
     <div class="hosted-none" data-no-workspaces>
-      <p class="dim">None yet. Make one from a terminal, or ask an agent with Arugula's <code>cloud</code> tool to:</p>
-      <CopyText text={`arugula cloud create NAME --project ${id}`} />
+      <p>A cloud workspace is a machine of the project's in the cloud: its terminals and agents keep going with your computer off, and everyone in the project reaches them.</p>
+      {makes ? (
+        <p>
+          <NewWorkspaceButton project={id} />
+        </p>
+      ) : (
+        <p class="dim" data-no-workspaces-why>
+          {!session.hosted ? "Cloud workspaces are in a limited beta, and your account isn't in it yet." : "A team's owners and editors make its cloud workspaces."}
+        </p>
+      )}
+      {makes && (
+        <>
+          <p class="dim">Or from a terminal, or ask an agent with Arugula's <code>cloud</code> tool to:</p>
+          <CopyText text={`arugula cloud create NAME --project ${id}`} />
+        </>
+      )}
     </div>
+  );
+}
+
+/** A cloud workspace's name, as the platform takes it (hosted::good_name). */
+export const WORKSPACE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/** Create a cloud workspace: a button, and its dialog. */
+export function NewWorkspaceButton({ project: id, primary = true }: { project: string; primary?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" class={primary ? "primary" : "secondary"} data-hosted-new aria-haspopup="dialog" onClick={() => setOpen(true)}>
+        Create a cloud workspace
+      </button>
+      {open && <NewWorkspace project={id} close={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/** Its dialog: a name and a size, made as `arugula cloud create` makes one
+ * (`POST /api/projects/{project}/workspaces`); then its page, which
+ * follows it while its box is made. */
+function NewWorkspace({ project: id, close }: { project: string; close: () => void }) {
+  const [name, setName] = useState("");
+  const [size, setSize] = useState<Size>("small");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const submit = async (e: Event) => {
+    e.preventDefault();
+    const n = name.trim();
+    if (!WORKSPACE_NAME.test(n)) return setErr("A name: letters, digits, '-', '_' and '.', up to 64, starting with a letter or digit.");
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await platformFetch(`${project(id)}/workspaces`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: n, spec: { size } }),
+      });
+      const v = (await r.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!r.ok || !v.id) throw new Error(v.error ?? `Request failed (${r.status})`);
+      close();
+      go(pathOf({ page: "workspace", project: id, workspace: v.id }, names));
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal close={close} class="hosted-new">
+      <form onSubmit={(e) => void submit(e)} data-hosted-new-form>
+        <h2>Create a cloud workspace</h2>
+        <p class="dim">Its box is made now and joins the project in a minute or two. Its repos, packages and setup script come after, with <code>arugula cloud edit</code>.</p>
+        <label>
+          Name
+          <input autofocus required value={name} placeholder="dev" data-hosted-new-name onInput={(e) => setName(e.currentTarget.value)} />
+        </label>
+        <fieldset class="hosted-new-sizes">
+          <legend>Size</legend>
+          {SIZES.map((s) => (
+            <label key={s.size} class="control-check">
+              <input type="radio" name="size" value={s.size} checked={size === s.size} data-hosted-new-size={s.size} onChange={() => setSize(s.size)} />
+              <span>
+                {s.label} <span class="dim">· {s.per_hour} an hour while it runs</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+        {err && (
+          <p class="control-error" role="alert" data-hosted-new-error>
+            {err}
+          </p>
+        )}
+        <div class="prompt-buttons">
+          <button type="button" class="secondary" onClick={close}>
+            Cancel
+          </button>
+          <button type="submit" class="primary" disabled={busy} data-hosted-new-create>
+            {busy ? "Creating…" : "Create"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

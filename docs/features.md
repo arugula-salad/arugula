@@ -66,8 +66,8 @@ around your panes. A phone keeps its own header and sheet.
 sandbox, attached to a project ([control.md](control.md), "Hosted
 workspaces"). A project's are listed on the platform page
 (`app.arugula.io/p/:project/workspaces`, [control-ops.md](control-ops.md));
-`arugula cloud create` makes one, small (2 vCPU, 2 GiB) or large (8 vCPU,
-8 GiB, `--size large`). Each is a machine like any other: its
+`arugula cloud create`, or Create a cloud workspace there, makes one, small
+(2 vCPU, 2 GiB) or large (8 vCPU, 8 GiB, `--size large`). Each is a machine like any other: its
 sessions and agent blocks open on control's page, and an agent on one of
 your own machines drives it over MCP (`list kind cloud_workspaces`, `cloud`,
 `read_cloud`). The Managoat-backed Cloud workspaces that came first, their
