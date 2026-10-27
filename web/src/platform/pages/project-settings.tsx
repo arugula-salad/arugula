@@ -19,6 +19,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
+import { desktopApp } from "../../shared/desktop";
+import { BrowserStep } from "../../shared/ui/browser-step";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
@@ -67,6 +69,10 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
   const [busy, setBusy] = useState(false);
   // Unlink asks first (UI audit #158): what was read of the repo goes.
   const [unlinking, setUnlinking] = useState<string | null>(null);
+  // The desktop app's way through the install: GitHub opens in the browser
+  // and this asks again, with the request that was refused, when the window
+  // is back (#236).
+  const [install, setInstall] = useState<{ url: string; retry: () => Promise<unknown> } | null>(null);
   const body = useRef<HTMLDivElement>(null);
   const base = `/api/projects/${encodeURIComponent(id)}/repos`;
   const load = () =>
@@ -86,9 +92,12 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
     } catch (e) {
       const a = (e as { answer?: { reason?: string; install_url?: string } }).answer;
       // The App isn't installed where the repo lives: off to GitHub, which
-      // brings them back to `/installed`.
-      if (a?.reason === "install_app" && a.install_url) location.href = a.install_url;
-      else setErr((e as Error).message);
+      // brings them back to `/installed`. The desktop app has no tab to
+      // come back to: it opens GitHub in the browser and waits here (#236).
+      if (a?.reason === "install_app" && a.install_url) {
+        if (desktopApp()) setInstall({ url: a.install_url, retry: f });
+        else location.href = a.install_url;
+      } else setErr((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -208,6 +217,27 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
               </form>
             ) : (
               <p class="dim">A team's owners and editors link repos.</p>
+            )}
+            {install && (
+              <BrowserStep
+                url={install.url}
+                label="Install the GitHub App"
+                cancel={() => setInstall(null)}
+                check={async () => {
+                  // Linked once the App is installed; until then the same 409.
+                  try {
+                    await install.retry();
+                    return true;
+                  } catch (e) {
+                    if ((e as { answer?: { reason?: string } }).answer?.reason === "install_app") return false;
+                    throw e;
+                  }
+                }}
+                onDone={() => {
+                  setInstall(null);
+                  void load();
+                }}
+              />
             )}
             {err && <p class="control-error" data-link-error>{err}</p>}
             {unlinking && (
