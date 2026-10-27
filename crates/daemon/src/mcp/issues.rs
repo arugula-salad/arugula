@@ -589,7 +589,7 @@ async fn github_repo_of(dir: &str) -> Option<String> {
     remotes.sort_by_key(|(name, _)| name != "origin");
     remotes
         .iter()
-        .filter_map(|(_, url)| crate::forge::login::parse_remote(url))
+        .filter_map(|(_, url)| crate::git_remote::parse_remote(url))
         .find(|(host, _)| host == "github.com")
         .map(|(_, repo)| repo)
 }
