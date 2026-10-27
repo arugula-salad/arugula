@@ -1122,6 +1122,41 @@ test("a waiting browser that follows another machine's link brings that one inst
   await visitor.context().close();
 });
 
+test("the app's Link GitHub opens the browser, and the window asks again when it's back (#235)", async () => {
+  let linked = false;
+  await laptop.route("**/api/me/passkeys", async (r) => {
+    const real = await (await r.fetch()).json();
+    await r.fulfill({ json: { ...real, github: linked ? "stranger" : null } });
+  });
+  await laptop.evaluate(() => {
+    Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac" }, opened: [] as unknown[][] });
+    window.open = (...a: unknown[]) => ((window as unknown as { opened: unknown[][] }).opened.push(a), null);
+  });
+  await controlPanel(laptop, "account");
+  await laptop.locator("[data-link-github]").click();
+  await laptop.locator("[data-browser-step-open]").click();
+  expect(await laptop.evaluate(() => (window as unknown as { opened: unknown[][] }).opened)).toEqual([[`${base}/#account`, "_blank", "noopener"]]);
+  await expect(laptop.locator("[data-browser-step-waiting]")).toBeVisible();
+  // Not linked yet when the window is back: it keeps waiting.
+  await laptop.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(laptop.locator("[data-browser-step-waiting]")).toBeVisible();
+  linked = true;
+  await laptop.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(laptop.locator("[data-github-link=linked]")).toBeVisible();
+  await expect(laptop.locator("[data-browser-step]")).toHaveCount(0);
+  await expect(laptop.locator("[data-github-login]")).toHaveText("stranger");
+  await laptop.unroute("**/api/me/passkeys");
+  await laptop.evaluate(() => {
+    delete (window as unknown as { __arugulaApp?: unknown }).__arugulaApp;
+  });
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+  // A plain browser at /#account: the panel opens.
+  await laptop.goto("/#account");
+  await expect(laptop.getByRole("heading", { name: "Sign-in and account" })).toBeVisible();
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+  expect(new URL(laptop.url()).hash).toBe("");
+});
+
 test("sessions: where you're signed in, and signing out everywhere (#173)", async () => {
   await controlPanel(laptop, "account");
   await expect(laptop.getByRole("heading", { name: "Sign-in and account" })).toBeVisible();
