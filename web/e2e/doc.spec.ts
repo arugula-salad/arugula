@@ -24,7 +24,7 @@ import type { ChildProcess } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
 import { hex, type Scheme } from "../src/shared/docs/colours";
 import { example } from "./doc-examples";
-import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, placedEmbeds, png, putAsset, seeEmbeds, type Post, widths } from "./doc-steps";
+import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, placedEmbeds, png, putAsset, seeEmbeds, sessionOf, type Post, widths } from "./doc-steps";
 import { closeContexts, open, panes, ready, reset } from "./helpers";
 import { daemon, pixel7 } from "./phones";
 
@@ -349,10 +349,7 @@ test.describe("a viewer", () => {
     const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
     await ready(page, term);
     const doc = await newDoc(post(page), term);
-    const session = await page.evaluate((d) => {
-      const c = window.__arugula.client;
-      return c.sessionOfTab(c.tabOfPane(d)!.id);
-    }, doc);
+    const session = await sessionOf(page, doc);
     expect((await page.request.post("/api/acl", { data: { session, principal: `tailnet:${FRIEND}`, role: "viewer" } })).ok()).toBe(true);
     await fillEmbeds(post(page), doc);
 
@@ -374,10 +371,7 @@ test.describe("a viewer", () => {
     const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
     await ready(page, term);
     const doc = await newDoc(post(page), term);
-    const session = await page.evaluate((d) => {
-      const c = window.__arugula.client;
-      return c.sessionOfTab(c.tabOfPane(d)!.id);
-    }, doc);
+    const session = await sessionOf(page, doc);
     expect((await page.request.post("/api/acl", { data: { session, principal: `tailnet:${FRIEND}`, role: "viewer" } })).ok()).toBe(true);
     await putAsset(post(page), doc, "flow.png", png(3, 2));
     await fill(post(page), doc, "s1", "The flow: ![The flow](assets/flow.png)");
