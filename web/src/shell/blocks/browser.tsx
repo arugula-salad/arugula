@@ -5,7 +5,7 @@
 import { render } from "preact";
 import type { Client } from "../client";
 import { OPS, opPath } from "../ops";
-import type { ListeningPort, OpenRequest, PaneId, Ports } from "../../shared/proto";
+import type { ListeningPort, PaneId, Ports } from "../../shared/proto";
 import { askText, tellSetup, type PromptChoice } from "../../shared/ui/menu";
 import { BlockFrame, RoutePill } from "./block-frame";
 import { BlockError, BlockLoading, OpenOutside } from "./block-states";
@@ -97,20 +97,26 @@ export async function openPort(client: Client, where: { split?: PaneId; host?: n
   openPortAt(client, where, Number(m[1]), m[2] ?? "/");
 }
 
-/** Open `port` beside `split`, asking nothing (a hint's Open beside). */
+/**
+ * Open `port` beside `split`, asking nothing (a hint's Open beside), and
+ * show it. A phone shows one pane, and a split drops the one it was
+ * showing: unless the port becomes the pane it shows, it drew the tab's
+ * split, the port in half the screen beside the terminal (Arugula #299).
+ */
 export function openPortAt(client: Client, where: { split?: PaneId; host?: number; local?: boolean }, port: number, path = "/") {
   if (!client.showsBlocks()) return blocksOff("port");
-  void client.api(
-    "/api/blocks",
-    {
-      type: "browser",
-      config: { port, path },
-      split: where.split ?? null,
-      host: where.host ?? null,
-      local: !!where.local,
-    } satisfies OpenRequest,
-    "couldn't open that port",
-  );
+  void client
+    .openBlock(
+      {
+        type: "browser",
+        config: { port, path },
+        split: where.split ?? null,
+        host: where.host ?? null,
+        local: !!where.local,
+      },
+      "couldn't open that port",
+    )
+    .then((block) => block !== null && client.showWhenKnown(block));
 }
 
 function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: BrowserState | null }) {
