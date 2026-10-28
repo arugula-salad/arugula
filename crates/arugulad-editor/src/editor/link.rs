@@ -24,6 +24,26 @@
 //! The daemon sends `welcome` (the id it got), `followers`, `resend` (a new
 //! follower needs the whole file again) and `continue` (the debugger).
 //!
+//! Claude Code's proposed edits (#1732, `ide/nvim.rs`), to an editor in a
+//! terminal whose hello says `diffs: true` (arugula.nvim), when Claude Code
+//! runs in the same session:
+//!
+//! - **`diff`** (daemon to editor): a proposal to show. `id` names it in
+//!   every answer; `file` is its whole path and `name` the one the card
+//!   shows; `agent` (`Claude Code`) and `pane` (the terminal it runs in)
+//!   say whose it is; `old` is the file as it is (empty, with `new_file`,
+//!   for a file it creates) and `new` the proposed text. Several may wait;
+//!   they come in the order Claude Code proposed them.
+//! - **`diff_accept`** (editor to daemon): `id` accepted as proposed, or,
+//!   with `text`, accepted with that text instead (edited first).
+//! - **`diff_reject`** (editor to daemon): `id` rejected.
+//! - **`diff_close`** (daemon to editor): `id` was answered (`how`:
+//!   `accepted`, `accepted with changes`, `rejected`, `answered` in Claude
+//!   Code's terminal, or `gone`), here or anywhere else: stop showing it.
+//!
+//! The daemon owns the answer: the card on the pane and the rail, and the
+//! editor, show one proposal, and whichever answers first closes the others.
+//!
 //! An editor that says it runs in a terminal (arugula.nvim in an Arugula
 //! pane) is that pane: what it reports goes on the pane, following the pane
 //! follows it, and its reasons are the pane's. It takes the place of what
@@ -96,6 +116,9 @@ pub struct Hello {
     /// Its process, which runs under that terminal's.
     #[serde(default)]
     pub pid: Option<u32>,
+    /// It shows Claude Code's proposed edits (`diff`; #1732).
+    #[serde(default)]
+    pub diffs: bool,
 }
 
 /// One connected editor.
@@ -533,6 +556,11 @@ where
         }
     };
     let Some(id) = id else { return };
+    // Claude Code's proposed edits show in it too (#1732).
+    let diffs = pane.filter(|_| hello.diffs);
+    if let Some(p) = diffs {
+        crate::ide::nvim::joined(&app.mux, p, link.clone());
+    }
     info!(
         pane = id,
         editor = hello.editor,
@@ -543,7 +571,10 @@ where
     loop {
         tokio::select! {
             line = read_line(&mut lines) => match line {
-                Some(v) => link.handle(v),
+                Some(v) => match (v["t"].as_str(), diffs) {
+                    (Some("diff_accept" | "diff_reject"), Some(p)) => crate::ide::nvim::answered(&app.mux, p, &v),
+                    _ => link.handle(v),
+                },
                 None => break,
             },
             Some(out) = rx.recv() => {
@@ -554,6 +585,9 @@ where
         }
     }
     link.gone();
+    if let Some(p) = diffs {
+        crate::ide::nvim::left(&app.mux, p, link.clone());
+    }
     match (block, pane) {
         (Some(b), _) => b.detach(&handle),
         (None, Some(p)) => {

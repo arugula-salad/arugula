@@ -56,6 +56,11 @@ export function DiffCard({
           <i class="add">+{diff.added}</i> <i class="del">−{diff.removed}</i>
         </span>
       </div>
+      {diff.nvim != null && (
+        <p class="diff-nvim" data-diff-nvim={diff.nvim}>
+          Also open in nvim (pane %{diff.nvim})
+        </p>
+      )}
       {editing === null ? (
         <DiffText text={diff.text} />
       ) : (

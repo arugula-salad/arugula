@@ -2113,6 +2113,7 @@ mod wire {
             new: false,
             at_ms: 5,
             ide: "arugula".into(),
+            nvim: None,
         };
         same(
             &PaneDiff { diff: info.clone(), old: "a".into(), new: "b".into() },

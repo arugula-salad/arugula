@@ -22,13 +22,15 @@
 -- making an entry of its own. Without this plugin the daemon still reads
 -- the pane's nvim over nvim's own socket (the file, cursor and
 -- diagnostics); the plugin adds following, the debugger and conflicts.
--- :ArugulaLeave there stops it for this nvim.
+-- :ArugulaLeave there stops it for this nvim. There, the edits Claude Code
+-- proposes in the same session open as vimdiff tabs too (diff.lua, #1732).
 --
 -- Lines count from 1 and columns from 0 (UTF-16 units), as the follow
 -- view (and VS Code) count them.
 
 local M = {}
 
+local diff = require("arugula.diff")
 local uv = vim.uv or vim.loop
 local SUMMARY_MS = 1000
 local PEEK_MS = 1000
@@ -384,6 +386,9 @@ local function on_message(m)
   elseif m.t == "continue" then
     local ok, dap = pcall(require, "dap")
     if ok then dap.continue() end
+  elseif m.t == "diff" or m.t == "diff_close" then
+    local ok, err = pcall(m.t == "diff" and diff.open or diff.closed, m)
+    if not ok then vim.notify("arugula: " .. tostring(err), vim.log.levels.WARN) end
   end
 end
 
@@ -394,6 +399,7 @@ local function lost()
     pcall(function() S.pipe:close() end)
   end
   S.pipe, S.id, S.followers, S.buf, S.open = nil, nil, 0, "", nil
+  pcall(diff.reset)
   if S.on and not S.retry then
     S.retry = uv.new_timer()
     S.retry:start(S.backoff, 0, vim.schedule_wrap(function()
@@ -434,6 +440,8 @@ connect = function()
             -- The Arugula pane it runs in: it's that pane, not an entry beside it.
             pane = S.pane or vim.NIL,
             pid = S.pane and vim.fn.getpid() or vim.NIL,
+            -- It shows Claude Code's proposed edits (diff.lua).
+            diffs = true,
           })
           if cur then S.sent.peek = "" end
         end
@@ -465,6 +473,7 @@ local function disconnect()
     pcall(function() p:close() end)
   end
   S.id, S.followers, S.open = nil, 0, nil
+  pcall(diff.reset)
 end
 
 -- ---- the debugger (nvim-dap, when it's there)
@@ -557,6 +566,7 @@ function M.setup(opts)
   })
   vim.api.nvim_create_autocmd("VimLeavePre", { group = g, callback = disconnect })
   hook_dap()
+  diff.setup(M.opts.keys, send)
   local cwd = vim.fn.getcwd()
   -- In an Arugula pane: it's that pane, so it's in already.
   S.pane = tonumber(env("ARUGULA_PANE") or "")
