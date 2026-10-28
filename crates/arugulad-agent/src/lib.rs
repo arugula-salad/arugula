@@ -55,14 +55,26 @@
 //! What the rest of the daemon shares with the block stays in `agent`: the
 //! agents and their adapters, the hosted gate, pictures, the transcript, a
 //! worn recipe and its secrets.
+//!
+//! This is the crate `arugulad-agent` (#232), with the conversations
+//! ([`conversations`]): the binary calls [`register`] before
+//! `arugulad_base::main`.
 
 mod background;
 pub mod chant;
+pub mod conversations;
 mod link;
 pub mod ops;
 #[cfg(test)]
 mod tests;
 mod turnwork;
+
+// What the code here names as `crate::…`: the mux's modules and the daemon's,
+// as it named them when it was the daemon's.
+use arugula_mux::{acl, block, mux, pane, paths, perm, procinfo, provider, shellenv, shim, store, sys, sys::home};
+#[cfg(unix)]
+use arugulad_base::upload;
+use arugulad_base::{agent, api, features, lab_hooks, mcp, review, rules, server, task, telemetry, work, worktree};
 
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -489,14 +501,14 @@ impl crate::features::Feature for AgentBlock {
     }
 
     fn routes(&self, r: axum::Router<Arc<crate::server::App>>) -> axum::Router<Arc<crate::server::App>> {
-        use crate::ops::OpRoutes;
         use arugula_proto::op::ops::{ConversationOpen, ConversationsList};
+        use arugulad_base::ops::OpRoutes;
         r.op_of::<ConversationsList, AgentBlock>().op_of::<ConversationOpen, AgentBlock>()
     }
 }
 
 impl crate::agent::Agents for AgentBlock {
-    fn open_transcripts(&self) -> Vec<crate::hosted::archive::Closed> {
+    fn open_transcripts(&self) -> Vec<arugulad_base::hosted::archive::Closed> {
         open_transcripts()
     }
 
@@ -619,7 +631,7 @@ static OPEN: Mutex<Vec<std::sync::Weak<Agent>>> = Mutex::new(Vec::new());
 
 /// What each open agent block would leave if it closed now (Arugula #209):
 /// a hosted box archives these before a rebuild takes it.
-pub fn open_transcripts() -> Vec<crate::hosted::archive::Closed> {
+pub fn open_transcripts() -> Vec<arugulad_base::hosted::archive::Closed> {
     let open: Vec<Arc<Agent>> = {
         let mut all = OPEN.lock().unwrap();
         all.retain(|a| a.strong_count() > 0);
@@ -1720,10 +1732,10 @@ impl Agent {
 
     /// What it leaves for its project's archive (M184): its text as it
     /// is now.
-    fn transcript(&self) -> crate::hosted::archive::Closed {
+    fn transcript(&self) -> arugulad_base::hosted::archive::Closed {
         let text = self.text();
         let g = self.inner.lock().unwrap();
-        crate::hosted::archive::Closed {
+        arugulad_base::hosted::archive::Closed {
             block: self.ctx.id.into(),
             agent: serde_json::to_value(g.cfg.def.agent)
                 .ok()
@@ -3402,7 +3414,7 @@ impl Block for Agent {
 
     fn close(&self) {
         // M184: on a hosted machine, its transcript goes to the project.
-        crate::hosted::archive::closed(&self.ctx.rt, self.transcript());
+        arugulad_base::hosted::archive::closed(&self.ctx.rt, self.transcript());
         let mut g = self.inner.lock().unwrap();
         g.closing = true;
         if let Some(l) = g.link.take() {

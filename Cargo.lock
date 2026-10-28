@@ -309,6 +309,7 @@ dependencies = [
  "arugula-proto",
  "arugula-testkit",
  "arugula-vt",
+ "arugulad-agent",
  "arugulad-base",
  "arugulad-control-tools",
  "arugulad-docs",
@@ -337,6 +338,27 @@ dependencies = [
  "tokio-tungstenite 0.30.0",
  "url",
  "zstd",
+]
+
+[[package]]
+name = "arugulad-agent"
+version = "0.0.0"
+dependencies = [
+ "arugula-control-wire",
+ "arugula-core",
+ "arugula-e2e",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "axum",
+ "futures-util",
+ "hex",
+ "nix",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
