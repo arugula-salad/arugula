@@ -699,7 +699,23 @@ fn firewall_nft(state: &Path, users: &[String]) -> bool {
         .stderr(std::process::Stdio::null())
         .spawn();
     let Ok(mut child) = child else { return false };
-    let wrote = child.stdin.take().is_some_and(|mut i| i.write_all(script.as_bytes()).is_ok());
+    // The daemon takes SIGPIPE's default (`main`, #682): sudo gone before
+    // it read the script (it can't run nft here, say) would end the daemon.
+    // Written from a thread that blocks it, as an agent's stdin is
+    // (`agent::link`), so the write fails instead. Linux sends a write's
+    // SIGPIPE to the thread that wrote, and a hosted box is Linux.
+    let wrote = child.stdin.take().is_some_and(|mut i| {
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let mut pipe = nix::sys::signal::SigSet::empty();
+                pipe.add(nix::sys::signal::Signal::SIGPIPE);
+                let _ = nix::sys::signal::pthread_sigmask(nix::sys::signal::SigmaskHow::SIG_BLOCK, Some(&pipe), None);
+                i.write_all(script.as_bytes()).is_ok()
+            })
+            .join()
+            .unwrap_or(false)
+        })
+    });
     child.wait().is_ok_and(|s| s.success()) && wrote
 }
 
