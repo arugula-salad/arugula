@@ -77,7 +77,9 @@ once (#287); a new push to a branch cancels that branch's run:
     (`E2E_SET=stack`). The specs that time things (`E2E_SET=perf`: the
     frame rates, `editors.spec.ts`) run nightly instead
     (`.github/workflows/perf-nightly.yml`, since 2026-10-28). The frame
-    rates are asserted; the editors' times to a file are reported against
+    rates are logged, and what the code does in a frame is asserted: a
+    Canvas 2D scene's work against the frame its rate allows, the city's
+    draw calls and triangles (#278); the editors' times to a file are reported against
     their 3 s budget (`web/e2e/timing.ts`) in the job's summary, over
     budget marked, and don't fail it (shared pods put them over with
     nothing broken: 10 red main runs in a week);

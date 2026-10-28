@@ -10,7 +10,10 @@
 //! git fingerprint changes ([`model::FINGERPRINT`]) and then holds still
 //! for one more poll, so a burst of edits (a `chant run`, an agent at work
 //! in a member) costs one read, not one per poll. A move of
-//! `chant/lifecycle` (a gate reached, a release) reads at once ([`next`]).
+//! `chant/lifecycle` (a gate reached, a release) reads at once ([`next`]),
+//! and when nothing else moved, only the reads that say what waits
+//! ([`model::gate_reads`]: `status`, and `points`), over the last full
+//! read: one or two chant processes, not five (#278).
 //! The fingerprint is
 //! looked at every [`POLL`] while some client draws the block (and on this
 //! host the lifecycle ref alone every [`REF_POLL`] in between, so a gate
@@ -286,6 +289,9 @@ pub struct Workspace {
     state: Mutex<model::State>,
     /// The fingerprint at the last read.
     seen: Mutex<Option<String>>,
+    /// What the reader said at the last full read, for a read of the gates
+    /// alone to go over ([`Workspace::load_gates`]).
+    raw: Mutex<Option<Value>>,
     /// A changed fingerprint the last poll saw, waiting to hold still.
     pending: Mutex<Option<String>>,
     /// The gates attention last asked for ([`raised_key`]), so it's asked
@@ -331,6 +337,7 @@ impl Workspace {
             runner: tokio::sync::OnceCell::new(),
             state: Mutex::new(state),
             seen: Mutex::new(None),
+            raw: Mutex::new(None),
             pending: Mutex::new(None),
             raised: Mutex::new(Some(String::new())),
             why: Mutex::default(),
@@ -368,17 +375,20 @@ impl Workspace {
         let print = self.fingerprint().await;
         *self.seen.lock().unwrap() = print;
         let env = self.env.lock().unwrap().clone();
-        let mut st = match self.runner().await {
+        *self.raw.lock().unwrap() = None;
+        let st = match self.runner().await {
             Err(e) => model::State { error: Some(e), ..Default::default() },
             Ok(r) => {
-                if let Ok((out, _)) = r.sh(ENVS, std::slice::from_ref(&self.config.root)).await {
-                    *self.envs.lock().unwrap() = envs(&String::from_utf8_lossy(&out), &env);
-                }
+                self.read_envs(&r, &env).await;
                 let args = [self.config.root.clone(), model::READER.to_owned(), env.clone()];
                 match r.sh(model::SCRIPT, &args).await {
                     Err(e) => model::State { error: Some(e), ..Default::default() },
                     Ok((out, _)) => match serde_json::from_slice::<Value>(&out) {
-                        Ok(raw) => model::compose(&raw, &env),
+                        Ok(raw) => {
+                            let st = model::compose(&raw, &env);
+                            *self.raw.lock().unwrap() = Some(raw);
+                            st
+                        }
                         Err(e) => model::State {
                             error: Some(format!("the reader said something else: {e}")),
                             ..Default::default()
@@ -387,6 +397,56 @@ impl Workspace {
                 }
             }
         };
+        self.publish(st, env);
+    }
+
+    /// The envs chant has ledgers for ([`ENVS`]).
+    async fn read_envs(&self, r: &Runner, env: &str) {
+        if let Ok((out, _)) = r.sh(ENVS, std::slice::from_ref(&self.config.root)).await {
+            *self.envs.lock().unwrap() = envs(&String::from_utf8_lossy(&out), env);
+        }
+    }
+
+    /// The lifecycle ref moved and nothing else did (`print` is the
+    /// fingerprint now): [`model::gate_reads`] again, over the last full
+    /// read. A full read when there's none, or they don't answer.
+    async fn load_gates(&self, print: String) {
+        if !self.reread_gates(print).await {
+            self.load().await;
+        }
+    }
+
+    /// [`Workspace::load_gates`]'s read: whether it read.
+    async fn reread_gates(&self, print: String) -> bool {
+        let _one = self.reading.lock().await;
+        if self.live.closed() {
+            return true;
+        }
+        let Some(raw) = self.raw.lock().unwrap().clone() else { return false };
+        let Ok(r) = self.runner().await else { return false };
+        let env = self.env.lock().unwrap().clone();
+        let version = self.state.lock().unwrap().version.clone();
+        self.read_envs(&r, &env).await;
+        let args = [
+            self.config.root.clone(),
+            model::READER.to_owned(),
+            env.clone(),
+            model::gate_reads(version.as_deref()).into(),
+        ];
+        let part = match r.sh(model::SCRIPT, &args).await {
+            Ok((out, _)) => serde_json::from_slice::<Value>(&out).ok(),
+            Err(_) => None,
+        };
+        let Some(raw) = part.and_then(|p| model::with_reads(&raw, &p)) else { return false };
+        *self.seen.lock().unwrap() = Some(print);
+        let st = model::compose(&raw, &env);
+        *self.raw.lock().unwrap() = Some(raw);
+        self.publish(st, env);
+        true
+    }
+
+    /// A read's state, shown: attention for what it found.
+    fn publish(&self, mut st: model::State, env: String) {
         if st.root.is_empty() {
             st.root = self.config.root.clone();
         }
@@ -563,11 +623,13 @@ impl Workspace {
         let what = {
             let mut pending = self.pending.lock().unwrap();
             let what = next(seen.as_deref(), pending.as_deref(), now.as_deref());
-            *pending = if what == Next::Wait { now } else { None };
+            *pending = if what == Next::Wait { now.clone() } else { None };
             what
         };
-        if what == Next::Read {
-            self.load().await;
+        match (what, now) {
+            (Next::Read, _) => self.load().await,
+            (Next::Gates, Some(now)) => self.load_gates(now).await,
+            _ => {}
         }
         what
     }
@@ -919,6 +981,8 @@ enum Next {
     /// It moved: look again next poll.
     Wait,
     Read,
+    /// Only the lifecycle ref moved: read what waits ([`model::gate_reads`]).
+    Gates,
 }
 
 /// The `chant/lifecycle` word of a fingerprint.
@@ -926,16 +990,25 @@ fn lifecycle(print: Option<&str>) -> Option<&str> {
     print.and_then(|p| p.split_whitespace().next())
 }
 
+/// A fingerprint without its `chant/lifecycle` word: `HEAD` and the tree.
+fn rest(print: &str) -> &str {
+    print.split_once(' ').map_or("", |(_, r)| r)
+}
+
 /// Given the fingerprint at the last read (`seen`), the changed one the
 /// poll before saw (`pending`) and the one now: read when the lifecycle ref
-/// moved (a gate or a release: at once), or when a change held still for
-/// one poll; wait while the working tree is still moving. No fingerprint at
-/// all reads, so the block says why.
+/// moved (a gate or a release: at once, and only the gates when nothing
+/// else did), or when a change held still for one poll; wait while the
+/// working tree is still moving. No fingerprint at all reads, so the block
+/// says why.
 fn next(seen: Option<&str>, pending: Option<&str>, now: Option<&str>) -> Next {
     match now {
         None => Next::Read,
         Some(n) if seen == Some(n) => Next::Nothing,
-        _ if lifecycle(seen) != lifecycle(now) => Next::Read,
+        Some(n) if lifecycle(seen) != lifecycle(now) => match seen {
+            Some(s) if rest(s) == rest(n) => Next::Gates,
+            _ => Next::Read,
+        },
         Some(n) if pending == Some(n) => Next::Read,
         Some(_) => Next::Wait,
     }
@@ -1390,7 +1463,7 @@ mod tests {
         for now in polls {
             let what = next(seen.as_deref(), pending.as_deref(), Some(now));
             pending = (what == Next::Wait).then(|| now.clone());
-            if what == Next::Read {
+            if matches!(what, Next::Read | Next::Gates) {
                 n += 1;
                 seen = Some(now.clone());
             }
@@ -1427,8 +1500,15 @@ mod tests {
         // tree is still changing. The very next poll reads.
         assert_eq!(next(Some("aaa 1"), None, Some("bbb 2")), Next::Read);
         assert_eq!(next(Some("aaa 1"), Some("aaa 2"), Some("bbb 3")), Next::Read);
-        // The ref appearing for the first run's gate counts too.
-        assert_eq!(next(Some("- 1"), None, Some("bbb 1")), Next::Read);
+        // The ref appearing for the first run's gate counts too, and with
+        // nothing else moved only the gates are read again (#278).
+        assert_eq!(next(Some("- 1"), None, Some("bbb 1")), Next::Gates);
+        assert_eq!(next(Some("aaa 1 9"), Some("aaa 1 8"), Some("bbb 1 9")), Next::Gates);
+        // HEAD moved with it (a release's commit): all of it.
+        assert_eq!(next(Some("aaa h1 9"), None, Some("bbb h2 9")), Next::Read);
+        // Nothing read yet, or the workspace gone: all of it.
+        assert_eq!(next(None, None, Some("bbb 1")), Next::Read);
+        assert_eq!(next(Some("aaa 1"), None, Some("gone")), Next::Read);
         let mut polls: Vec<String> = (1..=4).map(|t| fp("aaa", t)).collect();
         polls.push(fp("bbb", 5));
         assert_eq!(reads(&fp("aaa", 0), &polls), 1);
@@ -1450,14 +1530,14 @@ mod tests {
         assert!((0..10).all(|t| look(t, false) == Look::Full));
 
         // The quick look: a moved ref sends the poll to the full fingerprint
-        // (which then reads at once, as `next` says).
+        // (which then reads the gates at once, as `next` says).
         assert!(ref_moved(Some("aaa 1 2"), "bbb"));
         assert!(ref_moved(Some("- 1 2"), "bbb"));
         assert!(!ref_moved(Some("aaa 1 2"), "aaa"));
         // Couldn't tell, or nothing read yet: leave it to the full look.
         assert!(!ref_moved(Some("aaa 1 2"), ""));
         assert!(!ref_moved(None, "aaa"));
-        assert_eq!(next(Some("aaa 1 2"), None, Some("bbb 1 2")), Next::Read);
+        assert_eq!(next(Some("aaa 1 2"), None, Some("bbb 1 2")), Next::Gates);
     }
 
     #[test]
