@@ -96,6 +96,8 @@ test("opens once per account on control's page, remembered by the account", asyn
   await page.goto(link);
   await page.locator("[data-approve-join]").click();
   expect(await exited).toBe(0);
+  // Away, so the greeting is the next page's.
+  await page.goto("about:blank");
   procs.push(
     spawn(
       "../target/debug/arugulad",
@@ -113,9 +115,20 @@ test("opens once per account on control's page, remembered by the account", asyn
     .toEqual([true]);
   const prefs = async () => (await (await ctx.request.get("/api/me/prefs")).json()) as Record<string, unknown>;
 
-  // The machine shows: Getting started greets the account, at its start.
-  await page.goto("/");
+  // Opened for a link's dialog (the app's sign-in, Arugula #280), it
+  // waits until that's answered, rather than open behind it.
   const panel = page.getByRole("dialog", { name: "Getting started" });
+  await page.goto("/#app=0123456789abcdef");
+  const asks = page.getByRole("dialog", { name: "Sign in the app?" });
+  await expect(asks).toBeVisible();
+  await expect.poll(() => page.evaluate(() => !!window.__arugula?.client.e2e && window.__arugula.client.connected), { timeout: 20_000 }).toBe(true);
+  await expect(page.locator(".session-button")).toBeVisible();
+  await page.waitForTimeout(1000);
+  await expect(panel).toBeHidden();
+  expect((await prefs())["seen:getting-started"]).toBeFalsy();
+  await asks.getByRole("button", { name: "Close dialog" }).click();
+
+  // Answered: Getting started greets the account, at its start.
   await expect(panel).toBeVisible({ timeout: 20_000 });
   await expect(panel.locator("[data-start-progress]")).toHaveText("Step 1 / 5 · Welcome");
   await expect.poll(async () => (await prefs())["seen:getting-started"]).toBeTruthy();
