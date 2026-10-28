@@ -904,8 +904,9 @@ pub(crate) enum Human {
     /// A line of its own.
     Line(About),
     /// Part of another tool's line, named: `wait` is how `run`'s line works,
-    /// not something a person asks for.
-    In(&'static str),
+    /// not something a person asks for. The name is for the test that holds
+    /// the card complete (`every_tool_has_a_human_line`).
+    In(#[cfg_attr(not(test), allow(dead_code))] &'static str),
 }
 
 /// One line of the card.
