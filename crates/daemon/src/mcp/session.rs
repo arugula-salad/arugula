@@ -224,7 +224,7 @@ fn tools() -> Vec<Tool> {
 
 /// The server entry a session's agent is given: its MCP over HTTP, if the
 /// agent takes that (`http`) and this box serves one.
-pub(crate) fn entry(http: bool) -> Option<Value> {
+pub fn entry(http: bool) -> Option<Value> {
     entry_at(http, url())
 }
 

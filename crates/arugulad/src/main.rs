@@ -21,6 +21,14 @@ fn register() {
         arugulad_drivers::register();
         // The diff and file blocks (crates/arugulad-review).
         arugulad_review::register();
+        // MCP's tools for what lives in control: Cloud workspaces, linked
+        // repos, conversations, native issues, boards, runs, deploys and
+        // agent sessions (crates/arugulad-control-tools). Before invite,
+        // which lists after `forge_draft`.
+        arugulad_control_tools::register();
+        // The agent and chat blocks and the conversations on this machine
+        // (crates/arugulad-agent).
+        arugulad_agent::register();
         // Inviting a person into a session (crates/arugulad-invite).
         arugulad_invite::register();
         // A hosted workspace's box: enrolling, its setup and snapshots,

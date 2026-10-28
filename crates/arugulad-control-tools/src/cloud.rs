@@ -21,7 +21,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::tools::{Call, Kind, NoArgs, Out, done};
+use crate::mcp::tools::{Call, Kind, NoArgs, Out, done};
 
 // ---------------------------------------------------------------- arguments
 //
@@ -312,8 +312,8 @@ pub(crate) const DRIVE: &[Kind] = &[
 
 /// Whether agents here can drive the owner's Cloud workspaces, for
 /// `capabilities`: control is joined and has them, and says so in time.
-pub(super) async fn cloud_reach(app: &crate::server::App) -> super::results::CloudReach {
-    use super::results::CloudReach;
+pub(super) async fn cloud_reach(app: &crate::server::App) -> crate::mcp::results::CloudReach {
+    use crate::mcp::results::CloudReach;
     let asked =
         tokio::time::timeout(Duration::from_secs(3), app.control.cloud_now(Method::GET, "/api/workspaces", None));
     match asked.await {
@@ -326,44 +326,42 @@ pub(super) async fn cloud_reach(app: &crate::server::App) -> super::results::Clo
     }
 }
 
-impl Call<'_> {
-    pub(crate) async fn list_cloud_workspaces(&self) -> Out {
-        let rows = self.hosted_rows().await?;
-        let summary = match rows.len() {
-            0 => "No Cloud workspaces yet: cloud {kind: create} with a project makes one.".to_owned(),
-            n => format!(
-                "{n} Cloud workspace(s): {}",
-                rows.iter()
-                    .map(|w| format!(
-                        "{} {} ({})",
-                        w["id"].as_str().unwrap_or("?"),
-                        w["name"].as_str().unwrap_or("?"),
-                        w["status"].as_str().unwrap_or("?")
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        };
-        done(summary, json!({ "cloud_workspaces": rows }))
-    }
+pub(crate) async fn list_cloud_workspaces(c: &Call<'_>) -> Out {
+    let rows = c.hosted_rows().await?;
+    let summary = match rows.len() {
+        0 => "No Cloud workspaces yet: cloud {kind: create} with a project makes one.".to_owned(),
+        n => format!(
+            "{n} Cloud workspace(s): {}",
+            rows.iter()
+                .map(|w| format!(
+                    "{} {} ({})",
+                    w["id"].as_str().unwrap_or("?"),
+                    w["name"].as_str().unwrap_or("?"),
+                    w["status"].as_str().unwrap_or("?")
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    };
+    done(summary, json!({ "cloud_workspaces": rows }))
+}
 
-    pub(crate) async fn list_cloud_tabs(&self, a: CloudWorkspaceArgs) -> Out {
-        self.hosted_tabs(a.cloud_workspace.trim()).await
-    }
+pub(crate) async fn list_cloud_tabs(c: &Call<'_>, a: CloudWorkspaceArgs) -> Out {
+    c.hosted_tabs(a.cloud_workspace.trim()).await
+}
 
-    pub(crate) async fn read_cloud(&self, kind: &str, args: Value) -> Out {
-        let a: CloudWorkspaceArgs = super::tools::parse(args.clone())?;
-        self.hosted_read(kind, a.cloud_workspace.trim(), args).await
-    }
+pub(crate) async fn read_cloud(c: &Call<'_>, kind: &str, args: Value) -> Out {
+    let a: CloudWorkspaceArgs = crate::mcp::tools::parse(args.clone())?;
+    c.hosted_read(kind, a.cloud_workspace.trim(), args).await
+}
 
-    pub(crate) async fn drive_cloud(&self, kind: &str, args: Value) -> Out {
-        if kind == "create" {
-            let project = args["project"].as_str().map(str::trim).filter(|p| !p.is_empty());
-            let project = project
-                .ok_or("a Cloud workspace is a machine of a project: give project (its prj_… id, or personal)")?;
-            return self.hosted_create(project, &args).await;
-        }
-        let a: CloudWorkspaceArgs = super::tools::parse(args.clone())?;
-        self.hosted_drive(kind, a.cloud_workspace.trim(), args).await
+pub(crate) async fn drive_cloud(c: &Call<'_>, kind: &str, args: Value) -> Out {
+    if kind == "create" {
+        let project = args["project"].as_str().map(str::trim).filter(|p| !p.is_empty());
+        let project =
+            project.ok_or("a Cloud workspace is a machine of a project: give project (its prj_… id, or personal)")?;
+        return c.hosted_create(project, &args).await;
     }
+    let a: CloudWorkspaceArgs = crate::mcp::tools::parse(args.clone())?;
+    c.hosted_drive(kind, a.cloud_workspace.trim(), args).await
 }

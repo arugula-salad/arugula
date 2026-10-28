@@ -183,6 +183,9 @@ fn generate() -> String {
         c.visit::<ChatAskAnswer>();
         // Which model its agents use (Arugula #215).
         c.visit::<SessionSettings>();
+        // A wave of them (Fleet 5).
+        c.visit::<SessionWave>();
+        c.visit::<SessionWaveQuery>();
     }
     // Native issues (M195).
     {
@@ -206,6 +209,8 @@ fn generate() -> String {
         c.visit::<BoardView>();
         c.visit::<PutEntry>();
         c.visit::<MoveEntry>();
+        c.visit::<WorkQuery>();
+        c.visit::<WorkItems>();
     }
     // A project's Docs (aru-118).
     {

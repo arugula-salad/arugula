@@ -25,11 +25,7 @@ impl Call<'_> {
         let on = crate::lab_flags::flags(app.control.state_dir());
         let forges = forges(app, on).await;
         let hooks = self.hooks().await;
-        let (cloud, threads, runs) = tokio::join!(
-            super::cloud::cloud_reach(app),
-            super::threads::threads_reach(app),
-            super::runs::runs_reach(app)
-        );
+        let (cloud, threads, runs) = super::registry::reach(app).await;
         let control = control(app, cloud, threads, runs);
         let tools = tools::list(self.scope(), on).into_iter().map(|t| t.name.to_string()).collect();
         let signed: Vec<&str> = forges.iter().filter(|f| f.signed_in).map(|f| f.forge.as_str()).collect();
@@ -145,12 +141,7 @@ async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
 /// grants there.
 pub(crate) async fn can_do(app: &App) -> Vec<AgentCan> {
     let on = crate::lab_flags::flags(app.control.state_dir());
-    let (forges, cloud, threads, runs) = tokio::join!(
-        forges(app, on),
-        super::cloud::cloud_reach(app),
-        super::threads::threads_reach(app),
-        super::runs::runs_reach(app)
-    );
+    let (forges, (cloud, threads, runs)) = tokio::join!(forges(app, on), super::registry::reach(app));
     let signed = forges.iter().any(|f| f.signed_in);
     let joined = app.control.enrolled().is_some();
     let issues = threads.scopes.iter().any(|s| s.powers.iter().any(|p| p == "issues.write"));

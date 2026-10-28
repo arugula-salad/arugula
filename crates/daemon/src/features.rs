@@ -14,7 +14,28 @@ use arugula_proto::api::SearchHit;
 use axum::Router;
 use futures_util::future::BoxFuture;
 
-use crate::{block::BlockKinds, control::Control, invite::Hook, server::App};
+use crate::{
+    block::{BlockKinds, Secrets},
+    control::Control,
+    invite::Hook,
+    mcp::Link,
+    rules::Rules,
+    server::App,
+};
+
+/// What a feature's block types are given, beside what every block is
+/// (blocks are made before the server is).
+#[derive(Clone)]
+pub struct KindsCx {
+    /// The app once it's made, for an approved invite card.
+    pub invite: Hook,
+    /// How an agent reaches the daemon's MCP server (M16).
+    pub mcp: Option<Link>,
+    /// Where agents in VMs get their credentials from.
+    pub secrets: Secrets,
+    /// Standing permission rules (#166).
+    pub rules: Arc<Rules>,
+}
 
 /// What a feature crate adds.
 pub trait Feature: Send + Sync + 'static {
@@ -23,9 +44,8 @@ pub trait Feature: Send + Sync + 'static {
     fn prepare(&self, _state_dir: &Path) {}
     /// Once control is there (before any block is made).
     fn with_control(&self, _control: &Arc<Control>) {}
-    /// Its block types. `app` is the app once it's made (blocks are made
-    /// before the server is).
-    fn kinds(&self, _kinds: &mut BlockKinds, _app: &Hook) {}
+    /// Its block types, and what they're given ([`KindsCx`]).
+    fn kinds(&self, _kinds: &mut BlockKinds, _cx: &KindsCx) {}
     /// Its routes and operations, beside the API's.
     fn routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
         r
@@ -65,9 +85,9 @@ pub(crate) fn with_control(control: &Arc<Control>) {
     }
 }
 
-pub(crate) fn kinds(kinds: &mut BlockKinds, app: &Hook) {
+pub(crate) fn kinds(kinds: &mut BlockKinds, cx: &KindsCx) {
     for f in all() {
-        f.kinds(kinds, app);
+        f.kinds(kinds, cx);
     }
 }
 

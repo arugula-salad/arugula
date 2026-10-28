@@ -7,6 +7,8 @@
 //! front, or hides it when one of its windows has focus.
 
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -105,21 +107,78 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Result<(), String> {
     Ok(())
 }
 
-static LAST_BLUR: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+/// The tray's *Global hotkey* item, which `start` unchecks when the keys
+/// can't be had.
+pub struct Item(pub tauri::menu::CheckMenuItem<tauri::Wry>);
 
-/// A window of ours lost focus (or gained it: `focused`).
-pub fn focus_changed(focused: bool) {
-    *LAST_BLUR.lock().unwrap() = (!focused).then(std::time::Instant::now);
+/// Register the hotkey once the app is up (`RunEvent::Ready`, after its
+/// setup), not as its setup starts: a press then toggled an app whose
+/// window was on screen but not yet among its windows (the setup still
+/// building the tray, seconds on a loaded machine), so it opened a second
+/// one (#295). "arugula: global hotkey …" says it's ready for a press.
+pub fn start(app: &AppHandle) {
+    if let Err(e) = apply(app, &load(app)) {
+        eprintln!("arugula: {e}");
+        if let Some(item) = app.try_state::<Item>() {
+            let _ = item.0.set_checked(false);
+        }
+    }
+}
+
+/// Our windows' focus, as their `Focused` events tell it: which have it,
+/// and when one last lost it.
+///
+/// Not GTK's own (`is_focused`) alone: on X11 the hotkey's grab takes focus
+/// from the window as the key goes down, and the press reaches `toggle` on
+/// the hotkey's own thread. GTK can have taken the focus away (so
+/// `is_focused` says no) before its event reaches `focus_changed`; a check
+/// of when focus was lost made before that saw nothing, and the press
+/// brought the focused window forward instead of hiding it (#295: about 1
+/// press in 20 on a loaded machine). Here a window keeps focus until its
+/// event says it lost it, and then it lost it just now: either way it
+/// counts.
+#[derive(Default)]
+struct Focus {
+    windows: std::collections::BTreeSet<String>,
+    lost: Option<Instant>,
+}
+
+/// How long a window that lost focus still counts as having it.
+const JUST: Duration = Duration::from_millis(500);
+
+impl Focus {
+    fn changed(&mut self, window: &str, focused: bool, now: Instant) {
+        if focused {
+            self.windows.insert(window.to_owned());
+        } else {
+            self.windows.remove(window);
+            self.lost = Some(now);
+        }
+    }
+
+    /// One of our windows has focus, or had it a moment ago.
+    fn had(&self, now: Instant) -> bool {
+        !self.windows.is_empty() || self.lost.is_some_and(|t| now.saturating_duration_since(t) < JUST)
+    }
+}
+
+static FOCUS: Mutex<Focus> = Mutex::new(Focus { windows: std::collections::BTreeSet::new(), lost: None });
+
+/// Window `label` of ours gained focus (`focused`) or lost it.
+pub fn focus_changed(label: &str, focused: bool) {
+    FOCUS.lock().unwrap().changed(label, focused, Instant::now());
+}
+
+/// Window `label` is gone: it has no focus to lose.
+pub fn window_gone(label: &str) {
+    FOCUS.lock().unwrap().windows.remove(label);
 }
 
 /// Front, or away when a window of ours already has focus.
 fn toggle(app: &AppHandle) {
     let windows = app.webview_windows();
-    // On X11 the key's grab takes focus from the window just before the
-    // press arrives, so a window that had it a moment ago still counts.
-    let just = LAST_BLUR.lock().unwrap().is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(500));
-    let focused =
-        windows.values().any(|w| (w.is_focused().unwrap_or(false) || just) && w.is_visible().unwrap_or(false));
+    let had = FOCUS.lock().unwrap().had(Instant::now());
+    let focused = windows.values().any(|w| (had || w.is_focused().unwrap_or(false)) && w.is_visible().unwrap_or(false));
     if focused {
         #[cfg(target_os = "macos")]
         {
@@ -149,7 +208,32 @@ fn toggle(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::Settings;
+    use std::time::{Duration, Instant};
+
+    use super::{Focus, Settings};
+
+    #[test]
+    fn a_window_has_focus_until_its_event_says_it_lost_it() {
+        let t = Instant::now();
+        let mut f = Focus::default();
+        assert!(!f.had(t));
+        f.changed("w0", true, t);
+        // The hotkey's grab has taken it, and the event isn't here yet.
+        assert!(f.had(t + Duration::from_secs(5)));
+        // It's here: it lost focus just now.
+        f.changed("w0", false, t + Duration::from_secs(5));
+        assert!(f.had(t + Duration::from_millis(5400)));
+        assert!(!f.had(t + Duration::from_secs(6)));
+        // From one of our windows to another, in either order.
+        f.changed("w1", true, t);
+        f.changed("w0", false, t);
+        assert!(f.had(t + Duration::from_secs(9)));
+        f.changed("w0", true, t);
+        f.changed("w1", false, t);
+        assert!(f.had(t + Duration::from_secs(9)));
+        f.windows.remove("w0");
+        assert!(!f.had(t + Duration::from_secs(9)));
+    }
 
     #[test]
     fn off_by_default_with_a_default_key() {

@@ -23,7 +23,6 @@ pub mod control;
 // Windows panes on a pseudoconsole (M56).
 #[cfg(windows)]
 use arugula_mux::conpty;
-mod conversations;
 pub mod dial;
 pub mod doc_shares;
 pub mod e2e;
@@ -62,7 +61,6 @@ use arugula_mux::mux;
 pub mod ops;
 use arugula_mux::osc;
 use arugula_mux::pane;
-use arugula_mux::paths;
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 pub mod peer;
 use arugula_mux::perm;
@@ -79,7 +77,7 @@ pub mod push;
 mod remote;
 pub mod review;
 pub mod roots;
-mod rules;
+pub mod rules;
 mod seal;
 mod selfupdate;
 pub mod server;
@@ -88,6 +86,7 @@ mod share;
 mod team_chat;
 use arugula_mux::shellenv;
 use arugula_mux::shellint;
+#[cfg(unix)]
 use arugula_mux::shim;
 pub mod sites;
 pub mod task;
@@ -97,11 +96,11 @@ mod sync;
 use arugula_mux::sys;
 pub(crate) use arugula_mux::sys::home;
 pub mod tailscale;
-mod telemetry;
+pub mod telemetry;
 mod tls;
 mod update;
 #[cfg(unix)]
-mod upload;
+pub mod upload;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
@@ -754,16 +753,15 @@ fn kinds(
     use block::Make;
     let mut kinds = block::BlockKinds::default();
     kinds.add(BlockType::Browser, Make(browser::Browser::create));
-    kinds.add(BlockType::Agent, agent::AgentKind { mcp, secrets, rules: rules.clone() });
-    kinds.add(BlockType::Chat, agent::ChatKind { rules });
     editors::kinds(&mut kinds);
     kinds.add(BlockType::Remote, remote::RemoteKind);
     forges::kinds(&mut kinds);
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     kinds.add(BlockType::Board, board_block::BoardKind);
     lab_hooks::labs().kinds(&mut kinds, invite);
-    // The feature crates' (#232): Docs.
-    features::kinds(&mut kinds, invite);
+    // The feature crates' (#232): the agent and chat blocks, Docs, invites.
+    let cx = features::KindsCx { invite: invite.clone(), mcp, secrets, rules };
+    features::kinds(&mut kinds, &cx);
     kinds
 }
 
@@ -1050,7 +1048,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         kinds,
         pane_env: editors::pane_env(&ide),
         shell_env_skip: vec!["CLAUDE_CODE_SSE_PORT".into()],
-        sessions: Arc::new(conversations::Sessions),
+        sessions: agent::sessions(),
         pane_gone,
         usage: Arc::new(telemetry::Hooks),
         at_exit: Some(mux::AtExit(Arc::new(|| lab_hooks::labs().at_exit()))),

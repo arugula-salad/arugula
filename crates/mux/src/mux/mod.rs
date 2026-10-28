@@ -1266,6 +1266,8 @@ impl Daemon {
                     let took_ms = last.as_ref().map(|l| l.ended_ms.unwrap_or(l.started_ms) - l.started_ms).unwrap_or(0);
                     let text = last.and_then(|l| l.text);
                     self.emit(Some(pane), EventKind::CommandEnd { text: text.clone(), exit });
+                    // A `git commit` or a checkout shows in its info now.
+                    crate::classify::forget_heads();
                     // Its program said how it ended (#720): that's the card.
                     if self.status.get(&pane).is_some_and(|b| b.ended()) {
                         self.status_apply(pane);

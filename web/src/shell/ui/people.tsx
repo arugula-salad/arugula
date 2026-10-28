@@ -18,6 +18,7 @@ import { canScan, Scanner } from "./scan";
 import { useEscape } from "./keys";
 import { colorOf } from "../../shared/chat/avatar";
 import { ShareLinks } from "./share-links";
+import { secretsWarned, shareOpen } from "../hints/private";
 
 /** Control mode (M19): people are accounts there, and links go through it. */
 let control: ControlSession | null = null;
@@ -357,7 +358,11 @@ export function ShareDialog({ client }: { client: Client }) {
     if (h.ok) setAddress((await h.json<{ tailnet_url?: string }>()).tailnet_url ?? null);
     if (s !== null) {
       const x = await client.request("GET", `/api/sessions/${s}/secrets`);
-      if (x.ok) setSecrets(await x.json());
+      if (x.ok) {
+        const found = await x.json<{ pane: PaneId; kinds: string[] }[]>();
+        setSecrets(found);
+        secretsWarned(found.filter((f) => !client.info(f.pane)?.private).map((f) => f.pane));
+      }
     }
   };
   useEffect(() => {
@@ -381,6 +386,8 @@ export function ShareDialog({ client }: { client: Client }) {
       if (openShare === open) openShare = null;
     };
   }, [client]);
+  // The private pane hint waits for the dialog to close (hints/private).
+  useEffect(() => (session === null ? undefined : shareOpen()), [session]);
   // As soon as it's drawn (an effect waits for the next frame), and before
   // the terminal, which keeps the keys it takes.
   useEscape("share.close", session === null ? null : () => setSession(null), [session]);

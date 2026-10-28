@@ -31,7 +31,7 @@ use std::{collections::HashMap, sync::Mutex, time::Instant};
 
 use arugula_forge_github::{EtagCache, model::ItemState, parse, util};
 use serde_json::Value;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use super::stats::Stats;
 use crate::{
@@ -364,6 +364,10 @@ pub fn write(tx: &impl crate::db::sql::Sql, rows: &Rows, now: u64) -> anyhow::Re
     Ok(w)
 }
 
+/// A delivery whose rows land this long (ms) after GitHub's time for the
+/// change is logged on its own, `forge mirror: late delivery`.
+pub const LATE_MS: u64 = 30_000;
+
 /// A webhook's rows, for a linked repo, that came at `came`: written,
 /// and the time it took counted when one was new or changed. Its content
 /// changes (M166) in the same transaction, and what this machine's read
@@ -393,6 +397,23 @@ pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Insta
             if let (true, Some((_, rows))) = (w.fixed > 0, &rows) {
                 let event_ms = rows.at.map(|at| arugula_e2e::now_ms().saturating_sub(at));
                 gh.ingest.stats.landed(came.elapsed().as_millis() as u64, event_ms);
+                if let Some(ms) = event_ms.filter(|ms| *ms > LATE_MS) {
+                    // Which kind of change GitHub's time ran behind for
+                    // (M173): ids only, never titles.
+                    let numbers: Vec<u64> = rows.items.iter().map(|i| i.number).collect();
+                    let checks: Vec<&str> =
+                        rows.checks.iter().map(|c| c.head_sha.get(..8).unwrap_or(&c.head_sha)).collect();
+                    info!(
+                        event,
+                        action = v["action"].as_str().unwrap_or_default(),
+                        delivery,
+                        repo,
+                        event_ms = ms,
+                        numbers = ?numbers,
+                        checks = ?checks,
+                        "forge mirror: late delivery"
+                    );
+                }
                 super::inbox::written(p, repo, rows);
                 if !rows.items.is_empty() {
                     crate::sessions::pr::noted(p, repo);

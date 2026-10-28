@@ -14,4 +14,4 @@ failure-output = "immediate-final"
 fail-fast = false
 # The quarantined tests (.config/quarantine.toml), left out: `just
 # quarantine` writes this line from it; quarantine-nightly.yml runs them.
-default-filter = "not ((binary_id(=arugula-platform) & test(=triggers::tests::session_feedback::round_three_is_refused)))"
+default-filter = "all()"

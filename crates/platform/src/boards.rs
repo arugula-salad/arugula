@@ -40,6 +40,9 @@
 //! what aru-116 allows ([`wire::BlockState`]). A report pushes an object
 //! change for the boards whose rows point at the block.
 //!
+//! **Work** ([`work`]): a project's issues, PRs and runs, for a row to point
+//! at, and the open issues that no board of the project has a row for.
+//!
 //! **Live:** a change to a board, to an issue a row points at, or (a
 //! webhook) to a mirrored item it points at pushes an object change
 //! ([`changed`]), so clients following the board read it again.
@@ -77,6 +80,7 @@ use crate::{
 };
 
 pub mod agent;
+pub mod work;
 
 /// The Labs flag boards are behind.
 pub const FLAG: &str = "boards";

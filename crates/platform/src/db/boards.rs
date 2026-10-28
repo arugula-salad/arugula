@@ -819,3 +819,17 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute("DELETE FROM board_block_states WHERE account = ?1", params![d.account])?;
     Ok(())
 }
+
+impl Db {
+    /// The `fi_` and `iss_` ids that any row of any board of `project` points
+    /// at: what makes an issue triaged.
+    pub fn project_board_targets(&self, project: &str) -> Result<std::collections::HashSet<String>> {
+        let rows: Vec<String> = self.c().query_map(
+            "SELECT DISTINCT e.target FROM board_entries e JOIN boards b ON b.id = e.board_id
+             WHERE b.project_id = ?1 AND e.target_kind IN ('forge_item', 'issue')",
+            params![project],
+            |r| r.get(0),
+        )?;
+        Ok(rows.into_iter().collect())
+    }
+}

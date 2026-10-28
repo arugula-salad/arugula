@@ -40,7 +40,7 @@ pub fn the_tool_list_and_each_schema_are_unchanged() {
 
 pub fn annotations_are_honest() {
     let all = list(Scope::Full, fl(false));
-    assert_eq!(all.len(), 35 - no_forge());
+    assert_eq!(all.len(), 36 - no_forge());
     let ro: Vec<&str> = all
         .iter()
         .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -61,6 +61,7 @@ pub fn annotations_are_honest() {
         "search_threads",
         "read_run",
         "read_deploy",
+        "read_session",
     ];
     want.retain(|n| crate::forges::built() || !FORGE_TOOLS.contains(n));
     assert_eq!(ro, want);
@@ -153,9 +154,9 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     for name in THREAD_TOOLS {
         assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
     }
-    assert_eq!(every.len(), 38);
-    assert_eq!(defs(fl(false)).len(), 35 - no_forge());
-    assert_eq!(defs(fl(true)).len(), 38 - no_forge());
+    assert_eq!(every.len(), 39);
+    assert_eq!(defs(fl(false)).len(), 36 - no_forge());
+    assert_eq!(defs(fl(true)).len(), 39 - no_forge());
     assert_eq!(every.len(), defs(fl(false)).len() + 3 + no_forge(), "and delegate and the board tools");
 }
 
@@ -199,12 +200,10 @@ pub fn the_card_lists_what_this_machine_offers() {
     // Parts of another's line never show on their own.
     assert!(!all.contains(&"wait".to_owned()) && !all.contains(&"close".to_owned()));
     // A flag: boards, and delegating (the agent catalog's).
-    assert!(all.contains(&super::super::boards::READ_TOOL.to_owned()));
+    assert!(all.contains(&"board_read".to_owned()));
     assert!(all.contains(&"delegate".to_owned()) && !bare.contains(&"delegate".to_owned()));
     // What control and its grants give.
-    for t in
-        ["cloud", super::super::runs::START_TOOL, super::super::threads::READ_TOOL, super::super::issues::WRITE_TOOL]
-    {
+    for t in ["cloud", "start_run", "read_thread", "issue_write"] {
         assert!(all.contains(&t.to_owned()) && !bare.contains(&t.to_owned()), "{t}");
     }
     if crate::forges::built() {

@@ -21,13 +21,15 @@
 // can't, and checks the MCP server and the hooks; "Use Claude Code with
 // Arugula" does all three in one click (`POST /api/setup/agents/claude`),
 // then says what changed, naming the settings file. Where Claude Code is on the machine and isn't
-// set up, the first screen offers that click too.
+// set up, the first screen offers that click too. Beside the hooks, it
+// offers Claude Code's plugin, which brings the tools and the hooks at
+// once, as its two `/plugin` lines (./claude-plugin).
 
 import { opPath } from "../ops";
 import { directory } from "../hosts";
 import qrcode from "qrcode-generator";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { useModal } from "../../shared/ui/modal";
+import { dialogUp, subscribeDialogs, useModal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { CopyText } from "../../shared/ui/copy";
 import { notifyBlocker, pushNow, serveCommand, subscribePush, turnOnPush } from "./notify";
@@ -41,6 +43,7 @@ import { openPalette } from "./palette";
 import { openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { AgentCanCard } from "./agent-can";
+import { ClaudePlugin } from "./claude-plugin";
 import type { ControlState, HostInfo } from "../../shared/proto";
 import { placeOf, refreshControlState } from "./control-state";
 import { desktopApp } from "../../shared/desktop";
@@ -169,12 +172,23 @@ export function useFirstRun(client: Client) {
   // The seen store loads after the page does.
   const [loaded, setLoaded] = useState(seenReady());
   useEffect(() => subscribeSeen(() => setLoaded(seenReady())), []);
+  // Arugula #280: not while a dialog is up, such as the one a link opened
+  // control's page for (the app's sign-in, a machine's join): it waits
+  // until that's answered. It used to open under it, so the person
+  // answered the link's dialog and found another behind it. On control's
+  // page the link's dialog is up before the greeting can be: both wait
+  // for the account, and the greeting also for the account's prefs.
+  // Asked as it's about to open, and again whenever a dialog opens or
+  // closes (an answer kept from when the dialog opened could be stale: it
+  // isn't always in the page yet as it opens).
+  const [dialogs, setDialogs] = useState(0);
+  useEffect(() => subscribeDialogs(() => setDialogs((n) => n + 1)), []);
   useEffect(() => {
-    if (!ready || !loaded || client.state?.roles || navigator.webdriver || greeted()) return;
+    if (!ready || !loaded || dialogUp() || client.state?.roles || navigator.webdriver || greeted()) return;
     markSeen(SEEN);
     greetedNow = true;
     openGettingStarted(undefined, client);
-  }, [client, ready, loaded]);
+  }, [client, ready, loaded, dialogs]);
 }
 
 export function GettingStartedLayer() {
@@ -878,6 +892,7 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
                 <p class="start-dim">Or only the MCP server, or only the hooks:</p>
                 <CopyText text="claude mcp add arugula -- arugula mcp" data-mcp-command />
                 <CopyText text="arugula hooks install" data-hooks-command />
+                <ClaudePlugin />
               </>
             ) : (
               <>
@@ -894,6 +909,8 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
                   )}
                 </ul>
                 <UseClaude setup={setup} refresh={refresh} />
+                {/* Where the hooks are offered, the plugin too (Discovery 10). */}
+                {cl?.installed !== false && (!cl?.tools || cl.hooks === false) && <ClaudePlugin />}
               </>
             )}
             <p class="start-dim">

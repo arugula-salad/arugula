@@ -12,7 +12,7 @@ use arugula_proto::{
     api::{ActRequest, HistoryEntry, HistoryKind, OpenRequest, PaneSummary, RunRequest, WaitResult},
     flags::{self, On},
     forge::{ForgeState, ItemKind, ReviewEvent, Write},
-    op::ops::{ClosePane, ConversationOpen, ConversationsList, ListPanes},
+    op::ops::{ClosePane, ListPanes},
 };
 use rmcp::{
     RoleServer,
@@ -40,10 +40,10 @@ use crate::{
 };
 
 /// A page of output, by default (characters).
-pub(crate) const PAGE: usize = 16_000;
+pub const PAGE: usize = 16_000;
 /// The most any one result carries: Claude Code swaps anything over about
 /// 50,000 for a preview and a file (S14).
-pub(crate) const PAGE_MAX: usize = 40_000;
+pub const PAGE_MAX: usize = 40_000;
 /// How long a wait (or `run` with `wait`) waits before answering "still
 /// running": under interactive Claude Code's 120s auto-background.
 const WAIT_DEFAULT: Duration = Duration::from_secs(100);
@@ -240,6 +240,9 @@ pub enum Until {
     Idle,
     /// It asks for you: an agent's approval or question.
     NeedsInput,
+    /// An agent session in Arugula control (session) finished its turn,
+    /// waits on a person, or ended.
+    Done,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -267,6 +270,10 @@ pub struct WaitArgs {
     /// it ends (until command_end).
     #[serde(default)]
     pub run: Option<String>,
+    /// Or agent sessions in Arugula control (ses_…, several separated by
+    /// spaces), not pane: until done, when any of them finishes its turn.
+    #[serde(default)]
+    pub session: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema, Default)]
@@ -918,7 +925,6 @@ const SHOW: &[Kind] = &[
         schema: schema_for_type::<OpenIssueArgs>,
         flag: None,
     },
-    super::ops::kind::<ConversationOpen>(),
     Kind {
         name: "chat",
         description: "Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
@@ -977,7 +983,6 @@ const DRAFT: &[Kind] = &[
 /// `list`'s lists.
 const LIST: &[Kind] = &[
     super::ops::kind::<ListPanes>(),
-    super::ops::kind::<ConversationsList>(),
     Kind {
         name: "devices",
         description: "The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.",
@@ -990,10 +995,6 @@ const LIST: &[Kind] = &[
         schema: schema_for_type::<ListTeamAgentsArgs>,
         flag: None,
     },
-    super::cloud::LIST_WORKSPACES,
-    super::cloud::LIST_TABS,
-    super::repos::LIST_LINKED,
-    super::threads::LIST,
 ];
 
 /// The jobs that work but aren't listed without their Labs flag: they're for
@@ -1137,7 +1138,7 @@ pub(crate) fn block_offers(on: On) -> Vec<results::BlockOffer> {
 }
 
 /// A group's table as a tool holds it.
-fn table(kinds: &'static [Kind]) -> Vec<&'static Kind> {
+pub fn table(kinds: &'static [Kind]) -> Vec<&'static Kind> {
     kinds.iter().collect()
 }
 
@@ -1203,7 +1204,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Or agent sessions in Arugula control (session: ses_… ids, not pane) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -1369,36 +1370,6 @@ fn all_defs() -> Vec<Def> {
             ),
         },
         Def {
-            name: "forge_read",
-            title: "Read a linked repo's PRs and issues",
-            description: "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).",
-            args: Args::Kinds { kinds: table(super::forge_ops::READ), default: None },
-            read_only: true,
-            destructive: false,
-            idempotent: true,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: Human::In("forge_draft"),
-        },
-        Def {
-            name: "forge_draft",
-            title: "Draft on a linked repo",
-            description: "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.",
-            args: Args::Kinds { kinds: table(super::forge_ops::DRAFT), default: None },
-            read_only: false,
-            destructive: true,
-            idempotent: false,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: line(
-                "read your projects' linked GitHub repos and draft comments, reviews or issues for you to send",
-                "List the open PRs on our linked repo and draft a review of the oldest.",
-                Needs::Control,
-            ),
-        },
-        Def {
             name: "read_file",
             title: "Read a file",
             description: "A text file on this host or the machine a pane runs on, paged by byte offset.",
@@ -1427,237 +1398,6 @@ fn all_defs() -> Vec<Def> {
                 "Take a photo of the whiteboard with my phone.",
                 Needs::Nothing,
             ),
-        },
-        Def {
-            name: "read_cloud",
-            title: "Read a Cloud workspace",
-            description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff or git status. A Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.",
-            args: Args::Kinds { kinds: table(super::cloud::READ), default: None },
-            read_only: true,
-            destructive: false,
-            idempotent: true,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: Human::In("cloud"),
-        },
-        Def {
-            name: "cloud",
-            title: "Drive a Cloud workspace",
-            description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.",
-            args: Args::Kinds { kinds: table(super::cloud::DRIVE), default: None },
-            read_only: false,
-            destructive: true,
-            idempotent: false,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: line(
-                "drive your Cloud workspaces: open an agent there, prompt it and follow its turn",
-                "Open a Claude tab in my Cloud workspace and have it fix the flaky test.",
-                Needs::Cloud,
-            ),
-        },
-        Def {
-            name: "link_repo",
-            title: "Link a GitHub repo to a project",
-            description: "Link a GitHub repo to one of the user's projects in Arugula control, or unlink it, as the user (the owner of this machine). Linking takes admin or maintain on the repo on GitHub; unlinking purges its rows within a day. list kind linked_repos lists them.",
-            args: Args::Kinds { kinds: table(super::repos::LINK), default: None },
-            read_only: false,
-            destructive: true,
-            idempotent: true,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: Human::In("forge_draft"),
-        },
-        // M198: agents in conversations, through the owner's grants.
-        Def {
-            name: super::threads::READ_TOOL,
-            title: "Read a conversation",
-            description: super::threads::READ_DESCRIPTION,
-            args: Args::One(schema_for_type::<super::threads::ReadThreadArgs>),
-            read_only: true,
-            destructive: false,
-            idempotent: true,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: line(
-                "read, search and post in your projects' conversations",
-                "Search our project's channel for what we decided about sign-in.",
-                Needs::Threads,
-            ),
-        },
-        Def {
-            name: super::threads::SEARCH_TOOL,
-            title: "Search conversations",
-            description: super::threads::SEARCH_DESCRIPTION,
-            args: Args::One(schema_for_type::<super::threads::SearchThreadsArgs>),
-            read_only: true,
-            destructive: false,
-            idempotent: true,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: Human::In(super::threads::READ_TOOL),
-        },
-        Def {
-            name: super::threads::POST_TOOL,
-            title: "Post in a conversation",
-            description: super::threads::POST_DESCRIPTION,
-            args: Args::One(schema_for_type::<super::threads::PostThreadArgs>),
-            read_only: false,
-            destructive: false,
-            idempotent: false,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: Human::In(super::threads::READ_TOOL),
-        },
-        // M200: native issues, written at once through the owner's grants.
-        Def {
-            name: super::issues::WRITE_TOOL,
-            title: "Write to a native issue",
-            description: super::issues::WRITE_DESCRIPTION,
-            args: Args::Kinds { kinds: table(super::issues::WRITE), default: None },
-            read_only: false,
-            destructive: true,
-            idempotent: false,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: line(
-                "file your project's issues and keep them up to date",
-                "File an issue for the crash we just found, with the steps.",
-                Needs::Issues,
-            ),
-        },
-        // Boards, step 3: a project's live status board, through the owner's
-        // grants, behind the `boards` flag.
-        Def {
-            name: super::boards::READ_TOOL,
-            title: "Read a status board",
-            description: super::boards::READ_DESCRIPTION,
-            args: Args::One(schema_for_type::<super::boards::ReadBoardArgs>),
-            read_only: true,
-            destructive: false,
-            idempotent: true,
-            open_world: true,
-            flag: Some(flags::BOARDS),
-            output: None,
-            human: line(
-                "read your project's status board and keep its rows current",
-                "Mark the sign-in row done on our board.",
-                Needs::Control,
-            ),
-        },
-        Def {
-            name: super::boards::WRITE_TOOL,
-            title: "Write to a status board",
-            description: super::boards::WRITE_DESCRIPTION,
-            args: Args::Kinds { kinds: table(super::boards::WRITE), default: None },
-            read_only: false,
-            destructive: true,
-            idempotent: false,
-            open_world: true,
-            flag: Some(flags::BOARDS),
-            output: None,
-            human: Human::In(super::boards::READ_TOOL),
-        },
-        // M216: a project's runs, through the owner's grants.
-        Def {
-            name: super::runs::START_TOOL,
-            title: "Start a run",
-            description: super::runs::START_DESCRIPTION,
-            args: Args::One(schema_for_type::<super::runs::StartRunArgs>),
-            read_only: false,
-            destructive: true,
-            idempotent: false,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: line(
-                "start your project's runs and follow them to the end",
-                "Start the nightly eval run and tell me how it went.",
-                Needs::Runs,
-            ),
-        },
-        Def {
-            name: super::runs::READ_TOOL,
-            title: "Read a run",
-            description: super::runs::READ_DESCRIPTION,
-            args: Args::One(schema_for_type::<super::runs::ReadRunArgs>),
-            read_only: true,
-            destructive: false,
-            idempotent: true,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: Human::In(super::runs::START_TOOL),
-        },
-        // M252: plan a project's deploy and ask; an owner approves.
-        Def {
-            name: super::deploys::PLAN_TOOL,
-            title: "Plan a deploy and ask for approval",
-            description: super::deploys::PLAN_DESCRIPTION,
-            args: Args::One(schema_for_type::<super::deploys::PlanDeployArgs>),
-            read_only: false,
-            destructive: false,
-            idempotent: false,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: line(
-                "plan a deploy and ask an owner to approve it",
-                "Plan a deploy of main to staging.",
-                Needs::Control,
-            ),
-        },
-        Def {
-            name: super::deploys::READ_TOOL,
-            title: "Read a deploy",
-            description: super::deploys::READ_DESCRIPTION,
-            args: Args::One(schema_for_type::<super::deploys::ReadDeployArgs>),
-            read_only: true,
-            destructive: false,
-            idempotent: true,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: Human::In(super::deploys::PLAN_TOOL),
-        },
-        // Fleet 3 (aru-121): a person's agent starts, answers and prompts
-        // agent sessions as them, by their grants.
-        Def {
-            name: super::agent_sessions::START_TOOL,
-            title: "Start an agent session",
-            description: super::agent_sessions::START_DESCRIPTION,
-            args: Args::One(schema_for_type::<super::agent_sessions::SessionStartArgs>),
-            read_only: false,
-            destructive: false,
-            idempotent: false,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: line(
-                "hand an issue to an agent session on your project's cloud workspaces, and answer it",
-                "Start a session on issue #260 and tell me when it pushes.",
-                Needs::Control,
-            ),
-        },
-        Def {
-            name: super::agent_sessions::REPLY_TOOL,
-            title: "Answer or prompt an agent session",
-            description: super::agent_sessions::REPLY_DESCRIPTION,
-            args: Args::One(schema_for_type::<super::agent_sessions::SessionReplyArgs>),
-            read_only: false,
-            destructive: false,
-            idempotent: false,
-            open_world: true,
-            flag: None,
-            output: None,
-            human: Human::In(super::agent_sessions::START_TOOL),
         },
     ];
     // A feature crate's, where each says (#232).
@@ -2085,73 +1825,7 @@ impl<'a> Call<'a> {
             },
             // list
             ("list", Some("panes")) => super::ops::call::<ListPanes>(self, args).await,
-            ("list", Some("conversations")) => super::ops::call::<ConversationsList>(self, args).await,
             ("list", Some("devices")) => self.list_devices(),
-            ("list", Some("cloud_workspaces")) => match parse::<NoArgs>(args) {
-                Ok(_) => self.list_cloud_workspaces().await,
-                Err(e) => Err(e),
-            },
-            ("list", Some("cloud_tabs")) => match parse(args) {
-                Ok(a) => self.list_cloud_tabs(a).await,
-                Err(e) => Err(e),
-            },
-            ("list", Some("linked_repos")) => match parse(args) {
-                Ok(a) => self.list_linked_repos(a).await,
-                Err(e) => Err(e),
-            },
-            ("link_repo", Some(kind @ ("link" | "unlink"))) => match parse(args) {
-                Ok(a) => self.link_repo(kind, a).await,
-                Err(e) => Err(e),
-            },
-            ("forge_read" | "forge_draft", Some(kind)) => self.forge_ops(name, kind, args).await,
-            ("issue_write", Some(kind)) => self.issue_write(kind, args).await,
-            ("board_write", Some(kind)) => self.board_write(kind, args).await,
-            ("board_read", _) => match parse(args) {
-                Ok(a) => self.board_read(a).await,
-                Err(e) => Err(e),
-            },
-            ("start_run", _) => match parse(args) {
-                Ok(a) => self.start_run(a).await,
-                Err(e) => Err(e),
-            },
-            ("read_run", _) => match parse(args) {
-                Ok(a) => self.read_run(a).await,
-                Err(e) => Err(e),
-            },
-            ("plan_deploy", _) => match parse(args) {
-                Ok(a) => self.plan_deploy(a).await,
-                Err(e) => Err(e),
-            },
-            ("read_deploy", _) => match parse(args) {
-                Ok(a) => self.read_deploy(a).await,
-                Err(e) => Err(e),
-            },
-            ("session_start", _) => match parse(args) {
-                Ok(a) => self.session_start(a).await,
-                Err(e) => Err(e),
-            },
-            ("session_reply", _) => match parse(args) {
-                Ok(a) => self.session_reply(a).await,
-                Err(e) => Err(e),
-            },
-            ("read_cloud", Some(kind)) => self.read_cloud(kind, args).await,
-            ("cloud", Some(kind)) => self.drive_cloud(kind, args).await,
-            ("list", Some("threads")) => match parse::<NoArgs>(args) {
-                Ok(_) => self.list_threads().await,
-                Err(e) => Err(e),
-            },
-            ("read_thread", _) => match parse(args) {
-                Ok(a) => self.read_thread(a).await,
-                Err(e) => Err(e),
-            },
-            ("search_threads", _) => match parse(args) {
-                Ok(a) => self.search_threads(a).await,
-                Err(e) => Err(e),
-            },
-            ("post_thread", _) => match parse(args) {
-                Ok(a) => self.post_thread(a).await,
-                Err(e) => Err(e),
-            },
             ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel" | "review" | "apply"))) => match parse(args)
             {
                 Ok(a) => self.delegate(kind, a).await,
@@ -2185,7 +1859,6 @@ impl<'a> Call<'a> {
                 }
                 Err(e) => Err(e),
             },
-            ("show", Some("conversation")) => super::ops::call::<ConversationOpen>(self, args).await,
             ("show", Some("chat")) => match parse(args) {
                 Ok(a) => self.show_chat(a).await,
                 Err(e) => Err(e),
@@ -2932,6 +2605,19 @@ impl<'a> Call<'a> {
     }
 
     async fn wait(&self, a: WaitArgs) -> Out {
+        // Fleet 5: agent sessions, in control.
+        if let Some(ses) = &a.session {
+            if a.pane.is_some() || a.tab.is_some() || a.cloud_workspace.is_some() || a.run.is_some() {
+                return Err("give a pane, a Cloud workspace's tab, a run, or sessions: one of them".into());
+            }
+            if !matches!(a.until, Until::Done | Until::Idle) {
+                return Err("a session waits until its turn is done: until done".into());
+            }
+            return super::registry::wait_sessions(self, ses, Self::limit(a.timeout)).await;
+        }
+        if matches!(a.until, Until::Done) {
+            return Err("until done is for sessions (session: ses_…); a pane waits until idle or command_end".into());
+        }
         // M216: a run, in control.
         if let Some(run) = &a.run {
             if a.pane.is_some() || a.tab.is_some() || a.cloud_workspace.is_some() {
@@ -2940,7 +2626,7 @@ impl<'a> Call<'a> {
             if !matches!(a.until, Until::CommandEnd | Until::Exit) {
                 return Err("a run waits until it ends: until command_end".into());
             }
-            return self.wait_run(run, Self::limit(a.timeout)).await;
+            return super::registry::wait_run(self, run, Self::limit(a.timeout)).await;
         }
         // #1094: a Cloud workspace's tab, in control.
         if let Some(tab) = &a.tab {
@@ -2972,6 +2658,7 @@ impl<'a> Call<'a> {
             Until::Match => "match",
             Until::Idle => "idle",
             Until::NeedsInput => "needs-input",
+            Until::Done => unreachable!("refused above"),
         };
         if p.info.kind != BlockType::Terminal && !matches!(until, "idle" | "needs-input") {
             return Err(format!("%{pane} is an agent or browser block: wait until idle or needs_input"));
@@ -3465,6 +3152,22 @@ impl Call<'_> {
         Ok((id, b))
     }
 
+    /// One forge operation on the platform (M169): its result, a refusal
+    /// as `said` puts it. Never one that sends: only a person does.
+    pub async fn forge_op(
+        &self,
+        op: arugula_control_wire::forge_ops::Op,
+        said: fn(crate::control::CloudRefused) -> String,
+    ) -> Result<Value, String> {
+        if op.sends() {
+            return Err("only a person sends: draft it for them".into());
+        }
+        let body = serde_json::to_value(arugula_control_wire::forge_ops::Call::new(op)).map_err(|e| e.to_string())?;
+        let path = arugula_control_wire::forge_ops::FORGE_OPS;
+        let v = self.app.control.cloud(reqwest::Method::POST, path, Some(&body)).await.map_err(said)?;
+        Ok(v["result"].clone())
+    }
+
     async fn read_forge(&self, a: ReadForgeArgs) -> Out {
         if let PaneArg::Name(s) = &a.block
             && super::issues::Native::parse(s).is_some()
@@ -3513,7 +3216,7 @@ impl Call<'_> {
                 ItemKind::Issue => arugula_control_wire::forge_ops::Op::IssueGet(at),
                 _ => arugula_control_wire::forge_ops::Op::PrGet(at),
             };
-            if let Ok(v) = self.forge_op(op).await {
+            if let Ok(v) = self.forge_op(op, |e| e.to_string()).await {
                 summary += &format!(" (linked in Arugula control: {})", v["item"]["id"].as_str().unwrap_or("?"));
                 platform = Some(v);
             }
@@ -4074,7 +3777,7 @@ fn seconds(s: &str) -> Result<u64, String> {
     Ok(n * mult)
 }
 
-fn ago(ms: u64) -> String {
+pub fn ago(ms: u64) -> String {
     let secs = now_ms().saturating_sub(ms) / 1000;
     match secs {
         0..60 => format!("{secs}s ago"),
@@ -4265,7 +3968,7 @@ mod tests {
     fn kinds_are_picked_and_checked() {
         let kind = |tool: &str, args: Value| route(tool, args, fl(true)).map(|(_, k, a)| (k, a));
         assert_eq!(kind("list", json!({})).unwrap(), (Some("panes"), json!({})));
-        assert_eq!(kind("list", json!({ "kind": "conversations", "live": true })).unwrap().0, Some("conversations"));
+        assert_eq!(kind("list", json!({ "kind": "devices" })).unwrap().0, Some("devices"));
         let e = kind("show", json!({ "port": 3000 })).unwrap_err();
         assert!(e.contains("show needs a kind") && e.contains("port, changes, file"), "{e}");
         let e = kind("show", json!({ "kind": "terminal" })).unwrap_err();
