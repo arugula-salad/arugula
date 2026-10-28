@@ -20,8 +20,8 @@ use arugula_proto::{
 };
 use axum::http::StatusCode;
 
-use super::{Cx, Handle, OpError, Via};
 use crate::{
+    Docs,
     docs::{
         library,
         link::{self, Remote},
@@ -31,6 +31,7 @@ use crate::{
         tools::{Call, ListArgs, Out, done},
     },
     mux::Api,
+    ops::{Cx, Handle, OpError, Via},
     server::App,
 };
 
@@ -77,7 +78,7 @@ fn checked(app: &App, id: &str) -> Result<library::Meta, OpError> {
     library::read_meta(&dir).ok_or_else(|| not_found(id))
 }
 
-impl Handle for DocsList {
+impl Handle<Docs> for DocsList {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Vec<DocRow>, OpError> {
         let open = open_blocks(cx.app).await;
         let state = cx.app.control.state_dir().to_owned();
@@ -103,7 +104,7 @@ impl Handle for DocsList {
     }
 }
 
-impl McpOp for DocsList {
+impl McpOp<Docs> for DocsList {
     const SURFACE: Surface = Surface::Kind {
         tool: "doc",
         kind: "list",
@@ -164,7 +165,7 @@ pub(crate) async fn open_doc(
     }
 }
 
-impl Handle for DocOpen {
+impl Handle<Docs> for DocOpen {
     async fn handle(cx: &Cx<'_>, _: (), req: DocOpenRequest) -> Result<DocOpened, OpError> {
         let who = match &cx.via {
             Via::Http { who, .. } => Some(who.clone()),
@@ -174,7 +175,7 @@ impl Handle for DocOpen {
     }
 }
 
-impl Handle for DocDelete {
+impl Handle<Docs> for DocDelete {
     async fn handle(cx: &Cx<'_>, id: String, _: Empty) -> Result<Empty, OpError> {
         // The link's key is the machine's own account's, and a Doc that is
         // gone can't be got back: not an agent's, nor a team's other owner's.

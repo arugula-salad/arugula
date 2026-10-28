@@ -21,11 +21,11 @@ use arugula_proto::{
     },
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConversationOpen, ConversationsList,
-        DocDelete, DocLinkDelete, DocLinkGet, DocOpen, DocsList, FlagSet, FlagsList, HostedSetupGet, ListPanes,
-        MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection,
-        PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts, PaneProcess,
-        PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList,
-        SharingGet, SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
+        FlagSet, FlagsList, HostedSetupGet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk,
+        PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys,
+        PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe,
+        PushTest, RuleForget, RulesForgetAll, RulesList, SharingGet, SharingSet, ShellEnvGet, ShellEnvRefresh,
+        TelemetryGet, TelemetryNote, TelemetrySet,
     },
 };
 use axum::{
@@ -83,11 +83,6 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<RulesList>()
         .op::<RulesForgetAll>()
         .op::<RuleForget>()
-        .op::<DocLinkGet>()
-        .op::<DocsList>()
-        .op::<DocOpen>()
-        .op::<DocDelete>()
-        .op::<DocLinkDelete>()
         .op::<PaneWait>()
         .op::<ShellEnvGet>()
         .op::<ShellEnvRefresh>()
@@ -126,6 +121,8 @@ pub fn routes() -> Router<Arc<App>> {
     // Labs' routes, if this build has them, and the editor's.
     let r = crate::labs::routes(r);
     let r = crate::editors::routes(r);
+    // The feature crates' (#232).
+    let r = crate::features::routes(r);
     // M70: a file onto the pane's host, and its path pasted.
     #[cfg(unix)]
     let r = r
@@ -942,12 +939,12 @@ async fn call(
         // A Doc's link (#1066) is the owner's, and not for an agent on the
         // owner's CLI either: it publishes (or reads back the key). As for
         // invites, an honor system: the CLI says when an agent runs it.
-        if b.kind() == arugula_proto::BlockType::Doc && crate::docs::link::METHODS.contains(&method.as_str()) {
+        if b.kind() == arugula_proto::BlockType::Doc && crate::doc_shares::METHODS.contains(&method.as_str()) {
             if !owner || foreign(&app, &dev) {
-                return Err(ApiError(StatusCode::FORBIDDEN, crate::docs::link::OWNER_ONLY.into()));
+                return Err(ApiError(StatusCode::FORBIDDEN, crate::doc_shares::OWNER_ONLY.into()));
             }
             if crate::invite::agent(&headers) {
-                return Err(ApiError(StatusCode::FORBIDDEN, crate::docs::link::AGENT_ASKS.into()));
+                return Err(ApiError(StatusCode::FORBIDDEN, crate::doc_shares::AGENT_ASKS.into()));
             }
         }
         // M79: a task's card, and taking a grant back, are this machine's
@@ -1705,9 +1702,10 @@ async fn search(State(app): AppState, Query(q): Query<SearchQuery>) -> Res<Respo
     })
     .await
     .unwrap_or_default();
-    // The Doc library's lines (#1493) follow this machine's panes'.
+    // The feature crates' lines (the Doc library's, #1493) follow this
+    // machine's panes'.
     if host.is_none() {
-        hits.extend(crate::ops::docs::search_library(&app, docs_re, since, limit.saturating_sub(hits.len())).await);
+        hits.extend(crate::features::search(&app, docs_re, since, limit.saturating_sub(hits.len())).await);
     }
     Ok(Json(hits).into_response())
 }

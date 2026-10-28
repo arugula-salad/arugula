@@ -58,13 +58,8 @@ pub const PART_PLAIN: usize = (1 << 20) - OVERHEAD;
 /// Control's limit on parts (a part number is below it).
 const MAX_PARTS: usize = 48;
 
-/// What an agent is told, and the owner's CLI when an agent runs it.
-pub const AGENT_ASKS: &str = "an agent doesn't share a Doc: ask with the doc tool's share";
-/// Said to someone who isn't the owner, and to a team's other owner: the
-/// link's key is the sharing account's.
-pub const OWNER_ONLY: &str = "sharing a Doc is the machine's own account's";
-/// The block methods that publish, change or read back a link.
-pub const METHODS: [&str; 4] = ["doc_share", "doc_share_update", "doc_unshare", "doc_shares"];
+/// Who may share: the base's words, which its API checks with too.
+pub use arugulad_base::doc_shares::{AGENT_ASKS, OWNER_ONLY};
 /// The store, in the state directory.
 pub const FILE: &str = "doc-links.json";
 
@@ -756,7 +751,7 @@ mod tests {
     }
 
     fn fixture_path() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docs/link-vector.json")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../daemon/tests/fixtures/docs/link-vector.json")
     }
 
     /// The committed vector is what the encrypt path makes, byte for byte,
