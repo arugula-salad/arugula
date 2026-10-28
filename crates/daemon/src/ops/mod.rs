@@ -232,9 +232,8 @@ impl FromPath for String {
 /// as a route that isn't there (404) that says how to turn it on.
 pub fn flagged<O: Op>(app: &App) -> Result<(), OpError> {
     match O::FLAG {
-        Some(flag) => {
-            crate::labs::flag(app.control.state_dir(), flag).map_err(|why| OpError::Status(StatusCode::NOT_FOUND, why))
-        }
+        Some(flag) => crate::lab_flags::flag(app.control.state_dir(), flag)
+            .map_err(|why| OpError::Status(StatusCode::NOT_FOUND, why)),
         None => Ok(()),
     }
 }

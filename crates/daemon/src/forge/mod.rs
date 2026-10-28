@@ -2101,15 +2101,15 @@ impl Block for ForgeBlock {
 #[cfg(not(feature = "labs"))]
 impl ForgeBlock {
     async fn connect_tea(&self, _runner: Runner) -> Result<Arc<dyn Adapter>, String> {
-        Err(crate::labs::not_built("A Forgejo block"))
+        Err(crate::lab_flags::not_built("A Forgejo block"))
     }
 
     async fn connect_gitlab(&self) -> Result<Arc<dyn Adapter>, String> {
-        Err(crate::labs::not_built("A GitLab block"))
+        Err(crate::lab_flags::not_built("A GitLab block"))
     }
 
     async fn login_tea(self: &Arc<Self>, _name: &str) -> Result<Value, String> {
-        Err(crate::labs::not_built("A Forgejo login"))
+        Err(crate::lab_flags::not_built("A Forgejo login"))
     }
 }
 
@@ -2130,7 +2130,7 @@ pub async fn open_config(c: &Value, state_dir: &Path) -> Result<Value, String> {
     if let Some(out) = native::open_config(c).await? {
         return Ok(out);
     }
-    let out = resolve_for(c, crate::labs::on(state_dir, arugula_proto::flags::ADDITIONAL_FORGES)).await?;
+    let out = resolve_for(c, crate::lab_flags::on(state_dir, arugula_proto::flags::ADDITIONAL_FORGES)).await?;
     let provider = serde_json::from_value::<Provider>(out["provider"].clone()).unwrap_or_default();
     crate::labs::forge_allowed(provider, state_dir)?;
     Ok(out)

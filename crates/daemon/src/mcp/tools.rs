@@ -3350,7 +3350,7 @@ impl<'a> Call<'a> {
 #[cfg(feature = "labs")]
 impl Call<'_> {
     async fn open_app(&self, a: OpenAppArgs) -> Out {
-        crate::labs::flag(self.app.control.state_dir(), flags::STUDIO)?;
+        crate::lab_flags::flag(self.app.control.state_dir(), flags::STUDIO)?;
         let studio = crate::labs::apps::studio::get().ok_or("no studio here")?;
         let Some(name) = a.app else {
             let apps = studio.apps().await?;
@@ -3443,7 +3443,7 @@ impl Call<'_> {
     /// Delegating (M78): a task for another machine's agent.
     async fn delegate(&self, kind: &str, a: DelegateArgs) -> Out {
         use crate::labs::agents::delegate as d;
-        if !crate::labs::on(self.app.control.state_dir(), flags::AGENT_DELEGATION) {
+        if !crate::lab_flags::on(self.app.control.state_dir(), flags::AGENT_DELEGATION) {
             return Err("delegating is in Labs: `arugulad flags agent-delegation on` turns it on here".into());
         }
         // The owner's agents': a guest's agent asks no one's agents.
@@ -3513,7 +3513,7 @@ impl Call<'_> {
     /// The team's agent catalog (M77): the cards each machine offers.
     async fn team_agents(&self, a: ListTeamAgentsArgs) -> Out {
         use crate::labs::agents::catalog;
-        if !crate::labs::on(self.app.control.state_dir(), flags::AGENT_DELEGATION) {
+        if !crate::lab_flags::on(self.app.control.state_dir(), flags::AGENT_DELEGATION) {
             return Err("the agent catalog is in Labs: `arugulad flags agent-delegation on` turns it on here".into());
         }
         // The owner's agents': a guest's agent sees no catalog (#234's rule).
@@ -3554,19 +3554,19 @@ impl Call<'_> {
 #[cfg(not(feature = "labs"))]
 impl Call<'_> {
     async fn open_app(&self, _: OpenAppArgs) -> Out {
-        Err(crate::labs::not_built("An app block"))
+        Err(crate::lab_flags::not_built("An app block"))
     }
 
     async fn open_workspace(&self, _: OpenWorkspaceArgs) -> Out {
-        Err(crate::labs::not_built("A chant workspace"))
+        Err(crate::lab_flags::not_built("A chant workspace"))
     }
 
     async fn team_agents(&self, _: ListTeamAgentsArgs) -> Out {
-        Err(crate::labs::not_built("The agent catalog"))
+        Err(crate::lab_flags::not_built("The agent catalog"))
     }
 
     async fn delegate(&self, _: &str, _: DelegateArgs) -> Out {
-        Err(crate::labs::not_built("Delegating"))
+        Err(crate::lab_flags::not_built("Delegating"))
     }
 }
 
@@ -4615,7 +4615,7 @@ mod tests {
             arugula_proto::flags::set(&dir, f.name, true).unwrap();
         }
         assert_eq!(arugula_proto::flags::on(&dir), arugula_proto::flags::On::all(), "the flags are on");
-        let labs = crate::labs::flags(&dir).any();
+        let labs = crate::lab_flags::flags(&dir).any();
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(!labs, "labs is on in a build without it");
         for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
@@ -4781,7 +4781,7 @@ mod tests {
         for text in &prose {
             let mut lower = text.to_lowercase();
             // A sandbox provider is named with VMs' setup.
-            if crate::labs::BUILT {
+            if crate::lab_flags::BUILT {
                 lower = lower.replace("sandbox provider", "");
             }
             // Cloud workspaces (#1094) are everyone's; chant's are Labs'.

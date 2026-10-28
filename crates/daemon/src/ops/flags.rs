@@ -20,7 +20,7 @@ fn info(f: flags::Flag, s: flags::State) -> FlagInfo {
         about: f.about.into(),
         on: s.on,
         default: f.default,
-        built: crate::labs::BUILT,
+        built: crate::lab_flags::BUILT,
         source: s.source,
         local: s.local,
         account: s.account,

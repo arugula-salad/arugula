@@ -58,7 +58,7 @@ impl Handle for ShareRevoke {
 /// Labs answers past it, with what it lacks ([`crate::labs::guest_list`]'s
 /// twin), as it did past the flag.
 fn guest_ssh_on(cx: &Cx<'_>) -> Result<(), OpError> {
-    if crate::labs::BUILT && !arugula_proto::sharing::guest_ssh(cx.app.control.state_dir()) {
+    if crate::lab_flags::BUILT && !arugula_proto::sharing::guest_ssh(cx.app.control.state_dir()) {
         return Err(OpError::Status(StatusCode::NOT_FOUND, arugula_proto::sharing::GUEST_SSH_OFF.into()));
     }
     Ok(())
