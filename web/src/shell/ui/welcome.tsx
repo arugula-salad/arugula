@@ -40,6 +40,7 @@ import { openSwarm } from "../swarm/route";
 import { openPalette } from "./palette";
 import { openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
+import { AgentCanCard } from "./agent-can";
 import type { ControlState, HostInfo } from "../../shared/proto";
 import { placeOf, refreshControlState } from "./control-state";
 import { desktopApp } from "../../shared/desktop";
@@ -907,6 +908,7 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
           </div>
         </li>
       </ul>
+      {client && !manual && <AgentCanCard client={client} />}
     </section>
   );
 }

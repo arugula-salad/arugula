@@ -310,25 +310,23 @@ pub(crate) const DRIVE: &[Kind] = &[
 
 // ---------------------------------------------------------------- calls
 
-impl Call<'_> {
-    /// Whether agents here can drive the owner's Cloud workspaces, for
-    /// `capabilities`: control is joined and has them, and says so in time.
-    pub(super) async fn cloud_reach(&self) -> super::results::CloudReach {
-        use super::results::CloudReach;
-        let asked = tokio::time::timeout(
-            Duration::from_secs(3),
-            self.app().control.cloud_now(Method::GET, "/api/workspaces", None),
-        );
-        match asked.await {
-            Ok(Ok(_)) => CloudReach {
-                reachable: true,
-                note: "You can drive the user's Cloud workspaces as them: list kind cloud_workspaces, read_cloud, cloud, and wait with a tab".into(),
-            },
-            Ok(Err(e)) => CloudReach { reachable: false, note: e.to_string() },
-            Err(_) => CloudReach { reachable: false, note: "Arugula control didn't answer in time".into() },
-        }
+/// Whether agents here can drive the owner's Cloud workspaces, for
+/// `capabilities`: control is joined and has them, and says so in time.
+pub(super) async fn cloud_reach(app: &crate::server::App) -> super::results::CloudReach {
+    use super::results::CloudReach;
+    let asked =
+        tokio::time::timeout(Duration::from_secs(3), app.control.cloud_now(Method::GET, "/api/workspaces", None));
+    match asked.await {
+        Ok(Ok(_)) => CloudReach {
+            reachable: true,
+            note: "You can drive the user's Cloud workspaces as them: list kind cloud_workspaces, read_cloud, cloud, and wait with a tab".into(),
+        },
+        Ok(Err(e)) => CloudReach { reachable: false, note: e.to_string() },
+        Err(_) => CloudReach { reachable: false, note: "Arugula control didn't answer in time".into() },
     }
+}
 
+impl Call<'_> {
     pub(crate) async fn list_cloud_workspaces(&self) -> Out {
         let rows = self.hosted_rows().await?;
         let summary = match rows.len() {

@@ -893,6 +893,67 @@ pub(crate) struct Def {
     /// answer's, with `summary`. A grouped tool answers by kind, and a tool
     /// that answers with more than one type in some case, has none.
     pub(crate) output: Option<fn() -> Schema>,
+    /// What it lets the person ask for, in their words: the card *What your
+    /// agent can do here* is these ([`can_do`]).
+    pub(crate) human: Human,
+}
+
+/// A tool's place on the person's card. Every tool has one, so a new tool
+/// shows there and a removed one goes (`every_tool_has_a_human_line`).
+pub(crate) enum Human {
+    /// A line of its own.
+    Line(About),
+    /// Part of another tool's line, named: `wait` is how `run`'s line works,
+    /// not something a person asks for. The name is for the test that holds
+    /// the card complete (`every_tool_has_a_human_line`).
+    In(#[cfg_attr(not(test), allow(dead_code))] &'static str),
+}
+
+/// One line of the card.
+pub(crate) struct About {
+    /// The rest of "Ask it to …".
+    pub(crate) ask: &'static str,
+    /// A prompt the person can copy.
+    pub(crate) example: &'static str,
+    /// What this machine needs for it to work, as `capabilities` says.
+    pub(crate) needs: Needs,
+}
+
+/// What a line needs beyond its tool's flag, each as `capabilities` reports
+/// it: a forge login here, or control, and a grant there.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Needs {
+    Nothing,
+    /// The user signed in to a forge here (`forges`).
+    Forge,
+    /// This machine joined to Arugula control (`control.state`).
+    Control,
+    /// The user's Cloud workspaces reachable (`control.cloud`).
+    Cloud,
+    /// A thread grant (`control.threads`).
+    Threads,
+    /// An issues.write grant (`control.threads`' scopes).
+    Issues,
+    /// A run grant (`control.runs`).
+    Runs,
+}
+
+const fn line(ask: &'static str, example: &'static str, needs: Needs) -> Human {
+    Human::Line(About { ask, example, needs })
+}
+
+/// The card's lines with the flags in `on`, each kept where `has` says this
+/// machine has what it needs, in the tool list's order.
+pub(crate) fn can_do(on: On, has: impl Fn(Needs) -> bool) -> Vec<arugula_proto::api::AgentCan> {
+    defs(on)
+        .into_iter()
+        .filter_map(|d| match d.human {
+            Human::Line(a) if has(a.needs) => {
+                Some(arugula_proto::api::AgentCan { tool: d.name.into(), ask: a.ask.into(), example: a.example.into() })
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// What a tool takes.
@@ -1239,6 +1300,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: Some(output_schema::<results::RunState>),
+            human: line(
+                "run a build, the tests or a dev server in a pane you can watch and take over",
+                "Run the tests in a pane and tell me what fails.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "send_input",
@@ -1251,6 +1317,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("run"),
         },
         Def {
             name: "attach",
@@ -1263,6 +1330,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("run"),
         },
         Def {
             name: "read_output",
@@ -1275,6 +1343,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("run"),
         },
         Def {
             name: "wait",
@@ -1287,6 +1356,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("run"),
         },
         Def {
             name: "delegate",
@@ -1299,6 +1369,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "hand a task to an agent your team offers, on this machine or another",
+                "Ask the team's release agent to cut a build of main.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "list",
@@ -1311,6 +1386,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "tell you what's here: your panes, your Claude Code conversations, your devices",
+                "What's running in my panes right now?",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "capabilities",
@@ -1323,6 +1403,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: Some(output_schema::<results::Capabilities>),
+            human: Human::In("list"),
         },
         super::ops::def::<ClosePane>(),
         Def {
@@ -1336,6 +1417,11 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: line(
+                "find what happened before: commands, their output, who answered what",
+                "Which commands failed in my terminals yesterday, and why?",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "show",
@@ -1348,6 +1434,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "show you things beside it: a dev server, its changes, a file, a pull request",
+                "Start the dev server and show it to me beside you.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "doc",
@@ -1360,6 +1451,11 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: line(
+                "write a Doc you watch fill in: a report, a plan, a comparison",
+                "Write me a Doc comparing the two approaches, with a chart.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "start_agent",
@@ -1372,6 +1468,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: Some(output_schema::<results::BlockOnly>),
+            human: line(
+                "start other agents beside it and look after them",
+                "Start two agents on branches of their own, one per bug, and review what each did.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "prompt_agent",
@@ -1384,6 +1485,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("start_agent"),
         },
         Def {
             name: "agent_respond",
@@ -1396,6 +1498,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: Some(output_schema::<results::PaneOnly>),
+            human: Human::In("start_agent"),
         },
         Def {
             name: "read_forge",
@@ -1408,6 +1511,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: Some(output_schema::<results::ForgeRead>),
+            human: Human::In("draft"),
         },
         Def {
             name: "draft",
@@ -1420,6 +1524,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "read a pull request or issue and draft a comment, review or merge for you to send",
+                "Look at my PR's failing checks and draft a reply to the review.",
+                Needs::Forge,
+            ),
         },
         Def {
             name: "forge_read",
@@ -1432,6 +1541,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In("forge_draft"),
         },
         Def {
             name: "forge_draft",
@@ -1444,6 +1554,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "read your projects' linked GitHub repos and draft comments, reviews or issues for you to send",
+                "List the open PRs on our linked repo and draft a review of the oldest.",
+                Needs::Control,
+            ),
         },
         Def {
             name: "invite_person",
@@ -1456,6 +1571,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: Some(output_schema::<results::InviteDrafted>),
+            human: line(
+                "ask you to bring someone into this session, saying why",
+                "Ask my teammate to watch this session with me, and say why.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "read_invite",
@@ -1468,6 +1588,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("invite_person"),
         },
         Def {
             name: "read_file",
@@ -1480,6 +1601,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: Some(output_schema::<results::FileRead>),
+            human: Human::In("show"),
         },
         Def {
             name: "device_call",
@@ -1492,6 +1614,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: Some(output_schema::<results::DeviceCalled>),
+            human: line(
+                "use your phone: take a photo, say where it is",
+                "Take a photo of the whiteboard with my phone.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "read_cloud",
@@ -1504,6 +1631,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In("cloud"),
         },
         Def {
             name: "cloud",
@@ -1516,6 +1644,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "drive your Cloud workspaces: open an agent there, prompt it and follow its turn",
+                "Open a Claude tab in my Cloud workspace and have it fix the flaky test.",
+                Needs::Cloud,
+            ),
         },
         Def {
             name: "link_repo",
@@ -1528,6 +1661,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In("forge_draft"),
         },
         // M198: agents in conversations, through the owner's grants.
         Def {
@@ -1541,6 +1675,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "read, search and post in your projects' conversations",
+                "Search our project's channel for what we decided about sign-in.",
+                Needs::Threads,
+            ),
         },
         Def {
             name: super::threads::SEARCH_TOOL,
@@ -1553,6 +1692,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In(super::threads::READ_TOOL),
         },
         Def {
             name: super::threads::POST_TOOL,
@@ -1565,6 +1705,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In(super::threads::READ_TOOL),
         },
         // M200: native issues, written at once through the owner's grants.
         Def {
@@ -1578,6 +1719,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "file your project's issues and keep them up to date",
+                "File an issue for the crash we just found, with the steps.",
+                Needs::Issues,
+            ),
         },
         // Boards, step 3: a project's live status board, through the owner's
         // grants, behind the `boards` flag.
@@ -1592,6 +1738,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: Some(flags::BOARDS),
             output: None,
+            human: line(
+                "read your project's status board and keep its rows current",
+                "Mark the sign-in row done on our board.",
+                Needs::Control,
+            ),
         },
         Def {
             name: super::boards::WRITE_TOOL,
@@ -1604,6 +1755,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: Some(flags::BOARDS),
             output: None,
+            human: Human::In(super::boards::READ_TOOL),
         },
         // M216: a project's runs, through the owner's grants.
         Def {
@@ -1617,6 +1769,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "start your project's runs and follow them to the end",
+                "Start the nightly eval run and tell me how it went.",
+                Needs::Runs,
+            ),
         },
         Def {
             name: super::runs::READ_TOOL,
@@ -1629,6 +1786,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In(super::runs::START_TOOL),
         },
         // M252: plan a project's deploy and ask; an owner approves.
         Def {
@@ -1642,6 +1800,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "plan a deploy and ask an owner to approve it",
+                "Plan a deploy of main to staging.",
+                Needs::Control,
+            ),
         },
         Def {
             name: super::deploys::READ_TOOL,
@@ -1654,6 +1817,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In(super::deploys::PLAN_TOOL),
         },
     ]
 }
@@ -5183,5 +5347,60 @@ mod tests {
             "docs/mcp-permissions.json's allow list: the read-only tools, in defs() order"
         );
         assert_eq!(list("ask"), want(false), "docs/mcp-permissions.json's ask list: every other tool, in defs() order");
+    }
+
+    /// Every tool has its place on the card *What your agent can do here*:
+    /// a line of its own, an "Ask it to …" and a prompt to copy, or a part
+    /// of a tool that has one. A new tool without one fails here.
+    #[test]
+    fn every_tool_has_a_human_line() {
+        let defs = all_defs();
+        let lined = |name: &str| defs.iter().any(|d| d.name == name && matches!(d.human, Human::Line(_)));
+        for d in &defs {
+            match &d.human {
+                Human::Line(a) => {
+                    assert!(!a.ask.trim().is_empty(), "{} has no line for the person", d.name);
+                    assert!(!a.example.trim().is_empty(), "{} has no example prompt", d.name);
+                    assert!(
+                        a.ask.chars().next().is_some_and(char::is_lowercase),
+                        "{}: it reads after \"Ask it to\"",
+                        d.name
+                    );
+                    assert!(!a.ask.ends_with('.'), "{}: a line, not a sentence", d.name);
+                }
+                Human::In(of) => assert!(lined(of), "{} is part of {of}, which has no line of its own", d.name),
+            }
+        }
+    }
+
+    /// The card follows the tool list: a tool its flag leaves out, and a
+    /// line whose need this machine lacks, aren't on it.
+    #[test]
+    fn the_card_lists_what_this_machine_offers() {
+        let tools = |c: &[arugula_proto::api::AgentCan]| c.iter().map(|c| c.tool.clone()).collect::<Vec<_>>();
+        let all = tools(&can_do(fl(true), |_| true));
+        let bare = tools(&can_do(fl(false), |n| n == Needs::Nothing));
+        for t in ["run", "show", "doc", "start_agent", "history"] {
+            assert!(all.contains(&t.to_owned()) && bare.contains(&t.to_owned()), "{t}");
+        }
+        // Parts of another's line never show on their own.
+        assert!(!all.contains(&"wait".to_owned()) && !all.contains(&"close".to_owned()));
+        // A flag: boards, and delegating (the agent catalog's).
+        assert!(all.contains(&super::super::boards::READ_TOOL.to_owned()));
+        assert!(all.contains(&"delegate".to_owned()) && !bare.contains(&"delegate".to_owned()));
+        // What control and its grants give.
+        for t in [
+            "cloud",
+            super::super::runs::START_TOOL,
+            super::super::threads::READ_TOOL,
+            super::super::issues::WRITE_TOOL,
+        ] {
+            assert!(all.contains(&t.to_owned()) && !bare.contains(&t.to_owned()), "{t}");
+        }
+        if crate::forges::BUILT {
+            assert!(all.contains(&"draft".to_owned()) && !bare.contains(&"draft".to_owned()));
+            let signed = tools(&can_do(fl(false), |n| matches!(n, Needs::Nothing | Needs::Forge)));
+            assert!(signed.contains(&"draft".to_owned()) && !signed.contains(&"cloud".to_owned()));
+        }
     }
 }

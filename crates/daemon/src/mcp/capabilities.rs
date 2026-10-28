@@ -7,13 +7,13 @@
 //! from it ([`App::hooks_heard`](crate::server::App)), which, with the
 //! hooks installed, includes the `PreToolUse` of this very call.
 
-use arugula_proto::flags::On;
+use arugula_proto::{api::AgentCan, flags::On};
 
 use super::{
     results::{Capabilities, CloudReach, ControlJoined, ForgeSignIn, HooksLive, RunsReach, ThreadsReach},
-    tools::{self, Call, Out, done},
+    tools::{self, Call, Needs, Out, done},
 };
-use crate::{review::Runner, store::now_ms};
+use crate::{review::Runner, server::App, store::now_ms};
 
 /// A hook heard this recently counts as live: a session that has been
 /// quiet longer may have ended.
@@ -23,9 +23,13 @@ impl Call<'_> {
     pub(super) async fn capabilities(&self) -> Out {
         let app = self.app();
         let on = crate::labs::flags(app.control.state_dir());
-        let forges = self.forges(on).await;
+        let forges = forges(app, on).await;
         let hooks = self.hooks().await;
-        let (cloud, threads, runs) = tokio::join!(self.cloud_reach(), self.threads_reach(), self.runs_reach());
+        let (cloud, threads, runs) = tokio::join!(
+            super::cloud::cloud_reach(app),
+            super::threads::threads_reach(app),
+            super::runs::runs_reach(app)
+        );
         let control = control(app, cloud, threads, runs);
         let tools = tools::list(self.scope(), on).into_iter().map(|t| t.name.to_string()).collect();
         let signed: Vec<&str> = forges.iter().filter(|f| f.signed_in).map(|f| f.forge.as_str()).collect();
@@ -55,45 +59,6 @@ impl Call<'_> {
                 control,
             },
         )
-    }
-
-    /// GitHub through `gh`, and Labs' forges where the flag is on.
-    async fn forges(&self, on: On) -> Vec<ForgeSignIn> {
-        if !crate::forges::BUILT {
-            return Vec::new();
-        }
-        let app = self.app();
-        let runner = match crate::api::agent_env(app).await {
-            Ok((home, env)) => Runner::Local { env, home },
-            Err(e) => {
-                return vec![ForgeSignIn {
-                    forge: "github".into(),
-                    host: "github.com".into(),
-                    signed_in: false,
-                    user: None,
-                    note: e.1,
-                }];
-            }
-        };
-        let gh = crate::forges::gh_signed_in(&runner, "github.com").await;
-        let joined = app.control.enrolled().is_some();
-        let mut out = vec![ForgeSignIn {
-            forge: "github".into(),
-            host: "github.com".into(),
-            signed_in: gh.is_ok(),
-            user: None,
-            note: match gh {
-                Ok(()) => "gh".into(),
-                Err(e) if joined => {
-                    format!("{e}. Until then blocks read through Arugula control's GitHub App, and nothing is sent")
-                }
-                Err(e) => e,
-            },
-        }];
-        if on.has(arugula_proto::flags::ADDITIONAL_FORGES) {
-            out.extend(crate::labs::forge_logins(&runner, app.control.state_dir()).await);
-        }
-        out
     }
 
     /// Claude Code's hooks in the caller's pane.
@@ -136,10 +101,74 @@ impl Call<'_> {
     }
 }
 
+/// GitHub through `gh`, and Labs' forges where the flag is on.
+async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
+    if !crate::forges::BUILT {
+        return Vec::new();
+    }
+    let runner = match crate::api::agent_env(app).await {
+        Ok((home, env)) => Runner::Local { env, home },
+        Err(e) => {
+            return vec![ForgeSignIn {
+                forge: "github".into(),
+                host: "github.com".into(),
+                signed_in: false,
+                user: None,
+                note: e.1,
+            }];
+        }
+    };
+    let gh = crate::forges::gh_signed_in(&runner, "github.com").await;
+    let joined = app.control.enrolled().is_some();
+    let mut out = vec![ForgeSignIn {
+        forge: "github".into(),
+        host: "github.com".into(),
+        signed_in: gh.is_ok(),
+        user: None,
+        note: match gh {
+            Ok(()) => "gh".into(),
+            Err(e) if joined => {
+                format!("{e}. Until then blocks read through Arugula control's GitHub App, and nothing is sent")
+            }
+            Err(e) => e,
+        },
+    }];
+    if on.has(arugula_proto::flags::ADDITIONAL_FORGES) {
+        out.extend(crate::labs::forge_logins(&runner, app.control.state_dir()).await);
+    }
+    out
+}
+
+/// The card *What your agent can do here* (`agent_can.get`): a line per
+/// tool this machine offers, as `capabilities` would say it to an agent
+/// started now: its flags, a forge signed in to here, control and the
+/// grants there.
+pub(crate) async fn can_do(app: &App) -> Vec<AgentCan> {
+    let on = crate::labs::flags(app.control.state_dir());
+    let (forges, cloud, threads, runs) = tokio::join!(
+        forges(app, on),
+        super::cloud::cloud_reach(app),
+        super::threads::threads_reach(app),
+        super::runs::runs_reach(app)
+    );
+    let signed = forges.iter().any(|f| f.signed_in);
+    let joined = app.control.enrolled().is_some();
+    let issues = threads.scopes.iter().any(|s| s.powers.iter().any(|p| p == "issues.write"));
+    tools::can_do(on, |needs| match needs {
+        Needs::Nothing => true,
+        Needs::Forge => signed,
+        Needs::Control => joined,
+        Needs::Cloud => cloud.reachable,
+        Needs::Threads => threads.live,
+        Needs::Issues => issues,
+        Needs::Runs => runs.live,
+    })
+}
+
 /// This machine's standing with control, the teams it holds rosters of,
 /// and whether its agents reach the owner's Cloud workspaces (#1094),
 /// conversations (M198) and runs (M216).
-fn control(app: &crate::server::App, cloud: CloudReach, threads: ThreadsReach, runs: RunsReach) -> ControlJoined {
+fn control(app: &App, cloud: CloudReach, threads: ThreadsReach, runs: RunsReach) -> ControlJoined {
     let st = app.control.state();
     let teams = app
         .control

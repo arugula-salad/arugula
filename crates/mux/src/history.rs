@@ -154,6 +154,7 @@ pub fn search(store: &StateDir, kinds: &BlockKinds, re: &Regex, since_ms: Option
                         command: None,
                         host: None,
                         doc: None,
+                        at_ms: None,
                     });
                     if hits.len() >= limit {
                         return hits;
@@ -195,6 +196,14 @@ pub fn search_log(
             None => return false,
         },
     };
+    // Where each time mark is: a line's time is the last one before it.
+    let marks: Vec<(u64, u64)> = events
+        .iter()
+        .filter_map(|(o, e)| match e {
+            Event::Time { at_ms } | Event::Restore { at_ms } | Event::Command { at_ms, .. } => Some((*o, *at_ms)),
+            _ => None,
+        })
+        .collect();
     let cmds = commands_in(events, pane, open);
     let Some((start, bytes)) = read(from) else { return false };
     let mut at = start;
@@ -211,7 +220,17 @@ pub fn search_log(
                 .rev()
                 .find(|c| c.start <= line_end && c.end.is_none_or(|e| at < e))
                 .and_then(|c| c.text.clone());
-            hits.push(SearchHit { pane, open, offset: at, line: line.to_owned(), command, host: None, doc: None });
+            let at_ms = marks[..marks.partition_point(|(o, _)| *o <= line_end)].last().map(|(_, t)| *t);
+            hits.push(SearchHit {
+                pane,
+                open,
+                offset: at,
+                line: line.to_owned(),
+                command,
+                host: None,
+                doc: None,
+                at_ms,
+            });
             if hits.len() >= limit {
                 return true;
             }
@@ -343,6 +362,7 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].line, "FAILED: 2 tests");
         assert_eq!(hits[0].command.as_deref(), Some("make test"));
+        assert_eq!(hits[0].at_ms, Some(1_000));
 
         let cast = export_cast(&store.pane_dir(3), "t").unwrap();
         let lines: Vec<&str> = cast.lines().collect();

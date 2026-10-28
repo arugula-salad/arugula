@@ -15,7 +15,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use std::future::Future;
 
-use super::tools::{Args, Call, Def, Kind, Out, output_schema, parse};
+use super::tools::{Args, Call, Def, Human, Kind, Out, output_schema, parse};
 use crate::ops::{Cx, Handle, OpError, Via};
 
 /// Where an operation shows in the tool list.
@@ -29,6 +29,8 @@ pub enum Surface {
         destructive: bool,
         idempotent: bool,
         open_world: bool,
+        /// Its place on the person's card.
+        human: Human,
     },
     /// A kind of a grouped tool, which stays written out in `tools.rs`.
     Kind { tool: &'static str, kind: &'static str, description: &'static str },
@@ -56,9 +58,9 @@ pub trait McpOp: Handle {
 /// A tool's row in the list. Whether a read-only token may call it follows
 /// from the operation's method and `CREDENTIAL` (`ops::read_only`).
 pub fn def<O: McpOp>() -> Def {
-    let (name, title, description, destructive, idempotent, open_world) = match O::SURFACE {
-        Surface::Tool { name, title, description, destructive, idempotent, open_world } => {
-            (name, title, description, destructive, idempotent, open_world)
+    let (name, title, description, destructive, idempotent, open_world, human) = match O::SURFACE {
+        Surface::Tool { name, title, description, destructive, idempotent, open_world, human } => {
+            (name, title, description, destructive, idempotent, open_world, human)
         }
         Surface::Kind { tool, kind, .. } => panic!("{} is {tool}'s kind {kind}, not a tool", O::NAME),
     };
@@ -73,6 +75,7 @@ pub fn def<O: McpOp>() -> Def {
         open_world,
         flag: O::FLAG,
         output: Some(output_schema::<O::Answer>),
+        human,
     }
 }
 

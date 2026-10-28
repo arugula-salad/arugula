@@ -127,12 +127,15 @@ test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async 
   await noLabsItems(page, pane);
 
   // The palette has no chat entry (and does have the rest). A chat block
-  // ("Start a chat") isn't Labs: it's an agent block without tools.
+  // ("Start a chat") isn't Labs: it's an agent block without tools; nor is
+  // searching output for the word (native #245).
   await page.keyboard.press("ControlOrMeta+Shift+KeyP");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await expect(palette).toBeVisible();
   await palette.getByRole("combobox", { name: "Command" }).fill("chat");
-  await expect(palette.getByRole("option", { name: /chat/i }).filter({ hasNotText: "Start a chat" })).toHaveCount(0);
+  await expect(
+    palette.getByRole("option", { name: /chat/i }).filter({ hasNotText: "Start a chat" }).filter({ hasNotText: "Search output for" }),
+  ).toHaveCount(0);
   await palette.getByRole("combobox", { name: "Command" }).fill("docs");
   await expect(palette.getByRole("option", { name: /Go to Docs/ })).toBeVisible();
   await palette.getByRole("combobox", { name: "Command" }).fill("split");

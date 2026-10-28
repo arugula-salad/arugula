@@ -6221,6 +6221,49 @@ html[data-scheme="light"] .doc {
   font-size: 13px;
 }
 
+/* What your agent can do here (agent-can.tsx): "Ask it to …" lines, each
+   with a prompt to copy, in Getting started, the agent dialog (folded) and
+   the Docs page's empty state. */
+.agent-can {
+  margin: 14px 0 0;
+}
+
+.agent-can h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.agent-can summary {
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.agent-can-lines {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-can-lines li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.agent-can-ask {
+  color: var(--fg);
+}
+
+.agent-can-lines .agent-can-example {
+  font-style: italic;
+  text-align: left;
+}
+
 .start-glyph {
   flex: none;
   width: 30px;
@@ -13119,4 +13162,31 @@ html[data-workspace="new"] .thread-panel {
     left: 8px;
     width: auto;
   }
+}
+
+/* The Share dialog's live links and guests (native #245): what, when it
+   ends, Revoke. */
+.share-links h3 {
+  margin: 12px 0 0;
+  font-size: inherit;
+}
+
+.share-list.share-live li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.access-log {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+  max-height: 10rem;
+  overflow: auto;
+  display: grid;
+  gap: 2px;
+}
+
+.access-log li {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
 }
