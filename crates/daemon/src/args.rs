@@ -476,9 +476,11 @@ const LABS_OPTIONS: [(&str, &str); 5] = [
 ];
 
 /// The command line, listing in `--help` the options `flags` turns on.
+/// Named and versioned as the binary: this crate is `arugulad-base` 0.0.0,
+/// and `arugulad update` reads `--version` from what it downloads (#279).
 pub(crate) fn labs_command(on: On) -> clap::Command {
     use clap::CommandFactory;
-    let mut cmd = Args::command();
+    let mut cmd = Args::command().name("arugulad").version(arugula_core::version::get());
     for (opt, _) in LABS_OPTIONS.iter().filter(|(_, f)| on.has(f)) {
         cmd = cmd.mut_arg(*opt, |a| a.hide(false));
     }
