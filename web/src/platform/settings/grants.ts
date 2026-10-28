@@ -41,6 +41,36 @@ export const COMMAND_POWERS = ["runs.command"];
 export const SESSIONS_START = "sessions.start";
 export const SESSIONS_REPLY = "sessions.reply";
 
+/** The boards powers (#293): `boards.write` reads too, so the boards column
+ * is one control with three levels, not two switches. */
+export const BOARDS_READ = "boards.read";
+export const BOARDS_WRITE = "boards.write";
+
+/** How much of a project's boards a machine's agents have. */
+export type BoardsLevel = "off" | "read" | "write";
+
+/** The level after this one, as the boards control cycles: off, read, write,
+ * and off again. */
+export const nextBoardsLevel = (l: BoardsLevel): BoardsLevel => (l === "off" ? "read" : l === "read" ? "write" : "off");
+
+/** What a machine's agents have over a project's boards: write if
+ * `boards.write` is live (whatever else is), else read if `boards.read` is. */
+export function boardsLevel(grants: Grant[], machine: string, project: string): BoardsLevel {
+  if (singleGrant(grants, machine, project, BOARDS_WRITE)) return "write";
+  return singleGrant(grants, machine, project, BOARDS_READ) ? "read" : "off";
+}
+
+/** What moving to `to` takes: the powers to give, and the live grants to
+ * revoke. Down from write to read takes `boards.write` and keeps (or gives)
+ * `boards.read`; off takes both. */
+export function boardsMove(grants: Grant[], machine: string, project: string, to: BoardsLevel): { give: string[]; revoke: Grant[] } {
+  const have = (power: string) => singleGrant(grants, machine, project, power);
+  const revoke = (powers: string[]) => powers.flatMap((p) => have(p) ?? []);
+  if (to === "off") return { give: [], revoke: revoke([BOARDS_READ, BOARDS_WRITE]) };
+  if (to === "read") return { give: have(BOARDS_READ) ? [] : [BOARDS_READ], revoke: revoke([BOARDS_WRITE]) };
+  return { give: have(BOARDS_WRITE) ? [] : [BOARDS_WRITE], revoke: [] };
+}
+
 /** The columns that are one grant each, and its power. */
 export const SINGLE: Partial<Record<Column, string>> = {
   deploys: DEPLOYS_PLAN,
@@ -84,12 +114,12 @@ export function singleGrant(grants: Grant[], machine: string, project: string, p
 
 /** A column of a project's matrix on /settings (./agents): one switch per
  * machine. Threads & issues is the conversation one (`powersFor`), runs and
- * commands are M216's, deploys M218's, start and reply (sessions) aru-121's.
+ * commands are M216's, deploys M218's, start and reply (sessions) aru-121's, boards (#293) three levels.
  * Your DMs have only the first. */
-export type Column = "threads" | "runs" | "commands" | "deploys" | "start" | "reply";
+export type Column = "threads" | "runs" | "commands" | "deploys" | "start" | "reply" | "boards";
 
 /** A project's columns, in the matrix's order. */
-export const COLUMNS: Column[] = ["threads", "runs", "commands", "deploys", "start", "reply"];
+export const COLUMNS: Column[] = ["threads", "runs", "commands", "deploys", "start", "reply", "boards"];
 
 /** One switch: on while any of its grants is live, and `only` the powers it
  * holds when that's some but not all of what it gives (a partial grant,
@@ -102,6 +132,7 @@ export interface Cell {
 /** What one machine's switch in one column over a scope reads of the
  * grants. Deploys, start and reply are one grant each, so never partial. */
 export function cellOf(grants: Grant[], machine: string, s: AgentScope, column: Column): Cell {
+  if (column === "boards") return { on: boardsLevel(grants, machine, s.id ?? "") !== "off", only: null };
   const single = SINGLE[column];
   if (single) return { on: !!singleGrant(grants, machine, s.id ?? "", single), only: null };
   const powers = column === "runs" ? RUN_POWERS : column === "commands" ? COMMAND_POWERS : undefined;

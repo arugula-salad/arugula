@@ -1,5 +1,5 @@
 // Agents on your machines, in the account's settings: per project, a
-// matrix of the machines and six switches each. Threads & issues (M197)
+// matrix of the machines and six switches each, and a boards level (#293). Threads & issues (M197)
 // lets a machine's agents read and post in the project's threads and
 // write its issues; Runs (M216) lets them read its runs and start its run
 // specs; Commands (M216, apart) start commands of their own there; Deploys
@@ -18,18 +18,22 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { session } from "../session";
 import { toneClass } from "../swarm";
 import {
+  boardsLevel,
+  boardsMove,
   cellKey,
   COLUMNS,
   COMMAND_POWERS,
   liveOver,
   machinesOf,
   matrixOf,
+  nextBoardsLevel,
   powersFor,
   reaching,
   RUN_POWERS,
   SINGLE,
   singleGrant,
   type AgentScope,
+  type BoardsLevel,
   type Cell,
   type Column,
   type Grant,
@@ -68,7 +72,34 @@ const HEADS: Record<Column, Head> = {
     name: "answer sessions",
     gives: "answer its agent sessions' questions and prompt them, as you (never approve a permission)",
   },
+  boards: {
+    head: "Boards",
+    name: "boards",
+    gives: "read its boards (read), or read them and set their notes and statuses and move rows (read and write). Boards are in Labs: they do nothing until a team owner turns them on",
+  },
 };
+
+const LEVEL_WORDS: Record<BoardsLevel, string> = { off: "Off", read: "Read", write: "Read and write" };
+
+/** The boards column's control: its level, and a click to the next (off,
+ * read, read and write). */
+function BoardsLevelButton({ level, label, k, busy, turn }: { level: BoardsLevel; label: string; k: string; busy: boolean; turn: (to: BoardsLevel) => void }) {
+  return (
+    <button
+      type="button"
+      class={`agent-level${level === "off" ? "" : " on"}`}
+      data-agent-cell={k}
+      data-level={level}
+      aria-label={`${label}: ${LEVEL_WORDS[level]}`}
+      aria-busy={busy || undefined}
+      title={`${LEVEL_WORDS[level]}. Click for ${LEVEL_WORDS[nextBoardsLevel(level)].toLowerCase()}`}
+      disabled={busy}
+      onClick={() => turn(nextBoardsLevel(level))}
+    >
+      {LEVEL_WORDS[level]}
+    </button>
+  );
+}
 
 /** A switch in a matrix: on, off, or partly on (some of what it gives,
  * said in its title and under it), and busy while it's being turned. */
@@ -116,6 +147,21 @@ export function AgentGrants() {
       const g = singleGrant(grants, machine, project, power);
       if (on && !g) await call("/api/grants", { daemon: machine, power, scope: { kind: "project", id: project } });
       if (!on && g) await call(`/api/grants/${encodeURIComponent(g.id)}/revoke`, {});
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+    await load();
+    setBusy("");
+  };
+  // The boards column: to a level, giving and revoking what that takes.
+  const turnBoards = async (machine: string, s: AgentScope, to: BoardsLevel) => {
+    const project = s.id!;
+    setErr("");
+    setBusy(cellKey(machine, s, "boards"));
+    try {
+      const { give, revoke } = boardsMove(grants, machine, project, to);
+      for (const power of give) await call("/api/grants", { daemon: machine, power, scope: { kind: "project", id: project } });
+      for (const g of revoke) await call(`/api/grants/${encodeURIComponent(g.id)}/revoke`, {});
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -179,12 +225,26 @@ export function AgentGrants() {
                 <th scope="row">{m.name}</th>
                 {cells.map((cell, i) => {
                   const k = cellKey(m.id, s, columns[i]);
+                  const name = `${m.name}: ${s.kind === "account" ? "your DMs" : `${s.name}: ${heads[i].name}`}`;
+                  if (columns[i] === "boards") {
+                    return (
+                      <td key={k} data-col={heads[i].head}>
+                        <BoardsLevelButton
+                          level={boardsLevel(grants, m.id, s.id ?? "")}
+                          label={name}
+                          k={k}
+                          busy={busy === k}
+                          turn={(to) => void turnBoards(m.id, s, to)}
+                        />
+                      </td>
+                    );
+                  }
                   return (
                     <td key={k} data-col={heads[i].short ?? heads[i].head}>
                       <Switch
                         cell={cell}
                         k={k}
-                        label={`${m.name}: ${s.kind === "account" ? "your DMs" : `${s.name}: ${heads[i].name}`}`}
+                        label={name}
                         busy={busy === k}
                         turn={(on) => turnCell(m.id, s, columns[i], on)}
                       />

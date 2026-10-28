@@ -420,6 +420,21 @@ html[data-corners="square"] .platform input.sw-switch {
   width: 56%;
 }
 
+.platform .agent-level {
+  font: 500 11px/1.2 var(--f-mono);
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.platform .agent-level.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .platform .agent-only {
   display: block;
   margin-top: 3px;

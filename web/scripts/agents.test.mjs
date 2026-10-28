@@ -5,6 +5,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { agentLines, agentOwners, authorLabel, chipLabel, isSystemLine } from "../src/shared/chat/agents.ts";
 import {
+  boardsLevel,
+  boardsMove,
   cellKey,
   cellOf,
   COLUMNS,
@@ -13,6 +15,7 @@ import {
   liveOver,
   machinesOf,
   matrixOf,
+  nextBoardsLevel,
   powersFor,
   reaching,
   RUN_POWERS,
@@ -114,6 +117,44 @@ test("boards grants (given by `arugula grants add`) are not the conversations sw
   assert.deepEqual(liveOver(grants, "d1", { kind: "project", id: "prj_1", name: "" }).map((x) => x.id), ["g1"]);
 });
 
+test("the boards column has three levels, and each move gives and revokes what it takes (#293)", () => {
+  const g = (id, power, machine = "d1", live = true) => ({ id, subject: { kind: "daemon", id: machine, name: machine }, power, scope: { kind: "project", id: "prj_1" }, live });
+  const ids = (m) => ({ give: m.give, revoke: m.revoke.map((x) => x.id) });
+  const move = (grants, to) => ids(boardsMove(grants, "d1", "prj_1", to));
+  const p = { kind: "project", id: "prj_1", name: "Acme" };
+  const none = [g("g0", "threads.read")];
+  const read = [g("g1", "boards.read")];
+  const write = [g("g2", "boards.write")];
+  const both = [g("g1", "boards.read"), g("g2", "boards.write")];
+
+  assert.equal(boardsLevel(none, "d1", "prj_1"), "off");
+  assert.equal(boardsLevel(read, "d1", "prj_1"), "read");
+  assert.equal(boardsLevel(write, "d1", "prj_1"), "write", "a write reads too");
+  assert.equal(boardsLevel(both, "d1", "prj_1"), "write");
+  assert.equal(boardsLevel([g("g3", "boards.write", "d1", false), g("g4", "boards.read", "d2")], "d1", "prj_1"), "off", "revoked and other machines' don't count");
+  assert.deepEqual([nextBoardsLevel("off"), nextBoardsLevel("read"), nextBoardsLevel("write")], ["read", "write", "off"]);
+
+  // Up.
+  assert.deepEqual(move(none, "read"), { give: ["boards.read"], revoke: [] });
+  assert.deepEqual(move(none, "write"), { give: ["boards.write"], revoke: [] });
+  assert.deepEqual(move(read, "write"), { give: ["boards.write"], revoke: [] });
+  // Down: write to read revokes boards.write and keeps boards.read.
+  assert.deepEqual(move(write, "read"), { give: ["boards.read"], revoke: ["g2"] });
+  assert.deepEqual(move(both, "read"), { give: [], revoke: ["g2"] }, "read stays, write goes");
+  // Off revokes both.
+  assert.deepEqual(move(both, "off"), { give: [], revoke: ["g1", "g2"] });
+  assert.deepEqual(move(write, "off"), { give: [], revoke: ["g2"] });
+  assert.deepEqual(move(read, "off"), { give: [], revoke: ["g1"] });
+  // Where it already is: nothing to do.
+  assert.deepEqual(move(read, "read"), { give: [], revoke: [] });
+  assert.deepEqual(move(write, "write"), { give: [], revoke: [] });
+  assert.deepEqual(move(none, "off"), { give: [], revoke: [] });
+
+  assert.deepEqual(cellOf(read, "d1", p, "boards"), { on: true, only: null });
+  assert.deepEqual(cellOf(none, "d1", p, "boards"), { on: false, only: null });
+  assert.equal(cellKey("d1", p, "boards"), "d1/prj_1/boards");
+});
+
 test("a project's matrix on /settings: a row per machine, a switch per column, partial grants said", () => {
   const g = (id, machine, power, kind = "project", scope = "prj_1", live = true) => ({
     id,
@@ -136,7 +177,7 @@ test("a project's matrix on /settings: a row per machine, a switch per column, p
     g("g11", "d3", "cloud.drive", "account", "a1"),
   ];
   const p = { kind: "project", id: "prj_1", name: "Acme" };
-  assert.deepEqual(COLUMNS, ["threads", "runs", "commands", "deploys", "start", "reply"]);
+  assert.deepEqual(COLUMNS, ["threads", "runs", "commands", "deploys", "start", "reply", "boards"]);
   // All three conversation powers is on; one of the two runs powers is partial.
   assert.deepEqual(cellOf(grants, "d1", p, "threads"), { on: true, only: null });
   assert.deepEqual(cellOf(grants, "d1", p, "runs"), { on: true, only: ["runs.read"] });
@@ -158,7 +199,7 @@ test("a project's matrix on /settings: a row per machine, a switch per column, p
   );
   assert.deepEqual(
     rows[2].cells.map((c) => c.on),
-    [false, false, false, false, false, false],
+    [false, false, false, false, false, false, false],
   );
   assert.equal(reaching(rows), 2, "d3 has nothing on in prj_1");
   assert.equal(reaching(matrixOf(grants, machines, dms, ["threads"])), 1);
