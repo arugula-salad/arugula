@@ -11,9 +11,10 @@ use arugula_proto::{api::AgentCan, flags::On};
 
 use super::tools::{self, ToolCall};
 use crate::mcp::{
-    results::{Capabilities, CloudReach, ControlJoined, ForgeSignIn, HooksLive, RunsReach, ThreadsReach},
+    results::{CloudReach, ForgeSignIn, RunsReach, ThreadsReach},
     tools::{Needs, Out, done},
 };
+use crate::results::{Capabilities, ControlJoined, HooksLive};
 use crate::{review::Runner, server::App, store::now_ms};
 
 /// A hook heard this recently counts as live: a session that has been
