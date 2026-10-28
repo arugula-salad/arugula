@@ -7,7 +7,7 @@
       "name": "daemon",
       "dir": "crates/daemon",
       "kind": "other",
-      "because": "a Rust crate, arugulad: owns the terminals and serves the API, the web client and the editors' socket (the VS Code extension lives in src/editor/ext)",
+      "because": "the daemon's Rust crates, arugulad-base here with its binary (crates/arugulad) and feature crates (crates/arugulad-*): owns the terminals and serves the API, the web client and the editors' socket (the VS Code extension lives in crates/arugulad-editor/src/editor/ext)",
       "outputs": ["arugulad", "editor-socket"],
       "links": [
         { "member": "web", "output": "dist" },

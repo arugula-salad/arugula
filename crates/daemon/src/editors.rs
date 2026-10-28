@@ -10,9 +10,8 @@
 //! without it has no editor blocks (a saved one says so when it's opened), no
 //! socket for editors to join on, so none ever does, no extension to
 //! download and no IDE settings. The mux's half of each is the core's (the
-//! `EditorLink` and `PaneCards` traits). The IDE's operations stay here
-//! (`ops/ide.rs`): an operation's handler is the base's (`ops::Handle`), and
-//! it asks the [`Ide`].
+//! `EditorLink` and `PaneCards` traits). The IDE's operations are the editor
+//! crate's too (`impl Handle<Editor> for IdeGet`, routed with `op_of`).
 
 use std::{
     io,
@@ -59,7 +58,8 @@ pub struct Settings {
 pub trait Editors: Send + Sync + 'static {
     /// Registers the editor block type.
     fn kinds(&self, kinds: &mut BlockKinds);
-    /// Adds its HTTP routes to the API's: the extension's download.
+    /// Adds its HTTP routes to the API's: the extension's download, and the
+    /// IDE's operations.
     fn routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>>;
     /// Adds the route editors on this machine join the swarm on (M28).
     fn local_routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>>;
@@ -148,10 +148,8 @@ pub fn kinds(kinds: &mut BlockKinds) {
 /// Adds the editor's HTTP routes to the API's: the extension's download, and
 /// the IDE's settings and mentions.
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    use crate::ops::OpRoutes;
-    use arugula_proto::op::ops::{IdeGet, IdeMention, IdeSet};
     match editors() {
-        Some(e) => e.routes(r).op::<IdeGet>().op::<IdeSet>().op::<IdeMention>(),
+        Some(e) => e.routes(r),
         None => r,
     }
 }

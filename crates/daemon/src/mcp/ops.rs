@@ -36,8 +36,11 @@ pub enum Surface {
     Kind { tool: &'static str, kind: &'static str, description: &'static str },
 }
 
-/// An operation as an MCP tool, or as one kind of a grouped one.
-pub trait McpOp: Handle {
+/// An operation as an MCP tool, or as one kind of a grouped one. `M` is
+/// whose it is, as for [`Handle`]: a feature crate's operation is
+/// `McpOp<Mine>`, listed with [`def_of`] or [`kind_of`] and called with
+/// [`call_of`].
+pub trait McpOp<M = ()>: Handle<M> {
     const SURFACE: Surface;
     /// What an agent passes; its doc comments are the schema's.
     type Args: DeserializeOwned + JsonSchema + Sync + 'static;
@@ -58,6 +61,11 @@ pub trait McpOp: Handle {
 /// A tool's row in the list. Whether a read-only token may call it follows
 /// from the operation's method and `CREDENTIAL` (`ops::read_only`).
 pub fn def<O: McpOp>() -> Def {
+    def_of::<O, ()>()
+}
+
+/// [`def`], for `M`'s operation.
+pub fn def_of<O: McpOp<M>, M>() -> Def {
     let (name, title, description, destructive, idempotent, open_world, human) = match O::SURFACE {
         Surface::Tool { name, title, description, destructive, idempotent, open_world, human } => {
             (name, title, description, destructive, idempotent, open_world, human)
@@ -81,6 +89,11 @@ pub fn def<O: McpOp>() -> Def {
 
 /// A grouped tool's row for a kind.
 pub const fn kind<O: McpOp>() -> Kind {
+    kind_of::<O, ()>()
+}
+
+/// [`kind`], for `M`'s operation.
+pub const fn kind_of<O: McpOp<M>, M>() -> Kind {
     let Surface::Kind { kind, description, .. } = O::SURFACE else {
         panic!("an operation that is a tool of its own isn't a kind")
     };
@@ -90,11 +103,16 @@ pub const fn kind<O: McpOp>() -> Kind {
 /// A call to the operation's tool (or kind): its arguments, the handler, its
 /// answer; a refusal or a pane that's gone, as a sentence.
 pub async fn call<O: McpOp>(call: &Call<'_>, args: serde_json::Value) -> Out {
+    call_of::<O, ()>(call, args).await
+}
+
+/// [`call`], for `M`'s operation.
+pub async fn call_of<O: McpOp<M>, M>(call: &Call<'_>, args: serde_json::Value) -> Out {
     let a: O::Args = parse(args)?;
     let (path, req) = O::args(call, &a).await?;
     let cx = Cx { app: call.app(), via: Via::Mcp(call) };
     let done = match crate::ops::flagged::<O>(call.app()) {
-        Ok(()) => O::handle(&cx, path.clone(), req).await,
+        Ok(()) => <O as Handle<M>>::handle(&cx, path.clone(), req).await,
         Err(e) => Err(e),
     };
     match done {

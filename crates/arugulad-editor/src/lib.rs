@@ -41,13 +41,22 @@ pub fn register() {
 
 struct Editors;
 
+/// Whose the IDE's operations are (`impl Handle<Editor> for IdeGet`): this
+/// crate's, so it may handle `arugula-proto`'s operation types (#232).
+pub struct Editor;
+
 impl editors::Editors for Editors {
     fn kinds(&self, kinds: &mut block::BlockKinds) {
         kinds.add(BlockType::Editor, block::Make(editor::Editor::create));
     }
 
     fn routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
+        use arugula_proto::op::ops::{IdeGet, IdeMention, IdeSet};
+        use arugulad_base::ops::OpRoutes;
         r.route("/api/editors/vsix", axum::routing::get(editor::vsix::download))
+            .op_of::<IdeGet, Editor>()
+            .op_of::<IdeSet, Editor>()
+            .op_of::<IdeMention, Editor>()
     }
 
     fn local_routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
