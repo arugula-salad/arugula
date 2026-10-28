@@ -16,6 +16,8 @@ use arugula_proto::{
 };
 use axum::http::StatusCode;
 use futures_util::future::BoxFuture;
+use schemars::JsonSchema;
+use serde::Deserialize;
 use serde_json::Value;
 
 use arugulad_base::ops::{Cx, Handle, OpError, Via};
@@ -25,13 +27,49 @@ use crate::{
     api::{ApiError, bad},
     mcp::{
         ops::{McpOp, Surface, kind_of},
-        tools::{
-            Call, ConversationThen, Kind, ListConversationsArgs, OpenConversationArgs, Out, PaneArg, confine, done,
-        },
+        tools::{Call, Kind, Out, PaneArg, confine, done},
     },
     mux::Api,
     server::App,
 };
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ListConversationsArgs {
+    /// Words in the title, prompts or folder.
+    #[serde(default)]
+    pub query: Option<String>,
+    /// Only ones under this folder.
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Only ones open somewhere now.
+    #[serde(default)]
+    pub live: bool,
+    /// Everything: `claude -p` and SDK runs, archived ones, ones whose folder is gone.
+    #[serde(default)]
+    pub all: bool,
+    /// How many [default 30].
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct OpenConversationArgs {
+    /// The conversation's id, or the start of it (list kind conversations).
+    pub id: String,
+    /// Then continue it, or fork it (for one open somewhere else) and go on in the fork.
+    #[serde(default)]
+    pub then: Option<ConversationThen>,
+    /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
+    #[serde(default)]
+    pub beside: Option<PaneArg>,
+}
+
+#[derive(Deserialize, JsonSchema, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversationThen {
+    Continue,
+    Fork,
+}
 
 /// `list` kind conversations, after panes, and `show` kind conversation,
 /// after issue: where they were.

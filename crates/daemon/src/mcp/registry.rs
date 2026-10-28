@@ -1,5 +1,5 @@
 //! MCP tools and kinds a feature crate adds (#232). The tool list
-//! (`tools.rs`) is the base's table with these put in where each says, so
+//! (`mcp_server`'s `tools.rs`) is the base's table with these put in where each says, so
 //! the list an agent sees keeps its order (and `mcp-tool-list.json`, which
 //! pins it, its lines) whichever crate a tool lives in. A call to one runs
 //! its [`Run`]. Registered before `main`, by the binary.
@@ -52,7 +52,7 @@ const NO_CONTROL_TOOLS: &str = "This build of Arugula has no control tools";
 
 /// What [`ControlTools`] says of Cloud workspaces, conversations and
 /// runs from here; none reached without them.
-pub(crate) async fn reach(app: &App) -> (CloudReach, ThreadsReach, RunsReach) {
+pub async fn reach(app: &App) -> (CloudReach, ThreadsReach, RunsReach) {
     match CONTROL_TOOLS.get() {
         Some(c) => tokio::join!(c.cloud_reach(app), c.threads_reach(app), c.runs_reach(app)),
         None => (
@@ -64,7 +64,7 @@ pub(crate) async fn reach(app: &App) -> (CloudReach, ThreadsReach, RunsReach) {
 }
 
 /// `wait` with `run` ([`ControlTools::wait_run`]).
-pub(crate) async fn wait_run(call: &Call<'_>, run: &str, limit: Duration) -> Out {
+pub async fn wait_run(call: &Call<'_>, run: &str, limit: Duration) -> Out {
     match CONTROL_TOOLS.get() {
         Some(c) => c.wait_run(call, run, limit).await,
         None => Err(format!("{NO_CONTROL_TOOLS}: it can't wait on a run")),
@@ -72,7 +72,7 @@ pub(crate) async fn wait_run(call: &Call<'_>, run: &str, limit: Duration) -> Out
 }
 
 /// `wait` with `session` ([`ControlTools::wait_sessions`]).
-pub(crate) async fn wait_sessions(call: &Call<'_>, ids: &str, limit: Duration) -> Out {
+pub async fn wait_sessions(call: &Call<'_>, ids: &str, limit: Duration) -> Out {
     match CONTROL_TOOLS.get() {
         Some(c) => c.wait_sessions(call, ids, limit).await,
         None => Err(format!("{NO_CONTROL_TOOLS}: it can't wait on sessions")),
@@ -115,7 +115,7 @@ pub fn kind(k: ToolKind) {
 }
 
 /// Puts the registered tools and kinds into the base's table.
-pub(crate) fn add(defs: &mut Vec<Def>) {
+pub fn add(defs: &mut Vec<Def>) {
     add_these(defs, &TOOLS.lock().unwrap(), &KINDS.lock().unwrap());
 }
 
@@ -142,7 +142,7 @@ fn add_these(defs: &mut Vec<Def>, tools: &[Tool], kinds: &[ToolKind]) {
 
 /// The registered call for `tool` (and its kind), if a crate added it: a
 /// kind added to a tool, or a tool of the crate's own (grouped or not).
-pub(crate) fn run_of(tool: &str, kind: Option<&str>) -> Option<Run> {
+pub fn run_of(tool: &str, kind: Option<&str>) -> Option<Run> {
     if let Some(k) = kind
         && let Some(x) = KINDS.lock().unwrap().iter().find(|x| x.tool == tool && x.kind.name == k)
     {

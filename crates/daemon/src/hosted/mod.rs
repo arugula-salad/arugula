@@ -84,7 +84,7 @@ pub fn first_boot(state_dir: &Path) {
 /// ([`Hosted::start`]).
 pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
     crate::work::start(app.clone());
-    crate::mcp::session::start(app.clone());
+    crate::mcp::start_sessions(app.clone());
     archive::start(app.control.clone());
     match hosted() {
         Some(h) => h.start(app, state_dir, control_url),

@@ -9,9 +9,10 @@
 
 use arugula_proto::{api::AgentCan, flags::On};
 
-use super::{
+use super::tools::{self, ToolCall};
+use crate::mcp::{
     results::{Capabilities, CloudReach, ControlJoined, ForgeSignIn, HooksLive, RunsReach, ThreadsReach},
-    tools::{self, Call, Needs, Out, done},
+    tools::{Needs, Out, done},
 };
 use crate::{review::Runner, server::App, store::now_ms};
 
@@ -19,13 +20,13 @@ use crate::{review::Runner, server::App, store::now_ms};
 /// quiet longer may have ended.
 const LIVE_MS: u64 = 24 * 3600 * 1000;
 
-impl Call<'_> {
-    pub(super) async fn capabilities(&self) -> Out {
+impl ToolCall<'_, '_> {
+    pub(crate) async fn capabilities(&self) -> Out {
         let app = self.app();
         let on = crate::lab_flags::flags(app.control.state_dir());
         let forges = forges(app, on).await;
         let hooks = self.hooks().await;
-        let (cloud, threads, runs) = super::registry::reach(app).await;
+        let (cloud, threads, runs) = crate::mcp::registry::reach(app).await;
         let control = control(app, cloud, threads, runs);
         let tools = tools::list(self.scope(), on).into_iter().map(|t| t.name.to_string()).collect();
         let signed: Vec<&str> = forges.iter().filter(|f| f.signed_in).map(|f| f.forge.as_str()).collect();
@@ -141,7 +142,7 @@ async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
 /// grants there.
 pub(crate) async fn can_do(app: &App) -> Vec<AgentCan> {
     let on = crate::lab_flags::flags(app.control.state_dir());
-    let (forges, (cloud, threads, runs)) = tokio::join!(forges(app, on), super::registry::reach(app));
+    let (forges, (cloud, threads, runs)) = tokio::join!(forges(app, on), crate::mcp::registry::reach(app));
     let signed = forges.iter().any(|f| f.signed_in);
     let joined = app.control.enrolled().is_some();
     let issues = threads.scopes.iter().any(|s| s.powers.iter().any(|p| p == "issues.write"));

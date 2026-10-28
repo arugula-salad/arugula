@@ -1,6 +1,6 @@
 //! MCP's half of an operation (#451, #572): the tool it is, or the kind
 //! of a grouped tool (#349) it is, with the agent's arguments and answer.
-//! The tool list (`tools.rs`) takes its row from here ([`def`], [`kind`]),
+//! The tool list (`mcp_server`'s `tools.rs`) takes its row from here ([`def`], [`kind`]),
 //! and a call to it runs the operation's handler ([`call`]).
 //!
 //! An agent's arguments aren't the HTTP request: a pane is `7` or `"%7"`,
@@ -32,7 +32,7 @@ pub enum Surface {
         /// Its place on the person's card.
         human: Human,
     },
-    /// A kind of a grouped tool, which stays written out in `tools.rs`.
+    /// A kind of a grouped tool, which stays written out in `mcp_server`'s `tools.rs`.
     Kind { tool: &'static str, kind: &'static str, description: &'static str },
 }
 
