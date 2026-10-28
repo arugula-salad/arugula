@@ -26,4 +26,4 @@ after the update, type it and choose **Always Allow**: it asks once on a
 Mac that ran app 0.27.0 or older, which weren't signed with the Developer
 ID (#1647, `crates/desktop/README.md`).
 
-Needs control 0.63.8. It carries arugulad 0.64.0.
+Needs control 0.63.8. It carries arugulad 0.64.1.
