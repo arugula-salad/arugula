@@ -114,6 +114,10 @@ export class ChatStore {
   /** Rooms' pins (#119), once asked for: kept current by the stream. */
   private pinned = new Map<string, ChatPin[]>();
   private fetching = new Map<string, Promise<void>>();
+  /** Rooms the stream told of while a read of theirs was out: control may
+   * have answered that read before what it told of was posted, so the room
+   * is read once more when it's back. */
+  private again = new Set<string>();
   private es: EventSource | null = null;
   /** The rooms this page shows, by who shows each: a page with two chat
    * blocks (#123) has two, and closing one mustn't say the other's shut. */
@@ -319,6 +323,7 @@ export class ChatStore {
         this.roomsSoon();
         void this.loadSidebar();
         for (const room of this.loaded.keys()) void this.newer(room);
+        for (const room of this.loading()) this.again.add(room);
         for (const room of this.pinned.keys()) void this.loadPins(room);
         this.threads.reloadAll();
         this.objectChanged();
@@ -333,6 +338,7 @@ export class ChatStore {
       case "message":
         this.roomsSoon();
         if (this.loaded.has(ev.room)) void this.newer(ev.room);
+        else if (this.fetching.has(`load:${ev.room}`)) this.again.add(ev.room);
         return;
       case "changed":
         if (this.loaded.has(ev.room)) void this.refetch(ev.room, ev.seq);
@@ -688,7 +694,14 @@ export class ChatStore {
       const r = await call<ChatMessages>("GET", `/api/chat/rooms/${enc(id)}/messages`);
       this.loaded.set(id, { list: r.messages, older: r.more });
       this.took(r.room);
+      // Told of a message while this was out: what's come since.
+      if (this.again.delete(id)) void this.newer(id);
     });
+  }
+
+  /** The rooms whose first read is out. */
+  private loading(): string[] {
+    return [...this.fetching.keys()].filter((k) => k.startsWith("load:")).map((k) => k.slice("load:".length));
   }
 
   /** The page before the oldest loaded. */
@@ -703,10 +716,14 @@ export class ChatStore {
     });
   }
 
-  /** What's come since the newest loaded. */
+  /** What's come since the newest loaded. Asked while a read is out, that
+   * read may have been answered before what's asked for was posted: it
+   * reads once more before it's done. */
   private newer(id: string): Promise<void> {
+    if (this.fetching.has(`newer:${id}`)) this.again.add(id);
     return this.once(`newer:${id}`, async () => {
       for (;;) {
+        this.again.delete(id);
         const had = this.loaded.get(id);
         if (!had) return;
         const last = had.list.at(-1)?.seq;
@@ -724,7 +741,7 @@ export class ChatStore {
         this.loaded.set(id, { list: merge(now.list, r.messages), older: last === undefined ? r.more : now.older });
         this.sent(id, r.messages);
         this.took(r.room);
-        if (last === undefined || !r.more) return;
+        if ((last === undefined || !r.more) && !this.again.has(id)) return;
       }
     });
   }

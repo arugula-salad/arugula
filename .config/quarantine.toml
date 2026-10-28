@@ -38,10 +38,3 @@ test = "arugula-platform triggers::tests::session_feedback::round_three_is_refus
 issue = "https://app.arugula.io/p/prj_3e5d802cb4b08d43074df6c32f5344c1/issues/iss_44f336182dcf75495287bcf9fdcdb9ea"
 until = "2026-11-10"
 why = "Fails twice on macOS on unrelated commits (4f66cdc95, 2f33811ea)."
-
-[[e2e]]
-spec = "web/e2e/chat-control.spec.ts"
-title = "polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a scrolled-up room offers the newest, compact rows are one line"
-issue = "https://app.arugula.io/p/prj_3e5d802cb4b08d43074df6c32f5344c1/issues/iss_512407408f74541c952f8b2dc3bf6d18"
-until = "2026-11-10"
-why = "Fails twice on unrelated commits (716de40ef, e44124672), flaky on two more (4b6a5a37f, f285f0e98)."
