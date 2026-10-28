@@ -257,7 +257,14 @@ async fn an_editor_on_this_host() {
     writeln!(link, "{}", json!({"t": "hello", "editor": "code-server", "workspace": proj, "block": id})).unwrap();
     line.clear();
     r.read_line(&mut line).unwrap();
-    assert_eq!(serde_json::from_str::<Value>(&line).unwrap(), json!({"t": "welcome", "id": id}));
+    // The welcome: its id and the daemon's release (#1733); no pane, as it's a block's.
+    let welcome = serde_json::from_str::<Value>(&line).unwrap();
+    assert_eq!(
+        (&welcome["t"], &welcome["id"], welcome.get("pane")),
+        (&json!("welcome"), &json!(id), None),
+        "{welcome}"
+    );
+    assert!(welcome["version"].is_string(), "{welcome}");
     writeln!(link, "{}", json!({"t": "peek", "file": lib, "line": 10, "col": 9, "top": 8, "lines": lines, "dirty": 0}))
         .unwrap();
     writeln!(link, "{}", json!({"t": "summary", "diag": {"e": 1, "w": 0, "i": 0}})).unwrap();

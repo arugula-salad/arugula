@@ -205,7 +205,11 @@ impl Link {
         };
         // The daemon's release and the pane it's tied to, for
         // `:checkhealth arugula` (#1733).
-        self.send(json!({ "t": "welcome", "id": id, "version": arugula_core::version::get(), "pane": pane }));
+        let mut welcome = json!({ "t": "welcome", "id": id, "version": arugula_core::version::get() });
+        if let Some(p) = pane {
+            welcome["pane"] = p.into();
+        }
+        self.send(welcome);
     }
 
     /// It sends no follow stream (nvim read over its socket, #1730).
