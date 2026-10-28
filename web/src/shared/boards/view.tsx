@@ -21,7 +21,7 @@ import { useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { BoardError, STALE_REV, boards } from "./store";
 import "./boards.css";
-import { BLOCK_LABEL, GLYPH, LIVE_LABEL, STATUSES, STATUS_LABEL, blockClass, blockFacts, liveClass, parsePointer, pointerHref, pointerLabel, pointerText, progress, stepBefore } from "./text";
+import { BLOCK_LABEL, GLYPH, LIVE_LABEL, STATUSES, STATUS_LABEL, blockClass, blockFacts, liveClass, parsePointer, pointerHref, pointerLabel, pointerText, progress, proven, stepBefore } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -275,13 +275,18 @@ function Row({
       ) : (
         <div class="board-main">
           <div class="board-line">
-            {label && (href ? <a class="board-ptr" href={href} target={r.pointer.kind === "forge_item" ? "_blank" : undefined} rel="noreferrer" data-board-ptr>{label}</a> : <span class="board-ptr" data-board-ptr>{label}</span>)}
+            {label && (href ? <a class="board-ptr" href={href} target={r.pointer.kind === "forge_item" || r.pointer.kind === "link" ? "_blank" : undefined} rel="noopener noreferrer" data-board-ptr>{label}</a> : <span class="board-ptr" data-board-ptr>{label}</span>)}
             {r.live && (
               <span class={`ws-tag board-live ${liveClass(r.live.state)}`} data-board-live={r.live.state}>
                 {LIVE_LABEL[r.live.state]}
               </span>
             )}
             {r.live && <span class="board-item dim">{r.live.title}</span>}
+            {zone.kind === "proofs" && (
+              <span class={`ws-tag board-proof ${proven(r) ? "proven" : "unproven"}`} data-board-proof={proven(r) ? "proven" : "not-proven"}>
+                {proven(r) ? "proven" : "not proven yet"}
+              </span>
+            )}
           </div>
           {r.block && (
             <div class="board-line board-block" data-board-block={r.block.state}>
@@ -325,13 +330,13 @@ function RowForm({ row, save, done }: { row: BoardRow | null; save: (f: { note: 
       <input
         type="text"
         value={ptr}
-        placeholder="points at: iss_…, fi_…, run_…, hw_…"
+        placeholder="points at: iss_…, fi_…, run_…, hw_… or https://…"
         aria-label="Points at"
         aria-invalid={bad}
         data-board-ptr-input
         onInput={(e) => (setPtr(e.currentTarget.value), setBad(false))}
       />
-      {bad && <span class="board-bad">Expected an id that starts iss_, fi_, run_ or hw_.</span>}
+      {bad && <span class="board-bad">Expected an id that starts iss_, fi_, run_ or hw_, or an https:// link.</span>}
       <span class="board-form-buttons">
         <button type="submit" class="primary" data-board-save>
           Save

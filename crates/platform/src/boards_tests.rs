@@ -5,12 +5,14 @@
 
 use std::sync::Arc;
 
-use crate::db::sql::{Sql as _, params};
 use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
 use super::FLAG;
-use crate::chat_tests::{TestHub, call, serve};
+use crate::{
+    chat_tests::{TestHub, call, serve},
+    db::sql::{Sql as _, params},
+};
 
 /// Team t: a owns it, v views. Chat is on for it, and boards when `boards`
 /// is. c is in team u, which has neither. t's project id. (The platform
@@ -171,6 +173,63 @@ async fn a_board_from_creation_to_a_stale_write() {
     assert_eq!((st, shape(&v)), (200, vec![zone("Later", &[]), zone("PROOFS", &[])]), "{v}");
     assert_eq!(call(&base, "a", "DELETE", &format!("/api/boards/{id}/entries/{now}"), None).await.0, 404);
 
+    // The proofs zone: a link is kept as it was said and refused if it isn't
+    // plain https; a run row shows the run's state to a reader of its
+    // project, and nothing to one who isn't.
+    let proof = |pointer: Value| put(&base, "a", &id, json!({ "entry": "row", "zone": proofs, "pointer": pointer }));
+    let (st, v) = proof(json!({ "kind": "link", "url": "https://ci.example.com/runs/42?x=1#top" })).await;
+    assert_eq!(
+        (st, &v["zones"][1]["rows"][0]["pointer"]),
+        (200, &json!({ "kind": "link", "url": "https://ci.example.com/runs/42?x=1#top" })),
+        "{v}"
+    );
+    let long = format!("https://example.com/{}", "a".repeat(2048));
+    for bad in [
+        "http://ci.example.com/x",
+        "https://user:pw@ci.example.com/x",
+        "https://ci.example.com@evil.example/x",
+        "https://",
+        "https://ci.example.com/a b",
+        "https://ci.example.com/a\u{7}b",
+        "javascript:alert(1)",
+        long.as_str(),
+    ] {
+        let (st, v) = proof(json!({ "kind": "link", "url": bad })).await;
+        assert_eq!(st, 400, "{bad}: {v}");
+        assert!(v.to_string().contains("https"), "{bad}: {v}");
+    }
+    let mk = |project: &str, state: &str| {
+        let op = "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd -\nargv ZWNobw==\n";
+        let new = crate::db::runs::NewRun {
+            project,
+            workspace: None,
+            trigger: crate::db::runs::TriggerKind::Manual,
+            source: &json!({}),
+            op,
+            started_by: "a",
+            started_by_agent: None,
+            grant: Some("g1"),
+        };
+        let run = app.db.create_run(&new, 1).unwrap().unwrap().id;
+        app.db.c().execute("UPDATE runs SET state = ?2 WHERE id = ?1", params![run, state]).unwrap();
+        run
+    };
+    let theirs = app.db.team_project("u", "u", 1).unwrap();
+    let (ok, running, canceled, hidden) =
+        (mk(&p, "succeeded"), mk(&p, "running"), mk(&p, "canceled"), mk(&theirs, "succeeded"));
+    for r in [&ok, &running, &canceled, &hidden] {
+        let (st, v) = proof(json!({ "kind": "run", "id": r })).await;
+        assert_eq!(st, 200, "{v}");
+    }
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    let live = |i: usize| v["zones"][1]["rows"][i]["live"].clone();
+    assert_eq!(v["zones"][1]["rows"][0].get("live"), None, "a link has no live state");
+    assert_eq!(live(1), json!({ "state": "succeeded", "kind": "run", "number": 0, "title": "manual run" }));
+    assert_eq!(live(2)["state"], json!("running"));
+    assert_eq!(live(3)["state"], json!("other"));
+    assert_eq!(v["zones"][1]["rows"][4].get("live"), None, "a run of a project the reader isn't in");
+    assert_eq!(v["zones"][1]["rows"][4]["pointer"]["id"], json!(hidden));
+
     // The board's thread is an object thread, as an issue's is (with chat on).
     let open = |who: &'static str| {
         call(&base, who, "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id })))
@@ -180,9 +239,6 @@ async fn a_board_from_creation_to_a_stale_write() {
     assert_eq!(open("c").await.0, 404, "a stranger doesn't find it");
 }
 
-/// With the flag off for an account (chat on doesn't turn it on), every
-/// route answers 404 as if boards weren't there, a board that exists
-/// included.
 /// A row whose pointer a newer build wrote (a kind this one doesn't know,
 /// after a rollback) reads as no pointer, and the board still reads; a note
 /// edit or a status change leaves the stored pointer as it was.
@@ -208,7 +264,7 @@ async fn a_pointer_from_a_newer_build_reads_as_none_and_is_kept() {
             c.execute_batch("PRAGMA ignore_check_constraints = ON").unwrap();
         }
         c.execute(
-            "UPDATE board_entries SET target_kind = 'link', target = 'https://example.com/proof' WHERE id = ?1",
+            "UPDATE board_entries SET target_kind = 'from_a_newer_build', target = 'x_1' WHERE id = ?1",
             params![row],
         )
         .unwrap();
@@ -230,9 +286,12 @@ async fn a_pointer_from_a_newer_build_reads_as_none_and_is_kept() {
             Ok((r.get(0)?, r.get(1)?))
         })
         .unwrap();
-    assert_eq!(kept, ("link".to_owned(), "https://example.com/proof".to_owned()));
+    assert_eq!(kept, ("from_a_newer_build".to_owned(), "x_1".to_owned()));
 }
 
+/// With the flag off for an account (chat on doesn't turn it on), every
+/// route answers 404 as if boards weren't there, a board that exists
+/// included.
 #[tokio::test]
 async fn with_the_flag_off_there_are_no_boards() {
     let hub = Arc::new(TestHub::default());

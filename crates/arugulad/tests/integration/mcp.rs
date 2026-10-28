@@ -2777,7 +2777,12 @@ async fn fake_boards(f: FakeBoards) -> String {
                        "created_at": 1, "updated_at": 1 },
             "zones": [{ "id": "zon_1", "rev": 1, "title": "Now", "rows": [{
                 "id": "row_1", "rev": 2, "pointer": { "kind": "issue", "id": "iss_0123456789abcdef" },
-                "note": "fix login", "status": "working", "created_at": 1, "updated_at": 1 }] }],
+                "note": "fix login", "status": "working", "created_at": 1, "updated_at": 1 }] },
+                { "id": "zon_2", "rev": 1, "title": "PROOFS", "kind": "proofs", "rows": [
+                    { "id": "row_3", "rev": 1, "pointer": { "kind": "link", "url": "https://ci.example.com/runs/42" },
+                      "note": "CI on main", "status": "done", "created_at": 1, "updated_at": 1 },
+                    { "id": "row_4", "rev": 1, "pointer": { "kind": "run", "id": "run_ee11" },
+                      "note": "Nightly", "status": "done", "created_at": 1, "updated_at": 1 }] }],
         })
     }
     async fn any(State(f): State<FakeBoards>, req: Request) -> Response {
@@ -2881,6 +2886,7 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     let text = read["text"].as_str().unwrap();
     assert!(text.starts_with("Launch\nNow") && text.contains("◐ iss_01234567"), "{text}");
     assert!(text.lines().all(|l| l.chars().count() <= 72), "{text}");
+    assert!(text.contains("[proven] CI on main") && text.contains("[not proven yet] Nightly"), "{text}");
 
     let added = call(
         &s,
@@ -2890,6 +2896,13 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     .await;
     assert_eq!(added["zones"][0]["rows"][1]["agent"]["machine_name"], "geek", "{added}");
     assert!(added["summary"].as_str().unwrap().contains("as your person's agent"), "{added}");
+    let link = json!({ "kind": "link", "url": "https://ci.example.com/runs/43" });
+    call(
+        &s,
+        "board_write",
+        json!({ "kind": "add_row", "board": "brd_1", "zone": "zon_2", "note": "CI", "status": "open", "pointer": link }),
+    )
+    .await;
     call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "status": "done" })).await;
     call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "note": "ok", "rev": 2 })).await;
 
@@ -2914,5 +2927,7 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     assert_eq!(status.1, json!({ "id": "row_1", "status": "done" }), "a status names no rev: {status:?}");
     let add = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["entry"] == "row").unwrap();
     assert_eq!(add.1, json!({ "entry": "row", "zone": "zon_1", "note": "agent row", "status": "working" }), "{add:?}");
+    let linked = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["zone"] == "zon_2").unwrap();
+    assert_eq!(linked.1["pointer"], link, "a link pointer goes to the platform as it is: {linked:?}");
     s.cancel().await.unwrap();
 }

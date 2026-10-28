@@ -88,6 +88,9 @@ pub enum PointerArg {
     Workspace { id: String },
     /// An agent block on a machine.
     Block { machine: String, pane: String },
+    /// An https:// URL as evidence (a CI page, a report): no user name or
+    /// password in it, at most 2048 bytes. On a PROOFS row it counts as proven.
+    Link { url: String },
 }
 
 impl From<PointerArg> for Pointer {
@@ -99,6 +102,7 @@ impl From<PointerArg> for Pointer {
             PointerArg::Run { id } => Pointer::Run { id },
             PointerArg::Workspace { id } => Pointer::Workspace { id },
             PointerArg::Block { machine, pane } => Pointer::Block { machine, pane },
+            PointerArg::Link { url } => Pointer::Link { url },
         }
     }
 }
@@ -372,6 +376,9 @@ mod tests {
     fn a_pointer_arg_is_a_wire_pointer() {
         let p: PointerArg = serde_json::from_value(json!({ "kind": "block", "machine": "m1", "pane": "7" })).unwrap();
         assert_eq!(Pointer::from(p), Pointer::Block { machine: "m1".into(), pane: "7".into() });
+        let l: PointerArg =
+            serde_json::from_value(json!({ "kind": "link", "url": "https://ci.example.com/1" })).unwrap();
+        assert_eq!(Pointer::from(l), Pointer::Link { url: "https://ci.example.com/1".into() });
         assert!(serde_json::from_value::<PointerArg>(json!({ "kind": "zone" })).is_err());
     }
 }

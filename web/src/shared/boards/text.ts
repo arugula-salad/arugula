@@ -34,12 +34,36 @@ export const LIVE_LABEL: Record<BoardLiveState, string> = {
   checks_failed: "checks failed",
   merged: "merged",
   closed: "closed",
+  running: "running",
+  succeeded: "succeeded",
+  run_failed: "failed",
+  other: "not run",
 };
 
 /** The classes a live tag takes: the forge blocks' state colours, and
- * `waits` and `bad` for checks. */
+ * `waits` and `bad` for checks and runs. */
 export function liveClass(s: BoardLiveState): string {
-  return s === "checks_running" ? "waits" : s === "checks_failed" ? "bad" : `forge-state ${s}`;
+  if (s === "checks_running" || s === "running") return "waits";
+  if (s === "checks_failed" || s === "run_failed") return "bad";
+  if (s === "succeeded") return "forge-state merged";
+  if (s === "other") return "";
+  return `forge-state ${s}`;
+}
+
+/** Whether a row proves what it says (it matters in a `proofs` zone): a
+ * link, a run that succeeded, or a PR that is merged. Derived from what the
+ * platform read, never stored over the row's status. */
+export function proven(r: Pick<BoardRow, "pointer" | "live">): boolean {
+  switch (r.pointer.kind) {
+    case "link":
+      return true;
+    case "run":
+      return r.live?.state === "succeeded";
+    case "forge_item":
+      return r.live?.state === "merged";
+    default:
+      return false;
+  }
 }
 
 /** What a machine reported of an agent block, as a tag. */
@@ -94,19 +118,22 @@ export function pointerLabel(p: BoardPointer, live?: BoardLive | null): string {
       return `workspace ${short(p.id)}`;
     case "block":
       return `agent ${p.pane}`;
+    case "link":
+      return p.url.replace(/^https:\/\//, "");
   }
 }
 
 /** The pointer as the id a person edits: none for a block's, which isn't typed. */
 export function pointerText(p: BoardPointer): string {
-  return p.kind === "none" || p.kind === "block" ? "" : p.id;
+  return p.kind === "none" || p.kind === "block" ? "" : p.kind === "link" ? p.url : p.id;
 }
 
-/** An id a person typed as a pointer (`fi_…`, `iss_…`, `run_…`, `hw_…`),
- * or null when it isn't one; empty is no pointer. */
+/** An id a person typed as a pointer (`fi_…`, `iss_…`, `run_…`, `hw_…`) or
+ * an `https://` link, or null when it isn't one; empty is no pointer. */
 export function parsePointer(text: string): BoardPointer | null {
   const t = text.trim();
   if (!t) return { kind: "none" };
+  if (/^https:\/\/[^\s\u0000-\u001f\u007f]+$/.test(t)) return { kind: "link", url: t };
   const m = /^(fi|iss|run|hw)_[0-9A-Za-z]{1,64}$/.exec(t);
   if (!m) return null;
   switch (m[1]) {
@@ -131,6 +158,7 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
   }
   if (p.kind === "issue") return platform(`/issues/${p.id}`);
   if (p.kind === "run") return platform(`/runs/${p.id}`);
+  if (p.kind === "link") return /^https:\/\//.test(p.url) ? p.url : undefined;
   return undefined;
 }
 
