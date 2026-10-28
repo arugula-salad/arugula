@@ -766,8 +766,6 @@ fn kinds(
     kinds.add(BlockType::Chat, agent::ChatKind { rules });
     editors::kinds(&mut kinds);
     kinds.add(BlockType::Remote, remote::RemoteKind);
-    kinds.add(BlockType::Diff, Make(review::diff::Diff::create));
-    kinds.add(BlockType::File, Make(review::file::FileView::create));
     forges::kinds(&mut kinds);
     kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));

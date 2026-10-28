@@ -59,6 +59,8 @@ Each has a `README.md` with where to start reading.
   daemon reaches it only through `forges.rs` (the `Forges` trait); the
   binary registers it with its `forge` feature. Labs' Forgejo and GitLab
   register into its `OtherForges`.
+- `crates/arugulad-review`: `arugulad-review`, the diff and file blocks;
+  what they share (`Runner`, `Live`) stays in the base's `review/`.
 - `crates/arugulad-labs`: `arugulad-labs`, Labs (studio apps, chant
   workspaces, VMs and resident daemons, guest ssh, agent recipes and
   delegating, the Forgejo and GitLab forges). The daemon reaches it only
@@ -142,7 +144,7 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Blocks:** what every block provides and the registry of kinds (`mux:block.rs`), agents (`agent/`),
   browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`,
   and `block_channel.rs` for control's block origins),
-  editors (`editor/`, in `arugulad-editor`), review (`review/`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`, in `arugulad-forge`),
+  editors (`editor/`, in `arugulad-editor`), review (`review/`, its blocks in `arugulad-review`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`, in `arugulad-forge`),
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
   conversations (`conversations/`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
