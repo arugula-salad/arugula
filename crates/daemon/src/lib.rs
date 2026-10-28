@@ -43,8 +43,6 @@ use arugula_mux::holder;
 #[cfg(windows)]
 use arugula_mux::host;
 pub mod hosted;
-// A hosted box (`--hosted`): what registers `hosted::Hosted`.
-pub mod hosted_box;
 pub mod hosts;
 pub mod http1;
 pub mod install;

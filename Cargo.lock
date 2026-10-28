@@ -314,6 +314,7 @@ dependencies = [
  "arugulad-drivers",
  "arugulad-editor",
  "arugulad-forge",
+ "arugulad-hosted",
  "arugulad-invite",
  "arugulad-labs",
  "arugulad-review",
@@ -472,6 +473,30 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "arugulad-hosted"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "arugula-control-wire",
+ "arugula-e2e",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "axum",
+ "base64 0.23.1",
+ "futures-util",
+ "getrandom 0.4.3",
+ "hex",
+ "memchr",
+ "nix",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

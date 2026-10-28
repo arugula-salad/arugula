@@ -42,6 +42,7 @@ arugulad-docs = { path = "crates/arugulad-docs" }
 arugulad-drivers = { path = "crates/arugulad-drivers" }
 arugulad-editor = { path = "crates/arugulad-editor" }
 arugulad-forge = { path = "crates/arugulad-forge" }
+arugulad-hosted = { path = "crates/arugulad-hosted" }
 arugulad-invite = { path = "crates/arugulad-invite" }
 arugulad-labs = { path = "crates/arugulad-labs" }
 arugulad-review = { path = "crates/arugulad-review" }

@@ -14,7 +14,8 @@ reaches its log lines (log targets are module paths, matched by prefix). So far:
 `arugulad-editor` ([crates/arugulad-editor](../arugulad-editor/README.md)),
 `arugulad-drivers` (crates/arugulad-drivers, the deploy drivers), `arugulad-docs`
 ([crates/arugulad-docs](../arugulad-docs/README.md)), `arugulad-forge`
-([crates/arugulad-forge](../arugulad-forge/README.md)), `arugulad-invite`
+([crates/arugulad-forge](../arugulad-forge/README.md)), `arugulad-hosted`
+([crates/arugulad-hosted](../arugulad-hosted/README.md)), `arugulad-invite`
 ([crates/arugulad-invite](../arugulad-invite/README.md)), `arugulad-review`
 ([crates/arugulad-review](../arugulad-review/README.md)) and `arugulad-labs`
 ([crates/arugulad-labs](../arugulad-labs/README.md)).

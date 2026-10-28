@@ -16,6 +16,8 @@ arugulad-drivers = { workspace = true }
 arugulad-review = { workspace = true }
 # Inviting a person into a session, in every build.
 arugulad-invite = { workspace = true }
+# A hosted workspace's box (`--hosted`), in every build.
+arugulad-hosted = { workspace = true }
 # The editor server and Claude Code's IDE, for the `editor` feature.
 arugulad-editor = { workspace = true, optional = true }
 # The GitHub forge, for the `forge` feature.

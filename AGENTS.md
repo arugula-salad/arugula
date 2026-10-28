@@ -59,6 +59,10 @@ Each has a `README.md` with where to start reading.
   daemon reaches it only through `forges.rs` (the `Forges` trait); the
   binary registers it with its `forge` feature. Labs' Forgejo and GitLab
   register into its `OtherForges`.
+- `crates/arugulad-hosted`: `arugulad-hosted`, the daemon in a hosted
+  workspace's box (enrolling, its setup and snapshots, `_reseed`, `_seal`).
+  The base keeps `hosted/` (the `Hosted` trait it registers, the runs'
+  grant check, closed agent blocks' archive, the enrollment's check).
 - `crates/arugulad-invite`: `arugulad-invite`, inviting a person into a
   session: its operations, the invite card and MCP's `invite_person` and
   `read_invite`. The base keeps `invite.rs` (the agent header, the
@@ -161,9 +165,9 @@ nothing marked `mux:` names the edge or the block kinds.
   `labs/sandbox.rs` in Labs), synced history (`sync.rs`, `seal.rs`),
   tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
 - **Lifecycle:** the command line (`args.rs`), startup (`lib.rs`), a
-  hosted workspace's box (`hosted_box/`: `--hosted`, its own keys per box,
-  enrolling, redialling on resume, busy and idle for control; it registers
-  `hosted/`'s `Hosted`, and `hosted/` keeps its runs, archive and
+  hosted workspace's box (`arugulad-hosted`: `--hosted`, its own keys per
+  box, enrolling, redialling on resume, busy and idle for control; it
+  registers `hosted/`'s `Hosted`, and `hosted/` keeps its runs, archive and
   enrollment check), `install`
   (`install.rs`), Getting started (`setup.rs`), updates (`update.rs`,
   `selfupdate.rs`), `_host` (`mux:host.rs`), malloc settings (`mux:heap.rs`), paths
