@@ -101,7 +101,7 @@ runners (`ubuntu-latest`): **binaries** (`scripts/check-binaries`) and
 **quick**, the checks that take seconds and would otherwise first fail on
 main after the merge, by the recipes main runs: rustfmt (`just fmt-check`,
 also the desktop app's), gitleaks over the pull request's own commits
-(`scripts/ci-gitleaks BASE..HEAD`; lint scans the whole history) and
+(`scripts/ci-gitleaks BASE..HEAD`; lint scans main's whole history, not other branches) and
 `just notices-check` (cargo-about reads `cargo metadata` and the crates'
 sources, no build; pnpm reads web's `node_modules`). Main still runs them
 all (lint and clippy), for anything pushed without a pull request.
