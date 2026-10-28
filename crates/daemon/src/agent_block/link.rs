@@ -132,17 +132,6 @@ pub struct LocalSpawn<'a> {
     pub launch: &'a Launcher,
 }
 
-/// A pipe whose ends aren't inherited (`pipe2` doesn't exist on macOS).
-#[cfg(unix)]
-pub(crate) fn pipe_cloexec() -> nix::Result<(std::os::fd::OwnedFd, std::os::fd::OwnedFd)> {
-    use nix::fcntl::{FcntlArg, FdFlag, fcntl};
-    let (r, w) = nix::unistd::pipe()?;
-    for fd in [&r, &w] {
-        fcntl(fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC))?;
-    }
-    Ok((r, w))
-}
-
 /// Start an agent server on this host. Windows: in M56 (#219).
 #[cfg(not(unix))]
 pub fn spawn_local(_s: LocalSpawn, _sink: Sink) -> std::io::Result<(Link, u32)> {
@@ -152,7 +141,7 @@ pub fn spawn_local(_s: LocalSpawn, _sink: Sink) -> std::io::Result<(Link, u32)> 
 /// Start an agent server on this host.
 #[cfg(unix)]
 pub fn spawn_local(s: LocalSpawn, sink: Sink) -> std::io::Result<(Link, u32)> {
-    let (in_r, in_w) = pipe_cloexec()?;
+    let (in_r, in_w) = crate::agent::pipe_cloexec()?;
     let (ours, theirs) = UnixStream::pair()?;
     // Best effort: the kernel may cap it, and read_lines copes with less.
     let _ = setsockopt(&theirs, sockopt::SndBuf, &OUT_BUF);

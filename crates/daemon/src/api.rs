@@ -3,7 +3,6 @@
 //! over the tailnet, where the same access checks as the web client apply.
 
 use std::{
-    collections::HashMap,
     convert::Infallible,
     sync::{
         Arc,
@@ -15,17 +14,15 @@ use std::{
 use arugula_proto::{
     Driver, EventKind, Frame, FrameKind, PaneId, SessionId,
     api::{
-        AgentRules, AgentsInventory, Answered, ConversationList, ConversationRow, ConversationsQuery, Described, Empty,
-        HistoryKind, KeysRequest, OpenConversationRequest, OpenConversationResponse, OpenResponse, Process, RunRequest,
-        RunResponse, SecretFinding, SendRequest, WaitRequest, WaitResult,
+        AgentRules, AgentsInventory, Answered, Described, Empty, HistoryKind, KeysRequest, OpenResponse, Process,
+        RunRequest, RunResponse, SecretFinding, SendRequest, WaitRequest, WaitResult,
     },
     op::ops::{
-        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConversationOpen, ConversationsList,
-        FlagSet, FlagsList, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw,
-        PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse,
-        PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest,
-        RuleForget, RulesForgetAll, RulesList, SharingGet, SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet,
-        TelemetryNote, TelemetrySet,
+        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, FlagSet, FlagsList, ListPanes, MachineReset,
+        MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf,
+        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt,
+        PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, SharingGet,
+        SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
     },
 };
 use axum::{
@@ -99,8 +96,6 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/sessions/{id}/secrets", get(secrets))
         .op::<AdaptersList>()
         .op::<AdapterInstall>()
-        .op::<ConversationsList>()
-        .op::<ConversationOpen>()
         .route("/api/blocks", post(open_block))
         .route("/api/blocks/{id}", get(describe))
         .route("/api/blocks/{id}/call/{method}", post(call))
@@ -716,147 +711,6 @@ async fn open_block(
         Some(Err(e)) => Err(bad(e)),
         None => Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
     }
-}
-
-/// Agent blocks and chats by the Claude Code session they have.
-async fn blocks_by_session(app: &App) -> HashMap<String, PaneId> {
-    let mut out = HashMap::new();
-    for p in app.mux.api(Api::Panes).await.unwrap_or_default() {
-        if !p.info.kind.prompted() {
-            continue;
-        }
-        if let Some(b) = app.mux.api(|r| Api::Block(p.info.id, r)).await.flatten()
-            && let Some(sid) = b.config()["session_id"].as_str()
-        {
-            out.insert(sid.to_owned(), p.info.id);
-        }
-    }
-    out
-}
-
-/// Our terminals' and agent blocks' processes on this host (#81): a
-/// Claude Code under one of them runs there.
-async fn our_pids(app: &App) -> crate::conversations::Ours {
-    let mut ours = crate::conversations::Ours::default();
-    for p in app.mux.api(Api::Panes).await.unwrap_or_default() {
-        let id = p.info.id;
-        match p.info.kind {
-            arugula_proto::BlockType::Terminal => {
-                if let Some(pid) = app.mux.api(|r| Api::Pane(id, r)).await.flatten().and_then(|h| h.pid_now()) {
-                    ours.panes.insert(pid, id);
-                }
-            }
-            _ => {
-                if let Some(pid) = app.mux.api(|r| Api::Block(id, r)).await.flatten().and_then(|b| b.pid()) {
-                    ours.blocks.insert(pid, id);
-                }
-            }
-        }
-    }
-    ours
-}
-
-pub async fn list_conversations(app: &App, q: ConversationsQuery) -> Result<ConversationList, String> {
-    let blocks = blocks_by_session(app).await;
-    let ours: std::collections::HashSet<PaneId> =
-        app.mux.api(Api::Panes).await.unwrap_or_default().into_iter().map(|p| p.info.id).collect();
-    let pids = our_pids(app).await;
-    let list = crate::task::spawn_blocking(move || {
-        let mut ix = crate::conversations::Index::global().lock().unwrap();
-        ix.set_ours(pids);
-        ix.scan()
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-    let words: Vec<String> = q.q.as_deref().unwrap_or("").split_whitespace().map(str::to_lowercase).collect();
-    let total = list.len();
-    let out: Vec<ConversationRow> = list
-        .into_iter()
-        .filter(|c| crate::conversations::shown(c, q.all))
-        .filter(|c| !q.live || c.live.is_some())
-        .filter(|c| q.cwd.as_deref().is_none_or(|d| crate::paths::is_under(&c.cwd, d)))
-        .filter(|c| {
-            let hay = format!(
-                "{} {} {} {}",
-                c.title,
-                c.first_prompt.as_deref().unwrap_or(""),
-                c.last_prompt.as_deref().unwrap_or(""),
-                c.cwd
-            )
-            .to_lowercase();
-            words.iter().all(|w| hay.contains(w.as_str()))
-        })
-        .take(q.limit.unwrap_or(500))
-        .map(|mut c| {
-            let block = blocks.get(&c.id).copied();
-            c.live = c.live.take().map(|l| l.ours(|p| ours.contains(&p)));
-            // The adapter of the block that has it, when its scope didn't
-            // say (no systemd scopes).
-            if let (Some(b), Some(l)) = (block, c.live.as_mut())
-                && l.block.is_none()
-                && l.entrypoint == "sdk-ts"
-            {
-                l.block = Some(b);
-                l.pane = None;
-                l.place = l.place();
-            }
-            ConversationRow { conversation: serde_json::to_value(&c).unwrap_or_default(), block }
-        })
-        .collect();
-    Ok(ConversationList { conversations: out, total })
-}
-
-pub async fn open_conversation_as(
-    app: &App,
-    who: Option<crate::acl::Principal>,
-    req: OpenConversationRequest,
-) -> Result<OpenConversationResponse, ApiError> {
-    let id = req.id.clone();
-    let c = crate::task::spawn_blocking(move || crate::conversations::Index::global().lock().unwrap().find(&id))
-        .await
-        .map_err(|e| bad(e.to_string()))?
-        .map_err(|e| ApiError(StatusCode::NOT_FOUND, e))?;
-    let existing = blocks_by_session(app).await.get(&c.id).copied();
-    let (block, opened) = match existing {
-        Some(b) => (b, false),
-        None => {
-            let source = serde_json::to_value(c.source).unwrap_or_default();
-            let config = serde_json::json!({
-                "agent": "claude",
-                "cwd": c.cwd,
-                "session_id": c.id,
-                "import": { "path": c.path, "source": source, "title": c.title, "model": c.model },
-            });
-            let open = arugula_proto::api::OpenRequest {
-                kind: arugula_proto::BlockType::Agent,
-                config,
-                session: req.session,
-                split: req.split,
-                from_pane: req.from_pane,
-                vm: false,
-                image: None,
-                host: None,
-                local: true,
-            };
-            match app.mux.api(|r| Api::Open(open, who, r)).await {
-                Some(Ok(b)) => (b, true),
-                Some(Err(e)) => return Err(bad(e)),
-                None => return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
-            }
-        }
-    };
-    let mut out = OpenConversationResponse { block, opened, conversation: c.id, error: None };
-    if let Some(then) = req.then.as_deref() {
-        let method = match then {
-            "continue" | "fork" => then,
-            t => return Err(bad(format!("then: {t}? (continue or fork)"))),
-        };
-        let b = app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| bad("the block went away"))?;
-        if let Err(e) = b.call(method, serde_json::json!({})).await {
-            out.error = Some(e);
-        }
-    }
-    Ok(out)
 }
 
 /// `describe %N`: where a block is and what it's doing, for any type.
