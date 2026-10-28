@@ -198,8 +198,13 @@ export class ChatStore {
     clearTimeout(this.probe);
     let failed = false;
     try {
-      await this.loadRooms();
-      void this.loadSidebar();
+      // The rooms and the person's sidebar together, drawn once (#296):
+      // drawn before it, the rooms showed in their kinds' groups and the
+      // starred ones jumped up when it came. While chat is off, the probe
+      // asks only for the rooms, and the sidebar follows once it's on.
+      const sidebar = this.on === false ? undefined : this.fetchSidebar();
+      await this.loadRooms(sidebar);
+      if (!sidebar) void this.loadSidebar();
       if (!this.es) this.listen();
     } catch (e) {
       if (e instanceof ChatError && (e.reason === "chat_off" || e.status === 401 || e.status === 404)) this.turnOff(e.status === 401);
@@ -232,8 +237,12 @@ export class ChatStore {
     if (was !== false || wasOut !== signedOut) this.emit();
   }
 
-  async loadRooms() {
+  /** The room list; with `sidebar` (a read of it already asked for), its
+   * groups too, in the same draw. */
+  async loadRooms(sidebar?: Promise<ChatSidebar | null>) {
     const r = await call<ChatRooms>("GET", "/api/chat");
+    const s = sidebar ? await sidebar : null;
+    if (s && !this.sidebarPending) this.sidebar = s;
     this.on = true;
     this.signedOut = false;
     presence.start();
@@ -245,15 +254,17 @@ export class ChatStore {
   /** Edits sent and not yet answered: what is read meanwhile is older. */
   private sidebarPending = 0;
 
+  /** The person's sidebar, or null if control didn't give it: the rooms
+   * still list, in their kinds' groups. */
+  private fetchSidebar(): Promise<ChatSidebar | null> {
+    return call<ChatSidebar>("GET", "/api/chat/sidebar").catch(() => null);
+  }
+
   async loadSidebar() {
-    try {
-      const s = await call<ChatSidebar>("GET", "/api/chat/sidebar");
-      if (this.sidebarPending) return;
-      this.sidebar = s;
-      this.emit();
-    } catch {
-      // As it was: the rooms still list, in their kinds' groups.
-    }
+    const s = await this.fetchSidebar();
+    if (!s || this.sidebarPending) return;
+    this.sidebar = s;
+    this.emit();
   }
 
   /** Change the sidebar: shown at once, kept on the server (the last write
