@@ -520,6 +520,9 @@ test-run part="" which="":
       *) echo "test-run: WHICH is server or rest" >&2; exit 2 ;;
     esac
     # ${part[@]+…}: macOS bash 3.2 calls an empty array unbound.
+    # The test stack up and ready first, when this run has its tests: its
+    # image build is no test's, against that test's deadline.
+    if [ "{{which}}" != server ]; then testnet/suite-up.sh ${part[@]+"${part[@]}"}; fi
     if [ "{{which}}" != server ]; then {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
     if [ "{{which}}" != rest ]; then {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
     [ "{{which}}" != server ] || exit 0

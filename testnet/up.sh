@@ -141,8 +141,22 @@ if [ "$PROFILE" = tailnet ]; then
   tail -n1 "$STATE/tailnet-authkey.new" > "$STATE/tailnet-authkey" && rm "$STATE/tailnet-authkey.new"
 fi
 
+# The images built (or pulled) and the containers made, first: on a cold
+# Docker (a CI pod's own) that's minutes of apt-get, which is work, not
+# waiting, so no deadline. Then started, and ready within WAIT seconds:
+# every service with a healthcheck passing it (compose.yaml's x-ready), so
+# a box answers ssh and control and its fakes answer, not just run.
+wait="${ARUGULA_TESTNET_WAIT:-180}"
 # shellcheck disable=SC2086 # several words: the files and profiles
-docker compose $files $profiles up -d --build --wait >&2
+docker compose $files $profiles up --build --no-start >&2
+# shellcheck disable=SC2086
+if ! docker compose $files $profiles up -d --wait --wait-timeout "$wait" >&2; then
+  # shellcheck disable=SC2086
+  docker compose $files $profiles ps -a >&2 || true
+  # shellcheck disable=SC2086
+  docker compose $files $profiles logs --tail=40 >&2 || true
+  die "the stack wasn't ready in ${wait}s (ARUGULA_TESTNET_WAIT)"
+fi
 
 if [ "$PROFILE" = control ]; then
   # What the control profile's tests need (test.sh reads it): control's
@@ -173,10 +187,7 @@ export ARUGULA_TESTNET_PLATFORM2_PORT=${ARUGULA_TESTNET_PLATFORM2_PORT:-22984}
 # Hosted workspaces at the fake E2B (M183, hosted.yaml): 1, or empty.
 export ARUGULA_TESTNET_HOSTED=${ARUGULA_TESTNET_HOSTED:-}
 ENV
-  for _ in $(seq 1 40); do
-    curl -fsS "http://127.0.0.1:$cport/control.json" >/dev/null 2>&1 && break
-    sleep 0.5
-  done
+  # Healthy, so it answers; this is the published port, as the tests reach it.
   curl -fsS "http://127.0.0.1:$cport/control.json" >/dev/null || die "control did not answer on 127.0.0.1:$cport"
   log "control: http://$net.10:8080 (127.0.0.1:$cport from here), platform ${ARUGULA_TESTNET_PLATFORM:-in} of process"
 fi
@@ -193,14 +204,12 @@ if [ "$PROFILE" = tailnet ]; then
   die "ts-client can't reach ts-box over the tailnet"
 fi
 
-# sshd answers as soon as its container is up, but give it a few tries.
-for _ in $(seq 1 20); do
-  if ssh -F "$STATE/ssh_config" box-bare true 2>/dev/null; then
-    log "up: ssh -F $STATE/ssh_config box-bare"
-    exit 0
-  fi
-  sleep 0.5
-done
+# The bastion and box-bare are healthy (sshd answers in each), so this is
+# the path from here: the published port, the jump, the keys.
+if ssh -F "$STATE/ssh_config" box-bare true 2>/dev/null; then
+  log "up: ssh -F $STATE/ssh_config box-bare"
+  exit 0
+fi
 ssh -F "$STATE/ssh_config" -v box-bare true || true
 # shellcheck disable=SC2086
 docker compose $files $profiles logs --tail=40 >&2 || true

@@ -50,10 +50,21 @@ testnet/selfupdate.sh OLD NEW  # #391: the daemon updates itself (two `just stat
 ```
 
 The Rust tests that drive Arugula against the stack,
-`crates/arugulad/tests/integration/ssh.rs` (M51, box-bare and git) and
-`crates/arugulad/tests/integration/reboot.rs` (#26, box-systemd), bring the `ssh` profile
-up when it isn't. Both recreate the boxes they use and need `just static
-<arch>` for the box's binaries.
+`crates/arugulad/tests/integration/ssh.rs` (M51, box-bare and git),
+`crates/arugulad/tests/integration/reboot.rs` (#26, box-systemd) and
+`guest_ssh.rs`'s jump host test (the `control` profile), bring their
+profile up when it isn't ready. All three recreate the boxes they use and
+need `just static <arch>` for the box's binaries. `just test-run` brings
+the stack up before the suite (`testnet/suite-up.sh`), so a cold image
+build (minutes of apt-get on a CI pod's own Docker) isn't charged to the
+first test's 5-minute deadline.
+
+Up means ready, not started: the boxes, `git`, `control` and `fakes` have
+healthchecks (`compose.yaml`'s `x-ready`: sshd's banner, box-systemd's boot
+finished, control's `control.json`, every fake's port), so `up --wait`
+returns when they answer. `up.sh` builds and makes the containers first,
+with no deadline, then waits up to `ARUGULA_TESTNET_WAIT` seconds (180)
+for them to be healthy; a test's recreate waits up to two minutes.
 
 Docker is required: without it every script and test here fails, saying
 so. Only `ARUGULA_SKIP_DOCKER=1` skips, and then each prints that it did
