@@ -70,7 +70,10 @@ once (#287); a new push to a branch cancels that branch's run:
   - **e2e**: the specs (`E2E_SET=rest`) in seven shards split by recorded
     time (`web/scripts/e2e-shard.mjs` from `web/e2e/durations.json`; refresh
     it with `just e2e-durations RUN` after a main run), each with its own
-    test daemon on a free port; **stack**: those on the test stack
+    test daemon on a free port. The shards run on GitHub's runners
+    (`ubuntu-24.04`, since 2026-10-28), from build's binaries: they build
+    nothing, and a VM of their own keeps other jobs' load out of their
+    timings. **stack**: those on the test stack
     (`E2E_SET=stack`). The specs that time things (`E2E_SET=perf`: the
     frame rates, `editors.spec.ts`) run nightly instead
     (`.github/workflows/perf-nightly.yml`, since 2026-10-28). The frame
