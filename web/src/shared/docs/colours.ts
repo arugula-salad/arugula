@@ -2,7 +2,7 @@
 // paper, each with a `-soft` fill, which an agent writes in a drawing
 // (`fill="leaf-soft"`) or a chart's `colors` and which resolve to the
 // current scheme's value. The values are colours.json, which the daemon
-// reads too (`crates/daemon/src/docs/embeds.rs`); style.css's `--doc-*`
+// reads too (`crates/arugulad-docs/src/docs/embeds.rs`); style.css's `--doc-*`
 // tokens hold the same ones (a spec checks).
 
 import table from "./colours.json" with { type: "json" };

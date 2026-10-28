@@ -12,10 +12,11 @@ use arugula_proto::{
 };
 use axum::http::StatusCode;
 
-use super::{Cx, Handle, OpError};
 use crate::{
+    Docs,
     docs::link::{self, AGENT_ASKS, OWNER_ONLY, Remote},
     mux::Api,
+    ops::{Cx, Handle, OpError},
 };
 
 fn id_of(id: &str) -> Result<(), OpError> {
@@ -26,7 +27,7 @@ fn id_of(id: &str) -> Result<(), OpError> {
     }
 }
 
-impl Handle for DocLinkGet {
+impl Handle<Docs> for DocLinkGet {
     async fn handle(cx: &Cx<'_>, id: String, _: Empty) -> Result<DocLinkUrl, OpError> {
         if cx.agent_or_guest() {
             return Err(OpError::Forbidden(AGENT_ASKS.into()));
@@ -43,7 +44,7 @@ impl Handle for DocLinkGet {
     }
 }
 
-impl Handle for DocLinkDelete {
+impl Handle<Docs> for DocLinkDelete {
     async fn handle(cx: &Cx<'_>, id: String, _: Empty) -> Result<Empty, OpError> {
         if cx.agent_or_guest() {
             return Err(OpError::Forbidden(AGENT_ASKS.into()));
@@ -61,7 +62,7 @@ impl Handle for DocLinkDelete {
         // link, does it all and clears its `shared`; otherwise only the key
         // goes.
         let block = match &entry.doc {
-            Some(doc) => super::docs::open_blocks(cx.app).await.get(doc).copied(),
+            Some(doc) => crate::doc_ops::open_blocks(cx.app).await.get(doc).copied(),
             None => None,
         };
         if let Some(b) = match block {

@@ -102,3 +102,6 @@ labs = ["forge", "arugula-mux/labs", "dep:russh", "dep:serde_norway"]
 # tree at run time otherwise): CI's e2e shards run binaries built in another
 # job's checkout.
 debug-embed = ["rust-embed/debug-embed"]
+# The checks of the whole daemon (`whole` modules), which need every feature
+# crate registered: the binary's tests turn it on and run them.
+whole-tests = []

@@ -1,5 +1,5 @@
 // #964, #965, #254: the grammar of a Doc's charts, tiles, drawings and pictures, with no page. The
-// daemon's validator (crates/daemon/src/docs/embeds.rs) and the web
+// daemon's validator (crates/arugulad-docs/src/docs/embeds.rs) and the web
 // client's are run over the same files (crates/daemon/tests/fixtures/docs/),
 // and then the chart is laid out: a bar a row, from zero, with axes, labels
 // and a text alternative; a line a path a series.

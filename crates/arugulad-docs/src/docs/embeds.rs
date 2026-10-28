@@ -621,7 +621,7 @@ mod tests {
     use super::*;
 
     fn dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docs")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../daemon/tests/fixtures/docs")
     }
 
     fn expect() -> Value {

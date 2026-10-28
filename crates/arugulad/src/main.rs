@@ -3,16 +3,29 @@
 //! (`arugulad-<area>`, #232): this binary registers the features it's built
 //! with, gives the daemon the release it is and starts it.
 
+#[cfg(test)]
+mod whole_tests;
+
 /// The version, findable in the binary's bytes: the testnet tests read it
 /// from a box's static build they can't run here (#259).
 #[used]
 static VERSION_MARK: &str = concat!("\0arugula-version=", env!("CARGO_PKG_VERSION"), "\0");
 
+/// Puts every feature crate this build has in the daemon. Once.
+fn register() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // Docs (crates/arugulad-docs).
+        arugulad_docs::register();
+        // The deploy drivers, programs of their own (crates/arugulad-drivers).
+        arugulad_drivers::register();
+        // The editor server and Claude Code's IDE (crates/arugulad-editor).
+        #[cfg(feature = "editor")]
+        arugulad_editor::register();
+    });
+}
+
 fn main() -> anyhow::Result<()> {
-    // The deploy drivers, programs of their own (crates/arugulad-drivers).
-    arugulad_drivers::register();
-    // The editor server and Claude Code's IDE (crates/arugulad-editor).
-    #[cfg(feature = "editor")]
-    arugulad_editor::register();
+    register();
     arugulad_base::main(env!("CARGO_PKG_VERSION"))
 }

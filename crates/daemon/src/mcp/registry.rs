@@ -11,9 +11,9 @@ use serde_json::Value;
 
 use super::tools::{Args, Call, Def, Kind, Out};
 
-/// A call to a registered tool or kind: the call, and its arguments (a
-/// kind's without `kind`).
-pub type Run = for<'a> fn(&'a Call<'a>, Value) -> BoxFuture<'a, Out>;
+/// A call to a registered tool or kind: the call, the kind (a grouped
+/// tool's, which `route` took out of the arguments), and the arguments.
+pub type Run = for<'a> fn(&'a Call<'a>, Option<&'static str>, Value) -> BoxFuture<'a, Out>;
 
 /// A tool of a feature crate's.
 pub struct Tool {
@@ -72,12 +72,15 @@ fn add_these(defs: &mut Vec<Def>, tools: &[Tool], kinds: &[ToolKind]) {
     }
 }
 
-/// The registered call for `tool` (and its kind), if a crate added it.
+/// The registered call for `tool` (and its kind), if a crate added it: a
+/// kind added to a tool, or a tool of the crate's own (grouped or not).
 pub(crate) fn run_of(tool: &str, kind: Option<&str>) -> Option<Run> {
-    match kind {
-        Some(k) => KINDS.lock().unwrap().iter().find(|x| x.tool == tool && x.kind.name == k).map(|x| x.run),
-        None => TOOLS.lock().unwrap().iter().find(|t| (t.def)().name == tool).map(|t| t.run),
+    if let Some(k) = kind
+        && let Some(x) = KINDS.lock().unwrap().iter().find(|x| x.tool == tool && x.kind.name == k)
+    {
+        return Some(x.run);
     }
+    TOOLS.lock().unwrap().iter().find(|t| (t.def)().name == tool).map(|t| t.run)
 }
 
 #[cfg(test)]
@@ -103,7 +106,7 @@ mod tests {
         }
     }
 
-    fn run<'a>(_: &'a Call<'a>, _: Value) -> BoxFuture<'a, Out> {
+    fn run<'a>(_: &'a Call<'a>, _: Option<&'static str>, _: Value) -> BoxFuture<'a, Out> {
         Box::pin(async { Ok(Value::Null) })
     }
 

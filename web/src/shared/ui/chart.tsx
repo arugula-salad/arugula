@@ -4,7 +4,7 @@
 // `Chart` turns that tree into SVG. A chart that can't be drawn says why
 // and shows its source: never an empty box.
 //
-// The rules are the daemon's (`crates/daemon/src/docs/embeds.rs`, which has
+// The rules are the daemon's (`crates/arugulad-docs/src/docs/embeds.rs`, which has
 // the grammar) and say the same things: `doc_fill` refuses a chart that
 // breaks them, so they only matter here for a chart that arrives another
 // way, but a spec runs both over the same files (`tests/fixtures/docs/`).

@@ -310,6 +310,7 @@ dependencies = [
  "arugula-testkit",
  "arugula-vt",
  "arugulad-base",
+ "arugulad-docs",
  "arugulad-drivers",
  "arugulad-editor",
  "axum",
@@ -386,6 +387,30 @@ dependencies = [
  "windows-sys 0.60.2",
  "x509-parser",
  "zstd",
+]
+
+[[package]]
+name = "arugulad-docs"
+version = "0.0.0"
+dependencies = [
+ "aes-gcm 0.11.1",
+ "anyhow",
+ "arugula-core",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "axum",
+ "base64 0.23.1",
+ "futures-util",
+ "hex",
+ "regex",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -850,7 +850,8 @@ mod tests {
     }
 
     fn example(name: &str) -> String {
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docs").join(name)).unwrap()
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../daemon/tests/fixtures/docs").join(name))
+            .unwrap()
     }
 
     /// A bad chart or drawing is refused before the first write: the
