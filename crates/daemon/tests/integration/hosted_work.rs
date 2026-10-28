@@ -630,6 +630,9 @@ fn a_hosted_agent_holds_the_credential_its_turn_says() {
         .wait_secs(30)
         .start();
     wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
+    // Control answered; the daemon knows it's in once it reads what it
+    // saved, and only then asks for work (or for a turn).
+    wait(&marks, &f, "the daemon in control", || f.pulls() > 0);
 
     let fake = format!("{}/tests/fake_acp.py", env!("CARGO_MANIFEST_DIR"));
     let config = json!({ "agent": "claude", "command": ["python3", fake], "cwd": sessions, "prompt": "remember plum" });

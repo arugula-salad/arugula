@@ -521,6 +521,9 @@ pub struct Control {
     state_dir: PathBuf,
     acl: Arc<Acl>,
     now: RwLock<Option<Arc<Enrolled>>>,
+    /// `control.json`'s stamp as [`Control::reload`] last read it, taken
+    /// before the read: where the watcher starts from.
+    loaded: std::sync::Mutex<Option<std::time::SystemTime>>,
     /// Bumped whenever the trusted set changes: open channels re-check
     /// their device and close if it's gone.
     pub changed: watch::Sender<u64>,
@@ -777,6 +780,7 @@ impl Control {
             state_dir: state_dir.to_owned(),
             acl,
             now: RwLock::new(None),
+            loaded: Default::default(),
             changed: watch::channel(0).0,
             direct_urls,
             default_url,
@@ -1362,6 +1366,7 @@ impl Control {
 
     /// Read `control.json` (and the key) again.
     fn reload(&self) {
+        *self.loaded.lock().unwrap() = file_stamp(&self.state_dir);
         let next = match read_saved(&self.state_dir).and_then(|s| {
             let Some(saved) = s else { return Ok(None) };
             let keys = DeviceKeys::load(&self.state_dir.join(KEY_FILE))?;
@@ -2012,7 +2017,11 @@ impl Control {
     ) {
         let me = self.clone();
         tokio::spawn(async move {
-            let mut stamp = file_stamp(&me.state_dir);
+            // From the file as it was last read (`new` reads it), not as
+            // this task first runs: a hosted box's enrollment, written in
+            // between, would look like nothing changed, and the daemon would
+            // never know it's in.
+            let mut stamp = *me.loaded.lock().unwrap();
             // When certificates were last fetched; `None`: fetch now.
             let mut last_refresh: Option<std::time::Instant> = None;
             let mut relay: Option<tokio::task::JoinHandle<()>> = None;
@@ -3825,6 +3834,28 @@ pub(crate) mod tests {
         }
         assert!(c.enrolled().is_none(), "the daemon noticed it left");
         assert!(!r.dir.join(FILE).exists(), "and the refresh didn't save it again");
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// A join saved after the daemon read its state, but before the watcher
+    /// first ran, is noticed: a hosted box enrolls as it starts, and its
+    /// watcher used to take the joined file as where it started, so the
+    /// daemon never knew it was in (its runs never pulled, its agents'
+    /// turns refused).
+    #[tokio::test]
+    async fn a_join_saved_before_the_watcher_runs_is_noticed() {
+        let r = rig("join-before-watch").await;
+        let aside = r.dir.join(format!("{FILE}.aside"));
+        std::fs::rename(r.dir.join(FILE), &aside).unwrap();
+        let c = Control::new(&r.dir, vec![], String::new(), r.acl.clone(), false);
+        assert!(c.enrolled().is_none());
+        std::fs::rename(&aside, r.dir.join(FILE)).unwrap();
+        c.run(|| {}, |_| tokio::spawn(std::future::pending()), |_| {});
+        let t = std::time::Instant::now();
+        while c.enrolled().is_none() && t.elapsed() < Duration::from_secs(10) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(c.enrolled().is_some(), "the daemon noticed it joined");
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 
