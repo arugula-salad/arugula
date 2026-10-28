@@ -325,6 +325,13 @@ transcript is in `.state/window/transcript.txt`. Run it with its own
 - Host ports are off the defaults and each can be overridden with an
   `ARUGULA_TESTNET_*_PORT` variable.
 - The scripts run on Linux and macOS (bash 3.2) and pass `shellcheck`.
+- Healthy isn't connected. On a host that sends bridged traffic through
+  iptables and has another program replacing the filter table (k3s's
+  network policy controller, on geek), the rules Docker adds for a new
+  network can be erased a moment later: its containers are each healthy
+  and can't reach one another (#282). `up.sh` connects across each
+  network from the bastion and, if one drops the connection, makes the
+  stack's networks again once; then it fails saying so.
 - CI (`.github/workflows/check.yml`) brings up the `control` profile once
   on the Linux runner and runs `test ssh`, `test control`, `break ssh` and
   `break control` on it: control's stack has all of ssh's boxes, and the

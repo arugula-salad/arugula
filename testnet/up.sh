@@ -149,13 +149,49 @@ fi
 wait="${ARUGULA_TESTNET_WAIT:-180}"
 # shellcheck disable=SC2086 # several words: the files and profiles
 docker compose $files $profiles up --build --no-start >&2
-# shellcheck disable=SC2086
-if ! docker compose $files $profiles up -d --wait --wait-timeout "$wait" >&2; then
+start() {
   # shellcheck disable=SC2086
-  docker compose $files $profiles ps -a >&2 || true
+  if ! docker compose $files $profiles up -d --wait --wait-timeout "$wait" >&2; then
+    # shellcheck disable=SC2086
+    docker compose $files $profiles ps -a >&2 || true
+    # shellcheck disable=SC2086
+    docker compose $files $profiles logs --tail=40 >&2 || true
+    die "the stack wasn't ready in ${wait}s (ARUGULA_TESTNET_WAIT)"
+  fi
+}
+start
+
+# Healthy means each service answers itself (its check dials 127.0.0.1),
+# not that the host forwards between them: with bridged traffic going
+# through the host's iptables (bridge-nf-call-iptables, as on a k3s node),
+# each network needs the ACCEPT rules Docker adds when it makes it. On geek,
+# k3s's network policy controller (kube-router) replaces the whole filter
+# table from a copy it saved a moment earlier, up to several times a
+# second while pods come and go, and so erases rules Docker added in
+# between: a network made then drops every packet between its containers,
+# for its whole life (#282). So: TCP across each network, from the
+# bastion, and if one drops it, the stack's networks made again, once
+# (the rules come with them).
+blocked() {
+  local to
+  case "$PROFILE" in
+    ssh) to="box-bare:22" ;;
+    control) to="box-bare:22 fakes:9001" ;;  # the inner network, and the outer
+    *) return 1 ;;
+  esac
+  for t in $to; do
+    docker exec "$TESTNET-bastion" timeout 5 bash -c "exec 3<>/dev/tcp/${t%:*}/${t#*:}" 2>/dev/null || echo "$t"
+  done
+}
+lost="$(blocked)" || true
+if [ -n "$lost" ]; then
+  log "the bastion can't reach $lost, with every service healthy: the host drops traffic between the stack's containers"
+  log "(Docker's rules for a new network were lost, as when k3s's kube-router rewrites the filter table: #282); making the networks again"
   # shellcheck disable=SC2086
-  docker compose $files $profiles logs --tail=40 >&2 || true
-  die "the stack wasn't ready in ${wait}s (ARUGULA_TESTNET_WAIT)"
+  docker compose $files $profiles down >&2 || true
+  start
+  lost="$(blocked)" || true
+  [ -z "$lost" ] || die "the bastion still can't reach $lost, with every service healthy: the host's firewall (iptables FORWARD) drops traffic between the stack's containers (#282)"
 fi
 
 if [ "$PROFILE" = control ]; then
