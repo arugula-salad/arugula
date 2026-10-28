@@ -52,7 +52,7 @@ use crate::{
     control::Saved,
     mux::Api,
     server::App,
-    work::{self, RunAs},
+    work_engine::{self as work, RunAs},
 };
 
 /// How often a running run's log is looked at.
@@ -98,7 +98,7 @@ fn allowed(app: &App) -> Result<(), &'static str> {
 pub fn artifacts_dir(state: &Path, run: &str, as_: Option<&RunAs>) -> PathBuf {
     match as_ {
         Some(a) => a.work(run).join(ARTIFACTS_DIR),
-        None => state.join(work::DIR).join(format!("{run}.artifacts")),
+        None => state.join(crate::work::DIR).join(format!("{run}.artifacts")),
     }
 }
 
