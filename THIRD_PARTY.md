@@ -5430,10 +5430,10 @@ limitations under the License.
 
 Used by:
 - [libghostty-vt 0.2.1](https://github.com/uzaaft/libghostty-rs)
-- [arugulad 0.63.7](https://github.com/arugula-salad/arugula)
+- [arugulad 0.63.8](https://github.com/arugula-salad/arugula)
 - [arugulad-drivers 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-editor 0.0.0](https://github.com/arugula-salad/arugula)
-- [arugula 0.63.7](https://github.com/arugula-salad/arugula)
+- [arugula 0.63.8](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-base 0.0.0](https://github.com/arugula-salad/arugula)
