@@ -63,7 +63,7 @@ use crate::{
 pub const PERSONAL: &str = "personal";
 
 /// Searches per account, as chat's.
-const ISSUE_SEARCHES: (&str, usize) = ("issue-search", 600);
+pub(crate) const ISSUE_SEARCHES: (&str, usize) = ("issue-search", 600);
 /// Exports per account: each reads a whole project.
 const ISSUE_EXPORTS: (&str, usize) = ("issue-export", 60);
 /// A list's page, unless it asks for fewer; never more than [`PAGE_MAX`].
@@ -315,7 +315,7 @@ fn edit_of(e: &wire::IssueListEdit) -> ListEdit<'_> {
 
 /// A search box's words: `dep*` is a word starting with `dep`. Only text,
 /// never search syntax (as chat's).
-fn words(q: &str) -> Vec<Word> {
+pub(crate) fn words(q: &str) -> Vec<Word> {
     q.split_whitespace()
         .filter_map(|tok| {
             let text: String = tok.trim_end_matches('*').chars().filter(|c| *c != '"').collect();

@@ -31,6 +31,8 @@ pub const BOARD_ENTRIES: &str = "/api/boards/{id}/entries";
 pub const BOARD_ENTRY: &str = "/api/boards/{id}/entries/{entry}";
 /// `POST` [`MoveEntry`]: reorder a row or a zone; answered [`BoardView`].
 pub const BOARD_ENTRY_MOVE: &str = "/api/boards/{id}/entries/{entry}/move";
+/// `GET` [`WorkQuery`]: a project's work items, [`WorkItems`].
+pub const PROJECT_WORK: &str = "/api/projects/{project}/work";
 
 /// A machine's agents, under `boards.read` / `boards.write` (over the
 /// project, given by the machine's owner): the same operations as above,
@@ -526,6 +528,61 @@ pub fn render(view: &BoardView) -> String {
         }
     }
     out.trim_end().to_owned()
+}
+
+// ---------------------------------------------------------------- work
+
+/// [`PROJECT_WORK`]'s query.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkQuery"))]
+pub struct WorkQuery {
+    /// Search words: an issue's title or body, a mirrored item's title or
+    /// mirrored content, a run's trigger (`manual`).
+    #[serde(default)]
+    pub q: Option<String>,
+    /// `issue`, `pr` or `run`; absent means all.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Only open issues (native and GitHub) that no row of any of the
+    /// project's boards points at.
+    #[serde(default)]
+    pub untriaged: bool,
+    /// At most this many (default 30, at most 100).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// One thing a row may point at.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkItem"))]
+pub struct WorkItem {
+    /// What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`.
+    pub pointer: Pointer,
+    /// `native`, `github` or `run`.
+    pub source: String,
+    /// `issue`, `pr` or `run`.
+    pub kind: String,
+    /// `OWNER/NAME` of a mirrored item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// A run has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub number: Option<u64>,
+    /// A run's: how it started (`manual run`).
+    pub title: String,
+    /// `open`, `closed` or `merged` for an issue or a PR; a run's own state.
+    pub state: String,
+    /// GitHub logins for a mirrored item; account ids for a native issue.
+    pub assignees: Vec<String>,
+    pub updated_at: u64,
+}
+
+/// [`PROJECT_WORK`]'s answer: the newest first, across sources.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkItems"))]
+pub struct WorkItems {
+    pub project: String,
+    pub items: Vec<WorkItem>,
 }
 
 #[cfg(test)]

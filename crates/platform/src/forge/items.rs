@@ -27,7 +27,7 @@ const MOST: u32 = 200;
 const DEFAULT: u32 = 100;
 
 /// A JSON list of names or logins as stored; anything else is none.
-pub(super) fn names(json: &str) -> Vec<String> {
+pub(crate) fn names(json: &str) -> Vec<String> {
     let v: Vec<Value> = serde_json::from_str(json).unwrap_or_default();
     v.iter()
         .filter_map(|x| x.as_str().or_else(|| x["login"].as_str()).or_else(|| x["name"].as_str()))

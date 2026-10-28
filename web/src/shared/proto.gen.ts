@@ -300,6 +300,71 @@ export type BoardStatus = "none" | "open" | "working" | "needs_input" | "done" |
  */
 export type BoardView = { board: ProjectBoard, zones: Array<BoardZone>, };
 
+/**
+ * One thing a row may point at.
+ */
+export type BoardWorkItem = { 
+/**
+ * What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`.
+ */
+pointer: BoardPointer, 
+/**
+ * `native`, `github` or `run`.
+ */
+source: string, 
+/**
+ * `issue`, `pr` or `run`.
+ */
+kind: string, 
+/**
+ * `OWNER/NAME` of a mirrored item.
+ */
+repo?: string | null, 
+/**
+ * A run has none.
+ */
+number?: number | null, 
+/**
+ * A run's: how it started (`manual run`).
+ */
+title: string, 
+/**
+ * `open`, `closed` or `merged` for an issue or a PR; a run's own state.
+ */
+state: string, 
+/**
+ * GitHub logins for a mirrored item; account ids for a native issue.
+ */
+assignees: Array<string>, updated_at: number, };
+
+/**
+ * [`PROJECT_WORK`]'s answer: the newest first, across sources.
+ */
+export type BoardWorkItems = { project: string, items: Array<BoardWorkItem>, };
+
+/**
+ * [`PROJECT_WORK`]'s query.
+ */
+export type BoardWorkQuery = { 
+/**
+ * Search words: an issue's title or body, a mirrored item's title or
+ * mirrored content, a run's trigger (`manual`).
+ */
+q: string | null, 
+/**
+ * `issue`, `pr` or `run`; absent means all.
+ */
+kind: string | null, 
+/**
+ * Only open issues (native and GitHub) that no row of any of the
+ * project's boards points at.
+ */
+untriaged: boolean, 
+/**
+ * At most this many (default 30, at most 100).
+ */
+limit: number | null, };
+
 export type BoardZone = { id: string, rev: number, title: string, kind?: BoardZoneKind | null, rows: Array<BoardRow>, };
 
 /**

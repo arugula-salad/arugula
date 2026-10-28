@@ -170,6 +170,7 @@ fn routes() -> Routes {
         .route(issues::AGENT_ISSUE_EVENTS, get(crate::issues::agent::events))
         // Boards, behind the `boards` flag.
         .route(boards::PROJECT_BOARDS, get(crate::boards::list_route).post(crate::boards::create_route))
+        .route(boards::PROJECT_WORK, get(crate::boards::work::route))
         .route(boards::BOARD, get(crate::boards::get_route))
         .route(boards::BOARD_ENTRIES, put(crate::boards::put_route))
         .route(boards::BOARD_ENTRY, axum::routing::delete(crate::boards::delete_route))
