@@ -14,10 +14,10 @@ not the daemon:
 `src/lib.rs` is the whole of its surface: `register()`, which the binary
 calls when its `editor` feature is on, and the implementations of
 `arugulad_base::editors::{Editors, Ide}`. The daemon names nothing in here.
-The IDE's operations (`GET`/`PUT /api/ide`, mentions) stay in the base
-(`crates/daemon/src/ops/ide.rs`), because an operation's handler implements
-the base's `ops::Handle` for a type of `arugula-proto`'s. They ask the `Ide`
-trait.
+The IDE's operations (`GET`/`PUT /api/ide`, mentions) are here too
+(`src/ide/ops.rs`): `impl Handle<Editor> for IdeGet`, routed with
+`op_of::<IdeGet, Editor>()` (docs/operations.md, "A feature crate's
+operations").
 
 The code here still names what it uses as `crate::…` (`crate::task`,
 `crate::mux`, `crate::server::App`): `lib.rs` brings those modules in from

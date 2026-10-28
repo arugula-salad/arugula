@@ -145,7 +145,7 @@ impl IntoResponse for ApiError {
     }
 }
 
-pub(crate) fn bad(msg: impl Into<String>) -> ApiError {
+pub fn bad(msg: impl Into<String>) -> ApiError {
     ApiError(StatusCode::BAD_REQUEST, msg.into())
 }
 

@@ -18,7 +18,6 @@ mod flags;
 mod fs;
 mod hosted;
 mod hosts;
-mod ide;
 mod input;
 mod inspect;
 mod invite;
@@ -187,7 +186,14 @@ impl Cx<'_> {
 }
 
 /// The daemon's half of an operation: what it does, once for every way in.
-pub trait Handle: Op {
+///
+/// `M` says whose it is (#232): `()` for the base's own, or a marker type
+/// of the feature crate that handles it. The operation types are
+/// `arugula-proto`'s, so only the crate that defines `Handle` may write
+/// `impl Handle for SomeOp`; another crate writes `impl Handle<Mine> for
+/// SomeOp` with a type of its own as `M`, and routes it with
+/// [`OpRoutes::op_of`].
+pub trait Handle<M = ()>: Op {
     fn handle(cx: &Cx<'_>, path: Self::Path, req: Self::Req)
     -> impl Future<Output = Result<Self::Res, OpError>> + Send;
 }
@@ -238,9 +244,9 @@ pub fn flagged<O: Op>(app: &App) -> Result<(), OpError> {
 /// An operation's HTTP handler: the path, the body (or none), who asks, the
 /// owner's check for an owner's operation (`authz::check` makes it first;
 /// this is the handler's own, as `owner_only` was), then the handler.
-async fn serve<O>(State(app): State<Arc<App>>, req: axum::extract::Request) -> Response
+async fn serve<O, M>(State(app): State<Arc<App>>, req: axum::extract::Request) -> Response
 where
-    O: Handle,
+    O: Handle<M>,
     O::Path: FromPath,
 {
     if let Err(e) = flagged::<O>(&app) {
@@ -282,7 +288,7 @@ where
         return ApiError(StatusCode::FORBIDDEN, "only the owner can".into()).into_response();
     }
     let cx = Cx { app: &app, via: Via::Http { who, owner, agent, acting, caller } };
-    match O::handle(&cx, path, body).await {
+    match <O as Handle<M>>::handle(&cx, path, body).await {
         Ok(res) => Json(res).into_response(),
         Err(OpError::Text(code, why)) => (code, why).into_response(),
         Err(e) => e.http().into_response(),
@@ -290,25 +296,36 @@ where
 }
 
 /// Routes for operations, beside the hand-written ones.
-pub trait OpRoutes {
-    /// `O`'s route, at its path and method.
-    fn op<O>(self) -> Self
-    where
-        O: Handle,
-        O::Path: FromPath;
-}
-
-impl OpRoutes for Router<Arc<App>> {
+pub trait OpRoutes: Sized {
+    /// `O`'s route, at its path and method: one of the base's own.
     fn op<O>(self) -> Self
     where
         O: Handle,
         O::Path: FromPath,
     {
+        self.op_of::<O, ()>()
+    }
+
+    /// `O`'s route, handled by `M`'s crate (`impl Handle<M> for O`).
+    fn op_of<O, M>(self) -> Self
+    where
+        O: Handle<M>,
+        O::Path: FromPath,
+        M: 'static;
+}
+
+impl OpRoutes for Router<Arc<App>> {
+    fn op_of<O, M>(self) -> Self
+    where
+        O: Handle<M>,
+        O::Path: FromPath,
+        M: 'static,
+    {
         let m: MethodRouter<Arc<App>> = match O::METHOD {
-            Method::Get => get(serve::<O>),
-            Method::Post => post(serve::<O>),
-            Method::Put => put(serve::<O>),
-            Method::Delete => delete(serve::<O>),
+            Method::Get => get(serve::<O, M>),
+            Method::Post => post(serve::<O, M>),
+            Method::Put => put(serve::<O, M>),
+            Method::Delete => delete(serve::<O, M>),
         };
         self.route(O::PATH, m)
     }
@@ -338,7 +355,7 @@ fn matches<'p>(template: &str, parts: &[&'p str]) -> Option<Option<&'p str>> {
 /// for the ones it hands a handler, so `/api/panes/%31/close` is pane 1's.
 /// A segment that isn't UTF-8 once decoded is `None` too, and `authz` gives
 /// that the owner.
-pub fn policy(method: &axum::http::Method, path: &str) -> Option<crate::authz::Policy> {
+pub(crate) fn policy(method: &axum::http::Method, path: &str) -> Option<crate::authz::Policy> {
     use crate::authz::Policy;
     let parts = crate::authz::segments(path)?;
     let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
@@ -586,7 +603,7 @@ mod tests {
     }
 
     /// The paths [`ROUTERS`] add, and the operations they add with
-    /// `.op::<…>()`, read from the source (the router can't be walked once
+    /// `.op::<…>()` (or a feature crate's `.op_of::<…, M>()`), read from the source (the router can't be walked once
     /// built). Routers not listed there are outside it.
     fn api_routes() -> (Vec<String>, Vec<String>) {
         let (mut paths, mut ops) = (Vec::new(), Vec::new());
@@ -613,6 +630,11 @@ mod tests {
             for (i, _) in body.match_indices(".op::<") {
                 let rest = &body[i + ".op::<".len()..];
                 ops.push(rest[..rest.find(">()").unwrap()].to_owned());
+            }
+            // A feature crate's: `.op_of::<SomeOp, Mine>()`.
+            for (i, _) in body.match_indices(".op_of::<") {
+                let rest = &body[i + ".op_of::<".len()..];
+                ops.push(rest[..rest.find(',').unwrap()].trim().to_owned());
             }
         }
         (paths, ops)

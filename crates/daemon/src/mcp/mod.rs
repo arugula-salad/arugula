@@ -36,7 +36,8 @@ mod deploys;
 mod forge_ops;
 pub(crate) mod hosted;
 mod issues;
-pub(crate) mod ops;
+pub mod ops;
+pub mod registry;
 pub mod relay;
 mod repos;
 pub(crate) mod results;
@@ -44,7 +45,7 @@ pub(crate) mod runs;
 pub mod session;
 mod threads;
 pub mod tokens;
-pub(crate) mod tools;
+pub mod tools;
 
 use std::sync::Arc;
 
