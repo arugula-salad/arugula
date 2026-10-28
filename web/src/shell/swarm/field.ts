@@ -92,7 +92,65 @@ export interface SwarmScene {
   /** Where a pane is on the screen now (tests click it). */
   screenOf(key: string): { x: number; y: number } | null;
   /** Frame-rate check. */
-  measure(ms: number): Promise<{ fps: number; workP50: number; frames: number }>;
+  measure(ms: number): Promise<Measured>;
+}
+
+/** What the frame-rate check (e2e/swarm-fps.spec.ts) reads over a window
+ * of frames. The rate is the browser's: how often it asks for a frame,
+ * which on a loaded machine is the neighbours' doing as much as ours, so
+ * the spec logs it. The work is ours: a frame's step and draw on the main
+ * thread, which the spec holds to the frame the rate it names allows, and
+ * the city's draw calls (#278). */
+export interface Measured {
+  /** Animation frames a second. */
+  fps: number;
+  frames: number;
+  /** A frame's work, its median and 95th percentile, in ms. */
+  workP50: number;
+  workP95: number;
+  /** WebGL's draw calls and triangles in a frame, the most any frame had
+   * (the city; 0 for the others). */
+  calls: number;
+  triangles: number;
+}
+
+/** Frames while a scene's `measure` runs. */
+export class Meter {
+  private gaps: number[] = [];
+  private work: number[] = [];
+  private calls = 0;
+  private triangles = 0;
+
+  /** One frame: the time since the last, its work, and (WebGL) what it drew. */
+  frame(gap: number, work: number, drew?: { calls: number; triangles: number }) {
+    this.gaps.push(gap);
+    this.work.push(work);
+    if (drew) {
+      this.calls = Math.max(this.calls, drew.calls);
+      this.triangles = Math.max(this.triangles, drew.triangles);
+    }
+  }
+
+  /** Frames for `ms` (`set` hands the meter to the scene's loop and takes
+   * it back), the first five left out. */
+  static async run(ms: number, set: (m: Meter | null) => void): Promise<Measured> {
+    const m = new Meter();
+    set(m);
+    await new Promise((r) => setTimeout(r, ms));
+    set(null);
+    const gaps = m.gaps.slice(5);
+    const work = m.work.slice(5).sort((a, b) => a - b);
+    const total = gaps.reduce((a, b) => a + b, 0);
+    const at = (q: number) => work[Math.min(work.length - 1, Math.floor(work.length * q))] ?? 0;
+    return {
+      fps: total ? (1000 * gaps.length) / total : 0,
+      frames: gaps.length,
+      workP50: at(0.5),
+      workP95: at(0.95),
+      calls: m.calls,
+      triangles: m.triangles,
+    };
+  }
 }
 
 interface Tile extends FieldPane {
@@ -197,8 +255,8 @@ export class Field implements SwarmScene {
   asleep = false;
   private settled = 0;
   private dirty = true;
-  /** Frame times while measuring (the frame-rate test). */
-  private measuring: { gaps: number[]; work: number[] } | null = null;
+  /** Frames while measuring (the frame-rate test). */
+  private measuring: Meter | null = null;
   private fitted = false;
   /** Someone panned, zoomed or dived: stop fitting by ourselves. */
   private userMoved = false;
@@ -597,10 +655,7 @@ export class Field implements SwarmScene {
         this.draw(now);
         this.dirty = false;
       }
-      if (this.measuring) {
-        this.measuring.gaps.push(dt);
-        this.measuring.work.push(performance.now() - t0);
-      }
+      this.measuring?.frame(dt, performance.now() - t0);
       this.raf = requestAnimationFrame(frame);
     };
     this.raf = requestAnimationFrame(frame);
@@ -616,17 +671,9 @@ export class Field implements SwarmScene {
     this.dirty = true;
   }
 
-  /** Frame-rate check: run (awake) for `ms`, then report fps and the median
-   * work per frame. */
-  async measure(ms: number): Promise<{ fps: number; workP50: number; frames: number }> {
-    this.measuring = { gaps: [], work: [] };
-    await new Promise((r) => setTimeout(r, ms));
-    const m = this.measuring;
-    this.measuring = null;
-    const gaps = m.gaps.slice(5);
-    const work = [...m.work].sort((a, b) => a - b);
-    const total = gaps.reduce((a, b) => a + b, 0);
-    return { fps: gaps.length ? (1000 * gaps.length) / total : 0, workP50: work[Math.floor(work.length / 2)] ?? 0, frames: gaps.length };
+  /** Frame-rate check: run (awake) for `ms`, then what the frames did. */
+  measure(ms: number): Promise<Measured> {
+    return Meter.run(ms, (m) => (this.measuring = m));
   }
 
   private step(now: number, dt: number, elapsed: number) {

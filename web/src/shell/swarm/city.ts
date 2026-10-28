@@ -27,7 +27,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { WorkKind } from "../../shared/proto";
-import { C, readColors, type FieldHooks, type FieldPane, type SwarmScene } from "./field";
+import { C, Meter, readColors, type FieldHooks, type FieldPane, type Measured, type SwarmScene } from "./field";
 import { KINDS } from "./model";
 
 type Shape = "box" | "hex" | "pent" | "drum" | "slab";
@@ -273,7 +273,7 @@ export class City implements SwarmScene {
   private fontsReady = false;
   private down: { x: number; y: number } | null = null;
   private ray = new THREE.Raycaster();
-  private measuring: { gaps: number[]; work: number[] } | null = null;
+  private measuring: Meter | null = null;
   private off: (() => void)[] = [];
 
   constructor(
@@ -966,10 +966,8 @@ export class City implements SwarmScene {
       this.uni.uFogNear.value = back * 1.1;
       this.uni.uFogFar.value = back * 3.5;
       this.renderer.render(this.scene, this.camera);
-      if (this.measuring) {
-        this.measuring.gaps.push(dt * 1000);
-        this.measuring.work.push(performance.now() - t0);
-      }
+      // info.render is this render's alone (three's autoReset).
+      this.measuring?.frame(dt * 1000, performance.now() - t0, this.renderer.info.render);
     };
     this.raf = requestAnimationFrame(frame);
   }
@@ -985,14 +983,7 @@ export class City implements SwarmScene {
     this.renderer.dispose();
   }
 
-  async measure(ms: number): Promise<{ fps: number; workP50: number; frames: number }> {
-    this.measuring = { gaps: [], work: [] };
-    await new Promise((r) => setTimeout(r, ms));
-    const m = this.measuring;
-    this.measuring = null;
-    const gaps = m.gaps.slice(5);
-    const work = [...m.work].sort((a, b) => a - b);
-    const total = gaps.reduce((a, b) => a + b, 0);
-    return { fps: gaps.length ? (1000 * gaps.length) / total : 0, workP50: work[Math.floor(work.length / 2)] ?? 0, frames: gaps.length };
+  measure(ms: number): Promise<Measured> {
+    return Meter.run(ms, (m) => (this.measuring = m));
   }
 }
