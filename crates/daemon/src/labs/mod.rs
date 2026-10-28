@@ -34,7 +34,7 @@ use std::{
     sync::Arc,
 };
 
-use arugula_proto::{BlockType, flags::On};
+use arugula_proto::BlockType;
 use axum::Router;
 #[cfg(not(feature = "labs"))]
 use serde_json::Value;
@@ -91,25 +91,12 @@ pub const GUEST_SSH_LISTEN: &str = "0.0.0.0:7684";
 /// The raw stream kind control opens for a guest through its jump host.
 pub const GUEST_STREAM_KIND: &[u8] = b"ssh-guest";
 
-/// Whether this build has Labs.
-pub const BUILT: bool = cfg!(feature = "labs");
-
 #[cfg(feature = "forge")]
 use arugula_mux::labs::flag_off_as;
-pub use arugula_mux::labs::{flag, not_built};
-
-/// The Labs flags that are on here: none in a build without Labs, else
-/// what the machine's state directory says (read on each call).
-pub fn flags(state_dir: &Path) -> On {
-    if BUILT { arugula_proto::flags::on(state_dir) } else { On::none() }
-}
-
-/// Whether `flag` is on here: this build has Labs, and the machine has
-/// turned the flag on.
-#[cfg(feature = "forge")]
-pub fn on(state_dir: &Path, flag: &str) -> bool {
-    flags(state_dir).has(flag)
-}
+// The flags are the base's (`lab_flags.rs`), as Labs always had them;
+// which of them a build uses depends on its features.
+#[allow(unused_imports)]
+pub use crate::lab_flags::{BUILT, flag, not_built, on};
 
 /// Whether this machine offers agents to its teams' members (#399): the
 /// `agent-delegation` flag is on and at least one recipe is offered. Until
@@ -188,19 +175,6 @@ impl<K: crate::block::BlockKind> crate::block::BlockKind for Flagged<K> {
 
     fn stored_text(&self, dir: &Path) -> Option<String> {
         self.kind.stored_text(dir)
-    }
-}
-
-/// The flag a new block of `kind` needs (#347), for a route to refuse it
-/// before it does anything else (an app block asks the studio where its box
-/// is first). The block types check it again when made.
-pub fn block_flag(kind: BlockType) -> Option<&'static str> {
-    use arugula_proto::flags;
-    match kind {
-        BlockType::Agents => Some(flags::AGENT_DELEGATION),
-        BlockType::App => Some(flags::STUDIO),
-        BlockType::Workspace => Some(flags::CHANT_WORKSPACES),
-        _ => None,
     }
 }
 

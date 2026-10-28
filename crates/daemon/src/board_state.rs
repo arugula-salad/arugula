@@ -195,7 +195,7 @@ pub async fn keep_reporting(app: Arc<App>) {
 /// Whether this machine reports now: the `boards` flag is on here, and it
 /// has joined control.
 fn enabled(app: &App) -> bool {
-    crate::labs::flags(app.control.state_dir()).has(flags::BOARDS) && app.control.enrolled().is_some()
+    crate::lab_flags::flags(app.control.state_dir()).has(flags::BOARDS) && app.control.enrolled().is_some()
 }
 
 async fn is_agent(app: &App, id: PaneId) -> bool {

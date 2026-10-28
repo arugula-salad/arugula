@@ -233,7 +233,7 @@ fn line(v: &BoardView) -> String {
 impl Call<'_> {
     /// They act as this machine's owner: only the owner's own agents may.
     async fn owners_boards(&self, what: &str) -> Result<(), String> {
-        crate::labs::flag(self.app().control.state_dir(), arugula_proto::flags::BOARDS)?;
+        crate::lab_flags::flag(self.app().control.state_dir(), arugula_proto::flags::BOARDS)?;
         if let Some(me) = self.me()
             && self.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
         {

@@ -246,7 +246,7 @@ impl McpServer {
     /// This machine's Labs flags: read on each call, so a change needs no
     /// restart.
     fn flags(&self) -> On {
-        crate::labs::flags(self.app.control.state_dir())
+        crate::lab_flags::flags(self.app.control.state_dir())
     }
 
     fn caller(&self, ctx: &RequestContext<RoleServer>) -> Caller {

@@ -676,8 +676,8 @@ async fn open_block(
     }
     // A Labs block whose flag is off here (#347): refused before anything
     // else is asked (an app block's box, of the studio).
-    if let Some(flag) = crate::labs::block_flag(req.kind) {
-        crate::labs::flag(app.control.state_dir(), flag).map_err(bad)?;
+    if let Some(flag) = crate::lab_flags::block_flag(req.kind) {
+        crate::lab_flags::flag(app.control.state_dir(), flag).map_err(bad)?;
     }
     // A studio box (M35), by its app's name: where it is, from studio.
     if req.kind == arugula_proto::BlockType::App {

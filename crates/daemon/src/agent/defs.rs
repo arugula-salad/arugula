@@ -196,7 +196,7 @@ impl Def {
         match self.agent {
             Kind::Managoat => Err(CLOUD_MIGRATION.into()),
             Kind::Acp if self.command.is_empty() => Err("an ACP agent block needs a command".into()),
-            _ if !crate::labs::BUILT && self.recipe.is_some() => Err(crate::labs::not_built("Agent recipes")),
+            _ if !crate::lab_flags::BUILT && self.recipe.is_some() => Err(crate::lab_flags::not_built("Agent recipes")),
             _ if self.recipe.is_some() && self.agent != Kind::Claude => {
                 Err("only Claude Code runs a recipe (agent: claude)".into())
             }
