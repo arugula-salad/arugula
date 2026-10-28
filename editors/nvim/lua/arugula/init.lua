@@ -446,6 +446,8 @@ connect = function()
             pid = S.pane and vim.fn.getpid() or vim.NIL,
             -- It shows Claude Code's proposed edits (diff.lua).
             diffs = true,
+            -- For Arugula's nvim key tips: those a newer nvim brought.
+            version = tostring(vim.version()),
           })
           if cur then S.sent.peek = "" end
         end

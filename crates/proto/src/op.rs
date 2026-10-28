@@ -134,6 +134,8 @@ impl Request for crate::api::KeysRequest {}
 
 impl Request for crate::api::MouseRequest {}
 
+impl Request for crate::api::NvimHelpRequest {}
+
 impl Request for crate::api::AttentionRequest {}
 
 impl Request for crate::api::PromptRequest {}
@@ -295,6 +297,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::NvimPluginInstall);
         $m!($crate::op::ops::NvimPluginGet);
         $m!($crate::op::ops::NvimPluginRemove);
+        $m!($crate::op::ops::PaneNvimHelp);
         $m!($crate::op::ops::AgentsGet);
         $m!($crate::op::ops::AgentsRefresh);
         $m!($crate::op::ops::AdaptersList);
@@ -371,7 +374,7 @@ pub mod ops {
             DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest,
             IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
             InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest,
-            NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved,
+            NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved,
             OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest,
             Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse,
             SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest,
@@ -1007,6 +1010,23 @@ pub mod ops {
         type Path = ();
         type Req = Empty;
         type Res = NvimPluginRemoved;
+    }
+
+    /// `POST /api/panes/N/nvim/help` (#1735): `:help <tag>` in the nvim
+    /// pane N runs, over its own RPC socket, with or without arugula.nvim:
+    /// nvim's key tip's button. Refused (409) when the pane runs no nvim
+    /// Arugula can reach, or nvim has no such help; the page then opens
+    /// nvim's online docs instead.
+    pub struct PaneNvimHelp;
+
+    impl Op for PaneNvimHelp {
+        const NAME: &'static str = "pane.nvim_help";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/nvim/help";
+        const ACCESS: Access = Access::Owner;
+        type Path = PaneId;
+        type Req = NvimHelpRequest;
+        type Res = Empty;
     }
 
     /// `GET /api/hosts/self/agents` (#145): the agents configured on this

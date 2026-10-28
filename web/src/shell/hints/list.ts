@@ -17,6 +17,7 @@ import { printedLink } from "./links";
 import { commandMarked } from "./marks";
 import { passkeyWanted } from "./passkeys";
 import { secondPerson } from "./people";
+import { claudeEditsBesideNvim, NVIM_HELP, nvimNotTheEditor, nvimStarted, nvimWithoutPlugin, tipCopy, tipTaken } from "./nvim-facts";
 import { listeningPort } from "./ports";
 import { secretPane } from "./private";
 import { pushWanted } from "./push";
@@ -105,8 +106,41 @@ export const HINTS: Hint[] = [
     copy: () => "See what changed beside it",
     action: { label: "Changes", command: "changes.open" },
   },
+  // nvim (#1735, ./nvim-facts): its help card the first time it runs in a pane,
+  // then its chips, seen once answered.
+  NVIM_HELP,
   {
-    // vim or nvim in a pane, or `code`, where blocks can show.
+    // nvim without arugula.nvim, which Arugula can add (#1733).
+    id: "nvim-connect",
+    place: "chip",
+    fact: nvimWithoutPlugin,
+    copy: () => "Arugula can follow this nvim and open files in it",
+    action: { label: "Add arugula.nvim", command: "nvim.install-plugin" },
+    seenOn: "answer",
+    views: { shown: "nvim-connect-shown", acted: "nvim-connect-acted", closed: "nvim-connect-dismissed" },
+  },
+  {
+    // nvim runs, and Open in editor opens something else (#1731).
+    id: "nvim-open-here",
+    place: "chip",
+    fact: nvimNotTheEditor,
+    copy: () => "Open files from Arugula in this nvim?",
+    action: { label: "Use nvim", command: "editor.use-nvim" },
+    seenOn: "answer",
+    views: { shown: "nvim-open-here-shown", acted: "nvim-open-here-acted", closed: "nvim-open-here-dismissed" },
+  },
+  {
+    // Claude Code proposes an edit while nvim is connected (#1732).
+    id: "nvim-diff",
+    place: "chip",
+    fact: claudeEditsBesideNvim,
+    copy: () => "Review Claude's edits in nvim",
+    action: { label: "Show me", command: "nvim.help-card" },
+    seenOn: "answer",
+    views: { shown: "nvim-diff-shown", acted: "nvim-diff-acted", closed: "nvim-diff-dismissed" },
+  },
+  {
+    // `code` typed in a pane, where blocks can show.
     id: "editor-beside",
     place: "chip",
     fact: editorStarted,
@@ -120,6 +154,19 @@ export const HINTS: Hint[] = [
     fact: otherHost,
     copy: () => "Split a shell on that machine into this tab",
     action: { label: (f) => `Split right on ${f.args.host}`, command: "remote.split" },
+  },
+  {
+    // A new nvim process in a pane: one key tip, every start, after the
+    // one-time hints.
+    id: "nvim-key-tip",
+    place: "chip",
+    fact: nvimStarted,
+    copy: tipCopy,
+    action: { label: (f) => `:help ${f.args.help}`, command: "nvim.help" },
+    seenOn: "answer",
+    repeat: "per-fact",
+    said: tipTaken,
+    views: { shown: "nvim-key-tip-shown", acted: "nvim-key-tip-acted", closed: "nvim-key-tip-dismissed" },
   },
   {
     // A command's first mark (shell integration). Last of the chips: any

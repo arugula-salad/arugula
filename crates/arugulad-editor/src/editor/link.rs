@@ -120,6 +120,9 @@ pub struct Hello {
     /// It shows Claude Code's proposed edits (`diff`; #1732).
     #[serde(default)]
     pub diffs: bool,
+    /// Its own version (nvim's `0.11.6`), for nvim's key tips (#1735).
+    #[serde(default)]
+    pub version: Option<String>,
 }
 
 /// One connected editor.
@@ -191,6 +194,9 @@ impl Link {
             remote: hello.remote.clone(),
             authority: hello.authority.clone(),
             hostname: hello.hostname.clone(),
+            // A terminal's editor (#1735: nvim's key tip, once per process).
+            pid: hello.pid,
+            version: hello.version.clone(),
             ..EditorInfo::default()
         };
         Arc::new(Self { hello, out, st: Mutex::new(St { info, ..St::default() }), on_peek: Mutex::new(None) })

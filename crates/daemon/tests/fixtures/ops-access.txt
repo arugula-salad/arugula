@@ -55,6 +55,7 @@ pane.followup POST /api/panes/{id}/followup Pane(Editor) drives=true credential=
 pane.inbox POST /api/panes/{id}/inbox Pane(Editor) drives=false credential=false
 pane.keys POST /api/panes/{id}/keys Pane(Editor) drives=true credential=false
 pane.mouse POST /api/panes/{id}/mouse Pane(Editor) drives=true credential=false
+pane.nvim_help POST /api/panes/{id}/nvim/help Owner drives=false credential=false
 pane.nvim_open POST /api/panes/{id}/nvim Owner drives=false credential=false
 pane.permit POST /api/panes/{id}/permit Pane(Editor) drives=false credential=false
 pane.ports GET /api/panes/{id}/ports Owner drives=false credential=false

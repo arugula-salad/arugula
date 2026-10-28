@@ -5,7 +5,7 @@
 // `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accountBackend, bigTipsOn, loadSeen, localBackend, markSeen, pref, seen, seenReady, setBigTips, setPref, setSeenBackend, setTips, tipsOn } from "../src/shared/seen.ts";
+import { accountBackend, bigTipsOn, FACTS_KEPT, loadSeen, localBackend, markSeen, markSeenFact, pref, seen, seenFact, seenReady, setBigTips, setPref, setSeenBackend, setTips, tipsOn } from "../src/shared/seen.ts";
 
 /** A Storage of our own. */
 function storage(init = {}) {
@@ -116,4 +116,23 @@ test("Big tips are on until a pane modal's opt-out, apart from Tips", async () =
   assert.equal(bigTipsOn(), true);
   await settle();
   assert.deepEqual(stored(s), {});
+});
+
+test("a repeating hint is seen per fact, keeping its last few", async () => {
+  setSeenBackend(null);
+  assert.equal(seenFact("nvim-key-tip", "3:100"), true, "not loaded yet");
+  const s = storage();
+  setSeenBackend(localBackend(s));
+  await loadSeen();
+  assert.equal(seenFact("nvim-key-tip", "3:100"), false);
+  markSeenFact("nvim-key-tip", "3:100");
+  assert.equal(seenFact("nvim-key-tip", "3:100"), true);
+  assert.equal(seenFact("nvim-key-tip", "3:101"), false, "a new nvim is a new fact");
+  for (let i = 0; i < FACTS_KEPT; i++) markSeenFact("nvim-key-tip", `4:${i}`);
+  assert.equal(seenFact("nvim-key-tip", "3:100"), false, "the oldest goes");
+  assert.equal(seenFact("nvim-key-tip", `4:${FACTS_KEPT - 1}`), true);
+  await settle();
+  const kept = stored(s)["seen:nvim-key-tip"];
+  assert.equal(kept.length, FACTS_KEPT);
+  assert.ok(JSON.stringify(kept).length <= 512, "fits a pref");
 });

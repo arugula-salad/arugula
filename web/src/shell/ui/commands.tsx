@@ -34,6 +34,7 @@ import { bigTipsOn, setBigTips, setTips, tipsOn } from "../../shared/seen";
 import { clientTarget, EDITORS, editorShown, openInEditor, setEditorPref } from "../open-in-editor";
 import { openWhatsNew } from "./whats-new";
 import { openPanel } from "../trust/common";
+import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, runsNvim, useNvim } from "../hints/nvim";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -203,6 +204,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(entry && client.mayType(id)
       ? [{ label: "Attach file…", shortcut: desktopPlatform() === "macos" ? keyHint("desktop.attach") : undefined, run: () => void client.attachFiles(id) } as MenuItem]
       : []),
+    // #1735: nvim's help card, over this pane, when nvim runs in it.
+    ...(runsNvim(info) ? [{ id: "nvim-help", label: "nvim help", run: () => openHelpCard(client, id) } as MenuItem] : []),
     ...sub("Share", share),
     // M61: the people's conversation about this pane.
     ...sub("Thread", threadItems(client, id)),
@@ -355,6 +358,8 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
       ? [
           "separator" as const,
           { label: "Getting started", run: () => openGettingStarted(undefined, client) } as MenuItem,
+          // Features' help cards, opened on purpose (Tips on or off).
+          { label: "Help", submenu: [{ id: "nvim-help", label: "nvim in Arugula", run: () => openHelpCard(client, undefined) }] } as MenuItem,
           { label: "What's new", hint: "The newest releases' headlines", run: () => void openWhatsNew(client) } as MenuItem,
           { label: "Command palette…", shortcut: keyHint("palette"), run: () => openPalette(client) } as MenuItem,
         ]
@@ -399,6 +404,12 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   "agents.notify": (client, { session }) => void client.setNotify({ session: Number(session), on: true }),
   "changes.open": (client, { pane }) => openChanges(client, Number(pane)),
   "editor.open": (client, { pane }) => openEditor(client, Number(pane)),
+  /** nvim's chips and help card (#1735, hints/nvim). */
+  "nvim.install-plugin": (client, { pane }) => void addPlugin(client, Number(pane)),
+  "editor.use-nvim": (client) => useNvim(client),
+  "nvim.help-card": (client, { pane, section }) => openHelpCard(client, Number(pane), section === undefined ? undefined : String(section)),
+  "nvim.help": (client, { pane, help }) => void openHelp(client, Number(pane), String(help)),
+  "nvim.docs": () => void window.open(NVIM_DOCS, "_blank", "noopener"),
   /** A shell on another host, split right of the pane (#17). */
   "remote.split": (client, { pane, host }) => void newRemote(client, String(host), { split: Number(pane) }),
   /** Sign-in and account, where Add a passkey is. */

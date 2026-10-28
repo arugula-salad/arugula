@@ -52,7 +52,9 @@ impl editors::Editors for Editors {
     }
 
     fn routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
-        use arugula_proto::op::ops::{IdeGet, IdeMention, IdeSet, NvimPluginGet, NvimPluginInstall, NvimPluginRemove};
+        use arugula_proto::op::ops::{
+            IdeGet, IdeMention, IdeSet, NvimPluginGet, NvimPluginInstall, NvimPluginRemove, PaneNvimHelp,
+        };
         use arugulad_base::ops::OpRoutes;
         r.route("/api/editors/vsix", axum::routing::get(editor::vsix::download))
             .op_of::<IdeGet, Editor>()
@@ -61,6 +63,7 @@ impl editors::Editors for Editors {
             .op_of::<NvimPluginInstall, Editor>()
             .op_of::<NvimPluginGet, Editor>()
             .op_of::<NvimPluginRemove, Editor>()
+            .op_of::<PaneNvimHelp, Editor>()
     }
 
     fn local_routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {

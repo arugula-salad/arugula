@@ -39,8 +39,8 @@ use std::{
 
 use arugula_proto::{
     PaneId,
-    api::{Empty, NvimPluginCopies, NvimPluginCopy, NvimPluginInstalled, NvimPluginRemoved},
-    op::ops::{NvimPluginGet, NvimPluginInstall, NvimPluginRemove},
+    api::{Empty, NvimHelpRequest, NvimPluginCopies, NvimPluginCopy, NvimPluginInstalled, NvimPluginRemoved},
+    op::ops::{NvimPluginGet, NvimPluginInstall, NvimPluginRemove, PaneNvimHelp},
 };
 use arugulad_base::ops::{Cx, Handle, OpError};
 use axum::http::StatusCode;
@@ -509,6 +509,21 @@ impl Handle<Editor> for NvimPluginRemove {
             info!(dir = %d.display(), "removed arugula.nvim");
         }
         Ok(NvimPluginRemoved { removed: removed.iter().map(|d| d.display().to_string()).collect() })
+    }
+}
+
+/// nvim's key tip's button (#1735): `:help <tag>` in the pane's nvim. It
+/// sits with the plugin's operations, though it needs no plugin.
+impl Handle<Editor> for PaneNvimHelp {
+    async fn handle(cx: &Cx<'_>, pane: PaneId, req: NvimHelpRequest) -> Result<Empty, OpError> {
+        let tag = req.tag.trim();
+        if tag.is_empty() || tag.len() > 100 || tag.contains(['\n', '\r', '|']) {
+            return Err(OpError::Status(StatusCode::BAD_REQUEST, "a :help tag is one short word".into()));
+        }
+        nvim::help_in_pane(&cx.app.mux, pane, tag).await.map(|()| Empty {}).map_err(|e| match e {
+            NoNvim::NoPane(p) => OpError::NoPane(p),
+            NoNvim::Why(why) => OpError::Status(StatusCode::CONFLICT, why),
+        })
     }
 }
 

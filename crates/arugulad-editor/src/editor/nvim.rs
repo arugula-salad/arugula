@@ -601,8 +601,15 @@ async fn session(mux: &MuxHandle, pane: PaneId, tui: u32, mut stop: oneshot::Rec
         return End::Not(format!("nvim {}.{} is older than 0.10", v.0, v.1));
     }
     let offer = super::nvim_plugin::on_connect(&rpc).await;
+    // Its server's pid and its version, as arugula.nvim's hello says them,
+    // so the pane's nvim is the same one after the plugin takes over: its
+    // key tip (#1735) shows once per nvim process.
+    let pid = rpc.lua("return vim.fn.getpid()", vec![]).await.ok().and_then(|v| v.as_u64()).map(|p| p as u32);
+    let patch = version["patch"].as_u64().unwrap_or(0);
+    let hello =
+        Hello { editor: "nvim".into(), pid, version: Some(format!("{}.{}.{patch}", v.0, v.1)), ..Hello::default() };
     let (tx, _) = mpsc::unbounded_channel();
-    let link = Link::new(Hello { editor: "nvim".into(), ..Hello::default() }, tx);
+    let link = Link::new(hello, tx);
     link.no_follow();
     if offer {
         link.offer_plugin(true);
@@ -674,6 +681,30 @@ fn apply(link: &Link, s: &Value, last: &mut Value) {
         link.handle(m);
         *last = summary;
     }
+}
+
+// ---- :help
+
+/// `:help <tag>` in an nvim, out of insert mode first; nvim's error when it
+/// has no such help.
+const HELP: &str = r#"
+local tag = ...
+if vim.fn.mode() ~= "n" then vim.cmd("stopinsert") end
+vim.cmd.help(vim.fn.escape(tag, " "))
+"#;
+
+/// Opens `:help <tag>` in the nvim terminal `pane` runs, over its own RPC
+/// socket, plugin or not: nvim's key tip's button (#1735). `Err` says why
+/// not, as [`open_in_pane`]'s does, or that nvim has no such help.
+pub async fn help_in_pane(mux: &MuxHandle, pane: PaneId, tag: &str) -> Result<(), NoNvim> {
+    let socket = pane_socket(mux, pane).await?;
+    help_at(&socket, tag).await.map_err(NoNvim::Why)
+}
+
+/// Opens `:help <tag>` in the nvim listening on `socket`.
+pub async fn help_at(socket: &Path, tag: &str) -> Result<(), String> {
+    let (rpc, _) = Rpc::connect(socket).await.map_err(|e| format!("can't reach nvim: {e}"))?;
+    rpc.lua(HELP, vec![Mp::from(tag)]).await.map(|_| ())
 }
 
 // ---- opening a file
@@ -892,6 +923,12 @@ mod tests {
                 break;
             }
         }
+        // A key tip's :help (#1735), and a tag nvim hasn't.
+        help_at(&socket, "gv").await.unwrap();
+        let (ft, file) =
+            (rpc.lua("return vim.bo.filetype", vec![]).await, rpc.lua("return vim.fn.expand('%:t')", vec![]).await);
+        assert_eq!((ft.unwrap(), file.unwrap()), (json!("help"), json!("visual.txt")));
+        assert!(help_at(&socket, "no-such-arugula-tag").await.unwrap_err().contains("E149"));
         // Quitting: it says goodbye, then the socket closes.
         let _ = rpc.lua("vim.schedule(function() vim.cmd('qa!') end)", vec![]).await;
         let mut bye = false;

@@ -40,6 +40,8 @@ evidence:
     url: "https://app.arugula.io/issues/iss_cedaab33ef116a6f060daece807933fa"
   - title: "#1737 A pane-modal tip place, with \"Don't show tips like this again\" (epic #1736, ruling 7)"
     url: "https://github.com/arugula-salad/arugula/issues/1737"
+  - title: "#1735 nvim: tips, a key-tip chip on each nvim start, and the \"nvim in Arugula\" help card (epic #1736, ruling 6)"
+    url: "https://github.com/arugula-salad/arugula/issues/1735"
 decided_by: "jhgaylor"
 decided_on: "2026-10-27"
 reviews: []
@@ -47,6 +49,9 @@ constrains:
   - "path:web/src/shell/hints/index.ts"
   - "path:web/src/shell/hints/list.ts"
   - "path:web/src/shell/hints/ports.ts"
+  - "path:web/src/shell/hints/nvim.ts"
+  - "path:web/src/shell/hints/nvim-facts.ts"
+  - "path:web/src/shell/hints/editor.ts"
   - "path:crates/mux/src/osc.rs"
   - "path:crates/mux/src/classify.rs"
   - "path:web/src/shell/ui/hints.tsx"
@@ -83,9 +88,12 @@ a tour.
 - `place`: where it renders.
 - `seenOn`: `"show"` (a chip's, a toast's, an empty state's) or
   `"answer"` (a pane modal's), below.
-- A pane modal's alone: `body(fact)`, paragraphs and lists of text and key
-  caps (`{ kbd }`), and `second`, a second button (a command, a route, or
-  only closing it).
+- `repeat: "per-fact"`: said again for each new fact, below.
+- A pane modal's alone: `body(fact)`, paragraphs, lists and headings of
+  text, key caps (`{ kbd }`) and links (`{ link, href }`), and `second`, a
+  second button (a command, a route, or only closing it). A heading with an
+  `id` is a section: a fact whose `args.section` names it opens the modal
+  scrolled to it.
 
 **Four places only:** a chip in a pane's header (`HintChip`), a toast at
 the bottom of the workspace (`HintToast`), a view's empty state
@@ -126,8 +134,29 @@ someone ignored doesn't come back either. Dismissing or acting closes it.
 A hint with `seenOn: "answer"` is seen only when it's answered (acted on,
 or closed): one hidden before that, by a tab switch or its fact going,
 shows again the next time its fact holds. Every pane modal is, since it
-asks for an answer and a tab switch shouldn't use it up; chips may opt in
-(#1735's).
+asks for an answer and a tab switch shouldn't use it up; chips may opt in,
+as nvim's do (#1735).
+
+**Repeating hints** (`repeat: "per-fact"`, #1735): the one exception to
+once. The fact carries a `key` naming which fact it is, and the hint is
+seen per key: `seen:<id>` holds the keys of the last 16 facts it was said
+for (a list, so it stays within a pref's 512 bytes), and a fact with a new
+key says it again. nvim's key tip is one: its key is the pane and its
+nvim's server pid, so each new nvim process gets a tip and a refocus, a
+tab switch or a reload doesn't. It paces like any other: it waits behind a
+higher hint and a pane modal, never shows while someone types, and Tips
+off stops it. A hint may take something when it comes on screen (`said`):
+the key tip takes its tip there, and the account's place in the tip list
+(`nvim.tips.next`, a pref beside seen) moves on, so each tip shows once
+before any repeats.
+
+**Shown from a menu** (`showHint`): a menu may show a hint on purpose, seen
+or not and with Tips or Big tips off, in place of what's on screen: nvim's
+help card from the pane menu's "nvim help" and from Help in the account
+menu. It stays while its pane is there and drawn, until it's answered;
+where nothing draws it (a phone), the menu opens the docs page instead.
+Tips off, and "Don't show tips like this again", stop a hint showing on
+its own, never a menu showing it.
 
 **Seen, per account through control, else per browser.** One store,
 `web/src/shared/seen.ts`: `seen(id)`, `markSeen(id)`, `pref`/`setPref` for
@@ -161,9 +190,11 @@ docs/telemetry.md): three views, `hint-shown`, `hint-acted` and
 four, `pane-tip-shown`, `pane-tip-acted`, `pane-tip-closed` and
 `pane-tip-opted-out`, every pane modal's together. The views are a closed
 set on the wire (`View` in `crates/control-wire/src/telemetry.rs`); a hint
-counted on its own adds its own variants and names them in its entry
-(`views`: shown, acted, closed, opted out), counted beside the shared
-ones.
+counted on its own, a chip as well as a pane modal, adds its own variants
+and names them in its entry (`views`: shown, acted, closed, and a pane
+modal's opted out), counted beside the shared ones. nvim's help card and
+chips do (`nvim-help-*`, `nvim-connect-*`, `nvim-open-here-*`,
+`nvim-diff-*`, `nvim-key-tip-*`).
 
 **Facts from the daemon, or the client's alone:**
 - *A port listening in a pane* (the example, `port-listening`): no daemon
@@ -203,7 +234,21 @@ ones.
   HEAD is at, read from the files with the branch
   (`crates/mux/src/classify.rs`, read afresh when a command ends); the
   client remembers each pane's from when it first saw it, typing or not,
-  and the fact holds once either moved.
+  and the fact holds once either moved. `code` as the last command line
+  says the editor hint; vim or nvim in the pane never does (#1735).
+- nvim (#1735, `web/src/shell/hints/nvim-facts.ts`, its actions in
+  `nvim.ts`): the daemon's. A pane runs nvim when its foreground command
+  is nvim or the daemon reads an nvim there (`PaneInfo.editor`, #1730),
+  which also says its server's pid and its version, and `offer_plugin`
+  when arugula.nvim could be added (#1733). The help card's fact is the
+  first nvim pane of the shown tab; `nvim-connect`'s, an nvim offered the
+  plugin on this host; `nvim-open-here`'s, an nvim the daemon reads while
+  the Editor preference (#1731, `shell/open-in-editor.ts`) isn't nvim;
+  `nvim-diff`'s, a pane of the tab with Claude Code's edit waiting
+  (`PaneInfo.diff`) beside an nvim the daemon reads; the key tip's, a pane
+  whose nvim has a pid. Its button runs `:help <tag>` in that nvim
+  (`pane.nvim_help`, over nvim's RPC socket), else opens the tag's page in
+  nvim's online docs.
 
 **Under a test runner** (`navigator.webdriver`) hints keep quiet unless the
 page sets `window.__arugulaHints`, as telemetry's ask does: a toast would
@@ -219,4 +264,4 @@ Where: `web/src/shell/hints/` (the registry, the engine, a module per fact),
 `covers`), `web/src/shell/ui/commands.tsx` (`COMMANDS`, *Tips*, *Big tips*),
 `web/src/shared/seen.ts`, `web/src/shell/main.tsx` (which store),
 `crates/control/src/prefs.rs` and `db.rs` (`account_prefs`).
-From: Discovery 0, Arugula #241 (part of #238); Discovery 3, 4, 5 and 11 add entries; #1737 the pane modal.
+From: Discovery 0, Arugula #241 (part of #238); Discovery 3, 4, 5 and 11 add entries; #1737 the pane modal; #1735 repeating hints, menus that show one, and nvim's.

@@ -63,15 +63,29 @@ export function HintEmpty({ client }: { client: Client }) {
  * by a computer's pane slots only, never a phone's. */
 export function HintPaneModal({ client, pane }: { client: Client; pane: PaneId }) {
   const s = useHint("pane-modal", pane);
-  return s ? <PaneModal key={s.hint.id} client={client} pane={pane} hint={s.hint} fact={s.fact} /> : null;
+  return s ? <PaneModal key={s.hint.id} client={client} pane={pane} hint={s.hint} fact={s.fact} asked={!!s.asked} /> : null;
 }
 
 function Text({ line }: { line: Line }) {
   if (typeof line === "string") return <>{line}</>;
-  return <>{line.map((x) => (typeof x === "string" ? x : <kbd>{x.kbd}</kbd>))}</>;
+  return (
+    <>
+      {line.map((x) =>
+        typeof x === "string" ? (
+          x
+        ) : "kbd" in x ? (
+          <kbd>{x.kbd}</kbd>
+        ) : (
+          <a href={x.href} target="_blank" rel="noopener">
+            {x.link}
+          </a>
+        ),
+      )}
+    </>
+  );
 }
 
-function PaneModal({ client, pane, hint, fact }: { client: Client; pane: PaneId; hint: Hint; fact: Fact }) {
+function PaneModal({ client, pane, hint, fact, asked }: { client: Client; pane: PaneId; hint: Hint; fact: Fact; asked: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [never, setNever] = useState(false);
   const optOut = useRef(never);
@@ -90,6 +104,14 @@ function PaneModal({ client, pane, hint, fact }: { client: Client; pane: PaneId;
     },
     [],
   );
+  // Opened at a section (nvim's help card at Claude's edits): scrolled to it.
+  // Opened on purpose (a menu, a chip's button): the keys come in, wherever
+  // they were, so Escape closes it.
+  const section = fact.args.section;
+  useLayoutEffect(() => {
+    if (section) ref.current?.querySelector(`[data-tip-section="${section}"]`)?.scrollIntoView({ block: "start" });
+    if (asked) ref.current?.focus({ preventScroll: true });
+  }, [section]);
   const title = `pane-tip-title-${pane}`;
   return (
     <div
@@ -111,7 +133,9 @@ function PaneModal({ client, pane, hint, fact }: { client: Client; pane: PaneId;
         </button>
         <h2 id={title}>{hint.copy(fact)}</h2>
         {hint.body?.(fact).map((b) =>
-          typeof b === "object" && !Array.isArray(b) ? (
+          typeof b === "object" && !Array.isArray(b) && "heading" in b ? (
+            <h3 data-tip-section={b.id}>{b.heading}</h3>
+          ) : typeof b === "object" && !Array.isArray(b) ? (
             <ul>
               {b.list.map((l) => (
                 <li>

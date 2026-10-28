@@ -1206,6 +1206,16 @@ pub struct EditorInfo {
     /// `nvim_plugin.install` for the pane.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub offer_plugin: bool,
+    /// The editor's process, when it runs in a terminal pane: nvim's
+    /// server pid (`vim.fn.getpid()`), the same over its socket (#1730) and
+    /// from arugula.nvim. A new one is a new nvim, which is what nvim's key
+    /// tip (#1735) shows on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    /// Its version, when it says (nvim's `0.11.6`): nvim's key tips that
+    /// need a newer nvim aren't shown to an older one (#1735).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 /// Diagnostic counts: errors, warnings, information.

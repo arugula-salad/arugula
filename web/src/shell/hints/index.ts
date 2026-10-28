@@ -8,12 +8,15 @@
 // seen (shared/seen: per account through control, else per browser) when
 // it's shown, or, with `seenOn: "answer"` (every pane modal's), when it's
 // answered: acted on or closed. Seen, it never comes back; on screen, it
-// stays until it's answered or its fact goes. The Tips switch hides them
-// all; Big tips, pane modals alone.
+// stays until it's answered or its fact goes. A hint with `repeat:
+// "per-fact"` is seen per fact instead (each fact's `key`): said again for
+// each new one, as nvim's key tip is on every nvim start. A menu can show
+// one on purpose (`showHint`), seen or not, Tips on or off. The Tips
+// switch hides them all; Big tips, pane modals alone.
 
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
-import { bigTipsOn, markSeen, seen, seenReady, setBigTips, subscribeSeen, tipsOn } from "../../shared/seen";
+import { bigTipsOn, markSeen, markSeenFact, seen, seenFact, seenReady, setBigTips, subscribeSeen, tipsOn } from "../../shared/seen";
 import { countView, type View } from "../../shared/telemetry";
 import { dialogUp, subscribeDialogs } from "../../shared/ui/modal";
 import { COMMANDS } from "../ui/commands";
@@ -29,14 +32,19 @@ export type Place = "chip" | "toast" | "empty" | "pane-modal";
 export interface Fact {
   pane?: PaneId;
   args: Record<string, string | number>;
+  /** A repeating hint's: which fact this is (nvim's key tip: the pane and
+   * its nvim's pid), what it's seen for. */
+  key?: string;
 }
 
-/** Text in a pane modal's body: words, or a key cap (`kbd`). */
-export type Inline = string | { kbd: string };
+/** Text in a pane modal's body: words, a key cap (`kbd`), or a link (it
+ * opens in a new tab). */
+export type Inline = string | { kbd: string } | { link: string; href: string };
 /** A paragraph, or a list's item. */
 export type Line = string | Inline[];
-/** A pane modal's body is paragraphs and lists. */
-export type TipBlock = Line | { list: Line[] };
+/** A pane modal's body is paragraphs, lists and headings. A heading with
+ * an `id` is a section a fact can open the modal at (`args.section`). */
+export type TipBlock = Line | { list: Line[] } | { heading: string; id?: string };
 
 /** What a button does: a command of `COMMANDS` (ui/commands), given the
  * fact's args, or a route (`#swarm`). Its label can name the fact's
@@ -63,13 +71,22 @@ export interface Hint {
    * answered (a pane modal's): one hidden before that (a tab switch, the
    * fact gone) comes back the next time its fact holds. */
   seenOn?: "show" | "answer";
-  /** Its own usage counts, beside every pane modal's together: views
-   * added to `View` for this hint (control-wire's telemetry.rs). */
-  views?: { shown: View; acted: View; closed: View; optedOut: View };
+  /** `"per-fact"`: seen per fact, not once: its fact carries a `key`, and
+   * a fact with a new key says it again (nvim's key tip, a new nvim
+   * process each time). Unset: once, for good. */
+  repeat?: "per-fact";
+  /** Told each time it comes on screen (again, after a tab switch): nvim's
+   * key tip takes its tip for a fact the first time. */
+  said?: (f: Fact) => void;
+  /** Its own usage counts, beside every hint's (or every pane modal's)
+   * together: views added to `View` for this hint (control-wire's
+   * telemetry.rs). Opted out is a pane modal's alone. */
+  views?: { shown: View; acted: View; closed: View; optedOut?: View };
 }
 
-/** The one on screen, and its fact as of now. */
-let shown: { hint: Hint; fact: Fact } | null = null;
+/** The one on screen, and its fact as of now. `asked`: a menu showed it
+ * (`showHint`), so neither seen nor Tips keep it off. */
+let shown: { hint: Hint; fact: Fact; asked?: boolean } | null = null;
 let lastKey = 0;
 /** Typing in the page holds new hints back this long after the last key. */
 export const TYPING_MS = 1500;
@@ -85,6 +102,12 @@ export function subscribeHints(fn: () => void) {
 
 const modal = (h: Hint) => h.place === "pane-modal";
 const seenOnAnswer = (h: Hint) => (h.seenOn ?? (modal(h) ? "answer" : "show")) === "answer";
+/** Said already: for good, or for this fact (a repeating hint's). */
+const saidAlready = (h: Hint, f: Fact) => (h.repeat === "per-fact" ? f.key === undefined || seenFact(h.id, f.key) : seen(h.id));
+function markSaid(h: Hint, f: Fact) {
+  if (h.repeat !== "per-fact") markSeen(h.id);
+  else if (f.key !== undefined) markSeenFact(h.id, f.key);
+}
 
 /** Someone types: in this page lately, or (the daemon says) someone else
  * in a pane. This person's own keys are the page's: the daemon's `typing`
@@ -140,22 +163,29 @@ function may(client: Client, hint: Hint, fact: Fact): boolean {
  * first unseen one whose fact does. */
 export function evaluate(client: Client, list: Hint[] = HINTS) {
   const was = shown;
-  if (!seenReady() || !tipsOn() || !client.state || quiet()) shown = null;
+  if (shown?.asked) {
+    // A menu's: while its pane is there and drawn.
+    const f = shown.fact;
+    if (!client.state || (f.pane !== undefined && !client.info(f.pane)) || !mounted.has(placeOf(shown.hint, f))) shown = null;
+  } else if (!seenReady() || !tipsOn() || !client.state || quiet()) shown = null;
   else if (shown) {
     const fact = shown.hint.fact(client);
     shown = fact && may(client, shown.hint, fact) ? { hint: shown.hint, fact } : null;
+    // Another fact of a repeating hint: it's said anew, below.
+    if (shown?.hint.repeat === "per-fact" && shown.fact.key !== was?.fact.key) shown = null;
     // The same as it was: nothing to draw again.
     if (was && shown && JSON.stringify(was.fact) === JSON.stringify(shown.fact)) shown = was;
   }
   if (!shown && seenReady() && tipsOn() && client.state && !quiet() && !typing(client)) {
     for (const hint of list === HINTS ? [...testHints(), ...HINTS] : list) {
-      if (seen(hint.id)) continue;
+      if (hint.repeat !== "per-fact" && seen(hint.id)) continue;
       // A big tip never opens under a dialog over the window.
       if (modal(hint) && dialogUp()) continue;
       const fact = hint.fact(client);
-      if (!fact || !may(client, hint, fact)) continue;
+      if (!fact || saidAlready(hint, fact) || !may(client, hint, fact)) continue;
       shown = { hint, fact };
-      if (!seenOnAnswer(hint)) markSeen(hint.id);
+      if (!seenOnAnswer(hint)) markSaid(hint, fact);
+      hint.said?.(fact);
       count(hint, "shown");
       break;
     }
@@ -163,22 +193,32 @@ export function evaluate(client: Client, list: Hint[] = HINTS) {
   if (shown !== was) changed();
 }
 
+/** Show `hint` with `fact` now, from a menu (nvim's help card from the pane
+ * menu or Help): seen or not, Tips on or off, in place of whatever was on
+ * screen. Says false when nothing draws it there (a phone draws no pane
+ * modals): the caller does something else. */
+export function showHint(client: Client, hint: Hint, fact: Fact): boolean {
+  if (!client.state || !mounted.has(placeOf(hint, fact))) return false;
+  shown = { hint, fact, asked: true };
+  count(hint, "shown");
+  changed();
+  return true;
+}
+
 /** Counted (opt-in, shared/telemetry): a chip's or a toast's among every
  * hint's, a pane modal's among every pane modal's and, when it names its
  * own, on its own. */
 function count(h: Hint, what: "shown" | "acted" | "closed" | "optedOut") {
-  if (!modal(h)) {
-    countView(what === "shown" ? "hint-shown" : what === "acted" ? "hint-acted" : "hint-dismissed");
-    return;
-  }
-  countView(what === "optedOut" ? "pane-tip-opted-out" : `pane-tip-${what}`);
-  if (h.views) countView(h.views[what]);
+  if (!modal(h)) countView(what === "shown" ? "hint-shown" : what === "acted" ? "hint-acted" : "hint-dismissed");
+  else countView(what === "optedOut" ? "pane-tip-opted-out" : `pane-tip-${what}`);
+  const own = h.views?.[what];
+  if (own) countView(own);
 }
 
 /** Answered (acted on, or closed): seen now if it's seen on answer; with
  * `optOut` ("Don't show tips like this again"), Big tips go off. */
-function answer(s: { hint: Hint }, how: "acted" | "closed", optOut: boolean) {
-  if (seenOnAnswer(s.hint)) markSeen(s.hint.id);
+function answer(s: { hint: Hint; fact: Fact }, how: "acted" | "closed", optOut: boolean) {
+  if (seenOnAnswer(s.hint)) markSaid(s.hint, s.fact);
   count(s.hint, how);
   if (optOut && modal(s.hint)) {
     setBigTips(false);

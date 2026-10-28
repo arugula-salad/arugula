@@ -56,6 +56,7 @@
 //! | POST | `/api/ide/mention` | `IdeMentionRequest` | `IdeMentioned` |
 //! | POST | `/api/panes/N/nvim-plugin` | | `NvimPluginInstalled`: arugula.nvim installed into the nvim the pane runs, loaded and joined (#1733; the owner's) |
 //! | GET, DELETE | `/api/nvim-plugin` | | `NvimPluginCopies` (DELETE: `NvimPluginRemoved`): the copies of arugula.nvim Arugula installed here; DELETE removes them (#1733; the owner's) |
+//! | POST | `/api/panes/N/nvim/help` | `NvimHelpRequest` | `Empty`: `:help TAG` in the nvim the pane runs (#1735; the owner's) |
 //! | GET, DELETE | `/api/rules`, `/api/rules/N` | | `Rules` (DELETE: `Empty`): the standing permission rules (#166; the owner's) |
 //! | GET | `/api/panes/N/diff` | | `PaneDiff`: the edit its diff card shows (M28) |
 //! | GET | `/api/sessions/N/secrets` | | `[SecretFinding]`: panes whose recent output looks like it holds a secret |
@@ -1605,6 +1606,14 @@ pub struct NvimPluginCopy {
     pub dir: String,
     /// The version stamp its marker file says.
     pub version: String,
+}
+
+/// `POST /api/panes/N/nvim/help` (#1735): the `:help` tag to open in the
+/// pane's nvim, exactly as `:help` takes it (`gv`, `CTRL-O`, `]<Space>`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NvimHelpRequest {
+    pub tag: String,
 }
 
 /// `DELETE /api/nvim-plugin` (#1733): the copies Arugula installed that
