@@ -59,13 +59,31 @@ async fn one_list_of_issues_prs_and_runs_per_reader() {
             .await;
     assert_eq!(s, 200, "{native}");
     let native = native["id"].as_str().unwrap().to_owned();
+    // Assigned to bob and to an account that is gone; and exported to
+    // acme/site as #5, whose mirror row (fi_a5) is there too.
+    app.db
+        .c()
+        .execute(
+            "UPDATE issues SET assignees = '[\"bob\", \"gone\"]', github_repo = 'acme/site', github_repo_id = 88,
+                 github_number = 5 WHERE id = ?1",
+            params![native],
+        )
+        .unwrap();
 
     // bob reads the private repo too: everything, newest first (the native
     // issue was just made).
     let (s, all) = work(&base, "bob", &team, "").await;
     assert_eq!(s, 200);
-    assert_eq!(ids(&all), [&native, "fi_a1", "fi_a4", "run_1", "fi_a2", "fi_a3", "fi_a5", "fi_a6"], "{all:?}");
-    assert_eq!((all[0]["source"].as_str(), all[0]["assignees"].clone()), (Some("native"), json!([])));
+    assert_eq!(
+        ids(&all),
+        [&native, "fi_a1", "fi_a4", "run_1", "fi_a2", "fi_a3", "fi_a6"],
+        "an exported issue is listed once: {all:?}"
+    );
+    assert_eq!(
+        (all[0]["source"].as_str(), all[0]["assignees"].clone()),
+        (Some("native"), json!(["bob", "someone who left"])),
+        "a native issue's assignees are named"
+    );
     assert_eq!(
         (all[1]["source"].as_str(), all[1]["kind"].as_str(), all[1]["repo"].as_str(), all[1]["number"].as_u64()),
         (Some("github"), Some("pr"), Some("acme/app"), Some(1))
@@ -77,7 +95,7 @@ async fn one_list_of_issues_prs_and_runs_per_reader() {
     // carol has no GitHub: acme/app's items are not hers.
     let (s, carol) = work(&base, "carol", &team, "").await;
     assert_eq!(s, 200);
-    assert_eq!(ids(&carol), [&native, "run_1", "fi_a2", "fi_a3", "fi_a5", "fi_a6"], "{carol:?}");
+    assert_eq!(ids(&carol), [&native, "run_1", "fi_a2", "fi_a3", "fi_a6"], "{carol:?}");
 
     // kind, q and limit.
     let (_, prs) = work(&base, "bob", &team, "?kind=pr").await;
@@ -126,6 +144,23 @@ async fn untriaged_is_open_issues_no_board_of_this_project_points_at() {
     let (_, b) =
         call(&base, "bob", "POST", &format!("/api/projects/{team}/issues"), Some(json!({ "title": "Loose" }))).await;
     let (a, b) = (a["id"].as_str().unwrap().to_owned(), b["id"].as_str().unwrap().to_owned());
+
+    // `a` was exported to acme/site as #7, and its mirror row is there: one
+    // piece of work, so the copy is off the inbox with `a`.
+    {
+        let c = app.db.c();
+        c.execute(
+            "INSERT INTO forge_items (id, repo_id, number, kind, state, title, created_at, updated_at, synced_at)
+             VALUES ('fi_a7', 88, 7, 'issue', 'open', 'fi_a7', 1, 3, 1)",
+            params![],
+        )
+        .unwrap();
+        c.execute(
+            "UPDATE issues SET github_repo = 'acme/site', github_repo_id = 88, github_number = 7 WHERE id = ?1",
+            params![a],
+        )
+        .unwrap();
+    }
 
     // Nothing on a board: every open issue, and no PR or run.
     let (s, v) = work(&base, "bob", &team, "?untriaged=true").await;
