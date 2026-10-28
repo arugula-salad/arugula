@@ -125,6 +125,9 @@ enum Scope {
     /// default branch's, as every session's do once main changed CI after
     /// it began (aru-115, amended 2026-10-26).
     SessionPush,
+    /// An agent session's clone of a linked repo no box's setup cloned
+    /// (Fleet 6): one repository's contents, read.
+    SessionClone,
 }
 
 /// What a deploy's run's token may do on its one repository (M219–M233).
@@ -182,6 +185,7 @@ impl Scope {
                 json!({ "metadata": "read", "contents": "write", "pull_requests": "write", "workflows": "write" })
             }
             Scope::SessionPush => json!({ "metadata": "read", "contents": "write", "workflows": "write" }),
+            Scope::SessionClone => json!({ "metadata": "read", "contents": "read" }),
             Scope::Send(Writes::Issues) => json!({ "metadata": "read", "issues": "write" }),
             Scope::Send(Writes::PullRequests) => json!({ "metadata": "read", "pull_requests": "write" }),
             Scope::Send(Writes::Both) => json!({ "metadata": "read", "issues": "write", "pull_requests": "write" }),
@@ -198,6 +202,7 @@ impl Scope {
             Scope::DeployPull => "deploy:contents+pull_requests",
             Scope::DeployScaffold => "deploy:contents+pull_requests+workflows",
             Scope::SessionPush => "session:push",
+            Scope::SessionClone => "session:clone",
             Scope::Send(Writes::Issues) => "send:issues",
             Scope::Send(Writes::PullRequests) => "send:pull_requests",
             Scope::Send(Writes::Both) => "send:issues+pull_requests",
@@ -669,6 +674,18 @@ impl GithubApp {
         repo: Repo<'_>,
     ) -> anyhow::Result<(String, String)> {
         let (secret, expires_at, _) = self.mint(c, install, repo, Scope::SessionPush).await?;
+        Ok((secret, expires_at))
+    }
+
+    /// A token an agent session's box clones its repo with (Fleet 6): that
+    /// repo's contents, read, minted now for that clone.
+    pub async fn session_clone_token(
+        &self,
+        c: &Caller<'_>,
+        install: u64,
+        repo: Repo<'_>,
+    ) -> anyhow::Result<(String, String)> {
+        let (secret, expires_at, _) = self.mint(c, install, repo, Scope::SessionClone).await?;
         Ok((secret, expires_at))
     }
 

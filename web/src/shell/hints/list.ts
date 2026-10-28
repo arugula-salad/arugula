@@ -5,14 +5,22 @@
 
 import type { Hint } from "./index";
 import { keyHint } from "../ui/keys";
+import { sharedAgents } from "./agents-notify";
 import { pathOffered } from "./attach";
 import { cdTyped } from "./cd";
+import { repoMoved } from "./changes";
 import { conversationHere } from "./conversations";
 import { docOpen } from "./docs";
+import { editorStarted } from "./editor";
+import { otherHost } from "./hosts";
 import { printedLink } from "./links";
+import { commandMarked } from "./marks";
+import { passkeyWanted } from "./passkeys";
 import { secondPerson } from "./people";
 import { listeningPort } from "./ports";
+import { secretPane } from "./private";
 import { pushWanted } from "./push";
+import { pushOnControl } from "./push-kinds";
 import { restoredPane } from "./restart";
 import { smallTeam } from "./teams";
 
@@ -82,6 +90,47 @@ export const HINTS: Hint[] = [
     action: { label: "Notify this device", command: "push.enable" },
   },
   {
+    // The Share dialog warned that a pane may show secrets.
+    id: "private-pane",
+    place: "chip",
+    fact: secretPane,
+    copy: () => "Make this pane private: nobody you share with sees it",
+    action: { label: "Private…", command: "pane.private" },
+  },
+  {
+    // A commit or a checkout in a pane.
+    id: "repo-changes",
+    place: "chip",
+    fact: repoMoved,
+    copy: () => "See what changed beside it",
+    action: { label: "Changes", command: "changes.open" },
+  },
+  {
+    // vim or nvim in a pane, or `code`, where blocks can show.
+    id: "editor-beside",
+    place: "chip",
+    fact: editorStarted,
+    copy: () => "Open the editor beside it",
+    action: { label: "Open in editor", command: "editor.open" },
+  },
+  {
+    // Another machine in the host menu.
+    id: "remote-split",
+    place: "chip",
+    fact: otherHost,
+    copy: () => "Split a shell on that machine into this tab",
+    action: { label: (f) => `Split right on ${f.args.host}`, command: "remote.split" },
+  },
+  {
+    // A command's first mark (shell integration). Last of the chips: any
+    // command makes one.
+    id: "command-mark",
+    place: "chip",
+    fact: commandMarked,
+    copy: () => "Right-click the mark: copy its output, run it again",
+    action: { label: "Show its menu", command: "mark.menu" },
+  },
+  {
     // A team made, or its second member in.
     id: "team-invite",
     place: "toast",
@@ -96,5 +145,29 @@ export const HINTS: Hint[] = [
     fact: conversationHere,
     copy: () => "Pick up a Claude Code conversation here",
     action: { label: "Claude Code conversations…", command: "conversations.pick" },
+  },
+  {
+    // This device's push on, through control.
+    id: "push-kinds",
+    place: "toast",
+    fact: pushOnControl,
+    copy: () => "Choose what to be told about: chat, machines, projects",
+    action: { label: "Notifications…", command: "push.kinds" },
+  },
+  {
+    // A shared session with agents in it, for a guest or a teammate.
+    id: "agents-notify",
+    place: "toast",
+    fact: sharedAgents,
+    copy: () => "Get told when its agents need someone",
+    action: { label: "Notify me about its agents", command: "agents.notify" },
+  },
+  {
+    // A GitHub-only account, on a device that can make a passkey.
+    id: "add-passkey",
+    place: "toast",
+    fact: passkeyWanted,
+    copy: () => "Add a passkey: sign in without GitHub",
+    action: { label: "Passkeys…", command: "control.passkeys" },
   },
 ];

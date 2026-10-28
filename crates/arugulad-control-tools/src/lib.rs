@@ -5,14 +5,15 @@
 //! native issues (`issue_write`, M200), status boards (`board_read`,
 //! `board_write`), runs (`start_run`, `read_run`, M216), deploys
 //! (`plan_deploy`, `read_deploy`, M252) and agent sessions
-//! (`session_start`, `session_reply`, aru-121), with `list`'s kinds
-//! `cloud_workspaces`, `cloud_tabs`, `linked_repos` and `threads`.
+//! (`session_start`, `session_reply`, aru-121; `read_session`, Fleet 5),
+//! with `list`'s kinds `cloud_workspaces`, `cloud_tabs`, `linked_repos`,
+//! `threads` and `sessions`.
 //!
 //! Each call is a route on control's platform signed with this machine's
 //! key; nothing is kept here. They're registered into the base's tool list
 //! where they were (`mcp::registry`), and tell the base what it asks of
 //! them ([`ControlTools`]): whether they reach control from here, for
-//! `capabilities` and the card, and `wait` on a run. Reading a native
+//! `capabilities` and the card, and `wait` on a run or on sessions. Reading a native
 //! issue stays the base's (`mcp::issues`), since `read_forge` does it too.
 //!
 //! This is the crate `arugulad-control-tools` (#232): the binary calls
@@ -56,7 +57,7 @@ use crate::{
 pub fn register() {
     /// What a tool is listed after, its row and its call.
     type Listed = (&'static str, fn() -> Def, registry::Run);
-    let tools: [Listed; 17] = [
+    let tools: [Listed; 18] = [
         ("draft", forge_read_def, run_forge_read),
         ("forge_read", forge_draft_def, run_forge_draft),
         ("device_call", read_cloud_def, run_read_cloud),
@@ -74,15 +75,17 @@ pub fn register() {
         (deploys::PLAN_TOOL, read_deploy_def, run_read_deploy),
         (deploys::READ_TOOL, session_start_def, run_session_start),
         (agent_sessions::START_TOOL, session_reply_def, run_session_reply),
+        (agent_sessions::REPLY_TOOL, read_session_def, run_read_session),
     ];
     for (after, def, run) in tools {
         registry::tool(registry::Tool { after: Some(after), def, run });
     }
-    let kinds: [(&'static str, &'static crate::mcp::tools::Kind, registry::Run); 4] = [
+    let kinds: [(&'static str, &'static crate::mcp::tools::Kind, registry::Run); 5] = [
         ("agents", &cloud::LIST_WORKSPACES, run_list_cloud_workspaces),
         ("cloud_workspaces", &cloud::LIST_TABS, run_list_cloud_tabs),
         ("cloud_tabs", &repos::LIST_LINKED, run_list_linked_repos),
         ("linked_repos", &threads::LIST, run_list_threads),
+        ("threads", &agent_sessions::LIST, run_list_sessions),
     ];
     for (after, kind, run) in kinds {
         registry::kind(registry::ToolKind { tool: "list", after: Some(after), kind, run });
@@ -108,6 +111,10 @@ impl ControlTools for Reach {
 
     fn wait_run<'a>(&'a self, call: &'a Call<'a>, run: &'a str, limit: Duration) -> BoxFuture<'a, Out> {
         Box::pin(runs::wait_run(call, run, limit))
+    }
+
+    fn wait_sessions<'a>(&'a self, call: &'a Call<'a>, ids: &'a str, limit: Duration) -> BoxFuture<'a, Out> {
+        Box::pin(agent_sessions::wait_sessions(call, ids, limit))
     }
 }
 
@@ -170,6 +177,8 @@ one!(run_plan_deploy, deploys::plan_deploy);
 one!(run_read_deploy, deploys::read_deploy);
 one!(run_session_start, agent_sessions::session_start);
 one!(run_session_reply, agent_sessions::session_reply);
+one!(run_read_session, agent_sessions::read_session);
+one!(run_list_sessions, agent_sessions::list_sessions);
 no_args!(run_list_cloud_workspaces, cloud::list_cloud_workspaces);
 one!(run_list_cloud_tabs, cloud::list_cloud_tabs);
 one!(run_list_linked_repos, repos::list_linked_repos);
@@ -486,5 +495,26 @@ fn session_reply_def() -> Def {
         flag: None,
         output: None,
         human: Human::In(agent_sessions::START_TOOL),
+    }
+}
+
+// Fleet 5: following a wave of them.
+fn read_session_def() -> Def {
+    Def {
+        name: agent_sessions::READ_TOOL,
+        title: "Read an agent session",
+        description: agent_sessions::READ_DESCRIPTION,
+        args: Args::One(schema_for_type::<agent_sessions::ReadSessionArgs>),
+        read_only: true,
+        destructive: false,
+        idempotent: true,
+        open_world: true,
+        flag: None,
+        output: None,
+        human: line(
+            "follow a wave of agent sessions: which are done, their branches, and what each said",
+            "Wait for the sessions on #262's issues and tell me what each one did.",
+            Needs::Control,
+        ),
     }
 }

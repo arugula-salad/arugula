@@ -240,6 +240,9 @@ pub enum Until {
     Idle,
     /// It asks for you: an agent's approval or question.
     NeedsInput,
+    /// An agent session in Arugula control (session) finished its turn,
+    /// waits on a person, or ended.
+    Done,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -267,6 +270,10 @@ pub struct WaitArgs {
     /// it ends (until command_end).
     #[serde(default)]
     pub run: Option<String>,
+    /// Or agent sessions in Arugula control (ses_…, several separated by
+    /// spaces), not pane: until done, when any of them finishes its turn.
+    #[serde(default)]
+    pub session: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema, Default)]
@@ -1197,7 +1204,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Or agent sessions in Arugula control (session: ses_… ids, not pane) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -2598,6 +2605,19 @@ impl<'a> Call<'a> {
     }
 
     async fn wait(&self, a: WaitArgs) -> Out {
+        // Fleet 5: agent sessions, in control.
+        if let Some(ses) = &a.session {
+            if a.pane.is_some() || a.tab.is_some() || a.cloud_workspace.is_some() || a.run.is_some() {
+                return Err("give a pane, a Cloud workspace's tab, a run, or sessions: one of them".into());
+            }
+            if !matches!(a.until, Until::Done | Until::Idle) {
+                return Err("a session waits until its turn is done: until done".into());
+            }
+            return super::registry::wait_sessions(self, ses, Self::limit(a.timeout)).await;
+        }
+        if matches!(a.until, Until::Done) {
+            return Err("until done is for sessions (session: ses_…); a pane waits until idle or command_end".into());
+        }
         // M216: a run, in control.
         if let Some(run) = &a.run {
             if a.pane.is_some() || a.tab.is_some() || a.cloud_workspace.is_some() {
@@ -2638,6 +2658,7 @@ impl<'a> Call<'a> {
             Until::Match => "match",
             Until::Idle => "idle",
             Until::NeedsInput => "needs-input",
+            Until::Done => unreachable!("refused above"),
         };
         if p.info.kind != BlockType::Terminal && !matches!(until, "idle" | "needs-input") {
             return Err(format!("%{pane} is an agent or browser block: wait until idle or needs_input"));
@@ -3756,7 +3777,7 @@ fn seconds(s: &str) -> Result<u64, String> {
     Ok(n * mult)
 }
 
-fn ago(ms: u64) -> String {
+pub fn ago(ms: u64) -> String {
     let secs = now_ms().saturating_sub(ms) / 1000;
     match secs {
         0..60 => format!("{secs}s ago"),

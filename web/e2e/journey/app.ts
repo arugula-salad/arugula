@@ -23,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { resolve } from "node:path";
 import type { BrowserContext, Page, Route } from "@playwright/test";
-import { asPerson, closeControlGreeting, type Person } from "./world";
+import { asPerson, skipControlGreeting, type Person } from "./world";
 
 /** The app's own pages (cloud.rs `app_url`, as on Windows: a URL the
  * window can load; macOS uses tauri://localhost). */
@@ -61,7 +61,7 @@ export class App {
     const app = new App(person, ctx);
     await app.read();
     await ctx.addInitScript(asPerson);
-    closeControlGreeting(ctx, () => person.world.control);
+    skipControlGreeting(ctx, () => person.world.control);
     await ctx.addInitScript(
       ({ name, control }) => {
         Object.assign(window, {

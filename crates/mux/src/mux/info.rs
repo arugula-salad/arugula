@@ -184,11 +184,13 @@ impl Daemon {
             && !self.hooked.contains(&p.id)
             && command.as_deref().and_then(agent_in).as_deref() == Some("claude");
         let project = cwd.as_deref().and_then(crate::classify::project);
+        let head = project.as_ref().and_then(|p| crate::classify::head(&p.root));
         PaneInfo {
             resumes,
             id: p.id,
             epoch: p.epoch,
-            branch: project.as_ref().and_then(|p| crate::classify::branch(&p.root)),
+            branch: head.as_ref().map(|h| h.branch.clone()),
+            head: head.and_then(|h| h.commit),
             project,
             cwd,
             command,
@@ -242,6 +244,7 @@ impl Daemon {
             id,
             epoch: 0,
             branch: s.project.as_ref().and_then(|p| crate::classify::branch(&p.root)),
+            head: None,
             project: s.project,
             cwd: s.cwd,
             file: s.file,

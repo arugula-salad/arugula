@@ -12,7 +12,9 @@
 // be cards, with Set up: the same one click (`POST
 // /api/setup/agents/claude`, which installs the hooks too). A one-off for
 // now, kept apart so it can move into the hints when they come. The bell's
-// empty drawer offers the same Set up (`setUpClaude`).
+// empty drawer offers the same Set up (`setUpClaude`). Or the plugin
+// shows Claude Code's plugin's two `/plugin` lines under it, the other way
+// to the hooks (Discovery 10).
 
 import { opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
@@ -20,6 +22,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { adapterReady, type Adapter } from "./adapter";
 import { openGettingStarted } from "./welcome";
+import { ClaudePlugin } from "./claude-plugin";
 
 const SAID_KEY = "arugula.agents-nudge";
 
@@ -159,6 +162,7 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
   const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
+  const [plugin, setPlugin] = useState(false);
   useEffect(() => {
     if (!wants) return;
     let live = true;
@@ -183,6 +187,11 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
           {busy ? "Setting up…" : "Set up"}
         </button>
       )}
+      {!said && (
+        <button class="link" aria-expanded={plugin} onClick={() => setPlugin(!plugin)} data-hooks-chip-plugin>
+          Or the plugin
+        </button>
+      )}
       {said && !said.ok && (
         <button class="link" onClick={() => openGettingStarted("agents", client)}>
           Getting started…
@@ -201,6 +210,7 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
       >
         ✕
       </button>
+      {plugin && !said && <ClaudePlugin lead="Claude Code's plugin brings the hooks and Arugula's tools. In Claude Code, then start it again here:" />}
     </div>
   );
 }

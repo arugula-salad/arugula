@@ -21,6 +21,8 @@
 //!   #214), and [`moves`], Move to… another.
 //! - [`asks`]: what still needs its asker, as a form and a mention of them
 //!   (Arugula #214).
+//! - [`wave`]: a project's sessions in one list, a session's last answer
+//!   whole, and a wait for any of them to finish (Fleet 5).
 //!
 //! **How sessions end besides** (each `stopped` by control, with a
 //! `reason` in its event's detail):
@@ -48,3 +50,4 @@ pub mod push;
 pub mod review;
 pub mod tries;
 pub mod typed;
+pub mod wave;

@@ -499,7 +499,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Or agent sessions in Arugula control (session: ses_… ids, not pane) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -541,6 +541,11 @@
                 "const": "needs_input",
                 "description": "It asks for you: an agent's approval or question.",
                 "type": "string"
+              },
+              {
+                "const": "done",
+                "description": "An agent session in Arugula control (session) finished its turn,\nwaits on a person, or ended.",
+                "type": "string"
               }
             ]
           }
@@ -577,6 +582,14 @@
           "run": {
             "default": null,
             "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session": {
+            "default": null,
+            "description": "Or agent sessions in Arugula control (ses_…, several separated by\nspaces), not pane: until done, when any of them finishes its turn.",
             "type": [
               "string",
               "null"
@@ -620,7 +633,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.\n- sessions {asker?, going?, label?, limit?, mine?, project?, tracker?}: A project's agent sessions in Arugula control, a wave of them, newest first: each one's id, state, issue, box, branch and HEAD, when it last pushed, who started it, and what waits on your person (its question, a permission, CI that failed again, its PR to send). Narrow it with label (its issue's), tracker (an issue's number: the issues its body names as #N, and those naming it), asker (an account, or me), mine (only those this machine's agents started) and going. Needs your person's sessions.start, sessions.reply or threads.read grant over the project. wait with session waits for them; read_session reads one's whole answer.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -628,6 +641,14 @@
             "default": false,
             "description": "conversations: Everything: `claude -p` and SDK runs, archived ones, ones whose folder is gone.",
             "type": "boolean"
+          },
+          "asker": {
+            "default": null,
+            "description": "sessions: Only sessions this account asked for (or me: your person).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "cloud_workspace": {
             "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -641,6 +662,11 @@
               "null"
             ]
           },
+          "going": {
+            "default": false,
+            "description": "sessions: Only ones going (not failed, stopped or merged).",
+            "type": "boolean"
+          },
           "kind": {
             "default": "panes",
             "description": "Which one (see the tool's description).",
@@ -651,13 +677,22 @@
               "cloud_workspaces",
               "cloud_tabs",
               "linked_repos",
-              "threads"
+              "threads",
+              "sessions"
             ],
             "type": "string"
           },
+          "label": {
+            "default": null,
+            "description": "sessions: Only sessions on an issue with this label.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30].",
+            "description": "conversations: How many [default 30]. sessions: At most this many (default 50, at most 100).",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -670,9 +705,14 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
+          "mine": {
+            "default": false,
+            "description": "sessions: Only sessions this machine's agents started.",
+            "type": "boolean"
+          },
           "project": {
             "default": null,
-            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project. sessions: The project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
             "type": [
               "string",
               "null"
@@ -681,6 +721,14 @@
           "query": {
             "default": null,
             "description": "conversations: Words in the title, prompts or folder.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tracker": {
+            "default": null,
+            "description": "sessions: Only sessions on a tracker's issues: its number (#N), the issues its\nbody names, those whose body names it, and itself.",
             "type": [
               "string",
               "null"
@@ -3831,6 +3879,32 @@
       },
       "name": "session_reply",
       "title": "Answer or prompt an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read an agent session"
+      },
+      "description": "Read an agent session in Arugula control (ses_…): its state, box, branch, HEAD and last push, what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its box sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with session waits for its turn to finish.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "ReadSessionArgs",
+        "type": "object"
+      },
+      "name": "read_session",
+      "title": "Read an agent session"
     }
   ],
   "block, labs true": [
@@ -4359,7 +4433,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Or agent sessions in Arugula control (session: ses_… ids, not pane) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -4401,6 +4475,11 @@
                 "const": "needs_input",
                 "description": "It asks for you: an agent's approval or question.",
                 "type": "string"
+              },
+              {
+                "const": "done",
+                "description": "An agent session in Arugula control (session) finished its turn,\nwaits on a person, or ended.",
+                "type": "string"
               }
             ]
           }
@@ -4437,6 +4516,14 @@
           "run": {
             "default": null,
             "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session": {
+            "default": null,
+            "description": "Or agent sessions in Arugula control (ses_…, several separated by\nspaces), not pane: until done, when any of them finishes its turn.",
             "type": [
               "string",
               "null"
@@ -4564,7 +4651,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.\n- sessions {asker?, going?, label?, limit?, mine?, project?, tracker?}: A project's agent sessions in Arugula control, a wave of them, newest first: each one's id, state, issue, box, branch and HEAD, when it last pushed, who started it, and what waits on your person (its question, a permission, CI that failed again, its PR to send). Narrow it with label (its issue's), tracker (an issue's number: the issues its body names as #N, and those naming it), asker (an account, or me), mine (only those this machine's agents started) and going. Needs your person's sessions.start, sessions.reply or threads.read grant over the project. wait with session waits for them; read_session reads one's whole answer.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -4572,6 +4659,14 @@
             "default": false,
             "description": "conversations: Everything: `claude -p` and SDK runs, archived ones, ones whose folder is gone.",
             "type": "boolean"
+          },
+          "asker": {
+            "default": null,
+            "description": "sessions: Only sessions this account asked for (or me: your person).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "cloud_workspace": {
             "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -4590,6 +4685,11 @@
             "description": "agents: Ask every machine now, not from the last minute's read.",
             "type": "boolean"
           },
+          "going": {
+            "default": false,
+            "description": "sessions: Only ones going (not failed, stopped or merged).",
+            "type": "boolean"
+          },
           "kind": {
             "default": "panes",
             "description": "Which one (see the tool's description).",
@@ -4601,13 +4701,22 @@
               "cloud_workspaces",
               "cloud_tabs",
               "linked_repos",
-              "threads"
+              "threads",
+              "sessions"
             ],
             "type": "string"
           },
+          "label": {
+            "default": null,
+            "description": "sessions: Only sessions on an issue with this label.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30].",
+            "description": "conversations: How many [default 30]. sessions: At most this many (default 50, at most 100).",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -4620,9 +4729,14 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
+          "mine": {
+            "default": false,
+            "description": "sessions: Only sessions this machine's agents started.",
+            "type": "boolean"
+          },
           "project": {
             "default": null,
-            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project. sessions: The project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
             "type": [
               "string",
               "null"
@@ -4631,6 +4745,14 @@
           "query": {
             "default": null,
             "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tracker": {
+            "default": null,
+            "description": "sessions: Only sessions on a tracker's issues: its number (#N), the issues its\nbody names, those whose body names it, and itself.",
             "type": [
               "string",
               "null"
@@ -8101,6 +8223,32 @@
       },
       "name": "session_reply",
       "title": "Answer or prompt an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read an agent session"
+      },
+      "description": "Read an agent session in Arugula control (ses_…): its state, box, branch, HEAD and last push, what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its box sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with session waits for its turn to finish.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "ReadSessionArgs",
+        "type": "object"
+      },
+      "name": "read_session",
+      "title": "Read an agent session"
     }
   ],
   "full, labs false": [
@@ -8603,7 +8751,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Or agent sessions in Arugula control (session: ses_… ids, not pane) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -8645,6 +8793,11 @@
                 "const": "needs_input",
                 "description": "It asks for you: an agent's approval or question.",
                 "type": "string"
+              },
+              {
+                "const": "done",
+                "description": "An agent session in Arugula control (session) finished its turn,\nwaits on a person, or ended.",
+                "type": "string"
               }
             ]
           }
@@ -8681,6 +8834,14 @@
           "run": {
             "default": null,
             "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session": {
+            "default": null,
+            "description": "Or agent sessions in Arugula control (ses_…, several separated by\nspaces), not pane: until done, when any of them finishes its turn.",
             "type": [
               "string",
               "null"
@@ -8724,7 +8885,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.\n- sessions {asker?, going?, label?, limit?, mine?, project?, tracker?}: A project's agent sessions in Arugula control, a wave of them, newest first: each one's id, state, issue, box, branch and HEAD, when it last pushed, who started it, and what waits on your person (its question, a permission, CI that failed again, its PR to send). Narrow it with label (its issue's), tracker (an issue's number: the issues its body names as #N, and those naming it), asker (an account, or me), mine (only those this machine's agents started) and going. Needs your person's sessions.start, sessions.reply or threads.read grant over the project. wait with session waits for them; read_session reads one's whole answer.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -8732,6 +8893,14 @@
             "default": false,
             "description": "conversations: Everything: `claude -p` and SDK runs, archived ones, ones whose folder is gone.",
             "type": "boolean"
+          },
+          "asker": {
+            "default": null,
+            "description": "sessions: Only sessions this account asked for (or me: your person).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "cloud_workspace": {
             "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -8745,6 +8914,11 @@
               "null"
             ]
           },
+          "going": {
+            "default": false,
+            "description": "sessions: Only ones going (not failed, stopped or merged).",
+            "type": "boolean"
+          },
           "kind": {
             "default": "panes",
             "description": "Which one (see the tool's description).",
@@ -8755,13 +8929,22 @@
               "cloud_workspaces",
               "cloud_tabs",
               "linked_repos",
-              "threads"
+              "threads",
+              "sessions"
             ],
             "type": "string"
           },
+          "label": {
+            "default": null,
+            "description": "sessions: Only sessions on an issue with this label.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30].",
+            "description": "conversations: How many [default 30]. sessions: At most this many (default 50, at most 100).",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -8774,9 +8957,14 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
+          "mine": {
+            "default": false,
+            "description": "sessions: Only sessions this machine's agents started.",
+            "type": "boolean"
+          },
           "project": {
             "default": null,
-            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project. sessions: The project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
             "type": [
               "string",
               "null"
@@ -8785,6 +8973,14 @@
           "query": {
             "default": null,
             "description": "conversations: Words in the title, prompts or folder.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tracker": {
+            "default": null,
+            "description": "sessions: Only sessions on a tracker's issues: its number (#N), the issues its\nbody names, those whose body names it, and itself.",
             "type": [
               "string",
               "null"
@@ -11935,6 +12131,32 @@
       },
       "name": "session_reply",
       "title": "Answer or prompt an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read an agent session"
+      },
+      "description": "Read an agent session in Arugula control (ses_…): its state, box, branch, HEAD and last push, what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its box sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with session waits for its turn to finish.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "ReadSessionArgs",
+        "type": "object"
+      },
+      "name": "read_session",
+      "title": "Read an agent session"
     }
   ],
   "full, labs true": [
@@ -12463,7 +12685,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Or agent sessions in Arugula control (session: ses_… ids, not pane) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -12505,6 +12727,11 @@
                 "const": "needs_input",
                 "description": "It asks for you: an agent's approval or question.",
                 "type": "string"
+              },
+              {
+                "const": "done",
+                "description": "An agent session in Arugula control (session) finished its turn,\nwaits on a person, or ended.",
+                "type": "string"
               }
             ]
           }
@@ -12541,6 +12768,14 @@
           "run": {
             "default": null,
             "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session": {
+            "default": null,
+            "description": "Or agent sessions in Arugula control (ses_…, several separated by\nspaces), not pane: until done, when any of them finishes its turn.",
             "type": [
               "string",
               "null"
@@ -12668,7 +12903,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.\n- sessions {asker?, going?, label?, limit?, mine?, project?, tracker?}: A project's agent sessions in Arugula control, a wave of them, newest first: each one's id, state, issue, box, branch and HEAD, when it last pushed, who started it, and what waits on your person (its question, a permission, CI that failed again, its PR to send). Narrow it with label (its issue's), tracker (an issue's number: the issues its body names as #N, and those naming it), asker (an account, or me), mine (only those this machine's agents started) and going. Needs your person's sessions.start, sessions.reply or threads.read grant over the project. wait with session waits for them; read_session reads one's whole answer.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -12676,6 +12911,14 @@
             "default": false,
             "description": "conversations: Everything: `claude -p` and SDK runs, archived ones, ones whose folder is gone.",
             "type": "boolean"
+          },
+          "asker": {
+            "default": null,
+            "description": "sessions: Only sessions this account asked for (or me: your person).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "cloud_workspace": {
             "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -12694,6 +12937,11 @@
             "description": "agents: Ask every machine now, not from the last minute's read.",
             "type": "boolean"
           },
+          "going": {
+            "default": false,
+            "description": "sessions: Only ones going (not failed, stopped or merged).",
+            "type": "boolean"
+          },
           "kind": {
             "default": "panes",
             "description": "Which one (see the tool's description).",
@@ -12705,13 +12953,22 @@
               "cloud_workspaces",
               "cloud_tabs",
               "linked_repos",
-              "threads"
+              "threads",
+              "sessions"
             ],
             "type": "string"
           },
+          "label": {
+            "default": null,
+            "description": "sessions: Only sessions on an issue with this label.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30].",
+            "description": "conversations: How many [default 30]. sessions: At most this many (default 50, at most 100).",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -12724,9 +12981,14 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
+          "mine": {
+            "default": false,
+            "description": "sessions: Only sessions this machine's agents started.",
+            "type": "boolean"
+          },
           "project": {
             "default": null,
-            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project. sessions: The project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
             "type": [
               "string",
               "null"
@@ -12735,6 +12997,14 @@
           "query": {
             "default": null,
             "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tracker": {
+            "default": null,
+            "description": "sessions: Only sessions on a tracker's issues: its number (#N), the issues its\nbody names, those whose body names it, and itself.",
             "type": [
               "string",
               "null"
@@ -16205,6 +16475,32 @@
       },
       "name": "session_reply",
       "title": "Answer or prompt an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read an agent session"
+      },
+      "description": "Read an agent session in Arugula control (ses_…): its state, box, branch, HEAD and last push, what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its box sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with session waits for its turn to finish.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "ReadSessionArgs",
+        "type": "object"
+      },
+      "name": "read_session",
+      "title": "Read an agent session"
     }
   ],
   "read, labs false": [
@@ -16290,7 +16586,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Or agent sessions in Arugula control (session: ses_… ids, not pane) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -16332,6 +16628,11 @@
                 "const": "needs_input",
                 "description": "It asks for you: an agent's approval or question.",
                 "type": "string"
+              },
+              {
+                "const": "done",
+                "description": "An agent session in Arugula control (session) finished its turn,\nwaits on a person, or ended.",
+                "type": "string"
               }
             ]
           }
@@ -16368,6 +16669,14 @@
           "run": {
             "default": null,
             "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session": {
+            "default": null,
+            "description": "Or agent sessions in Arugula control (ses_…, several separated by\nspaces), not pane: until done, when any of them finishes its turn.",
             "type": [
               "string",
               "null"
@@ -16411,7 +16720,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.\n- sessions {asker?, going?, label?, limit?, mine?, project?, tracker?}: A project's agent sessions in Arugula control, a wave of them, newest first: each one's id, state, issue, box, branch and HEAD, when it last pushed, who started it, and what waits on your person (its question, a permission, CI that failed again, its PR to send). Narrow it with label (its issue's), tracker (an issue's number: the issues its body names as #N, and those naming it), asker (an account, or me), mine (only those this machine's agents started) and going. Needs your person's sessions.start, sessions.reply or threads.read grant over the project. wait with session waits for them; read_session reads one's whole answer.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -16419,6 +16728,14 @@
             "default": false,
             "description": "conversations: Everything: `claude -p` and SDK runs, archived ones, ones whose folder is gone.",
             "type": "boolean"
+          },
+          "asker": {
+            "default": null,
+            "description": "sessions: Only sessions this account asked for (or me: your person).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "cloud_workspace": {
             "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -16432,6 +16749,11 @@
               "null"
             ]
           },
+          "going": {
+            "default": false,
+            "description": "sessions: Only ones going (not failed, stopped or merged).",
+            "type": "boolean"
+          },
           "kind": {
             "default": "panes",
             "description": "Which one (see the tool's description).",
@@ -16442,13 +16764,22 @@
               "cloud_workspaces",
               "cloud_tabs",
               "linked_repos",
-              "threads"
+              "threads",
+              "sessions"
             ],
             "type": "string"
           },
+          "label": {
+            "default": null,
+            "description": "sessions: Only sessions on an issue with this label.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30].",
+            "description": "conversations: How many [default 30]. sessions: At most this many (default 50, at most 100).",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -16461,9 +16792,14 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
+          "mine": {
+            "default": false,
+            "description": "sessions: Only sessions this machine's agents started.",
+            "type": "boolean"
+          },
           "project": {
             "default": null,
-            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project. sessions: The project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
             "type": [
               "string",
               "null"
@@ -16472,6 +16808,14 @@
           "query": {
             "default": null,
             "description": "conversations: Words in the title, prompts or folder.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tracker": {
+            "default": null,
+            "description": "sessions: Only sessions on a tracker's issues: its number (#N), the issues its\nbody names, those whose body names it, and itself.",
             "type": [
               "string",
               "null"
@@ -17812,6 +18156,32 @@
       },
       "name": "read_deploy",
       "title": "Read a deploy"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read an agent session"
+      },
+      "description": "Read an agent session in Arugula control (ses_…): its state, box, branch, HEAD and last push, what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its box sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with session waits for its turn to finish.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "ReadSessionArgs",
+        "type": "object"
+      },
+      "name": "read_session",
+      "title": "Read an agent session"
     }
   ],
   "read, labs true": [
@@ -17897,7 +18267,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Or agent sessions in Arugula control (session: ses_… ids, not pane) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -17939,6 +18309,11 @@
                 "const": "needs_input",
                 "description": "It asks for you: an agent's approval or question.",
                 "type": "string"
+              },
+              {
+                "const": "done",
+                "description": "An agent session in Arugula control (session) finished its turn,\nwaits on a person, or ended.",
+                "type": "string"
               }
             ]
           }
@@ -17975,6 +18350,14 @@
           "run": {
             "default": null,
             "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session": {
+            "default": null,
+            "description": "Or agent sessions in Arugula control (ses_…, several separated by\nspaces), not pane: until done, when any of them finishes its turn.",
             "type": [
               "string",
               "null"
@@ -18018,7 +18401,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.\n- sessions {asker?, going?, label?, limit?, mine?, project?, tracker?}: A project's agent sessions in Arugula control, a wave of them, newest first: each one's id, state, issue, box, branch and HEAD, when it last pushed, who started it, and what waits on your person (its question, a permission, CI that failed again, its PR to send). Narrow it with label (its issue's), tracker (an issue's number: the issues its body names as #N, and those naming it), asker (an account, or me), mine (only those this machine's agents started) and going. Needs your person's sessions.start, sessions.reply or threads.read grant over the project. wait with session waits for them; read_session reads one's whole answer.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -18026,6 +18409,14 @@
             "default": false,
             "description": "conversations: Everything: `claude -p` and SDK runs, archived ones, ones whose folder is gone.",
             "type": "boolean"
+          },
+          "asker": {
+            "default": null,
+            "description": "sessions: Only sessions this account asked for (or me: your person).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "cloud_workspace": {
             "description": "cloud_tabs: The Cloud workspace: its hw_… id or its name (list kind\ncloud_workspaces). With the other kinds: A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -18044,6 +18435,11 @@
             "description": "agents: Ask every machine now, not from the last minute's read.",
             "type": "boolean"
           },
+          "going": {
+            "default": false,
+            "description": "sessions: Only ones going (not failed, stopped or merged).",
+            "type": "boolean"
+          },
           "kind": {
             "default": "panes",
             "description": "Which one (see the tool's description).",
@@ -18055,13 +18451,22 @@
               "cloud_workspaces",
               "cloud_tabs",
               "linked_repos",
-              "threads"
+              "threads",
+              "sessions"
             ],
             "type": "string"
           },
+          "label": {
+            "default": null,
+            "description": "sessions: Only sessions on an issue with this label.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30].",
+            "description": "conversations: How many [default 30]. sessions: At most this many (default 50, at most 100).",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -18074,9 +18479,14 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
+          "mine": {
+            "default": false,
+            "description": "sessions: Only sessions this machine's agents started.",
+            "type": "boolean"
+          },
           "project": {
             "default": null,
-            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project. sessions: The project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
             "type": [
               "string",
               "null"
@@ -18085,6 +18495,14 @@
           "query": {
             "default": null,
             "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tracker": {
+            "default": null,
+            "description": "sessions: Only sessions on a tracker's issues: its number (#N), the issues its\nbody names, those whose body names it, and itself.",
             "type": [
               "string",
               "null"
@@ -19461,6 +19879,32 @@
       },
       "name": "read_deploy",
       "title": "Read a deploy"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read an agent session"
+      },
+      "description": "Read an agent session in Arugula control (ses_…): its state, box, branch, HEAD and last push, what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its box sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with session waits for its turn to finish.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "ReadSessionArgs",
+        "type": "object"
+      },
+      "name": "read_session",
+      "title": "Read an agent session"
     }
   ]
 }

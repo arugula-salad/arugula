@@ -661,6 +661,12 @@ pub const MODEL_MAX: usize = 120;
 pub struct PushAsk {
     pub session: String,
     pub branch: String,
+    /// A token to clone the session's repo instead, with `contents: read`
+    /// alone: a repo linked to the project that no box's setup cloned is
+    /// cloned at the session's start, shallow (Fleet 6). The same checks
+    /// as a push's. An older platform ignores it and mints a push's.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub clone: bool,
 }
 
 /// [`WORK_SESSION_PUSH`]'s answer.
@@ -668,8 +674,8 @@ pub struct PushAsk {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PushGiven {
     /// An installation token for the session's repo alone, with
-    /// `contents: write` and `workflows: write` (aru-115, amended), minted
-    /// for this push: the box hands it to git in one process's environment, never
+    /// `contents: write` and `workflows: write` (aru-115, amended), or
+    /// `contents: read` for a clone, minted for this push or clone: the box hands it to git in one process's environment, never
     /// to a file, then revokes it at `revoke` (`DELETE`, the token as its
     /// bearer). `expires_at` is GitHub's.
     Given { token: String, expires_at: String, revoke: String },

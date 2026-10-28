@@ -1,5 +1,10 @@
 // Starting an agent block: which agent, where it runs, and the first prompt.
-// Opened from a pane's menu and the phone's sheet.
+// Opened from a pane's menu and the phone's sheet. More holds what
+// `arugula agent` takes besides (Discovery 10): its permission mode
+// (`--permission-mode`), MCP servers (`--mcp NAME=CMD`), tools allowed
+// without asking (`--allow`) and Claude Code's own settings
+// (`--user-settings`). Folded, and empty unless set: the defaults are the
+// daemon's, as without them.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
@@ -55,6 +60,25 @@ export function AgentDialogLayer() {
 
 type Remembered = { kind?: Kind; acp?: string; model?: string };
 
+/** Claude Code's permission modes (`--permission-mode` takes another
+ * agent's own too). */
+const MODES = ["default", "acceptEdits", "plan", "auto"];
+
+/** More's fields, as the block's config takes them (the CLI's). */
+export function moreConfig(m: { mode: string; mcp: string; allow: string; userSettings: boolean }, kind: Kind): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (m.mode.trim()) out.permission_mode = m.mode.trim();
+  const mcp = m.mcp
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (mcp.length) out.mcp_servers = mcp;
+  const allow = m.allow.split(/[\s,]+/).filter(Boolean);
+  if (allow.length) out.allow = allow.map((tool) => ({ tool }));
+  if (m.userSettings && kind === "claude") out.user_settings = true;
+  return out;
+}
+
 const remembered = (): Remembered => {
   try {
     const last = JSON.parse(localStorage.getItem("arugula.agent") ?? "{}") as Omit<Remembered, "kind"> & { kind?: Kind | "fountain" | "managoat" };
@@ -73,6 +97,12 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
   const [vm, setVm] = useState(false);
   const [cwd, setCwd] = useState(where.cwd || (where.from !== undefined && client.cwd(where.from)) || "");
   const [prompt, setPrompt] = useState("");
+  const [mode, setMode] = useState("");
+  const [mcp, setMcp] = useState("");
+  const [allow, setAllow] = useState("");
+  const [userSettings, setUserSettings] = useState(false);
+  const [mcpErr, setMcpErr] = useState("");
+  const [more, setMore] = useState(false);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => promptRef.current?.focus(), []);
   const canVm = client.has("vms");
@@ -95,12 +125,18 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
 
   const submit = async () => {
     if (blocked) return;
+    const bad = mcp
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l && !/^[^=\s]+=\S/.test(l));
+    if (bad) return (setMore(true), setMcpErr(`${bad}: want NAME=COMMAND`));
     remember();
     const config: Record<string, unknown> = { agent: kind };
     if (kind === "acp") config.command = acp.trim();
     if (model.trim()) config.model = model.trim();
     if (!(vm && canVm) && cwd.trim()) config.cwd = cwd.trim();
     if (prompt.trim()) config.prompt = prompt.trim();
+    Object.assign(config, moreConfig({ mode, mcp, allow, userSettings }, kind));
     close();
     await client.newAgent({ config, vm: vm && canVm, split: where.split, session: where.session, from: where.from });
   };
@@ -181,6 +217,43 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
           Prompt
           <textarea name="prompt" ref={promptRef} rows={4} value={prompt} placeholder="What should it do?" onInput={(e) => setPrompt(e.currentTarget.value)} />
         </label>
+        <details class="agent-more" open={more} onToggle={(e) => setMore(e.currentTarget.open)} data-agent-more>
+          <summary>More</summary>
+          <label>
+            Permission mode
+            <input name="permission_mode" list="agent-modes" value={mode} placeholder="the agent's default" onInput={(e) => setMode(e.currentTarget.value)} />
+            <datalist id="agent-modes">
+              {MODES.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          </label>
+          <label>
+            MCP servers <span class="hint">NAME=COMMAND, one a line</span>
+            <textarea
+              name="mcp"
+              rows={2}
+              value={mcp}
+              placeholder="files=npx -y @modelcontextprotocol/server-filesystem ."
+              onInput={(e) => (setMcp(e.currentTarget.value), setMcpErr(""))}
+            />
+          </label>
+          {mcpErr && (
+            <p class="control-error" role="alert" data-agent-mcp-error>
+              {mcpErr}
+            </p>
+          )}
+          <label>
+            Allow without asking <span class="hint">tools, as "always" on a card</span>
+            <input name="allow" value={allow} placeholder="Read, Edit, Bash" onInput={(e) => setAllow(e.currentTarget.value)} />
+          </label>
+          {kind === "claude" && (
+            <label class="check">
+              <input type="checkbox" name="user_settings" checked={userSettings} onChange={(e) => setUserSettings(e.currentTarget.checked)} />
+              With my Claude Code settings (allow and deny lists, default mode, CLAUDE.md; not their hooks)
+            </label>
+          )}
+        </details>
         <AgentCanCard
           client={client}
           folded

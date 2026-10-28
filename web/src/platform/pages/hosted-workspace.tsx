@@ -10,7 +10,9 @@
 // its closed agents' transcripts, read only (`/api/projects/…/transcripts`).
 // Opening one asks the platform to wake a paused box. Create a cloud
 // workspace makes one, a name and a size, as `arugula cloud create` does,
-// for those the platform lets.
+// for those the platform lets. Its Edit, Rebuild, previews, secrets and the
+// project's inference keys are `./hosted-manage`'s, as `arugula cloud`'s
+// edit, rebuild, preview, secret and key (Discovery 10).
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
@@ -29,6 +31,8 @@ import { toneClass, workspaceTone, type Tone } from "../swarm";
 import { Missing } from "./project";
 import { Time } from "../../shared/ui/time";
 import { SIZES, sizeOf, type Size } from "../settings/workspace-size";
+import { mayWrite } from "./issues";
+import { InferenceKeys, Previews, Secrets, WorkspaceActions, type Spec } from "./hosted-manage";
 
 /** A hosted workspace, as the platform answers it. */
 interface HostedWorkspace {
@@ -41,8 +45,8 @@ interface HostedWorkspace {
   error: string | null;
   rebuild_needed: boolean;
   created_at: number;
-  /** What its box is built from: only its size is read here (M266). */
-  spec: { size?: string };
+  /** What its box is built from (M266's size, and what Edit changes). */
+  spec: Spec;
   /** Its snapshot (M263): what its new boxes start from, set up. */
   snapshot?: Snapshot;
 }
@@ -303,7 +307,7 @@ function NewWorkspace({ project: id, close }: { project: string; close: () => vo
     <Modal close={close} class="hosted-new">
       <form onSubmit={(e) => void submit(e)} data-hosted-new-form>
         <h2>Create a cloud workspace</h2>
-        <p class="dim">Its box is made now and joins the project in a minute or two. Its repos, packages and setup script come after, with <code>arugula cloud edit</code>.</p>
+        <p class="dim">Its box is made now and joins the project in a minute or two. Its repos, packages and setup script come after, with Edit on its page or <code>arugula cloud edit</code>.</p>
         <label>
           Name
           <input autofocus required value={name} placeholder="dev" data-hosted-new-name onInput={(e) => setName(e.currentTarget.value)} />
@@ -401,12 +405,14 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
           </StateChip>
         }
         actions={
-          w.machine &&
-          w.state === "ready" && (
-            <button type="button" class="primary" onClick={() => window.open(machineHref(w.machine ?? "", true), "_blank", "noopener")} data-hosted-agent>
-              + Agent ↗
-            </button>
-          )
+          <>
+            <WorkspaceActions p={p} w={w} changed={(v) => v && setW({ ...w, ...v })} />
+            {w.machine && w.state === "ready" && (
+              <button type="button" class="primary" onClick={() => window.open(machineHref(w.machine ?? "", true), "_blank", "noopener")} data-hosted-agent>
+                + Agent ↗
+              </button>
+            )}
+          </>
         }
         sub={
           <>
@@ -434,8 +440,9 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
       {w.rebuild_needed && (
         <div class="hosted-rebuild" data-hosted-rebuild>
           <p>
-            <span class="sw-chip">Wants a rebuild</span> Its spec changed since its box was made. Rebuild it from a terminal: the command checks
-            its repos for unpushed work first, and stops if there is some.
+            <span class="sw-chip">Wants a rebuild</span> Its spec changed since its box was made.{" "}
+            {mayWrite(p) && session.hosted ? "Rebuild it here, or from a terminal" : "An owner or editor rebuilds it, here or from a terminal"}: the
+            command checks its repos for unpushed work first, and stops if there is some.
           </p>
           <CopyText text={`arugula cloud rebuild ${w.name} --project ${id}`} />
         </div>
@@ -500,6 +507,11 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
             </ul>
           )}
         </section>
+      </div>
+      <div class="hosted-ws-view hosted-manage">
+        <Previews p={p} w={w} />
+        <Secrets p={p} w={w} />
+        <InferenceKeys p={p} />
       </div>
     </section>
   );

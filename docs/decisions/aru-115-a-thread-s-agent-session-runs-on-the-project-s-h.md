@@ -27,7 +27,7 @@ options:
     tradeoff: "A machine would act on GitHub as the project with nobody sending it, against \"agents draft, people send\", and a token that pushes any ref can push to main."
 choice:
   option: "a"
-  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them. Amended again (Jake, 2026-10-27, Arugula #215): a box runs three sessions and holds six (or as many session users as it says it has, three when it doesn't say); a done one idle 30 minutes is parked (its agent closed, its user, checkout and conversation kept) and opens again on a reply when there's a running slot. Amended again (Jake, 2026-10-27, Arugula #216): a session's agent reads and comments on its own project's native issues, with its asker's rights and as the session itself, through a server of its own and a route that takes the session as the authority, not machine grants. Amended again (Jake, 2026-10-27, the session Docs ask): it also opens issues in that project, as the session's own, telling nobody, and makes, writes (its own) and reads the project's Docs (aru-118). Amended again (Jake, 2026-10-27, Arugula #265, aru-121): a person's agent on a machine, by its owner's sessions.start grant, starts a session as them (they stay the asker and the payer; the card says it was their agent), and by sessions.reply answers a session's question or prompts it; a message an agent posts without those grants still starts and prompts nothing."
+  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them. Amended again (Jake, 2026-10-27, Arugula #215): a box runs three sessions and holds six (or as many session users as it says it has, three when it doesn't say); a done one idle 30 minutes is parked (its agent closed, its user, checkout and conversation kept) and opens again on a reply when there's a running slot. Amended again (Jake, 2026-10-27, Arugula #216): a session's agent reads and comments on its own project's native issues, with its asker's rights and as the session itself, through a server of its own and a route that takes the session as the authority, not machine grants. Amended again (Jake, 2026-10-27, the session Docs ask): it also opens issues in that project, as the session's own, telling nobody, and makes, writes (its own) and reads the project's Docs (aru-118). Amended again (Jake, 2026-10-27, Arugula #265, aru-121): a person's agent on a machine, by its owner's sessions.start grant, starts a session as them (they stay the asker and the payer; the card says it was their agent), and by sessions.reply answers a session's question or prompts it; a message an agent posts without those grants still starts and prompts nothing. Amended again (Jake, 2026-10-28, Fleet 6): a repo linked to the project that no box's spec has is one a session may work in: the ask may name it and the which-repo form offers it, and the session's box clones it into the session's home at its start, shallow, with an installation token minted for that clone (contents read, the session's repo alone, revoked after), without adding it to the box's spec."
 rejected:
   - option: "b"
     why: "Agents on personal machines are never woken by other people's mentions: a person's machine runs what its person starts."
@@ -45,6 +45,8 @@ evidence:
     url: "https://app.arugula.io/issues/iss_e2a536bc47833538c4a29793052acbc1"
   - title: "Arugula #131"
     url: "https://app.arugula.io/issues/iss_9eac7586846748abea4bf7264dfd9771"
+  - title: "Fleet 6: dispatch into a linked repo no box clones yet"
+    url: "https://app.arugula.io/issues/iss_2c4191592f7e2be3e77c5db0d4c6f5e3"
 decided_by: "jhgaylor"
 decided_on: "2026-10-25"
 reviews: []
@@ -63,6 +65,7 @@ constrains:
   - "path:crates/platform/src/sessions/review.rs"
   - "path:crates/platform/src/sessions/issues.rs"
   - "path:crates/daemon/src/mcp/session.rs"
+  - "path:crates/platform/src/sessions/pool.rs"
 ---
 
 # A thread's agent session runs on the project's hosted box
@@ -104,7 +107,14 @@ agents draft while people send".
   the least busy, then by name, and its card's Move to… sends it to
   another (amended, Arugula #214: it no longer asks which box). It asks
   only which repo, when the boxes have several and the ask names none,
-  as a form that mentions the asker until it's answered. "Least busy"
+  as a form that mentions the asker until it's answered. A repo linked to
+  the project that no box's spec has is a repo it may work in too
+  (amended, Jake, 2026-10-28, Fleet 6): the ask names it by
+  `owner/name`, or the form offers it beside the boxes' repos, and the
+  session goes to the best of the boxes, whose daemon clones it into
+  the session's home at its start, shallow, from GitHub. The box's spec
+  stays as it was: the clone is the session's, and goes with its
+  checkout. "Least busy"
   is the fewest live sessions (queued, or a turn under way), then the
   fewest done ones (Arugula #215): a done session still holds its slot
   and its checkout, but it isn't working the box now, so asks in a row
@@ -155,6 +165,11 @@ agents draft while people send".
     session's branch exactly, on its linked repo, with `contents: write`
     and `workflows: write` (amended below). The box revokes it once it
     pushed.
+  - A session whose repo no box's setup cloned (amended, Fleet 6) gets a
+    token for its clone the same way, after the same checks, with
+    `contents: read` alone, revoked once it's cloned. Its daemon clones
+    with its own git (no hooks, no config of the agent's), and the token
+    reaches git as the push's does, never in the checkout's config.
   - **Amended (Jake, 2026-10-26): the push token writes workflows too.**
     It was `contents: write` alone, so that GitHub would refuse a push that
     changes `.github/workflows/`. But GitHub compares a new branch's tree

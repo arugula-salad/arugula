@@ -226,24 +226,38 @@ fn git_dir(root: &Path) -> Option<PathBuf> {
 /// small read per repository per period, not one per frame.
 const BRANCH_FRESH: Duration = Duration::from_secs(2);
 
-/// A branch as read, and when.
-type Read = (Instant, Option<String>);
+/// A repository's HEAD as read: its branch, or the short commit when
+/// detached, and the commit it's at (none before the first commit).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Head {
+    pub branch: String,
+    pub commit: Option<String>,
+}
 
-/// Branches already read, by repository root.
-static BRANCHES: LazyLock<Mutex<HashMap<String, Read>>> = LazyLock::new(Default::default);
+/// A HEAD as read, and when.
+type Read = (Instant, Option<Head>);
+
+/// HEADs already read, by repository root.
+static HEADS: LazyLock<Mutex<HashMap<String, Read>>> = LazyLock::new(Default::default);
 
 /// The branch checked out in the repository at `root` (a [`Project`]'s
-/// root), or the short commit when HEAD is detached. Read from HEAD, not
-/// by running git, and cached for [`BRANCH_FRESH`]; a pane moving to
-/// another repository asks for another root, so it's read afresh.
+/// root), or the short commit when HEAD is detached.
 pub fn branch(root: &str) -> Option<String> {
-    if let Some((at, b)) = BRANCHES.lock().unwrap().get(root)
+    head(root).map(|h| h.branch)
+}
+
+/// The repository at `root`'s HEAD: its branch and the commit it's at.
+/// Read from the files, not by running git, and cached for
+/// [`BRANCH_FRESH`]; a pane moving to another repository asks for another
+/// root, so it's read afresh.
+pub fn head(root: &str) -> Option<Head> {
+    if let Some((at, h)) = HEADS.lock().unwrap().get(root)
         && at.elapsed() < BRANCH_FRESH
     {
-        return b.clone();
+        return h.clone();
     }
     let found = head_of(Path::new(root));
-    let mut cache = BRANCHES.lock().unwrap();
+    let mut cache = HEADS.lock().unwrap();
     if cache.len() > 4096 {
         cache.clear();
     }
@@ -251,8 +265,38 @@ pub fn branch(root: &str) -> Option<String> {
     found
 }
 
-fn head_of(root: &Path) -> Option<String> {
-    head_in(&std::fs::read_to_string(git_dir(root)?.join("HEAD")).ok()?)
+/// A command ended: what it did to a repository is read afresh.
+pub fn forget_heads() {
+    HEADS.lock().unwrap().clear();
+}
+
+fn head_of(root: &Path) -> Option<Head> {
+    let dir = git_dir(root)?;
+    let text = std::fs::read_to_string(dir.join("HEAD")).ok()?;
+    let branch = head_in(&text)?;
+    let commit = match text.trim().strip_prefix("ref:") {
+        Some(r) => ref_commit(&dir, r.trim()),
+        None => Some(branch.clone()),
+    };
+    Some(Head { branch, commit })
+}
+
+/// The short commit `r` (`refs/heads/main`) names: its own file, in the
+/// worktree's directory or the main repository's, else `packed-refs`.
+fn ref_commit(dir: &Path, r: &str) -> Option<String> {
+    let common = match std::fs::read_to_string(dir.join("commondir")) {
+        Ok(c) => dir.join(c.trim()),
+        Err(_) => dir.to_path_buf(),
+    };
+    let loose = [dir, common.as_path()].into_iter().find_map(|d| std::fs::read_to_string(d.join(r)).ok());
+    let sha = match loose {
+        Some(s) => s.trim().to_owned(),
+        None => std::fs::read_to_string(common.join("packed-refs"))
+            .ok()?
+            .lines()
+            .find_map(|l| l.strip_suffix(r)?.strip_suffix(' ').map(str::to_owned))?,
+    };
+    (sha.len() >= 7 && sha.bytes().all(|b| b.is_ascii_hexdigit())).then(|| sha[..7].to_owned())
 }
 
 /// A HEAD file's branch (`ref: refs/heads/main` → `main`), or its
@@ -480,7 +524,7 @@ mod tests {
         let rel = dir.join("rel");
         std::fs::create_dir_all(&rel).unwrap();
         std::fs::write(rel.join(".git"), "gitdir: ../repo/.git/worktrees/wt\n").unwrap();
-        assert_eq!(head_of(&rel).as_deref(), Some("feature"));
+        assert_eq!(head_of(&rel).map(|h| h.branch).as_deref(), Some("feature"));
         // No repository, or one without a readable HEAD.
         let loose = dir.join("loose");
         std::fs::create_dir_all(&loose).unwrap();
@@ -489,7 +533,17 @@ mod tests {
         // A checkout shows once the cache is stale; a cwd in a pane's info
         // goes through `project` first, so a subdirectory is its root's.
         std::fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
-        assert_eq!(head_of(&repo).as_deref(), Some("main"));
+        assert_eq!(head_of(&repo), Some(Head { branch: "main".into(), commit: None }), "no commit yet");
+        std::fs::create_dir_all(repo.join(".git/refs/heads")).unwrap();
+        // The commit: the branch's own file, else packed-refs; a worktree's
+        // branch is in the main repository's.
+        let packed = "# pack-refs with: peeled\n0123456789abcdef0123456789abcdef01234567 refs/heads/feature\n";
+        std::fs::write(repo.join(".git/packed-refs"), packed).unwrap();
+        std::fs::write(repo.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
+        assert_eq!(head_of(&wt).and_then(|h| h.commit).as_deref(), Some("0123456"));
+        std::fs::write(repo.join(".git/refs/heads/main"), "fedcba9876543210fedcba9876543210fedcba98\n").unwrap();
+        assert_eq!(head_of(&repo).and_then(|h| h.commit).as_deref(), Some("fedcba9"));
+        assert_eq!(head_of(&detached).and_then(|h| h.commit).as_deref(), Some("bb5b2f1"));
         let inner = repo.join("src");
         std::fs::create_dir_all(&inner).unwrap();
         assert_eq!(project(&s(&inner)).map(|p| p.root), Some(s(&repo)));

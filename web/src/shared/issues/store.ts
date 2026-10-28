@@ -102,7 +102,14 @@ export const issues = {
   thread: (id: string) => chat.openObject(id),
   /** Agent on this (M265): `@arugula` in the issue's thread, as the
    * reader. */
-  agent: (id: string) => call<IssueAgent>("POST", `/api/issues/${enc(id)}/agent`),
+  agent: async (id: string) => {
+    const r = await call<IssueAgent>("POST", `/api/issues/${enc(id)}/agent`);
+    // Its card is in the thread now: read what's new there rather than
+    // wait on the stream alone (Fleet 5, a card that showed only after a
+    // reload).
+    await chat.readNew(r.room);
+    return r;
+  },
   /** Where the project's export downloads from. */
   exportUrl: (project: string, format: "json" | "md") => `/api/projects/${enc(project)}/issues/export?format=${format}`,
 };

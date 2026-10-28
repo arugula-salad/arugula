@@ -1136,6 +1136,10 @@ pub struct PaneInfo {
     /// detached (M109).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+    /// The commit its repository's HEAD is at, short: a commit or a
+    /// checkout in it moves it (the web client's hint for Changes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head: Option<String>,
     /// Output rate (M23).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activity: Option<Activity>,
