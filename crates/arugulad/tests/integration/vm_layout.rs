@@ -34,6 +34,11 @@ fn a_saved_vm_pane_stays_in_the_layout_when_there_is_no_provider() {
     let mut d = Daemon::child();
     let local = d.post("/api/run", json!({ "command": "echo local-$((6*7)); sleep 600" }))["pane"].as_u64().unwrap();
     let vm = d.post("/api/run", json!({ "command": "sleep 600" }))["pane"].as_u64().unwrap();
+    // Printed before the stop: stopped first, the shell never runs the
+    // echo (its pane ends with the daemon), and there's nothing to restore
+    // (#287). What a stop does with output it hasn't read yet is
+    // stop_output's.
+    until("the local pane's echo", || screen(&d, local).contains("local-42"));
     // A daemon with a provider saved it so: the pane on a machine its own.
     d.stop();
     let path = d.state.join("layout.json");
