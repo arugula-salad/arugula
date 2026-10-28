@@ -45,3 +45,10 @@ title = "polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a
 issue = "https://app.arugula.io/p/prj_3e5d802cb4b08d43074df6c32f5344c1/issues/iss_512407408f74541c952f8b2dc3bf6d18"
 until = "2026-11-10"
 why = "Fails twice on unrelated commits (716de40ef, e44124672), flaky on two more (4b6a5a37f, f285f0e98)."
+
+[[e2e]]
+spec = "web/e2e/workspace.spec.ts"
+title = "arugula workspace shows its members; a gate reached while it's drawn is attention in seconds"
+issue = "https://app.arugula.io/p/prj_3e5d802cb4b08d43074df6c32f5344c1/issues/iss_ce9ea4a02b95593e99e9c8b29004bce6"
+until = "2026-11-10"
+why = "Its 3 s budget (gate on screen) takes 3.4-3.9 s on GitHub's runners every time (4 of 4, a25139c35); about 1.3 s on the pods."
