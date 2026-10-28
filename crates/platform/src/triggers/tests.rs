@@ -913,14 +913,32 @@ mod session_feedback {
             said[2].starts_with("CI failed again: 1 check; not sent.") && said[2].contains("needs a person"),
             "{said:?}"
         );
-        let fb = app.db.session_feedback(&s.id).unwrap();
+        // By commit: the three webhooks can land in one millisecond, and
+        // batches made in the same one list in either order (Arugula #277).
+        let mut fb: Vec<_> = app.db.session_feedback(&s.id).unwrap().into_iter().map(|f| (f.batch, f.state)).collect();
+        fb.sort_by(|a, b| a.0.cmp(&b.0));
         assert_eq!(
-            fb.iter().map(|f| f.state).collect::<Vec<_>>(),
-            [FeedbackState::Sent, FeedbackState::Sent, FeedbackState::Refused]
+            fb,
+            [
+                ("aaa".to_owned(), FeedbackState::Sent),
+                ("bbb".to_owned(), FeedbackState::Sent),
+                ("ccc".to_owned(), FeedbackState::Refused)
+            ]
         );
 
         let card = crate::session_live::view(&app, &after, true, "alice").await.unwrap().card;
         assert_eq!((card.ci_rounds, card.ci_max, card.needs_person), (2, 2, true));
+        // The refusal listed first, as when it was made in the same
+        // millisecond as the rounds before it and its id sorts first: it's
+        // still the last round.
+        app.db
+            .c()
+            .execute(
+                "UPDATE session_feedback SET created_at = 0 WHERE session_id = ?1 AND batch = 'ccc'",
+                params![s.id],
+            )
+            .unwrap();
+        assert!(feedback::needs_person(&app, &s).unwrap());
 
         // A review still goes through.
         hook(
