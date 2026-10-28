@@ -460,6 +460,9 @@ fn a_hosted_machine_runs_each_run_once() {
         .env("ARUGULA_WORK_PULL_MS", "150")
         // No `runner` user here: runs run as the daemon's own (tests only).
         .env("ARUGULA_HOSTED_RUN_USER", "")
+        // Nor session users, whatever this machine has (an Arugula box has
+        // `ses1`…): no firewall of theirs, no `kill -1` as one.
+        .env("ARUGULA_HOSTED_SESSION_USERS", "")
         // A Claude Code that says what it was asked, and with which login.
         .env("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()))
         .env("ANTHROPIC_API_KEY", "sk-test")
@@ -623,6 +626,7 @@ fn a_hosted_agent_holds_the_credential_its_turn_says() {
         // No `runner` user here: never `kill -1` as one (on CI, that's the
         // Actions runner's own user).
         .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_SESSION_USERS", "")
         .env("ANTHROPIC_API_KEY", "sk-test")
         .env_remove("CLAUDE_CONFIG_DIR")
         .env("RUST_LOG", "info")
@@ -683,6 +687,7 @@ fn a_run_a_crash_interrupts_fails_and_never_runs_again() {
         .env("ARUGULA_CONTROL_URL", &url)
         .env("ARUGULA_WORK_PULL_MS", "150")
         .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_SESSION_USERS", "")
         .env("RUST_LOG", "info")
         .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
         .wait_secs(30)
@@ -863,6 +868,7 @@ fn a_hosted_machine_applies_a_deploy_and_its_secret_never_reaches_disk_or_a_pane
         .env("ARUGULA_WORK_PULL_MS", "150")
         // No `runner` user here: a deploy's box refuses that, but in tests.
         .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_SESSION_USERS", "")
         .env("ARUGULA_HOSTED_TESTS_UNSAFE", "1")
         .env("ARUGULA_HOSTED_FAKE_DRIVER", "1")
         .env("RUST_LOG", "info")
@@ -946,6 +952,7 @@ fn a_deploy_box_takes_its_one_deploy_and_stops() {
         .env("ARUGULA_CONTROL_URL", &url)
         .env("ARUGULA_WORK_PULL_MS", "150")
         .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_SESSION_USERS", "")
         .env("ARUGULA_HOSTED_TESTS_UNSAFE", "1")
         .env("ARUGULA_HOSTED_FAKE_DRIVER", "1")
         .env("RUST_LOG", "info")
@@ -993,6 +1000,7 @@ fn a_hosted_runs_log_and_artifact_go_to_the_bucket() {
         .env("ARUGULA_CONTROL_URL", &url)
         .env("ARUGULA_WORK_PULL_MS", "150")
         .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_SESSION_USERS", "")
         .wait_secs(30)
         .start();
     d.wait_for("the box enrolled", || !f.device().is_empty());
@@ -1144,6 +1152,7 @@ fn a_deploy_box_applies_an_apps_platform_deploy() {
         .env("ARUGULA_CONTROL_URL", &url)
         .env("ARUGULA_WORK_PULL_MS", "150")
         .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_SESSION_USERS", "")
         // No `runner` user here: a deploy's box refuses that, but in tests.
         .env("ARUGULA_HOSTED_TESTS_UNSAFE", "1")
         .env("ARUGULA_HOSTED_FAKE_DRIVER", "1")
@@ -1277,6 +1286,7 @@ fn a_deploy_box_releases_arugula() {
         .env("ARUGULA_CONTROL_URL", &url)
         .env("ARUGULA_WORK_PULL_MS", "150")
         .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_SESSION_USERS", "")
         // No `runner` user here: a deploy's box refuses that, but in tests.
         .env("ARUGULA_HOSTED_TESTS_UNSAFE", "1")
         .env("ARUGULA_HOSTED_FAKE_DRIVER", "1")
