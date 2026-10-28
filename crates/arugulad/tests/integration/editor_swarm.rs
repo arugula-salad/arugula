@@ -15,7 +15,7 @@ use crate::agentd;
 use std::time::{Duration, Instant};
 
 use agentd::*;
-use arugula_proto::{ClientMsg, PaneInfo, ServerMsg, State};
+use arugula_proto::{ClientMsg, PaneInfo, ReasonKind, ServerMsg, State};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::{
@@ -352,6 +352,7 @@ async fn nvim_joins_follows_and_leaves() {
         .args(["-c", "runtime plugin/arugula.lua", "-c", "ArugulaJoin", &file])
         .current_dir(&root)
         .env("ARUGULA_SOCK", d.sock())
+        .env_remove("ARUGULA_PANE")
         .env("XDG_DATA_HOME", &data)
         .env("XDG_STATE_HOME", d.sessions.join("nvim-state"))
         .stdin(std::process::Stdio::null())
@@ -428,6 +429,7 @@ fn nvim_with(root: &str, data: &std::path::Path, rpc: &std::path::Path, args: &[
         .args(args)
         .current_dir(root)
         .env_remove("ARUGULA_SOCK")
+        .env_remove("ARUGULA_PANE")
         .env("XDG_DATA_HOME", data)
         .env("XDG_STATE_HOME", data.join("state"))
         .stdin(std::process::Stdio::null())
@@ -476,6 +478,210 @@ async fn nvim_rejoins_what_it_remembered() {
     assert_eq!(expr("exists(':ArugulaLeave')"), "2");
     let _ = nvim.kill();
     let _ = nvim.wait();
+}
+
+/// nvim's version, if it's here: `NVIM v0.11.6`.
+fn nvim_version() -> Option<(u32, u32)> {
+    let out = std::process::Command::new("nvim").arg("--version").output().ok()?;
+    let first = String::from_utf8_lossy(&out.stdout).lines().next()?.to_owned();
+    let v = first.split_whitespace().nth(1)?.trim_start_matches('v').to_owned();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().ok());
+    Some((parts.next()??, parts.next()??))
+}
+
+/// Whether nvim is here and new enough for the daemon to read it in a pane
+/// (#1730): it says why not, loudly, when it isn't.
+fn nvim_for_panes() -> bool {
+    match nvim_version() {
+        None => {
+            eprintln!("SKIPPED: no nvim here (CI installs it; 0.10 or later)");
+            false
+        }
+        Some(v) if v < (0, 10) => {
+            eprintln!("SKIPPED: nvim {}.{} is older than 0.10, which panes need (CI must install 0.10+)", v.0, v.1);
+            false
+        }
+        Some(_) => true,
+    }
+}
+
+/// A shell pane in `cwd`, at its prompt.
+fn shell_pane(d: &Daemon, cwd: &str) -> u32 {
+    let pane = d.post("/api/run", json!({ "cwd": cwd }))["pane"].as_u64().unwrap() as u32;
+    d.wait_for("a prompt", || d.raw("GET", &format!("/api/panes/{pane}/capture"), None).1.contains('$'));
+    pane
+}
+
+/// Type into a pane, as someone at its keyboard.
+fn type_in(d: &Daemon, pane: u32, text: &str) {
+    d.post(&format!("/api/panes/{pane}/send"), json!({ "text": text }));
+}
+
+/// The pid of the nvim (its TUI, not its `--embed` server) whose command
+/// line has `marker`.
+fn tui_pid(marker: &str) -> Option<u32> {
+    let out = std::process::Command::new("ps").args(["-A", "-o", "pid=,args="]).output().ok()?;
+    String::from_utf8_lossy(&out.stdout).lines().find_map(|l| {
+        let (pid, args) = l.trim().split_once(' ')?;
+        (args.contains(marker) && args.contains("nvim") && !args.contains("--embed")).then(|| pid.parse().ok())?
+    })
+}
+
+/// Every entry that's an editor.
+fn editors_in(web: &Client) -> Vec<u32> {
+    web.state
+        .as_ref()
+        .map(|s| s.panes.iter().filter(|p| p.editor.is_some()).map(|p| p.id).collect())
+        .unwrap_or_default()
+}
+
+/// #1730: nvim in a pane, with no plugin and no config, is an editor on
+/// that pane: the daemon finds it by its pid and reads it over its own RPC
+/// socket. Its file and line show on the pane within 2 s of opening a file,
+/// its diagnostic counts and unsaved buffers too, a merge conflict is a
+/// reason on the pane, and quitting or `kill -9` takes it all off.
+#[tokio::test(flavor = "multi_thread")]
+async fn nvim_in_a_pane_is_an_editor_without_the_plugin() {
+    if !nvim_for_panes() {
+        return;
+    }
+    let d = Daemon::child();
+    let root = repo(&d);
+    let file = format!("{root}/src/a.txt");
+    std::fs::write(&file, "one\ntwo\nthree\nfour\n").unwrap();
+    std::fs::write(format!("{root}/src/b.txt"), "b1\nb2\nb3\nb4\nb5\n").unwrap();
+    std::fs::write(format!("{root}/src/c.txt"), "<<<<<<< ours\nmine\n=======\ntheirs\n>>>>>>> theirs\n").unwrap();
+    let pane = shell_pane(&d, &root);
+    let mut web = Client::connect(&d).await;
+    type_in(&d, pane, &format!("nvim --clean {file}\r"));
+    // It's the pane: its file and line on it, and nothing beside it.
+    let p = web
+        .until("nvim's file on the pane", pane, |p| {
+            p.and_then(|p| p.editor.as_ref().map(|e| (e, p.file.as_deref())))
+                .is_some_and(|(e, f)| e.app == "nvim" && f == Some("src/a.txt") && e.line == Some(1))
+        })
+        .await
+        .unwrap();
+    assert!(p.editor.as_ref().unwrap().no_follow, "without the plugin there's no follow stream");
+    assert_eq!(p.title.as_deref(), Some("a.txt:1 (nvim)"));
+    assert_eq!(editors_in(&web), vec![pane], "one entry: the pane");
+    // Opening another file, and moving in it: on the pane within 2 s.
+    type_in(&d, pane, ":e src/b.txt\r");
+    let opened = Instant::now();
+    web.until("the new file", pane, |p| p.is_some_and(|p| p.file.as_deref() == Some("src/b.txt"))).await;
+    assert!(opened.elapsed() < Duration::from_secs(2), "took {:?}", opened.elapsed());
+    type_in(&d, pane, "3G");
+    let p = web
+        .until("the cursor on line 3", pane, |p| p.and_then(|p| p.editor.as_ref()).is_some_and(|e| e.line == Some(3)))
+        .await
+        .unwrap();
+    assert_eq!(p.title.as_deref(), Some("b.txt:3 (nvim)"));
+    // What a language server reports, it counts.
+    type_in(
+        &d,
+        pane,
+        ":lua vim.diagnostic.set(vim.api.nvim_create_namespace('t'), 0, {{ lnum = 0, col = 0, message = 'x', severity = 1 }, { lnum = 1, col = 0, message = 'y', severity = 2 }})\r",
+    );
+    web.until("diagnostic counts", pane, |p| {
+        p.and_then(|p| p.editor.as_ref()).is_some_and(|e| e.diag.e == 1 && e.diag.w == 1)
+    })
+    .await;
+    // An unsaved change.
+    type_in(&d, pane, "ox");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    type_in(&d, pane, "\x1b");
+    web.until("an unsaved buffer", pane, |p| p.and_then(|p| p.editor.as_ref()).is_some_and(|e| e.dirty == 1)).await;
+    type_in(&d, pane, ":w\r");
+    web.until("saved", pane, |p| p.and_then(|p| p.editor.as_ref()).is_some_and(|e| e.dirty == 0)).await;
+    // A merge conflict opening: a reason on the pane.
+    type_in(&d, pane, ":e src/c.txt\r");
+    let p = web
+        .until("the conflict", pane, |p| {
+            p.and_then(|p| p.reason.as_ref()).is_some_and(|r| r.kind == ReasonKind::Conflict)
+        })
+        .await
+        .unwrap();
+    assert_eq!(p.reason.unwrap().headline, "Merge conflict in c.txt");
+    // Quitting: the editor's gone from the pane, and its reason with it
+    // (the shell's own "finished" may follow).
+    type_in(&d, pane, ":qa!\r");
+    let p = web
+        .until("nvim gone from the pane", pane, |p| {
+            p.is_some_and(|p| p.editor.is_none() && p.reason.as_ref().is_none_or(|r| r.kind != ReasonKind::Conflict))
+        })
+        .await
+        .unwrap();
+    assert_eq!(p.file, None);
+    // Again, and `kill -9`: gone within 5 s.
+    type_in(&d, pane, &format!("nvim --clean {file}\r"));
+    web.until("nvim again", pane, |p| p.and_then(|p| p.editor.as_ref()).is_some()).await;
+    let pid = tui_pid(&file).expect("nvim's pid");
+    assert!(std::process::Command::new("kill").args(["-9", &pid.to_string()]).status().unwrap().success());
+    let killed = Instant::now();
+    web.until("nvim gone after kill -9", pane, |p| p.is_some_and(|p| p.editor.is_none())).await;
+    assert!(killed.elapsed() < Duration::from_secs(5), "took {:?}", killed.elapsed());
+    assert!(editors_in(&web).is_empty(), "nothing left behind: {:?}", editors_in(&web));
+}
+
+/// #1730: with arugula.nvim, the same nvim in a pane is still one entry,
+/// the pane: the plugin says which pane it's in, the daemon attaches it
+/// there instead of making a presence, and following the pane follows its
+/// buffer. Leaving, the pane is read over nvim's socket again; here that
+/// socket is where the pane's own environment put it.
+#[tokio::test(flavor = "multi_thread")]
+async fn nvim_with_the_plugin_in_a_pane_is_that_pane() {
+    if !nvim_for_panes() {
+        return;
+    }
+    let d = Daemon::child();
+    let root = repo(&d);
+    let file = format!("{root}/src/a.txt");
+    std::fs::write(&file, "one\ntwo\nthree\nfour\n").unwrap();
+    let plugin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../editors/nvim");
+    let plugin = std::fs::canonicalize(plugin).unwrap();
+    // A runtime directory only the pane knows of, short as sockets need.
+    let run = std::path::PathBuf::from(format!("/tmp/aru-nv-{}", std::process::id()));
+    std::fs::create_dir_all(&run).unwrap();
+    let data = d.sessions.join("nvim-data");
+    let pane = shell_pane(&d, &root);
+    let mut web = Client::connect(&d).await;
+    type_in(
+        &d,
+        pane,
+        &format!(
+            "XDG_RUNTIME_DIR={} XDG_DATA_HOME={} nvim --clean --cmd 'set rtp^={}' -c 'runtime plugin/arugula.lua' {file}\r",
+            run.display(),
+            data.display(),
+            plugin.display(),
+        ),
+    );
+    // The plugin's link on the pane: it can be followed.
+    web.until("the plugin on the pane", pane, |p| {
+        p.and_then(|p| p.editor.as_ref().map(|e| (e, p.file.as_deref())))
+            .is_some_and(|(e, f)| e.app == "nvim" && !e.no_follow && f == Some("src/a.txt"))
+    })
+    .await;
+    web.pump(Duration::from_millis(500)).await;
+    assert_eq!(editors_in(&web), vec![pane], "one entry: the pane, no presence beside it");
+    // Following the pane: the buffer, then the cursor, live.
+    web.send(ClientMsg::Follow { pane, on: true }).await;
+    let open = web.followed("the file", |v| v.get("open").is_some()).await;
+    assert_eq!(open["open"]["text"], "one\ntwo\nthree\nfour");
+    type_in(&d, pane, "jj");
+    web.followed("the cursor on line 3", |v| v["line"] == 3).await;
+    type_in(&d, pane, "x");
+    let edit = web.followed("an edit", |v| v.get("edit").is_some()).await;
+    assert_eq!(edit["edit"]["changes"][0], json!({ "range": [3, 0, 4, 0], "text": "hree\n" }));
+    // Leaving: the pane is read over nvim's own socket again.
+    type_in(&d, pane, ":ArugulaLeave\r");
+    web.until("read without the plugin", pane, |p| {
+        p.and_then(|p| p.editor.as_ref()).is_some_and(|e| e.no_follow && e.line == Some(3))
+    })
+    .await;
+    assert_eq!(editors_in(&web), vec![pane]);
+    type_in(&d, pane, ":qa!\r");
+    web.until("nvim gone", pane, |p| p.is_some_and(|p| p.editor.is_none())).await;
+    let _ = std::fs::remove_dir_all(&run);
 }
 
 /// An editor isn't in any session: someone a session was shared with

@@ -359,6 +359,7 @@ impl Daemon {
                         p.close();
                         self.config.pane_gone.forget(pane);
                     }
+                    self.editors.remove(&pane);
                     if let Some(b) = self.blocks.remove(&pane) {
                         b.close();
                         // Its history is kept like a closed pane's.

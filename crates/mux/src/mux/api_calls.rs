@@ -1,6 +1,8 @@
 //! What the HTTP API and the CLI ask of the multiplexer: one match on [`Api`],
 //! answered here in the same order as every other change.
 
+use std::sync::Arc;
+
 use super::{Api, AskReply, Daemon, SAVE_DEBOUNCE};
 use arugula_core::{Intent, Role};
 use arugula_proto::{PaneId, ServerMsg, ask::AskKind};
@@ -191,20 +193,28 @@ impl Daemon {
                 }
             }
             Api::Editors(who, reply) => {
+                let entry = |id: PaneId, i: arugula_proto::PaneInfo, block: bool| {
+                    let v = serde_json::json!({
+                        "pane": id, "block": block, "editor": i.editor, "folder": i.cwd,
+                        "project": i.project, "file": i.file, "title": i.title, "attention": i.attention,
+                        "reason": i.reason, "terminal": i.kind == arugula_proto::BlockType::Terminal,
+                    });
+                    (id, v)
+                };
+                let may = |id: PaneId| who.as_ref().is_none_or(|w| self.readable(w, id));
                 let mut out: Vec<(PaneId, serde_json::Value)> = self
                     .blocks
                     .iter()
-                    .filter(|(id, b)| b.link().is_some() && who.as_ref().is_none_or(|w| self.readable(w, **id)))
-                    .map(|(id, b)| {
-                        let i = self.block_info(*id, b);
-                        let v = serde_json::json!({
-                            "pane": id, "block": !b.detached(), "editor": i.editor, "folder": i.cwd,
-                            "project": i.project, "file": i.file, "title": i.title, "attention": i.attention,
-                            "reason": i.reason,
-                        });
-                        (*id, v)
-                    })
+                    .filter(|(id, b)| b.link().is_some() && may(**id))
+                    .map(|(id, b)| entry(*id, self.block_info(*id, b), !b.detached()))
                     .collect();
+                // The editors running in terminals (#1730).
+                out.extend(
+                    self.editors
+                        .keys()
+                        .filter(|id| may(**id))
+                        .filter_map(|id| Some(entry(*id, self.info_of_any(*id)?, false))),
+                );
                 out.sort_by_key(|(id, _)| *id);
                 let _ = reply.send(out.into_iter().map(|(_, v)| v).collect());
             }
@@ -229,6 +239,39 @@ impl Daemon {
                     self.full = true;
                     self.broadcast();
                 }
+            }
+            Api::EditorAttach(pane, link, replace, reply) => {
+                let r = if !self.panes.contains_key(&pane) {
+                    Err(format!("no terminal %{pane} here"))
+                } else if self.editors.contains_key(&pane) && !replace {
+                    Err(format!("%{pane} has an editor already"))
+                } else {
+                    link.bind(pane, self.notices.clone());
+                    // Anyone following the one before follows this one.
+                    if let Some(n) = self.follows.get(&pane).map(|s| s.len() as u32) {
+                        link.followers(n, true);
+                    }
+                    self.editors.insert(pane, link);
+                    info!(pane, "an editor runs in it");
+                    self.touch(pane);
+                    Ok(())
+                };
+                let _ = reply.send(r);
+            }
+            Api::EditorDetach(pane, link) => {
+                if self.editors.get(&pane).is_some_and(|l| Arc::ptr_eq(l, &link)) {
+                    self.editors.remove(&pane);
+                    self.editor_gone(pane);
+                }
+            }
+            Api::Terminals(reply) => {
+                let out = self
+                    .panes
+                    .iter()
+                    .filter(|(id, _)| self.meta.get(id).is_none_or(|m| m.host.is_none()))
+                    .map(|(id, h)| (*id, h.pid_now()))
+                    .collect();
+                let _ = reply.send(out);
             }
             Api::StartedBy(pane, by) => {
                 if self.panes.contains_key(&pane) || self.blocks.contains_key(&pane) {

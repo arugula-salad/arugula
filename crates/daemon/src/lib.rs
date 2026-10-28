@@ -1057,6 +1057,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     telemetry.start(control.clone());
     let mux = mux::start(config, store, kept, editors::pane_cards(&ide));
     editors::run_ide(&ide, mux.clone());
+    editors::watch_panes(mux.clone());
 
     let hosts = hosts::Hosts::open(&state_dir, name.clone(), provider);
     hosts.spawn_probe();

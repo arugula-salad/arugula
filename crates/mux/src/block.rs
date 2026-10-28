@@ -488,11 +488,17 @@ impl BlockKinds {
 }
 
 /// What the multiplexer and an editor block call on the editor that is
-/// connected to them.
+/// connected to them: an editor block's window, an editor of its own, or
+/// the editor running in a terminal pane (#1730), which the mux keeps
+/// beside the pane and shows on it.
 pub trait EditorLink: Send + Sync {
     /// It's pane `id` now: notices about it go to `sink`.
     fn bind(&self, id: PaneId, sink: NoticeSink);
     fn info(&self) -> arugula_proto::EditorInfo;
+    /// Its active file, whole.
+    fn file(&self) -> Option<String> {
+        None
+    }
     /// An editor block's: told of each peek.
     fn on_peek(&self, f: Box<dyn Fn(&Peek) + Send + Sync>);
     /// The debugger: run on.
