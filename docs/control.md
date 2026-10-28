@@ -197,7 +197,26 @@ session users wrote to would let one session plant what another links.
 A slot's caches outlive its sessions, like the rest of the slot user's
 home but `~/.claude` and the checkout. sccache over a kept target
 directory, because its size has a cap: an Arugula target directory is
-8 to 40 GB, and a box has three slots.
+8 to 40 GB, and a box has three slots. The box's sessions share its disk,
+so each prompt the daemon hands a session says when it's under 10 GiB
+free, and asks the session to clear its own build output and say if a
+build ran out (Arugula #263).
+
+The example also installs what the browser specs need (python3,
+Playwright's Chromium in `/opt/arugula/tools/ms-playwright`) and gives the
+box one suite lock (`/opt/arugula/locks/suite.lock`), so a session runs
+the specs it wrote with `just e2e-spec` while the others wait for their
+turn at the box's memory ([docs/testing.md](testing.md#on-a-dev-box),
+Arugula #264).
+
+A session's branch starts from its repo's default branch as GitHub has it
+when the session starts: the daemon fetches it into the checkout before it
+hands the checkout over, since the workspace's clone is as old as the
+box's setup (Arugula #263). It fetches with no credentials, so a private
+repo's session starts from the clone, and its first prompt says so. And the
+daemon ends `/etc/resolv.conf` with a newline at its start, after each
+resume and before each prompt: E2B's envd writes it without one at every
+`/init`, and Zig's resolver then fails to fetch Ghostty's dependencies.
 
 **Snapshots (M263, Arugula #140).** Once a workspace's box has set up all
 right, the platform builds the workspace a snapshot, and its new boxes and

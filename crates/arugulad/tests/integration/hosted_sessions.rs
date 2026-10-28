@@ -7,6 +7,9 @@
 //! - a session's first prompt runs as its slot's user, in a clone of the
 //!   workspace's repo on the session's branch, with the repo's CLAUDE.md as
 //!   text, and its reports are signed by the box, numbered from 1;
+//! - that branch starts from the repo's default branch as GitHub has it
+//!   when the session starts, or from the clone, said, when GitHub can't
+//!   be read (Arugula #263);
 //! - a follow-up queued mid-turn waits for the turn, then runs, credited to
 //!   its own author; a cancel stops the turn;
 //! - a question and a permission go out as `needs_input`, and the answers
@@ -910,6 +913,56 @@ fn a_hosted_machine_runs_sessions() {
             }
         }
     }
+}
+
+/// Arugula #263: a session's branch starts from its repo's default branch
+/// as GitHub has it when the session starts, not as the workspace's clone
+/// had it at setup; `origin/HEAD` is that head, so a push counts only the
+/// session's own commits. When GitHub can't be read, it starts from the
+/// clone, and its first prompt says so.
+#[test]
+fn a_session_branches_from_main_as_it_is_now() {
+    // The daemon bound, so it lives to the end.
+    let Rig { _rt, f, marks, homes, repo, remote, d: _d, .. } = rig("fresh");
+    // main moves on GitHub after the box's setup cloned it.
+    let other = marks.join("elsewhere");
+    git(&marks, &["clone", "-q", remote.to_str().unwrap(), other.to_str().unwrap()]);
+    git(&other, &["config", "user.email", "x@example.invalid"]);
+    git(&other, &["config", "user.name", "x"]);
+    std::fs::write(other.join("NEW.md"), "merged since\n").unwrap();
+    git(&other, &["add", "."]);
+    git(&other, &["commit", "-qm", "merged after the setup"]);
+    git(&other, &["push", "-q", "origin", "main"]);
+    let now = git(&remote, &["rev-parse", "main"]);
+    assert_ne!(now, git(&repo, &["rev-parse", "main"]), "the box's clone is behind");
+
+    let a = ses('a');
+    f.start(&a, "fresh", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "session a's first turn", || f.state(&a) == "done");
+    let checkout = homes.join("ses1").join("work").join(&a);
+    assert_eq!(git(&checkout, &["rev-parse", "HEAD"]), now, "its branch starts at main's head now");
+    assert_eq!(git(&checkout, &["rev-parse", "refs/remotes/origin/HEAD"]), now);
+    assert!(checkout.join("NEW.md").exists());
+    let sent = |user: &str| -> String {
+        std::fs::read_dir(homes.join(user).join(".fake-acp"))
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("prompt-"))
+            .map(|e| std::fs::read_to_string(e.path()).unwrap())
+            .collect()
+    };
+    assert!(!sent("ses1").contains("the box's clone"), "{}", sent("ses1"));
+
+    // GitHub gone: the clone as its setup made it, said.
+    std::fs::rename(&remote, marks.join("gone.git")).unwrap();
+    let b = ses('b');
+    f.start(&b, "stale", prompt(2, "acct1", "hello"));
+    wait(&marks, &f, "session b's first turn", || f.state(&b) == "done");
+    let checkout = homes.join("ses2").join("work").join(&b);
+    assert_eq!(git(&checkout, &["rev-parse", "HEAD"]), git(&repo, &["rev-parse", "main"]));
+    let said = sent("ses2");
+    assert!(said.contains("This checkout is the box's clone of acme/app as its setup made it"), "{said}");
+    assert!(said.contains("Run the tests with make check."), "the repo's notes still come: {said}");
 }
 
 /// M261: the workspace's finish step, after each turn and before the push,

@@ -26,6 +26,17 @@
 #   "Session users' tools"). One cache all session users write would let
 #   one session plant what another links; each user's is theirs.
 # - Swap, and cargo's jobs (CARGO_BUILD_JOBS), as a box this size takes.
+# - The browser specs (Arugula #264): python3 (the specs' fake agent,
+#   scripts/free-port), Playwright's Chromium with its system libraries
+#   in $tools/ms-playwright (PLAYWRIGHT_BROWSERS_PATH, E2E_CHROMIUM=1), and
+#   one suite lock for the whole box (ARUGULA_SUITE_LOCK_FILE): its
+#   sessions share 8 GiB, so one Chrome (or one `just test`) runs at a
+#   time across all of them. A session runs its specs with
+#   `just e2e-spec e2e/<name>.spec.ts` (docs/testing.md, "On a dev box").
+# - /etc/resolv.conf ends with a newline, which Zig needs to fetch
+#   Ghostty's dependencies (Arugula #263). envd writes it again at every
+#   resume, so arugulad --hosted puts it back too (hosted/resolv.rs); this
+#   only fixes it for the setup's own run.
 #
 # Run again, it does only what's missing, and republishes.
 set -euo pipefail
@@ -82,6 +93,31 @@ hash -r
 # The web client's dependencies, as `just bootstrap` installs them.
 (cd "$repo/web" && pnpm install --frozen-lockfile)
 
+# Zig reads a last line with no newline as cut off (Arugula #263).
+if [ -s /etc/resolv.conf ] && [ "$(tail -c 1 /etc/resolv.conf | od -An -c | tr -d ' ')" != '\n' ]; then
+  sudo -n sh -c "printf '\n' >> /etc/resolv.conf" && echo "ended /etc/resolv.conf with a newline"
+fi
+
+# The browser specs (Arugula #264): python3 for the specs' fake agent and
+# scripts/free-port, and Playwright's Chromium, the version this checkout's
+# Playwright wants, with the system libraries it needs (its --with-deps
+# runs apt through sudo). In the tools, where every session user reads it.
+if ! command -v python3 >/dev/null; then
+  sudo -n apt-get update -qq
+  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends python3 perl
+fi
+export PLAYWRIGHT_BROWSERS_PATH="$tools/ms-playwright"
+(cd "$repo/web" && pnpm exec playwright install --with-deps chromium)
+arugula-tools env "PLAYWRIGHT_BROWSERS_PATH=$tools/ms-playwright" E2E_CHROMIUM=1
+# One suite at a time on the box (scripts/suite-lock): a file every session
+# user can open to lock, in a directory only `user` writes, so none can
+# swap it for another.
+install -d -m 0755 /opt/arugula/locks
+[ -f /opt/arugula/locks/suite.lock ] || install -m 0666 /dev/null /opt/arugula/locks/suite.lock
+chmod 0666 /opt/arugula/locks/suite.lock
+export ARUGULA_SUITE_LOCK_FILE=/opt/arugula/locks/suite.lock
+arugula-tools env "ARUGULA_SUITE_LOCK_FILE=$ARUGULA_SUITE_LOCK_FILE"
+
 # Swap, so a Rust build doesn't take the box down: with 2 GB, cargo's
 # rustc and linker ran the box out of memory and the OOM killer took the
 # daemon (2026-10-24: six boxes paused and never came back).
@@ -134,13 +170,14 @@ else
 fi
 
 # The same tools in `user`'s own shells.
-line="export MISE_DATA_DIR=$tools/mise PATH=\"$tools/bin:\$HOME/.cargo/bin:\$HOME/.local/bin:$tools/mise/bin:$tools/mise/shims:\$PATH\""
+line="export MISE_DATA_DIR=$tools/mise PLAYWRIGHT_BROWSERS_PATH=$tools/ms-playwright E2E_CHROMIUM=1 ARUGULA_SUITE_LOCK_FILE=/opt/arugula/locks/suite.lock PATH=\"$tools/bin:\$HOME/.cargo/bin:\$HOME/.local/bin:$tools/mise/bin:$tools/mise/shims:\$PATH\""
 for f in "$HOME/.profile" "$HOME/.bashrc"; do
   grep -qxF "$line" "$f" 2>/dev/null || echo "$line" >>"$f"
 done
 
-# What a session sees, as ses1 when the box has it.
-check='cd /tmp && rustc --version && cargo --version && cargo nextest --version | head -1 && zig version && just --version && pnpm --version && node --version'
+# What a session sees, as ses1 when the box has it (expanded there).
+# shellcheck disable=SC2016
+check='cd /tmp && rustc --version && cargo --version && cargo nextest --version | head -1 && zig version && just --version && pnpm --version && node --version && python3 --version && ls -d "$PLAYWRIGHT_BROWSERS_PATH"/chromium-*/chrome-linux*/chrome && test -w "$ARUGULA_SUITE_LOCK_FILE"'
 if getent passwd ses1 >/dev/null; then
   arugula-tools as ses1 sh -c "$check"
 else
