@@ -43,11 +43,12 @@ export interface EditorState {
 
 /**
  * Open an editor on a pane's machine, in its directory (the daemon fills
- * both in from `from`), in a tab of its own.
+ * both in from `from`), in a tab of its own; or a file there, at `line`.
  */
-export function openEditor(client: Client, from: PaneId, path?: string) {
+export function openEditor(client: Client, from: PaneId, path?: string, line?: number | null) {
   if (!client.showsBlocks()) return blocksOff("editor");
-  void client.api("/api/blocks", { type: "editor", config: path ? { path } : {}, from_pane: from } satisfies OpenRequest, "couldn't open an editor");
+  const config = path ? (line ? { path, line } : { path }) : {};
+  void client.api("/api/blocks", { type: "editor", config, from_pane: from } satisfies OpenRequest, "couldn't open an editor");
 }
 
 const MB = (n: number) => `${Math.round(n / 1e6)} MB`;
