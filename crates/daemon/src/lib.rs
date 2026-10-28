@@ -42,7 +42,9 @@ use arugula_mux::holder;
 // The pane host on Windows (M58): the shim's part there.
 #[cfg(windows)]
 use arugula_mux::host;
-mod hosted;
+pub mod hosted;
+// A hosted box (`--hosted`): what registers `hosted::Hosted`.
+pub mod hosted_box;
 pub mod hosts;
 pub mod http1;
 pub mod install;
@@ -499,17 +501,9 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
     if argv.get(1).map(String::as_str) == Some("_shim") {
         shim::run(&argv[2..]);
     }
-    // A hosted box's reseed (M180), as root: nothing else of the daemon runs.
-    if argv.get(1).map(String::as_str) == Some("_reseed") {
-        hosted::reseed::cli(argv.get(2).map_or("", String::as_str));
-    }
-    // A snapshot builder's wipe (M263), as root, what to look for on its
-    // stdin: nothing else of the daemon runs.
-    if argv.get(1).map(String::as_str) == Some("_seal") {
-        hosted::snapshot::cli();
-    }
     // A feature crate's own program (the deploy drivers, `_planter` and
-    // the rest, as a deploy's run user): nothing else of the daemon runs.
+    // the rest, as a deploy's run user; a hosted box's `_reseed` and
+    // `_seal`, as root): nothing else of the daemon runs.
     if let Some(run) = subcommands::find(&argv) {
         run(&argv[2..]);
     }
@@ -787,7 +781,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         // A box from a workspace's snapshot (M263): nothing of the
         // builder's daemon is kept, before anything here reads its state.
         let state_dir = args.state_dir.clone().unwrap_or_else(default_state_dir);
-        hosted::snapshot::first_boot(&state_dir, &hosted::resume::sandbox_id_file(), &hosted::snapshot::dir());
+        hosted::first_boot(&state_dir);
     }
     let mut public_hosts = args.public_hosts.clone();
     let mut owner = args.owner.clone();

@@ -309,7 +309,7 @@ pub(crate) mod tests {
             legacy_app_children: None,
             purpose: None,
         };
-        (super::super::enroll::saved_from(got, &keys, None).unwrap(), d, root, phone)
+        (super::super::trust::saved_from(got, &keys, None).unwrap(), d, root, phone)
     }
 
     fn grant(d: &Delegation, by: &DeviceKeys, made: u64) -> ProjectGrant {

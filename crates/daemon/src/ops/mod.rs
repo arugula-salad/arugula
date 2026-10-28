@@ -14,7 +14,6 @@ mod close;
 mod conversations;
 mod flags;
 mod fs;
-mod hosted;
 mod hosts;
 mod input;
 mod inspect;
@@ -434,6 +433,8 @@ const ROUTERS: &[(&str, &str)] = &[
     // Nested in `mod api`: its function ends at its own indent.
     ("src/acl_api.rs", "pub fn routes()"),
     ("../arugulad-invite/src/lib.rs", "    fn routes(&self"),
+    // A hosted box's setup (M183).
+    ("src/hosted_box/mod.rs", "    fn routes(&self"),
     ("src/mcp/tokens.rs", "pub fn api_routes()"),
     ("../arugulad-labs/src/guest_ssh.rs", "pub fn routes()"),
     // The editor's: the IDE's operations here, and from its own crate the

@@ -855,14 +855,13 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
 /// The workspace's clone of `repo` (`owner/name`), as its setup made it.
 fn clone_of(dir: &Path, repo: &str) -> Option<PathBuf> {
     let want = repo.trim().trim_end_matches(".git").to_ascii_lowercase();
-    crate::hosted::setup::Saved::load(dir)
-        .repos
+    crate::hosted::clones(dir)
         .into_iter()
-        .find(|c| {
-            let url = c.url.trim_end_matches('/').trim_end_matches(".git").to_ascii_lowercase();
+        .find(|(url, _)| {
+            let url = url.trim_end_matches('/').trim_end_matches(".git").to_ascii_lowercase();
             url.ends_with(&format!("/{want}")) || url.ends_with(&format!(":{want}"))
         })
-        .map(|c| c.dir)
+        .map(|(_, dir)| dir)
         .filter(|d| d.join(".git").exists())
 }
 
@@ -1632,7 +1631,7 @@ async fn give(
     // Arugula #263: what the turn builds with. A resume since the last turn
     // took resolv.conf's newline again; the disk is shared with the box's
     // other sessions.
-    crate::hosted::resolv::fix().await;
+    crate::hosted::fix_resolv().await;
     if let Some(n) = disk_now(&l.user.home) {
         text.push_str(&n);
     }
