@@ -15,7 +15,6 @@ import {
   liveOver,
   machinesOf,
   matrixOf,
-  nextBoardsLevel,
   powersFor,
   reaching,
   RUN_POWERS,
@@ -132,7 +131,6 @@ test("the boards column has three levels, and each move gives and revokes what i
   assert.equal(boardsLevel(write, "d1", "prj_1"), "write", "a write reads too");
   assert.equal(boardsLevel(both, "d1", "prj_1"), "write");
   assert.equal(boardsLevel([g("g3", "boards.write", "d1", false), g("g4", "boards.read", "d2")], "d1", "prj_1"), "off", "revoked and other machines' don't count");
-  assert.deepEqual([nextBoardsLevel("off"), nextBoardsLevel("read"), nextBoardsLevel("write")], ["read", "write", "off"]);
 
   // Up.
   assert.deepEqual(move(none, "read"), { give: ["boards.read"], revoke: [] });

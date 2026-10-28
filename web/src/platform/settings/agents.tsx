@@ -1,11 +1,12 @@
 // Agents on your machines, in the account's settings: per project, a
-// matrix of the machines and six switches each, and a boards level (#293). Threads & issues (M197)
+// matrix of the machines and seven columns each. Threads & issues (M197)
 // lets a machine's agents read and post in the project's threads and
 // write its issues; Runs (M216) lets them read its runs and start its run
 // specs; Commands (M216, apart) start commands of their own there; Deploys
-// (M218) plan its deploys and ask for approval: never approve; and Start
+// (M218) plan its deploys and ask for approval: never approve; Start
 // sessions and Answer sessions (aru-121) start agent sessions as you, and
-// answer or prompt them.
+// answer or prompt them; and Boards (#293, a select of three levels, not a
+// switch) lets them read its boards, or read them and write their rows.
 // Your DMs get one more, one switch per machine (M197). Off until you turn
 // one on, and only over what you read; what they write is labelled as your
 // agent's, and every room they reach says so. The same grants as `arugula
@@ -26,7 +27,6 @@ import {
   liveOver,
   machinesOf,
   matrixOf,
-  nextBoardsLevel,
   powersFor,
   reaching,
   RUN_POWERS,
@@ -75,29 +75,32 @@ const HEADS: Record<Column, Head> = {
   boards: {
     head: "Boards",
     name: "boards",
-    gives: "read its boards (read), or read them and set their notes and statuses and move rows (read and write). Boards are in Labs: they do nothing until a team owner turns them on",
+    gives: "read its boards (read), or read them and set their notes and statuses and move rows (read and write). Boards are in Labs: this does nothing until boards are on for your account.",
   },
 };
 
 const LEVEL_WORDS: Record<BoardsLevel, string> = { off: "Off", read: "Read", write: "Read and write" };
 
-/** The boards column's control: its level, and a click to the next (off,
- * read, read and write). */
-function BoardsLevelButton({ level, label, k, busy, turn }: { level: BoardsLevel; label: string; k: string; busy: boolean; turn: (to: BoardsLevel) => void }) {
+/** The boards column's control: its level, and a choice of any of the
+ * three, which moves straight there. */
+function BoardsLevelSelect({ level, label, k, busy, turn }: { level: BoardsLevel; label: string; k: string; busy: boolean; turn: (to: BoardsLevel) => void }) {
   return (
-    <button
-      type="button"
+    <select
       class={`agent-level${level === "off" ? "" : " on"}`}
       data-agent-cell={k}
       data-level={level}
-      aria-label={`${label}: ${LEVEL_WORDS[level]}`}
+      aria-label={label}
       aria-busy={busy || undefined}
-      title={`${LEVEL_WORDS[level]}. Click for ${LEVEL_WORDS[nextBoardsLevel(level)].toLowerCase()}`}
+      value={level}
       disabled={busy}
-      onClick={() => turn(nextBoardsLevel(level))}
+      onChange={(e) => turn((e.target as HTMLSelectElement).value as BoardsLevel)}
     >
-      {LEVEL_WORDS[level]}
-    </button>
+      {(Object.keys(LEVEL_WORDS) as BoardsLevel[]).map((l) => (
+        <option key={l} value={l}>
+          {LEVEL_WORDS[l]}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -229,7 +232,7 @@ export function AgentGrants() {
                   if (columns[i] === "boards") {
                     return (
                       <td key={k} data-col={heads[i].head}>
-                        <BoardsLevelButton
+                        <BoardsLevelSelect
                           level={boardsLevel(grants, m.id, s.id ?? "")}
                           label={name}
                           k={k}

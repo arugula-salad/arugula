@@ -49,10 +49,6 @@ export const BOARDS_WRITE = "boards.write";
 /** How much of a project's boards a machine's agents have. */
 export type BoardsLevel = "off" | "read" | "write";
 
-/** The level after this one, as the boards control cycles: off, read, write,
- * and off again. */
-export const nextBoardsLevel = (l: BoardsLevel): BoardsLevel => (l === "off" ? "read" : l === "read" ? "write" : "off");
-
 /** What a machine's agents have over a project's boards: write if
  * `boards.write` is live (whatever else is), else read if `boards.read` is. */
 export function boardsLevel(grants: Grant[], machine: string, project: string): BoardsLevel {
