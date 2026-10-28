@@ -55,6 +55,7 @@ mod worktree;
 use arugula_mux::inventory;
 mod invite;
 use arugula_mux::keys;
+pub mod lab_flags;
 mod labs;
 mod listening;
 mod localauth;
@@ -652,7 +653,7 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
             let now = flags::explain(dir).into_iter().find(|(f, _)| f.name == name).map(|(_, s)| s);
             let now = now.expect("set accepted a known flag");
             println!("{name} is {} ({})", state(now.on), from(now.source));
-            if !labs::BUILT {
+            if !lab_flags::BUILT {
                 println!("  This build of Arugula has no Labs, so nothing changes.");
             } else if daemon_running(dir) {
                 println!("  The running daemon follows at once.");
@@ -680,7 +681,7 @@ fn sharing_cli(
             let on = s == args::OnOff::On;
             sharing::set_guest_ssh(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
             println!("guest-ssh is {}", state(on));
-            if !labs::BUILT {
+            if !lab_flags::BUILT {
                 println!("  This build of Arugula has no guest ssh, so nothing changes.");
             } else if daemon_running(dir) {
                 println!("  The running daemon follows at once.");

@@ -19,7 +19,7 @@ fn fl(labs: bool) -> arugula_proto::flags::On {
 /// checks the listing in
 /// `unlisted_tools_are_not_listed_without_labs_but_are_there`.
 pub fn the_tool_list_and_each_schema_are_unchanged() {
-    if !crate::labs::BUILT {
+    if !crate::lab_flags::BUILT {
         return;
     }
     let mut all = serde_json::Map::new();

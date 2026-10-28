@@ -14,7 +14,7 @@ use super::{Cx, Handle, OpError};
 /// The settings as they are now. A build without Labs has no guest ssh:
 /// the setting is kept, and nothing follows.
 fn now(cx: &Cx<'_>) -> Sharing {
-    Sharing { guest_ssh: sharing::guest_ssh(cx.app.control.state_dir()), built: crate::labs::BUILT }
+    Sharing { guest_ssh: sharing::guest_ssh(cx.app.control.state_dir()), built: crate::lab_flags::BUILT }
 }
 
 impl Handle for SharingGet {

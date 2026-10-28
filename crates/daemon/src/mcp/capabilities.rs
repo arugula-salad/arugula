@@ -22,7 +22,7 @@ const LIVE_MS: u64 = 24 * 3600 * 1000;
 impl Call<'_> {
     pub(super) async fn capabilities(&self) -> Out {
         let app = self.app();
-        let on = crate::labs::flags(app.control.state_dir());
+        let on = crate::lab_flags::flags(app.control.state_dir());
         let forges = forges(app, on).await;
         let hooks = self.hooks().await;
         let (cloud, threads, runs) = tokio::join!(
@@ -144,7 +144,7 @@ async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
 /// started now: its flags, a forge signed in to here, control and the
 /// grants there.
 pub(crate) async fn can_do(app: &App) -> Vec<AgentCan> {
-    let on = crate::labs::flags(app.control.state_dir());
+    let on = crate::lab_flags::flags(app.control.state_dir());
     let (forges, cloud, threads, runs) = tokio::join!(
         forges(app, on),
         super::cloud::cloud_reach(app),

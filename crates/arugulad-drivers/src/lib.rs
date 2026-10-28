@@ -26,8 +26,8 @@ pub fn register() {
     register("_arugula-release", arugula_release::cli);
 }
 
-/// The temp directories the drivers' tests work in.
-#[cfg(test)]
+/// The temp directories the drivers' tests work in: theirs are Unix only.
+#[cfg(all(test, unix))]
 mod hosted {
     use std::path::PathBuf;
 

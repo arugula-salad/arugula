@@ -547,7 +547,7 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
 /// their own setup.
 pub(crate) fn features(app: &App) -> HostFeatures {
     let dir = app.control.state_dir();
-    let on = crate::labs::flags(dir);
+    let on = crate::lab_flags::flags(dir);
     HostFeatures {
         labs: on.any(),
         dev: arugula_proto::flags::unlocked(dir),
@@ -556,7 +556,7 @@ pub(crate) fn features(app: &App) -> HostFeatures {
         vms: on.has(flags::SANDBOX_PROVIDERS) && app.mux.provider.is_some(),
         studio: on.has(flags::STUDIO) && crate::labs::studio_here(),
         // A sharing setting, not a flag (native #205).
-        guest_ssh: Some(crate::labs::BUILT && arugula_proto::sharing::guest_ssh(dir)),
+        guest_ssh: Some(crate::lab_flags::BUILT && arugula_proto::sharing::guest_ssh(dir)),
         flags: Some(on.names().map(str::to_owned).collect()),
     }
 }
