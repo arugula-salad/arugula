@@ -9,6 +9,9 @@ mod acl {
 }
 mod acl_api;
 pub mod agent;
+// The agent and chat blocks, and the conversations' operations; the
+// binary registers them. Next: crates/arugulad-agent (#232).
+pub mod agent_block;
 use arugula_mux::agentenv;
 pub mod api;
 pub mod args;
@@ -79,7 +82,7 @@ pub mod push;
 mod remote;
 pub mod review;
 pub mod roots;
-mod rules;
+pub mod rules;
 mod seal;
 mod selfupdate;
 pub mod server;
@@ -754,16 +757,15 @@ fn kinds(
     use block::Make;
     let mut kinds = block::BlockKinds::default();
     kinds.add(BlockType::Browser, Make(browser::Browser::create));
-    kinds.add(BlockType::Agent, agent::AgentKind { mcp, secrets, rules: rules.clone() });
-    kinds.add(BlockType::Chat, agent::ChatKind { rules });
     editors::kinds(&mut kinds);
     kinds.add(BlockType::Remote, remote::RemoteKind);
     forges::kinds(&mut kinds);
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     kinds.add(BlockType::Board, board_block::BoardKind);
     lab_hooks::labs().kinds(&mut kinds, invite);
-    // The feature crates' (#232): Docs.
-    features::kinds(&mut kinds, invite);
+    // The feature crates' (#232): the agent and chat blocks, Docs, invites.
+    let cx = features::KindsCx { invite: invite.clone(), mcp, secrets, rules };
+    features::kinds(&mut kinds, &cx);
     kinds
 }
 
@@ -1050,7 +1052,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         kinds,
         pane_env: editors::pane_env(&ide),
         shell_env_skip: vec!["CLAUDE_CODE_SSE_PORT".into()],
-        sessions: Arc::new(conversations::Sessions),
+        sessions: agent::sessions(),
         pane_gone,
         usage: Arc::new(telemetry::Hooks),
         at_exit: Some(mux::AtExit(Arc::new(|| lab_hooks::labs().at_exit()))),

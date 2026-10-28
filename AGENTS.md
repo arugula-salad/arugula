@@ -156,7 +156,7 @@ nothing marked `mux:` names the edge or the block kinds.
   (`shellint.rs`, `shellenv.rs`), what a pane is busy with (`classify.rs`),
   process info (`procinfo.rs`), history (`history.rs`), resuming an agent's
   conversation (`resume.rs`), named keys (`keys.rs`).
-- **Blocks:** what every block provides and the registry of kinds (`mux:block.rs`), agents (`agent/`),
+- **Blocks:** what every block provides and the registry of kinds (`mux:block.rs`), agents (the block in `agent_block/`, registered through `features.rs` and `agent/`'s `Agents`; what the rest shares with it in `agent/`),
   browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`,
   and `block_channel.rs` for control's block origins),
   editors (`editor/`, in `arugulad-editor`), review (`review/`, its blocks in `arugulad-review`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`, in `arugulad-forge`),

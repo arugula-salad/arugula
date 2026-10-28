@@ -258,10 +258,10 @@ fn a_real_node_from_mise_not_its_shims() {
     }
     // Aliases mise keeps beside the versions are ignored.
     std::fs::create_dir_all(root.join("lts/bin")).unwrap();
-    assert_eq!(super::mise_node(&root), Some(root.join("22.23.3/bin")));
+    assert_eq!(crate::agent::adapters::mise_node(&root), Some(root.join("22.23.3/bin")));
     std::fs::remove_dir_all(root.join("22.9.1")).unwrap();
     std::fs::remove_dir_all(root.join("22.23.3")).unwrap();
-    assert_eq!(super::mise_node(&root), Some(root.join("24.21.0/bin")));
+    assert_eq!(crate::agent::adapters::mise_node(&root), Some(root.join("24.21.0/bin")));
     std::fs::remove_dir_all(&root).unwrap();
 }
 

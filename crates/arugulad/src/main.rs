@@ -26,6 +26,9 @@ fn register() {
         // agent sessions (crates/arugulad-control-tools). Before invite,
         // which lists after `forge_draft`.
         arugulad_control_tools::register();
+        // The agent and chat blocks and the conversations on this machine
+        // (agent_block, next: crates/arugulad-agent).
+        arugulad_base::agent_block::register();
         // Inviting a person into a session (crates/arugulad-invite).
         arugulad_invite::register();
         // A hosted workspace's box: enrolling, its setup and snapshots,

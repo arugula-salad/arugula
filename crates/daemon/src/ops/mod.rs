@@ -11,7 +11,6 @@
 
 mod acl;
 mod close;
-mod conversations;
 mod flags;
 mod fs;
 mod hosts;
@@ -433,6 +432,8 @@ const ROUTERS: &[(&str, &str)] = &[
     // Nested in `mod api`: its function ends at its own indent.
     ("src/acl_api.rs", "pub fn routes()"),
     ("../arugulad-invite/src/lib.rs", "    fn routes(&self"),
+    // The conversations' (M33), the agent block's.
+    ("src/agent_block/mod.rs", "    fn routes(&self"),
     // A hosted box's setup (M183).
     ("../arugulad-hosted/src/lib.rs", "    fn routes(&self"),
     ("src/mcp/tokens.rs", "pub fn api_routes()"),

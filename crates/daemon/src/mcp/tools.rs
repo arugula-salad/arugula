@@ -12,7 +12,7 @@ use arugula_proto::{
     api::{ActRequest, HistoryEntry, HistoryKind, OpenRequest, PaneSummary, RunRequest, WaitResult},
     flags::{self, On},
     forge::{ForgeState, ItemKind, ReviewEvent, Write},
-    op::ops::{ClosePane, ConversationOpen, ConversationsList, ListPanes},
+    op::ops::{ClosePane, ListPanes},
 };
 use rmcp::{
     RoleServer,
@@ -918,7 +918,6 @@ const SHOW: &[Kind] = &[
         schema: schema_for_type::<OpenIssueArgs>,
         flag: None,
     },
-    super::ops::kind::<ConversationOpen>(),
     Kind {
         name: "chat",
         description: "Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
@@ -977,7 +976,6 @@ const DRAFT: &[Kind] = &[
 /// `list`'s lists.
 const LIST: &[Kind] = &[
     super::ops::kind::<ListPanes>(),
-    super::ops::kind::<ConversationsList>(),
     Kind {
         name: "devices",
         description: "The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.",
@@ -1820,7 +1818,6 @@ impl<'a> Call<'a> {
             },
             // list
             ("list", Some("panes")) => super::ops::call::<ListPanes>(self, args).await,
-            ("list", Some("conversations")) => super::ops::call::<ConversationsList>(self, args).await,
             ("list", Some("devices")) => self.list_devices(),
             ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel" | "review" | "apply"))) => match parse(args)
             {
@@ -1855,7 +1852,6 @@ impl<'a> Call<'a> {
                 }
                 Err(e) => Err(e),
             },
-            ("show", Some("conversation")) => super::ops::call::<ConversationOpen>(self, args).await,
             ("show", Some("chat")) => match parse(args) {
                 Ok(a) => self.show_chat(a).await,
                 Err(e) => Err(e),
@@ -3951,7 +3947,7 @@ mod tests {
     fn kinds_are_picked_and_checked() {
         let kind = |tool: &str, args: Value| route(tool, args, fl(true)).map(|(_, k, a)| (k, a));
         assert_eq!(kind("list", json!({})).unwrap(), (Some("panes"), json!({})));
-        assert_eq!(kind("list", json!({ "kind": "conversations", "live": true })).unwrap().0, Some("conversations"));
+        assert_eq!(kind("list", json!({ "kind": "devices" })).unwrap().0, Some("devices"));
         let e = kind("show", json!({ "port": 3000 })).unwrap_err();
         assert!(e.contains("show needs a kind") && e.contains("port, changes, file"), "{e}");
         let e = kind("show", json!({ "kind": "terminal" })).unwrap_err();
