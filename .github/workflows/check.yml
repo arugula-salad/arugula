@@ -1,5 +1,6 @@
 # Every push to main, as parallel as it goes (#287):
-# - lint: the quick checks, on GitHub's runners;
+# - on GitHub's runners: lint, the quick checks, and e2e, the Playwright
+#   specs in seven shards (build's binaries, from the pods);
 # - on the home cloud's runners (arugula-amd64: a fresh pod per job,
 #   docs/development.md):
 #   - build and static: the debug and the box's (static) binaries, once;
@@ -15,7 +16,7 @@
 #     (`just test-platform-postgres`, M143), beside test;
 #   - core: the daemon and the CLI without Labs (`just check-core`, #452);
 #   - testnet: the test stack's claims (ssh, then control);
-#   - e2e: the Playwright specs in seven shards; stack: those on the test
+#   - stack: the Playwright specs on the test
 #     stack (the specs that time things run nightly: perf-nightly.yml);
 #   - desktop-xvfb: the Linux desktop app's claims under Xvfb, against
 #     static's binaries, in a test image kept on GHCR;
@@ -406,9 +407,15 @@ jobs:
         if: always()
         run: just testnet down
 
+  # On GitHub's runners since 2026-10-28, not the pods: the shards build
+  # nothing (build's run-debug artifact, 109 MB), were a third of the pods'
+  # time, and their timing flakes came under shared nodes' load (#271's
+  # census); each hosted job is a VM of its own, free for a public repo.
+  # Ubuntu 24.04, not ubuntu-latest: build's binaries need glibc 2.39, the
+  # pods' image's, which 24.04 has; a newer pod image needs a newer runner.
   e2e:
     needs: build
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
