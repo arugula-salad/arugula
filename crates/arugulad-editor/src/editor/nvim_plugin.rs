@@ -564,10 +564,27 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    /// Whether nvim 0.10 or later is here (what panes need, #1730); it
+    /// says why not, loudly, when it isn't.
+    fn nvim_here() -> bool {
+        let Ok(out) = std::process::Command::new("nvim").arg("--version").output() else {
+            eprintln!("SKIPPED: no nvim here");
+            return false;
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        let v = text.split_whitespace().nth(1).unwrap_or("").trim_start_matches('v').to_owned();
+        let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+        let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+        if (major, minor) < (0, 10) {
+            eprintln!("SKIPPED: nvim {v} is older than 0.10 (CI must install 0.10+)");
+            return false;
+        }
+        true
+    }
+
     /// A headless nvim with these variables, and its socket.
     async fn headless(dir: &Path, env: &[(&str, &Path)], args: &[&str]) -> Option<(std::process::Child, PathBuf)> {
-        if std::process::Command::new("nvim").arg("--version").output().is_err() {
-            eprintln!("SKIPPED: no nvim here");
+        if !nvim_here() {
             return None;
         }
         let run = dir.join("run");
@@ -677,8 +694,7 @@ mod tests {
     /// a socket with no daemon behind it.
     #[tokio::test(flavor = "multi_thread")]
     async fn checkhealth_names_a_missing_socket_or_daemon() {
-        if std::process::Command::new("nvim").arg("--version").output().is_err() {
-            eprintln!("SKIPPED: no nvim here");
+        if !nvim_here() {
             return;
         }
         let d = temp("health");
