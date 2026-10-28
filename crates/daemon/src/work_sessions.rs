@@ -618,7 +618,7 @@ pub fn all(dir: &Path) -> Vec<Session> {
 }
 
 /// The sessions this box holds now (taken, not ended), parked ones too.
-pub(crate) fn live(dir: &Path) -> Vec<Session> {
+pub fn live(dir: &Path) -> Vec<Session> {
     all(dir).into_iter().filter(|l| l.ended.is_none()).collect()
 }
 

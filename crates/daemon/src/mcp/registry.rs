@@ -1,5 +1,5 @@
 //! MCP tools and kinds a feature crate adds (#232). The tool list
-//! (`mcp_server`'s `tools.rs`) is the base's table with these put in where each says, so
+//! (`arugulad-mcp`'s `tools.rs`) is the base's table with these put in where each says, so
 //! the list an agent sees keeps its order (and `mcp-tool-list.json`, which
 //! pins it, its lines) whichever crate a tool lives in. A call to one runs
 //! its [`Run`]. Registered before `main`, by the binary.

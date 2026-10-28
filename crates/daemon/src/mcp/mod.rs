@@ -14,14 +14,14 @@
 //! already ran on every TCP request, with the tailnet names in it.
 //!
 //! **Where** (#232). The server (rmcp's handler, the table, the tools'
-//! calls, `capabilities`) is `mcp_server`, which the base reaches through
+//! calls, `capabilities`) is `arugulad-mcp`, which the base reaches through
 //! [`Mcp`]. Here is what it shares with the base's operations (`ops.rs`)
 //! and the feature crates' tools (`registry.rs`): who's calling
 //! ([`Caller`]), a call and a tool's row (`tools.rs`), the tokens, a VM
 //! agent's relay, an agent block's [`Link`], and driving a cloud
 //! workspace's machine (`hosted.rs`).
 //!
-//! **Tools** (`mcp_server`'s `tools.rs`) return their structured result with a `summary`
+//! **Tools** (`arugulad-mcp`'s `tools.rs`) return their structured result with a `summary`
 //! sentence in it, and the same JSON as text: Claude Code shows the model
 //! only the structured part, Codex both (S14). Output is paged (about 16 KB
 //! a page) so a chatty pane can't flood the agent's context, and waits
@@ -133,7 +133,7 @@ impl Caller {
     }
 }
 
-/// MCP's server (#232, `mcp_server`): `/mcp` and what goes with it, a VM
+/// MCP's server (#232, `arugulad-mcp`): `/mcp` and what goes with it, a VM
 /// agent's relayed sessions, a hosted session's own listener, and the tool
 /// table. What the rest of the daemon and the feature crates share with it
 /// (a call, the tools' rows, the registry, the operations' half) stays here.

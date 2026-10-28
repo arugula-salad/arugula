@@ -15,7 +15,7 @@ Arugula is MIT OR Apache-2.0. Its binaries include the software below.
   It also carries the swarm's fonts, Big Shoulders Display, Instrument Sans and JetBrains Mono (Fontsource's builds, SIL Open Font License 1.1, below).
 - **Rust crates**, by license:
 
-- Apache License 2.0 (259)
+- Apache License 2.0 (260)
 - MIT License (57)
 - Unicode License v3 (19)
 - BSD 3-Clause "New" or "Revised" License (11)
@@ -5440,6 +5440,7 @@ Used by:
 - [arugulad-hosted 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-invite 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-labs 0.0.0](https://github.com/arugula-salad/arugula)
+- [arugulad-mcp 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-review 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula 0.65.0](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)

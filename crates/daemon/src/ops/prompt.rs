@@ -171,7 +171,7 @@ pub async fn prompt(
 
 /// What an agent block's last turn said and left in its repo (AR-1,
 /// #1475); `None` for anything else, or while it runs.
-pub(crate) async fn turn_result(app: &App, id: PaneId) -> Option<TurnResult> {
+pub async fn turn_result(app: &App, id: PaneId) -> Option<TurnResult> {
     let block = app.mux.api(|r| Api::Block(id, r)).await.flatten()?;
     serde_json::from_value(block.call("turn_result", serde_json::Value::Null).await.ok()?).ok()
 }

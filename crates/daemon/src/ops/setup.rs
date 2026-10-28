@@ -3,7 +3,7 @@
 //! agent's adapter. HTTP only, on `setup.rs`'s router, all the owner's. The
 //! status and the control answers are built as JSON values (their keys
 //! depend on the call); a button's is an [`Outcome`]. The card *What your
-//! agent can do here* is MCP's server's (`mcp_server`).
+//! agent can do here* is MCP's server's (`arugulad-mcp`).
 
 use arugula_proto::{
     api::Empty,

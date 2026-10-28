@@ -319,6 +319,7 @@ dependencies = [
  "arugulad-hosted",
  "arugulad-invite",
  "arugulad-labs",
+ "arugulad-mcp",
  "arugulad-review",
  "axum",
  "base64 0.23.1",
@@ -592,6 +593,28 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "arugulad-mcp"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "arugula-control-wire",
+ "arugula-core",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "axum",
+ "base64 0.23.1",
+ "nix",
+ "regex",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

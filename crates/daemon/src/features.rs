@@ -99,7 +99,7 @@ pub(crate) fn routes(mut r: Router<Arc<App>>) -> Router<Arc<App>> {
 }
 
 /// Each feature's `search` lines, in turn, up to `limit` in all.
-pub(crate) async fn search(app: &Arc<App>, re: regex::Regex, since_ms: Option<u64>, limit: usize) -> Vec<SearchHit> {
+pub async fn search(app: &Arc<App>, re: regex::Regex, since_ms: Option<u64>, limit: usize) -> Vec<SearchHit> {
     let mut out = Vec::new();
     for f in all() {
         if out.len() >= limit {

@@ -1,6 +1,6 @@
 //! A hosted session's MCP (aru-115, amended): the tools a session's agent
 //! has for its project's native issues and Docs (aru-118), on a listener of
-//! their own, which `mcp_server`'s `session` serves. Here: their names, and
+//! their own, which `arugulad-mcp`'s `session` serves. Here: their names, and
 //! the entry a session's agent is given ([`entry`]).
 
 use std::sync::OnceLock;

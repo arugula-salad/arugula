@@ -3,7 +3,8 @@
 //! the crates' tools put in. The checks are the base's (`whole` modules,
 //! cargo feature `whole-tests`); they run here, after [`register`].
 
-use arugulad_base::{mcp_server::tools::whole as tools, whole};
+use arugulad_base::whole;
+use arugulad_mcp::tools::whole as tools;
 
 use super::register;
 
