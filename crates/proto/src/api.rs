@@ -55,6 +55,8 @@
 //! | GET, PUT | `/api/ide` | PUT `IdeDiffsRequest` | `IdeInfo` (PUT: `IdeDiffs`): arugulad as Claude Code's IDE (M28; the owner's) |
 //! | POST | `/api/ide/mention` | `IdeMentionRequest` | `IdeMentioned` |
 //! | POST | `/api/panes/N/nvim-plugin` | | `NvimPluginInstalled`: arugula.nvim installed into the nvim the pane runs, loaded and joined (#1733; the owner's) |
+//! | POST | `/api/panes/N/nvim-block` | `NvimBlockRequest` | `NvimBlockOpened`: an nvim editor block beside the pane (#1734; the owner's) |
+//! | POST | `/api/nvim/theme` | `NvimTheme` | `NvimThemed`: the page's colors for this machine's nvim blocks (#1734; the owner's) |
 //! | GET, DELETE | `/api/nvim-plugin` | | `NvimPluginCopies` (DELETE: `NvimPluginRemoved`): the copies of arugula.nvim Arugula installed here; DELETE removes them (#1733; the owner's) |
 //! | POST | `/api/panes/N/nvim/help` | `NvimHelpRequest` | `Empty`: `:help TAG` in the nvim the pane runs (#1735; the owner's) |
 //! | GET, DELETE | `/api/rules`, `/api/rules/N` | | `Rules` (DELETE: `Empty`): the standing permission rules (#166; the owner's) |
@@ -1623,6 +1625,86 @@ pub struct NvimHelpRequest {
 pub struct NvimPluginRemoved {
     #[serde(default)]
     pub removed: Vec<String>,
+}
+
+/// `POST /api/panes/N/nvim-block` (#1734): "New editor block" with nvim,
+/// beside pane N: a terminal typed as an editor, running nvim with
+/// arugula.nvim and the page's colors, in a folder or at a file and line.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct NvimBlockRequest {
+    /// The folder it opens in (none: the file's, else pane N's).
+    #[serde(default)]
+    pub dir: Option<String>,
+    /// A file to open: whole, or relative to the folder.
+    #[serde(default)]
+    pub file: Option<String>,
+    /// Its line, from 1.
+    #[serde(default)]
+    pub line: Option<u32>,
+    /// On this host even when pane N's tab is a machine's (a VM tab).
+    #[serde(default)]
+    pub local: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NvimBlockOpened {
+    pub pane: PaneId,
+}
+
+/// `POST /api/nvim/theme` (#1734): the page's palette as nvim's colors,
+/// for every nvim block on this machine, now and when one starts. The
+/// latest wins, as with an editor block's VS Code colors.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NvimTheme {
+    /// `background` is `light`.
+    pub light: bool,
+    /// Highlight groups by name (`Normal`, `@string`), as `nvim_set_hl`
+    /// takes them.
+    pub groups: std::collections::BTreeMap<String, NvimHl>,
+    /// `g:terminal_color_0` to `_15`.
+    #[serde(default)]
+    pub terminal: Vec<String>,
+}
+
+/// One highlight group: colors as `#rrggbb`, or a link to another group.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct NvimHl {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fg: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bg: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sp: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
+    pub bold: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
+    pub italic: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
+    pub underline: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
+    pub undercurl: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
+    pub reverse: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NvimThemed {
+    /// The nvim blocks it went to now (the rest get it when they start).
+    pub blocks: u32,
 }
 
 /// `GET /api/rules` (#166): the standing permission rules agent blocks

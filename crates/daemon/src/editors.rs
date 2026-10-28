@@ -78,6 +78,8 @@ pub trait Editors: Send + Sync + 'static {
         file: &Path,
         line: Option<u32>,
     ) -> BoxFuture<'static, Result<(), String>>;
+    /// Makes an nvim editor block (#1734; see [`nvim_block`]).
+    fn nvim_block(&self, mux: &MuxHandle, at: NvimBlockAt) -> BoxFuture<'static, Result<PaneId, String>>;
     /// Starts being Claude Code's IDE (M28), if it can.
     fn start_ide(
         &self,
@@ -211,6 +213,31 @@ pub async fn open_in_pane(mux: &MuxHandle, pane: PaneId, file: &Path, line: Opti
     match editors() {
         Some(e) => e.open_in_pane(mux, pane, file, line).await,
         None => Err(not_built("Opening a file in nvim")),
+    }
+}
+
+/// Where an nvim editor block goes, and what it opens (#1734).
+#[derive(Debug, Clone, Default)]
+pub struct NvimBlockAt {
+    /// Beside this pane, on its machine.
+    pub from: PaneId,
+    /// The folder nvim starts in (none: the file's, else the pane's).
+    pub dir: Option<String>,
+    /// A file (whole, or relative to the folder) and its line.
+    pub file: Option<String>,
+    pub line: Option<u32>,
+    /// On this host even if the pane's tab is a VM's.
+    pub local: bool,
+}
+
+/// Makes an nvim editor block beside `at.from` (#1734): a terminal typed
+/// as an editor, running nvim with arugula.nvim from the daemon and the
+/// page's colors, on that pane's machine. Its pane. `Err` in a build
+/// without the editor; the caller can run plain nvim instead.
+pub async fn nvim_block(mux: &MuxHandle, at: NvimBlockAt) -> Result<PaneId, String> {
+    match editors() {
+        Some(e) => e.nvim_block(mux, at).await,
+        None => Err(not_built("An nvim editor block")),
     }
 }
 

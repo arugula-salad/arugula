@@ -11,7 +11,7 @@ import { openFresh } from "../open-fresh";
 import { drop } from "../panes/drop";
 import { len } from "../panes/geometry";
 import { layoutRefusal, ordinal, toggleFocus } from "../panes/layout";
-import { BranchIcon, MoreIcon } from "./icons";
+import { BranchIcon, MoreIcon, NVIM_GLYPH } from "./icons";
 import { HintChip } from "../hints";
 
 /** What kind of pane it is, in a word. */
@@ -61,6 +61,8 @@ export function paneGlyph(client: Client, id: PaneId, info: PaneInfo | undefined
     if (s?.native) return { glyph: "native-issue", word: "project issue" };
     return s?.kind === "issue" ? { glyph: "issue", word: "issue" } : { glyph: "pr", word: "pull request" };
   }
+  // #1734: an nvim editor block, a terminal typed as an editor.
+  if (info?.app === "nvim") return { glyph: "nvim", word: "nvim editor" };
   return { glyph: info?.type ?? "terminal", word: paneType(info) };
 }
 
@@ -207,6 +209,8 @@ const GLYPHS: Record<string, string> = {
   chat: "M4 5h16v11H9l-5 4z",
   team_chat: "M3 4h12v9H7l-4 3zM18 8h3v11l-3-3h-7v-3",
   editor: "M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16",
+  // nvim's mark: two uprights and the diagonal between them.
+  nvim: NVIM_GLYPH,
   file: "M6 3h8l4 4v14H6zM14 3v5h4M10.5 12l-2 2.5 2 2.5M13.5 12l2 2.5-2 2.5",
   doc: "M5 3h14v18H5zM8 7h8M8 11h8M8 15h5",
   diff: "M6 3v18M18 3v18M3 8h6M15 16h6M18 13v6",

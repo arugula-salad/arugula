@@ -13,6 +13,9 @@
 --             only while someone follows (the daemon says `followers`):
 --             the cursor at most every 100 ms, the file, each change
 --
+-- From the daemon, besides follow's: `theme`, an nvim editor block's
+-- colors from the page (#1734), which theme.lua applies.
+--
 -- A folder joins only when asked (:ArugulaJoin), and that's remembered
 -- for it; :ArugulaLeave takes it out at once.
 --
@@ -393,6 +396,9 @@ local function on_message(m)
   elseif m.t == "diff" or m.t == "diff_close" then
     local ok, err = pcall(m.t == "diff" and diff.open or diff.closed, m)
     if not ok then vim.notify("arugula: " .. tostring(err), vim.log.levels.WARN) end
+  elseif m.t == "theme" then
+    -- An nvim editor block's colors, from the page (#1734): theme.lua.
+    pcall(function() require("arugula.theme").apply(m.theme) end)
   end
 end
 

@@ -175,6 +175,8 @@ impl Daemon {
         // text is next best (a command that hasn't started its process yet).
         let typed = status.current.as_ref().and_then(|c| c.text.as_deref()).map(crate::classify::kind);
         let work = match &seen {
+            // An editor block is one whatever runs in it (#1734).
+            _ if meta.app.is_some() => WorkKind::Editor,
             Some(s) if s.command.is_some() => s.work,
             _ => typed.or(seen.as_ref().map(|s| s.work)).unwrap_or(WorkKind::Shell),
         };
@@ -200,7 +202,7 @@ impl Daemon {
                     None => format!("{name} ({})", i.app),
                 })
             }
-            _ => status.title.clone(),
+            _ => status.title.clone().or_else(|| meta.app.clone()),
         };
         PaneInfo {
             resumes,
@@ -219,6 +221,7 @@ impl Daemon {
             diff: self.card_of.get(&p.id).map(|c| c.1.clone()),
             claude_ide: self.cards.as_ref().is_some_and(|c| c.linked(p.id)),
             started_by: meta.started_by.clone(),
+            app: meta.app.clone(),
             running,
             policy: meta.policy,
             current: status.current.map(info_of),
@@ -297,6 +300,7 @@ impl Daemon {
             activity: None,
             title: s.title,
             started_by: meta.started_by.clone(),
+            app: None,
             editor: s.editor,
             diff: None,
             claude_ide: false,

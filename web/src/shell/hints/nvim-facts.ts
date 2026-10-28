@@ -118,7 +118,7 @@ export const NVIM_HELP: Hint = {
     {
       list: [
         "Follows it: the swarm and the pane's card show the file and line nvim has open, and its errors.",
-        "Open in editor: with Settings › Editor on nvim, Open in editor (the pane menu, a diff card, a file, a link) opens the file in the nvim already running there, at its line, or in a new nvim pane when none runs.",
+        "Open in editor: with Settings › Editor on nvim, Open in editor (the pane menu, a diff card, a file, a link) opens the file in the nvim already running there, at its line, or in a new nvim editor block when none runs: nvim with arugula.nvim, in the page's colors. Add a pane › Editor makes one too.",
         "Your nvim is the pane: one entry in the swarm, not two.",
       ],
     },

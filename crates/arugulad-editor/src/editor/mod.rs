@@ -22,9 +22,13 @@
 //!
 //! In a VM there's no daemon socket for the extension to reach, so the
 //! block shows the file it was opened on and doesn't follow the cursor.
+//!
+//! An editor block can be nvim instead (#1734, `nvim_block.rs`): a
+//! terminal typed as an editor, not a block of this kind.
 
 pub mod link;
 pub mod nvim;
+pub mod nvim_block;
 pub mod nvim_plugin;
 pub mod presence;
 pub mod server;

@@ -157,6 +157,10 @@ impl Request for crate::api::IdeMentionRequest {}
 
 impl Request for crate::api::NvimOpenRequest {}
 
+impl Request for crate::api::NvimBlockRequest {}
+
+impl Request for crate::api::NvimTheme {}
+
 impl Request for crate::api::ConversationsQuery {}
 
 impl Request for crate::api::OpenConversationRequest {}
@@ -298,6 +302,8 @@ macro_rules! every_op {
         $m!($crate::op::ops::NvimPluginGet);
         $m!($crate::op::ops::NvimPluginRemove);
         $m!($crate::op::ops::PaneNvimHelp);
+        $m!($crate::op::ops::NvimBlockOpen);
+        $m!($crate::op::ops::NvimBlockTheme);
         $m!($crate::op::ops::AgentsGet);
         $m!($crate::op::ops::AgentsRefresh);
         $m!($crate::op::ops::AdaptersList);
@@ -374,12 +380,13 @@ pub mod ops {
             DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest,
             IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
             InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest,
-            NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved,
-            OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest,
-            Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse,
-            SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest,
-            StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest,
-            WaitResult, WithdrawRequest,
+            NvimBlockOpened, NvimBlockRequest, NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies,
+            NvimPluginInstalled, NvimPluginRemoved, NvimTheme, NvimThemed, OpenConversationRequest,
+            OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process,
+            PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse, SendRequest, Share,
+            ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus,
+            Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest, WaitResult,
+            WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -1027,6 +1034,38 @@ pub mod ops {
         type Path = PaneId;
         type Req = NvimHelpRequest;
         type Res = Empty;
+    }
+
+    /// `POST /api/panes/N/nvim-block` (#1734): "New editor block" with
+    /// nvim: a terminal beside pane N, typed as an editor, running nvim in
+    /// a folder (or at a file and line) on N's machine, with arugula.nvim
+    /// loaded from the daemon and the page's colors. The owner's, as
+    /// editor blocks are.
+    pub struct NvimBlockOpen;
+
+    impl Op for NvimBlockOpen {
+        const NAME: &'static str = "nvim_block.open";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/nvim-block";
+        const ACCESS: Access = Access::Owner;
+        type Path = PaneId;
+        type Req = NvimBlockRequest;
+        type Res = NvimBlockOpened;
+    }
+
+    /// `POST /api/nvim/theme` (#1734): the page's colors for this machine's
+    /// nvim blocks, applied at once and to each one that starts. The
+    /// owner's.
+    pub struct NvimBlockTheme;
+
+    impl Op for NvimBlockTheme {
+        const NAME: &'static str = "nvim_block.theme";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/nvim/theme";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = NvimTheme;
+        type Res = NvimThemed;
     }
 
     /// `GET /api/hosts/self/agents` (#145): the agents configured on this
@@ -1886,6 +1925,7 @@ mod tests {
             ("diff", ops::PaneDiffOf::path(&7)),
             ("drivers", ops::PaneDrivers::path(&7)),
             ("nvim", ops::PaneNvimOpen::path(&7)),
+            ("nvim-block", ops::NvimBlockOpen::path(&7)),
         ] {
             assert_eq!(got, format!("/api/panes/7/{path}"));
         }

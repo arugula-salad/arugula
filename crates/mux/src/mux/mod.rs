@@ -262,6 +262,13 @@ pub enum Api {
     /// An MCP client started this pane or block (M16): shown on it, and
     /// what lets an agent block's token drive it.
     StartedBy(PaneId, arugula_proto::StartedBy),
+    /// A terminal is an editor block (#1734): the editor it runs, which
+    /// it's listed and drawn as whatever its foreground is.
+    EditorApp(PaneId, String),
+    /// Set a pane's restart policy, but only while it's still `was`: an
+    /// editor block keeps its own up to date (#1734), and a policy someone
+    /// picked since is theirs. Whether it changed.
+    SwapPolicy(PaneId, Policy, Policy, oneshot::Sender<bool>),
     /// The guest (principal id) behind a pane or block, if any: who
     /// started it, or the agent that did, or whose VM it runs on.
     GuestBehind(PaneId, oneshot::Sender<Option<String>>),

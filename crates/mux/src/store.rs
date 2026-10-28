@@ -100,6 +100,10 @@ pub struct PaneMeta {
     /// runs Claude Code resumes its conversation).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub policy_set: bool,
+    /// A terminal made as an editor block (#1734): the editor it runs
+    /// (`nvim`). The mux only keeps it and shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
 }
 
 /// An agent's conversation in a pane (#146), as its hooks or Claude

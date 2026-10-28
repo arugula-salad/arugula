@@ -34,6 +34,7 @@ import { MaintenanceNote } from "../../shared/ui/maintenance-note";
 import { AgentsNudge } from "./agents-setup";
 import { HintEmpty, HintsWatch, HintToast } from "./hints";
 import { NvimWatch } from "../open-in-editor";
+import { NvimBlockColors } from "../nvim-block";
 import { WhatsNewLayer } from "./whats-new";
 import { useWorkspaceKeys } from "./keys";
 import { connection, ContextHeader } from "./shell/context-header";
@@ -149,6 +150,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <ControlRequests client={client} />
       {state && <HintsWatch client={client} />}
       {state && <NvimWatch client={client} />}
+      {state && <NvimBlockColors client={client} />}
       {state && <HintToast client={client} />}
       <WhatsNewLayer client={client} />
     </>
@@ -239,6 +241,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <ControlRequests client={client} />
       {state && <HintsWatch client={client} />}
       {state && <NvimWatch client={client} />}
+      {state && <NvimBlockColors client={client} />}
       {state && <HintToast client={client} />}
       <WhatsNewLayer client={client} />
       <StatusPill client={client} />

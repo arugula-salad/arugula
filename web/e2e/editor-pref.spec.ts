@@ -2,7 +2,8 @@
 // nvim. Settings shows it with no Labs flag on; VS Code opens an editor
 // block as before; nvim opens the file at its line in the nvim already in
 // the pane or its tab (over nvim's RPC socket, #1730) and shows that pane,
-// else a new pane beside running nvim there; Ask offers both with
+// else a new nvim editor block beside it (#1734, which, having arugula.nvim,
+// gets the waiting edit as a vimdiff tab too, #1732); Ask offers both with
 // Remember this; and nvim seen in a pane makes the first Open in editor
 // ask, once. Each from the pane menu and from Claude Code's diff card (the
 // stand-in `fake_claude.py`, in a terminal pane).
@@ -280,12 +281,17 @@ test("from Claude Code's diff card: VS Code at the line, nvim in the tab's nvim,
   await open.click();
   await expect.poll(() => panes(page)).toHaveLength(2);
   const nv = (await panes(page)).find((p) => p !== claude)!;
-  await expect.poll(() => nvimAt(page, nv), { timeout: 10_000 }).toBe("a.txt:30 (nvim)");
   await expect.poll(() => active(page)).toBe(nv);
   expect((await info(page, nv))?.cwd).toBe(join(proj, "src"));
+  // It's an nvim editor block (#1734), so arugula.nvim is in it, and the
+  // edit the card waits on comes to it as a vimdiff tab, in front (#1732):
+  // no file of its own there. Behind it, the file at the line.
+  await expect.poll(() => info(page, nv).then((i) => i && [i.app, i.editor?.app ?? null, i.file ?? null]), { timeout: 10_000 }).toEqual(["nvim", "nvim", null]);
+  await ready(page, nv);
+  await inNvim(page, nv, ":tabclose\n");
+  await expect.poll(() => nvimAt(page, nv), { timeout: 10_000 }).toBe("a.txt:30 (nvim)");
 
   // nvim, running in the tab: that one, at the line, without a new pane.
-  await ready(page, nv);
   await inNvim(page, nv, ":e b.txt\n");
   await expect.poll(() => nvimAt(page, nv)).toBe("b.txt:1 (nvim)");
   await page.evaluate((p) => window.__arugula.client.setActive(p), claude);

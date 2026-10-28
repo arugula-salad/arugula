@@ -205,7 +205,7 @@ pub fn write(dir: &Path) -> io::Result<()> {
 /// `doc/tags` for the help files in `doc/`, as `:helptags` writes it: one
 /// `tag<Tab>file<Tab>/*tag*` line per `*tag*`, sorted. A package's help
 /// is found only through its tags file, and the repo has none.
-fn help_tags() -> String {
+pub fn help_tags() -> String {
     let mut lines = vec![];
     for (path, bytes) in FILES {
         let Some(file) = path.strip_prefix("doc/").filter(|f| f.ends_with(".txt") && !f.contains('/')) else {
