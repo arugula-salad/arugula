@@ -23,10 +23,13 @@
 //!   `owner/name`). The one the ask names (`owner/name`, or by its name
 //!   when that's unambiguous) is it; else the only one; none, the session
 //!   works in no repo, and its first line says so. A repo the project
-//!   linked that no box has, named by `owner/name`, is said so. Several,
+//!   linked that no box has, named by `owner/name`, is it too (Fleet 6):
+//!   the box clones it into the session's home at its start. On a native
+//!   issue, after the ask's words, the issue's title and the GitHub repo
+//!   it was exported to may name it ([`pool::settle_in`]). Several,
 //!   and the ask named none: an ask ([`crate::sessions::asks`]) mentions
-//!   the asker, in the thread and the channel, with a button per repo
-//!   ([`ask_show`], [`ask_answer`]).
+//!   the asker, in the thread and the channel, with a button per repo,
+//!   the linked ones too ([`pool::choices`], [`ask_show`], [`ask_answer`]).
 //! - **Answering it in words** (the fallback): the asker's next reply in
 //!   the thread that names exactly one of the repos picks it (and one
 //!   naming a box by its name runs on that box). Nothing is stored for
@@ -324,11 +327,25 @@ async fn start(
         say(app, room, thread, NO_BOX)?;
         return Ok(());
     }
-    settled(app, room, thread, project, asker, agent, boxes, &[text]).await
+    // On a native issue, its title and the GitHub repo it went to may name
+    // the repo too (Agent on this names none), after the ask's own words.
+    // Not its body: an issue about one repo often mentions others.
+    let issue = match room.target.as_deref().filter(|t| room.kind == "object" && t.starts_with("iss_")) {
+        Some(t) => app.db.issue(t)?,
+        None => None,
+    };
+    let mut said = vec![text];
+    if let Some(i) = &issue {
+        said.push(&i.title);
+        if let Some(g) = &i.github {
+            said.push(&g.repo);
+        }
+    }
+    settled(app, room, thread, project, asker, agent, boxes, &said).await
 }
 
 /// The boxes are these: settle the repo from what the asker wrote, then
-/// start, or say what's missing, or ask which repo.
+/// start, or ask which repo.
 #[allow(clippy::too_many_arguments)]
 async fn settled(
     app: &Platform,
@@ -342,36 +359,20 @@ async fn settled(
 ) -> Result<()> {
     let all = pool::all_repos(&boxes);
     let linked = pool::linked(app, project)?;
-    let mut how = pool::Settled::Ambiguous;
-    for text in if said.is_empty() { &[""][..] } else { said } {
-        how = pool::settle(text, &all, &linked);
-        if how != pool::Settled::Ambiguous {
-            break;
-        }
-    }
-    match how {
+    match pool::settle_in(said, &all, &linked) {
         pool::Settled::Repo(repo) => go(app, room, thread, project, asker, agent, boxes, repo.as_deref()).await,
-        pool::Settled::Missing(repo) => {
-            say(app, room, thread, &missing(&repo))?;
-            Ok(())
-        }
         pool::Settled::Ambiguous => {
             let on = match boxes.as_slice() {
                 [one] => Some(one.name.as_str()),
                 _ => None,
             };
-            ask_repo(app, room, thread, asker, &all, on).await
+            ask_repo(app, room, thread, asker, &pool::choices(&all, &linked), on).await
         }
     }
 }
 
-/// Said when the ask names a repo the project linked and none of its
-/// workspaces has.
-pub fn missing(repo: &str) -> String {
-    format!("None of this project's cloud workspaces has {repo}: add it to one's repos (its settings), then ask again.")
-}
-
-/// The repo is settled: the best of `boxes` with it, then start.
+/// The repo is settled: the best of `boxes` with it (of all of them, for a
+/// linked repo none has: [`pool::with_repo`]), then start.
 #[allow(clippy::too_many_arguments)]
 async fn go(
     app: &Platform,
@@ -384,7 +385,7 @@ async fn go(
     repo: Option<&str>,
 ) -> Result<()> {
     let Some(w) = pool::pick(app, project, boxes, repo).await? else {
-        say(app, room, thread, &missing(repo.unwrap_or("that repo")))?;
+        say(app, room, thread, NO_BOX)?;
         return Ok(());
     };
     launch(app, room, thread, project, asker, agent, &w, repo).await
@@ -478,12 +479,7 @@ pub(crate) fn answers(
         .filter(|w| !matches!(w.state.as_str(), "deleting" | "deleted"))
         .collect();
     let boxes: Vec<(String, Vec<String>)> = ws.iter().map(|w| (w.id.clone(), vec![w.name.clone()])).collect();
-    let mut all: Vec<String> = Vec::new();
-    for r in ws.iter().flat_map(pool::repos) {
-        if !all.contains(&r) {
-            all.push(r);
-        }
-    }
+    let all = pool::choices(&pool::all_repos(&ws), &pool::linked(app, project)?);
     let in_repos = pool::repo_options(&all);
     let (mut asked, mut out) = (false, Vec::new());
     for m in ms.iter().filter(|m| m.deleted.is_none()) {
@@ -534,7 +530,7 @@ async fn answer(app: &Platform, room: &Room, thread: u64, project: &str, author:
     if let Some((_, id)) = &chose {
         boxes.retain(|w| w.id == *id);
     }
-    let all = pool::all_repos(&boxes);
+    let all = pool::choices(&pool::all_repos(&boxes), &pool::linked(app, project)?);
     let from = chose.as_ref().map(|(s, _)| *s);
     let options = pool::repo_options(&all);
     if let Some(r) =
@@ -623,7 +619,7 @@ async fn repo_ask(app: &Platform, room: &Room, seq: i64, reader: &str) -> Result
         false => app.db.latest_thread_session(&room.id, thread)?.filter(|s| s.created_at >= m.at).map(|s| s.id),
     };
     let choices = match &project {
-        Some(p) => pool::all_repos(&pool::candidates(app, p)?),
+        Some(p) => pool::choices(&pool::all_repos(&pool::candidates(app, p)?), &pool::linked(app, p)?),
         None => vec![],
     };
     let asker_name = if asker.is_empty() { String::new() } else { super::name_of(app, &asker).await? };

@@ -395,7 +395,7 @@ async fn codex_review_reviews_what_was_pushed() {
         sign: hex::encode(w.keys.sign_public()),
     };
     w.take(&r.id, "claude").await;
-    let ask = arugula_control_wire::work::PushAsk { session: r.id.clone(), branch: r.branch.clone() };
+    let ask = arugula_control_wire::work::PushAsk { session: r.id.clone(), branch: r.branch.clone(), clone: false };
     let given = crate::sessions::push::token(&w.app, &m, &ask).await.unwrap();
     assert!(format!("{given:?}").contains("a review pushes nothing"), "{given:?}");
 

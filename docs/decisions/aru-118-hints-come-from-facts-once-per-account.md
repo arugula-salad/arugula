@@ -46,6 +46,7 @@ constrains:
   - "path:web/src/shell/hints/list.ts"
   - "path:web/src/shell/hints/ports.ts"
   - "path:crates/mux/src/osc.rs"
+  - "path:crates/mux/src/classify.rs"
   - "path:web/src/shell/ui/hints.tsx"
   - "path:web/src/shell/ui/commands.tsx"
   - "path:web/src/shared/seen.ts"
@@ -70,7 +71,8 @@ a tour.
   unseen and Tips are on, so a fact that costs a request stops costing
   once it's been said.
 - `copy(fact)`: one line.
-- `action`: a label, and a command id of `COMMANDS` in
+- `action`: a label (which may name the fact's values: *Split right on
+  HOST*), and a command id of `COMMANDS` in
   `web/src/shell/ui/commands.tsx` (given the fact's values) or a route
   (`#swarm`). `COMMANDS` is new: the menus had no ids to name. What's
   new's *Try it* names them too (Discovery 2, `shell/ui/whats-new.tsx`).
@@ -148,6 +150,19 @@ counting on its own adds its own variant.
   reads); the client asks once a page, while the hint is unseen.
 - *Push*: only where this device's push is `off`: never on plain http, a
   browser without it, notifications blocked, or where it's on already.
+- Batch 2 (Discovery 11). *A command's mark* (TerminalView's OSC 133
+  marks), *the Share dialog warned a pane may show secrets* (the daemon's
+  guess, once the dialog closes), *push on through control*, *a shared
+  session with agents in it* (a guest's or a teammate's `notifyPref`),
+  *`code` as the last command line*, *another machine in the host menu*
+  and *a GitHub-only account on a device that can make a passkey*: the
+  client alone. *vim or nvim in a pane* is the daemon's foreground command
+  (`PaneInfo.command`). *A commit or a checkout* is the daemon's:
+  `PaneInfo.branch` (M109) and `head`, the short commit its repository's
+  HEAD is at, read from the files with the branch
+  (`crates/mux/src/classify.rs`, read afresh when a command ends); the
+  client remembers each pane's from when it first saw it, typing or not,
+  and the fact holds once either moved.
 
 **Under a test runner** (`navigator.webdriver`) hints keep quiet unless the
 page sets `window.__arugulaHints`, as telemetry's ask does: a toast would
@@ -157,4 +172,4 @@ Where: `web/src/shell/hints/` (the registry, the engine, a module per fact),
 `web/src/shell/ui/hints.tsx` (the three places), `web/src/shell/ui/commands.tsx`
 (`COMMANDS`, *Tips*), `web/src/shared/seen.ts`, `web/src/shell/main.tsx`
 (which store), `crates/control/src/prefs.rs` and `db.rs` (`account_prefs`).
-From: Discovery 0, Arugula #241 (part of #238); Discovery 3, 4 and 5 add entries.
+From: Discovery 0, Arugula #241 (part of #238); Discovery 3, 4, 5 and 11 add entries.

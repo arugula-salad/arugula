@@ -37,6 +37,9 @@
 //!   `~/.claude`; a reply opens a block again on the same user and
 //!   checkout, resuming its conversation; with three running, a parked
 //!   one's reply waits until one parks.
+//! - a session in a repo linked to the project that the box's setup didn't
+//!   clone (Fleet 6) clones it from GitHub, shallow, with a token control
+//!   mints for that clone and the box revokes after, then pushes from it.
 
 use std::{
     collections::BTreeMap,
@@ -183,12 +186,28 @@ impl Fake {
         review: bool,
         model: Option<&str>,
     ) {
+        self.start_in(id, slug, prompt, finish, harness, review, model, "acme/app");
+    }
+
+    /// [`Fake::start_on`], in `repo`.
+    #[allow(clippy::too_many_arguments)]
+    fn start_in(
+        &self,
+        id: &str,
+        slug: &str,
+        prompt: SessionPrompt,
+        finish: Option<FinishStep>,
+        harness: Option<&str>,
+        review: bool,
+        model: Option<&str>,
+        repo: &str,
+    ) {
         let work = SessionWork {
             session: id.into(),
             project: PROJECT.into(),
             workspace: WORKSPACE.into(),
             asker: prompt.author.clone(),
-            repo: Some("acme/app".into()),
+            repo: Some(repo.into()),
             branch: format!("arugula/{}-{slug}", &id[4..12]),
             state: "queued".into(),
             n: 0,
@@ -963,6 +982,61 @@ fn a_session_branches_from_main_as_it_is_now() {
     let said = sent("ses2");
     assert!(said.contains("This checkout is the box's clone of acme/app as its setup made it"), "{said}");
     assert!(said.contains("Run the tests with make check."), "the repo's notes still come: {said}");
+}
+
+/// Fleet 6: a session in a repo the box's setup didn't clone (one linked
+/// to the project) clones it from GitHub at its start, shallow, its
+/// default branch's head, with a token control mints for that clone and
+/// the box revokes after; its commits push from that shallow checkout.
+#[test]
+fn a_linked_repo_no_box_has_is_cloned_for_its_session() {
+    let Rig { _rt, f, marks, homes, d: _d, .. } = rig("linked");
+    // acme/site on GitHub, two commits deep; the box has only acme/app.
+    let site = marks.join("github/acme/site.git");
+    std::fs::create_dir_all(&site).unwrap();
+    git(&site, &["init", "-q", "--bare", "-b", "main"]);
+    let work = marks.join("site-work");
+    git(&marks, &["clone", "-q", site.to_str().unwrap(), work.to_str().unwrap()]);
+    git(&work, &["config", "user.email", "x@example.invalid"]);
+    git(&work, &["config", "user.name", "x"]);
+    for (n, text) in [("index.md", "# site\n"), ("CLAUDE.md", "Build the site with zola.\n")] {
+        std::fs::write(work.join(n), text).unwrap();
+        git(&work, &["add", "."]);
+        git(&work, &["commit", "-qm", n]);
+    }
+    git(&work, &["push", "-q", "origin", "HEAD:main"]);
+    let main = git(&site, &["rev-parse", "main"]);
+
+    let a = ses('a');
+    f.start_in(&a, "docs", prompt(1, "acct1", "work index.md NEW.md"), None, None, false, None, "acme/site");
+    wait(&marks, &f, "session a's first turn", || f.state(&a) == "done");
+    let checkout = homes.join("ses1").join("work").join(&a);
+    let branch = format!("arugula/{}-docs", &a[4..12]);
+    assert_eq!(git(&checkout, &["rev-parse", "HEAD~1"]), main, "from GitHub's head");
+    assert_eq!(git(&checkout, &["rev-parse", "--is-shallow-repository"]), "true", "shallow");
+    assert_eq!(git(&checkout, &["rev-parse", "refs/remotes/origin/HEAD"]), main);
+    assert_eq!(git(&checkout, &["remote", "get-url", "origin"]), format!("file://{}", site.display()));
+    assert!(!git(&checkout, &["config", "--local", "--list"]).contains("credential"), "no token in its config");
+    let sent: String = std::fs::read_dir(homes.join("ses1/.fake-acp"))
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("prompt-"))
+        .map(|e| std::fs::read_to_string(e.path()).unwrap())
+        .collect();
+    assert!(sent.contains("Build the site with zola."), "the repo's notes: {sent}");
+    assert!(!sent.contains("the box's clone"), "not stale: {sent}");
+
+    // A clone's token, then the push's, each revoked.
+    let asked = f.pushes.lock().unwrap().clone();
+    assert_eq!(
+        asked,
+        [json!({ "session": a, "branch": branch, "clone": true }), json!({ "session": a, "branch": branch })]
+    );
+    assert_eq!(*f.revoked.lock().unwrap(), [format!("Bearer {PUSH_TOKEN}"), format!("Bearer {PUSH_TOKEN}")]);
+    let (_, turn) = f.of(&a).into_iter().rfind(|(r, _)| r.kind == "turn").unwrap();
+    assert_eq!(turn.pushed, Some(true), "{turn:?}");
+    assert_eq!(git(&site, &["rev-parse", &format!("refs/heads/{branch}")]), git(&checkout, &["rev-parse", "HEAD"]));
+    assert_eq!(git(&site, &["rev-parse", &format!("refs/heads/{branch}~1")]), main);
 }
 
 /// M261: the workspace's finish step, after each turn and before the push,

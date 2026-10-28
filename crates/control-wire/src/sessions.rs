@@ -32,6 +32,10 @@
 //! | `POST` [`ASK`] [`ChatAskAnswer`]: [`ChatAsk`] | its asker |
 //! | `POST` [`AGENT_SESSIONS`] [`AgentSessionStart`]: [`AgentSessionStarted`] | a machine's agents, with `sessions.start` |
 //! | `POST` [`AGENT_SESSION_REPLY`] [`AgentSessionReply`]: [`AgentSessionReplied`] | a machine's agents, with `sessions.reply` |
+//! | `GET` [`PROJECT_SESSIONS`] [`SessionWaveQuery`]: [`SessionWave`] | the project's members |
+//! | `GET` [`AGENT_PROJECT_SESSIONS`] [`SessionWaveQuery`]: [`SessionWave`] | a machine's agents, with a session or thread read |
+//! | `GET` [`AGENT_SESSION`]: [`AgentSessionRead`] | a machine's agents, with a session or thread read |
+//! | `POST` [`AGENT_SESSIONS_WAIT`] [`AgentSessionWait`]: [`AgentSessionsWaited`] | a machine's agents, with a session or thread read |
 //!
 //! **A person's agent** (Fleet 3, aru-121). The agents on a machine whose
 //! owner gave it `sessions.start` over a project start sessions there as
@@ -40,6 +44,16 @@
 //! session's question or prompt it (`session_reply`: its reply in the
 //! session's thread). The asker, and the bill, are the owner's; the card
 //! says who started it ([`SessionCard::started_by`]).
+//!
+//! **A wave** (Fleet 5). A project's sessions in one list, newest first
+//! ([`SessionWave`]): each one's state, box, branch, last push, and what
+//! waits on the reader. Narrowed by its issue's label, by a tracker (an
+//! issue: the issues its body names, `#N`, and those whose body names it),
+//! or by who asked. A machine's agents read the same list, a session with
+//! its last answer whole ([`AgentSessionRead`]: the thread gets only its
+//! end), and wait for any of a wave's turns to finish
+//! ([`AGENT_SESSIONS_WAIT`]), with `sessions.start`, `sessions.reply` or
+//! `threads.read` over the project: any of them.
 //!
 //! **Which box** (Arugula #214). The project's "agents run on" setting, or
 //! its only workspace; with several and none chosen, the session picks
@@ -135,6 +149,34 @@ pub const AGENT_SESSIONS: &str = "/api/daemon/sessions";
 /// thread (`sessions.reply`, aru-121): an answer to its question, or a
 /// prompt.
 pub const AGENT_SESSION_REPLY: &str = "/api/daemon/sessions/{ses}/reply";
+
+/// `GET` [`SessionWaveQuery`]: a project's sessions, a wave view's rows
+/// ([`SessionWave`], Fleet 5).
+pub const PROJECT_SESSIONS: &str = "/api/projects/{project}/sessions";
+/// [`PROJECT_SESSIONS`] for a machine's agents.
+pub const AGENT_PROJECT_SESSIONS: &str = "/api/daemon/projects/{project}/sessions";
+/// `GET`: a session for a machine's agents, with its last answer whole
+/// ([`AgentSessionRead`]).
+pub const AGENT_SESSION: &str = "/api/daemon/sessions/{ses}";
+/// `POST` [`AgentSessionWait`]: answers once any of the sessions' turns
+/// has finished ([`SessionRow::settled`]), or after the wait.
+pub const AGENT_SESSIONS_WAIT: &str = "/api/daemon/sessions/wait";
+
+/// The longest [`AGENT_SESSIONS_WAIT`] holds, in seconds: well inside a
+/// daemon's request timeout, as a run's wait.
+pub const SESSION_WAIT_MAX: u64 = 15;
+/// The most sessions one wait or one wave holds.
+pub const WAVE_MAX: u32 = 100;
+
+/// [`AGENT_PROJECT_SESSIONS`] for `project`.
+pub fn agent_project_sessions(project: &str) -> String {
+    AGENT_PROJECT_SESSIONS.replace("{project}", project)
+}
+
+/// [`AGENT_SESSION`] for session `ses`.
+pub fn agent_session(ses: &str) -> String {
+    AGENT_SESSION.replace("{ses}", ses)
+}
 
 /// [`AGENT_SESSION_REPLY`] for session `ses`.
 pub fn agent_session_reply(ses: &str) -> String {
@@ -297,7 +339,9 @@ pub struct SessionPlace {
     pub name: String,
     /// Its box is up now (ready and online).
     pub awake: bool,
-    /// How many of its project's sessions it holds or has queued.
+    /// How many of its project's sessions are going there: queued, or a
+    /// turn under way. Not done or parked ones, which only wait, nor one
+    /// left from before its box was rebuilt.
     pub busy: u32,
 }
 
@@ -672,6 +716,149 @@ pub struct AgentSessionReplied {
     pub permission: bool,
     #[serde(default)]
     pub why: Option<String>,
+}
+
+/// [`PROJECT_SESSIONS`]' query: each that's set narrows the wave.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionWaveQuery {
+    /// Sessions on an issue with this label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub label: Option<String>,
+    /// Sessions on a tracker's issues, by its number: the tracker, the
+    /// issues its body names (`#N`), and those whose body names it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub tracker: Option<u64>,
+    /// Sessions this account asked for (by hand or through its agents);
+    /// `me`, the reader (a machine's agents': its owner).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub asker: Option<String>,
+    /// Sessions this machine's agents started (aru-121); `me`, for a
+    /// machine's agents, their own machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub agent: Option<String>,
+    /// Only ones going (not failed, stopped or merged).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub going: bool,
+    /// At most this many (default 50, at most [`WAVE_MAX`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub limit: Option<u32>,
+}
+
+/// The issue a session works on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionIssue {
+    pub id: String,
+    pub number: u64,
+    pub title: String,
+    pub labels: Vec<String>,
+    /// `open` or `closed`.
+    pub state: String,
+}
+
+/// A session as a wave lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionRow {
+    pub session: String,
+    pub project: String,
+    /// Its thread: the room and the message it hangs off.
+    pub room: String,
+    pub parent: u64,
+    /// As [`SessionCard::state`].
+    pub state: String,
+    /// Its turn has finished: it isn't queued or working, and no prompt
+    /// waits for its next turn (or it ended, or it waits on a person).
+    pub settled: bool,
+    /// `thread`, `try` or `review`, as [`SessionCard::role`].
+    pub role: String,
+    pub issue: Option<SessionIssue>,
+    pub asker: String,
+    pub asker_name: String,
+    /// As [`SessionCard::started_by`]: "<asker>'s agent on <machine>".
+    pub started_by: Option<String>,
+    /// The machine whose agents started it, by id.
+    pub agent: Option<String>,
+    /// Its box: the workspace and its name.
+    pub workspace: String,
+    pub workspace_name: String,
+    pub repo: Option<String>,
+    pub branch: String,
+    /// HEAD after its latest turn, and when a turn last pushed the branch.
+    pub head: Option<String>,
+    pub pushed_at: Option<u64>,
+    /// What waits on the reader, in a few words ("its question", "a
+    /// permission", "CI failed again", "its PR to send"), if anything.
+    pub waiting: Option<String>,
+    /// What it asks, while it waits on a person.
+    pub question: Option<String>,
+    pub pr: Option<String>,
+    pub merged_at: Option<u64>,
+    /// Why it failed or stopped.
+    pub reason: Option<String>,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+/// [`PROJECT_SESSIONS`]' answer: the wave, newest first, and what narrows
+/// it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionWave {
+    pub project: String,
+    pub sessions: Vec<SessionRow>,
+    /// The project's issue labels, to narrow by.
+    pub labels: Vec<String>,
+    /// Who asked for the sessions listed, `[account, name]`, by name.
+    pub askers: Vec<(String, String)>,
+    /// The tracker it's narrowed to, when it is.
+    pub tracker: Option<SessionIssue>,
+    /// More matched than it lists.
+    pub more: bool,
+}
+
+/// [`AGENT_SESSION`]'s answer: its row, its last answer whole (the
+/// thread's copy keeps only its end), and what its latest turn left.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionRead {
+    pub session: SessionRow,
+    pub answer: Option<SessionAnswer>,
+    pub turn: Option<SessionTurn>,
+    pub open: Option<SessionOpen>,
+    /// How many turns it has finished.
+    pub turns: u32,
+}
+
+/// A turn's answer: the agent's last message, as its box sent it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionAnswer {
+    pub at: u64,
+    pub text: String,
+    /// Its box cut its start ([`crate::work::REPLY_MAX`]): it starts `…`.
+    pub cut: bool,
+}
+
+/// [`AGENT_SESSIONS_WAIT`]'s body.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionWait {
+    pub sessions: Vec<String>,
+    /// Seconds, at most [`SESSION_WAIT_MAX`]; 0 answers at once.
+    #[serde(default)]
+    pub wait: u64,
+}
+
+/// [`AGENT_SESSIONS_WAIT`]'s answer: each session asked of, in order, and
+/// those of them whose turn has finished.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionsWaited {
+    pub sessions: Vec<SessionRow>,
+    pub settled: Vec<String>,
 }
 
 #[cfg(test)]

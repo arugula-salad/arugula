@@ -2,12 +2,19 @@
 //! project's workspaces, from its card.
 //!
 //! - **Where:** the project's other live workspaces that have the
-//!   session's repo, as the pool ranks them ([`places`],
-//!   [`super::pool::ranked`]).
+//!   session's repo (every one, for a linked repo none has: the box clones
+//!   it), as the pool ranks them ([`places`], [`super::pool::ranked`]),
+//!   each with how many sessions are going there (queued, or a turn under
+//!   way: done and parked ones only wait, and one left from before its box
+//!   was rebuilt isn't its box's, Arugula #266).
 //! - **When:** while nothing runs: `queued` (it just goes, for the other
 //!   box to take) or `done` (queued again there). Not mid-turn, and not
 //!   once it ended. A Try 3's sibling or a review stays on its box, beside
-//!   the session it's of.
+//!   the session it's of. Not "after this turn" either (Arugula #266): a
+//!   turn's work is in its box's checkout until it pushes, and the other
+//!   box starts from the thread, so the move waits for the turn's end,
+//!   when the card offers it; and the pool spreading new sessions over
+//!   idle boxes ([`super::pool`]) is what moving a working one was for.
 //! - **Who:** its asker, or an owner or editor of its project; not a
 //!   viewer.
 //! - **How** (`db::sessions::moved_in`): as a rebuilt box's session moves
@@ -64,7 +71,7 @@ pub async fn places(app: &Platform, s: &Session) -> anyhow::Result<Vec<SessionPl
     Ok(pool::ranked(app, &s.project, others)
         .await?
         .into_iter()
-        .map(|(w, l)| SessionPlace { workspace: w.id, name: w.name, awake: l.awake, busy: l.busy() })
+        .map(|(w, l)| SessionPlace { workspace: w.id, name: w.name, awake: l.awake, busy: l.live })
         .collect())
 }
 

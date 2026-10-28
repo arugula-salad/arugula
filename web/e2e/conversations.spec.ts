@@ -6,14 +6,26 @@
 // anything.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
 import { menu, paneEl, panes, reset, seedConversation, type Base } from "./helpers";
 
 const claude = process.env.CLAUDE_CONFIG_DIR!;
 
-const seed = (word: string, title: string, more?: (base: Base) => object[]) => seedConversation(claude, word, title, more);
+const seeded: string[] = [];
+const seed = (word: string, title: string, more?: (base: Base) => object[]) => {
+  const made = seedConversation(claude, word, title, more);
+  seeded.push(made.cwd);
+  return made;
+};
+
+// The run's Claude directory is every spec's: what these leave in it is a
+// conversation each later daemon lists (and a hint it offers, aru-118).
+test.afterAll(() => {
+  rmSync(join(claude, "projects"), { recursive: true, force: true });
+  for (const cwd of seeded) rmSync(cwd, { recursive: true, force: true });
+});
 
 /** This test's process holds the session, as a running Claude Code would. */
 function hold(id: string) {

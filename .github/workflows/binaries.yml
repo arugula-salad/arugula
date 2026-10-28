@@ -52,3 +52,16 @@ jobs:
         run: cd web && pnpm install --frozen-lockfile
       - name: THIRD_PARTY.md is current
         run: just notices-check
+
+  # The merge queue's check on a pull request (docs/development.md,
+  # "Merging through the queue"): its ruleset requires `queue` by name, on
+  # the pull request before it's queued and on its merge group after.
+  # Here it's binaries and quick; the group's is check.yml's, the whole
+  # suite. So this workflow has no merge_group trigger: its `queue`,
+  # skipped on a group, would count as passed there.
+  queue:
+    if: github.event_name == 'pull_request'
+    needs: [binaries, quick]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "binaries and quick passed; the merge queue runs check.yml on the group"

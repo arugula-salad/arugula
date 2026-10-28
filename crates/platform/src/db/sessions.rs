@@ -894,14 +894,25 @@ pub fn parked(s: &Session, now: u64) -> bool {
     s.state == State::Done && now.saturating_sub(s.heard_at.unwrap_or(s.updated_at)) >= SESSION_PARK_MS
 }
 
+/// A session (`s`) counts on its workspace's box now (Arugula #266):
+/// no box took it yet, or the one that did is the workspace's machine. One
+/// a box took before the workspace's box changed (a rebuild, until
+/// `hosted::sessions_on_box_changed` moves it; or one that didn't move) is
+/// the old box's: the new one doesn't run or hold it, so it takes no slot
+/// there and the pool doesn't count it.
+pub const ON_ITS_BOX: &str =
+    "(s.machine IS NULL OR s.machine = (SELECT w.machine FROM hosted_workspaces w WHERE w.id = s.workspace_id))";
+
 /// How many sessions on `workspace` other than `but` run on its box at
 /// `now`: a turn under way, or done and not parked ([`parked`]).
 fn under_way(c: &impl Sql, workspace: &str, but: &str, now: u64) -> Result<usize> {
     let n: u64 = c.query_row(
-        "SELECT count(*) FROM agent_sessions
-         WHERE workspace_id = ?1 AND id <> ?2
-           AND (state IN ('working', 'needs_input', 'unresponsive')
-                OR (state = 'done' AND COALESCE(heard_at, updated_at) > ?3))",
+        &format!(
+            "SELECT count(*) FROM agent_sessions s
+             WHERE workspace_id = ?1 AND id <> ?2 AND {ON_ITS_BOX}
+               AND (state IN ('working', 'needs_input', 'unresponsive')
+                    OR (state = 'done' AND COALESCE(heard_at, updated_at) > ?3))"
+        ),
         params![workspace, but, now.saturating_sub(SESSION_PARK_MS)],
         |r| r.get(0),
     )?;
@@ -942,8 +953,11 @@ fn caps(c: &impl Sql, workspace: &str) -> Result<Caps> {
 /// taken and not ended, running or parked, each in a session user's home.
 fn held(c: &impl Sql, workspace: &str, but: &str) -> Result<usize> {
     let n: u64 = c.query_row(
-        "SELECT count(*) FROM agent_sessions
-         WHERE workspace_id = ?1 AND id <> ?2 AND state IN ('working', 'needs_input', 'unresponsive', 'done')",
+        &format!(
+            "SELECT count(*) FROM agent_sessions s
+             WHERE workspace_id = ?1 AND id <> ?2 AND {ON_ITS_BOX}
+               AND state IN ('working', 'needs_input', 'unresponsive', 'done')"
+        ),
         params![workspace, but],
         |r| r.get(0),
     )?;
@@ -1989,15 +2003,18 @@ impl Db {
     }
 
     /// How many of `project`'s sessions each of its workspaces holds or
-    /// has queued (every one that hasn't ended), by workspace, at `now`:
-    /// how busy its box is, for picking one (Arugula #214, #215).
+    /// has queued (every one that hasn't ended, on its box now:
+    /// [`ON_ITS_BOX`]), by workspace, at `now`: how busy its box is, for
+    /// picking one (Arugula #214, #215).
     pub fn workspace_load(&self, project: &str, now: u64) -> Result<std::collections::HashMap<String, BoxLoad>> {
         let rows: Vec<(String, String, u64)> = self.c().query_map(
-            "SELECT workspace_id,
-                    CASE WHEN state <> 'done' THEN 'live' WHEN COALESCE(heard_at, updated_at) > ?2 THEN 'done' ELSE 'parked' END,
-                    count(*)
-             FROM agent_sessions WHERE project_id = ?1 AND state NOT IN ('failed', 'stopped')
-             GROUP BY workspace_id, 2",
+            &format!(
+                "SELECT workspace_id,
+                        CASE WHEN state <> 'done' THEN 'live' WHEN COALESCE(heard_at, updated_at) > ?2 THEN 'done' ELSE 'parked' END,
+                        count(*)
+                 FROM agent_sessions s WHERE project_id = ?1 AND state NOT IN ('failed', 'stopped') AND {ON_ITS_BOX}
+                 GROUP BY workspace_id, 2"
+            ),
             params![project, now.saturating_sub(SESSION_PARK_MS)],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?;
@@ -2087,9 +2104,14 @@ impl Db {
         }
         let cap = caps(&c, workspace)?;
         // Running: a turn under way, or done and not parked. Held: every
-        // one but a queued one.
-        let mut running = live.iter().filter(|s| s.state != State::Queued && !parked(s, now)).count();
-        let mut held = live.iter().filter(|s| s.state != State::Queued).count();
+        // one but a queued one. Neither counts the old box's ([`ON_ITS_BOX`]).
+        let machine: Option<String> = c
+            .query_row("SELECT machine FROM hosted_workspaces WHERE id = ?1", params![workspace], |r| r.get(0))
+            .optional()?
+            .flatten();
+        let ours = |s: &&Session| s.machine.is_none() || s.machine == machine;
+        let mut running = live.iter().filter(ours).filter(|s| s.state != State::Queued && !parked(s, now)).count();
+        let mut held = live.iter().filter(ours).filter(|s| s.state != State::Queued).count();
         // A parked one with prompts runs again while there's a slot; else
         // it stays parked, its prompts waiting here.
         let mut wakes = std::collections::HashSet::new();

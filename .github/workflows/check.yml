@@ -37,15 +37,25 @@
 # daemon as a service run, and ARUGULA_REQUIRE_SYSTEMD fails them in test
 # and core if it's ever missing instead of letting them skip. Only main's pushes (never other branches or pull requests), since
 # most of it runs on our own machines; a branch runs by hand:
-# `gh workflow run check.yml --ref BRANCH`.
+# `gh workflow run check.yml --ref BRANCH`. And the merge queue's groups
+# (merge_group, once the queue is on: docs/development.md, "Merging through
+# the queue"): a pull request with main and whatever is queued ahead of it,
+# everything run (scripts/changed runs it all for any event but a push),
+# with `queue` the one verdict the queue waits for. Only someone who may
+# merge queues a pull request, so its code reaches our machines no sooner
+# than a merge would bring it.
 name: check
 on:
   push:
     branches: [main]
   workflow_dispatch:
+  merge_group:
+    types: [checks_requested]
 
 # A new run by hand on a branch cancels its run in progress; main's runs
-# all start and finish. Each of main's runs has a group of its own: GitHub
+# all start and finish. Each merge group has a ref of its own
+# (gh-readonly-queue/main/pr-…), so a group the queue drops and builds again
+# is a new run. Each of main's runs has a group of its own: GitHub
 # keeps one pending run per group and cancels the one before, even without
 # cancel-in-progress, so pushes close together left runs that never started
 # and commits chant ci never decided (#524).
@@ -532,6 +542,28 @@ jobs:
         env:
           ARUGULA_DESKTOP_IMAGE_REPO: ghcr.io/arugula-salad/arugula-desktop-xvfb
           ARUGULA_DESKTOP_IMAGE_PUSH: ${{ github.ref == 'refs/heads/main' && '1' || '' }}
+
+  # The merge queue's verdict on a group: every job above passed or was
+  # skipped (a skipped job is one the group didn't need). The queue's
+  # ruleset requires this check by name, so a job added above goes into
+  # `needs` too. Only merge groups: main's pushes are judged by chant
+  # (chant.workspace.json), and a pull request reports binaries.yml's job
+  # of this name instead.
+  queue:
+    needs: [lint, changes, build, static, clippy, core, test, test-2, test-postgres, testnet, e2e, stack, desktop-xvfb, macos]
+    if: always() && github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed or was skipped
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$RESULTS" | jq -e 'any(.[]; . != "success" and . != "skipped")' >/dev/null; then
+            echo "::error::a job failed or was cancelled: the group doesn't merge"
+            exit 1
+          fi
 
   # What the push changed (#868): suite, the suites' inputs
   # (scripts/suite-changed); app, the desktop app's (scripts/app-changed);

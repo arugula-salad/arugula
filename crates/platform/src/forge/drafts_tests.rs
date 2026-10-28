@@ -584,7 +584,7 @@ async fn a_push_outside_its_branch_is_refused() {
         machine: machine.into(),
         sign: String::new(),
     };
-    let ask = |b: &str| PushAsk { session: ses.clone(), branch: b.into() };
+    let ask = |b: &str| PushAsk { session: ses.clone(), branch: b.into(), clone: false };
     let other = format!("arugula/{}-x", "f".repeat(8));
     for (machine, b) in [("box1", "main"), ("box1", other.as_str()), ("box1", "arugula/"), ("box2", branch.as_str())] {
         let got = app.hosted_session_push(&m(machine), &ask(b)).await.unwrap();
@@ -614,6 +614,14 @@ async fn a_push_outside_its_branch_is_refused() {
     assert_eq!(logged.len(), 1, "{logged:?}");
     assert_eq!((logged[0].0.as_str(), logged[0].1.as_str()), ("alice", "session:push"));
     assert!(logged[0].2.contains(r#""workflows":"write""#), "{logged:?}");
+
+    // A clone of its repo (Fleet 6): the same checks, contents read alone.
+    let clone = |b: &str| PushAsk { clone: true, ..ask(b) };
+    let got = app.hosted_session_push(&m("box2"), &clone(&branch)).await.unwrap();
+    assert!(matches!(got, PushGiven::Refused { .. }), "another machine's: {got:?}");
+    let got = app.hosted_session_push(&m("box1"), &clone(&branch)).await.unwrap();
+    assert!(matches!(got, PushGiven::Given { .. }), "{got:?}");
+    assert_eq!(gh.lock().unwrap().minted[1], json!({ "metadata": "read", "contents": "read" }));
 
     // Once it ended, no more.
     app.db.c().execute("UPDATE agent_sessions SET state = 'stopped' WHERE id = ?1", params![ses]).unwrap();

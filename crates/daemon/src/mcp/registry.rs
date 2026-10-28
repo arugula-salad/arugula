@@ -24,7 +24,7 @@ use crate::server::App;
 
 /// What the base asks of control's tools: `capabilities` and the card
 /// *What your agent can do here* say whether each reaches control from
-/// here, and `wait` with `run` follows a run.
+/// here, `wait` with `run` follows a run, and with `session` agent sessions.
 pub trait ControlTools: Send + Sync + 'static {
     /// Whether agents here drive the owner's Cloud workspaces (#1094).
     fn cloud_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, CloudReach>;
@@ -34,6 +34,8 @@ pub trait ControlTools: Send + Sync + 'static {
     fn runs_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, RunsReach>;
     /// `wait` with `run`: until it ends, or `limit`.
     fn wait_run<'a>(&'a self, call: &'a Call<'a>, run: &'a str, limit: Duration) -> BoxFuture<'a, Out>;
+    /// `wait` with `session`: until any of them settles, or `limit`.
+    fn wait_sessions<'a>(&'a self, call: &'a Call<'a>, ids: &'a str, limit: Duration) -> BoxFuture<'a, Out>;
 }
 
 static CONTROL_TOOLS: OnceLock<Box<dyn ControlTools>> = OnceLock::new();
@@ -66,6 +68,14 @@ pub(crate) async fn wait_run(call: &Call<'_>, run: &str, limit: Duration) -> Out
     match CONTROL_TOOLS.get() {
         Some(c) => c.wait_run(call, run, limit).await,
         None => Err(format!("{NO_CONTROL_TOOLS}: it can't wait on a run")),
+    }
+}
+
+/// `wait` with `session` ([`ControlTools::wait_sessions`]).
+pub(crate) async fn wait_sessions(call: &Call<'_>, ids: &str, limit: Duration) -> Out {
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.wait_sessions(call, ids, limit).await,
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't wait on sessions")),
     }
 }
 
