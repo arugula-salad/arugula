@@ -40,10 +40,10 @@ use crate::{
 };
 
 /// A page of output, by default (characters).
-pub(crate) const PAGE: usize = 16_000;
+pub const PAGE: usize = 16_000;
 /// The most any one result carries: Claude Code swaps anything over about
 /// 50,000 for a preview and a file (S14).
-pub(crate) const PAGE_MAX: usize = 40_000;
+pub const PAGE_MAX: usize = 40_000;
 /// How long a wait (or `run` with `wait`) waits before answering "still
 /// running": under interactive Claude Code's 120s auto-background.
 const WAIT_DEFAULT: Duration = Duration::from_secs(100);

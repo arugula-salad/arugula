@@ -20,10 +20,6 @@ mod callers;
 mod chat_readers;
 use arugula_mux::classify;
 pub mod control;
-// MCP's tools for what lives in control (Cloud workspaces, conversations,
-// native issues, boards, runs, deploys, linked repos, agent sessions);
-// the binary registers them. Next: crates/arugulad-control-tools (#232).
-pub mod control_tools;
 // Windows panes on a pseudoconsole (M56).
 #[cfg(windows)]
 use arugula_mux::conpty;

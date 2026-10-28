@@ -8,6 +8,8 @@ repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 arugulad-base = { workspace = true }
+# MCP's tools for what lives in control, in every build.
+arugulad-control-tools = { workspace = true }
 # Docs, in every build.
 arugulad-docs = { workspace = true }
 # The deploy drivers (`_planter` and the rest), in every build.
