@@ -1,135 +1,143 @@
-//! The GitHub forge (`forge/`: pull requests and issues as blocks, their
-//! live updates through control), behind the cargo feature `forge`. It's on
-//! by default; `--no-default-features` leaves it out, and Labs' GitLab and
-//! Forgejo need it, so `labs` turns it on.
+//! The GitHub forge (pull requests and issues as blocks, their live updates
+//! through control) is a crate of its own, `arugulad-forge`
+//! (crates/arugulad-forge, #232), which the binary registers ([`install`])
+//! when its `forge` feature is on, as it is by default. Labs' GitLab and
+//! Forgejo are built on it, so the binary's `labs` feature turns it on.
 //!
-//! **The pattern** is Labs' (see `labs/mod.rs`): `forge/` is declared in
-//! `main.rs` under the feature, and nothing outside it names it but this
-//! file. What the rest of the daemon calls is below, each with a twin under
-//! `#[cfg(not(feature = "forge"))]` that does nothing or says [`not_built`],
-//! so no caller needs a `cfg` of its own. A build without the feature has
-//! no forge blocks (a saved one says so when it's opened), no forge tools in
-//! MCP's list and no live updates, and control's `forge.*` messages go
-//! unheard. Everything in `arugula-proto` stays, so the protocol is the same.
-//!
-//! Tests that need the forge are `#[cfg(feature = "forge")]`.
+//! **The surface:** what the rest of the daemon calls is below. Each asks
+//! the registered [`Forges`] or, with none, does nothing or says
+//! [`not_built`], so no caller needs to know whether it's there. A build
+//! without it has no forge blocks (a saved one says so when it's opened), no
+//! forge tools in MCP's list and no live updates, and control's `forge.*`
+//! messages go unheard. Everything in `arugula-proto` stays, so the protocol
+//! is the same.
 
-#[cfg(not(feature = "forge"))]
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, OnceLock},
+};
 
-use arugula_proto::BlockType;
-#[cfg(not(feature = "forge"))]
+use arugula_control_wire::forge::{ForgeSend, OpAnswer};
+use arugula_proto::{BlockType, forge::ForgeState};
+use futures_util::future::BoxFuture;
 use serde_json::Value;
 
-use crate::block::BlockKinds;
-#[cfg(not(feature = "forge"))]
-use crate::block::{Block, BlockCtx, BlockKind};
+use crate::{
+    block::{Block, BlockCtx, BlockKind, BlockKinds},
+    control::Control,
+    review::Runner,
+    server::App,
+};
 
-/// Whether this build has the forge.
-pub const BUILT: bool = cfg!(feature = "forge");
+/// The forge crate, as the daemon calls it.
+pub trait Forges: Send + Sync + 'static {
+    /// Registers the forge block type.
+    fn kinds(&self, kinds: &mut BlockKinds);
+    /// At start: where the forge keeps hooks' secrets, control (for
+    /// GitHub), and the URLs this daemon is reached at.
+    fn start(&self, state_dir: PathBuf, control: Option<&Arc<Control>>, urls: Vec<String>);
+    /// A forge block's config, made whole from a link, `OWNER/REPO#N`, or
+    /// `N` in a clone.
+    fn open_config<'a>(&'a self, c: &'a Value, state_dir: &'a Path) -> BoxFuture<'a, Result<Value, String>>;
+    /// Whether `gh` has a login for `host` now.
+    fn gh_signed_in<'a>(&'a self, runner: &'a Runner, host: &'a str) -> BoxFuture<'a, Result<(), String>>;
+    /// A text control's socket sent that may be the forge's.
+    fn heard(&self, text: &str);
+    /// The `forge.watch` messages for control's socket.
+    fn watch_messages(&self) -> Option<tokio::sync::watch::Receiver<Option<String>>>;
+    /// Whether a forge block's item is on a GitHub repo linked to a project.
+    fn linked<'a>(&'a self, st: &'a ForgeState) -> BoxFuture<'a, bool>;
+    /// Control's `forge.send` op (M168).
+    fn send<'a>(&'a self, app: &'a Arc<App>, s: ForgeSend) -> BoxFuture<'a, OpAnswer>;
+}
+
+static FORGES: OnceLock<Box<dyn Forges>> = OnceLock::new();
+
+/// Puts the forge in this daemon (once, before `main`).
+pub fn install(f: Box<dyn Forges>) {
+    if FORGES.set(f).is_err() {
+        tracing::warn!("the forge was registered twice");
+    }
+}
+
+fn forges() -> Option<&'static dyn Forges> {
+    FORGES.get().map(|f| f.as_ref())
+}
+
+/// Whether this daemon has the forge.
+pub fn built() -> bool {
+    forges().is_some()
+}
 
 /// What a request that needs the forge, in a build without it, answers.
-#[cfg(not(feature = "forge"))]
 pub fn not_built(what: &str) -> String {
     format!("{what} isn't in this build (built without the forge feature)")
 }
 
-/// Registers the forge block type.
-#[cfg(feature = "forge")]
-pub fn kinds(kinds: &mut BlockKinds) {
-    kinds.add(BlockType::Forge, crate::block::Make(crate::forge::ForgeBlock::create));
-}
-
 /// A kind this build doesn't have: it says so ([`not_built`]).
-#[cfg(not(feature = "forge"))]
 struct NotBuilt(&'static str);
 
-#[cfg(not(feature = "forge"))]
 impl BlockKind for NotBuilt {
     fn create(&self, _ctx: BlockCtx, _config: Value) -> Result<Arc<dyn Block>, String> {
         Err(not_built(self.0))
     }
 }
 
-#[cfg(not(feature = "forge"))]
+/// Registers the forge block type.
 pub fn kinds(kinds: &mut BlockKinds) {
-    kinds.add(BlockType::Forge, NotBuilt("A forge block"));
+    match forges() {
+        Some(f) => f.kinds(kinds),
+        None => kinds.add(BlockType::Forge, NotBuilt("A forge block")),
+    }
 }
 
 /// At start: where the forge keeps hooks' secrets, control (for GitHub), and
 /// the URLs this daemon is reached at.
-#[cfg(feature = "forge")]
-pub fn start(
-    state_dir: std::path::PathBuf,
-    control: Option<&std::sync::Arc<crate::control::Control>>,
-    urls: Vec<String>,
-) {
-    crate::forge::live::init(state_dir, control, urls);
-    crate::forge::shadow::start();
+pub fn start(state_dir: PathBuf, control: Option<&Arc<Control>>, urls: Vec<String>) {
+    if let Some(f) = forges() {
+        f.start(state_dir, control, urls);
+    }
 }
-
-#[cfg(not(feature = "forge"))]
-pub fn start(_state_dir: std::path::PathBuf, _control: Option<&Arc<crate::control::Control>>, _urls: Vec<String>) {}
 
 /// A forge block's config, made whole from a link, `OWNER/REPO#N`, or `N` in
 /// a clone.
-#[cfg(feature = "forge")]
-pub async fn open_config(c: &serde_json::Value, state_dir: &std::path::Path) -> Result<serde_json::Value, String> {
-    crate::forge::open_config(c, state_dir).await
-}
-
-#[cfg(not(feature = "forge"))]
-pub async fn open_config(_c: &Value, _state_dir: &std::path::Path) -> Result<Value, String> {
-    Err(not_built("A forge block"))
+pub async fn open_config(c: &Value, state_dir: &Path) -> Result<Value, String> {
+    match forges() {
+        Some(f) => f.open_config(c, state_dir).await,
+        None => Err(not_built("A forge block")),
+    }
 }
 
 /// Whether `gh` has a login for `host` now (asked afresh, not a block's
 /// cached answer), for MCP's `capabilities` (#229). `Err`: why not.
-#[cfg(feature = "forge")]
-pub(crate) async fn gh_signed_in(runner: &crate::review::Runner, host: &str) -> Result<(), String> {
-    crate::forge::github::GhToken::new(runner.clone(), host).get(true).await.map(|_| ())
-}
-
-#[cfg(not(feature = "forge"))]
-pub(crate) async fn gh_signed_in(_runner: &crate::review::Runner, _host: &str) -> Result<(), String> {
-    Err(not_built("GitHub"))
+pub(crate) async fn gh_signed_in(runner: &Runner, host: &str) -> Result<(), String> {
+    match forges() {
+        Some(f) => f.gh_signed_in(runner, host).await,
+        None => Err(not_built("GitHub")),
+    }
 }
 
 /// A text control's socket sent that may be the forge's (a poke or a
 /// heartbeat).
-#[cfg(feature = "forge")]
 pub fn from_control(text: &str) {
-    crate::forge::live::from_control(text);
+    if let Some(f) = forges() {
+        f.heard(text);
+    }
 }
-
-#[cfg(not(feature = "forge"))]
-pub fn from_control(_text: &str) {}
 
 /// The `forge.watch` messages for control's socket.
-#[cfg(feature = "forge")]
 pub fn watch_messages() -> Option<tokio::sync::watch::Receiver<Option<String>>> {
-    crate::forge::live::watch_messages()
-}
-
-#[cfg(not(feature = "forge"))]
-pub fn watch_messages() -> Option<tokio::sync::watch::Receiver<Option<String>>> {
-    None
+    forges()?.watch_messages()
 }
 
 /// Whether a forge block's item is on a GitHub repo linked to a project
 /// for this machine's owner (M170's word on it, kept a few minutes): MCP's
 /// `read_forge` reads it from the platform too then (M169).
-#[cfg(feature = "forge")]
-pub async fn linked(st: &arugula_proto::forge::ForgeState) -> bool {
-    st.provider == arugula_proto::forge::Provider::Github
-        && st.number != 0
-        && st.host.as_deref().is_none_or(crate::forge::github::is_github_host)
-        && matches!(crate::forge::platform::link(&st.repo).await, Ok(Some(_)))
-}
-
-#[cfg(not(feature = "forge"))]
-pub async fn linked(_st: &arugula_proto::forge::ForgeState) -> bool {
-    false
+pub async fn linked(st: &ForgeState) -> bool {
+    match forges() {
+        Some(f) => f.linked(st).await,
+        None => false,
+    }
 }
 
 /// `{"t": "ops"}` for control's socket (M168): the typed ops this machine
@@ -137,7 +145,7 @@ pub async fn linked(_st: &arugula_proto::forge::ForgeState) -> bool {
 /// #209), and the forge's when it's built.
 pub fn ops_message() -> tokio::sync::watch::Receiver<Option<String>> {
     let ops = arugula_control_wire::forge::Ops {
-        ops: if BUILT {
+        ops: if built() {
             arugula_control_wire::forge::Ops::ours().ops
         } else {
             arugula_control_wire::forge::RUN_OPS
@@ -154,20 +162,16 @@ pub fn ops_message() -> tokio::sync::watch::Receiver<Option<String>> {
 /// A text control's socket sent, if it asks an op of this machine (M168):
 /// whether it was one. The op runs on its own, and its answer goes to
 /// `answers`.
-pub fn op_from_control(
-    app: &std::sync::Arc<crate::server::App>,
-    text: &str,
-    answers: &tokio::sync::mpsc::UnboundedSender<String>,
-) -> bool {
+pub fn op_from_control(app: &Arc<App>, text: &str, answers: &tokio::sync::mpsc::UnboundedSender<String>) -> bool {
     use arugula_control_wire::forge::{DaemonOp, OpAsk, OpDone};
     let Ok(ask) = serde_json::from_str::<OpAsk>(text) else { return false };
     let (app, answers) = (app.clone(), answers.clone());
     crate::task::spawn(async move {
         let answer = match ask.op {
-            #[cfg(feature = "forge")]
-            DaemonOp::ForgeSend(s) => crate::forge::send_op::forge_send(&app, s).await,
-            #[cfg(not(feature = "forge"))]
-            DaemonOp::ForgeSend(_) => arugula_control_wire::forge::OpAnswer::Unknown,
+            DaemonOp::ForgeSend(s) => match forges() {
+                Some(f) => f.send(&app, s).await,
+                None => OpAnswer::Unknown,
+            },
             DaemonOp::RunStart(s) => crate::hosted::runs::start(&app, &s),
             DaemonOp::RunRevoke(r) => crate::hosted::runs::revoke(&app, &r),
             DaemonOp::HostedArchive(_) => crate::hosted::archive::flush(None).await,

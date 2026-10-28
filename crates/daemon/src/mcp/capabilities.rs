@@ -103,7 +103,7 @@ impl Call<'_> {
 
 /// GitHub through `gh`, and Labs' forges where the flag is on.
 async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
-    if !crate::forges::BUILT {
+    if !crate::forges::built() {
         return Vec::new();
     }
     let runner = match crate::api::agent_env(app).await {

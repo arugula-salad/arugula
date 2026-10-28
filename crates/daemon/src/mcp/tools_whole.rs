@@ -40,7 +40,7 @@ pub fn the_tool_list_and_each_schema_are_unchanged() {
 
 pub fn annotations_are_honest() {
     let all = list(Scope::Full, fl(false));
-    assert_eq!(all.len(), 35 - NO_FORGE);
+    assert_eq!(all.len(), 35 - no_forge());
     let ro: Vec<&str> = all
         .iter()
         .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -62,13 +62,13 @@ pub fn annotations_are_honest() {
         "read_run",
         "read_deploy",
     ];
-    want.retain(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n));
+    want.retain(|n| crate::forges::built() || !FORGE_TOOLS.contains(n));
     assert_eq!(ro, want);
     assert_eq!(list(Scope::Read, fl(false)).len(), ro.len(), "a read token sees the read-only tools only");
     let hint = |n: &str| all.iter().find(|t| t.name == n).unwrap().annotations.clone().unwrap();
     assert_eq!(hint("close").destructive_hint, Some(true));
     // A group is as careful as its most careful kind: draft has merge.
-    if crate::forges::BUILT {
+    if crate::forges::built() {
         assert_eq!(hint("draft").destructive_hint, Some(true));
     }
     assert_eq!((hint("show").destructive_hint, hint("show").open_world_hint), (Some(false), Some(true)));
@@ -82,7 +82,7 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     for scope in [Scope::Full, Scope::Read] {
         let with: Vec<String> = list(scope, fl(true)).iter().map(|t| t.name.to_string()).collect();
         for d in all_defs().iter().filter(|d| scope == Scope::Full || d.read_only) {
-            if !crate::forges::BUILT && FORGE_TOOLS.contains(&d.name) {
+            if !crate::forges::built() && FORGE_TOOLS.contains(&d.name) {
                 continue;
             }
             assert!(with.contains(&d.name.to_string()), "{} isn't listed for {scope:?} with labs", d.name);
@@ -154,9 +154,9 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
         assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
     }
     assert_eq!(every.len(), 38);
-    assert_eq!(defs(fl(false)).len(), 35 - NO_FORGE);
-    assert_eq!(defs(fl(true)).len(), 38 - NO_FORGE);
-    assert_eq!(every.len(), defs(fl(false)).len() + 3 + NO_FORGE, "and delegate and the board tools");
+    assert_eq!(defs(fl(false)).len(), 35 - no_forge());
+    assert_eq!(defs(fl(true)).len(), 38 - no_forge());
+    assert_eq!(every.len(), defs(fl(false)).len() + 3 + no_forge(), "and delegate and the board tools");
 }
 
 /// docs/mcp-permissions.json allows the read-only tools and asks for the
@@ -173,7 +173,7 @@ pub fn permissions_snippet_is_every_tool() {
         let body = &body[..body.find(']').unwrap()];
         body.split('"')
             .filter_map(|s| s.strip_prefix("mcp__arugula__"))
-            .filter(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n))
+            .filter(|n| crate::forges::built() || !FORGE_TOOLS.contains(n))
             .collect()
     };
     // The snippet lists what a stranger sees.
@@ -207,7 +207,7 @@ pub fn the_card_lists_what_this_machine_offers() {
     {
         assert!(all.contains(&t.to_owned()) && !bare.contains(&t.to_owned()), "{t}");
     }
-    if crate::forges::BUILT {
+    if crate::forges::built() {
         assert!(all.contains(&"draft".to_owned()) && !bare.contains(&"draft".to_owned()));
         let signed = tools(&can_do(fl(false), |n| matches!(n, Needs::Nothing | Needs::Forge)));
         assert!(signed.contains(&"draft".to_owned()) && !signed.contains(&"cloud".to_owned()));
@@ -240,7 +240,9 @@ pub fn doc_is_listed_with_no_flag() {
 const THREAD_TOOLS: [&str; 3] = ["read_thread", "search_threads", "post_thread"];
 
 /// How many of the tools a build without the forge doesn't list.
-const NO_FORGE: usize = if crate::forges::BUILT { 0 } else { FORGE_TOOLS.len() };
+fn no_forge() -> usize {
+    if crate::forges::built() { 0 } else { FORGE_TOOLS.len() }
+}
 
 /// The kinds that aren't listed without a flag: the table's, and the
 /// operations' own (`Op::FLAG`).
