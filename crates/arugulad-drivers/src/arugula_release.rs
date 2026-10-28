@@ -723,5 +723,5 @@ pub fn cli(args: &[String]) -> ! {
 }
 
 #[cfg(test)]
-#[path = "work_arugula_release_tests.rs"]
+#[path = "arugula_release_tests.rs"]
 mod tests;

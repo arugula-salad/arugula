@@ -4,11 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f8f6f0" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1a1b18" media="(prefers-color-scheme: dark)" />
     <meta name="referrer" content="no-referrer" />
-    <!-- No icon: the page's CSP allows images only as data: URLs, so a favicon
-         request would be refused. -->
-    <link rel="icon" href="data:," />
-    <title>Arugula</title>
+    <!-- The leaf (the site's mark) on the Doc's dark paper, as a data: URL:
+         the page's CSP allows images only so, and a favicon request would be
+         refused. Control adds the link preview's tags (doc_links.rs). -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%231a1b18'/%3E%3Cg fill='%239cc36b' transform='translate(5 5.4) scale(.75)'%3E%3Cpath d='M20 38V8' stroke='%239cc36b' stroke-width='2.4' stroke-linecap='round'/%3E%3Cellipse cx='20' cy='8.5' rx='6.2' ry='7'/%3E%3Cellipse cx='14' cy='18' rx='5' ry='3' transform='rotate(-28 14 18)'/%3E%3Cellipse cx='26' cy='18' rx='5' ry='3' transform='rotate(28 26 18)'/%3E%3Cellipse cx='15.2' cy='25.5' rx='3.8' ry='2.3' transform='rotate(-28 15.2 25.5)'/%3E%3Cellipse cx='24.8' cy='25.5' rx='3.8' ry='2.3' transform='rotate(28 24.8 25.5)'/%3E%3Cellipse cx='16.8' cy='31.5' rx='2.6' ry='1.6' transform='rotate(-28 16.8 31.5)'/%3E%3Cellipse cx='23.2' cy='31.5' rx='2.6' ry='1.6' transform='rotate(28 23.2 31.5)'/%3E%3C/g%3E%3C/svg%3E" />
+    <title>A shared Doc</title>
   </head>
   <body>
     <div id="root"></div>

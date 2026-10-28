@@ -502,9 +502,12 @@ server_test_bins := server_cargo + " build --workspace --bins --tests"
 
 # PART (check.yml's test and test-2, 1 or 2) runs half the Rust tests of
 # each workspace, nextest's count:PART/2; only the first half runs the
-# doctests and control-smoke after them.
+# doctests and control-smoke after them. WHICH splits a run in two:
+# `server`, only the server workspace's suite, which needs none of
+# static's binaries (ARUGULA_SSH_BINARIES), so check.yml runs it while
+# static builds them; `rest`, everything else (#259).
 [private]
-test-run part="":
+test-run part="" which="":
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{part}}" in
@@ -512,9 +515,14 @@ test-run part="":
       1|2) part=(--partition "count:{{part}}/2") ;;
       *) echo "test-run: PART is 1 or 2" >&2; exit 2 ;;
     esac
+    case "{{which}}" in
+      ''|server|rest) ;;
+      *) echo "test-run: WHICH is server or rest" >&2; exit 2 ;;
+    esac
     # ${part[@]+…}: macOS bash 3.2 calls an empty array unbound.
-    {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"}
-    {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"}
+    if [ "{{which}}" != server ]; then {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
+    if [ "{{which}}" != rest ]; then {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
+    [ "{{which}}" != server ] || exit 0
     [ "{{part}}" != 2 ] || exit 0
     {{cargo}} test --workspace --doc
     {{server_cargo}} test --workspace --doc
@@ -522,14 +530,18 @@ test-run part="":
 
 # The platform's suite on Postgres (M143), as hosted control runs it: a
 # postgres:17 container of its own on a free port, removed after. The same
-# tests as on SQLite (`Db::test`); check.yml's test-2 job runs it after
-# `test-run 2`, on what test-build built.
+# tests as on SQLite (`Db::test`); check.yml runs it in a job of its own
+# (test-postgres), beside test and test-2.
 test-platform-postgres:
     #!/usr/bin/env bash
     set -euo pipefail
     name="arugula-platform-pg-$$"
+    # No fsync: a test database needn't survive a crash, and with it every
+    # commit waited on the disk. In a job of its own beside test and
+    # test-2 the suite took 23-27 min instead of 2.
     docker run -d --rm --name "$name" -e POSTGRES_PASSWORD=platform -p 127.0.0.1::5432 \
-        postgres:17 -c max_connections=500 >/dev/null
+        postgres:17 -c max_connections=500 -c fsync=off -c synchronous_commit=off \
+        -c full_page_writes=off >/dev/null
     trap 'docker rm -f "$name" >/dev/null' EXIT
     port=$(docker port "$name" 5432/tcp | head -1 | sed 's/.*://')
     # Over TCP: the image's first start answers on its socket only while it
@@ -649,7 +661,7 @@ publish-vsix to="both":
     want vsce && [ -z "${VSCE_PAT:-}" ] && { echo "VSCE_PAT isn't set" >&2; exit 1; }
     want ovsx && [ -z "${OVSX_PAT:-}" ] && { echo "OVSX_PAT isn't set" >&2; exit 1; }
     {{just_executable()}} vsix
-    version=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' crates/daemon/src/editor/ext/package.json)
+    version=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' crates/arugulad-editor/src/editor/ext/package.json)
     f="{{target_dir}}/arugula-editor-$version.vsix"
     want vsce && npx -y @vscode/vsce@4.0.0 publish --skip-duplicate --packagePath "$f"
     want ovsx && npx -y ovsx@1.2.0 publish --skip-duplicate --packagePath "$f"
@@ -764,6 +776,7 @@ macos cmd="tools" *args:
 # per workspace size (M266); and its tools for session users (Arugula #215).
 test-scripts:
     scripts/tests/ci-red.sh
+    scripts/tests/ci-nightly-red.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
     scripts/tests/notices.sh
@@ -826,10 +839,10 @@ check: test mux-guard workspace-guard
     {{cargo}} clippy --workspace --all-targets -- -D warnings
     {{server_cargo}} clippy --workspace --all-targets -- -D warnings
 
-# The daemon's crates (#232): the binary, arugulad, and the library it's
-# built on, whose tests are the unit tests. `--features arugulad/…` reaches
-# them all.
-daemon_crates := "-p arugulad -p arugulad-base"
+# The daemon's crates (#232): the binary, arugulad, the library it's built
+# on and the feature crates on that, whose tests are the unit tests.
+# `--features arugulad/…` reaches them all.
+daemon_crates := "-p arugulad -p arugulad-base -p arugulad-drivers -p arugulad-editor"
 
 # The daemon and the CLI without Labs (#452): clippy and the tests with the
 # `labs` feature off, which CI runs as the `core` job. Run it after touching

@@ -87,16 +87,15 @@ rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs"
 rmcp = { version = "=3.5.0", default-features = false, features = ["transport-streamable-http-client-unix-socket"] }
 
 [features]
-# Labs (Managoat first; see src/labs/mod.rs), the GitHub forge (src/forge/,
-# surface src/forges.rs) and the editor server with Claude Code's IDE
-# (src/editor/ and src/ide/, surface src/editors.rs): each on by default.
-# Release builds have them all; `--no-default-features` leaves them out.
-# Only the forge has a dependency of its own (arugula-forge-github, which
-# the rest of the daemon's dependencies cover): what the others use, the rest
-# of the daemon uses too.
-default = ["labs", "forge", "editor"]
+# Labs (Managoat first; see src/labs/mod.rs) and the GitHub forge
+# (src/forge/, surface src/forges.rs): each on by default. Release builds
+# have them all; `--no-default-features` leaves them out. Only the forge has
+# a dependency of its own (arugula-forge-github, which the rest of the
+# daemon's dependencies cover): what the others use, the rest of the daemon
+# uses too. The editor is a crate of its own (arugulad-editor), which the
+# binary registers or not (src/editors.rs).
+default = ["labs", "forge"]
 forge = ["dep:arugula-forge-github"]
-editor = []
 # Labs' GitLab and Forgejo are forges built on the forge module.
 labs = ["forge", "arugula-mux/labs", "dep:russh", "dep:serde_norway"]
 # Embed web/dist even in a debug build (rust-embed reads it from the source

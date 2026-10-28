@@ -41,9 +41,16 @@ Each has a `README.md` with where to start reading.
   the integrations around `arugula-mux`, wired together in `lib.rs`'s
   `main`. It's being split into feature crates (`arugulad-<area>`, #232),
   each named `arugulad…` so `RUST_LOG=arugulad=…` reaches it.
-- `crates/arugulad`: `arugulad`, the binary on `arugulad-base`, and the
-  daemon's integration tests (`tests/integration/`; their fixtures stay in
-  `crates/daemon/tests/`).
+- `crates/arugulad-editor`: `arugulad-editor`, the editor server and
+  Claude Code's IDE (`editor/`, `ide/`). The daemon reaches it only through
+  `editors.rs` (the `Editors` and `Ide` traits); the binary registers it.
+- `crates/arugulad-drivers`: `arugulad-drivers`, the deploy drivers the
+  binary runs as programs of their own (`_planter`, `_apps-platform`,
+  `_arugula-release`), through the base's subcommand registry
+  (`subcommands.rs`).
+- `crates/arugulad`: `arugulad`, the binary on `arugulad-base`, which
+  registers the feature crates, and the daemon's integration tests
+  (`tests/integration/`; their fixtures stay in `crates/daemon/tests/`).
 - `crates/cli`: `arugula`, the CLI. It doesn't link `arugula-vt`, so it
   builds without libghostty and Zig.
 The server crates (`crates/control`, `crates/platform`,
@@ -116,10 +123,10 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Blocks:** what every block provides and the registry of kinds (`mux:block.rs`), agents (`agent/`),
   browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`,
   and `block_channel.rs` for control's block origins),
-  editors (`editor/`), review (`review/`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`),
+  editors (`editor/`, in `arugulad-editor`), review (`review/`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`),
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
-  conversations (`conversations/`), the IDE bridge (`ide/`, with the mux's half in `mux:ide/`), invites
+  conversations (`conversations/`), the IDE bridge (`ide/` in `arugulad-editor`, its operations in `ops/ide.rs`, the mux's half in `mux:ide/`), invites
   (`invite/`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
   configured agent harnesses
   (`mux:inventory.rs`).
@@ -209,9 +216,11 @@ in core (`provider/`); a build without Labs never has a provider, and a saved
 VM pane comes back exited, with the reason. `just check-core`
 runs clippy and the tests of `arugulad` and `arugula` with the feature off.
 The GitHub forge (`forge/`, surface `forges.rs`) and the editor server with
-Claude Code's IDE (`editor/` and `ide/`, surface `editors.rs`) are features of
-their own, `forge` and `editor`, on by default the way `labs` is, and built
-on the same pattern: one surface, a twin for each item, no `cfg` at call sites.
+Claude Code's IDE (crate `arugulad-editor`, surface `editors.rs`) are features
+of their own, `forge` and `editor`, on by default the way `labs` is. The forge
+is built on the same pattern: one surface, a twin for each item, no `cfg` at
+call sites. The editor is a crate the binary registers (#232): the surface
+asks the registered `Editors`, and with none it does what the twins did.
 `labs` turns `forge` on (Forgejo and GitLab are forges); `just check-features`
 lints the daemon with neither, and with each alone.
 

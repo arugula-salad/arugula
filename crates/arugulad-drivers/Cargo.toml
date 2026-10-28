@@ -1,0 +1,27 @@
+[package]
+name = "arugulad-drivers"
+description = "The deploy drivers arugulad runs as programs of their own (_planter, _apps-platform, _arugula-release)"
+# Not the workspace's version: a release bump would rebuild this crate and
+# everything on it. The binary carries the release (arugula_core::version).
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+arugula-e2e = { workspace = true }
+arugulad-base = { workspace = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs", "process", "signal"] }
+
+[lints]
+workspace = true

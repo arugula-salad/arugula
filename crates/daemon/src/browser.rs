@@ -479,7 +479,7 @@ fn usable(page: &Page, on_machine: bool) -> Result<(), String> {
 }
 
 /// A random name part: 20 letters and digits (about 103 bits).
-pub(crate) fn new_key() -> String {
+pub fn new_key() -> String {
     let b = crate::push::random::<20>();
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
     b.iter().map(|x| ALPHABET[*x as usize % ALPHABET.len()] as char).collect()

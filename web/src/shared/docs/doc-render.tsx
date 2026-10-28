@@ -98,6 +98,7 @@ export function DocBlock({
   load,
   cached,
   byline,
+  foot,
 }: {
   id: PaneId;
   s: DocState | null;
@@ -105,6 +106,8 @@ export function DocBlock({
   load: ImageLoader;
   cached?: ImageCache;
   byline?: ComponentChildren;
+  /** Under the last section: the share viewer's "Made with Arugula" (#255). */
+  foot?: ComponentChildren;
 }) {
   // Drawn again when a picture is added or replaced, and not otherwise.
   const kept = JSON.stringify(s?.assets ?? []);
@@ -150,6 +153,7 @@ export function DocBlock({
             )}
           </section>
         ))}
+        {foot}
       </div>
     </div>
   );

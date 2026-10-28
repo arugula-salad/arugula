@@ -21,8 +21,9 @@
 #    titlebar calls work: toggleMaximize fills the screen and restores
 #    it, minimize iconifies it, a drag on the page's top strip moves it
 #    (the app's drag script, start_dragging) and a double-click there
-#    maximizes it. A target=_blank link to it opens a window of ours,
-#    whose close() closes it.
+#    maximizes it. A target=_blank link to it goes to the window already
+#    showing it, with no second window (#1596); one to control's page
+#    opens a window of ours, whose close() closes it.
 # 3. Lookalikes go to the browser and the window stays on the platform
 #    page: another host on its port (127.0.0.3:P), its host on another
 #    port (127.0.0.2:Q), https on its host and port, and a target=_blank
@@ -179,11 +180,19 @@ call "$platform" toggleMaximize >/dev/null || true
 
 click_link "$platform" "$platform/second"
 wait_for 20 reported "$platform" loaded /second || fail "a target=_blank link to the platform page loaded nowhere"
-wait_for 10 windows_are 2 || fail "a target=_blank link to the platform page made $(windows | wc -l) windows"
+sleep 1
+windows_are 1 || fail "a target=_blank link to the platform page made $(windows | wc -l) windows, not the one showing it"
 ! grep -qF "127.0.0.2" "$work/opened" 2>/dev/null || fail "it opened the platform page in the browser: $(cat "$work/opened")"
-echo "ok: a target=_blank link to the platform page opened a window of ours on it"
-tell "$platform/second" call close
-wait_for 10 windows_are 1 || fail "close() on the platform page's second window left $(windows | wc -l) windows"
+echo "ok: a target=_blank link to the platform page went to the window showing it (#1596)"
+n=$(wc -l <"$work/control.log")
+tell "$platform/second" go "$platform/"
+wait_for 20 logged_since "$n" "^report 127.0.0.2:$port what=loaded origin=$platform path=/( |\$)" || fail "the window didn't go back to the platform page"
+click_link "$platform" "$control/second"
+wait_for 20 reported "$control" loaded /second || fail "a target=_blank link to control's page loaded nowhere"
+wait_for 10 windows_are 2 || fail "a target=_blank link to control's page made $(windows | wc -l) windows"
+echo "ok: a target=_blank link to control's page opened a window of ours on it"
+tell "$control/second" call close
+wait_for 10 windows_are 1 || fail "close() on control's second window left $(windows | wc -l) windows"
 echo "ok: close() on it closed that window"
 
 # 3. Lookalikes.

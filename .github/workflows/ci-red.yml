@@ -1,4 +1,5 @@
-# Tells people when main stays red, or a green commit is revoked (#524):
+# Tells people when main stays red, or a green commit is revoked (#524),
+# and when a scheduled workflow's newest run failed (scripts/ci-nightly-red):
 # scripts/ci-red opens, comments on or closes one issue, "main is red", and
 # GitHub notifies the repo's watchers. Every hour, with the job token (no
 # secret). Repository variables: ARUGULA_RED_HOURS (how long main may go
@@ -15,6 +16,8 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  # actions: scripts/ci-nightly-red reads the scheduled workflows' runs.
+  actions: read
   contents: read
   issues: write
 
@@ -34,4 +37,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ARUGULA_RED_HOURS: ${{ vars.ARUGULA_RED_HOURS || '6' }}
+          ARUGULA_RED_MENTION: ${{ vars.ARUGULA_RED_MENTION }}
+      # The scheduled workflows, which ci/green doesn't count: an issue
+      # each while its newest scheduled run is red.
+      - run: scripts/ci-nightly-red
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
           ARUGULA_RED_MENTION: ${{ vars.ARUGULA_RED_MENTION }}

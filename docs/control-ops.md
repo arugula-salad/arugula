@@ -3345,8 +3345,17 @@ with the link. **Control holds ciphertext only and can't read it.**
 - **`?v=<ver>` on a part** (`…/data/<n>?v=<ver>`, #1066): control answers
   404 unless that is the version it serves, so a page that began on one
   version, when an Update lands mid-load, starts over from `meta` and never
-  mixes two. The viewer page (`web/doc.html`) loads no font, so the CSP
-  needs no `font-src`.
+  mixes two.
+- **The page's fonts** (#255) are the build's own woff2 files, under the
+  CSP's `font-src 'self'` (DECISIONS.md "A shared Doc's page loads its
+  fonts from its own origin", which amends #1064's decision 5).
+- **A link preview** (#255): the page's head carries Open Graph and
+  Twitter tags that control writes in, the same for every id, shared or
+  not ("A shared Doc", and that it's encrypted), since control can't read
+  a title. Their picture is the site's own card,
+  `https://arugula.io/img/og.jpg` (`doc_links.rs`, `PREVIEW_CARD`), which
+  only a preview bot fetches. `curl -s https://docs.arugula.run/<id> |
+  grep -o '<meta property="og:[^>]*>'` shows them.
 
 ### Backups (Litestream to Cloudflare R2)
 

@@ -233,7 +233,7 @@ daemon's update check read it.
    that trusts the `marketplace` environment, #934), both by the
    workflow's OIDC token with no secret, skipping a version that's
    already there, and trying each store even if the other refuses: bump
-   `crates/daemon/src/editor/ext/package.json` to ship a new one. Its
+   `crates/arugulad-editor/src/editor/ext/package.json` to ship a new one. Its
    `platform` job deploys control's platform (`arugula-platform`) from the
    tag's x86_64 static build, once that app exists (the
    `FLY_PLATFORM_API_TOKEN` secret; without it the job deploys nothing and
