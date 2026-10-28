@@ -281,7 +281,7 @@ impl Call<'_> {
     }
 
     /// The cloud workspaces, for `list kind cloud_workspaces`.
-    pub(crate) async fn hosted_rows(&self) -> Result<Vec<Value>, String> {
+    pub async fn hosted_rows(&self) -> Result<Vec<Value>, String> {
         let all = self.hosted_workspaces().await?;
         let online: Vec<String> = match peer::machines(&self.app().control).await {
             Ok(ms) => ms.into_iter().filter(|m| m.online).map(|m| m.id).collect(),
@@ -304,7 +304,7 @@ impl Call<'_> {
 
     /// `list kind cloud_tabs` for a cloud workspace: its machine's agent
     /// blocks.
-    pub(crate) async fn hosted_tabs(&self, which: &str) -> Out {
+    pub async fn hosted_tabs(&self, which: &str) -> Out {
         let v = self.on_workspace("list", which, json!({ "kind": "panes" })).await?;
         let panes = v["panes"].as_array().cloned().unwrap_or_default();
         let tabs: Vec<Value> = panes.into_iter().filter(|p| p["type"] == "agent").collect();
@@ -318,7 +318,7 @@ impl Call<'_> {
     }
 
     /// `read_cloud` for a cloud workspace.
-    pub(crate) async fn hosted_read(&self, kind: &str, which: &str, args: Value) -> Out {
+    pub async fn hosted_read(&self, kind: &str, which: &str, args: Value) -> Out {
         let tab = || tab_pane(args["tab"].as_str().unwrap_or_default());
         match kind {
             "events" => {
@@ -347,7 +347,7 @@ impl Call<'_> {
 
     /// `cloud` for a cloud workspace (all but `create`, which takes a
     /// project instead).
-    pub(crate) async fn hosted_drive(&self, kind: &str, which: &str, args: Value) -> Out {
+    pub async fn hosted_drive(&self, kind: &str, which: &str, args: Value) -> Out {
         let tab = || tab_pane(args["tab"].as_str().unwrap_or_default());
         match kind {
             "open_tab" => {
@@ -413,7 +413,7 @@ impl Call<'_> {
     }
 
     /// `cloud kind create` with a project: a cloud workspace in it.
-    pub(crate) async fn hosted_create(&self, project: &str, args: &Value) -> Out {
+    pub async fn hosted_create(&self, project: &str, args: &Value) -> Out {
         let repos: Vec<Value> =
             args["repositories"].as_array().into_iter().flatten().map(|r| r["url"].clone()).collect();
         let mut packages: Vec<Value> = args["apt"].as_array().cloned().unwrap_or_default();

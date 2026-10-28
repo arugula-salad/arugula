@@ -14,6 +14,10 @@
 //! them ([`ControlTools`]): whether they reach control from here, for
 //! `capabilities` and the card, and `wait` on a run. Reading a native
 //! issue stays the base's (`mcp::issues`), since `read_forge` does it too.
+//!
+//! This is the crate `arugulad-control-tools` (#232): the binary calls
+//! [`register`] before `arugulad_base::main`, and the daemon reaches it
+//! only through `mcp::registry`.
 
 mod agent_sessions;
 mod boards;
@@ -31,6 +35,11 @@ use arugula_proto::flags;
 use futures_util::future::BoxFuture;
 use rmcp::handler::server::common::schema_for_type;
 use serde_json::Value;
+
+// What the code here names as `crate::…`: the mux's modules and the daemon's,
+// as it named them when it was the daemon's.
+use arugula_mux::mux;
+use arugulad_base::{control, fs, lab_flags, mcp, server};
 
 use crate::{
     mcp::{

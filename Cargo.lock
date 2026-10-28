@@ -310,6 +310,7 @@ dependencies = [
  "arugula-testkit",
  "arugula-vt",
  "arugulad-base",
+ "arugulad-control-tools",
  "arugulad-docs",
  "arugulad-drivers",
  "arugulad-editor",
@@ -389,6 +390,25 @@ dependencies = [
  "windows-sys 0.60.2",
  "x509-parser",
  "zstd",
+]
+
+[[package]]
+name = "arugulad-control-tools"
+version = "0.0.0"
+dependencies = [
+ "arugula-control-wire",
+ "arugula-e2e",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "futures-util",
+ "reqwest",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]

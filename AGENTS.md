@@ -44,6 +44,11 @@ Each has a `README.md` with where to start reading.
 - `crates/arugulad-editor`: `arugulad-editor`, the editor server and
   Claude Code's IDE (`editor/`, `ide/`). The daemon reaches it only through
   `editors.rs` (the `Editors` and `Ide` traits); the binary registers it.
+- `crates/arugulad-control-tools`: `arugulad-control-tools`, MCP's tools for
+  what lives in control (Cloud workspaces, linked repos, conversations,
+  native issues, boards, runs, deploys, agent sessions), through
+  `mcp/registry.rs` and its `ControlTools`. The base keeps reading a native
+  issue (`mcp/issues.rs`), which `read_forge` does too.
 - `crates/arugulad-docs`: `arugulad-docs`, Docs: the Doc block, its library
   and links, their operations and the `doc` MCP tool. The daemon reaches it
   through `features.rs`' hooks and `mcp/registry.rs`; who may share a Doc
@@ -121,7 +126,7 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Edge:** the embedded web client and `/ws` (`server.rs`), the HTTP API
   (`api.rs`), MCP (`mcp/`; its tools for what lives in control, such as
   Cloud workspaces, conversations, native issues, runs and deploys, are
-  `control_tools/`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport
+  in `arugulad-control-tools`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport
   (`dial.rs`), end-to-end channels from client devices (`e2e.rs`), enrolment in
   control (`control.rs`), Windows' named pipe (`pipe.rs`).
 - **Who may:** who may talk to the daemon (`access.rs`, `localauth.rs`),
