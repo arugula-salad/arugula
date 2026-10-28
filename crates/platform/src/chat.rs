@@ -1630,7 +1630,7 @@ pub async fn new_dm(
     let (app, account) = (&*app, s.account.as_str());
     let reopen = |r: Room| async move {
         // Back in a conversation they left, from now.
-        if app.db.add_chat_member(&r.id, account, now_ms())? {
+        if app.db.add_chat_member_from_now(&r.id, account, now_ms())? {
             app.chat.room(&app.db, &r.id);
         }
         let facts = Facts::of(app, Some(account), &[&r]).await?;
