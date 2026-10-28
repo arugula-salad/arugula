@@ -743,11 +743,14 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
             false
         })
         .build()?;
-    w.on_window_event(|e| {
-        if let tauri::WindowEvent::Focused(f) = e {
-            settings::focus_changed(*f);
+    let label = w.label().to_owned();
+    w.on_window_event(move |e| match e {
+        tauri::WindowEvent::Focused(f) => {
+            settings::focus_changed(&label, *f);
             updates::focus_changed(*f);
         }
+        tauri::WindowEvent::Destroyed => settings::window_gone(&label),
+        _ => {}
     });
     #[cfg(target_os = "macos")]
     tab_in(&w);
@@ -1319,14 +1322,8 @@ fn main() {
                 drop(one);
             });
             compat::check();
+            // The hotkey itself once the app is up (settings::start).
             let prefs = settings::load(app.handle());
-            let hotkey_ok = match settings::apply(app.handle(), &prefs) {
-                Ok(()) => prefs.hotkey_on,
-                Err(e) => {
-                    eprintln!("arugula: {e}");
-                    false
-                }
-            };
             match &quiet {
                 // The windows it had, on their pages; none when it had none.
                 Some(q) => {
@@ -1353,9 +1350,10 @@ fn main() {
                 "hotkey",
                 format!("Global hotkey ({})", prefs.keys()),
                 true,
-                hotkey_ok,
+                prefs.hotkey_on,
                 None::<&str>,
             )?;
+            app.manage(settings::Item(hotkey.clone()));
             let update = MenuItem::with_id(app, "update", "Restart to update", false, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             // Which app this is (#419): there's no other place it shows on
@@ -1436,6 +1434,7 @@ fn main() {
         .build(context)
         .expect("Arugula desktop")
         .run(|app, event| match event {
+            tauri::RunEvent::Ready => settings::start(app),
             // macOS: stay in the Dock with no windows, as Mac apps do.
             // Linux: stay in the tray while the global hotkey is on.
             tauri::RunEvent::ExitRequested { code: None, api, .. }
