@@ -29,6 +29,15 @@
 //! repo on GitHub (tests name another base, `ARUGULA_GITHUB_GIT`), never to
 //! a URL from the workspace's spec or the checkout. A push that isn't a
 //! fast-forward is refused by GitHub, and the turn says it didn't push.
+//!
+//! **A linked repo no box has** (Fleet 6) is cloned at the session's start
+//! ([`clone_linked`]): shallow, from the same place, by this daemon's own
+//! git, with a token control mints for that clone (`WORK_SESSION_PUSH` with
+//! `clone`: `contents: read` alone), revoked once it's cloned. Its
+//! checkout is shallow, so its bundle carries the boundary's commits
+//! without their parents: the daemon's repo is told which they are (the
+//! checkout's `shallow` list, [`shallow_of`]), or its fetch would refuse
+//! the bundle as incomplete.
 
 use std::{
     path::{Path, PathBuf},
@@ -111,9 +120,21 @@ async fn run(mut c: tokio::process::Command, what: &str) -> Result<String, Strin
     }
 }
 
+/// The commits a shallow checkout's `shallow` file names, one per line:
+/// object ids, and nothing else.
+pub fn shallow_of(file: &str) -> Vec<String> {
+    file.lines()
+        .map(str::trim)
+        .filter(|l| matches!(l.len(), 40 | 64) && l.bytes().all(|b| b.is_ascii_hexdigit()))
+        .map(str::to_owned)
+        .collect()
+}
+
 /// From the bundle at `bundle`, into the daemon's own bare repo `mirror`,
 /// then to `remote`: session `session`'s `branch`, if it's `own` and the
-/// bundle names it alone. The pushed commit.
+/// bundle names it alone. `shallow`: the checkout's shallow commits, when
+/// it's a shallow clone (module docs). The pushed commit.
+#[allow(clippy::too_many_arguments)]
 pub async fn push_bundle(
     mirror: &Path,
     bundle: &Path,
@@ -122,6 +143,7 @@ pub async fn push_bundle(
     branch: &str,
     remote: &str,
     token: Option<&str>,
+    shallow: &[String],
 ) -> Result<String, String> {
     if !may_push(session, own, branch) {
         return Err(format!(
@@ -140,6 +162,18 @@ pub async fn push_bundle(
             "make the push's repo",
         )
         .await?;
+    }
+    if !shallow.is_empty() {
+        // Each turn's, kept: what an earlier turn's bundle brought still
+        // stops there.
+        let file = mirror.join("shallow");
+        let mut all = shallow_of(&std::fs::read_to_string(&file).unwrap_or_default());
+        for c in shallow {
+            if !all.contains(c) {
+                all.push(c.clone());
+            }
+        }
+        std::fs::write(&file, all.join("\n") + "\n").map_err(|e| format!("{}: {e}", file.display()))?;
     }
     let mut c = git(mirror);
     c.args(["bundle", "list-heads"]).arg(bundle);
@@ -275,7 +309,7 @@ pub async fn push_turn(app: &App, l: &Session) -> Result<Option<String>, String>
     let mine = place.join("in.bundle");
     std::fs::write(&mine, &bytes).map_err(|e| format!("{}: {e}", mine.display()))?;
     // The token, for this push alone.
-    let ask = PushAsk { session: l.session.clone(), branch: l.branch.clone() };
+    let ask = PushAsk { session: l.session.clone(), branch: l.branch.clone(), clone: false };
     let given: PushGiven =
         app.control.post_signed(WORK_SESSION_PUSH, &ask).await.map_err(|e| format!("asking control to push: {e:#}"))?;
     let (token, revoke_at) = match given {
@@ -286,16 +320,24 @@ pub async fn push_turn(app: &App, l: &Session) -> Result<Option<String>, String>
         }
     };
     let mirror = place.join("repo.git");
+    let shallow = match as_user_bytes(&l.user, &["git", "-C", &l.checkout, "rev-parse", "--git-path", "shallow"]).await
+    {
+        Ok(at) => {
+            let at = String::from_utf8_lossy(&at).trim().to_owned();
+            let at = Path::new(&l.checkout).join(at).display().to_string();
+            let file = as_user_bytes(&l.user, &["cat", "--", &at]).await.unwrap_or_default();
+            shallow_of(&String::from_utf8_lossy(&file))
+        }
+        Err(_) => vec![],
+    };
     let pushed = tokio::time::timeout(
         PUSH_MAX,
-        push_bundle(&mirror, &mine, &l.session, &l.branch, &l.branch, &remote, Some(&token)),
+        push_bundle(&mirror, &mine, &l.session, &l.branch, &l.branch, &remote, Some(&token), &shallow),
     )
     .await
     .unwrap_or_else(|_| Err("the push took too long".into()));
     revoke(&revoke_at, &token).await;
-    let mut t = token.into_bytes();
-    t.iter_mut().for_each(|b| *b = 0);
-    std::hint::black_box(&t);
+    forget(token);
     let _ = std::fs::remove_file(&mine);
     match &pushed {
         Ok(sha) => info!(session = l.session, branch = l.branch, head = sha, "hosted: pushed a session's branch"),
@@ -306,4 +348,54 @@ pub async fn push_turn(app: &App, l: &Session) -> Result<Option<String>, String>
         return Err(format!("it pushed {sha}, not {head}: the branch moved under it"));
     }
     Ok(Some(head))
+}
+
+/// A token's bytes, zeroed once it's done with.
+fn forget(token: String) {
+    let mut t = token.into_bytes();
+    t.iter_mut().for_each(|b| *b = 0);
+    std::hint::black_box(&t);
+}
+
+/// Clone session `l`'s repo into `stage`, shallow, from GitHub (module
+/// docs): for a repo linked to its project that no box's setup cloned. Its
+/// origin is the repo on GitHub, with no credentials in it.
+pub async fn clone_linked(app: &App, l: &Session, stage: &Path) -> Result<(), String> {
+    let repo = l.repo.as_deref().ok_or("the session has no repo")?;
+    let remote =
+        remote_for(repo).ok_or_else(|| format!("{} isn't a GitHub repo's name", super::super::printable(repo)))?;
+    let ask = PushAsk { session: l.session.clone(), branch: l.branch.clone(), clone: true };
+    let given: PushGiven = app
+        .control
+        .post_signed(WORK_SESSION_PUSH, &ask)
+        .await
+        .map_err(|e| format!("asking control to clone: {e:#}"))?;
+    let (token, revoke_at) = match given {
+        PushGiven::Given { token, revoke, .. } => (token, revoke),
+        PushGiven::Refused { why } => return Err(format!("control won't let it clone: {why}")),
+    };
+    let cloned = clone_shallow(stage, &remote, Some(&token)).await;
+    revoke(&revoke_at, &token).await;
+    forget(token);
+    match &cloned {
+        Ok(()) => info!(session = l.session, repo, "hosted: cloned a linked repo no box has for a session"),
+        Err(e) => warn!(session = l.session, repo, error = e, "hosted: cloning a session's linked repo failed"),
+    }
+    cloned
+}
+
+/// `remote`'s default branch, one commit deep, into `stage`, by the
+/// daemon's own git, `token` reaching it as a push's does.
+pub async fn clone_shallow(stage: &Path, remote: &str, token: Option<&str>) -> Result<(), String> {
+    let parent = stage.parent().ok_or("the clone has nowhere to go")?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    let mut c = git(parent);
+    c.args(["-c", "credential.helper=", "-c", &format!("credential.helper={HELPER}")])
+        .args(["-c", "credential.useHttpPath=false"])
+        .args(["clone", "-q", "--depth", "1", "--no-tags", "--single-branch", "--", remote])
+        .arg(stage);
+    if let Some(t) = token {
+        c.env("ARUGULA_PUSH_TOKEN", t);
+    }
+    run(c, "clone it").await.map(|_| ())
 }

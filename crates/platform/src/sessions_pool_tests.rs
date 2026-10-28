@@ -176,10 +176,12 @@ async fn the_pool_spreads_by_live_sessions_then_done() {
 }
 
 /// It asks only when it must: which repo when the boxes have several and
-/// the ask names none; it says so when the ask names a linked repo no box
-/// has. An explicit "agents run on" wins over the pool.
+/// the ask names none, with the linked repos no box has among its
+/// choices. A linked repo no box has, named by `owner/name`, gets a
+/// session (Fleet 6: its box clones it), by the ask or by its button. An
+/// explicit "agents run on" wins over the pool.
 #[tokio::test]
-async fn it_asks_only_when_the_repo_is_missing_or_ambiguous() {
+async fn a_linked_repo_no_box_has_gets_a_session() {
     let (hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
     hub.set_online(&keys.id(), true);
     add_box(&app, &t, "hw_web", "web", &["https://github.com/o/web"], Some("m_web"));
@@ -188,18 +190,59 @@ async fn it_asks_only_when_the_repo_is_missing_or_ambiguous() {
     link(&app, &t, 3, "o/docs");
     let (p, s) = ask(&app, &base, &t, "b", "@arugula fix the canary").await;
     assert!(s.is_none());
-    let ask_text = "Which repo should @arugula work in? Reply with one: o/app or o/web.";
+    let ask_text = "Which repo should @arugula work in? Reply with one: o/app, o/web or o/docs.";
     assert_eq!(asks_in(&base, "a", p).await, [("ask:repo".into(), ask_text.into(), json!(["b"]))]);
     assert!(lines(&base, ROOM, Some(p)).await.is_empty(), "an ask, not a system line");
     let (q, s) = ask(&app, &base, &t, "b", "@arugula update o/docs").await;
-    assert!(s.is_none());
-    assert_eq!(lines(&base, ROOM, Some(q)).await, [crate::chat::sessions::missing("o/docs")]);
+    let s = s.expect("a session, though no box has o/docs");
+    assert_eq!(s.repo.as_deref(), Some("o/docs"));
+    assert!(["hw_web", "hw_dev"].contains(&s.workspace.as_str()), "{}", s.workspace);
+    assert!(lines(&base, ROOM, Some(q)).await.is_empty(), "no line saying it's missing");
     assert!(asks_in(&base, "a", q).await.is_empty());
+
+    // The ask's button for it starts one too.
+    let (st, all) = call(&base, "b", "GET", &format!("/api/chat/rooms/{ROOM}/messages?thread={p}"), None).await;
+    assert_eq!(st, 200);
+    let seq = all["messages"].as_array().unwrap().iter().find(|m| m["via"] == "ask:repo").unwrap()["seq"].clone();
+    let form = format!("/api/chat/rooms/{ROOM}/asks/{seq}");
+    let (st, f) = call(&base, "b", "POST", &form, Some(json!({ "choice": "o/docs" }))).await;
+    assert_eq!(st, 200, "{f}");
+    let s = sessions(&app, &t).into_iter().find(|s| s.parent_seq == p as u64).expect("started");
+    assert_eq!(s.repo.as_deref(), Some("o/docs"));
 
     // Agents run on web: there, in its repo, though dev has app and is free.
     assert!(app.db.set_agents_run_on(&t, Some("hw_web")).unwrap());
     let (_, s) = ask(&app, &base, &t, "b", "@arugula fix the app").await;
     assert_eq!(s.map(|s| (s.workspace, s.repo)), Some(("hw_web".into(), Some("o/web".into()))));
+    // And a linked repo it hasn't goes there too.
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula update o/docs").await;
+    assert_eq!(s.map(|s| (s.workspace, s.repo)), Some(("hw_web".into(), Some("o/docs".into()))));
+}
+
+/// Agent on this on an issue whose title names a linked repo no box has
+/// (Fleet 6: a site issue) starts a session in that repo; one whose title
+/// names none goes to the box's repo, whatever its body mentions.
+#[tokio::test]
+async fn agent_on_this_works_in_the_linked_repo_its_issue_names() {
+    use crate::db::issues::{Actor, NewIssue};
+
+    let (_hub, app, base, t, _u, _keys) = platform(&["https://github.com/o/app"]).await;
+    link(&app, &t, 1, "o/app");
+    link(&app, &t, 2, "o/site");
+    let agent_on = |title: &'static str, body: &'static str| {
+        let n = NewIssue { project: &t, title, body, labels: &[], assignees: &[] };
+        format!("/api/issues/{}/agent", app.db.create_issue(&n, Actor::person("a"), 1).unwrap().unwrap().id)
+    };
+    let site = agent_on("o/site: the guest SSH page", "Say that turning it off keeps invites.");
+    let (st, v) = call(&base, "b", "POST", &site, None).await;
+    assert_eq!(st, 200, "{v}");
+    let s = app.db.session(v["session"].as_str().expect("a session")).unwrap().unwrap();
+    assert_eq!((s.repo.as_deref(), s.workspace.as_str()), (Some("o/site"), "hw_dev"));
+    let app_issue = agent_on("Login's slow", "Its docs in o/site say otherwise.");
+    let (st, v) = call(&base, "b", "POST", &app_issue, None).await;
+    assert_eq!(st, 200, "{v}");
+    let s = app.db.session(v["session"].as_str().expect("a session")).unwrap().unwrap();
+    assert_eq!(s.repo.as_deref(), Some("o/app"), "not by its body");
 }
 
 /// The which-repo ask is a form (`/api/chat/rooms/{room}/asks/{seq}`), in

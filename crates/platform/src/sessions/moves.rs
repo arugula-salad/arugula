@@ -2,8 +2,8 @@
 //! project's workspaces, from its card.
 //!
 //! - **Where:** the project's other live workspaces that have the
-//!   session's repo, as the pool ranks them ([`places`],
-//!   [`super::pool::ranked`]).
+//!   session's repo (every one, for a linked repo none has: the box clones
+//!   it), as the pool ranks them ([`places`], [`super::pool::ranked`]).
 //! - **When:** while nothing runs: `queued` (it just goes, for the other
 //!   box to take) or `done` (queued again there). Not mid-turn, and not
 //!   once it ended. A Try 3's sibling or a review stays on its box, beside

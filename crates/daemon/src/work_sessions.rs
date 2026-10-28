@@ -33,7 +33,10 @@
 //!   user, and everything the daemon does in it
 //!   after that (switching to the session's branch, the turn's work) runs
 //!   as the session user, never as `user` (who can't get in) or root
-//!   (whose git would run the agent's planted repo config).
+//!   (whose git would run the agent's planted repo config). A repo linked
+//!   to the project that the box's setup didn't clone is cloned from
+//!   GitHub instead, shallow, with a token control mints for that clone
+//!   ([`push::clone_linked`], Fleet 6).
 //! - **Its agent is an ACP agent block** of kind `claude` (so M185's turn
 //!   gate and placeholder key hold), whose agent runs as the session user
 //!   (`agent::Config::run_as`): `sudo -n -u sesN -- env -i …`, with nothing
@@ -155,6 +158,9 @@ const TEXT_MAX: usize = 4 * 1024;
 /// The most of a tool's title a heartbeat sends, in bytes: control keeps
 /// 200 characters (an older control refused a longer one, 0.63.3).
 const TOOL_MAX: usize = 196;
+/// The most a session's clone of a linked repo no box has may take
+/// ([`push::clone_linked`]).
+const CLONE_MAX: Duration = Duration::from_secs(300);
 /// What a session whose block went away fails with.
 pub const BLOCK_GONE: &str = "its agent block is gone";
 /// The most of a finish step's output a turn's report carries, and its fix
@@ -820,17 +826,16 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         return;
     }
     info!(session = l.session, user = l.user.user, "hosted: took a session");
-    let src = match l.repo.clone() {
-        Some(repo) => match clone_of(&dir, &repo) {
-            Some(p) => Some(p),
-            None => return fail(l, format!("this box has no clone of {repo}: its setup didn't clone it")),
-        },
-        None => None,
+    // A repo the box's setup didn't clone is one linked to the project:
+    // cloned for the session (Fleet 6).
+    let src = match l.repo.as_deref() {
+        Some(repo) => clone_of(&dir, repo).map_or(Source::Linked, Source::Box),
+        None => Source::Empty,
     };
     if real {
         super::kill_user(&l.user.user).await;
     }
-    match checkout(&dir, &l, src.as_deref(), real).await {
+    match checkout(app, &dir, &l, src, real).await {
         Ok(notes) => l.notes = notes,
         Err(why) => return fail(l, format!("its checkout: {why}")),
     }
@@ -864,6 +869,17 @@ fn clone_of(dir: &Path, repo: &str) -> Option<PathBuf> {
         })
         .map(|c| c.dir)
         .filter(|d| d.join(".git").exists())
+}
+
+/// Where a session's checkout comes from ([`checkout`]).
+enum Source {
+    /// The workspace's clone of its repo, as its setup made it.
+    Box(PathBuf),
+    /// Its repo on GitHub, shallow: linked to the project, and no box's
+    /// setup cloned it.
+    Linked,
+    /// Nothing: the session works in no repo.
+    Empty,
 }
 
 /// Run `argv` as `u` ([`AsUser::wrap`]): its output, or what it said.
@@ -914,7 +930,8 @@ async fn here(argv: &[&str], root: bool) -> Result<String, String> {
 }
 
 /// The session's checkout, `~sesN/work/ID`: a clone of `src` (the
-/// workspace's clone; an empty repo with none) made by this daemon's user
+/// workspace's clone; its repo on GitHub, shallow, for a linked repo the
+/// box has none of; an empty repo with none) made by this daemon's user
 /// in a staging directory, its origin the workspace clone's, handed to the
 /// session user (`chown`, then moved into its home), and switched to the
 /// session's branch as the session user. Never a `git worktree`: its
@@ -927,14 +944,14 @@ async fn here(argv: &[&str], root: bool) -> Result<String, String> {
 /// setup, which is a box's age behind: sessions cut from it built on code
 /// from before the last waves merged. When that fetch fails, it starts
 /// from the clone, and the first prompt says so ([`stale_note`]).
-async fn checkout(dir: &Path, l: &Session, src: Option<&Path>, real: bool) -> Result<Option<String>, String> {
+async fn checkout(app: &App, dir: &Path, l: &Session, src: Source, real: bool) -> Result<Option<String>, String> {
     let stage = dir.join(super::DIR).join(DIR).join(format!("{}.stage", l.session));
     let dest = PathBuf::from(&l.checkout);
     let s = stage.display().to_string();
     let _ = std::fs::remove_dir_all(&stage);
     let mut stale = None;
     match src {
-        Some(src) => {
+        Source::Box(src) => {
             let from = src.display().to_string();
             here(&["git", "clone", "-q", "--no-hardlinks", "--", &from, &s], false).await?;
             // Its origin is the workspace clone's (no credentials in it).
@@ -956,7 +973,15 @@ async fn checkout(dir: &Path, l: &Session, src: Option<&Path>, real: bool) -> Re
                 }
             }
         }
-        None => here(&["git", "init", "-q", &s], false).await.map(|_| ())?,
+        // GitHub's head now: no fresh base to fetch.
+        Source::Linked => tokio::time::timeout(CLONE_MAX, push::clone_linked(app, l, &stage))
+            .await
+            .unwrap_or_else(|_| Err(format!("it took over {} s", CLONE_MAX.as_secs())))
+            .map_err(|why| {
+                let repo = l.repo.as_deref().unwrap_or_default();
+                format!("no box's setup cloned {repo}, and cloning it failed: {why}")
+            })?,
+        Source::Empty => here(&["git", "init", "-q", &s], false).await.map(|_| ())?,
     }
     let notes = match (notes(&stage), stale) {
         (Some(n), Some(s)) => Some(format!("{s}{n}")),

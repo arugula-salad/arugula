@@ -8,10 +8,14 @@
 //!   specs. The one the ask names (`owner/name`, or a name only one of
 //!   them has) is it; else, when there's one, that one; none at all, the
 //!   session works in no repo. A repo the project linked that no candidate
-//!   has, named by `owner/name`, is said so ([`Settled::Missing`]);
-//!   several and named none, the asker is asked ([`Settled::Ambiguous`]).
+//!   has, named by `owner/name`, is it too (Fleet 6): the box clones it
+//!   into the session's home at its start, shallow, with a token the
+//!   platform mints for that clone (`sessions::push`). Several and named
+//!   none, the asker is asked ([`Settled::Ambiguous`]), with the boxes'
+//!   repos and the linked ones as its choices ([`choices`]).
 //! - **Then the box** ([`ranked`], [`Load::rank`]): of the candidates
-//!   that have the repo, one that's awake (ready, and online at the hub;
+//!   that have the repo (every one, for a linked repo none has), one
+//!   that's awake (ready, and online at the hub;
 //!   ready alone when the hub can't say) with a free slot first (fewer
 //!   than `MAX_SESSIONS_PER_BOX` running, counting queued ones and done
 //!   ones not yet parked, and fewer than `MAX_HELD_SESSIONS_PER_BOX`
@@ -90,12 +94,27 @@ pub fn all_repos(ws: &[HostedWorkspace]) -> Vec<String> {
     out
 }
 
-/// The boxes that have `repo` (every one, for none).
+/// The boxes that have `repo` (every one, for none). When none has it (a
+/// linked repo, which the session's box clones at its start), every one.
 pub fn with_repo(ws: Vec<HostedWorkspace>, repo: Option<&str>) -> Vec<HostedWorkspace> {
-    match repo {
-        None => ws,
-        Some(r) => ws.into_iter().filter(|w| repos(w).iter().any(|x| x == r)).collect(),
+    let Some(r) = repo else { return ws };
+    let has = |w: &HostedWorkspace| repos(w).iter().any(|x| x.eq_ignore_ascii_case(r));
+    if !ws.iter().any(has) {
+        return ws;
     }
+    ws.into_iter().filter(has).collect()
+}
+
+/// What a session may work in: `all` (the boxes' repos), then the
+/// project's `linked` repos none of them has, each once.
+pub fn choices(all: &[String], linked: &[String]) -> Vec<String> {
+    let mut out = all.to_vec();
+    for r in linked {
+        if !out.iter().any(|o| o.eq_ignore_ascii_case(r)) {
+            out.push(r.clone());
+        }
+    }
+    out
 }
 
 /// The words of `text` as names may be written: lowercase, split at
@@ -135,26 +154,34 @@ pub fn repo_options(all: &[String]) -> Vec<(String, Vec<String>)> {
 /// Which repo an ask is about ([`settle`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Settled {
-    /// This one, or none: the boxes have no repos.
+    /// This one (a box's, or one the project linked), or none: the boxes
+    /// have no repos.
     Repo(Option<String>),
-    /// The ask names a repo the project linked that none of the boxes has.
-    Missing(String),
     /// Several, and the ask names none of them: ask its asker.
     Ambiguous,
 }
 
 /// Which of `all` (the boxes' repos) `text` is about, by the module's rule;
 /// `linked`: the project's linked repos (`owner/name`), which the ask may
-/// name though no box has them.
+/// name, by `owner/name`, though no box has them.
 pub fn settle(text: &str, all: &[String], linked: &[String]) -> Settled {
-    if let Some(r) = named(text, &repo_options(all)) {
-        return Settled::Repo(Some(r.to_owned()));
-    }
+    settle_in(&[text], all, linked)
+}
+
+/// [`settle`] over `texts`, first to last: the first that names a repo
+/// names it (an ask's words, then the issue it's on).
+pub fn settle_in(texts: &[&str], all: &[String], linked: &[String]) -> Settled {
+    let boxes = repo_options(all);
     // Only by `owner/name`: a linked repo's short name is often a plain
     // word ("docs", "api").
     let full: Vec<(String, Vec<String>)> = linked.iter().map(|r| (r.clone(), vec![r.clone()])).collect();
-    if let Some(r) = named(text, &full).filter(|r| !all.iter().any(|a| a.eq_ignore_ascii_case(r))) {
-        return Settled::Missing(r.to_owned());
+    for text in texts {
+        if let Some(r) = named(text, &boxes) {
+            return Settled::Repo(Some(r.to_owned()));
+        }
+        if let Some(r) = named(text, &full).filter(|r| !all.iter().any(|a| a.eq_ignore_ascii_case(r))) {
+            return Settled::Repo(Some(r.to_owned()));
+        }
     }
     match all {
         [] => Settled::Repo(None),
@@ -328,8 +355,8 @@ mod tests {
     }
 
     /// The repo an ask is about: the one it names, the only one, none at
-    /// all; a linked one no box has is missing; several and none named is
-    /// a question.
+    /// all; a linked one no box has, by `owner/name`; several and none
+    /// named is a question.
     #[test]
     fn the_repo_is_settled_before_the_box() {
         let all: Vec<String> = vec!["o/app".into(), "o/web".into()];
@@ -338,9 +365,15 @@ mod tests {
         assert_eq!(settle("@arugula fix o/app", &all, &linked), Settled::Repo(Some("o/app".into())));
         assert_eq!(settle("@arugula fix the canary", &all, &linked), Settled::Ambiguous);
         assert_eq!(settle("@arugula fix app and web", &all, &linked), Settled::Ambiguous, "two named");
-        assert_eq!(settle("@arugula update o/docs", &all, &linked), Settled::Missing("o/docs".into()));
+        assert_eq!(settle("@arugula update o/docs", &all, &linked), Settled::Repo(Some("o/docs".into())));
         assert_eq!(settle("@arugula update the docs", &all, &linked), Settled::Ambiguous, "not by its short name");
         assert_eq!(settle("@arugula fix it", &all[..1], &linked), Settled::Repo(Some("o/app".into())));
         assert_eq!(settle("@arugula fix it", &[], &[]), Settled::Repo(None));
+        assert_eq!(choices(&all, &["O/App".into(), "o/docs".into()]), ["o/app", "o/web", "o/docs"]);
+        // On an issue: the ask's words first, then the issue's.
+        let one = &all[..1];
+        assert_eq!(settle_in(&["work on this", "Docs: o/docs"], one, &linked), Settled::Repo(Some("o/docs".into())));
+        assert_eq!(settle_in(&["in o/app", "o/docs"], one, &linked), Settled::Repo(Some("o/app".into())));
+        assert_eq!(settle_in(&["work on this", "a title"], one, &linked), Settled::Repo(Some("o/app".into())));
     }
 }
