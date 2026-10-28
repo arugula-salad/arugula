@@ -12,11 +12,13 @@ test("a read-only link is listed, and Revoke ends it", async ({ page, context })
   const pane = await active(page);
   await ready(page, pane);
   await run(page, pane, "echo linked-$((5*5))", "linked-25");
-  const url = await page.evaluate((p) => window.__arugula.client.share(p), pane);
-  expect(url).toMatch(/\/share\//);
+  const link = await page.evaluate((p) => window.__arugula.client.share(p), pane);
+  expect(link).toMatch(/\/share\//);
+  // The link is on the machine's tailnet name; this daemon is the one here.
+  const url = new URL(link!).pathname;
 
   const viewer = await context.newPage();
-  await viewer.goto(url!);
+  await viewer.goto(url);
   const shown = () => viewer.evaluate(() => (window as unknown as { __share: { text(): string } }).__share.text());
   const ended = () => viewer.evaluate(() => (window as unknown as { __share: { ended: string | null } }).__share.ended);
   await expect.poll(shown).toContain("linked-25");
@@ -31,7 +33,7 @@ test("a read-only link is listed, and Revoke ends it", async ({ page, context })
   await row.locator("[data-revoke]").click();
   await expect(row).toHaveCount(0);
   await expect.poll(ended).toMatch(/expired or was revoked/);
-  expect((await page.request.get(url!)).status()).toBe(404);
+  expect((await page.request.get(url)).status()).toBe(404);
 
   // The access log: this session's grants and revokes (none here yet).
   await dialog.locator("[data-access-log-open]").click();
