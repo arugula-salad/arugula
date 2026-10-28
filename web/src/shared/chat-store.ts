@@ -424,15 +424,36 @@ export class ChatStore {
   }
 
   private told: string | undefined = undefined;
+  /** Whether a POST of what's open is out, and what waits for it: null
+   * for nothing, else whether that was forced. One at a time (#285): two
+   * at once (the hello's, with no room yet, and the room's a moment later)
+   * can reach control in either order, and the older one landing last left
+   * the stream with no room open there. Then the room's typing never came,
+   * and its pushes did, for a room on screen. */
+  private telling = false;
+  private tellAgain: boolean | null = null;
   private tellOpen(force = false) {
     if (!this.stream) return;
+    if (this.telling) {
+      this.tellAgain = this.tellAgain === true || force;
+      return;
+    }
     const rooms = document.visibilityState === "visible" ? [...new Set(this.open.values())] : [];
     // The thread is the first room's (the one a page shows first).
     const thread = rooms.length ? this.openThread : null;
     const key = `${rooms.join(" ")}|${thread ?? ""}`;
     if (!force && key === this.told) return;
     this.told = key;
-    void call("POST", "/api/chat/live/open", { stream: this.stream, room: rooms[0] ?? null, more: rooms.slice(1), ...(thread !== null ? { thread } : {}) }).catch(() => {});
+    this.telling = true;
+    void call("POST", "/api/chat/live/open", { stream: this.stream, room: rooms[0] ?? null, more: rooms.slice(1), ...(thread !== null ? { thread } : {}) })
+      .catch(() => {})
+      .finally(() => {
+        this.telling = false;
+        const again = this.tellAgain;
+        this.tellAgain = null;
+        // What changed meanwhile, from the page as it is now.
+        if (again !== null) this.tellOpen(again);
+      });
   }
 
   // ---- typing (#111)
