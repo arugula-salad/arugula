@@ -1,0 +1,41 @@
+# Flaky tests CI leaves out until they're fixed (docs/testing.md,
+# "Quarantine"). One entry per test:
+#
+#   [[rust]]: `test`, the binary id and the test's name, as nextest prints
+#   them (`arugulad::integration ssh::...`, `arugula-platform triggers::...`).
+#   [[e2e]]: `spec`, the spec's path from the checkout's root, and `title`,
+#   the test's own title.
+#   Both: `issue`, the issue that tracks the fix (a number or a URL);
+#   `until`, the day it comes back (YYYY-MM-DD, at most 14 days out); `why`,
+#   one line.
+#
+# After changing this file run `just quarantine`: it writes the nextest
+# configs' default-filter from it. Lint (`just test-scripts`) fails when an
+# entry has no issue or is past its `until`: fix the test and delete the
+# entry, or delete the test. quarantine-nightly.yml runs these alone, every
+# night, without gating anything.
+
+[[rust]]
+test = "arugulad::integration reboot::a_restarted_box_brings_its_daemon_back_with_no_login_and_every_pane_by_policy"
+issue = ""
+until = "2026-11-10"
+why = "Fails or times out twice on unrelated commits (e2cae11d3, b78354362, 6709112c8)."
+
+[[rust]]
+test = "arugulad::integration ssh::ssh_installs_runs_forwards_the_agent_pushes_and_saved_hosts_work"
+issue = ""
+until = "2026-11-10"
+why = "Fails twice on unrelated commits (2ac1e89ba, c2b452072)."
+
+[[rust]]
+test = "arugula-platform triggers::tests::session_feedback::round_three_is_refused"
+issue = ""
+until = "2026-11-10"
+why = "Fails twice on macOS on unrelated commits (4f66cdc95, 2f33811ea)."
+
+[[e2e]]
+spec = "web/e2e/chat-control.spec.ts"
+title = "polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a scrolled-up room offers the newest, compact rows are one line"
+issue = ""
+until = "2026-11-10"
+why = "Fails twice on unrelated commits (716de40ef, e44124672), flaky on two more (4b6a5a37f, f285f0e98)."
