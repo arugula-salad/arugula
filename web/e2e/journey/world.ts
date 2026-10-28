@@ -11,7 +11,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { Browser, BrowserContext, Page } from "@playwright/test";
+import type { Browser, BrowserContext } from "@playwright/test";
 import { fakeGithub } from "./github.ts";
 import { ANY, controlPort, daemonPort, listen } from "../ports";
 
@@ -22,24 +22,22 @@ export const BIN = resolve("../target/debug");
 export const asPerson = () => Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
 
 /** Getting started greets an account once on control's page too, after
- * the machine's own page greeted the browser: on control's page a journey
- * closes it as it comes (the machine's greeting is first-run.ts's step). */
+ * the machine's own page greeted the browser (first-run.ts's step). On
+ * control's page every account here has seen it already: its prefs
+ * (`/api/me/prefs`) come back with `seen:getting-started`, so it never
+ * opens over a journey's own dialogs (closing it as it came raced the
+ * device-approval prompt). */
 export function closeControlGreeting(ctx: BrowserContext, control: () => string) {
-  const add = (p: Page) => {
-    const dialog = p.getByRole("dialog", { name: "Getting started" });
-    void p
-      .addLocatorHandler(
-        dialog,
-        async () => {
-          if (!control() || new URL(p.url()).origin !== new URL(control()).origin) return;
-          await dialog.getByRole("button", { name: "Close" }).click();
-        },
-        { noWaitAfter: true },
-      )
-      .catch(() => {});
-  };
-  ctx.pages().forEach(add);
-  ctx.on("page", add);
+  void ctx.route(
+    (url) => !!control() && url.origin === new URL(control()).origin && url.pathname === "/api/me/prefs",
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      const res = await route.fetch();
+      if (!res.ok()) return route.fulfill({ response: res });
+      const prefs = (await res.json()) as Record<string, unknown>;
+      await route.fulfill({ response: res, json: { "seen:getting-started": 1, ...prefs } });
+    },
+  );
 }
 
 export class World {
