@@ -280,6 +280,10 @@ pub struct Session {
     pub model: Option<String>,
     /// The model its box last said its agent runs on (`Opus 5.5`).
     pub ran_model: Option<String>,
+    /// The machine whose agent started it for its asker (aru-121, a
+    /// `sessions.start` grant): its card says "started by <asker>'s agent
+    /// on <machine>". `None`: the asker asked themselves.
+    pub asker_agent: Option<String>,
 }
 
 impl Session {
@@ -691,7 +695,7 @@ impl AgentsOn {
 pub(super) const COLS: &str = "id, project_id, room_id, parent_seq, asker, workspace_id, machine, block, repo, \
                                branch, state, was_state, last_seq, daemon_n, heard_at, last_tool, last_error, pr, \
                                ci_rounds, created_at, updated_at, role, parent_session, harness, picked, \
-                               picked_by, picked_at, merged_at, model, ran_model";
+                               picked_by, picked_at, merged_at, model, ran_model, asker_agent";
 const EVENT_COLS: &str = "session_id, seq, kind, from_state, to_state, at, detail, daemon, daemon_n, sig";
 const PROMPT_COLS: &str = "id, session_id, author, source, association, text, state, created_at, sent_at, dropped_at";
 const ACTION_COLS: &str =
@@ -736,6 +740,7 @@ pub(super) fn session_row(r: &Row) -> Result<Session> {
         merged_at: r.get(27)?,
         model: r.get(28)?,
         ran_model: r.get(29)?,
+        asker_agent: r.get(30)?,
     })
 }
 
@@ -1152,6 +1157,13 @@ pub fn set_model_in(c: &impl Sql, id: &str, model: Option<&str>) -> Result<()> {
         return Ok(());
     }
     c.execute("UPDATE agent_sessions SET model = ?2 WHERE id = ?1", params![id, model])?;
+    Ok(())
+}
+
+/// Session `id` was started by the agents on machine `agent` for its
+/// asker (aru-121): in the transaction that made it.
+pub fn set_asker_agent_in(c: &impl Sql, id: &str, agent: &str) -> Result<()> {
+    c.execute("UPDATE agent_sessions SET asker_agent = ?2 WHERE id = ?1", params![id, agent])?;
     Ok(())
 }
 

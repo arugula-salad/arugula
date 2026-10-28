@@ -1689,6 +1689,38 @@ fn all_defs() -> Vec<Def> {
             output: None,
             human: Human::In(super::deploys::PLAN_TOOL),
         },
+        // Fleet 3 (aru-121): a person's agent starts, answers and prompts
+        // agent sessions as them, by their grants.
+        Def {
+            name: super::agent_sessions::START_TOOL,
+            title: "Start an agent session",
+            description: super::agent_sessions::START_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::agent_sessions::SessionStartArgs>),
+            read_only: false,
+            destructive: false,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+            human: line(
+                "hand an issue to an agent session on your project's cloud workspaces, and answer it",
+                "Start a session on issue #260 and tell me when it pushes.",
+                Needs::Control,
+            ),
+        },
+        Def {
+            name: super::agent_sessions::REPLY_TOOL,
+            title: "Answer or prompt an agent session",
+            description: super::agent_sessions::REPLY_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::agent_sessions::SessionReplyArgs>),
+            read_only: false,
+            destructive: false,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+            human: Human::In(super::agent_sessions::START_TOOL),
+        },
     ];
     // A feature crate's, where each says (#232).
     super::registry::add(&mut defs);
@@ -2162,6 +2194,14 @@ impl<'a> Call<'a> {
             },
             ("read_deploy", _) => match parse(args) {
                 Ok(a) => self.read_deploy(a).await,
+                Err(e) => Err(e),
+            },
+            ("session_start", _) => match parse(args) {
+                Ok(a) => self.session_start(a).await,
+                Err(e) => Err(e),
+            },
+            ("session_reply", _) => match parse(args) {
+                Ok(a) => self.session_reply(a).await,
                 Err(e) => Err(e),
             },
             ("read_cloud", Some(kind)) => self.read_cloud(kind, args).await,

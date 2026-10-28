@@ -241,6 +241,13 @@ lints the daemon with neither, and with each alone.
   the `proto-ts` check, fmt and clippy, for both workspaces (the root's
   and the server's).
 - `just e2e`: the browser specs. `just e2e-webkit`: WebKit's.
+  `just e2e-spec e2e/<name>.spec.ts`: only the ones named.
+- In a session on a hosted dev box (your branch is `arugula/...`): run the
+  specs you wrote or changed with `just e2e-spec`, one at a time
+  (docs/testing.md, "On a dev box"), and don't commit
+  `web/src/shared/proto.gen.ts` or blessed fixtures (`ARUGULA_BLESS=1`'s
+  `tests/fixtures/`): regenerate them to build and test, leave them out of
+  your commits, and say so; the lead regenerates them on the rollup.
 - `just dev`: a dev daemon on 7682 (state in `~/.local/state/arugula-dev`)
   and Vite on 5173, leaving your daily daemon alone.
 - `just proto-ts`: regenerate `web/src/shared/proto.gen.ts`.

@@ -197,7 +197,26 @@ session users wrote to would let one session plant what another links.
 A slot's caches outlive its sessions, like the rest of the slot user's
 home but `~/.claude` and the checkout. sccache over a kept target
 directory, because its size has a cap: an Arugula target directory is
-8 to 40 GB, and a box has three slots.
+8 to 40 GB, and a box has three slots. The box's sessions share its disk,
+so each prompt the daemon hands a session says when it's under 10 GiB
+free, and asks the session to clear its own build output and say if a
+build ran out (Arugula #263).
+
+The example also installs what the browser specs need (python3,
+Playwright's Chromium in `/opt/arugula/tools/ms-playwright`) and gives the
+box one suite lock (`/opt/arugula/locks/suite.lock`), so a session runs
+the specs it wrote with `just e2e-spec` while the others wait for their
+turn at the box's memory ([docs/testing.md](testing.md#on-a-dev-box),
+Arugula #264).
+
+A session's branch starts from its repo's default branch as GitHub has it
+when the session starts: the daemon fetches it into the checkout before it
+hands the checkout over, since the workspace's clone is as old as the
+box's setup (Arugula #263). It fetches with no credentials, so a private
+repo's session starts from the clone, and its first prompt says so. And the
+daemon ends `/etc/resolv.conf` with a newline at its start, after each
+resume and before each prompt: E2B's envd writes it without one at every
+`/init`, and Zig's resolver then fails to fetch Ghostty's dependencies.
 
 **Snapshots (M263, Arugula #140).** Once a workspace's box has set up all
 right, the platform builds the workspace a snapshot, and its new boxes and
@@ -1259,6 +1278,39 @@ machine reaches another only for its agents (`/api/a2a/`). The routes are
 `/api/daemon/runs/reach`, `/api/daemon/projects/{project}/runs` (`GET`,
 `POST`) and `/api/daemon/runs/{run}[/log]`
 (`crates/platform/src/triggers/agent.rs`).
+
+**Agents and sessions (Fleet 3, aru-121).** Two more powers, each over one
+project, off until the owner gives them, let a machine's agents start and
+steer agent sessions as their owner: `sessions.start` (their `@arugula` on a
+native issue or in the project's channels starts a session) and
+`sessions.reply` (their reply in a session's thread answers its open
+question, or prompts it).
+
+```
+arugula grants add geek sessions.start sessions.reply --project acme
+```
+
+or the Start sessions and Answer sessions switches per machine and project
+under Settings, Agents on your machines, on the platform page. A session
+an agent starts is its owner's ask: the same checks (an owner or editor on
+`ARUGULA_HOSTED_ACCOUNTS`), box and repo as theirs, with the owner as the
+asker and the payer; the platform records the machine
+(`agent_sessions.asker_agent`), and the card and the first prompt say
+"started by <owner>'s agent on <machine>". The which-repo ask still
+mentions the owner; the agent's next reply naming a repo answers it too.
+A reply answers a question the session waits on (its ask then says
+"<owner>'s agent on <machine> answered: …"), and is otherwise queued as a
+prompt credited to the owner. Neither power approves anything: while a
+session waits on a permission, the reply is queued for after it, and a
+person allows or denies. The MCP tools are `session_start` (`issue` or
+`room`/`thread`, `prompt`, `project`) and `session_reply` (`session`,
+`text`), both in the permission snippet's ask list; an agent a guest stands
+behind is refused. They need no `threads.post`: each posts only its ask or
+its reply, labelled as the agent's. The routes are `POST
+/api/daemon/sessions` and `POST /api/daemon/sessions/{ses}/reply`
+(`crates/platform/src/chat/agent_sessions.rs`). An agent's message posted
+with `post_thread` (with `threads.post`) counts the same way when the
+machine holds the grant.
 
 A read that waits (`since` and `wait`) is woken when its platform machine
 moves the run, and looks every 2 seconds for a move another machine made.

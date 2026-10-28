@@ -16,6 +16,8 @@ import {
   powersFor,
   reaching,
   RUN_POWERS,
+  SINGLE,
+  singleGrant,
 } from "../src/platform/settings/grants.ts";
 
 const msg = (over) => ({ author: "a1", name: "Jake", agent: null, ...over });
@@ -134,7 +136,7 @@ test("a project's matrix on /settings: a row per machine, a switch per column, p
     g("g11", "d3", "cloud.drive", "account", "a1"),
   ];
   const p = { kind: "project", id: "prj_1", name: "Acme" };
-  assert.deepEqual(COLUMNS, ["threads", "runs", "commands", "deploys"]);
+  assert.deepEqual(COLUMNS, ["threads", "runs", "commands", "deploys", "start", "reply"]);
   // All three conversation powers is on; one of the two runs powers is partial.
   assert.deepEqual(cellOf(grants, "d1", p, "threads"), { on: true, only: null });
   assert.deepEqual(cellOf(grants, "d1", p, "runs"), { on: true, only: ["runs.read"] });
@@ -156,7 +158,7 @@ test("a project's matrix on /settings: a row per machine, a switch per column, p
   );
   assert.deepEqual(
     rows[2].cells.map((c) => c.on),
-    [false, false, false, false],
+    [false, false, false, false, false, false],
   );
   assert.equal(reaching(rows), 2, "d3 has nothing on in prj_1");
   assert.equal(reaching(matrixOf(grants, machines, dms, ["threads"])), 1);
@@ -164,6 +166,33 @@ test("a project's matrix on /settings: a row per machine, a switch per column, p
 
   assert.equal(cellKey("d1", p, "deploys"), "d1/prj_1/deploys");
   assert.equal(cellKey("d1", dms, "threads"), "d1/dms/threads");
+});
+
+test("sessions.start and sessions.reply have a switch each (aru-121), never the conversation one's", () => {
+  const g = (id, power, scope = "prj_1", live = true) => ({
+    id,
+    subject: { kind: "daemon", id: "d1", name: "geek" },
+    power,
+    scope: { kind: "project", id: scope },
+    live,
+  });
+  const grants = [
+    g("g1", "threads.read"),
+    g("g2", "sessions.start"),
+    g("g3", "sessions.reply", "prj_1", false),
+    g("g4", "sessions.reply", "prj_2"),
+  ];
+  const p = { kind: "project", id: "prj_1", name: "Acme" };
+  // Turning conversations off leaves the session grants alone.
+  assert.deepEqual(liveOver(grants, "d1", p).map((x) => x.id), ["g1"]);
+  assert.ok(!powersFor("project").some((x) => x.startsWith("sessions.")), "conversations on doesn't start sessions");
+  assert.deepEqual(cellOf(grants, "d1", p, "start"), { on: true, only: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "reply"), { on: false, only: null }, "a revoked sessions.reply is off");
+  assert.deepEqual(cellOf(grants, "d1", { kind: "project", id: "prj_2", name: "" }, "reply"), { on: true, only: null });
+  assert.equal(SINGLE.start, "sessions.start");
+  assert.equal(SINGLE.reply, "sessions.reply");
+  assert.equal(singleGrant(grants, "d1", "prj_1", "sessions.start")?.id, "g2");
+  assert.equal(singleGrant(grants, "d1", "prj_1", "sessions.reply"), undefined);
 });
 
 test("the header chip counts machines and the popover lists them all", () => {

@@ -2,7 +2,8 @@
 # Tests scripts/suite-lock: COMMAND's exit code comes back; a second run
 # waits for the first and says who holds the lock; a run inside a locked
 # one, CI and ARUGULA_SUITE_LOCK=0 don't wait; a holder killed with -9
-# leaves no lock behind; SIGTERM reaches COMMAND; a syspolicyd that stays
+# leaves no lock behind; ARUGULA_SUITE_LOCK_FILE is one lock for every
+# home; SIGTERM reaches COMMAND; a syspolicyd that stays
 # busy is refused, with the lock left free, and one that settles isn't.
 # The lock lives under a temp HOME, and a stand-in ps plays syspolicyd.
 #
@@ -73,6 +74,21 @@ wait
 touch "$work/go4"
 if "$lock" sh -c "'$lock' true" && [ $((SECONDS - start)) -lt 3 ]; then ok "suite-lock inside COMMAND runs at once"; else bad "suite-lock inside COMMAND waited on itself"; fi
 rm -f "$work/go4"
+
+# ARUGULA_SUITE_LOCK_FILE: users with homes of their own (a dev box's
+# session users) share one lock.
+shared=$work/box/suite.lock
+mkdir -p "$work/box"
+touch "$work/go5"
+HOME=$work/other ARUGULA_SUITE_LOCK_FILE=$shared "$lock" sh -c "touch '$work/held5'; while [ -e '$work/go5' ]; do sleep 0.05; done" &
+pids+=($!)
+until_file "$work/held5"
+if [ ! -e "$work/other/.cache/arugula/suite.lock" ] && [ -e "$shared" ]; then ok "ARUGULA_SUITE_LOCK_FILE is the lock"; else bad "the lock isn't $shared"; fi
+start=$SECONDS
+(sleep 1; rm -f "$work/go5") &
+ARUGULA_SUITE_LOCK_FILE=$shared "$lock" true 2>/dev/null
+if [ $((SECONDS - start)) -ge 1 ]; then ok "another home waits on the shared lock"; else bad "another home didn't wait on $shared"; fi
+wait
 
 # A holder killed with -9 (its command still running) frees the lock.
 "$lock" sh -c "echo \$\$ >'$work/child'; sleep 30" &

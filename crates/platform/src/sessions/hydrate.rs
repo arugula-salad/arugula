@@ -46,7 +46,10 @@
 //! - **Rules** say where it works, to commit on its branch and not push
 //!   (the box pushes it after the finish step) nor say whether it's
 //!   pushed (the agent can't know; its answer says, Arugula #215), that
-//!   the asker sends the PR, to name an Arugula issue the thread is on by its link (never
+//!   the asker sends the PR, to leave generated files out of its commits
+//!   (Arugula #263: parallel sessions' regenerations conflict, and whoever
+//!   combines the branches regenerates once), to run the tests and specs
+//!   it wrote or changed and say whether they passed (Arugula #264), to name an Arugula issue the thread is on by its link (never
 //!   `#N`, which on GitHub is another), to ask with the agent's tool for
 //!   asking (AskUserQuestion in Claude Code; a Try 3's Codex runs the same
 //!   prompt, M264), since a question only in its reply ends the turn
@@ -109,6 +112,9 @@ pub struct Item {
 pub struct Thread {
     /// The asker's name.
     pub asker: String,
+    /// Who asked, in words: the asker's name, or "<asker>'s agent on
+    /// <machine>" when their agent started it (aru-121).
+    pub asked_by: String,
     /// `#general`, `the thread on PR o/app#3`.
     pub place: String,
     /// Oldest first; the last is the ask.
@@ -152,6 +158,21 @@ fn rules(t: &Thread) -> String {
             t.asker
         )),
         None => out.push_str("- You work in no repo: this session has none to push to.\n"),
+    }
+    if t.repo.is_some() {
+        // Arugula #263, #264: sessions run side by side, and whoever
+        // combines their branches regenerates once and runs what they
+        // proved.
+        out.push_str(
+            "- Don't commit files the repository generates (code generated from a schema, blessed test fixtures) \
+             unless the ask is about them: regenerate them in your checkout to build and test, and leave them out \
+             of your commits. Sessions run side by side, and whoever combines their branches regenerates them once. \
+             Say in your answer which ones you left out.\n",
+        );
+        out.push_str(
+            "- Run the tests you wrote or changed, end-to-end and browser specs included, one at a time, and say in \
+             your answer whether each passed. If one can't run here, say what stopped it.\n",
+        );
     }
     if let Some((n, url)) = &t.issue {
         out.push_str(&format!(
@@ -205,7 +226,7 @@ pub fn assemble(t: &Thread) -> String {
 }
 
 fn render(t: &Thread, said: &[String], left_said: usize, texts: &[String], left_texts: usize) -> String {
-    let mut out = format!("@arugula was asked by {} in {}. The thread so far, oldest first:\n\n", t.asker, t.place);
+    let mut out = format!("@arugula was asked by {} in {}. The thread so far, oldest first:\n\n", t.asked_by, t.place);
     if left_said > 0 {
         out.push_str(&format!("({left_said} older {} left out to fit)\n", plural(left_said, "message", "messages")));
     }
@@ -372,20 +393,23 @@ fn place(room: &Room) -> String {
 }
 
 /// The first prompt of a session `asker` asked for on `room`'s thread
-/// `parent_seq` (module docs).
+/// `parent_seq` (module docs), or their agent on machine `agent` asked for
+/// them (aru-121).
+#[allow(clippy::too_many_arguments)]
 pub async fn first_prompt(
     app: &Platform,
     room: &Room,
     parent_seq: u64,
     project: &str,
     asker: &str,
+    agent: Option<&str>,
     repo: Option<&str>,
     slug: &str,
 ) -> Result<String> {
     let ms = messages(app, room, parent_seq)?;
     // The platform's which-box and which-repo questions (its lines, with no
     // author) and the asker's answers to them were for the platform.
-    let answers = crate::chat::sessions::answers(app, project, asker, &ms)?;
+    let answers = crate::chat::sessions::answers(app, project, asker, agent, &ms)?;
     let ms: Vec<Message> = ms
         .into_iter()
         .filter(|m| m.deleted.is_none() && (!m.author.is_empty() || said_by(m).is_some()) && !answers.contains(&m.seq))
@@ -430,8 +454,13 @@ pub async fn first_prompt(
         .into_iter()
         .filter_map(|(url, p)| card_line(&p).map(|l| format!("{url}: {l}")))
         .collect();
+    let asked_by = match agent {
+        Some(machine) => crate::chat::sessions::agent_asker(app, &name(asker), machine).await?,
+        None => name(asker),
+    };
     let t = Thread {
         asker: name(asker),
+        asked_by,
         place: place(room),
         said,
         item: item(app, room, asker).await?,
@@ -475,7 +504,9 @@ pub async fn after_move(app: &Platform, s: &crate::db::sessions::Session) -> Res
 async fn after(app: &Platform, s: &crate::db::sessions::Session, note: &str, what: &str) -> Result<Rebuilt> {
     let room = app.db.chat_room(&s.room)?.ok_or_else(|| anyhow::anyhow!("the session's thread is gone"))?;
     let slug = s.branch.strip_prefix("arugula/").and_then(|b| b.split_once('-')).map_or("", |(_, slug)| slug);
-    let thread = first_prompt(app, &room, s.parent_seq, &s.project, &s.asker, s.repo.as_deref(), slug).await?;
+    let thread =
+        first_prompt(app, &room, s.parent_seq, &s.project, &s.asker, s.asker_agent.as_deref(), s.repo.as_deref(), slug)
+            .await?;
     let transcript = match (&s.machine, &s.block) {
         (Some(machine), Some(block)) => {
             let ours = app
@@ -586,6 +617,7 @@ mod tests {
     fn thread(said: Vec<Said>) -> Thread {
         Thread {
             asker: "ann".into(),
+            asked_by: "ann".into(),
             place: "#general".into(),
             said,
             item: None,

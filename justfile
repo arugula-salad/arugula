@@ -595,6 +595,18 @@ e2e-interop:
 e2e url="": web e2e-build
     cd web && E2E_BASE_URL="{{url}}" {{suite_lock}} pnpm exec playwright test
 
+# Only the specs named (`just e2e-spec e2e/hints.spec.ts`, paths under
+# web/), as a session on a dev box runs the ones it wrote or changed
+# (Arugula #264): the web dependencies when the checkout has none, the
+# binaries the specs run, then Playwright on a free port (beside other
+# checkouts' runs) under the suite lock.
+e2e-spec +specs: _web-deps web e2e-build
+    cd web && E2E_PORT="${E2E_PORT:-$(../scripts/free-port)}" {{suite_lock}} pnpm exec playwright test {{specs}}
+
+[private]
+_web-deps:
+    [ -d web/node_modules ] || (cd web && pnpm install --frozen-lockfile)
+
 # A new user's journeys (#551), as a person takes them: J1 (one person,
 # from no account to a terminal) and J2 (two people linking up). Each ends
 # with a graph of the path, every step annotated with what went right or

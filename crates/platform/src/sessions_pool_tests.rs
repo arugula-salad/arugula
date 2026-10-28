@@ -251,7 +251,7 @@ async fn the_repo_ask_is_a_form_and_a_mention_until_answered() {
 }
 
 /// `who`'s box's next signed report on `s`, through the hub's route.
-async fn report(app: &Platform, keys: &DeviceKeys, s: &str, to: State, detail: Value) -> Value {
+pub(crate) async fn report(app: &Platform, keys: &DeviceKeys, s: &str, to: State, detail: Value) -> Value {
     let now = app.db.session(s).unwrap().unwrap();
     let detail = detail.to_string();
     let id = keys.id();

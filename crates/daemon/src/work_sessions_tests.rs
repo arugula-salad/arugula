@@ -220,6 +220,34 @@ fn the_repos_notes_are_text() {
     assert!(!n.contains("AGENTS.md"), "an empty one is left out");
 }
 
+/// Arugula #263: the default branch is what `ls-remote --symref` names,
+/// and only a plain branch; a prompt says when the base is the box's clone
+/// and when the disk is low.
+#[test]
+fn a_sessions_base_is_the_default_branch_github_names() {
+    let listing = "ref: refs/heads/main\tHEAD\n0123456789abcdef0123456789abcdef01234567\tHEAD\n";
+    assert_eq!(default_branch_of(listing).as_deref(), Some("main"));
+    assert_eq!(default_branch_of("ref: refs/heads/release/2.x\tHEAD\n").as_deref(), Some("release/2.x"));
+    for bad in [
+        "0123456789abcdef0123456789abcdef01234567\tHEAD\n",
+        "ref: refs/tags/v1\tHEAD\n",
+        "ref: refs/heads/-x\tHEAD\n",
+        "ref: refs/heads/a..b\tHEAD\n",
+        "ref: refs/heads/a b\tHEAD\n",
+        "ref: refs/heads/main\trefs/heads/other\n",
+        "",
+    ] {
+        assert_eq!(default_branch_of(bad), None, "{bad:?}");
+    }
+    let n = stale_note("acme/app", "fatal: could not read Username");
+    assert!(n.contains("the box's clone of acme/app") && n.contains("(fatal: could not read Username)"), "{n}");
+
+    const GIB: u64 = 1 << 30;
+    assert_eq!(disk_note(40 * GIB, 100 * GIB), None);
+    let low = disk_note(GIB * 3 / 2, 20 * GIB).expect("under 10 GiB is low");
+    assert!(low.contains("1.5 GiB free of 20 GiB") && low.contains("incremental"), "{low}");
+}
+
 /// M261: the finish step's output goes to the agent fenced, in a fence its
 /// own backticks can't close, and only its last 4 KiB.
 #[test]

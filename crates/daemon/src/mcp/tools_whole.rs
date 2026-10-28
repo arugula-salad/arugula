@@ -40,7 +40,7 @@ pub fn the_tool_list_and_each_schema_are_unchanged() {
 
 pub fn annotations_are_honest() {
     let all = list(Scope::Full, fl(false));
-    assert_eq!(all.len(), 33 - NO_FORGE);
+    assert_eq!(all.len(), 35 - NO_FORGE);
     let ro: Vec<&str> = all
         .iter()
         .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -153,9 +153,9 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     for name in THREAD_TOOLS {
         assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
     }
-    assert_eq!(every.len(), 36);
-    assert_eq!(defs(fl(false)).len(), 33 - NO_FORGE);
-    assert_eq!(defs(fl(true)).len(), 36 - NO_FORGE);
+    assert_eq!(every.len(), 38);
+    assert_eq!(defs(fl(false)).len(), 35 - NO_FORGE);
+    assert_eq!(defs(fl(true)).len(), 38 - NO_FORGE);
     assert_eq!(every.len(), defs(fl(false)).len() + 3 + NO_FORGE, "and delegate and the board tools");
 }
 

@@ -13,6 +13,9 @@
 # while COMMAND runs: the kernel frees it when the script exits or is killed,
 # so a dead run leaves no stale lock. COMMAND doesn't inherit it, so a daemon
 # a test leaves behind doesn't hold it either. The file says who holds it.
+# ARUGULA_SUITE_LOCK_FILE names another file: a box whose users share its
+# memory (the dev boxes' session users, packaging/hosted/examples/
+# arugula-dev-setup.sh) runs one suite at a time across all of them.
 #
 # CI runs one job's suite per slot already (scripts/ci-slot), so with CI set
 # this only runs COMMAND, as it does inside a locked run (no deadlock on
@@ -27,10 +30,13 @@ use POSIX qw(strftime);
 exec @ARGV or die "suite-lock: $ARGV[0]: $!\n"
   if $ENV{CI} || $ENV{ARUGULA_SUITE_LOCKED} || ($ENV{ARUGULA_SUITE_LOCK} // '') eq '0';
 
-my $dir = "$ENV{HOME}/.cache/arugula";
-# ~/.cache too, on a fresh home.
-make_path($dir);
-my $path = "$dir/suite.lock";
+my $path = $ENV{ARUGULA_SUITE_LOCK_FILE} // '';
+if ($path eq '') {
+  my $dir = "$ENV{HOME}/.cache/arugula";
+  # ~/.cache too, on a fresh home.
+  make_path($dir);
+  $path = "$dir/suite.lock";
+}
 open(my $lock, '+>>', $path) or die "suite-lock: $path: $!\n";
 
 unless (flock($lock, LOCK_EX | LOCK_NB)) {

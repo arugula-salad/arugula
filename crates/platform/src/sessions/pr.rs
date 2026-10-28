@@ -881,6 +881,7 @@ mod tests {
             merged_at: None,
             model: None,
             ran_model: None,
+            asker_agent: None,
         }
     }
 

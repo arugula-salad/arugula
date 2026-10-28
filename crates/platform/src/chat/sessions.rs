@@ -53,8 +53,21 @@
 //!   or any owner or editor is a prompt, credited to its author
 //!   (`session_prompts.author`), queued while a turn runs; the session's
 //!   job is nudged so a paused box wakes. Billing stays the asker's. A
-//!   viewer's reply stays ordinary chat. A message an agent or a product
-//!   posted never starts or prompts a session, and neither does an edit.
+//!   viewer's reply stays ordinary chat. A message a product posted never
+//!   starts or prompts a session, and neither does an edit.
+//! - **A person's agent** (Fleet 3, aru-121). A message an agent on a
+//!   machine posted (its owner's, labelled with the machine) does nothing
+//!   here, unless the owner gave that machine a grant over the room's
+//!   project: with `sessions.start`, its `@arugula` starts a session exactly
+//!   as its owner's would (the same checks, on the owner: the asker is the
+//!   owner, and so is the bill), and its card and first prompt say "started
+//!   by <owner>'s agent on <machine>" ([`agent_asker`]); its words after a
+//!   which-repo ask answer it as the owner's would. With `sessions.reply`,
+//!   its reply in a session's thread answers the session's open question
+//!   ([`Replied::Answered`]), or else is a prompt, as the owner's would be.
+//!   It never approves or denies a permission: one waits on a person, and
+//!   the reply is queued for after. Grants are read on every message, so a
+//!   revoked one stops the next. `@codex review` stays a person's.
 //!
 //! Lines are the platform's: no author, `via` [`SYSTEM_VIA`], in the
 //! thread. A failure here is logged: the message was posted either way.
@@ -77,8 +90,13 @@ use crate::{
         Taken,
         chat::{Message, NewMessage, Room},
         hosted::HostedWorkspace,
-        sessions::{NewPrompt, NewSession, Source, create_session_in, dispatch, issue_slug, set_model_in, slug},
+        projects::{SESSIONS_REPLY, SESSIONS_START},
+        sessions::{
+            ActionKind, Kind, NewAction, NewPrompt, NewSession, Session, Source, State, create_session_in, dispatch,
+            issue_slug, set_asker_agent_in, set_model_in, slug,
+        },
     },
+    grants::AgentPrincipal,
     sessions::{asks, hydrate, pool},
     triggers::{Cannot, may_start},
 };
@@ -98,24 +116,65 @@ pub const WHICH_REPO: &str = "Which repo should @arugula work in on ";
 pub const NO_BOX: &str =
     "@arugula runs on this project's cloud workspace, and it has none: set one up first, then ask again.";
 
-/// A person posted `text` as message `seq` (under `parent`) in `room`: start
-/// a session, answer one's question, or prompt one. An agent's or a
-/// product's message does nothing here.
+/// What a reply in a session's thread did ([`reply`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Replied {
+    /// It answered the session's open question (an agent's, aru-121).
+    Answered,
+    /// It's the session's next prompt (`spr_…`), queued while a turn runs.
+    /// `permission`: the session waits on a permission, which a person
+    /// approves or denies; the prompt goes after it.
+    Queued { prompt: String, permission: bool },
+    /// The session took no prompt: why.
+    Refused(String),
+    /// Ordinary chat: its author only views the project.
+    Chat,
+}
+
+/// A person, or their agent on machine `agent` (its owner's message,
+/// labelled with it), posted `text` as message `seq` (under `parent`) in
+/// `room`: start a session, answer one's question, or prompt one. A
+/// product's message does nothing here, and an agent's only with a grant
+/// (module docs). What a reply in a session's thread did, if it was one.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn posted(
     app: &Platform,
     room: &Room,
     author: &str,
-    by_agent_or_product: bool,
+    agent: Option<&AgentPrincipal>,
+    by_product: bool,
     seq: i64,
     parent: Option<i64>,
     text: &str,
-) {
-    if by_agent_or_product || author.is_empty() {
-        return;
+) -> Option<Replied> {
+    if by_product || author.is_empty() {
+        return None;
     }
-    if let Err(e) = handle(app, room, author, seq, parent, text).await {
-        warn!(room = room.id, seq, error = %format!("{e:#}"), "@arugula in a thread");
+    match handle(app, room, author, agent.map(|a| a.machine.as_str()), seq, parent, text).await {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(room = room.id, seq, error = %format!("{e:#}"), "@arugula in a thread");
+            None
+        }
     }
+}
+
+/// Whether the agents on `machine` hold `power` over `project`, given by
+/// `owner` (aru-121), now. Its owner posted as it, so they read the room.
+fn granted(app: &Platform, machine: &str, power: &str, project: &str, owner: &str) -> Result<bool> {
+    Ok(app.db.live_grant(machine, power, ("project", project), owner)?.is_some())
+}
+
+/// Who started or answered a session when it was `owner`'s agent on
+/// `machine` (aru-121): "<owner>'s agent on <machine>", by its name now.
+pub(crate) async fn agent_asker(app: &Platform, owner: &str, machine: &str) -> Result<String> {
+    let name = crate::grants::agent_names(app, &[machine.to_owned()])
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))?
+        .remove(machine)
+        .map_or_else(|| machine.to_owned(), |d| d.name);
+    let owner = if owner.is_empty() { "someone" } else { owner };
+    Ok(crate::grants::agent_label(owner, machine, &name))
 }
 
 /// The thread a message is in: its parent's, or a channel's message's own,
@@ -130,7 +189,7 @@ fn thread_of(room: &Room, seq: i64, parent: Option<i64>) -> u64 {
 
 /// Whether `@arugula` works in this room: a channel, or the thread on a
 /// native issue or a mirrored item.
-pub(super) fn works_in(room: &Room) -> bool {
+pub(crate) fn works_in(room: &Room) -> bool {
     match room.kind.as_str() {
         "channel" => true,
         "object" => room.target.as_deref().is_some_and(|t| t.starts_with("iss_") || t.starts_with("fi_")),
@@ -142,37 +201,59 @@ pub(crate) fn asks(text: &str) -> bool {
     at_words(text).iter().any(|w| w == MENTION)
 }
 
-async fn handle(app: &Platform, room: &Room, author: &str, seq: i64, parent: Option<i64>, text: &str) -> Result<()> {
+async fn handle(
+    app: &Platform,
+    room: &Room,
+    author: &str,
+    agent: Option<&str>,
+    seq: i64,
+    parent: Option<i64>,
+    text: &str,
+) -> Result<Option<Replied>> {
     let thread = thread_of(room, seq, parent);
     // `@codex review` (M264): a review of the thread's session, never a
-    // prompt to it.
-    if crate::sessions::review::mentions(text) && works_in(room) {
-        return crate::sessions::review::asked(app, room, thread, author, text).await;
+    // prompt to it. A person's only.
+    if agent.is_none() && crate::sessions::review::mentions(text) && works_in(room) {
+        crate::sessions::review::asked(app, room, thread, author, text).await?;
+        return Ok(None);
     }
     if let Some(s) = app.db.session_on_thread(&room.id, thread)? {
-        return reply(app, &s, author, text).await;
+        // An agent's reply prompts or answers only with sessions.reply.
+        if let Some(m) = agent
+            && !granted(app, m, SESSIONS_REPLY, &s.project, author)?
+        {
+            return Ok(None);
+        }
+        return reply(app, &s, author, agent, text).await.map(Some);
     }
     let asked = asks(text);
     if !works_in(room) {
-        if asked {
+        if asked && agent.is_none() {
             say(app, room, thread, NOT_HERE)?;
         }
-        return Ok(());
+        return Ok(None);
     }
     let Some(project) = app.db.chat_room_project(&room.id)? else {
-        if asked {
+        if asked && agent.is_none() {
             say(app, room, thread, NOT_HERE)?;
         }
-        return Ok(());
+        return Ok(None);
     };
+    // An agent's `@arugula`, or its answer, counts only with sessions.start.
+    if let Some(m) = agent
+        && !granted(app, m, SESSIONS_START, &project, author)?
+    {
+        return Ok(None);
+    }
     if asked {
-        return start(app, room, thread, &project, author, text).await;
+        start(app, room, thread, &project, author, agent, text).await?;
+        return Ok(None);
     }
     // Only a thread, not a channel's new message, has a question to answer.
     if parent.is_some() || thread == 0 {
         answer(app, room, thread, &project, author, seq).await?;
     }
-    Ok(())
+    Ok(None)
 }
 
 /// Post the platform's line in the thread.
@@ -224,7 +305,15 @@ fn list(items: &[String]) -> String {
 /// `@arugula` in a thread with no session going: the boxes it may run on
 /// ([`pool::candidates`]), the repo ([`pool::settle`]), then the box
 /// ([`pool::pick`]).
-async fn start(app: &Platform, room: &Room, thread: u64, project: &str, asker: &str, text: &str) -> Result<()> {
+async fn start(
+    app: &Platform,
+    room: &Room,
+    thread: u64,
+    project: &str,
+    asker: &str,
+    agent: Option<&str>,
+    text: &str,
+) -> Result<()> {
     if let Some(why) = may_start(app, project, asker).await? {
         let who = super::name_of(app, asker).await?;
         say(app, room, thread, &refusal(if who.is_empty() { "the asker" } else { &who }, why))?;
@@ -235,17 +324,19 @@ async fn start(app: &Platform, room: &Room, thread: u64, project: &str, asker: &
         say(app, room, thread, NO_BOX)?;
         return Ok(());
     }
-    settled(app, room, thread, project, asker, boxes, &[text]).await
+    settled(app, room, thread, project, asker, agent, boxes, &[text]).await
 }
 
 /// The boxes are these: settle the repo from what the asker wrote, then
 /// start, or say what's missing, or ask which repo.
+#[allow(clippy::too_many_arguments)]
 async fn settled(
     app: &Platform,
     room: &Room,
     thread: u64,
     project: &str,
     asker: &str,
+    agent: Option<&str>,
     boxes: Vec<HostedWorkspace>,
     said: &[&str],
 ) -> Result<()> {
@@ -259,7 +350,7 @@ async fn settled(
         }
     }
     match how {
-        pool::Settled::Repo(repo) => go(app, room, thread, project, asker, boxes, repo.as_deref()).await,
+        pool::Settled::Repo(repo) => go(app, room, thread, project, asker, agent, boxes, repo.as_deref()).await,
         pool::Settled::Missing(repo) => {
             say(app, room, thread, &missing(&repo))?;
             Ok(())
@@ -281,12 +372,14 @@ pub fn missing(repo: &str) -> String {
 }
 
 /// The repo is settled: the best of `boxes` with it, then start.
+#[allow(clippy::too_many_arguments)]
 async fn go(
     app: &Platform,
     room: &Room,
     thread: u64,
     project: &str,
     asker: &str,
+    agent: Option<&str>,
     boxes: Vec<HostedWorkspace>,
     repo: Option<&str>,
 ) -> Result<()> {
@@ -294,7 +387,7 @@ async fn go(
         say(app, room, thread, &missing(repo.unwrap_or("that repo")))?;
         return Ok(());
     };
-    launch(app, room, thread, project, asker, &w, repo).await
+    launch(app, room, thread, project, asker, agent, &w, repo).await
 }
 
 /// The which-repo question, as an ask (Arugula #214): a form on its card,
@@ -319,44 +412,65 @@ async fn ask_repo(
     Ok(())
 }
 
+/// Whether `m` is an ask of `@arugula` in `project`: a person's, or their
+/// agent's with a `sessions.start` grant from them (aru-121) now.
+fn is_ask(app: &Platform, project: &str, m: &Message) -> Result<bool> {
+    if m.deleted.is_some() || m.via.is_some() || m.author.is_empty() || !asks(&m.text) {
+        return Ok(false);
+    }
+    match &m.agent {
+        None => Ok(true),
+        Some(machine) => granted(app, machine, SESSIONS_START, project, &m.author),
+    }
+}
+
+/// Whether `m`, after `ask`, is its asker's own words for it: theirs, not
+/// their agent's (unless that agent asked, by grant), nor a product's for
+/// them. A session's answer is none of these: it has no author (`via`
+/// `said:<ses>`, Arugula #215), or before that was its asker's `via` the
+/// session.
+fn follows(ask: &Message, m: &Message) -> bool {
+    m.author == ask.author && m.deleted.is_none() && m.via.is_none() && (m.agent.is_none() || m.agent == ask.agent)
+}
+
 /// The ask in this thread that's waiting on its asker: the newest message
-/// that asks `@arugula`, by a person, after the thread's last session was
-/// made.
-async fn waiting_ask(app: &Platform, room: &Room, thread: u64, before: i64) -> Result<Option<(Message, Vec<Message>)>> {
+/// that asks `@arugula`, by a person (or their agent, by grant), after the
+/// thread's last session was made.
+async fn waiting_ask(
+    app: &Platform,
+    room: &Room,
+    thread: u64,
+    project: &str,
+    before: i64,
+) -> Result<Option<(Message, Vec<Message>)>> {
     let ms = hydrate::messages(app, room, thread)?;
     let since = app.db.latest_thread_session(&room.id, thread)?.map(|s| s.created_at);
-    let Some(i) = ms.iter().rposition(|m| {
-        m.seq < before
-            && m.deleted.is_none()
-            && m.agent.is_none()
-            && m.via.is_none()
-            && !m.author.is_empty()
-            && asks(&m.text)
-            && since.is_none_or(|t| m.at > t)
-    }) else {
-        return Ok(None);
-    };
+    let mut at = None;
+    for (i, m) in ms.iter().enumerate().rev() {
+        if m.seq < before && since.is_none_or(|t| m.at > t) && is_ask(app, project, m)? {
+            at = Some(i);
+            break;
+        }
+    }
+    let Some(i) = at else { return Ok(None) };
     let ask = ms[i].clone();
-    let after: Vec<Message> =
-        ms[i + 1..].iter().filter(|m| m.author == ask.author && m.deleted.is_none() && own(m)).cloned().collect();
+    let after: Vec<Message> = ms[i + 1..].iter().filter(|m| follows(&ask, m)).cloned().collect();
     Ok(Some((ask, after)))
 }
 
-/// Whether `m` is its author's own words: not their agent's, nor a
-/// product's for them. A session's answer is neither: it has no author
-/// (`via` `said:<ses>`, Arugula #215), or before that was its asker's
-/// `via` the session.
-fn own(m: &Message) -> bool {
-    m.agent.is_none() && m.via.is_none()
-}
-
 /// Of a thread's messages `ms`, oldest first, the numbers of `asker`'s
-/// replies that answered the platform's which-box or which-repo question
-/// (as [`answer`] reads them: after the question, before the session's
-/// card, naming exactly one of the project's boxes or their repos). The
-/// first prompt leaves them out ([`hydrate::first_prompt`]): they were
-/// for the platform, not the agent.
-pub(crate) fn answers(app: &Platform, project: &str, asker: &str, ms: &[Message]) -> Result<Vec<i64>> {
+/// replies (or, when their agent on `agent` asked, its) that answered the
+/// platform's which-box or which-repo question (as [`answer`] reads them:
+/// after the question, before the session's card, naming exactly one of
+/// the project's boxes or their repos). The first prompt leaves them out
+/// ([`hydrate::first_prompt`]): they were for the platform, not the agent.
+pub(crate) fn answers(
+    app: &Platform,
+    project: &str,
+    asker: &str,
+    agent: Option<&str>,
+    ms: &[Message],
+) -> Result<Vec<i64>> {
     let ws: Vec<HostedWorkspace> = app
         .db
         .hosted_workspaces(project)?
@@ -385,7 +499,8 @@ pub(crate) fn answers(app: &Platform, project: &str, asker: &str, ms: &[Message]
             }
         } else if asked
             && m.author == asker
-            && own(m)
+            && m.via.is_none()
+            && (m.agent.is_none() || m.agent.as_deref() == agent)
             && (pool::named(&m.text, &boxes).is_some() || pool::named(&m.text, &in_repos).is_some())
         {
             out.push(m.seq);
@@ -398,10 +513,12 @@ pub(crate) fn answers(app: &Platform, project: &str, asker: &str, ms: &[Message]
 /// question, when it is one (module docs). The asker may also name one of
 /// the boxes, to run on that one.
 async fn answer(app: &Platform, room: &Room, thread: u64, project: &str, author: &str, seq: i64) -> Result<()> {
-    let Some((ask, said)) = waiting_ask(app, room, thread, seq).await? else { return Ok(()) };
+    let Some((ask, said)) = waiting_ask(app, room, thread, project, seq).await? else { return Ok(()) };
     if ask.author != author || !said.iter().any(|m| m.seq == seq) {
         return Ok(());
     }
+    // The session is its ask's: its agent's when their agent asked.
+    let agent = ask.agent.as_deref();
     if may_start(app, project, author).await?.is_some() {
         return Ok(());
     }
@@ -426,11 +543,11 @@ async fn answer(app: &Platform, room: &Room, thread: u64, project: &str, author:
         // Named in this reply, or this reply chose the box after a repo
         // was named: either way it's now.
         let r = r.to_owned();
-        return go(app, room, thread, project, author, boxes, Some(&r)).await;
+        return go(app, room, thread, project, author, agent, boxes, Some(&r)).await;
     }
     if from == Some(seq) {
         // This reply chose the box: its only repo, or which of its repos.
-        return settled(app, room, thread, project, author, boxes, &[]).await;
+        return settled(app, room, thread, project, author, agent, boxes, &[]).await;
     }
     Ok(())
 }
@@ -473,7 +590,9 @@ pub async fn ask_answer(
     }
     let thread = a.parent.map_or(0, |p| p as u64);
     let boxes = pool::candidates(&app, &project)?;
-    go(&app, &room, thread, &project, &account, boxes, Some(&choice)).await?;
+    // An ask its agent wrote (aru-121) starts the session as the agent's.
+    let agent = waiting_ask(&app, &room, thread, &project, seq).await?.and_then(|(m, _)| m.agent);
+    go(&app, &room, thread, &project, &account, agent.as_deref(), boxes, Some(&choice)).await?;
     Ok(axum::Json(repo_ask(&app, &room, seq, &account).await?))
 }
 
@@ -485,21 +604,26 @@ async fn repo_ask(app: &Platform, room: &Room, seq: i64, reader: &str) -> Result
         return Err(none());
     }
     let thread = m.parent.map_or(0, |p| p as u64);
-    // Its asker: who wrote the `@arugula` it asks about.
+    // Its asker: who wrote the `@arugula` it asks about (or whose agent did,
+    // by grant: aru-121).
+    let project = app.db.chat_room_project(&room.id)?;
     let ms = hydrate::messages(app, room, thread)?;
-    let asker = ms
-        .iter()
-        .rev()
-        .find(|x| x.seq < m.seq && x.agent.is_none() && x.via.is_none() && !x.author.is_empty() && asks(&x.text))
-        .map(|x| x.author.clone())
-        .unwrap_or_default();
+    let mut asker = String::new();
+    if let Some(p) = &project {
+        for x in ms.iter().rev().filter(|x| x.seq < m.seq) {
+            if is_ask(app, p, x)? {
+                asker = x.author.clone();
+                break;
+            }
+        }
+    }
     let open = !m.mentions.is_empty();
     let session = match open {
         true => None,
         false => app.db.latest_thread_session(&room.id, thread)?.filter(|s| s.created_at >= m.at).map(|s| s.id),
     };
-    let choices = match app.db.chat_room_project(&room.id)? {
-        Some(p) => pool::all_repos(&pool::candidates(app, &p)?),
+    let choices = match &project {
+        Some(p) => pool::all_repos(&pool::candidates(app, p)?),
         None => vec![],
     };
     let asker_name = if asker.is_empty() { String::new() } else { super::name_of(app, &asker).await? };
@@ -518,17 +642,20 @@ async fn repo_ask(app: &Platform, room: &Room, seq: i64, reader: &str) -> Result
     })
 }
 
-/// Make the session and its job, bound to the thread, and say so.
+/// Make the session and its job, bound to the thread, and say so. `agent`:
+/// the machine whose agent asked for `asker` (aru-121).
+#[allow(clippy::too_many_arguments)]
 async fn launch(
     app: &Platform,
     room: &Room,
     thread: u64,
     project: &str,
     asker: &str,
+    agent: Option<&str>,
     w: &HostedWorkspace,
     repo: Option<&str>,
 ) -> Result<()> {
-    let ask = waiting_ask(app, room, thread, i64::MAX).await?.map(|(m, _)| m.text).unwrap_or_default();
+    let ask = waiting_ask(app, room, thread, project, i64::MAX).await?.map(|(m, _)| m.text).unwrap_or_default();
     let words: Vec<&str> = ask.split_whitespace().filter(|w| !w.starts_with('@')).collect();
     // On a native issue, the branch is named for the issue (M265).
     let issue = match room.target.as_deref().filter(|t| room.kind == "object" && t.starts_with("iss_")) {
@@ -539,7 +666,7 @@ async fn launch(
         Some(i) => issue_slug(i.number, &i.title),
         None => slug(&words.join(" ")),
     };
-    let prompt = hydrate::first_prompt(app, room, thread, project, asker, repo, &slug).await?;
+    let prompt = hydrate::first_prompt(app, room, thread, project, asker, agent, repo, &slug).await?;
     let new = NewSession {
         project,
         room: &room.id,
@@ -555,9 +682,14 @@ async fn launch(
         let mut c = app.db.c();
         let tx = c.immediate()?;
         match create_session_in(&tx, &new, now) {
-            Ok(Some((s, _))) => {
+            Ok(Some((mut s, _))) => {
                 // The model its ask named, if it did (Arugula #215).
                 set_model_in(&tx, &s.id, crate::sessions::model::asked_in(&ask))?;
+                // Its asker's agent asked (aru-121): its card says so.
+                if let Some(m) = agent {
+                    set_asker_agent_in(&tx, &s.id, m)?;
+                    s.asker_agent = Some(m.to_owned());
+                }
                 dispatch(&tx, &s.id, now)?;
                 tx.commit()?;
                 Some(s)
@@ -569,38 +701,97 @@ async fn launch(
         }
     };
     let Some(s) = made else { anyhow::bail!("the session's project or workspace is gone") };
-    info!(session = s.id, room = room.id, thread, workspace = w.id, "a thread asked @arugula: session made");
+    info!(session = s.id, room = room.id, thread, workspace = w.id, agent = ?agent, "a thread asked @arugula: session made");
     // Its status card (M257) says it started, and where, from here on.
-    super::session_card::post_card(app, &s)?;
+    let by = match agent {
+        Some(m) => Some(agent_asker(app, &super::name_of(app, asker).await?, m).await?),
+        None => None,
+    };
+    super::session_card::post_card_by(app, &s, by.as_deref())?;
     // The which-repo ask is answered (Arugula #214).
     asks::close(app, room, thread, asks::REPO)?;
     Ok(())
 }
 
+/// What session `s` waits on while it's `needs_input`: its open request's
+/// id and whether it's a permission (`ask`), as its box said.
+fn open_ask(app: &Platform, s: &Session) -> Result<Option<(Option<String>, bool)>> {
+    if s.seen_as() != State::NeedsInput {
+        return Ok(None);
+    }
+    let events = app.db.session_events(&s.id)?;
+    let Some(e) = events.iter().rev().find(|e| e.kind == Kind::State && e.to == State::NeedsInput) else {
+        return Ok(None);
+    };
+    let d: arugula_control_wire::work::SessionDetail = serde_json::from_str(&e.detail).unwrap_or_default();
+    Ok(Some((d.request, d.ask.as_deref() == Some("permission"))))
+}
+
 /// A reply in a thread with a session going: a prompt from its asker or an
-/// owner or editor; anyone else's is ordinary chat.
-async fn reply(app: &Platform, s: &crate::db::sessions::Session, author: &str, text: &str) -> Result<()> {
+/// owner or editor; anyone else's is ordinary chat. From their agent on
+/// `agent` (by its `sessions.reply` grant, aru-121), it answers the
+/// session's open question instead, when it waits on one; a permission
+/// waits on a person, and the reply is queued for after it.
+pub(crate) async fn reply(
+    app: &Platform,
+    s: &Session,
+    author: &str,
+    agent: Option<&str>,
+    text: &str,
+) -> Result<Replied> {
     if text.trim().is_empty() {
-        return Ok(());
+        return Ok(Replied::Refused("say something".into()));
     }
     if author != s.asker {
         match crate::forge::links::membership(app, author, &s.project, true).await {
             Ok((_, TeamRole::Owner | TeamRole::Editor)) => {}
-            Ok(_) => return Ok(()),
-            Err(e) if e.0 == axum::http::StatusCode::NOT_FOUND => return Ok(()),
+            Ok(_) => return Ok(Replied::Chat),
+            Err(e) if e.0 == axum::http::StatusCode::NOT_FOUND => return Ok(Replied::Chat),
             Err(e) => anyhow::bail!("asking the hub who's in the project: {}", e.1),
         }
     }
     let now = now_ms();
+    let open = match agent {
+        Some(_) => open_ask(app, s)?,
+        None => None,
+    };
+    if let (Some(machine), Some((request, false))) = (agent, &open) {
+        let answer = serde_json::json!({ "question_0": text.trim() });
+        let new = NewAction {
+            by: author,
+            kind: ActionKind::Answer,
+            request: request.as_deref(),
+            answer: Some(&answer),
+            option: None,
+            reason: None,
+        };
+        match app.db.add_session_action(&s.id, &new, now)? {
+            Ok(_) => {
+                info!(session = s.id, agent = machine, "an agent's reply answered a session's question");
+                if let Some(after) = app.db.session(&s.id)? {
+                    app.chat.session(&app.db, &after);
+                    let owner = super::name_of(app, author).await?;
+                    let who = agent_asker(app, &owner, machine).await?;
+                    asks::answered(app, &after, &who, &asks::said("answer", Some(&answer), None))?;
+                }
+                return Ok(Replied::Answered);
+            }
+            // Someone answered it first, or it moved on: a prompt, then.
+            Err(why) => info!(session = s.id, refused = %why, "an agent's answer wasn't taken"),
+        }
+    }
     let p = NewPrompt { author, source: Source::Member, association: None, text };
     match app.db.queue_prompt(&s.id, &p, now)? {
         Ok(p) => {
-            info!(session = s.id, prompt = p.id, "a reply in a session's thread queued a prompt");
+            info!(session = s.id, prompt = p.id, agent = ?agent, "a reply in a session's thread queued a prompt");
             app.db.nudge_session(&s.id, now)?;
+            Ok(Replied::Queued { prompt: p.id, permission: matches!(open, Some((_, true))) })
         }
-        Err(why) => info!(session = s.id, refused = %why, "a reply in a session's thread wasn't queued"),
+        Err(why) => {
+            info!(session = s.id, refused = %why, "a reply in a session's thread wasn't queued");
+            Ok(Replied::Refused(why.to_string()))
+        }
     }
-    Ok(())
 }
 
 /// What Agent on this writes in an issue's thread, as its presser.
