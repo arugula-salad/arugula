@@ -837,7 +837,7 @@ check: test mux-guard workspace-guard
 # The daemon's crates (#232): the binary, arugulad, the library it's built
 # on and the feature crates on that, whose tests are the unit tests.
 # `--features arugulad/…` reaches them all.
-daemon_crates := "-p arugulad -p arugulad-base -p arugulad-editor"
+daemon_crates := "-p arugulad -p arugulad-base -p arugulad-drivers -p arugulad-editor"
 
 # The daemon and the CLI without Labs (#452): clippy and the tests with the
 # `labs` feature off, which CI runs as the `core` job. Run it after touching

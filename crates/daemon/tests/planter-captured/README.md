@@ -1,7 +1,7 @@
 # planter, as GitHub has it
 
 Real files from planter's GitOps repositories, captured 2026-10-23 for the
-planter drivers' tests (M233, `crates/daemon/src/work_planter_tests.rs`):
+planter drivers' tests (M233, `crates/arugulad-drivers/src/planter_tests.rs`):
 the box's half is held to what planter actually wrote, not to what a test
 thinks it wrote.
 

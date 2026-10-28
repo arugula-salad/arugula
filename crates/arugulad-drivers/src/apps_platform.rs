@@ -1142,5 +1142,5 @@ pub fn cli(args: &[String]) -> ! {
 }
 
 #[cfg(test)]
-#[path = "work_apps_platform_tests.rs"]
+#[path = "apps_platform_tests.rs"]
 mod tests;

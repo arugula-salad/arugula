@@ -8,6 +8,8 @@ repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 arugulad-base = { workspace = true }
+# The deploy drivers (`_planter` and the rest), in every build.
+arugulad-drivers = { workspace = true }
 # The editor server and Claude Code's IDE, for the `editor` feature.
 arugulad-editor = { workspace = true, optional = true }
 

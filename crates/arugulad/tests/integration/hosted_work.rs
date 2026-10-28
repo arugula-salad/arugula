@@ -1222,7 +1222,7 @@ fn a_deploy_box_releases_arugula() {
     let marks: PathBuf = std::env::temp_dir().join(format!("arugula-release-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
-    let seed = include_str!("../../../daemon/src/work_arugula_release_seed.sh");
+    let seed = include_str!("../../../arugulad-drivers/src/arugula_release_seed.sh");
     let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/release");
     let out = std::process::Command::new("bash").args(["-c", seed, "seed"]).arg(&marks).arg(script).output().unwrap();
     assert!(out.status.success(), "seed: {}", String::from_utf8_lossy(&out.stderr));

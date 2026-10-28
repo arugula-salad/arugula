@@ -49,9 +49,9 @@ use std::{
 
 use arugula_e2e::{
     deploy::planter::{
-        self as p, APP, APP_TOKEN, ARTIFACT_WHERE, GO_LIVE, HEALTH, LOAM_DOMAIN, MAX_FILES, MAX_TARBALL, MAX_UNPACKED,
-        ORG, POINTERS_BRANCH, POINTERS_REPO, POINTERS_TOKEN, PORT, PORT_ENV, PROD, PROMOTE, SCAFFOLD_BRANCH, SECRETS,
-        SHIP, SHIPPED_BRANCH, SHIPPED_REPO, SHIPPED_TOKEN, SOURCE_TOKEN,
+        self as p, APP, APP_TOKEN, GO_LIVE, HEALTH, LOAM_DOMAIN, MAX_FILES, MAX_TARBALL, MAX_UNPACKED, ORG,
+        POINTERS_BRANCH, POINTERS_REPO, POINTERS_TOKEN, PORT, PORT_ENV, PROD, PROMOTE, SCAFFOLD_BRANCH, SECRETS, SHIP,
+        SHIPPED_BRANCH, SHIPPED_REPO, SHIPPED_TOKEN, SOURCE_TOKEN,
     },
     drivers::{RollBack, Settings},
 };
@@ -1425,16 +1425,6 @@ pub fn cli(args: &[String]) -> ! {
     std::process::exit(code)
 }
 
-/// What a box hands Ship: where the artifact was fetched to, by run.
-pub fn artifact_path(run: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("arugula-ship-{run}.tgz"))
-}
-
-/// Whether `where` is Ship's: the artifact the platform keeps.
-pub fn ships(driver: &str, source_where: &str) -> bool {
-    driver == SHIP && source_where == ARTIFACT_WHERE
-}
-
 #[cfg(all(test, unix))]
-#[path = "work_planter_tests.rs"]
+#[path = "planter_tests.rs"]
 mod tests;

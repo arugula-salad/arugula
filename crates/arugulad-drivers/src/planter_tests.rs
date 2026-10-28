@@ -12,6 +12,7 @@ use std::{
     time::Duration,
 };
 
+use arugula_e2e::deploy::planter::ARTIFACT_WHERE;
 use axum::{
     Json, Router,
     extract::{Path as UrlPath, State},
@@ -42,7 +43,7 @@ macro_rules! needs_node {
 }
 
 fn captured(rel: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/planter-captured").join(rel)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../daemon/tests/planter-captured").join(rel)
 }
 
 fn fixture(name: &str) -> Value {
