@@ -18,6 +18,8 @@
 //                                  `?q=…`, `?label=…`, `?assignee=…` narrow it
 //   /p/:project/issues/new         a new issue
 //   /p/:project/issues/:issue      an issue (`?msg=N`: at that comment)
+//   /p/:project/triage             its open issues on no board, when the
+//                                  `boards` Labs flag is on (#292)
 //   /p/:project/boards             its boards (live status board), when the
 //                                  `boards` Labs flag is on
 //   /p/:project/boards/:board      a board (`brd_…`)
@@ -69,6 +71,7 @@ export type Route =
   | { page: "issues"; project: string; state?: "closed"; q?: string; label?: string; assignee?: string }
   | { page: "new-issue"; project: string }
   | { page: "issue"; project: string; issue: string; msg?: number }
+  | { page: "triage"; project: string }
   | { page: "boards"; project: string }
   | { page: "board"; project: string; board: string }
   | { page: "docs"; project: string }
@@ -198,6 +201,7 @@ export function parse(path: string, search = ""): Route {
     return room ? { page: "dm", project, room, ...msg, ...thread } : missing;
   }
   if (parts[2] === "issues") return issueRoute(project, parts.slice(3), q, msg) ?? missing;
+  if (parts[2] === "triage" && parts.length === 3) return { page: "triage", project };
   if (parts[2] === "boards" && parts.length === 3) return { page: "boards", project };
   if (parts[2] === "boards" && parts.length === 4) {
     const board = idOf(parts[3]);
@@ -283,6 +287,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
     }
     case "new-issue":
       return `/p/${s(r.project)}/issues/new`;
+    case "triage":
+      return `/p/${s(r.project)}/triage`;
     case "boards":
       return `/p/${s(r.project)}/boards`;
     case "board":

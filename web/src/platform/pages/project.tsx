@@ -27,7 +27,7 @@ import { whyNoStart } from "./runs";
 import { platformFetch } from "../../shared/maintenance";
 import type { LinkedRepos } from "../../shared/proto.gen";
 import { toast } from "../toast";
-import { ProjectBoards } from "./boards";
+import { ProjectBoards, useBoards } from "./boards";
 import { ProjectDocs } from "./docs";
 import { ProjectIssues } from "./issues";
 import { SessionNumbers } from "../session-stats";
@@ -38,9 +38,11 @@ export function ProjectHome({ id }: { id: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => chat.subscribe(fn));
   const workspaces = useHostedWorkspaces(id);
+  const boards = useBoards(id);
   const p = session.project(id);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const rooms = chat.on ? chat.rooms.filter((r) => (p.team ? r.team === p.team.id : !r.team) && (r.kind === "channel" || r.kind === "dm")) : [];
+  const boardsOn = boards !== null && boards !== "off";
   const chatPath = pathOf({ page: "chat", project: p.id }, names);
   const settingsPath = pathOf({ page: "project-settings", project: p.id }, names);
   const workspacesPath = pathOf({ page: "workspaces", project: p.id }, names);
@@ -84,11 +86,13 @@ export function ProjectHome({ id }: { id: string }) {
                 );
               })}
           </ul>
+          {/* With boards on, they lead and Issues is Triage (#292). */}
+          {boardsOn && <ProjectBoards p={p} list={boards} />}
           {chat.on && <ProjectIssues p={p} />}
           {chat.on && <ProjectDocs p={p} />}
           <ProjectRuns p={p} workspaces={workspaces} />
           <ProjectSetup p={p} />
-          <ProjectBoards p={p} />
+          {!boardsOn && <ProjectBoards p={p} list={boards} />}
           {(session.hosted || !!workspaces?.length) && (
             <>
               <SectionHead title="Cloud workspaces" all={workspacesPath} />
