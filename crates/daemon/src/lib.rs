@@ -56,6 +56,11 @@ use arugula_mux::inventory;
 mod invite;
 use arugula_mux::keys;
 pub mod lab_flags;
+// Labs registers what it adds; until it is a crate of its own (#232) a
+// build without it uses none of the registering.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+pub(crate) mod lab_hooks;
+#[cfg(feature = "labs")]
 mod labs;
 mod listening;
 mod localauth;
@@ -487,6 +492,9 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
     // they report as the version is the binary's.
     arugula_core::version::set(version);
     arugula_vt::set_version(version);
+    // Labs, while it's in the base (#232).
+    #[cfg(feature = "labs")]
+    labs::register();
     // A closed pipe (`| head`) ends the process quietly, not with a panic
     // from `println!` (#682): Rust starts with SIGPIPE ignored. The daemon
     // itself ignores it again before it serves (below).
@@ -555,14 +563,14 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
     }
     match args.command {
         #[cfg(unix)]
-        Some(install @ Command::Install { tailnet: Some(_), .. }) => labs::tailnet_install(install),
+        Some(install @ Command::Install { tailnet: Some(_), .. }) => lab_hooks::labs().tailnet_install(install),
         Some(Command::Install { no_service: true, .. }) => install::binaries_only(),
         Some(Command::Install { no_start, reset_args, system, daemon_args, .. }) => {
             install::install(!no_start, &daemon_args, reset_args, system)
         }
         Some(Command::Uninstall) => install::uninstall(),
         Some(Command::Update { yes }) => selfupdate::cli(yes, &args.run.update_url),
-        Some(Command::Sandbox) => labs::supervise_sandbox(),
+        Some(Command::Sandbox) => lab_hooks::labs().supervise_sandbox(),
         Some(Command::Join { url, name, team, account, state_dir }) => {
             let name = name.unwrap_or_else(|| hostname().unwrap_or_else(|| "arugula".into()));
             let dir = state_dir.unwrap_or_else(default_state_dir);
@@ -774,7 +782,7 @@ fn kinds(
     kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     kinds.add(BlockType::Board, board_block::BoardKind);
-    labs::kinds(&mut kinds, invite);
+    lab_hooks::labs().kinds(&mut kinds, invite);
     // The feature crates' (#232): Docs.
     features::kinds(&mut kinds);
     kinds
@@ -964,12 +972,12 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     });
     let provider: Option<std::sync::Arc<dyn provider::Provider>> = match args.loam_url.as_deref() {
         Some(url) if !url.is_empty() => {
-            let p = labs::open_loam(url, &loam_key_file);
+            let p = lab_hooks::labs().open_loam(url, &loam_key_file);
             info!(url, on = p.is_some(), "VM panes on loam");
             p
         }
         _ => {
-            let p = labs::open_provider(
+            let p = lab_hooks::labs().open_provider(
                 &args.wisp_url,
                 &token_file,
                 args.wisp_token_file.is_some() || args.wisp_url != args::DEFAULT_WISP_URL,
@@ -987,7 +995,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     };
     // Studio apps (M35): the token that lists them and mints ways in.
     let studio_file = args.studio_file.clone().unwrap_or_else(|| state_dir.join("studio.json"));
-    labs::install_studio(studio_file.clone(), args.studio_file.is_some());
+    lab_hooks::labs().install_studio(studio_file.clone(), args.studio_file.is_some());
     // What `fs` never serves, besides the state directory.
     let private = vec![
         token_file.clone(),
@@ -1066,7 +1074,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         sessions: Arc::new(conversations::Sessions),
         pane_gone,
         usage: Arc::new(telemetry::Hooks),
-        at_exit: Some(mux::AtExit(Arc::new(labs::stop_beholds))),
+        at_exit: Some(mux::AtExit(Arc::new(|| lab_hooks::labs().at_exit()))),
     };
     // M101: counting starts with the mux; reports, once control is known.
     let telemetry = telemetry::Telemetry::from_env(&state_dir, &home());
@@ -1087,8 +1095,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         a => Some(a.parse::<SocketAddr>().map_err(|e| anyhow::anyhow!("--guest-ssh {a}: {e}"))?),
     };
     let guest_given =
-        !["off", labs::GUEST_SSH_LISTEN].contains(&args.guest_ssh.as_str()) || args.guest_ssh_host.is_some();
-    let guests = labs::open_guests(&state_dir, guest_listen, args.guest_ssh_host.clone(), guest_given);
+        !["off", lab_hooks::GUEST_SSH_LISTEN].contains(&args.guest_ssh.as_str()) || args.guest_ssh_host.is_some();
     let synced = sync::Synced::new(&state_dir, args.reach.sync_key_file.clone());
     synced.prune(sync::RETAIN_MS);
     let static_dir = args.static_dir.clone().unwrap_or_else(|| {
@@ -1096,7 +1103,14 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         // The one from before the rename, where it is.
         arugula_proto::dirs::named_in(&data, "arugula", "illogical").join("static")
     });
-    let binaries = labs::binaries(static_dir);
+    // Labs' guest invites and the static binaries for resident daemons.
+    lab_hooks::labs().open(lab_hooks::Start {
+        state_dir: state_dir.clone(),
+        guest_listen,
+        guest_host: args.guest_ssh_host.clone(),
+        guest_given,
+        static_dir,
+    });
     let app = server::App::new(
         access,
         identify,
@@ -1106,17 +1120,15 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         hosts,
         shares,
         synced,
-        binaries,
         control.clone(),
         acl.clone(),
         mcp_tokens,
-        guests,
         hand::Hands::open(&state_dir),
         rules,
     );
-    app.guests.run(&app);
-    // M78: tasks for this machine's agents that a restart interrupted.
-    crate::labs::resume_tasks(&app);
+    // Labs' guest ssh server, and (M78) tasks for this machine's agents
+    // that a restart interrupted.
+    lab_hooks::labs().start(&app);
     // Daemon-side Managoat was removed: an old service file's flag still
     // parses, and says so.
     if args.managoat_account_stream {

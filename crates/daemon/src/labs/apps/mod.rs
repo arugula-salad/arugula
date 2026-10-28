@@ -34,6 +34,7 @@
 pub mod hud;
 pub mod routes;
 pub mod studio;
+pub mod tool;
 
 use std::sync::{Arc, Mutex, Weak};
 

@@ -42,7 +42,7 @@ use std::{
 
 use arugula_proto::{
     BlockType, ClientId, Driver, EventKind, Frame, FrameKind, PaneId,
-    api::{GuestInvite, GuestInviteRequest},
+    api::{Empty, GuestInvite, GuestInviteRequest},
     op::ops::{GuestMint, GuestRevoke, GuestsList},
 };
 use axum::{Router, http::StatusCode};
@@ -194,6 +194,12 @@ pub struct Jump {
     pub host: String,
     pub port: u16,
     pub known_hosts: String,
+}
+
+impl From<arugula_control_wire::GuestJump> for Jump {
+    fn from(j: arugula_control_wire::GuestJump) -> Self {
+        Jump { host: j.host, port: j.port, known_hosts: j.known_hosts }
+    }
 }
 
 impl Jump {
@@ -932,7 +938,23 @@ async fn attach(
 
 /// The owner's: making, listing and revoking invites.
 pub fn routes() -> Router<Arc<App>> {
-    Router::new().op::<GuestsList>().op::<GuestMint>().op::<GuestRevoke>()
+    Router::new().op_of::<GuestsList, Labs>().op_of::<GuestMint, Labs>().op_of::<GuestRevoke, Labs>()
+}
+
+static GUESTS: std::sync::OnceLock<Arc<Guests>> = std::sync::OnceLock::new();
+
+/// Opens the guest invites, as the daemon starts.
+pub fn open(state_dir: &FsPath, listen: Option<SocketAddr>, host: Option<String>) {
+    let _ = GUESTS.set(Guests::open(state_dir, listen, host));
+}
+
+/// The guest invites, once opened.
+pub fn guests() -> Option<&'static Arc<Guests>> {
+    GUESTS.get()
+}
+
+fn guests_here() -> Result<&'static Arc<Guests>, ApiError> {
+    guests().ok_or_else(|| ApiError(StatusCode::SERVICE_UNAVAILABLE, "guest invites aren't open yet".into()))
 }
 
 fn hostname() -> String {
@@ -951,7 +973,7 @@ pub async fn mint_invite(app: &Arc<App>, req: GuestInviteRequest) -> Result<Gues
         }
         Some(_) => {}
     }
-    let guests = &app.guests;
+    let guests = guests_here()?;
     let named = req.host.clone().or_else(|| guests.host.clone());
     // Through control when asked, or when this machine is joined to one
     // and no address for guests is set: it may well be behind NAT.
@@ -997,14 +1019,16 @@ pub async fn mint_invite(app: &Arc<App>, req: GuestInviteRequest) -> Result<Gues
 /// An invite through control's jump host, or why not (`true`: control
 /// has a jump host, and something else went wrong).
 async fn relayed(app: &Arc<App>, req: &GuestInviteRequest) -> Result<GuestInvite, (bool, String)> {
-    let guests = &app.guests;
+    let Some(guests) = guests() else {
+        return Err((true, "guest invites aren't open yet".into()));
+    };
     if guests.listen.is_none() {
         return Err((true, "guest ssh is off on this machine (--guest-ssh off)".into()));
     }
     let Some(e) = app.control.enrolled() else {
         return Err((false, "this machine isn't joined to control".into()));
     };
-    let jump = match app.control.guest_jump().await {
+    let jump = match app.control.guest_jump().await.map(|j| j.map(Jump::from)) {
         Ok(Some(j)) if j.plain() => j,
         Ok(Some(j)) => return Err((true, format!("control's jump host {:?} isn't a plain host and key", j.host))),
         Ok(None) => return Err((false, format!("control at {} has no ssh jump host for guests", e.saved.url))),
@@ -1030,16 +1054,55 @@ async fn relayed(app: &Arc<App>, req: &GuestInviteRequest) -> Result<GuestInvite
     Ok(invite)
 }
 
-pub fn list_invites(app: &App) -> Vec<GuestInvite> {
-    app.guests.list()
-}
-
-pub async fn revoke_invite(app: &App, id: u32) -> Result<(), ApiError> {
-    if app.guests.revoke(id) {
-        app.guests.stop_if_idle().await;
+pub async fn revoke_invite(id: u32) -> Result<(), ApiError> {
+    let guests = guests_here()?;
+    if guests.revoke(id) {
+        guests.stop_if_idle().await;
         Ok(())
     } else {
         Err(ApiError(StatusCode::NOT_FOUND, format!("no invite {id}")))
+    }
+}
+
+// ---------------------------------------------------------------- operations
+
+// `guests`: the ssh invites the owner makes, lists and ends (`arugula
+// guests`). The owner's (`serve` checks that before the handler runs), and
+// the list is credentials.
+
+use super::Labs;
+use crate::ops::{Cx, Handle, OpError};
+
+/// `Ok` where the owner has turned on Guest SSH access, a sharing setting
+/// (native #205; it was the `guest-ssh` flag): off, each operation is
+/// refused as a route that isn't there, saying how to turn it on, as a
+/// flag's are.
+fn guest_ssh_on(cx: &Cx<'_>) -> Result<(), OpError> {
+    if !arugula_proto::sharing::guest_ssh(cx.app.control.state_dir()) {
+        return Err(OpError::Status(StatusCode::NOT_FOUND, arugula_proto::sharing::GUEST_SSH_OFF.into()));
+    }
+    Ok(())
+}
+
+impl Handle<Labs> for GuestsList {
+    async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Vec<GuestInvite>, OpError> {
+        guest_ssh_on(cx)?;
+        Ok(guests_here()?.list())
+    }
+}
+
+impl Handle<Labs> for GuestMint {
+    async fn handle(cx: &Cx<'_>, _: (), req: GuestInviteRequest) -> Result<GuestInvite, OpError> {
+        guest_ssh_on(cx)?;
+        Ok(mint_invite(cx.app, req).await?)
+    }
+}
+
+impl Handle<Labs> for GuestRevoke {
+    async fn handle(cx: &Cx<'_>, id: u32, _: Empty) -> Result<Empty, OpError> {
+        guest_ssh_on(cx)?;
+        revoke_invite(id).await?;
+        Ok(Empty {})
     }
 }
 

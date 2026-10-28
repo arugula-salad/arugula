@@ -25,9 +25,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[cfg(feature = "labs")]
-use crate::labs::apps::studio::AppInfo;
-
 /// Only the pane: closed, answered, or sent a prompt.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct PaneOnly {
@@ -244,13 +241,6 @@ pub struct PortOpened {
 pub struct AppOpened {
     pub block: PaneId,
     pub app: String,
-}
-
-/// The studio's apps.
-#[cfg(feature = "labs")]
-#[derive(Debug, Serialize)]
-pub struct Apps {
-    pub apps: Vec<AppInfo>,
 }
 
 /// A block opened, with nothing more to say: a file, a started agent.
@@ -785,8 +775,6 @@ mod tests {
             json!({ "block": 4, "root": "/w", "members": [{ "name": "m", "dir": "/w/m", "kind": "rust",
                 "errors": 0, "gates": [] }], "gates": [] }),
         );
-        #[cfg(feature = "labs")]
-        same(Apps { apps: vec![] }, json!({ "apps": [] }));
     }
 
     #[test]

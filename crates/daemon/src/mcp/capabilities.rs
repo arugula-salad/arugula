@@ -134,7 +134,7 @@ async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
         },
     }];
     if on.has(arugula_proto::flags::ADDITIONAL_FORGES) {
-        out.extend(crate::labs::forge_logins(&runner, app.control.state_dir()).await);
+        out.extend(crate::lab_hooks::labs().forge_logins(&runner, app.control.state_dir()).await);
     }
     out
 }

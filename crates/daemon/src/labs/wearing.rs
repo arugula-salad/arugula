@@ -138,8 +138,9 @@ pub struct McpServer {
     pub extra: Map<String, Value>,
 }
 
-/// What stands in for a secret scrubbed out of what's shown.
-pub const REDACTED: &str = "<redacted>";
+// What stands in for a secret scrubbed out of what's shown, and the
+// scrubbing: the agent block's (it scrubs what a worn agent says).
+pub use crate::agent::scrub;
 
 /// Whether a value holds a `${VAR}` reference.
 pub fn is_reference(v: &str) -> bool {
@@ -676,10 +677,10 @@ impl std::fmt::Debug for Worn {
     }
 }
 
-impl Worn {
+impl crate::agent::Worn for Worn {
     /// Put it on `session/new`'s `_meta`: the system prompt, the plugin and
     /// the model, keeping `settingSources: []`.
-    pub fn dress(&self, meta: &mut Value) {
+    fn dress(&self, meta: &mut Value) {
         crate::agent::defs::wear_meta(meta, &self.system, &self.plugin, self.info.model.as_deref());
         let o = &mut meta["claudeCode"]["options"];
         if !self.tools.is_empty() {
@@ -695,32 +696,32 @@ impl Worn {
     }
 
     /// The permission mode it asks for (a recipe's `permissionMode`).
-    pub fn permission_mode(&self) -> Option<&str> {
+    fn permission_mode(&self) -> Option<&str> {
         self.permission_mode.as_deref()
     }
 
     /// The servers it adds to the agent's own, each credential a reference.
-    pub fn servers(&self) -> &[Value] {
+    fn servers(&self) -> &[Value] {
         &self.servers
     }
 
     /// What the references stand for: the adapter's environment.
-    pub fn env(&self) -> &[(String, String)] {
+    fn env(&self) -> &[(String, String)] {
         &self.env
     }
 
     /// Every value that may be secret, to keep out of logs.
-    pub fn secrets(&self) -> &[String] {
+    fn secrets(&self) -> &[String] {
         &self.secrets
     }
 
     /// What the block shows of it (nothing secret), as JSON.
-    pub fn info(&self) -> Value {
+    fn info(&self) -> Value {
         serde_json::to_value(&self.info).unwrap_or_default()
     }
 
     /// [`Info::text`], for `capture --text`.
-    pub fn text(&self) -> String {
+    fn text(&self) -> String {
         self.info.text()
     }
 }
@@ -929,26 +930,6 @@ pub async fn servers(mcp_servers: &BTreeMap<String, McpServer>, found: &Found, p
     for l in &mut out.left {
         if let Some(clean) = scrub(&l.why, &out.secrets) {
             l.why = clean;
-        }
-    }
-    out
-}
-
-/// Replace every secret in a JSON line with `<redacted>` (as it's escaped
-/// in JSON, and as it is).
-pub fn scrub(line: &str, secrets: &[String]) -> Option<String> {
-    let mut out: Option<String> = None;
-    for s in secrets {
-        let escaped = serde_json::to_string(s).unwrap_or_default();
-        let escaped = escaped.trim_matches('"');
-        for needle in [escaped, s.as_str()] {
-            if needle.len() < 6 {
-                continue;
-            }
-            let cur = out.as_deref().unwrap_or(line);
-            if cur.contains(needle) {
-                out = Some(cur.replace(needle, REDACTED));
-            }
         }
     }
     out

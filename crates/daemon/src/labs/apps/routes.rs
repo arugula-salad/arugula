@@ -1,5 +1,5 @@
 //! Studio's HTTP routes (M35): `/api/studio`, its apps and follower links,
-//! added to the API's router by [`crate::labs::routes`], and the config an
+//! added to the API's router by `lab_hooks::Hooks::routes`, and the config an
 //! app block is made from.
 
 use std::{collections::HashMap, sync::Arc};
@@ -16,16 +16,15 @@ use crate::{
     server::App,
 };
 
-/// Adds studio's routes to the API's: operations (`ops/studio.rs`).
+/// Adds studio's routes to the API's: operations (below).
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
     use crate::ops::OpRoutes;
-    use arugula_proto::op::ops::{StudioAppsList, StudioFollow, StudioGet, StudioLogin, StudioLogout, StudioUnfollow};
-    r.op::<StudioGet>()
-        .op::<StudioLogin>()
-        .op::<StudioLogout>()
-        .op::<StudioAppsList>()
-        .op::<StudioFollow>()
-        .op::<StudioUnfollow>()
+    r.op_of::<StudioGet, Labs>()
+        .op_of::<StudioLogin, Labs>()
+        .op_of::<StudioLogout, Labs>()
+        .op_of::<StudioAppsList, Labs>()
+        .op_of::<StudioFollow, Labs>()
+        .op_of::<StudioUnfollow, Labs>()
 }
 
 /// A studio app block's config (M35) from `{app}` (and optionally `to`,
@@ -112,4 +111,56 @@ pub async fn studio_apps(app: &App) -> Res<StudioApps> {
 pub async fn studio_follow(name: &str, link: Option<&str>) -> Res<Empty> {
     studio()?.set_follower(name, link).map_err(bad)?;
     Ok(Empty {})
+}
+
+// ---------------------------------------------------------------- operations
+
+// `studio` (M35): the person's studio token, its apps and the hud follower
+// links kept for them. A way into a studio box is the owner's (it signs in
+// as them), so all are `Owner`.
+
+use arugula_proto::{
+    api::FollowerLinkRequest,
+    op::ops::{StudioAppsList, StudioFollow, StudioGet, StudioLogin, StudioLogout, StudioUnfollow},
+};
+
+use crate::{
+    labs::Labs,
+    ops::{Cx, Handle, OpError},
+};
+
+impl Handle<Labs> for StudioGet {
+    async fn handle(_: &Cx<'_>, _: (), _: Empty) -> Result<StudioStatus, OpError> {
+        Ok(studio_status().await?)
+    }
+}
+
+impl Handle<Labs> for StudioLogin {
+    async fn handle(_: &Cx<'_>, _: (), req: StudioLoginRequest) -> Result<StudioLoggedIn, OpError> {
+        Ok(studio_login(req).await?)
+    }
+}
+
+impl Handle<Labs> for StudioLogout {
+    async fn handle(_: &Cx<'_>, _: (), _: Empty) -> Result<Empty, OpError> {
+        Ok(studio_logout().await?)
+    }
+}
+
+impl Handle<Labs> for StudioAppsList {
+    async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<StudioApps, OpError> {
+        Ok(studio_apps(cx.app).await?)
+    }
+}
+
+impl Handle<Labs> for StudioFollow {
+    async fn handle(_: &Cx<'_>, app: String, req: FollowerLinkRequest) -> Result<Empty, OpError> {
+        Ok(studio_follow(&app, Some(&req.link)).await?)
+    }
+}
+
+impl Handle<Labs> for StudioUnfollow {
+    async fn handle(_: &Cx<'_>, app: String, _: Empty) -> Result<Empty, OpError> {
+        Ok(studio_follow(&app, None).await?)
+    }
 }

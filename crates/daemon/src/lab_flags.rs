@@ -36,3 +36,23 @@ pub fn block_flag(kind: BlockType) -> Option<&'static str> {
         _ => None,
     }
 }
+
+/// Whether a forge block of `provider` may be made or opened here. GitHub's
+/// always may; Forgejo's and GitLab's are Labs, so they need this build to
+/// have it and the machine to have turned on the `additional-forges` flag.
+#[cfg(feature = "forge")]
+pub fn forge_allowed(provider: crate::forge::model::Provider, state_dir: &Path) -> Result<(), String> {
+    use crate::forge::model::Provider;
+    let name = match provider {
+        Provider::Github => return Ok(()),
+        Provider::Forgejo => "Forgejo",
+        Provider::Gitlab => "GitLab",
+    };
+    if on(state_dir, arugula_proto::flags::ADDITIONAL_FORGES) {
+        Ok(())
+    } else if BUILT {
+        Err(arugula_mux::labs::flag_off_as(&format!("{name} blocks are"), arugula_proto::flags::ADDITIONAL_FORGES))
+    } else {
+        Err(not_built(&format!("A {name} block")))
+    }
+}

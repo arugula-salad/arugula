@@ -210,13 +210,13 @@ says how to turn it on. `labs` in the file, or the old empty `labs`
 file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it
-only through the surface in `labs/mod.rs`, which explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
+only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; `labs/mod.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
 daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
 (`labs/guest_ssh.rs`; `russh` is an optional dependency, and a build without
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
 (`labs/forgejo.rs`, `labs/gitlab.rs`, `labs/tea.rs`, `labs/forge_live.rs`,
 and `forge/labs_forges.rs`, the block's own connecting, which needs its
-fields; GitHub's PR and issue blocks are core, and `labs::forge_allowed`
+fields; GitHub's PR and issue blocks are core, and `lab_flags::forge_allowed`
 refuses the others unless Labs is on, in a block's creation, `open_config`
 and each read, so a saved one comes back unavailable; with Labs off a bare
 `OWNER/REPO#N` is GitHub's) are there (#452 to #457). The `Provider` trait stays

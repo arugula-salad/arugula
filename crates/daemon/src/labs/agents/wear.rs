@@ -201,6 +201,7 @@ pub async fn wear(runner: &Runner, cwd: &Path, name: &str) -> Result<Worn, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::Worn as _;
 
     #[tokio::test]
     async fn a_recipe_brings_its_skills_and_servers_or_says_why_not() {

@@ -56,6 +56,49 @@ pub mod hosted;
 pub mod images;
 mod link;
 mod turnwork;
+
+/// A recipe an agent block wears (M76): what it adds to the block, and the
+/// secrets to keep out of every log. Labs wears one (`lab_hooks`).
+pub trait Worn: Send + Sync {
+    /// Put it on `session/new`'s `_meta`.
+    fn dress(&self, meta: &mut Value);
+    /// The permission mode it asks for (a recipe's `permissionMode`).
+    fn permission_mode(&self) -> Option<&str>;
+    /// The servers it adds to the agent's own, each credential a reference.
+    fn servers(&self) -> &[Value];
+    /// What the references stand for: the adapter's environment.
+    fn env(&self) -> &[(String, String)];
+    /// Every value that may be secret, to keep out of logs.
+    fn secrets(&self) -> &[String];
+    /// What the block shows of it (nothing secret), as JSON.
+    fn info(&self) -> Value;
+    /// What it is, for `capture --text`.
+    fn text(&self) -> String;
+}
+
+/// What stands in for a secret scrubbed out of what's shown.
+pub const REDACTED: &str = "<redacted>";
+
+/// Replace every secret in a JSON line with `<redacted>` (as it's escaped
+/// in JSON, and as it is).
+pub fn scrub(line: &str, secrets: &[String]) -> Option<String> {
+    let mut out: Option<String> = None;
+    for s in secrets {
+        let escaped = serde_json::to_string(s).unwrap_or_default();
+        let escaped = escaped.trim_matches('"');
+        for needle in [escaped, s.as_str()] {
+            if needle.len() < 6 {
+                continue;
+            }
+            let cur = out.as_deref().unwrap_or(line);
+            if cur.contains(needle) {
+                out = Some(cur.replace(needle, REDACTED));
+            }
+        }
+    }
+    out
+}
+
 #[cfg(unix)]
 pub(crate) use link::pipe_cloexec;
 pub mod transcript;
@@ -419,7 +462,7 @@ struct Inner {
     adapter: Option<Value>,
     /// M44: the Managoat agent it wears, once put on (in memory only: its
     /// MCP servers' values may be secrets). Put on again after a restart.
-    worn: Option<Arc<crate::labs::Worn>>,
+    worn: Option<Arc<dyn Worn>>,
     /// Putting it on now.
     wearing: bool,
     /// #161: waiting for this host's shell environment before spawning.
@@ -1760,7 +1803,7 @@ impl Agent {
                     line
                 } else {
                     let text = String::from_utf8_lossy(&line);
-                    match crate::labs::scrub(&text, &secrets) {
+                    match scrub(&text, &secrets) {
                         Some(t) => t.into_bytes(),
                         None => line,
                     }
@@ -2053,7 +2096,7 @@ impl Agent {
                 _ if def.as_managoat.is_some() => Err(defs::AS_MANAGOAT_GONE.to_owned()),
                 Ok(runner) => {
                     let cwd = cwd.map(std::path::PathBuf::from).unwrap_or_else(|| agent.ctx.home.clone());
-                    crate::labs::wear_recipe(&runner, &agent.ctx.state_dir, &cwd, &which).await
+                    crate::lab_hooks::labs().wear_recipe(&runner, &agent.ctx.state_dir, &cwd, &which).await
                 }
                 Err(e) => Err(e),
             };
@@ -2064,7 +2107,7 @@ impl Agent {
             }
             match worn {
                 Ok(w) => {
-                    g.worn = Some(Arc::new(w));
+                    g.worn = Some(w);
                     if take_over {
                         agent.take_over(&mut g);
                     } else {
@@ -2705,7 +2748,7 @@ fn redacted<'a>(frame: &'a Value, secrets: &[String]) -> std::borrow::Cow<'a, Va
         }
     }
     if !secrets.is_empty()
-        && let Some(text) = crate::labs::scrub(&f.to_string(), secrets)
+        && let Some(text) = scrub(&f.to_string(), secrets)
     {
         f = serde_json::from_str(&text).unwrap_or_else(|_| json!({ "redacted": true, "method": frame["method"] }));
     }

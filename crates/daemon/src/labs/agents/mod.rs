@@ -23,6 +23,7 @@ pub mod catalog;
 pub mod delegate;
 pub mod manage;
 pub mod tasks;
+pub mod tool;
 pub mod wear;
 
 use std::{
