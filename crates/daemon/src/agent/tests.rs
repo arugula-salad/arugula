@@ -96,6 +96,38 @@ fn answering_clears_the_card_and_the_turn_reports_its_cost() {
     assert_eq!(g.attention().0, Attention::Idle, "a cancelled turn isn't news");
 }
 
+/// A turn that starts and ends between two publishes (a quick agent,
+/// #277) still says it worked before it says it's done: `ops::prompt`
+/// waits for a sign of work before it takes "done" for the end of its turn.
+#[test]
+fn a_turn_between_two_publishes_is_reported_working_then_done() {
+    let mut g = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        g.rebuild_line(l);
+    }
+    let states = |n: Vec<(Attention, String)>| n.into_iter().map(|(a, _)| a).collect::<Vec<_>>();
+    assert_eq!(states(g.news(true)), [Attention::Idle]);
+    let prompt = |id: u64| json!({ "jsonrpc": "2.0", "id": id, "method": "session/prompt", "params": { "prompt": [{ "type": "text", "text": "hi" }] } });
+    let ended = |id: u64| json!({ "jsonrpc": "2.0", "id": id, "result": { "stopReason": "end_turn" } });
+    g.on_out(&prompt(3), 2000);
+    g.on_in(&ended(3), 2001);
+    assert_eq!(states(g.news(false)), [Attention::Working, Attention::Done]);
+    assert_eq!(states(g.news(false)), [], "nothing new");
+    // A turn published while it works: as before.
+    g.on_out(&prompt(4), 3000);
+    assert_eq!(states(g.news(false)), [Attention::Working]);
+    g.on_in(&ended(4), 3001);
+    assert_eq!(states(g.news(false)), [Attention::Done]);
+    // After a restart, the turns it had aren't news.
+    let mut again = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        again.rebuild_line(l);
+    }
+    again.on_out(&prompt(3), 2000);
+    again.on_in(&ended(3), 2001);
+    assert_eq!(states(again.news(true)), [Attention::Idle]);
+}
+
 #[test]
 fn a_finished_tool_call_drops_its_card() {
     // Managoat refuses an unanswered request after 5 minutes, saying only

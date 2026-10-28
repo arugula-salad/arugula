@@ -435,6 +435,8 @@ struct Inner {
     generation: u64,
     pid: Option<u32>,
     reported: Option<Attention>,
+    /// How many turns had started when the attention was last reported.
+    reported_turns: usize,
     /// The transcript window clients were last sent, as where it starts and
     /// a hash of each entry (#713): the next state goes as what changed.
     sent: (usize, Vec<u64>),
@@ -670,6 +672,7 @@ impl Inner {
             generation: 0,
             pid: None,
             reported: None,
+            reported_turns: 0,
             sent: (0, Vec::new()),
             closing: false,
             live: false,
@@ -1430,6 +1433,29 @@ impl Inner {
             },
             _ => (Attention::Idle, "idle".into()),
         }
+    }
+
+    /// The attention to report now, in order: none when it's what was
+    /// last reported. A whole turn between two publishes (a quick agent:
+    /// its answer came in before the block was next published, #277) is
+    /// working, then where it ended, or whoever waits for a turn to start
+    /// (`ops::prompt`) never sees it begin. `first`: after a restart, a
+    /// finished turn isn't news.
+    fn news(&mut self, first: bool) -> Vec<(Attention, String)> {
+        let (a, why) = self.attention();
+        let mut news = vec![];
+        let turns = self.turns.len();
+        if !first && turns > self.reported_turns && a != Attention::Working && self.reported != Some(Attention::Working)
+        {
+            self.reported = Some(Attention::Working);
+            news.push((Attention::Working, "working".to_owned()));
+        }
+        self.reported_turns = turns;
+        if self.reported != Some(a) {
+            self.reported = Some(a);
+            news.push((if first && a == Attention::Done { Attention::Idle } else { a }, why));
+        }
+        news
     }
 
     /// A woken cycle ended (#700): its turn did.
@@ -2436,11 +2462,7 @@ fn refresh_import(ctx: &AgentCtx, g: &mut Inner) -> bool {
 
 fn publish(ctx: &AgentCtx, inner: &Arc<Mutex<Inner>>, first: bool) {
     let mut g = inner.lock().unwrap();
-    let (a, why) = g.attention();
-    if g.reported != Some(a) {
-        g.reported = Some(a);
-        // Coming back after a restart, a finished turn isn't news.
-        let a = if first && a == Attention::Done { Attention::Idle } else { a };
+    for (a, why) in g.news(first) {
         if why == CUT_OFF {
             ctx.reason(a, cut_reason(why));
         } else {
