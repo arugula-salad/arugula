@@ -111,6 +111,7 @@ mod summaries;
 mod team_answers;
 mod telemetry;
 mod upgrade;
+mod version;
 mod vm_layout;
 #[cfg(feature = "labs")]
 mod vm_reboot;
