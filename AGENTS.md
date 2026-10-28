@@ -221,8 +221,8 @@ daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
 (`guest_ssh.rs`; `russh` is Labs' dependency, and a build without
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
 (`forgejo.rs`, `gitlab.rs`, `tea.rs`, `forge_live.rs`,
-and `forges.rs`, the connecting a block asks of Labs through
-`lab_hooks`; GitHub's PR and issue blocks are core, and `lab_flags::forge_allowed`
+and `forges.rs`, the connecting a block asks of Labs through the
+forge's trait `forge::others::OtherForges`; GitHub's PR and issue blocks are core, and `lab_flags::forge_allowed`
 refuses the others unless Labs is on, in a block's creation, `open_config`
 and each read, so a saved one comes back unavailable; with Labs off a bare
 `OWNER/REPO#N` is GitHub's) are there (#452 to #457). The `Provider` trait stays
@@ -231,10 +231,10 @@ VM pane comes back exited, with the reason. `just check-core`
 runs clippy and the tests of `arugulad` and `arugula` with the feature off.
 The GitHub forge (`forge/`, surface `forges.rs`) and the editor server with
 Claude Code's IDE (crate `arugulad-editor`, surface `editors.rs`) are features
-of their own, `forge` and `editor`, on by default the way `labs` is. The forge
-is built on the same pattern: one surface, a twin for each item, no `cfg` at
-call sites. The editor is a crate the binary registers (#232): the surface
-asks the registered `Editors`, and with none it does what the twins did.
+of their own, `forge` and `editor`, on by default the way `labs` is. Both
+are registered by the binary (#232): the surface asks the registered
+`Forges` or `Editors`, and with none it does what a build without them did
+(nothing, or "isn't in this build"), so no call site needs a `cfg`.
 `labs` turns `forge` on (Forgejo and GitLab are forges); `just check-features`
 lints the daemon with neither, and with each alone.
 

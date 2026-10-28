@@ -1798,7 +1798,6 @@ impl Control {
     /// M40: a read-only installation token for a GitHub repository from
     /// control's GitHub App (for a box with no `gh` login), and the
     /// account's GitHub login. Never logged.
-    #[cfg(feature = "forge")]
     pub async fn github_token(&self, repo: &str) -> Result<wire::forge::GithubToken, String> {
         let e = self.enrolled().ok_or("not joined to Arugula control")?;
         let res = self

@@ -31,11 +31,10 @@ pub mod editors;
 pub mod features;
 #[cfg(feature = "forge")]
 pub mod forge;
-mod forges;
+pub mod forges;
 pub mod fs;
 mod git_remote;
 // The gates a forge block and Labs' blocks raise.
-#[cfg(feature = "forge")]
 pub mod gate;
 mod hand;
 use arugula_mux::heap;

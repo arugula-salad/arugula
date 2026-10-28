@@ -68,7 +68,7 @@ pub mod apps;
 pub mod gates;
 // Forgejo and GitLab as forges (#457): their adapters, the `tea` logins
 // Forgejo reads with, the webhooks they send, and what a forge block asks to
-// reach them (`forges.rs`: `lab_hooks`'s `tea_connect` and the rest).
+// reach them (`forges.rs`: the forge's `OtherForges`, `tea_connect` and the rest).
 // GitHub is core's.
 pub mod forge_live;
 pub mod forgejo;
@@ -103,6 +103,7 @@ pub struct Labs;
 /// Puts Labs in the daemon. Call it before the daemon starts.
 pub fn register() {
     crate::lab_hooks::install(Box::new(Labs));
+    forge::others::install(Box::new(Labs));
 }
 
 /// A Labs block type that is made only where the machine has `flag` on
@@ -230,36 +231,6 @@ impl Hooks for Labs {
         forge_live::is_hook(path)
     }
 
-    fn tea_connect<'a>(
-        &'a self,
-        runner: Runner,
-        ask: crate::forge::TeaAsk,
-    ) -> BoxFuture<'a, Result<crate::forge::TeaFound, crate::forge::TeaMissed>> {
-        Box::pin(forges::tea_connect(runner, ask))
-    }
-
-    fn tea_login<'a>(
-        &'a self,
-        runner: Runner,
-        provider: ForgeProvider,
-        name: &'a str,
-    ) -> BoxFuture<'a, Result<crate::forge::TeaFound, String>> {
-        Box::pin(forges::tea_login(runner, provider, name))
-    }
-
-    fn gitlab_connect<'a>(
-        &'a self,
-        runner: Runner,
-        host: &'a str,
-        api: &'a str,
-    ) -> BoxFuture<'a, Result<(Arc<dyn crate::forge::Adapter>, Option<String>), String>> {
-        Box::pin(async move { Ok(forges::gitlab_connect(runner, host, api).await) })
-    }
-
-    fn hook_path(&self, provider: ForgeProvider) -> Result<&'static str, String> {
-        Ok(forge_live::path(provider))
-    }
-
     /// The `agent-delegation` flag is on and at least one recipe is offered.
     /// Until then no teammate's daemon gets in to a personal machine.
     fn offers_agents(&self, state_dir: &Path) -> bool {
@@ -337,6 +308,39 @@ impl Hooks for Labs {
     /// unless the `additional-forges` flag is on.
     fn forge_logins<'a>(&'a self, runner: &'a Runner, state_dir: &'a Path) -> BoxFuture<'a, Vec<ForgeSignIn>> {
         Box::pin(forge_logins(runner, state_dir))
+    }
+}
+
+/// Forgejo and GitLab, the forges that are Labs' (`forges.rs`, #457).
+impl forge::others::OtherForges for Labs {
+    fn tea_connect<'a>(
+        &'a self,
+        runner: Runner,
+        ask: forge::TeaAsk,
+    ) -> BoxFuture<'a, Result<forge::TeaFound, forge::TeaMissed>> {
+        Box::pin(forges::tea_connect(runner, ask))
+    }
+
+    fn tea_login<'a>(
+        &'a self,
+        runner: Runner,
+        provider: ForgeProvider,
+        name: &'a str,
+    ) -> BoxFuture<'a, Result<forge::TeaFound, String>> {
+        Box::pin(forges::tea_login(runner, provider, name))
+    }
+
+    fn gitlab_connect<'a>(
+        &'a self,
+        runner: Runner,
+        host: &'a str,
+        api: &'a str,
+    ) -> BoxFuture<'a, Result<(Arc<dyn forge::Adapter>, Option<String>), String>> {
+        Box::pin(async move { Ok(forges::gitlab_connect(runner, host, api).await) })
+    }
+
+    fn hook_path(&self, provider: ForgeProvider) -> Result<&'static str, String> {
+        Ok(forge_live::path(provider))
     }
 }
 

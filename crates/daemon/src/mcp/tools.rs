@@ -1106,7 +1106,7 @@ fn forge_kind(tool: &str, kind: &str) -> bool {
 fn listed_kind(on: On, tool: &str, kind: &Kind) -> bool {
     kind.flag.is_none_or(|f| on.has(f))
         && UNLISTED.iter().all(|(t, k, f)| (*t, *k) != (tool, kind.name) || on.has(f))
-        && (crate::forges::BUILT || !forge_kind(tool, kind.name))
+        && (crate::forges::built() || !forge_kind(tool, kind.name))
 }
 
 /// The tools `tools/list` shows: each one a stranger can't use needs its
@@ -1115,7 +1115,7 @@ fn defs(on: On) -> Vec<Def> {
     all_defs()
         .into_iter()
         .filter(|d| d.flag.is_none_or(|f| on.has(f)))
-        .filter(|d| crate::forges::BUILT || !FORGE_TOOLS.contains(&d.name))
+        .filter(|d| crate::forges::built() || !FORGE_TOOLS.contains(&d.name))
         // M78: delegating is the agent catalog's.
         .filter(|d| on.has(flags::AGENT_DELEGATION) || d.name != "delegate")
         .map(|mut d| {

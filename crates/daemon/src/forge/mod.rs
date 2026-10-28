@@ -69,6 +69,7 @@ pub mod issue;
 pub mod live;
 pub mod login;
 pub mod native;
+pub mod others;
 pub mod pin;
 pub mod platform;
 pub mod send_op;
@@ -108,6 +109,59 @@ use crate::{
     review::{Live, Runner},
     store::now_ms,
 };
+
+/// Puts the forge in this daemon: the binary calls it before `main` when
+/// its `forge` feature is on. The daemon reaches it through `forges.rs`.
+pub fn register() {
+    crate::forges::install(Box::new(Forge));
+}
+
+/// The forge, as `forges.rs` calls it.
+struct Forge;
+
+impl crate::forges::Forges for Forge {
+    fn kinds(&self, kinds: &mut crate::block::BlockKinds) {
+        kinds.add(BlockType::Forge, crate::block::Make(ForgeBlock::create));
+    }
+
+    fn start(&self, state_dir: std::path::PathBuf, control: Option<&Arc<crate::control::Control>>, urls: Vec<String>) {
+        live::init(state_dir, control, urls);
+        shadow::start();
+    }
+
+    fn open_config<'a>(&'a self, c: &'a Value, state_dir: &'a Path) -> BoxFuture<'a, Result<Value, String>> {
+        Box::pin(open_config(c, state_dir))
+    }
+
+    fn gh_signed_in<'a>(&'a self, runner: &'a Runner, host: &'a str) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move { github::GhToken::new(runner.clone(), host).get(true).await.map(|_| ()) })
+    }
+
+    fn heard(&self, text: &str) {
+        live::from_control(text);
+    }
+
+    fn watch_messages(&self) -> Option<tokio::sync::watch::Receiver<Option<String>>> {
+        live::watch_messages()
+    }
+
+    fn linked<'a>(&'a self, st: &'a ForgeState) -> BoxFuture<'a, bool> {
+        Box::pin(async move {
+            st.provider == Provider::Github
+                && st.number != 0
+                && st.host.as_deref().is_none_or(github::is_github_host)
+                && matches!(platform::link(&st.repo).await, Ok(Some(_)))
+        })
+    }
+
+    fn send<'a>(
+        &'a self,
+        app: &'a Arc<crate::server::App>,
+        s: arugula_control_wire::forge::ForgeSend,
+    ) -> BoxFuture<'a, arugula_control_wire::forge::OpAnswer> {
+        Box::pin(send_op::forge_send(app, s))
+    }
+}
 
 /// How often it polls: while drawn or wanting you, and otherwise.
 pub fn intervals() -> (Duration, Duration) {
@@ -223,7 +277,6 @@ pub trait Adapter: Send + Sync {
     fn write<'a>(&'a self, repo: &'a str, number: u64, w: &'a Write) -> BoxFuture<'a, Result<Sent, Error>>;
     /// The repository's clone URLs, for matching a remote to a login (only
     /// Forgejo's `tea` logins are matched that way, so only Labs asks).
-    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     fn repo_urls<'a>(&'a self, repo: &'a str) -> BoxFuture<'a, Result<Vec<String>, Error>>;
 
     // M37: issues. Defaults say the forge can't yet, so an adapter that
@@ -2090,9 +2143,8 @@ impl Block for ForgeBlock {
     }
 }
 
-/// What a Forgejo block asks Labs for (`lab_hooks`): the `tea` login it
+/// What a Forgejo block asks Labs for ([`others`]): the `tea` login it
 /// reads with, from its config, resolved for its host, or picked.
-#[cfg_attr(not(feature = "labs"), allow(dead_code))]
 pub struct TeaAsk {
     /// The login the config names.
     pub want: Option<String>,
@@ -2131,7 +2183,7 @@ impl ForgeBlock {
                 repo: c.repo.clone(),
             }
         };
-        match crate::lab_hooks::labs().tea_connect(runner, ask).await {
+        match others::others().tea_connect(runner, ask).await {
             Ok(f) => Ok(self.attach(f.name, f.api, f.adapter)),
             Err(m) => {
                 if let Some(c) = m.candidates {
@@ -2152,7 +2204,7 @@ impl ForgeBlock {
             let api = c.api.clone().unwrap_or_else(|| format!("https://{host}/api/v4"));
             (host, api)
         };
-        let (a, login) = crate::lab_hooks::labs().gitlab_connect(runner, &host, &api).await?;
+        let (a, login) = others::others().gitlab_connect(runner, &host, &api).await?;
         {
             let mut c = self.config.lock().unwrap();
             c.login = login.clone();
@@ -2174,7 +2226,7 @@ impl ForgeBlock {
     async fn login_tea(self: &Arc<Self>, name: &str) -> Result<Value, String> {
         let runner = self.runner().await?;
         let provider = self.config.lock().unwrap().provider;
-        let f = crate::lab_hooks::labs().tea_login(runner, provider, name).await?;
+        let f = others::others().tea_login(runner, provider, name).await?;
         *self.you.lock().unwrap() = None;
         self.attach(f.name, f.api, f.adapter);
         self.read(true).await;
