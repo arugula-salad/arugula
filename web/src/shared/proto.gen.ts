@@ -225,7 +225,12 @@ number: number,
 /**
  * A run's: how it started (`manual run`).
  */
-title: string, };
+title: string, 
+/**
+ * Who an issue or PR is assigned to: a mirrored item's logins, a native
+ * issue's names. A run has none.
+ */
+assignees?: Array<string>, };
 
 /**
  * What a row's `fi_`, `iss_` or `run_` pointer is now, from data control

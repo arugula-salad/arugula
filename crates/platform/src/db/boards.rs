@@ -285,6 +285,16 @@ fn is_proofs(e: &Entry) -> bool {
     e.zone_kind == Some(ZoneKind::Proofs)
 }
 
+/// A native issue as a board row reads it.
+pub struct IssueState {
+    pub id: String,
+    pub number: u64,
+    pub title: String,
+    pub closed: bool,
+    /// Accounts; a list that doesn't parse reads as none.
+    pub assignees: Vec<String>,
+}
+
 impl Db {
     /// Make a board in `project` as `by`. `None`: the project already has
     /// `max` boards. The project is the caller's to have checked.
@@ -663,19 +673,27 @@ impl Db {
     }
 
     /// The native issues among `ids` in `project`, as (id, number, title,
-    /// closed): one read for any number (a board's rows).
-    pub fn issue_states(&self, project: &str, ids: &[&str]) -> Result<Vec<(String, u64, String, bool)>> {
+    /// closed, assignees): one read for any number (a board's rows).
+    pub fn issue_states(&self, project: &str, ids: &[&str]) -> Result<Vec<IssueState>> {
         if ids.is_empty() {
             return Ok(vec![]);
         }
         let c = self.c();
         c.query_map(
             &format!(
-                "SELECT id, number, title, closed_at IS NOT NULL FROM issues WHERE project_id = ?1 AND {}",
+                "SELECT id, number, title, closed_at IS NOT NULL, assignees FROM issues WHERE project_id = ?1 AND {}",
                 in_json(&c, "id", 2)
             ),
             params![project, json_list(ids)?],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| {
+                Ok(IssueState {
+                    id: r.get(0)?,
+                    number: r.get(1)?,
+                    title: r.get(2)?,
+                    closed: r.get(3)?,
+                    assignees: serde_json::from_str(&r.get::<String>(4)?).unwrap_or_default(),
+                })
+            },
         )
     }
 
