@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Checks that every tip in web/src/shell/hints/nvim-tips.ts names a `:help`
+# tag a real nvim has: the tag is in one of nvim's doc/tags files, exactly,
+# and `:help <tag>` opens it. Fails listing each tag that doesn't.
+#
+# Needs node (to read the list) and nvim 0.10 or later; skips, saying so,
+# when nvim is missing or older. A tip marked `since: "0.11"` is checked
+# only by an nvim that new, and listed as skipped by an older one.
+#
+#   scripts/check-nvim-tips            # the nvim on PATH
+#   NVIM=/path/to/nvim scripts/check-nvim-tips
+set -euo pipefail
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+nvim=${NVIM:-nvim}
+min=0.10
+
+if ! command -v "$nvim" >/dev/null 2>&1; then
+  echo "check-nvim-tips: SKIPPED, nvim isn't installed (needs $min or later)" >&2
+  exit 0
+fi
+version=$("$nvim" --version | head -1 | sed -E 's/^NVIM v([0-9]+\.[0-9]+).*/\1/')
+older() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" != "$2" ]; }
+if older "$version" "$min"; then
+  echo "check-nvim-tips: SKIPPED, nvim $version is older than $min" >&2
+  exit 0
+fi
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+node --experimental-strip-types --no-warnings --input-type=module -e "
+  const { NVIM_TIPS } = await import('$root/web/src/shell/hints/nvim-tips.ts');
+  process.stdout.write(JSON.stringify(NVIM_TIPS.map(({ id, help, since }) => ({ id, help, since }))));
+" >"$work/tips.json"
+
+cat >"$work/check.lua" <<'LUA'
+local dir, version = arg[1], arg[2]
+local tips = vim.json.decode(table.concat(vim.fn.readfile(dir .. "/tips.json"), "\n"))
+local tags = {}
+for _, f in ipairs(vim.api.nvim_get_runtime_file("doc/tags", true)) do
+  for _, line in ipairs(vim.fn.readfile(f)) do
+    local t = line:match("^([^\t]+)\t")
+    if t then tags[t] = true end
+  end
+end
+local function newer(a, b) return vim.version.lt(a, b) end
+local out, bad, skipped = {}, 0, 0
+for _, tip in ipairs(tips) do
+  if tip.since and tip.since ~= vim.NIL and newer(version, tip.since) then
+    skipped = skipped + 1
+    table.insert(out, ("skip  %s (%s), since nvim %s"):format(tip.help, tip.id, tip.since))
+  elseif not tags[tip.help] then
+    bad = bad + 1
+    table.insert(out, ("FAIL  %s (%s): no such help tag"):format(tip.help, tip.id))
+  else
+    local ok, err = pcall(vim.cmd.help, vim.fn.escape(tip.help, " "))
+    vim.cmd("silent! helpclose")
+    if not ok then
+      bad = bad + 1
+      table.insert(out, ("FAIL  %s (%s): %s"):format(tip.help, tip.id, err))
+    end
+  end
+end
+table.insert(out, ("%d tips, %d failed, %d skipped, nvim %s"):format(#tips, bad, skipped, version))
+vim.fn.writefile(out, dir .. "/out")
+vim.cmd(bad == 0 and "qa!" or "cq!")
+LUA
+
+status=0
+"$nvim" --headless --clean -l "$work/check.lua" "$work" "$version" || status=$?
+cat "$work/out" 2>/dev/null || echo "check-nvim-tips: nvim wrote no result" >&2
+if [ "$status" -ne 0 ]; then
+  echo "check-nvim-tips: some tips' :help tags don't resolve" >&2
+  exit 1
+fi
+echo "check-nvim-tips: ok"
