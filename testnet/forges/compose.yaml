@@ -42,7 +42,7 @@ services:
   # and a few minutes to start.
   gitlab:
     profiles: [gitlab]
-    image: gitlab/gitlab-ce:18.4.1-ce.0
+    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/gitlab/gitlab-ce:18.4.1-ce.0
     hostname: gitlab
     shm_size: 256m
     environment:
@@ -74,6 +74,6 @@ services:
   # A shell-executor runner, so a pipeline can go red and be retried.
   gitlab-runner:
     profiles: [gitlab]
-    image: gitlab/gitlab-runner:v18.4.0
+    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/gitlab/gitlab-runner:v18.4.0
     hostname: gitlab-runner
     entrypoint: ["sleep", "infinity"]

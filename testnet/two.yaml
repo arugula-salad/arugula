@@ -35,7 +35,7 @@ services:
 
   platform2:
     profiles: [two]
-    image: debian:bookworm-slim
+    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/debian:bookworm-slim
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-platform2
     hostname: platform2
     depends_on:

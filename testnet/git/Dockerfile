@@ -5,7 +5,9 @@
 # The same repositories over HTTPS too (git-http-backend behind nginx, basic
 # auth), as a forge serves clones with a token: a hosted workspace's setup
 # clones from here (M183).
-FROM debian:bookworm-slim
+# Docker Hub's image, from CI's mirror (docs/testing.md, "CI's images").
+ARG ARUGULA_IMAGES=ghcr.io/arugula-salad/ci
+FROM ${ARUGULA_IMAGES}/debian:bookworm-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssh-server git nginx-light fcgiwrap \
  && rm -rf /var/lib/apt/lists/* /etc/ssh/ssh_host_* \
