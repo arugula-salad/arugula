@@ -1393,7 +1393,7 @@ what's missing:
 | `sandbox.spec.ts` (`just e2e-sandbox`) | `ARUGULA_E2E_TAILNET_AUTHKEY_FILE` and wispd |
 | `forges_github_real.rs` | the test organization's variables and secrets ([the nightly job](#the-nightly-job-against-githubcom)) |
 | `guest_ssh.rs`, `guest-ssh.spec.ts` | an `ssh` client on PATH |
-| `scripts/macos-sign` in the release | the `APPLE_*` secrets (a Developer ID, #177); without them it says which is missing and leaves the ad-hoc signature |
+| `scripts/macos-sign` in the release | the `APPLE_*` secrets (a Developer ID, #177); without them it says which is missing and leaves the ad-hoc signature, except on an `app-v*` tag, which it fails (#1647) |
 | updater signatures and `latest.json` in the release | `TAURI_SIGNING_PRIVATE_KEY` (and its password), and the matching public key in `crates/desktop/tauri.conf.json` |
 
 `vm_reboot.rs` is #214's VM tabs across a real kernel reboot (#256): two

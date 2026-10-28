@@ -10,7 +10,10 @@
 #                               for notarytool
 #
 # Without APPLE_CERTIFICATE it says so and leaves the ad-hoc signature
-# (exit 0): releases stay unsigned until there's a Developer ID.
+# (exit 0), except on an app release's tag (app-v*), which it fails: an
+# ad-hoc release makes every Mac that runs it ask for the keychain password
+# on its next signed update (#1647: WebKit's "Arugula WebCrypto Master
+# Key" names the build that made it, by cdhash when it has no team).
 #
 # Passkeys in the window (D2): an app that carries the Developer ID
 # provisioning profile as Contents/embedded.provisionprofile (`just
@@ -31,6 +34,12 @@ what=$1
 path=$2
 [ -e "$path" ] || { echo "macos-sign: no $path" >&2; exit 2; }
 if [ -z "${APPLE_CERTIFICATE:-}" ]; then
+  case "${GITHUB_REF:-}" in
+    refs/tags/app-v*)
+      echo "macos-sign: refusing to release $(basename "$path") ad-hoc signed: the APPLE_CERTIFICATE secret isn't set (#1647)" >&2
+      exit 1
+      ;;
+  esac
   echo "macos-sign: skipped for $(basename "$path"): the APPLE_CERTIFICATE secret isn't set (#177); it stays ad-hoc signed"
   exit 0
 fi
