@@ -2,7 +2,7 @@
 // ```chart (a JSON spec, `chart.tsx`), ```stats (tiles, `stats.tsx`) and
 // ```svg (one drawing, shown only through <img>); and its pictures, `![alt](assets/<name>)` in a line of
 // text (#965). Plain TypeScript, so a spec can import it. The daemon checks
-// all three before it writes a section (`crates/daemon/src/docs/embeds.rs`,
+// all three before it writes a section (`crates/arugulad-docs/src/docs/embeds.rs`,
 // which has the grammar); `checkSvg`, `checkImages` and `plain` here say the
 // same things, and a spec runs both over the same files
 // (`tests/fixtures/docs/`).

@@ -1,5 +1,5 @@
 {
-  "about": "A Doc's named colours (#256): what an agent writes in a drawing or a chart, resolved per scheme. The web client (shared/docs/colours.ts) and the daemon (crates/daemon/src/docs/embeds.rs) both read this file; style.css's --doc-* tokens hold the same values, and a spec (doc-grammar.spec.ts) checks they agree. hues: a chart's series, in order, checked with the dataviz palette validator against paper in each scheme. css: the CSS colour keywords a drawing may also use.",
+  "about": "A Doc's named colours (#256): what an agent writes in a drawing or a chart, resolved per scheme. The web client (shared/docs/colours.ts) and the daemon (crates/arugulad-docs/src/docs/embeds.rs) both read this file; style.css's --doc-* tokens hold the same values, and a spec (doc-grammar.spec.ts) checks they agree. hues: a chart's series, in order, checked with the dataviz palette validator against paper in each scheme. css: the CSS colour keywords a drawing may also use.",
   "hues": ["leaf", "pepper", "sky", "plum", "sun", "stone"],
   "names": ["leaf", "pepper", "sky", "plum", "sun", "stone", "ink", "paper"],
   "dark": {

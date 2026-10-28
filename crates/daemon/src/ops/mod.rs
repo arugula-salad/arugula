@@ -12,8 +12,6 @@
 mod acl;
 mod close;
 mod conversations;
-mod doc_links;
-pub(crate) mod docs;
 mod flags;
 mod fs;
 mod hosted;
@@ -447,6 +445,8 @@ const ROUTERS: &[(&str, &str)] = &[
     ("src/editors.rs", "pub fn routes("),
     ("../arugulad-editor/src/lib.rs", "    fn routes(&self"),
     ("../arugulad-editor/src/lib.rs", "    fn local_routes(&self"),
+    // The Docs' (#1493, #1066).
+    ("../arugulad-docs/src/lib.rs", "    fn routes(&self"),
     // The Unix socket's router: the only one with the sign-in link.
     ("src/server.rs", "pub fn local_router("),
     // #578 part c.

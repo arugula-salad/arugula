@@ -1,7 +1,7 @@
 // Stat tiles in a Doc (#254): a ```stats fence holding a JSON list of 1 to
 // 6 tiles, each a label and a value, with an optional delta and its tone.
 // The rules are the daemon's (`check_stats` in
-// `crates/daemon/src/docs/embeds.rs`) and say the same things; a spec runs
+// `crates/arugulad-docs/src/docs/embeds.rs`) and say the same things; a spec runs
 // both over the same files (`tests/fixtures/docs/`), as charts do. A delta
 // always carries an arrow, so its tone is never colour alone.
 

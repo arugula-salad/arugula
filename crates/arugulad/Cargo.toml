@@ -8,6 +8,8 @@ repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 arugulad-base = { workspace = true }
+# Docs, in every build.
+arugulad-docs = { workspace = true }
 # The deploy drivers (`_planter` and the rest), in every build.
 arugulad-drivers = { workspace = true }
 # The editor server and Claude Code's IDE, for the `editor` feature.
@@ -18,6 +20,8 @@ workspace = true
 
 # The integration tests: the daemon, run as a process (arugula-testkit).
 [dev-dependencies]
+# The checks of the whole daemon (src/whole_tests.rs).
+arugulad-base = { workspace = true, features = ["whole-tests"] }
 aes-gcm = { workspace = true }
 arugula-control-wire = { workspace = true }
 arugula-e2e = { workspace = true }

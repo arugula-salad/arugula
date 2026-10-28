@@ -1,5 +1,5 @@
 // A shared Doc's snapshot (#1066), opened. The daemon makes it
-// (`crates/daemon/src/docs/link.rs` says the format): "ADL1", a big-endian
+// (`crates/arugulad-docs/src/docs/link.rs` says the format): "ADL1", a big-endian
 // u32 length, the manifest as JSON, then the assets' bytes in the
 // manifest's order, cut into parts that are each `nonce(12) || AES-256-GCM`
 // with `ADL1|<id>|<ver>|<n>|<parts>` as additional data.

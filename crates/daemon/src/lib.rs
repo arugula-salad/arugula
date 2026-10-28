@@ -8,7 +8,7 @@ mod acl {
     pub use arugula_mux::acl::*;
 }
 mod acl_api;
-mod agent;
+pub mod agent;
 use arugula_mux::agentenv;
 pub mod api;
 mod args;
@@ -19,19 +19,20 @@ pub mod browser;
 mod callers;
 mod chat_readers;
 use arugula_mux::classify;
-mod control;
+pub mod control;
 // Windows panes on a pseudoconsole (M56).
 #[cfg(windows)]
 use arugula_mux::conpty;
 mod conversations;
 mod dial;
-mod docs;
+pub mod doc_shares;
 mod e2e;
 pub mod editors;
+pub mod features;
 #[cfg(feature = "forge")]
 mod forge;
 mod forges;
-mod fs;
+pub mod fs;
 mod git_remote;
 // The gates a forge block and Labs' blocks raise.
 #[cfg(feature = "forge")]
@@ -756,10 +757,11 @@ fn kinds(
     kinds.add(BlockType::File, Make(review::file::FileView::create));
     forges::kinds(&mut kinds);
     kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
-    kinds.add(BlockType::Doc, docs::DocKind);
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     kinds.add(BlockType::Board, board_block::BoardKind);
     labs::kinds(&mut kinds, invite);
+    // The feature crates' (#232): Docs.
+    features::kinds(&mut kinds);
     kinds
 }
 
@@ -889,10 +891,10 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     #[cfg(windows)]
     kept.extend(host::collect(&state_dir));
     info!(scopes = launch.scopes, fd_store = launch.fd_store, hold = launch.hold, kept = kept.len(), "pane launcher");
-    // The Docs of the old layout move into the library before the layout is
-    // restored (the blocks' configs name their Doc) and before closed
-    // folders are pruned.
-    docs::library::migrate(&state_dir);
+    // What the feature crates keep moves before the layout is restored and
+    // before closed folders are pruned (the Docs of the old layout into the
+    // library: the blocks' configs name their Doc).
+    features::prepare(&state_dir);
     store.prune_closed(store::CLOSED_RETENTION_MS);
     let integration = if args.no_shell_integration {
         None
@@ -1010,8 +1012,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         acl.clone(),
         args.no_relay,
     );
-    // Doc blocks share through control (#1066).
-    docs::link::init(control.clone());
+    // The feature crates' use of control (Doc blocks share through it, #1066).
+    features::with_control(&control);
     // M185: a hosted box's agent turns ask the platform whose key pays.
     agent::hosted::init(control.clone(), args.hosted);
     // M40: forge blocks' live updates (control's GitHub App, hooks here).
@@ -1213,15 +1215,18 @@ async fn signalled() {
     }
 }
 
-#[cfg(test)]
-mod tests {
+/// Checks of the whole daemon, with every feature crate registered: the
+/// binary's tests run them (`crates/arugulad/src/whole_tests.rs`), with the
+/// cargo feature `whole-tests` (#232).
+#[cfg(feature = "whole-tests")]
+#[doc(hidden)]
+pub mod whole {
     use arugula_proto::BlockType;
 
     /// Every type that was made when `block::create` was a `match` has an
     /// entry in the table, in a build with Labs and in one without; the
     /// two that never were (`Terminal`, `Unknown`) still have none.
-    #[test]
-    fn every_type_the_daemon_makes_has_a_kind() {
+    pub fn every_type_the_daemon_makes_has_a_kind() {
         let kinds = super::kinds(
             None,
             Default::default(),
