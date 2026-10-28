@@ -21,11 +21,13 @@ import { presenceItems } from "../shared/chat/presence";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { InboxCount } from "./inbox-count";
+import { useBoards } from "./pages/boards";
+import { issuesPlace } from "./pages/triage-text";
 
 /** The bar's place a route is under (UI audit #159): a project's cloud
  * workspaces and its deploys (Deploy… and a deploy) have places of their
  * own (Discovery 5). */
-type Section = "home" | "issues" | "runs" | "sessions" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
+type Section = "home" | "issues" | "boards" | "runs" | "sessions" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
 function sectionOf(r: Route): Section | null {
   switch (r.page) {
     case "project":
@@ -40,7 +42,11 @@ function sectionOf(r: Route): Section | null {
     case "issues":
     case "issue":
     case "new-issue":
+    case "triage":
       return "issues";
+    case "boards":
+    case "board":
+      return "boards";
     case "runs":
     case "run":
       return "runs";
@@ -79,6 +85,10 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // None on a page that's no project's: the bar says "All projects".
   const project = barProject(r);
   const p = session.project(project);
+  // With boards on, Triage takes Issues' place and Boards follows it (#292).
+  // Until they've answered, and with them off, the bar is Issues as ever.
+  const boards = useBoards(project);
+  const triage = issuesPlace(boards) === "triage";
   // An id that's none of the reader's lights no place (UI audit #170): the
   // body says it isn't one of theirs.
   const unknown = !!project && !p && session.state === "ready";
@@ -157,9 +167,14 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         )}
         {/* From the start: only chat saying it's off takes Issues away. */}
         {project && chat.on !== false && (
-          <Place to={pathOf({ page: "issues", project }, names)} here={here === "issues"} data="issues">
-            Issues
+          <Place to={pathOf({ page: triage ? "triage" : "issues", project }, names)} here={here === "issues"} data={triage ? "triage" : "issues"}>
+            {triage ? "Triage" : "Issues"}
             <PlaceUnread project={project} prefix="iss_" />
+          </Place>
+        )}
+        {project && triage && (
+          <Place to={pathOf({ page: "boards", project }, names)} here={here === "boards"} data="boards">
+            Boards
           </Place>
         )}
         {project && (

@@ -20,14 +20,31 @@ import { toast } from "../toast";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
 
+/** The reads in flight, by project: the bar, the project's home and a page
+ * all ask for the same list at once, and share the one request. */
+const reading = new Map<string, Promise<ProjectBoard[]>>();
+function readBoards(project: string): Promise<ProjectBoard[]> {
+  let r = reading.get(project);
+  if (!r) {
+    r = boards.list(project).then((l) => l.boards);
+    reading.set(project, r);
+    const done = () => void reading.delete(project);
+    r.then(done, done);
+  }
+  return r;
+}
+
 /** The project's boards, `null` while they load, or `"off"` when the
- * `boards` flag isn't on for the reader (the routes answer 404). */
-export function useBoards(project: string): ProjectBoard[] | null | "off" {
+ * `boards` flag isn't on for the reader (the routes answer 404). Asked of
+ * no project (`undefined`), it reads nothing. */
+export function useBoards(project: string | undefined): ProjectBoard[] | null | "off" {
   const [list, setList] = useState<ProjectBoard[] | null | "off">(null);
   useEffect(() => {
+    setList(null);
+    if (!project) return;
     let live = true;
-    boards.list(project).then(
-      (l) => live && setList(l.boards),
+    readBoards(project).then(
+      (l) => live && setList(l),
       (e: Error) => live && setList(e instanceof BoardError && e.status === 404 ? "off" : []),
     );
     return () => void (live = false);
@@ -120,9 +137,9 @@ export function BoardPage({ project, board }: { project: string; board: string }
   );
 }
 
-/** The project home's list of boards: nothing while the flag is off. */
-export function ProjectBoards({ p }: { p: PlatformProject }) {
-  const list = useBoards(p.id);
+/** The project home's list of boards (`list`, from `useBoards`): nothing
+ * while the flag is off. */
+export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBoard[] | null | "off" }) {
   if (list === null || list === "off") return null;
   const all = pathOf({ page: "boards", project: p.id }, names);
   return (

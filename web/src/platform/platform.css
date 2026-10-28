@@ -1136,3 +1136,27 @@ html[data-corners="square"] .platform-section {
 .session-stat-to {
   color: var(--dim);
 }
+
+/* Triage (#292): a row is its label, its title, who has it and Add to
+   board…; on a phone the button drops under the title. */
+.triage-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 0;
+}
+
+.triage-label {
+  white-space: nowrap;
+}
+
+.triage-title {
+  flex: 1 1 14em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.triage-add {
+  margin-left: auto;
+}
