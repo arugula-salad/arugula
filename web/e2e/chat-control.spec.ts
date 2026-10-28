@@ -740,7 +740,11 @@ test("typing shows to the other reader and clears; @channel is offered; a keywor
   const room = await alice.evaluate((tm) => window.__arugula.chat.newChannel(tm, "alerts").then((r) => r.id), team);
   await withBob(room);
   await platform(aliceChat, `/chat/${room}-alerts`);
+  // Typing is told only to a page that has told control it shows the room,
+  // and never again (#285): Bob's page must have, before Alice types.
+  const shown = bob.waitForResponse((r) => r.url().endsWith("/api/chat/live/open") && r.ok() && r.request().postDataJSON()?.room === room);
   await platform(bob, `/chat/${room}-alerts`);
+  await shown;
   const a = aliceChat.locator("[data-chat-control]");
   const b = bob.locator("[data-chat-control]");
   const abox = a.getByRole("textbox", { name: "Message #alerts" });
