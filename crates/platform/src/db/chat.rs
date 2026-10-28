@@ -463,12 +463,28 @@ impl Db {
     }
 
     /// Add `account` to a channel or DM, reading from `from` (ms): a
-    /// channel's from the start, a DM it came back to from now. `false`:
-    /// it already was.
+    /// channel's from the start (a DM it came back to:
+    /// [`add_chat_member_from_now`](Self::add_chat_member_from_now)).
+    /// `false`: it already was.
     pub fn add_chat_member(&self, room: &str, account: &str, from: u64) -> Result<bool> {
         Ok(self.c().execute(
             "INSERT INTO chat_members (room, account, from_ms) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING",
             params![room, account, from as i64],
+        )? > 0)
+    }
+
+    /// Add `account` back to a DM it left, reading from `now` (ms), or from
+    /// just after the last message said there when that's later: one said
+    /// in the millisecond it came back, before it did, isn't one it reads
+    /// (Arugula #294). `false`: it already was.
+    pub fn add_chat_member_from_now(&self, room: &str, account: &str, now: u64) -> Result<bool> {
+        Ok(self.c().execute(
+            "INSERT INTO chat_members (room, account, from_ms)
+             SELECT CAST(?1 AS TEXT), CAST(?2 AS TEXT),
+                 CASE WHEN COALESCE(MAX(at), -1) >= CAST(?3 AS BIGINT) THEN MAX(at) + 1 ELSE CAST(?3 AS BIGINT) END
+             FROM chat_messages WHERE room = ?1
+             ON CONFLICT DO NOTHING",
+            params![room, account, now as i64],
         )? > 0)
     }
 
