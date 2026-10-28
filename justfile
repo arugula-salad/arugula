@@ -835,7 +835,8 @@ macos cmd="tools" *args:
 # per workspace size (M266); its tools for session users (Arugula #215);
 # and the flaky tests' quarantine (.config/quarantine.toml): its script,
 # and last the manifest itself, which fails when an entry has no issue or
-# is past its `until`.
+# is past its `until`. Also the nvim key tips' `:help` tags, against a real
+# nvim when there is one (`just nvim-tips-check`).
 test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/ci-nightly-red.sh
@@ -851,6 +852,12 @@ test-scripts:
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
     node scripts/quarantine.mjs check
+    scripts/check-nvim-tips
+
+# Every nvim key tip (web/src/shell/hints/nvim-tips.ts) names a `:help` tag
+# that a real nvim (0.10 or later) opens. Skips, saying so, without one.
+nvim-tips-check:
+    scripts/check-nvim-tips
 
 # The two workspaces stay apart: the root's has no server crate, and the
 # server's (server/Cargo.toml) builds none of the daemon's, the mux or
