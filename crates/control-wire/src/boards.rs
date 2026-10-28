@@ -557,6 +557,9 @@ fn assignees_suffix(who: &[String]) -> String {
 /// and under an agent block's row what its machine reported of it. A row
 /// in the `proofs` zone starts its note with `[proven]` or `[not proven yet]`
 /// ([`Row::proven`]).
+/// Before the zones: `Goal:` with the goal's first line, `Issues` with the
+/// board's issue progress when it has issues, and `Done:` with the done
+/// note's first line when it is closed.
 /// The `proofs` zone comes last. Ids and revs aren't in it: they are in the
 /// [`BoardView`].
 ///
@@ -570,6 +573,19 @@ pub fn render(view: &BoardView) -> String {
     // Stable: a plain zone keeps its place, `proofs` goes after them.
     zones.sort_by_key(|z| z.kind == Some(ZoneKind::Proofs));
     let mut out = String::new();
+    let first = |s: &str| s.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("").to_owned();
+    let b = &view.board;
+    if !first(&b.goal).is_empty() {
+        out += &format!("{}\n", fit(&format!("Goal: {}", first(&b.goal)), TEXT_WIDTH));
+    }
+    if b.progress.total > 0 {
+        let (done, total) = (b.progress.done as usize, b.progress.total as usize);
+        let filled = (done * BAR / total).min(BAR);
+        out += &format!("Issues  {}{} {done}/{total}\n", "█".repeat(filled), "░".repeat(BAR - filled));
+    }
+    if b.closed_at.is_some() {
+        out += &format!("{}\n", fit(&format!("Done: {}", first(&b.done_note)), TEXT_WIDTH));
+    }
     for z in zones {
         let done = z.rows.iter().filter(|r| r.status == Status::Done).count();
         let filled = if z.rows.is_empty() { 0 } else { done * BAR / z.rows.len() };
@@ -747,6 +763,31 @@ PROOFS                                                    ███████�
   ● run_aa22           [proven] Release build
   ● run_ee11           [not proven yet] Nightly";
         assert_eq!(text, want);
+        assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
+    }
+
+    /// A board's goal, issue progress and done note head its text, and a
+    /// board with none of them renders as before.
+    #[test]
+    fn a_goal_progress_and_done_note_head_the_text() {
+        let mut board =
+            Board { id: "brd_1".into(), project: "prj_1".into(), title: "Launch".into(), ..Default::default() };
+        let zones = vec![zone("Build", None, vec![row(Pointer::None, Status::Done, "x")])];
+        let plain = render(&BoardView { board: board.clone(), zones: zones.clone() });
+        assert!(plain.starts_with("Build "), "{plain}");
+        board.goal =
+            "\nShip the thing to everyone, and make it easy to find the thing again later on\nsecond line".into();
+        board.progress = BoardProgress { done: 3, total: 5 };
+        board.closed_at = Some(9);
+        board.done_note = "People can sign up.\nMore.".into();
+        let text = render(&BoardView { board, zones });
+        let want = "\
+Goal: Ship the thing to everyone, and make it easy to find the thing ag…
+Issues  ██████░░░░ 3/5
+Done: People can sign up.
+";
+        assert!(text.starts_with(want), "{text}");
+        assert_eq!(text.strip_prefix(want), Some(plain.as_str()));
         assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
     }
 

@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GLYPH, assigneesLine, debounced, isCard, parsePointer, pointerHref, pointerLabel, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "../src/shared/boards/text.ts";
+import { GLYPH, assigneesLine, debounced, epicLine, firstLine, isCard, parsePointer, pointerHref, pointerLabel, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -14,6 +14,14 @@ test("a status is a glyph, and a zone's progress counts the done rows", () => {
   const rows = ["done", "working", "done", "none"].map((status) => ({ status }));
   assert.deepEqual(progress({ rows }), { done: 2, total: 4, pct: 50 });
   assert.deepEqual(progress({ rows: [] }), { done: 0, total: 0, pct: 0 });
+});
+
+test("an epic's progress is in words, and a text's first line is what a list shows", () => {
+  assert.deepEqual(epicLine({ done: 3, total: 5 }), { words: "3 of 5 issues done", pct: 60 });
+  assert.deepEqual(epicLine({ done: 1, total: 1 }), { words: "1 of 1 issue done", pct: 100 });
+  assert.deepEqual(epicLine({ done: 0, total: 0 }), { words: "No issues yet", pct: 0 });
+  assert.equal(firstLine("\n  Ship it  \nand more"), "Ship it");
+  assert.equal(firstLine(""), "");
 });
 
 test("a pointer is labelled by its item when the platform read it", () => {

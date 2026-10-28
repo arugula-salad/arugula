@@ -325,3 +325,77 @@
     height: 40px;
   }
 }
+
+/* An epic: the goal, progress and closing under a board's title, and the
+   same on a list's items. */
+.board-rename {
+  cursor: pointer;
+}
+
+.board-rename:hover {
+  text-decoration: underline;
+}
+
+.board-epic {
+  margin: 0 0 12px;
+}
+
+.board-goal {
+  margin: 4px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.board-epic-actions {
+  margin: 4px 0;
+}
+
+.board-epic-actions button,
+.board-form textarea {
+  font: inherit;
+}
+
+.board-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.board-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.board-progress .board-bar {
+  flex: 1;
+  min-width: 0;
+}
+
+.board-done {
+  margin: 8px 0;
+}
+
+.board-done-tag {
+  color: var(--ok, inherit);
+}
+
+.board-item-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.board-item-line {
+  flex: 1 1 12em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-done-list summary {
+  cursor: pointer;
+  margin: 8px 0;
+}

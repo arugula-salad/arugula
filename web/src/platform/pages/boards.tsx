@@ -11,6 +11,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { ProjectBoard } from "../../shared/proto";
 import { BoardPanel } from "../../shared/boards/view";
 import { BoardError, boards } from "../../shared/boards/store";
+import { epicLine, firstLine } from "../../shared/boards/text";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
@@ -37,7 +38,9 @@ function readBoards(project: string): Promise<ProjectBoard[]> {
 /** The project's boards, `null` while they load, or `"off"` when the
  * `boards` flag isn't on for the reader (the routes answer 404). Asked of
  * no project (`undefined`), it reads nothing. */
-export function useBoards(project: string | undefined): ProjectBoard[] | null | "off" {
+export function useBoards(
+  project: string | undefined,
+): ProjectBoard[] | null | "off" {
   const [list, setList] = useState<ProjectBoard[] | null | "off">(null);
   useEffect(() => {
     setList(null);
@@ -45,7 +48,9 @@ export function useBoards(project: string | undefined): ProjectBoard[] | null | 
     let live = true;
     readBoards(project).then(
       (l) => live && setList(l),
-      (e: Error) => live && setList(e instanceof BoardError && e.status === 404 ? "off" : []),
+      (e: Error) =>
+        live &&
+        setList(e instanceof BoardError && e.status === 404 ? "off" : []),
     );
     return () => void (live = false);
   }, [project]);
@@ -56,7 +61,10 @@ function BoardsOff() {
   return (
     <section class="platform-section" data-boards-off>
       <h1>Boards</h1>
-      <p class="dim">Boards are a Labs feature, and they're off for you. A team owner turns them on in the team's Labs, on control's page.</p>
+      <p class="dim">
+        Boards are a Labs feature, and they're off for you. A team owner turns
+        them on in the team's Labs, on control's page.
+      </p>
     </section>
   );
 }
@@ -64,7 +72,8 @@ function BoardsOff() {
 export function BoardsPage({ project }: { project: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(project);
-  if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
+  if (!p)
+    return <Missing what="That project isn't one of yours (or it's gone)." />;
   return <BoardList p={p} />;
 }
 
@@ -87,23 +96,25 @@ function BoardList({ p }: { p: PlatformProject }) {
       <h1>Boards</h1>
       {list === null && <p class="dim">Loading…</p>}
       {list?.length === 0 && <p class="dim">No boards yet.</p>}
-      <ul class="platform-list board-list" data-boards>
-        {list?.map((b) => {
-          const to = pathOf({ page: "board", project: p.id, board: b.id }, names);
-          return (
-            <li key={b.id}>
-              <a href={to} data-board-link={b.id} onClick={(e) => follow(e, to)}>
-                {b.title}
-              </a>
-            </li>
-          );
-        })}
-      </ul>
+      {list && <BoardItems p={p} list={list} data="data-boards" />}
       {mayWrite(p) && (
         <form class="board-form" onSubmit={(e) => void make(e)}>
-          <input type="text" value={title} maxLength={120} placeholder="a new board's title" aria-label="New board's title" data-board-new-title onInput={(e) => setTitle(e.currentTarget.value)} />
+          <input
+            type="text"
+            value={title}
+            maxLength={120}
+            placeholder="a new board's title"
+            aria-label="New board's title"
+            data-board-new-title
+            onInput={(e) => setTitle(e.currentTarget.value)}
+          />
           <span class="board-form-buttons">
-            <button type="submit" class="primary" data-board-new disabled={!title.trim()}>
+            <button
+              type="submit"
+              class="primary"
+              data-board-new
+              disabled={!title.trim()}
+            >
               Make a board
             </button>
           </span>
@@ -113,17 +124,25 @@ function BoardList({ p }: { p: PlatformProject }) {
   );
 }
 
-export function BoardPage({ project, board }: { project: string; board: string }) {
+export function BoardPage({
+  project,
+  board,
+}: {
+  project: string;
+  board: string;
+}) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(project);
   const list = useBoards(project);
-  if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
+  if (!p)
+    return <Missing what="That project isn't one of yours (or it's gone)." />;
   if (list === "off") return <BoardsOff />;
   const all = pathOf({ page: "boards", project }, names);
   return (
     <section class="platform-section" data-board-page={board}>
       <BoardPanel
         id={board}
+        write={mayWrite(p)}
         platform={(path) => path}
         back={
           <p class="dim">
@@ -139,25 +158,76 @@ export function BoardPage({ project, board }: { project: string; board: string }
 
 /** The project home's list of boards (`list`, from `useBoards`): nothing
  * while the flag is off. */
-export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBoard[] | null | "off" }) {
+export function ProjectBoards({
+  p,
+  list,
+}: {
+  p: PlatformProject;
+  list: ProjectBoard[] | null | "off";
+}) {
   if (list === null || list === "off") return null;
   const all = pathOf({ page: "boards", project: p.id }, names);
   return (
     <>
       <SectionHead title="Boards" all={all} data="project-boards-link" />
       {list.length === 0 && <p class="dim">No boards yet.</p>}
-      <ul class="platform-list" data-project-boards>
-        {list.map((b) => {
-          const to = pathOf({ page: "board", project: p.id, board: b.id }, names);
-          return (
-            <li key={b.id}>
-              <a href={to} onClick={(e) => follow(e, to)}>
-                {b.title}
-              </a>
-            </li>
-          );
-        })}
+      <BoardItems p={p} list={list} data="data-project-boards" />
+    </>
+  );
+}
+
+/** One board in a list: its title, the goal's first line and its progress
+ * (a closed board has the done note's first line instead). */
+function BoardItem({ p, b }: { p: PlatformProject; b: ProjectBoard }) {
+  const to = pathOf({ page: "board", project: p.id, board: b.id }, names);
+  const closed = b.closed_at != null;
+  const e = epicLine(b.progress);
+  const line = firstLine(closed ? b.done_note : b.goal);
+  return (
+    <li class="board-item-row">
+      <a href={to} data-board-link={b.id} onClick={(ev) => follow(ev, to)}>
+        {b.title}
+      </a>
+      {line && <span class="board-item-line dim">{line}</span>}
+      {!closed && (
+        <span class="board-item-progress dim" data-board-progress>
+          {e.words}
+        </span>
+      )}
+    </li>
+  );
+}
+
+/** A project's boards, open ones first and the closed ones folded under
+ * "Done (N)". `data` is the attribute the open list carries. */
+function BoardItems({
+  p,
+  list,
+  data,
+}: {
+  p: PlatformProject;
+  list: ProjectBoard[];
+  data: "data-boards" | "data-project-boards";
+}) {
+  const open = list.filter((b) => b.closed_at == null);
+  const done = list.filter((b) => b.closed_at != null);
+  return (
+    <>
+      <ul class="platform-list board-list" {...{ [data]: true }}>
+        {open.map((b) => (
+          <BoardItem key={b.id} p={p} b={b} />
+        ))}
       </ul>
+      {done.length > 0 && (
+        <details class="board-done-list" data-boards-done>
+          <summary>Done ({done.length})</summary>
+          <ul class="platform-list board-list">
+            {done.map((b) => (
+              <BoardItem key={b.id} p={p} b={b} />
+            ))}
+          </ul>
+        </details>
+      )}
     </>
   );
 }
