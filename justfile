@@ -51,6 +51,13 @@ build-cache:
     printf 'LIBGHOSTTY_VT_SYS_CACHE_DIR = "%s/libghostty-vt-sys"\n' "$caches"
     printf 'SCCACHE_CACHE_SIZE = "20G"\n'
 
+# Delete the builds in target dirs that nothing has used in HOURS, keeping
+# each crate's newest (scripts/sweep-target). Cargo never deletes a build
+# whose version or features changed: a worktree reached 40 GB, 31 GB of it
+# dead caches. With no DIRS, this checkout's.
+sweep hours="48" *dirs:
+    scripts/sweep-target --hours {{hours}} {{ if dirs == "" { quote(target_dir) } else { dirs } }}
+
 # Build the web client into web/dist (embedded into the daemon).
 web:
     cd web && pnpm run build
@@ -70,6 +77,11 @@ proto-ts mode="write":
 # Without `write`, check it's current.
 decisions mode="write":
     node scripts/decisions-index.mjs {{ if mode == "write" { "" } else { "--check" } }}
+
+# Check the headline sections of the release notes (docs/releases/X.Y.Z.md),
+# which What's new reads at build time, and list them.
+whats-new:
+    node scripts/whats-new.mjs
 
 # Write "What control stores" in docs/control-e2e.md from control's table
 # manifest (crates/control/tables.toml). Without `write`, check it's
@@ -490,9 +502,12 @@ server_test_bins := server_cargo + " build --workspace --bins --tests"
 
 # PART (check.yml's test and test-2, 1 or 2) runs half the Rust tests of
 # each workspace, nextest's count:PART/2; only the first half runs the
-# doctests and control-smoke after them.
+# doctests and control-smoke after them. WHICH splits a run in two:
+# `server`, only the server workspace's suite, which needs none of
+# static's binaries (ARUGULA_SSH_BINARIES), so check.yml runs it while
+# static builds them; `rest`, everything else (#259).
 [private]
-test-run part="":
+test-run part="" which="":
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{part}}" in
@@ -500,24 +515,62 @@ test-run part="":
       1|2) part=(--partition "count:{{part}}/2") ;;
       *) echo "test-run: PART is 1 or 2" >&2; exit 2 ;;
     esac
+    case "{{which}}" in
+      ''|server|rest) ;;
+      *) echo "test-run: WHICH is server or rest" >&2; exit 2 ;;
+    esac
     # ${part[@]+…}: macOS bash 3.2 calls an empty array unbound.
-    {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"}
-    {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"}
+    if [ "{{which}}" != server ]; then {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
+    if [ "{{which}}" != rest ]; then {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
+    [ "{{which}}" != server ] || exit 0
     [ "{{part}}" != 2 ] || exit 0
     {{cargo}} test --workspace --doc
     {{server_cargo}} test --workspace --doc
     just e2e-interop control-smoke
 
+# FILTER is a nextest filterset, e.g.
+# 'test(=team_answers::the_terminal_answering_first_closes_the_card)'.
+# A flaky test's fix, shown to hold: FILTER's tests COUNT times, no retries.
+test-stress filter count="50": test-build
+    {{suite_lock}} {{cargo}} nextest run --workspace --retries 0 --stress-count {{count}} -E '{{filter}}'
+
+# Flaky tests CI leaves out for a while (.config/quarantine.toml,
+# docs/testing.md "Quarantine"). Run it after changing that manifest:
+# writes the nextest configs' default-filter from it, then checks it.
+quarantine:
+    node scripts/quarantine.mjs write
+    node scripts/quarantine.mjs check
+
+# Only the quarantined tests, which CI's runs leave out (the ssh and reboot
+# tests want what `just test` does: Docker, ARUGULA_SSH_BINARIES).
+# quarantine-nightly.yml runs them every night.
+test-quarantined: web e2e-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    status=0
+    root=$(node scripts/quarantine.mjs nextest root)
+    server=$(node scripts/quarantine.mjs nextest server)
+    if [ -n "$root" ]; then {{cargo}} nextest run --workspace --ignore-default-filter -E "$root" || status=1; fi
+    if [ -n "$server" ]; then {{server_cargo}} nextest run --workspace --ignore-default-filter -E "$server" || status=1; fi
+    if [ -n "$(node scripts/quarantine.mjs e2e)" ]; then
+      (cd web && E2E_QUARANTINED=1 {{suite_lock}} pnpm exec playwright test) || status=1
+    fi
+    exit "$status"
+
 # The platform's suite on Postgres (M143), as hosted control runs it: a
 # postgres:17 container of its own on a free port, removed after. The same
-# tests as on SQLite (`Db::test`); check.yml's test-2 job runs it after
-# `test-run 2`, on what test-build built.
+# tests as on SQLite (`Db::test`); check.yml runs it in a job of its own
+# (test-postgres), beside test and test-2.
 test-platform-postgres:
     #!/usr/bin/env bash
     set -euo pipefail
     name="arugula-platform-pg-$$"
+    # No fsync: a test database needn't survive a crash, and with it every
+    # commit waited on the disk. In a job of its own beside test and
+    # test-2 the suite took 23-27 min instead of 2.
     docker run -d --rm --name "$name" -e POSTGRES_PASSWORD=platform -p 127.0.0.1::5432 \
-        postgres:17 -c max_connections=500 >/dev/null
+        postgres:17 -c max_connections=500 -c fsync=off -c synchronous_commit=off \
+        -c full_page_writes=off >/dev/null
     trap 'docker rm -f "$name" >/dev/null' EXIT
     port=$(docker port "$name" 5432/tcp | head -1 | sed 's/.*://')
     # Over TCP: the image's first start answers on its socket only while it
@@ -547,6 +600,18 @@ e2e-interop:
 # Browser tests in system Chrome; pass a URL to test a running daemon.
 e2e url="": web e2e-build
     cd web && E2E_BASE_URL="{{url}}" {{suite_lock}} pnpm exec playwright test
+
+# Only the specs named (`just e2e-spec e2e/hints.spec.ts`, paths under
+# web/), as a session on a dev box runs the ones it wrote or changed
+# (Arugula #264): the web dependencies when the checkout has none, the
+# binaries the specs run, then Playwright on a free port (beside other
+# checkouts' runs) under the suite lock.
+e2e-spec +specs: _web-deps web e2e-build
+    cd web && E2E_PORT="${E2E_PORT:-$(../scripts/free-port)}" {{suite_lock}} pnpm exec playwright test {{specs}}
+
+[private]
+_web-deps:
+    [ -d web/node_modules ] || (cd web && pnpm install --frozen-lockfile)
 
 # A new user's journeys (#551), as a person takes them: J1 (one person,
 # from no account to a terminal) and J2 (two people linking up). Each ends
@@ -637,7 +702,7 @@ publish-vsix to="both":
     want vsce && [ -z "${VSCE_PAT:-}" ] && { echo "VSCE_PAT isn't set" >&2; exit 1; }
     want ovsx && [ -z "${OVSX_PAT:-}" ] && { echo "OVSX_PAT isn't set" >&2; exit 1; }
     {{just_executable()}} vsix
-    version=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' crates/daemon/src/editor/ext/package.json)
+    version=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' crates/arugulad-editor/src/editor/ext/package.json)
     f="{{target_dir}}/arugula-editor-$version.vsix"
     want vsce && npx -y @vscode/vsce@4.0.0 publish --skip-duplicate --packagePath "$f"
     want ovsx && npx -y ovsx@1.2.0 publish --skip-duplicate --packagePath "$f"
@@ -749,9 +814,14 @@ macos cmd="tools" *args:
 # `scripts/release check-green` refusing a tag on a commit CI didn't pass;
 # a release deploying the hub only when what it's built from changed; the
 # hosted template's supervision of arugulad (M258); its templates, one
-# per workspace size (M266); and its tools for session users (Arugula #215).
+# per workspace size (M266); its tools for session users (Arugula #215);
+# and the flaky tests' quarantine (.config/quarantine.toml): its script,
+# and last the manifest itself, which fails when an entry has no issue or
+# is past its `until`.
 test-scripts:
     scripts/tests/ci-red.sh
+    scripts/tests/ci-nightly-red.sh
+    scripts/tests/quarantine.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
     scripts/tests/notices.sh
@@ -762,6 +832,7 @@ test-scripts:
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
+    node scripts/quarantine.mjs check
 
 # The two workspaces stay apart: the root's has no server crate, and the
 # server's (server/Cargo.toml) builds none of the daemon's, the mux or
@@ -806,6 +877,7 @@ check: test mux-guard workspace-guard
     cd web && pnpm run paths
     just proto-ts check
     just decisions check
+    just whats-new
     just control-tables check
     scripts/check-binaries
     {{cargo}} fmt --all --check
@@ -813,21 +885,26 @@ check: test mux-guard workspace-guard
     {{cargo}} clippy --workspace --all-targets -- -D warnings
     {{server_cargo}} clippy --workspace --all-targets -- -D warnings
 
+# The daemon's crates (#232): the binary, arugulad, the library it's built
+# on and the feature crates on that, whose tests are the unit tests.
+# `--features arugulad/…` reaches them all.
+daemon_crates := "-p arugulad -p arugulad-base -p arugulad-docs -p arugulad-drivers -p arugulad-editor"
+
 # The daemon and the CLI without Labs (#452): clippy and the tests with the
 # `labs` feature off, which CI runs as the `core` job. Run it after touching
-# anything in or beside crates/daemon/src/labs; `just check` covers the rest.
+# anything in or beside crates/arugulad-labs; `just check` covers the rest.
 # The forge and the editor stay on (#461): "core" is everything but Labs.
 check-core: web mux-guard
-    {{cargo}} clippy -p arugulad -p arugula-mux -p arugula --no-default-features --features arugulad/forge,arugulad/editor --all-targets -- -D warnings
-    {{cargo}} nextest run -p arugulad -p arugula-mux -p arugula --no-default-features --features arugulad/forge,arugulad/editor
+    {{cargo}} clippy {{daemon_crates}} -p arugula-mux -p arugula --no-default-features --features arugulad/forge,arugulad/editor --all-targets -- -D warnings
+    {{cargo}} nextest run {{daemon_crates}} -p arugula-mux -p arugula --no-default-features --features arugulad/forge,arugulad/editor
 
 # The daemon with none of its integrations (#461), and with only the forge
 # or only the editor: clippy for each, which finds what one feature's code
 # left unused in the others. Not part of `check` or CI.
 check-features:
-    {{cargo}} clippy -p arugulad --no-default-features --all-targets -- -D warnings
-    {{cargo}} clippy -p arugulad --no-default-features --features forge --all-targets -- -D warnings
-    {{cargo}} clippy -p arugulad --no-default-features --features editor --all-targets -- -D warnings
+    {{cargo}} clippy {{daemon_crates}} --no-default-features --all-targets -- -D warnings
+    {{cargo}} clippy {{daemon_crates}} --no-default-features --features arugulad/forge --all-targets -- -D warnings
+    {{cargo}} clippy {{daemon_crates}} --no-default-features --features arugulad/editor --all-targets -- -D warnings
 
 # Type-check and lint the macOS build from Linux: ARCH is aarch64 (Apple
 # silicon) or x86_64 (Intel). Zig is the C compiler; this compiles but

@@ -12,6 +12,8 @@
 //! (`arugula_platform::chat`, M138), behind this hub's gate.
 
 mod account;
+mod account_email;
+mod account_reset;
 mod activity;
 #[cfg(test)]
 mod activity_wire;
@@ -72,6 +74,7 @@ mod limit;
 mod links;
 #[cfg(test)]
 mod links_wire;
+mod mail;
 mod maintenance;
 mod notice;
 mod passkey;
@@ -91,6 +94,7 @@ mod push_live_tests;
 #[cfg(test)]
 mod push_notices;
 mod relay;
+mod reset;
 mod roots;
 #[cfg(test)]
 mod routes;
@@ -276,6 +280,13 @@ struct Args {
     #[arg(long, default_value = "https://us.i.posthog.com", env = "POSTHOG_HOST")]
     posthog_host: String,
 
+    /// Security notices by email (#1609, mail.rs): an SMTP URL
+    /// (`smtps://USER:PASS@HOST:465`) and the From address. Off when unset.
+    #[arg(long, env = "ARUGULA_CONTROL_SMTP_URL", hide_env_values = true)]
+    smtp_url: Option<String>,
+    #[arg(long, env = "ARUGULA_CONTROL_MAIL_FROM")]
+    mail_from: Option<String>,
+
     /// Off-site backup with Litestream (#174).
     #[command(flatten)]
     backup: arugula_control_common::backup::Litestream,
@@ -441,6 +452,8 @@ pub struct App {
     pub previews: previews::Previews,
     /// Product analytics, when they're on.
     pub analytics: analytics::Analytics,
+    /// Email for security notices (#1609), when SMTP is set.
+    pub mail: mail::Mailer,
     /// Shared Docs: the disk guard and the open counts (#1064).
     pub docs: doc_links::Docs,
     /// The platform (#1153): chat, Cloud, billing, projects and grants
@@ -559,6 +572,7 @@ impl App {
             blocks: Default::default(),
             previews: Default::default(),
             analytics: Default::default(),
+            mail: Default::default(),
             docs: Default::default(),
             platform,
             maintenance: Default::default(),
@@ -621,6 +635,10 @@ fn routes() -> Routes {
         .route("/api/me/passkeys", get(account::passkeys))
         .route("/api/me/passkeys/{id}/remove", post(account::remove_passkey))
         .route("/api/me/github/unlink", post(github_link::unlink))
+        .route("/api/me/email", get(account_email::get).post(account_email::set).delete(account_email::remove))
+        .route("/api/me/reset", get(reset::status).post(reset::start))
+        .route("/api/me/reset/cancel", post(reset::cancel))
+        .route("/auth/email/verify", get(account_email::verify))
         .route("/api/me/delete", get(account::preview).post(account::delete))
         .route("/api/me/notices/{id}/seen", post(teams::notice_seen))
         .route("/api/devices", get(api::devices).post(api::enroll))
@@ -904,7 +922,8 @@ pub fn origin_of(url: &str) -> anyhow::Result<String> {
 fn main() -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
     // database (census.rs), with no server; `device-review` another
-    // (device_review.rs). `maintenance`: the switch
+    // (device_review.rs). `account-reset`: support's reset of an account's
+    // devices (account_reset.rs, aru-119). `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
     // `notice`: a notice for every account (notice.rs). `issuer`: the
     // issuer's keys and clients (issuer.rs). `import planter`: planter's
@@ -917,6 +936,9 @@ fn main() -> anyhow::Result<()> {
     }
     if argv.peek().is_some_and(|a| a == "device-review") {
         return device_review::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "account-reset") {
+        return account_reset::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "maintenance") {
         return maintenance::run(argv.skip(1));
@@ -1000,6 +1022,10 @@ async fn run() -> anyhow::Result<()> {
     let db = db::Db::open(&a.db)?;
     let db_dir = a.db.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(std::path::Path::new(".")).to_owned();
     let http = roots::client(std::time::Duration::from_secs(15))?;
+    let mail = mail::Mailer::from_config(set(a.smtp_url).as_deref(), set(a.mail_from).as_deref())?;
+    if !mail.on() {
+        info!("no ARUGULA_CONTROL_SMTP_URL: no email is sent");
+    }
     let analytics = match set(a.posthog_api_key) {
         Some(key) => analytics::Analytics::start(key, &a.posthog_host, http.clone()),
         None => {
@@ -1173,6 +1199,7 @@ async fn run() -> anyhow::Result<()> {
         blocks: Default::default(),
         previews: Default::default(),
         analytics,
+        mail,
         // The database's directory, whose disk shared Docs fill. Without
         // one, the guard has no disk to read and lets every part in.
         docs: if a.no_disk_guard { Default::default() } else { doc_links::Docs::at(db_dir) },

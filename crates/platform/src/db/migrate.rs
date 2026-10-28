@@ -482,8 +482,14 @@ const SQLITE: &[Migration] = &[
     },
     Migration {
         version: 65,
+        name: "session_asker_agent",
+        sql: include_str!("../../migrations/sqlite/0065_session_asker_agent.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 66,
         name: "board_links",
-        sql: include_str!("../../migrations/sqlite/0065_board_links.sql"),
+        sql: include_str!("../../migrations/sqlite/0066_board_links.sql"),
         additive: true,
     },
 ];
@@ -878,8 +884,14 @@ const POSTGRES: &[Migration] = &[
     },
     Migration {
         version: 65,
+        name: "session_asker_agent",
+        sql: include_str!("../../migrations/postgres/0065_session_asker_agent.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 66,
         name: "board_links",
-        sql: include_str!("../../migrations/postgres/0065_board_links.sql"),
+        sql: include_str!("../../migrations/postgres/0066_board_links.sql"),
         additive: true,
     },
 ];

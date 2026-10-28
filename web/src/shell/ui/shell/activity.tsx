@@ -10,6 +10,11 @@
 // (#1035), with the ids `follow=1` streams them with, so the stream (where
 // a plain fetch reaches the daemon) only makes them show sooner. A daemon
 // from before #1035 keeps none: its System is what the stream brought.
+// The first time it's open for someone, a line says what it keeps.
+//
+// All sessions (native #245) reads the same without `session=`: what
+// `arugula history` reads, every session's and closed panes', as far as
+// the reader may read.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../../client";
@@ -19,6 +24,7 @@ import { openMenu } from "../../../shared/ui/menu";
 import { Time } from "../../../shared/ui/time";
 import { closePlace, currentPlace } from "../places";
 import { MoreIcon } from "./icons";
+import { markSeen, seen, seenReady, subscribeSeen, tipsOn } from "../../../shared/seen";
 
 // ---- what this device remembers
 
@@ -29,11 +35,13 @@ interface Prefs {
   height: number;
   live: boolean;
   filter: ActivityFilter;
+  /** Every session's, not only the selected one's. */
+  everywhere: boolean;
 }
 
 const KEY = "arugula.workspace.activity";
 const MIN_H = 96;
-const DEFAULT: Prefs = { open: false, height: 220, live: true, filter: "all" };
+const DEFAULT: Prefs = { open: false, height: 220, live: true, filter: "all", everywhere: false };
 const FILTERS: ActivityFilter[] = ["all", "agents", "commands", "system"];
 
 function load(): Prefs {
@@ -45,6 +53,7 @@ function load(): Prefs {
       height: typeof v.height === "number" ? Math.max(MIN_H, Math.round(v.height)) : DEFAULT.height,
       live: v.live !== false,
       filter: FILTERS.includes(v.filter as ActivityFilter) ? (v.filter as ActivityFilter) : "all",
+      everywhere: v.everywhere === true,
     };
   } catch {
     return DEFAULT;
@@ -78,6 +87,28 @@ function usePrefs(): Prefs {
 /** Open or collapse the drawer (the footer's toggle, and its own menu). */
 export function setActivityOpen(open: boolean) {
   setPrefs({ open });
+}
+
+/** What the drawer keeps, said the first time it's open for this person
+ * (shared/seen: per account through control, else per browser), unless
+ * they turned Tips off. */
+export const INTRO =
+  "Activity keeps what happened in this session: commands and how they ended, agents' turns and answers, and panes opening, closing and exiting. Click a row to go to its pane.";
+const INTRO_ID = "activity-intro";
+
+/** Whether the first-open line shows: from the first time the drawer is
+ * open, until it's closed. */
+function useIntro(open: boolean): boolean {
+  useSubscribe(subscribeSeen);
+  const [showing, setShowing] = useState(false);
+  const ready = seenReady();
+  useEffect(() => {
+    if (!open) return setShowing(false);
+    if (!ready || !tipsOn() || seen(INTRO_ID)) return;
+    markSeen(INTRO_ID);
+    setShowing(true);
+  }, [open, ready]);
+  return showing;
 }
 
 /** Daemons that answered without ids: too old for the drawer. It hides. */
@@ -151,11 +182,17 @@ class Feed {
   private retry: number | undefined;
   private busy: Promise<void> | null = null;
 
+  /** `session` null: every session's. */
   constructor(
     readonly client: Client,
-    readonly session: SessionId,
+    readonly session: SessionId | null,
   ) {
     this.live = !client.e2e;
+  }
+
+  /** The query's `session=`, when it's one session's. */
+  private get scope(): string {
+    return this.session === null ? "" : `session=${this.session}&`;
   }
 
   subscribe(fn: () => void) {
@@ -181,7 +218,7 @@ class Feed {
   private async fetch() {
     try {
       const [res] = await Promise.all([
-        this.client.request("GET", `/api/history?session=${this.session}&limit=200`),
+        this.client.request("GET", `/api/history?${this.scope}limit=200`),
         this.fetchSystem(),
       ]);
       if (this.stopped) return;
@@ -229,7 +266,7 @@ class Feed {
    * says how the session is, and the stream may still bring them. */
   private async fetchSystem() {
     try {
-      const path = `/api/events?session=${this.session}&type=${SYSTEM_TYPES}&since=${SYSTEM_SINCE}`;
+      const path = `/api/events?${this.scope}type=${SYSTEM_TYPES}&since=${SYSTEM_SINCE}`;
       const res = await this.client.request("GET", path);
       if (!res.ok || !res.text || this.stopped) return;
       for (const line of (await res.text()).split("\n")) {
@@ -245,7 +282,7 @@ class Feed {
     if (!this.live || this.stopped) return;
     const ctrl = (this.abort = new AbortController());
     const base = this.client.base;
-    const url = `${base}/api/events?session=${this.session}&follow=1&type=${SYSTEM_TYPES}`;
+    const url = `${base}/api/events?${this.scope}follow=1&type=${SYSTEM_TYPES}`;
     const again = () => {
       if (!this.stopped) this.retry = window.setTimeout(() => this.stream(), 5000);
     };
@@ -367,7 +404,8 @@ export function byName(by: string): string {
  * or open at the height this device keeps. */
 export function ActivityDrawer({ client, session }: { client: Client; session: SessionId }) {
   const p = usePrefs();
-  const feed = useMemo(() => new Feed(client, session), [client, session]);
+  const scope = p.everywhere ? null : session;
+  const feed = useMemo(() => new Feed(client, scope), [client, scope]);
   const [, tick] = useState(0);
   useEffect(() => feed.subscribe(() => tick((t) => t + 1)), [feed]);
   // Where this page's view stops: Clear view hides up to `cleared`; a
@@ -376,6 +414,7 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
   const [frozen, setFrozen] = useState(0);
   const list = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
+  const intro = useIntro(p.open);
 
   useEffect(() => {
     setCleared(0);
@@ -409,6 +448,7 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
 
   if (unavailable.has(client)) return null;
 
+  const where = p.everywhere ? "in any session" : "in this session";
   const refresh = () => void feed.refresh().then(() => setFrozen(feed.seq));
   const live = () => {
     if (p.live) setFrozen(feed.seq);
@@ -470,6 +510,15 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
             </button>
           ))}
         </div>
+        <button
+          class={p.everywhere ? "ws-activity-filter on" : "ws-activity-filter"}
+          aria-pressed={p.everywhere}
+          data-activity-scope={p.everywhere ? "all" : "session"}
+          title={p.everywhere ? "Showing every session's, closed panes too: click for this session's" : "Show every session's, closed panes too (what arugula history reads)"}
+          onClick={() => setPrefs({ everywhere: !p.everywhere, open: true })}
+        >
+          All sessions
+        </button>
         <span class="ws-activity-fill" />
         {p.open && (
           <>
@@ -488,7 +537,7 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
               <span class="ws-dot" aria-hidden="true" />
               Live
             </button>
-            <button class="ws-activity-refresh" data-activity-refresh title="Read the session's history again" onClick={refresh}>
+            <button class="ws-activity-refresh" data-activity-refresh title={p.everywhere ? "Read the history again" : "Read the session's history again"} onClick={refresh}>
               Refresh
             </button>
           </>
@@ -506,11 +555,16 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
             atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
           }}
         >
+          {intro && (
+            <div class="ws-activity-note ws-activity-intro" role="note" data-activity-intro>
+              {INTRO}
+            </div>
+          )}
           {feed.status === "loading" && shown.length === 0 ? (
-            <div class="ws-activity-empty">Reading the session's history…</div>
+            <div class="ws-activity-empty">{p.everywhere ? "Reading the history…" : "Reading the session's history…"}</div>
           ) : feed.status === "denied" ? (
             <div class="ws-activity-empty" data-activity-denied>
-              This session's activity isn't shared with you.
+              {p.everywhere ? "This machine's activity isn't shared with you." : "This session's activity isn't shared with you."}
             </div>
           ) : feed.status === "error" && shown.length === 0 ? (
             <div class="ws-activity-empty error" data-activity-error>
@@ -524,13 +578,13 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
                 : filter === "system"
                   ? "Nothing yet: panes opening, closing and exiting show here."
                   : filter === "agents"
-                    ? "No agent turns or answers in this session yet."
+                    ? `No agent turns or answers ${where} yet.`
                     : filter === "commands"
-                      ? "No commands in this session yet."
-                      : "Nothing in this session yet."}
+                      ? `No commands ${where} yet.`
+                      : `Nothing ${where} yet.`}
             </div>
           ) : (
-            shown.map((it) => <Row key={it.id} client={client} it={it} onClick={() => reveal(it)} />)
+            shown.map((it) => <Row key={it.id} client={client} it={it} session={p.everywhere ? session : null} onClick={() => reveal(it)} />)
           )}
           {feed.status === "error" && shown.length > 0 && (
             <div class="ws-activity-note error" data-activity-error>
@@ -543,8 +597,12 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
   );
 }
 
-function Row({ client, it, onClick }: { client: Client; it: Item; onClick: () => void }) {
+/** `session`: the one selected, when the list is every session's: a row
+ * from another says which it's from. */
+function Row({ client, it, session, onClick }: { client: Client; it: Item; session: SessionId | null; onClick: () => void }) {
   const here = it.pane !== null && !!client.info(it.pane);
+  const from = session === null || it.pane === null ? null : client.sessionOfPane(it.pane);
+  const elsewhere = from !== null && from !== session ? (client.state?.sessions.find((s) => s.id === from)?.name ?? `$${from}`) : null;
   const status =
     it.kind === "system" || it.kind === "agent" || it.kind === "answer"
       ? null
@@ -576,6 +634,7 @@ function Row({ client, it, onClick }: { client: Client; it: Item; onClick: () =>
       {it.pane !== null && (
         <span class={here ? "ws-activity-pane" : "ws-activity-pane closed"} title={`Pane %${it.pane}`}>
           {here ? paneName(client, it.pane) : "closed pane"}
+          {elsewhere && <span class="ws-activity-session"> · {elsewhere}</span>}
         </span>
       )}
     </button>

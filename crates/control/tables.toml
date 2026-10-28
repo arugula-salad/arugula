@@ -52,6 +52,10 @@ sees = "Litestream copies the whole database to a bucket (Cloudflare R2, for the
 name = "The run-log bucket"
 sees = "Runs on hosted workspaces (and only those) send their logs, the whole of their pane's output, and the files they leave as artifacts to a bucket in Cloudflare R2 (M213), through URLs the platform signs for one run at a time. The platform reads them and serves them to the project's members, with every machine asleep. The bucket deletes them after 30 days, and the platform forgets their rows then. A person's own machines never send any."
 
+[parties.mail]
+name = "The email provider"
+sees = "When control sends email (#1609: security notices, and the link that verifies an address), the provider behind its SMTP URL (Postmark or Resend for the hosted control) sees the address and the email: a short notice, never a terminal's or chat's content. Off when no SMTP URL is set."
+
 [parties.e2b]
 name = "E2B"
 sees = "E2B runs hosted workspaces' boxes, so it processes their contents: it holds each box's disk and memory (the repos, files, terminals and agent conversations in it) while the box lives, paused too, the env and metadata each is made with (the workspace, project, release and template ids), its egress rules (which hold projects' own inference keys, and name the platform's), and the platform's inference keys in its secrets broker. It records each box's runs (when, how long, its size), which it bills by and the platform reads back to check its own usage."
@@ -210,6 +214,51 @@ plane = "machine"
 process = "hub"
 holds = "metadata"
 what = "Which device turned a waiting device down, and when."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "account_resets"
+plane = "machine"
+process = "hub"
+holds = "plaintext"
+what = "An account's devices reset (aru-119): when, who ran it, the reason support wrote, and the certificates and revocations it archived."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "reset_requests"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A reset of an account's devices its person asked for (aru-119, #1582): when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device) or done."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "account_emails"
+plane = "machine"
+process = "hub"
+holds = "plaintext"
+what = "An account's email address for security notices (#1609): GitHub's primary verified one, or one typed and verified by a link, and when."
+with_account = "deleted"
+seen_by = ["litestream", "mail"]
+
+[[table]]
+name = "email_tokens"
+plane = "machine"
+process = "hub"
+holds = "plaintext"
+what = "A typed address waiting for its verify link (#1609): the link's token by its hash, the address, and when it expires (a day)."
+with_account = "deleted"
+seen_by = ["litestream", "mail"]
+
+[[table]]
+name = "email_sends"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "That control emailed an account (#1609): which kind of notice and when, never its body. Kept 90 days, for the daily limit."
 with_account = "deleted"
 seen_by = ["litestream"]
 
@@ -1165,7 +1214,7 @@ name = "agent_sessions"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A thread's agent session (M254): its project, the thread it was asked in (a room and a message number), whose mention started it (it runs as them, on the project's key), the hosted workspace it runs on and that box's machine (the only one whose reports move it), its agent block, repo and the one branch it may push, its state (queued, working, needs input, done, failed, unresponsive or stopped), when the platform last heard from the box, the last tool it ran and the last error it hit (as the agent said it), the draft PR its asker sent (or the one opened from its branch), how many times CI sent it back, when that PR merged (its thread is done then), and its times; and (M264) what it is to its thread (the thread's own, a Try 3's sibling of another session, or a review of one) with that session, the agent it asked for (Claude Code or Codex), and on a Try 3's parent the one kept, who picked it and when."
+what = "A thread's agent session (M254): its project, the thread it was asked in (a room and a message number), whose mention started it (it runs as them, on the project's key) and, when their agent asked for them by grant (aru-121), that agent's machine, the hosted workspace it runs on and that box's machine (the only one whose reports move it), its agent block, repo and the one branch it may push, its state (queued, working, needs input, done, failed, unresponsive or stopped), when the platform last heard from the box, the last tool it ran and the last error it hit (as the agent said it), the draft PR its asker sent (or the one opened from its branch), how many times CI sent it back, when that PR merged (its thread is done then), and its times; and (M264) what it is to its thread (the thread's own, a Try 3's sibling of another session, or a review of one) with that session, the agent it asked for (Claude Code or Codex), and on a Try 3's parent the one kept, who picked it and when."
 why_asleep = "A session is asked for, followed and shown in its thread with every person's machine asleep; the box it runs on is the project's, not theirs."
 with_account = "partly"
 note = "The sessions of projects that go with it go. The rest stay, naming no one who asked."

@@ -13,7 +13,7 @@
 // phone. A push's tap (`#chat=<room>&msg=<n>` on control's page) opens the
 // room at the message on the platform page.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 import { closeContexts, menuItem, paneEl } from "./helpers";
 import { TeamControl, call, home, live, show } from "./team-fixture";
 import { pixel7 } from "./phones";
@@ -153,6 +153,20 @@ test("the rail's Chat opens the platform page, where Alice makes #general and me
   // Alice's pane: control says it opens for her (on control's page).
   await expect(quoted.locator("[data-pane-chip]")).toHaveAttribute("data-opens", "1");
   await expect(quoted.locator(".thread-quote pre")).toHaveText("MEAN-TEST-FAILED");
+});
+
+// #1596: in the desktop app, Chat opens the platform page in a window of its
+// own (the app reuses one), and the terminals stay where they were.
+test("in the app, the rail's Chat opens a window of its own, beside the terminals", async () => {
+  const shell = await alice.context().newPage();
+  await shell.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac", signedIn: true } }));
+  await shell.goto(`${t.base}/`);
+  const [opened] = await Promise.all([alice.context().waitForEvent("page"), shell.locator(".ws-rail [data-open-chat]").click()]);
+  await expect(opened).toHaveURL(new RegExp(`^${app}/`), { timeout: 15_000 });
+  // The terminals' window is still Control's page.
+  expect(new URL(shell.url()).origin).toBe(new URL(t.base).origin);
+  await opened.close();
+  await shell.close();
 });
 
 test("Bob has it live, mentioned; the chip doesn't open for him", async () => {
@@ -458,14 +472,20 @@ test("polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a sc
 
   // Scrolled up, Bob's new message is "↓ 1 new message"; the button and Esc go down.
   // (Twenty, with what the room has: sixty posts a minute is an account's most.)
-  for (let i = 0; i < 20; i++) await say(aliceChat, general, `filler ${Date.now()}`);
+  let filler = 0;
+  for (let i = 0; i < 20; i++) filler = (await say(aliceChat, general, `filler ${Date.now()}`)).seq;
+  // All of them in the room first: one of mine that comes after the scroll
+  // takes the room back down (a room follows my own messages).
+  await expect(room.locator(`[data-msg="${filler}"]`)).toBeVisible({ timeout: 15_000 });
   const list = room.locator(".thread-list");
   // The scroll's event comes with a frame, which a page in the background
   // doesn't get: send it with the scroll.
-  await list.evaluate((el) => {
-    el.scrollTop = 0;
-    el.dispatchEvent(new Event("scroll"));
-  });
+  const scrollUp = () =>
+    list.evaluate((el) => {
+      el.scrollTop = 0;
+      el.dispatchEvent(new Event("scroll"));
+    });
+  await scrollUp();
   await expect(room.locator("[data-jump-newest]")).toBeVisible();
   await platform(bob, "/chat");
   await say(bob, general, "while you were up there");
@@ -473,7 +493,10 @@ test("polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a sc
   await room.locator("[data-jump-newest]").click();
   await expect(room.locator("[data-jump-newest]")).toHaveCount(0);
   await expect(room.locator(".thread-msg").last()).toContainText("while you were up there");
-  await list.evaluate((el) => (el.scrollTop = 0));
+  // Up again, and Esc once the room knows it's up: before its scroll event,
+  // Esc finds the room at the bottom and leaves it be.
+  await scrollUp();
+  await expect(room.locator("[data-jump-newest]")).toBeVisible();
   await aliceChat.keyboard.press("Escape");
   await expect(room.locator("[data-jump-newest]")).toHaveCount(0);
 
@@ -485,6 +508,84 @@ test("polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a sc
   expect(Math.abs(t!.y - n!.y)).toBeLessThan(12);
   expect(Math.abs(n!.y - x!.y)).toBeLessThan(12);
   await aliceChat.evaluate(() => (document.documentElement.dataset.density = "cozy"));
+});
+
+test("a message that comes while the room's read is out shows: the room's first read, and a read of what's new", async () => {
+  test.setTimeout(60_000);
+  // What the page's live stream says, in order, as its handler hears it.
+  await aliceChat.addInitScript(() => {
+    const d = Object.getOwnPropertyDescriptor(EventSource.prototype, "onmessage")!;
+    const w = window as unknown as { __heard?: string[] };
+    Object.defineProperty(EventSource.prototype, "onmessage", {
+      configurable: true,
+      get() {
+        return d.get!.call(this);
+      },
+      set(fn: (e: MessageEvent) => void) {
+        d.set!.call(this, (e: MessageEvent) => {
+          (w.__heard ??= []).push(e.data as string);
+          fn(e);
+        });
+      },
+    });
+  });
+  const heard = () =>
+    aliceChat.evaluate(() => ((window as unknown as { __heard?: string[] }).__heard ?? []).map((d) => JSON.parse(d) as { type: string; room?: string; seq?: number }));
+  const told = (seq: number) => (e: { type: string; room?: string; seq?: number }) => e.type === "message" && e.room === general && e.seq === seq;
+  /** Hold the first answer to a read of #general that `want` picks, once
+   * control has given it: `answered` is when it has. The reads after it
+   * pass. (Taken off only at the end: a read the page sends while a route
+   * is being taken off can hang.) */
+  const routes: [(u: URL) => boolean, (r: Route) => Promise<void>][] = [];
+  const hold = async (want: (u: URL) => boolean) => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let answered!: () => void;
+    const got = new Promise<void>((r) => (answered = r));
+    let first = true;
+    const pick = (u: URL) => u.pathname === `/api/chat/rooms/${general}/messages` && want(u);
+    const handler = async (route: Route) => {
+      if (!first) return route.continue();
+      first = false;
+      const res = await route.fetch();
+      answered();
+      await held;
+      await route.fulfill({ response: res });
+    };
+    await aliceChat.route(pick, handler);
+    routes.push([pick, handler]);
+    return { answered: got, release };
+  };
+  await platform(bob, "/chat");
+
+  // The room's first read is out when Bob writes: on its way back, it
+  // hasn't what he wrote, and the page heard of it before it had the room.
+  const first = await hold((u) => !u.search);
+  await aliceChat.bringToFront();
+  const opening = aliceChat.goto(`${app}/chat/${general}`);
+  await first.answered;
+  const since = (await heard()).length;
+  const one = await say(bob, general, "while the room was opening");
+  // The stream told of it, or said hello (and so of everything) after it.
+  await expect
+    .poll(async () => (await heard()).slice(since).some((e) => e.type === "hello" || told(one.seq)(e)))
+    .toBe(true);
+  first.release();
+  await opening;
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  await expect(room.locator(`[data-msg="${one.seq}"]`)).toBeVisible({ timeout: 10_000 });
+
+  // A read of what's new is out when Bob writes again: the page heard of
+  // the second while the first's answer was on its way.
+  const next = await hold((u) => u.searchParams.has("after"));
+  const two = await say(bob, general, "the first of two");
+  await next.answered;
+  const three = await say(bob, general, "the second of two");
+  await expect.poll(async () => (await heard()).some(told(three.seq))).toBe(true);
+  next.release();
+  await expect(room.locator(`[data-msg="${two.seq}"]`)).toBeVisible({ timeout: 10_000 });
+  await expect(room.locator(`[data-msg="${three.seq}"]`)).toBeVisible({ timeout: 10_000 });
+  for (const [pick, handler] of routes) await aliceChat.unroute(pick, handler);
 });
 
 test("topic and pins: Alice sets a topic and pins two messages, Bob sees both live and the pin list jumps to the message", async () => {

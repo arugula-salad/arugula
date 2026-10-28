@@ -154,7 +154,7 @@ pub async fn keep_sweeping() {
     let mut every = tokio::time::interval(SWEEP_EVERY);
     loop {
         every.tick().await;
-        let _ = tokio::task::spawn_blocking(|| {
+        let _ = crate::task::spawn_blocking(|| {
             if let Ok(root) = root() {
                 sweep(&root, KEEP);
             }
@@ -248,7 +248,7 @@ async fn store(app: &App, id: PaneId, q: UploadQuery, body: Bytes) -> Res<serde_
     }
     let name = if ext.is_empty() { q.id.clone() } else { format!("{}.{ext}", q.id) };
     let (offset, last) = (q.offset, q.last);
-    let path = tokio::task::spawn_blocking(move || -> Result<PathBuf, ApiError> {
+    let path = crate::task::spawn_blocking(move || -> Result<PathBuf, ApiError> {
         let dir = folder(id).map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         if used(dir.parent().unwrap_or(&dir)) + body.len() as u64 > QUOTA {
             return Err(err(
@@ -315,7 +315,7 @@ const FORGET: &str = r#"rm -rf "$HOME/.cache/arugula/uploads/$1" "$HOME/.cache/i
 /// Remove a closed pane's uploads on the machine it ran on, if that
 /// machine stays.
 pub fn forget_on(provider: Arc<dyn crate::provider::Provider>, sprite: String, pane: PaneId) {
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         // (#505, kept where it is) A pane from before the rename has its uploads in the old folder.
         let script = FORGET;
         let tag = pane.to_string();
@@ -411,7 +411,7 @@ pub async fn paste_into(
     // there.
     let on_machine = matches!(app.mux.api(|r| Api::MachineOf(id, r)).await, Some(Some(_)));
     if !req.force && !on_machine {
-        let front = tokio::task::spawn_blocking({
+        let front = crate::task::spawn_blocking({
             let p = p.clone();
             move || p.command().or_else(|| p.own_command())
         })
@@ -422,7 +422,7 @@ pub async fn paste_into(
             return Ok(serde_json::json!({ "pasted": false, "front": front, "text": text }));
         }
     }
-    let data = tokio::task::spawn_blocking({
+    let data = crate::task::spawn_blocking({
         let p = p.clone();
         move || p.encode_paste(text)
     })

@@ -35,6 +35,7 @@ import { controlOrigin, session, type PlatformProject } from "../session";
 import { toast } from "../toast";
 import { ListLoading, mayWrite, nameIn } from "./issues";
 import { Missing } from "./project";
+import { NewWorkspaceButton } from "./hosted-workspace";
 import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type RunLogPage, type RunSpec, type RunView } from "../runs";
 import { runTone, toneClass, type Tone } from "../swarm";
 import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, deployTitle, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, shortId, startedBy, stripAnsi, tone, took, triggerLine, withoutExitNote, workspaceLabel } from "../runs-text";
@@ -71,8 +72,8 @@ function useSpecs(project: string): [RunSpec[] | null, () => void] {
   return [specs, () => setTick((t) => t + 1)];
 }
 
-function useWorkspaces(project: string): HostedWorkspace[] {
-  const [ws, setWs] = useState<HostedWorkspace[]>([]);
+function useWorkspaces(project: string): HostedWorkspace[] | null {
+  const [ws, setWs] = useState<HostedWorkspace[] | null>(null);
   useEffect(() => {
     let live = true;
     runs.workspaces(project).then((w) => live && setWs(w));
@@ -117,10 +118,12 @@ export function RunsPage({ project, filter }: { project: string; filter: RunFilt
 function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
   const [list, setList] = useState<RunView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [starting, setStarting] = useState(false);
+  // The project home's Start a run comes here with `#new-run`.
+  const [starting, setStarting] = useState(() => starter(p) && location.hash === "#new-run");
   const [addingSpec, setAddingSpec] = useState(false);
   const [specs, rereadSpecs] = useSpecs(p.id);
-  const workspaces = useWorkspaces(p.id);
+  const listed = useWorkspaces(p.id);
+  const workspaces = listed ?? [];
   const nameOf = nameIn(p);
   const specName = (id: unknown) => (typeof id === "string" ? specs?.find((s) => s.id === id)?.name : undefined);
   const key = JSON.stringify([p.id, filter.state, filter.trigger, filter.spec]);
@@ -212,11 +215,14 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
       </div>
       {error && <p class="control-error" role="alert">{error}</p>}
       {list === null && !error && <ListLoading />}
-      {list?.length === 0 && (
-        <p class="dim issues-none" data-runs-none>
-          {narrowed ? "No runs match." : starter(p) ? "No runs yet. Start one with New run, or give a run spec a schedule." : "No runs yet."}
-        </p>
-      )}
+      {list?.length === 0 &&
+        (narrowed ? (
+          <p class="dim issues-none" data-runs-none>
+            No runs match.
+          </p>
+        ) : (
+          <NoRuns p={p} workspaces={listed} starting={starting} start={() => setStarting(true)} />
+        ))}
       <ul class="issues-list sw-cards" data-runs-list>
         {list?.map((r) => {
           const path = pathOf({ page: "run", project: p.id, run: r.id }, names);
@@ -248,6 +254,43 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
       </ul>
       <Specs p={p} specs={specs} workspaces={workspaces} reread={rereadSpecs} adding={addingSpec} setAdding={setAddingSpec} />
     </section>
+  );
+}
+
+/** Why a reader can't start runs here, in one line; null when they can. */
+export function whyNoStart(p: PlatformProject): string | null {
+  if (!mayWrite(p)) return "A team's owners and editors start its runs; you can read them here.";
+  if (!session.hosted) return "Runs go on cloud workspaces, which are in a limited beta your account isn't in yet.";
+  return null;
+}
+
+/** No runs yet: the next step for someone who can start one (a cloud
+ * workspace first, where there's none to run on), and why not, in one
+ * line, for anyone else. */
+function NoRuns({ p, workspaces, starting, start }: { p: PlatformProject; workspaces: HostedWorkspace[] | null; starting: boolean; start: () => void }) {
+  const why = whyNoStart(p);
+  if (why || workspaces === null)
+    return (
+      <p class="dim issues-none" data-runs-none data-runs-why={why ? "" : undefined}>
+        No runs yet.{why ? ` ${why}` : ""}
+      </p>
+    );
+  if (!workspaces.length)
+    return (
+      <div class="issues-none platform-empty" data-runs-none>
+        <p>No runs yet. A run is a command on one of the project's cloud workspaces, and it has none yet: make one first.</p>
+        <NewWorkspaceButton project={p.id} />
+      </div>
+    );
+  return (
+    <div class="issues-none platform-empty" data-runs-none>
+      <p>No runs yet. Start one by hand (a command, or a run spec), or give a run spec a schedule.</p>
+      {!starting && (
+        <button class="primary" data-runs-none-start onClick={start}>
+          Start a run
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -634,7 +677,7 @@ function useRun(id: string): { run: RunView | null; missing: string | null } {
 function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: number }) {
   const { run, missing } = useRun(id);
   const [specs] = useSpecs(p.id);
-  const workspaces = useWorkspaces(p.id);
+  const workspaces = useWorkspaces(p.id) ?? [];
   const nameOf = nameIn(p);
   const back = pathOf({ page: "runs", project: p.id }, names);
   if (missing && !run) return <Missing what={`That run isn't one you can read (${missing}).`} />;

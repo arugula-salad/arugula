@@ -15,9 +15,11 @@ const A1: crate::db::doc_links::Maker = crate::db::doc_links::Maker { account: "
 const CONTROL: &str = "http://control.test";
 const DOMAIN: &str = "blocks.test";
 const DOCS: &str = "docs.blocks.test";
-/// What decision 5 says the viewer is served under.
+/// What decision 5 says the viewer is served under, with its own fonts
+/// (#255, DECISIONS.md "A shared Doc's page loads its fonts from its own origin").
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; \
-                   connect-src 'self'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+                   font-src 'self'; connect-src 'self'; worker-src 'none'; base-uri 'none'; form-action 'none'; \
+                   frame-ancestors 'none'";
 
 struct Control {
     app: Arc<App>,
@@ -42,7 +44,8 @@ async fn control(tweak: impl FnOnce(&mut App)) -> Control {
         Files(std::env::temp_dir().join(format!("arugula-doc-links-{}", hex::encode(arugula_e2e::random::<8>()))));
     std::fs::create_dir_all(files.0.join("assets")).unwrap();
     std::fs::write(files.0.join("index.html"), "<!doctype html><title>Arugula control</title>").unwrap();
-    std::fs::write(files.0.join("doc.html"), "<!doctype html><title>the viewer</title>").unwrap();
+    std::fs::write(files.0.join("doc.html"), "<!doctype html><head><title>the viewer</title></head><body></body>")
+        .unwrap();
     std::fs::write(files.0.join("assets/doc-abc.js"), "// the viewer").unwrap();
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
@@ -607,6 +610,59 @@ async fn the_viewer_has_its_headers_its_page_its_files_and_etags() {
         .unwrap();
     assert_eq!(r.status(), 200, "a new version isn't fresh");
     assert_eq!(r.headers()[header::ETAG], format!("\"{link}-2-0\"").as_str());
+}
+
+// #255: a link preview finds the same title, words and card (the site's)
+// for any id, shared or not, since control can't read a Doc.
+#[tokio::test]
+async fn the_page_carries_a_link_preview() {
+    let c = control(|_| {}).await;
+    let d = daemon(&c.app, "a1", "geek");
+    let link = id(85);
+    c.share(&d, &link, 1, &[b"secret words"]).await;
+    let tags = |id: &str| {
+        let url = format!("http://docs.blocks.test/{id}");
+        [
+            "<meta property=\"og:site_name\" content=\"Arugula\">".to_owned(),
+            "<meta property=\"og:title\" content=\"A shared Doc\">".to_owned(),
+            "<meta property=\"og:description\" content=\"A Doc made with Arugula. It's encrypted: only its link opens it.\">"
+                .to_owned(),
+            format!("<meta property=\"og:url\" content=\"{url}\">"),
+            "<meta property=\"og:image\" content=\"https://arugula.io/img/og.jpg\">".to_owned(),
+            "<meta property=\"og:image:type\" content=\"image/jpeg\">".to_owned(),
+            "<meta property=\"og:image:width\" content=\"1200\">".to_owned(),
+            "<meta property=\"og:image:height\" content=\"630\">".to_owned(),
+            "<meta name=\"twitter:card\" content=\"summary_large_image\">".to_owned(),
+            "<meta name=\"twitter:image\" content=\"https://arugula.io/img/og.jpg\">".to_owned(),
+        ]
+    };
+    let unshared = id(86);
+    let mut pages = Vec::new();
+    for l in [&link, &unshared] {
+        let html = c.view(&format!("/{l}")).await.text().await.unwrap();
+        let head = &html[..html.find("</head>").expect("a head")];
+        for t in tags(l) {
+            assert!(head.contains(&t), "{t} in {html}");
+        }
+        assert!(html.contains("the viewer"), "the build's page, around them");
+        pages.push(html.replace(l.as_str(), "ID"));
+    }
+    assert_eq!(pages[0], pages[1], "nothing says which id is shared");
+    assert!(!pages[0].contains("secret"));
+
+    // Under /d/ with no block domain: the page's own URL, the same card.
+    let off = control(|a| a.cfg.block_domain = None).await;
+    let html = off.at("control.test", reqwest::Method::GET, &format!("/d/{link}")).send().await.unwrap();
+    let html = html.text().await.unwrap();
+    assert!(html.contains(&format!("<meta property=\"og:url\" content=\"http://control.test/d/{link}\">")), "{html}");
+    assert!(html.contains("<meta property=\"og:image\" content=\"https://arugula.io/img/og.jpg\">"), "{html}");
+    // Nothing on the viewer serves a picture of its own.
+    assert_eq!(c.view("/card.png").await.status(), 404);
+
+    // With no web build, the placeholder has them too.
+    let bare = control(|a| a.cfg.static_dir = Some(std::env::temp_dir().join("arugula-no-such-dir"))).await;
+    let html = bare.view(&format!("/{link}")).await.text().await.unwrap();
+    assert!(html.contains("<meta property=\"og:title\" content=\"A shared Doc\">"), "{html}");
 }
 
 #[tokio::test]

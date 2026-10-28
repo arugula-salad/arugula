@@ -129,6 +129,17 @@ runs the handler and answers with `Json`. In `api.rs` the route table keeps
 its shape: `.op::<ClosePane>()` sits where `.route("/api/panes/{id}/close",
 post(close))` was.
 
+**A feature crate's operations** (#232). The operation types are
+`arugula-proto`'s and `Handle` is the base's, so Rust lets only the base
+write `impl Handle for O`. `Handle` and `McpOp` take a type parameter that
+says whose an operation is, `()` by default: a feature crate writes
+`impl Handle<Mine> for O` with a type of its own as `Mine`, routes it with
+`.op_of::<O, Mine>()` in the routes it registers, and lists and calls its
+MCP side with `def_of`, `kind_of` and `call_of`. Its MCP tools and kinds
+go into the base's table through `mcp/registry.rs`, each after the tool or
+kind it names, so the list keeps its order. The editor's IDE operations
+are the first (`crates/arugulad-editor/src/ide/ops.rs`).
+
 **The access check.** `authz::policy` asks `ops::policy(method, path)`
 first, which matches each declared operation's template and turns its
 `Access` into a `Policy`. A path that isn't an operation falls through to

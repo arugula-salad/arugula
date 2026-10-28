@@ -47,7 +47,7 @@ async fn rig(name: &str) -> Rig {
         .with_state((got.clone(), status.clone()));
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", l.local_addr().unwrap());
-    tokio::spawn(axum::serve(l, app).into_future());
+    crate::task::spawn(axum::serve(l, app).into_future());
     Rig { dir, got, status, url }
 }
 
@@ -104,7 +104,7 @@ async fn the_preview_shows_what_a_yes_would_send() {
     let p = t.info().preview.expect("a preview while not asked");
     assert_eq!(p["preview_only"], true);
     assert_eq!(p["install"], PREVIEW_INSTALL);
-    assert_eq!(p["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(p["version"], arugula_core::version::get());
     assert_eq!((p["channel"].as_str(), p["control"].as_str()), (Some("source"), Some("none")));
     let report: Report = serde_json::from_value(p).unwrap();
     assert!(report.check().is_err(), "a preview can't be taken for a report");

@@ -134,8 +134,8 @@ test("the share page's chunks are the Doc renderer and nothing of the app", asyn
   expect([...html.matchAll(/rel="stylesheet"[^>]*href="([^"]+)"/g)].map((m) => m[1]!.replace(/-[\w-]{8}\.css$/, ""))).toEqual(["/assets/doc"]);
   const index = readFileSync(join(dist, "index.html"), "utf8");
   expect(index, "the app's own CSS stays the app's").not.toMatch(/assets\/style-/);
-  // No icon request, no beacon, no other page's script.
-  expect(html).toContain('<link rel="icon" href="data:,"');
+  // No icon request (the leaf is a data: URL, #255), no beacon, no other page's script.
+  expect(html).toContain('<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,');
   expect(html).toContain('<meta name="referrer" content="no-referrer"');
   expect(html.match(/<script/g)).toHaveLength(1);
 });

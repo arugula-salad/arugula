@@ -66,6 +66,27 @@ bps: number,
 last_ms: number, };
 
 /**
+ * One line of the card *What your agent can do here*: `GET /api/agent-can`
+ * (the `agent_can.get` operation). The daemon's MCP tools each have one,
+ * or are part of another's, and only those this machine offers are sent:
+ * their Labs flags, a forge login here, control and its grants, as the
+ * agent's `capabilities` says.
+ */
+export type AgentCan = { 
+/**
+ * The MCP tool it is (`show`, `doc`).
+ */
+tool: string, 
+/**
+ * The rest of "Ask it to …".
+ */
+ask: string, 
+/**
+ * A prompt to copy.
+ */
+example: string, };
+
+/**
  * The agent working on an issue, and what it made.
  */
 export type AgentLink = { branch: string, 
@@ -2735,6 +2756,18 @@ inbox?: boolean,
  */
 unhooked?: boolean, 
 /**
+ * The last link to a pull request or an issue it printed (`gh pr
+ * create`'s), by its shape (`arugula_mux::osc::forge_link`): the web
+ * client's hint that a click opens it as a block.
+ */
+link?: string | null, 
+/**
+ * The daemon brought it back when it started, and its process didn't
+ * survive the restart (a reboot): its restart policy ran. For as long
+ * as this daemon runs.
+ */
+restored?: boolean, 
+/**
  * Who is driving it (M13): only their typing reaches it, unless it's
  * in pair mode. `None`: nobody yet (the next to type drives).
  */
@@ -3426,6 +3459,12 @@ was: string | null,
  */
 asker: string, asker_name: string, 
 /**
+ * Who started it, when it was its asker's agent and not the asker by
+ * hand (aru-121, a `sessions.start` grant): "<asker>'s agent on
+ * <machine>", by their names now. The asker is still the asker.
+ */
+started_by: string | null, 
+/**
  * The hosted workspace it runs on, and its name ("" once it's gone).
  */
 workspace: string, workspace_name: string, repo: string | null, branch: string, created_at: number, updated_at: number, 
@@ -4056,6 +4095,7 @@ export const OPS = {
   "acl.set": { method: "POST", path: "/api/acl" },
   "adapter.install": { method: "POST", path: "/api/agents/adapters/{kind}/install" },
   "adapters.list": { method: "GET", path: "/api/agents/adapters" },
+  "agent_can.get": { method: "GET", path: "/api/agent-can" },
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },

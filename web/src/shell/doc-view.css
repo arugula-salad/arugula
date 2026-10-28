@@ -2,8 +2,10 @@
    app's, with its dark palette in :root; this is the light one for a reader
    whose system is light (Latte, as the app's "system" palette), and the
    column the Doc fills. The Doc itself wears its own look in either
-   (style.css's `.doc`, by the `data-scheme` doc-view.tsx sets). */
+   (style.css's `.doc`, by the `data-scheme` doc-view.tsx sets), in its
+   own fonts (fonts.css: the CSP's `font-src 'self'`, #255). */
 @import "../shared/style.css";
+@import "../shared/fonts.css";
 
 /* `:root:root`, to win over style.css's `:root` whatever the order. The
    build writes Latte's colors in for the marker, from appearance.ts's
@@ -25,14 +27,57 @@
   font-size: 15px;
 }
 
+/* A notice (no Doc to show) and Loading…, on the Doc's paper, in its
+   head's type: the display face over the leaf rule. */
 .doc-notice {
-  margin: 20vh auto 0;
-  max-width: 28rem;
-  padding: 0 1rem;
-  text-align: center;
+  max-width: 30rem;
+  margin: 12vh 0 0;
 }
 
-.doc-notice h1 {
-  font-size: 16px;
-  margin: 0 0 0.4rem;
+.doc-notice-title {
+  margin: 0;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--doc-rule);
+  font: 800 34px/1.05 var(--f-display);
+  letter-spacing: 0.005em;
+  text-wrap: balance;
+}
+
+.doc-notice-more {
+  margin: 14px 0 0;
+  color: var(--doc-ink-soft);
+}
+
+.doc-loading {
+  margin: 12vh 0 0;
+  color: var(--doc-ink-faint);
+}
+
+/* "Made with Arugula", under the last section: small and dim, the leaf in
+   the Doc's rule colour, brighter on hover. */
+.doc-made {
+  margin-top: 64px;
+  padding-top: 14px;
+  border-top: 1px solid var(--doc-line-quiet);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.doc-made a {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--doc-ink-faint);
+  text-decoration: none;
+}
+
+.doc-made a:hover,
+.doc-made a:focus-visible {
+  color: var(--doc-ink-soft);
+}
+
+.doc-made-leaf {
+  width: 16px;
+  height: 16px;
+  color: var(--doc-rule);
 }

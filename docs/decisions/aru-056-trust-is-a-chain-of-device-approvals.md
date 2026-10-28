@@ -53,3 +53,10 @@ project-scoped certificates: clients accept them only for that project,
 never for an account's personal trust, and show them as "Hosted: the
 operator can read". Revoking the delegation stops new enrollments. From:
 M175 (#1236), M178 (#1239).
+
+**Account reset** (lex00, Jake, 2026-10-27, #1582). When no device can
+approve and no recovery code is left, a fresh GitHub sign-in can reset the
+account's devices after a wait any device can cancel ("An account can reset
+its devices from a fresh GitHub sign-in, after a wait"). The new chain has a
+new root; daemons keep the old pin and need joining again on the machine,
+so control still can't add a reader to a joined machine.

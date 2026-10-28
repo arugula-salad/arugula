@@ -385,6 +385,62 @@ auth = "session"
 clients = ["page"]
 
 [[route]]
+method = "GET"
+path = "/api/me/email"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "The account's address for security notices (#1609): what control keeps, a link waiting, and whether this control sends email. The cookie alone."
+
+[[route]]
+method = "POST"
+path = "/api/me/email"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "A typed address (#1609): a link to verify it is emailed there, at most five emails an account a day. Never from the desktop app's window."
+
+[[route]]
+method = "DELETE"
+path = "/api/me/email"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Taking the account's address off (#1609): no more notices by email."
+
+[[route]]
+method = "GET"
+path = "/auth/email/verify"
+process = "hub"
+auth = "public"
+clients = ["browser"]
+note = "The link in a verify email (#1609): its token, used once within a day, makes the address the account's, then back to control's page with `#email=verified` or `#email=expired`."
+
+[[route]]
+method = "GET"
+path = "/api/me/reset"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Whether a reset of the account's devices is waiting, and when it's due (aru-119, #1582); one that's due is done here. The cookie alone."
+
+[[route]]
+method = "POST"
+path = "/api/me/reset"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Start a reset of the account's devices (aru-119, #1582): a GitHub sign-in from the last ten minutes, no device used in two days, none pending, none done this week, three a day. Every device and the verified email are told. Never from the desktop app's window."
+
+[[route]]
+method = "POST"
+path = "/api/me/reset/cancel"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Cancel the waiting reset (aru-119, #1582): the sign-in that started it, or a device or recovery code the account trusts signing `arugula reset cancel v1`, its account and when it started."
+
+[[route]]
 method = "POST"
 path = "/api/me/github/unlink"
 process = "hub"
@@ -2076,6 +2132,22 @@ process = "platform"
 auth = "session"
 clients = ["page"]
 note = "Agent on this (M265): @arugula written in a native issue's thread as the caller, starting a session there. Owners and editors on the hosted beta; refused while a session is going on the issue."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/sessions"  # wire::sessions::AGENT_SESSIONS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A machine's agent starts an agent session as its owner (aru-121, MCP's session_start): its @arugula on a native issue or in a project's channel, posted as \"<owner>'s agent on <machine>\", with `sessions.start` over the project. The owner is the asker and the payer; answers with the session, or the platform's lines since (why not, or which repo)."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/sessions/{ses}/reply"  # wire::sessions::AGENT_SESSION_REPLY
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A machine's agent replies in a session's thread as its owner (aru-121, MCP's session_reply), with `sessions.reply` over its project: answers its open question, or queues a prompt (never approves a permission). Says which."
 
 [[route]]
 method = "POST"

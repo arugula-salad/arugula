@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Tells people when a scheduled workflow fails, as scripts/ci-red does for
+# main: ci/green counts only the pushes' required checks, so a nightly
+# failed unseen (forges-nightly on 5 of 12 nights, macos-intel every week
+# for a month, to 2026-10-27). One issue per workflow, titled "nightly is
+# red: WORKFLOW"; GitHub notifies the repo's watchers. ci-red.yml runs it
+# every hour, after ci-red.
+#
+#   its newest scheduled run on main failed    open the issue, or comment
+#                                              on it once per failed run
+#   its newest scheduled run on main passed    comment that it's green and
+#                                              close the issue
+#
+# The workflows are its arguments (their files' names, without .yml), or
+# ARUGULA_NIGHTLIES. Reads and writes with gh (GH_TOKEN: actions: read,
+# issues: write).
+set -euo pipefail
+
+repo=${GITHUB_REPOSITORY:-arugula-salad/arugula}
+mention=${ARUGULA_RED_MENTION:-}
+read -r -a nightlies <<<"${*:-${ARUGULA_NIGHTLIES:-forges-nightly macos-vm macos-intel testnet-break perf-nightly}}"
+
+errors=0
+for wf in "${nightlies[@]}"; do
+  title="nightly is red: $wf"
+  # Its newest finished scheduled run on main: "ID CONCLUSION URL". One
+  # workflow gh can't read (renamed, or not on main yet) doesn't stop the
+  # others; the job fails at the end.
+  if ! run=$(gh run list -R "$repo" -w "$wf.yml" -b main -e schedule -s completed -L 1 \
+    --json databaseId,conclusion,url --jq '.[] | "\(.databaseId) \(.conclusion) \(.url)"'); then
+    echo "$wf: couldn't list its runs" >&2
+    errors=1
+    continue
+  fi
+  id='' conclusion='' url=''
+  read -r id conclusion url <<<"$run" || true
+  if [ -z "$id" ]; then echo "$wf: no scheduled run yet"; continue; fi
+  # Cancelled or skipped says nothing either way.
+  case "$conclusion" in success|failure|timed_out|startup_failure) ;; *) echo "$wf: newest run $id $conclusion"; continue ;; esac
+
+  issue='' state=''
+  found=$(gh issue list -R "$repo" --state all --search "in:title \"$title\"" --limit 20 \
+    --json number,title,state --jq ".[] | select(.title == \"$title\") | \"\\(.number) \\(.state)\"")
+  read -r issue state <<<"$found" || true
+
+  if [ "$conclusion" = success ]; then
+    if [ "$state" = OPEN ]; then
+      gh issue comment "$issue" -R "$repo" --body "Green again: $url (scripts/ci-nightly-red, every hour)."
+      gh issue close "$issue" -R "$repo" >/dev/null
+      echo "$wf: closed #$issue"
+    else
+      echo "$wf: green"
+    fi
+    continue
+  fi
+
+  news="- The scheduled run $url ended $conclusion."
+  footer="This is scripts/ci-nightly-red, every hour: it closes this when a scheduled $wf run passes."
+  if [ "$state" = OPEN ]; then
+    said=$(gh issue view "$issue" -R "$repo" --json body,comments --jq '.body, .comments[].body')
+    if [[ "$said" == *"/runs/$id"* ]]; then echo "$wf: #$issue already names run $id"; continue; fi
+    gh issue comment "$issue" -R "$repo" --body "$news"
+    echo "$wf: commented on #$issue"
+  else
+    gh issue create -R "$repo" --title "$title" --body "$news"$'\n\n'"$footer${mention:+$'\n\n'$mention}" >/dev/null
+    echo "$wf: opened \"$title\""
+  fi
+done
+exit $errors

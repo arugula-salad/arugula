@@ -75,7 +75,7 @@ async fn serve_ws(app: Arc<App>, socket: WebSocket) {
         }
         let _ = tx.close().await;
     };
-    let w = tokio::spawn(writer);
+    let w = crate::task::spawn(writer);
     tokio::select! {
         r = serve(app, in_rx, out_tx) => log_end(r),
         _ = reader => {}
@@ -113,7 +113,7 @@ pub async fn serve_stream(app: Arc<App>, stream: DuplexStream) {
         }
         let _ = wr.shutdown().await;
     };
-    let w = tokio::spawn(writer);
+    let w = crate::task::spawn(writer);
     tokio::select! {
         r = serve(app, in_rx, out_tx) => log_end(r),
         _ = reader => {}
@@ -232,7 +232,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
                         }
                     }
                     Ok(Some(Msg::Request { id, head, body })) => {
-                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
+                        crate::task::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
                     }
                     Ok(Some(Msg::Response { .. })) => break Err(anyhow::anyhow!("a client doesn't answer requests")),
                     Err(e) => break Err(e),
@@ -331,7 +331,7 @@ async fn serve_machine(
                 match ch.open(&w) {
                     Ok(None) => {}
                     Ok(Some(Msg::Request { id, head, body })) if full || agents_only(&head.path) => {
-                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
+                        crate::task::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
                     }
                     Ok(Some(Msg::Request { id, .. })) => {
                         let body = serde_json::to_vec(&serde_json::json!({ "error": "a machine reaches only the agents here (/api/a2a/)" })).unwrap();

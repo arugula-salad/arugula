@@ -767,7 +767,7 @@ mod tests {
         std::fs::remove_file(state.join("hosted-box")).unwrap();
         assert!(!first_boot(&state, &id_file, &dir));
         assert_eq!(from_snapshot(&dir, &id_file), None);
-        let waiting = tokio::spawn({
+        let waiting = crate::task::spawn({
             let (f, of) = (id_file.clone(), snapshot_of(&dir));
             async move { super::super::enroll::new_box(&f, of.as_deref()).await }
         });

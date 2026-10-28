@@ -35,6 +35,13 @@
 //! each start as its owner may (an owner or editor on the hosted beta's
 //! list). None is ever an approval.
 //!
+//! **Agents and sessions** (Fleet 3, aru-121). Two more, over a project
+//! only, given and asked the same way: `sessions.start` (its agents start
+//! an agent session as their owner, the session's asker and payer) and
+//! `sessions.reply` (they answer a session's question, or prompt it, in its
+//! thread). Never to an agent grant token, and never an approval: a
+//! session's permission waits on a person.
+//!
 //! [`cache::DELAY`]: crate::cache::DELAY
 
 use std::sync::Arc;
@@ -55,7 +62,7 @@ use crate::{
     chat,
     db::projects::{
         AGENT_POWERS, BOARD_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, Grant, ISSUES_WRITE, RUN_POWERS, SECRETS_WRITE,
-        THREADS_POST, THREADS_READ, subject_kind,
+        SESSION_POWERS, THREADS_POST, THREADS_READ, subject_kind,
     },
     hub::{Daemon, HubResult},
 };
@@ -119,9 +126,12 @@ pub(crate) async fn owner_reads(
 }
 
 /// Whether `power` is an agent's (M197's in conversations, M216's over
-/// runs).
+/// runs, aru-121's over sessions).
 pub fn is_agent_power(power: &str) -> bool {
-    AGENT_POWERS.contains(&power) || RUN_POWERS.contains(&power) || BOARD_POWERS.contains(&power)
+    AGENT_POWERS.contains(&power)
+        || RUN_POWERS.contains(&power)
+        || BOARD_POWERS.contains(&power)
+        || SESSION_POWERS.contains(&power)
 }
 
 /// Whether an agent's `power` is over a project only, never the owner's
@@ -132,13 +142,15 @@ fn project_only(power: &str) -> bool {
         || power == SECRETS_WRITE
         || RUN_POWERS.contains(&power)
         || BOARD_POWERS.contains(&power)
+        || SESSION_POWERS.contains(&power)
 }
 
 /// Whether `power` is one an agent grant token may hold (M230): the agent
-/// powers, and `secrets.write`. Never `cloud.drive`, and never an approval:
-/// no grant is.
+/// powers but a session's (aru-121: a machine's agents', whose card names
+/// the machine), and `secrets.write`. Never `cloud.drive`, and never an
+/// approval: no grant is.
 pub fn is_token_power(power: &str) -> bool {
-    is_agent_power(power) || power == SECRETS_WRITE
+    (is_agent_power(power) && !SESSION_POWERS.contains(&power)) || power == SECRETS_WRITE
 }
 
 /// What an agent with no machine is called beside its owner's name, in
@@ -195,7 +207,13 @@ fn how_to_grant(machine_name: &str, power: &str, scope: &AgentScope, scope_name:
         // The page has no switch for boards yet.
         return format!("its owner gives it with `arugula grants add {machine_name} {power} {flag}`");
     }
-    let switch = if RUN_POWERS.contains(&power) { "Agents and runs" } else { "Agents in conversations" };
+    let switch = if RUN_POWERS.contains(&power) {
+        "Agents and runs"
+    } else if SESSION_POWERS.contains(&power) {
+        "Agents on your machines (Start sessions, Answer sessions)"
+    } else {
+        "Agents in conversations"
+    };
     format!(
         "its owner gives it with `arugula grants add {machine_name} {power} {flag}`, or turns on {machine_name} for \
          {scope_name} under Settings, {switch}, on the platform page"
@@ -402,7 +420,8 @@ pub enum GiveScope {
 /// `cloud.drive` is over the account (no scope); `threads.read`,
 /// `threads.post` and `issues.write` take a scope, `{kind: "project", id}`
 /// for a project the giver reads, or `{kind: "account"}` for their DMs
-/// (threads only); `runs.read` and `runs.start` (M216) a project.
+/// (threads only); `runs.read` and `runs.start` (M216), and
+/// `sessions.start` and `sessions.reply` (aru-121), a project.
 pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Give>) -> R {
     let scope = match (b.power.as_str(), b.scope) {
         (CLOUD_DRIVE, None) => None,
@@ -423,7 +442,7 @@ pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Giv
             return Err(err(
                 StatusCode::BAD_REQUEST,
                 "the powers there are to give are cloud.drive, threads.read, threads.post, issues.write, deploys.plan, \
-                 runs.read, runs.start, runs.command, boards.read and boards.write",
+                 runs.read, runs.start, runs.command, boards.read, boards.write, sessions.start and sessions.reply",
             ));
         }
     };

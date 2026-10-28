@@ -1,0 +1,64 @@
+[package]
+name = "arugulad"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+arugulad-base = { workspace = true }
+# Docs, in every build.
+arugulad-docs = { workspace = true }
+# The deploy drivers (`_planter` and the rest), in every build.
+arugulad-drivers = { workspace = true }
+# The editor server and Claude Code's IDE, for the `editor` feature.
+arugulad-editor = { workspace = true, optional = true }
+# Labs, for the `labs` feature.
+arugulad-labs = { workspace = true, optional = true }
+
+[lints]
+workspace = true
+
+# The integration tests: the daemon, run as a process (arugula-testkit).
+[dev-dependencies]
+# The checks of the whole daemon (src/whole_tests.rs).
+arugulad-base = { workspace = true, features = ["whole-tests"] }
+aes-gcm = { workspace = true }
+arugula-control-wire = { workspace = true }
+arugula-e2e = { workspace = true }
+arugula-mux = { workspace = true }
+arugula-proto = { workspace = true, features = ["fixtures"] }
+arugula-testkit = { path = "../testkit" }
+arugula-vt = { workspace = true }
+axum = { workspace = true, features = ["ws"] }
+base64 = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+hkdf = { workspace = true }
+hmac = { workspace = true }
+p256 = { workspace = true, features = ["ecdh", "ecdsa"] }
+regex = { workspace = true }
+reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
+rmcp = { version = "=3.5.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest", "transport-child-process"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }
+url = { workspace = true }
+zstd = { workspace = true }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["term", "process", "fs", "signal", "poll", "socket", "user"] }
+rmcp = { version = "=3.5.0", default-features = false, features = ["transport-streamable-http-client-unix-socket"] }
+
+[features]
+# The daemon's features: the forge is the library's (see
+# crates/daemon/Cargo.toml); Labs and the editor are crates of their own,
+# which main.rs registers.
+default = ["labs", "forge", "editor"]
+forge = ["arugulad-base/forge"]
+editor = ["dep:arugulad-editor"]
+labs = ["arugulad-base/labs", "dep:arugulad-labs"]
+debug-embed = ["arugulad-base/debug-embed"]

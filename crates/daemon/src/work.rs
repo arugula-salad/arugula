@@ -93,17 +93,20 @@ use crate::{mux::Api, server::App};
 #[path = "work_deploy.rs"]
 mod deploy;
 
-#[path = "work_apps_platform.rs"]
-pub mod apps_platform;
-
-#[path = "work_arugula_release.rs"]
-pub mod arugula_release;
-
-#[path = "work_planter.rs"]
-pub mod planter;
-
 #[path = "work_sessions.rs"]
 pub mod sessions;
+
+/// What a box hands planter's Ship (`arugulad-drivers`): where the
+/// artifact was fetched to, by run.
+pub fn ship_artifact_path(run: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("arugula-ship-{run}.tgz"))
+}
+
+/// Whether `where` is Ship's: the artifact the platform keeps.
+pub fn ships(driver: &str, source_where: &str) -> bool {
+    use arugula_e2e::deploy::planter::{ARTIFACT_WHERE, SHIP};
+    driver == SHIP && source_where == ARTIFACT_WHERE
+}
 
 /// The ledger's directory, in the state directory.
 pub const DIR: &str = "work";
@@ -822,7 +825,7 @@ pub fn stop_revoked(app: &App) {
         match &run_as {
             Ok(Some(as_)) => {
                 let as_ = as_.clone();
-                tokio::spawn(async move { kill_all(&as_).await });
+                crate::task::spawn(async move { kill_all(&as_).await });
             }
             _ => {
                 if let Some(p) = l.pane {
@@ -932,7 +935,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
     // A deploy's apply: its driver, outside any pane, with the
     // environment's secrets (M219).
     if op.deploy.is_some() {
-        tokio::spawn(deploy::apply(app.clone(), l, item, as_));
+        crate::task::spawn(deploy::apply(app.clone(), l, item, as_));
         return;
     }
     let fail = |mut l: Ledger, why: String| {
@@ -1005,7 +1008,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         warn!(run = l.run, error = %format!("{e:#}"), "hosted: can't write the ledger");
     }
     info!(run = l.run, pane, kind = op.kind(), "hosted: a run started");
-    tokio::spawn(watch(app.clone(), l, Some(events)));
+    crate::task::spawn(watch(app.clone(), l, Some(events)));
 }
 
 /// How a run's pane ended: its exit code, or why it has none.
@@ -1051,7 +1054,7 @@ async fn watch(app: Arc<App>, l: Ledger, events: Option<tokio::sync::broadcast::
     let Some(pane) = l.pane else { return };
     // Its log goes to the run-log bucket as it runs (M213).
     let (done, follow) = tokio::sync::watch::channel(false);
-    let follower = tokio::spawn(crate::run_logs::follow(app.clone(), l.run.clone(), pane, l.epoch, follow));
+    let follower = crate::task::spawn(crate::run_logs::follow(app.clone(), l.run.clone(), pane, l.epoch, follow));
     let mut end = ended(&app, pane, l.epoch, events).await;
     let as_ = run_as().ok().flatten();
     if let Some(as_) = &as_ {
@@ -1114,7 +1117,7 @@ async fn resume(app: &Arc<App>) {
                 // A restored pane replays its history before it adopts what
                 // its shim kept: until then it isn't running, nor ended.
                 if let Some(h) = h.clone() {
-                    let _ = tokio::task::spawn_blocking(move || h.begun(Duration::from_secs(30))).await;
+                    let _ = crate::task::spawn_blocking(move || h.begun(Duration::from_secs(30))).await;
                 }
                 let panes = match h {
                     Some(_) => app.mux.api(Api::Panes).await.unwrap_or_default(),
@@ -1141,7 +1144,7 @@ async fn resume(app: &Arc<App>) {
                 warn!(run = l.run, error = %format!("{e:#}"), "hosted: can't write the ledger");
             }
             RUNNING.fetch_add(1, Ordering::SeqCst);
-            tokio::spawn(watch(app.clone(), l, None));
+            crate::task::spawn(watch(app.clone(), l, None));
             continue;
         }
         info!(run = l.run, "hosted: a run was interrupted by the restart; it isn't run again");
@@ -1235,7 +1238,7 @@ async fn send_all(app: &App, open: &mut BTreeSet<String>) {
 /// left, then pull, take what's ready (one run at a time), stop what a
 /// revoke covers, and send what's unsent.
 pub fn start(app: Arc<App>) {
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let dir = app.control.state_dir().to_owned();
         let every = pull_every();
         while me(&app).is_none() {

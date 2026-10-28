@@ -34,3 +34,31 @@ test("Ctrl+Shift+N selects pane N in reading order; an N past the last pane reac
   await run(page, order[2], "echo still-$((6*7))", "still-42");
   expect(await text(page, order[2])).toContain("still-42");
 });
+
+test("Ctrl+Shift+L goes to the next pane that needs you; with none, the terminal gets it", async ({ page }) => {
+  await reset(page);
+  const first = await active(page);
+  await ready(page, first);
+  // Nothing needs you yet: the key goes on.
+  await paneEl(page, first).click({ position: { x: 40, y: 40 } });
+  await page.keyboard.press("Control+Shift+KeyL");
+  expect(await active(page)).toBe(first);
+
+  // A command fails in a tab nobody is looking at (attention.spec.ts's way).
+  const shown = await page.evaluate(() => window.__arugula.client.tab!);
+  const failing = await page.evaluate(async () => (await (await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).json()).pane as number);
+  await expect.poll(() => page.evaluate((p) => !!window.__arugula.client.info(p)?.running, failing)).toBe(true);
+  await page.evaluate((t) => window.__arugula.client.selectTab(t), shown);
+  await page.waitForTimeout(500);
+  for (const line of ["cargo() { sleep 3.2; echo 'test result: FAILED'; return 101; }", "cargo test"])
+    await page.evaluate(
+      ({ pane, text }) => fetch(`/api/panes/${pane}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, enter: true }) }),
+      { pane: failing, text: line },
+    );
+  await expect.poll(() => page.evaluate((p) => window.__arugula.client.info(p)?.reason?.kind ?? null, failing), { timeout: 15_000 }).toBe("failed");
+
+  await paneEl(page, first).click({ position: { x: 40, y: 40 } });
+  await page.keyboard.press("Control+Shift+KeyL");
+  await expect.poll(() => active(page)).toBe(failing);
+  await expect.poll(() => page.evaluate(() => document.activeElement?.closest<HTMLElement>("[data-pane]")?.dataset.pane)).toBe(String(failing));
+});

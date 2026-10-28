@@ -9,10 +9,10 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use arugula_proto::{
     Attention, BlockType, Driver, PaneId, Policy, StartedBy,
-    api::{ActRequest, DocOpenRequest, HistoryEntry, HistoryKind, OpenRequest, PaneSummary, RunRequest, WaitResult},
+    api::{ActRequest, HistoryEntry, HistoryKind, OpenRequest, PaneSummary, RunRequest, WaitResult},
     flags::{self, On},
     forge::{ForgeState, ItemKind, ReviewEvent, Write},
-    op::ops::{ClosePane, ConversationOpen, ConversationsList, DocsList, ListPanes},
+    op::ops::{ClosePane, ConversationOpen, ConversationsList, ListPanes},
 };
 use rmcp::{
     RoleServer,
@@ -108,7 +108,7 @@ pub enum PaneArg {
 }
 
 impl PaneArg {
-    pub(crate) fn id(&self) -> Result<PaneId, String> {
+    pub fn id(&self) -> Result<PaneId, String> {
         match self {
             PaneArg::Id(n) => Ok(*n),
             PaneArg::Name(s) => s
@@ -336,12 +336,6 @@ pub struct OpenPortArgs {
     pub beside: Option<PaneArg>,
 }
 
-#[derive(Deserialize, JsonSchema)]
-pub struct DocShareArgs {
-    /// The Doc block (from doc new).
-    pub block: PaneArg,
-}
-
 // Read only by the handler, which a build without Labs lacks.
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
@@ -558,60 +552,6 @@ pub struct ShowFileArgs {
     /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
-}
-
-/// One section of a Doc's outline.
-#[derive(Deserialize, JsonSchema)]
-pub struct DocSection {
-    /// The section's heading.
-    pub heading: String,
-    /// One line on what the section will hold: the user reads it while the section is pending.
-    #[serde(default)]
-    pub intent: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct DocNewArgs {
-    /// The Doc's title.
-    pub title: String,
-    /// Every section, in order (at most 40), so the user sees the whole outline at once.
-    pub sections: Vec<DocSection>,
-    /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
-    #[serde(default)]
-    pub beside: Option<PaneArg>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct DocOpenArgs {
-    /// The Doc's id (doc list has them).
-    pub doc: String,
-    /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
-    #[serde(default)]
-    pub beside: Option<PaneArg>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct DocFillArgs {
-    /// The Doc block (from doc new).
-    pub block: PaneArg,
-    /// The section's id (s1, s2, … from doc new).
-    pub section: String,
-    /// The section's body, in Markdown (at most 64 KB). Filling a section again replaces it.
-    pub markdown: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct DocAssetArgs {
-    /// The Doc block (from doc new).
-    pub block: PaneArg,
-    /// The picture's name in the Doc: letters, digits, _ . and -, ending in .png, .jpg, .jpeg, .gif or .webp (the bytes must be that type). A name already used is replaced.
-    pub name: String,
-    /// A PNG, JPEG, GIF or WebP file you can read, as an absolute path (at most 2 MB). An agent on a machine of its own sends data instead.
-    #[serde(default)]
-    pub path: Option<String>,
-    /// Or the file itself, base64 (at most 2 MB).
-    #[serde(default)]
-    pub data: Option<String>,
 }
 
 // Read only by the handler, which a build without Labs lacks.
@@ -878,25 +818,86 @@ pub struct ListTeamAgentsArgs {
 
 type Schema = Arc<serde_json::Map<String, Value>>;
 
-pub(crate) struct Def {
-    pub(crate) name: &'static str,
-    pub(crate) title: &'static str,
-    pub(crate) description: &'static str,
-    pub(crate) args: Args,
-    pub(crate) read_only: bool,
-    pub(crate) destructive: bool,
-    pub(crate) idempotent: bool,
-    pub(crate) open_world: bool,
+pub struct Def {
+    pub name: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub args: Args,
+    pub read_only: bool,
+    pub destructive: bool,
+    pub idempotent: bool,
+    pub open_world: bool,
     /// The flag the machine needs on for it to be listed (`Op::FLAG`).
-    pub(crate) flag: Option<&'static str>,
+    pub flag: Option<&'static str>,
     /// Its answer's schema (`outputSchema`), when it is always one type: the
     /// answer's, with `summary`. A grouped tool answers by kind, and a tool
     /// that answers with more than one type in some case, has none.
-    pub(crate) output: Option<fn() -> Schema>,
+    pub output: Option<fn() -> Schema>,
+    /// What it lets the person ask for, in their words: the card *What your
+    /// agent can do here* is these ([`can_do`]).
+    pub human: Human,
+}
+
+/// A tool's place on the person's card. Every tool has one, so a new tool
+/// shows there and a removed one goes (`every_tool_has_a_human_line`).
+pub enum Human {
+    /// A line of its own.
+    Line(About),
+    /// Part of another tool's line, named: `wait` is how `run`'s line works,
+    /// not something a person asks for. The name is for the test that holds
+    /// the card complete (`every_tool_has_a_human_line`).
+    In(#[cfg_attr(not(test), allow(dead_code))] &'static str),
+}
+
+/// One line of the card.
+pub struct About {
+    /// The rest of "Ask it to …".
+    pub ask: &'static str,
+    /// A prompt the person can copy.
+    pub example: &'static str,
+    /// What this machine needs for it to work, as `capabilities` says.
+    pub needs: Needs,
+}
+
+/// What a line needs beyond its tool's flag, each as `capabilities` reports
+/// it: a forge login here, or control, and a grant there.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Needs {
+    Nothing,
+    /// The user signed in to a forge here (`forges`).
+    Forge,
+    /// This machine joined to Arugula control (`control.state`).
+    Control,
+    /// The user's Cloud workspaces reachable (`control.cloud`).
+    Cloud,
+    /// A thread grant (`control.threads`).
+    Threads,
+    /// An issues.write grant (`control.threads`' scopes).
+    Issues,
+    /// A run grant (`control.runs`).
+    Runs,
+}
+
+pub const fn line(ask: &'static str, example: &'static str, needs: Needs) -> Human {
+    Human::Line(About { ask, example, needs })
+}
+
+/// The card's lines with the flags in `on`, each kept where `has` says this
+/// machine has what it needs, in the tool list's order.
+pub(crate) fn can_do(on: On, has: impl Fn(Needs) -> bool) -> Vec<arugula_proto::api::AgentCan> {
+    defs(on)
+        .into_iter()
+        .filter_map(|d| match d.human {
+            Human::Line(a) if has(a.needs) => {
+                Some(arugula_proto::api::AgentCan { tool: d.name.into(), ask: a.ask.into(), example: a.example.into() })
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// What a tool takes.
-pub(crate) enum Args {
+pub enum Args {
     /// One set of arguments, for a tool that does one thing.
     One(fn() -> Schema),
     /// A grouped tool (#349): its `kind` argument picks one of these jobs,
@@ -908,13 +909,13 @@ pub(crate) enum Args {
 /// One job of a grouped tool, like `show {kind: "port", port: 3000}`. Each
 /// is a row, so the kinds that belong to one feature (the studio's) can be left out of their group, and their arguments with them,
 /// by filtering its table ([`defs`]).
-pub(crate) struct Kind {
-    pub(crate) name: &'static str,
+pub struct Kind {
+    pub name: &'static str,
     /// What it does, for the tool's description.
-    pub(crate) description: &'static str,
-    pub(crate) schema: fn() -> Schema,
+    pub description: &'static str,
+    pub schema: fn() -> Schema,
     /// The flag the machine needs on for it to be listed (`Op::FLAG`).
-    pub(crate) flag: Option<&'static str>,
+    pub flag: Option<&'static str>,
 }
 
 /// `show`'s blocks.
@@ -1005,51 +1006,6 @@ const DRAFT: &[Kind] = &[
 ];
 
 /// `doc`'s jobs (#963): a document the user watches fill in.
-const DOC: &[Kind] = &[
-    Kind {
-        name: "new",
-        description: "A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.",
-        schema: schema_for_type::<DocNewArgs>,
-        flag: None,
-    },
-    super::ops::kind::<DocsList>(),
-    Kind {
-        name: "open",
-        description: "Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.",
-        schema: schema_for_type::<DocOpenArgs>,
-        flag: None,
-    },
-    Kind {
-        name: "fill",
-        description: r##"Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.
-
-Two kinds of fenced block draw as more than code, in the section that talks about them.
-A chart: a ```chart fence holding a JSON spec. type is "bar" or "line"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with "order": [...]. For example:
-```chart
-{"type": "bar", "title": "Sales by month", "x": "month", "y": ["sales"], "rows": [{"month": "Jan", "sales": 12}, {"month": "Feb", "sales": 19}]}
-```
-A drawing: a ```svg fence holding one <svg> element, with xmlns="http://www.w3.org/2000/svg" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run. For example:
-```svg Idea to app
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40"><rect x="2" y="8" width="60" height="24" fill="#e8f0fe" stroke="#335"/><path d="M62 20 H98" stroke="#335"/><rect x="98" y="8" width="60" height="24" fill="#e6f4ea" stroke="#335"/></svg>
-```
-Every fence is checked before anything is written: a bad chart or drawing is refused with one line saying what to fix, and the section stays as it was."##,
-        schema: schema_for_type::<DocFillArgs>,
-        flag: None,
-    },
-    Kind {
-        name: "asset",
-        description: r##"Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {"kind": "asset", "block": 7, "name": "flow.png", "path": "/tmp/flow.png"}."##,
-        schema: schema_for_type::<DocAssetArgs>,
-        flag: None,
-    },
-    Kind {
-        name: "share",
-        description: r##"Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: "waiting"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it."##,
-        schema: schema_for_type::<DocShareArgs>,
-        flag: None,
-    },
-];
-
 /// `list`'s lists.
 const LIST: &[Kind] = &[
     super::ops::kind::<ListPanes>(),
@@ -1150,7 +1106,7 @@ fn forge_kind(tool: &str, kind: &str) -> bool {
 fn listed_kind(on: On, tool: &str, kind: &Kind) -> bool {
     kind.flag.is_none_or(|f| on.has(f))
         && UNLISTED.iter().all(|(t, k, f)| (*t, *k) != (tool, kind.name) || on.has(f))
-        && (crate::forges::BUILT || !forge_kind(tool, kind.name))
+        && (crate::forges::built() || !forge_kind(tool, kind.name))
 }
 
 /// The tools `tools/list` shows: each one a stranger can't use needs its
@@ -1159,7 +1115,7 @@ fn defs(on: On) -> Vec<Def> {
     all_defs()
         .into_iter()
         .filter(|d| d.flag.is_none_or(|f| on.has(f)))
-        .filter(|d| crate::forges::BUILT || !FORGE_TOOLS.contains(&d.name))
+        .filter(|d| crate::forges::built() || !FORGE_TOOLS.contains(&d.name))
         // M78: delegating is the agent catalog's.
         .filter(|d| on.has(flags::AGENT_DELEGATION) || d.name != "delegate")
         .map(|mut d| {
@@ -1219,7 +1175,7 @@ fn table(kinds: &'static [Kind]) -> Vec<&'static Kind> {
 
 /// Every tool there is, listed or not, with every kind.
 fn all_defs() -> Vec<Def> {
-    vec![
+    let mut defs = vec![
         Def {
             name: "run",
             title: "Run a command in a pane",
@@ -1231,6 +1187,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: Some(output_schema::<results::RunState>),
+            human: line(
+                "run a build, the tests or a dev server in a pane you can watch and take over",
+                "Run the tests in a pane and tell me what fails.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "send_input",
@@ -1243,6 +1204,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("run"),
         },
         Def {
             name: "attach",
@@ -1255,6 +1217,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("run"),
         },
         Def {
             name: "read_output",
@@ -1267,6 +1230,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("run"),
         },
         Def {
             name: "wait",
@@ -1279,6 +1243,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("run"),
         },
         Def {
             name: "delegate",
@@ -1291,6 +1256,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "hand a task to an agent your team offers, on this machine or another",
+                "Ask the team's release agent to cut a build of main.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "list",
@@ -1303,6 +1273,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "tell you what's here: your panes, your Claude Code conversations, your devices",
+                "What's running in my panes right now?",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "capabilities",
@@ -1315,6 +1290,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: Some(output_schema::<results::Capabilities>),
+            human: Human::In("list"),
         },
         super::ops::def::<ClosePane>(),
         Def {
@@ -1328,6 +1304,11 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: line(
+                "find what happened before: commands, their output, who answered what",
+                "Which commands failed in my terminals yesterday, and why?",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "show",
@@ -1340,18 +1321,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
-        },
-        Def {
-            name: "doc",
-            title: "Build a document for the user",
-            description: "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.",
-            args: Args::Kinds { kinds: table(DOC), default: None },
-            read_only: false,
-            destructive: false,
-            idempotent: false,
-            open_world: false,
-            flag: None,
-            output: None,
+            human: line(
+                "show you things beside it: a dev server, its changes, a file, a pull request",
+                "Start the dev server and show it to me beside you.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "start_agent",
@@ -1364,6 +1338,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: Some(output_schema::<results::BlockOnly>),
+            human: line(
+                "start other agents beside it and look after them",
+                "Start two agents on branches of their own, one per bug, and review what each did.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "prompt_agent",
@@ -1376,6 +1355,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("start_agent"),
         },
         Def {
             name: "agent_respond",
@@ -1388,6 +1368,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: Some(output_schema::<results::PaneOnly>),
+            human: Human::In("start_agent"),
         },
         Def {
             name: "read_forge",
@@ -1400,6 +1381,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: Some(output_schema::<results::ForgeRead>),
+            human: Human::In("draft"),
         },
         Def {
             name: "draft",
@@ -1412,6 +1394,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "read a pull request or issue and draft a comment, review or merge for you to send",
+                "Look at my PR's failing checks and draft a reply to the review.",
+                Needs::Forge,
+            ),
         },
         Def {
             name: "forge_read",
@@ -1424,6 +1411,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In("forge_draft"),
         },
         Def {
             name: "forge_draft",
@@ -1436,6 +1424,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "read your projects' linked GitHub repos and draft comments, reviews or issues for you to send",
+                "List the open PRs on our linked repo and draft a review of the oldest.",
+                Needs::Control,
+            ),
         },
         Def {
             name: "invite_person",
@@ -1448,6 +1441,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: Some(output_schema::<results::InviteDrafted>),
+            human: line(
+                "ask you to bring someone into this session, saying why",
+                "Ask my teammate to watch this session with me, and say why.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "read_invite",
@@ -1460,6 +1458,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: None,
+            human: Human::In("invite_person"),
         },
         Def {
             name: "read_file",
@@ -1472,6 +1471,7 @@ fn all_defs() -> Vec<Def> {
             open_world: false,
             flag: None,
             output: Some(output_schema::<results::FileRead>),
+            human: Human::In("show"),
         },
         Def {
             name: "device_call",
@@ -1484,6 +1484,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: Some(output_schema::<results::DeviceCalled>),
+            human: line(
+                "use your phone: take a photo, say where it is",
+                "Take a photo of the whiteboard with my phone.",
+                Needs::Nothing,
+            ),
         },
         Def {
             name: "read_cloud",
@@ -1496,6 +1501,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In("cloud"),
         },
         Def {
             name: "cloud",
@@ -1508,6 +1514,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "drive your Cloud workspaces: open an agent there, prompt it and follow its turn",
+                "Open a Claude tab in my Cloud workspace and have it fix the flaky test.",
+                Needs::Cloud,
+            ),
         },
         Def {
             name: "link_repo",
@@ -1520,6 +1531,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In("forge_draft"),
         },
         // M198: agents in conversations, through the owner's grants.
         Def {
@@ -1533,6 +1545,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "read, search and post in your projects' conversations",
+                "Search our project's channel for what we decided about sign-in.",
+                Needs::Threads,
+            ),
         },
         Def {
             name: super::threads::SEARCH_TOOL,
@@ -1545,6 +1562,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In(super::threads::READ_TOOL),
         },
         Def {
             name: super::threads::POST_TOOL,
@@ -1557,6 +1575,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In(super::threads::READ_TOOL),
         },
         // M200: native issues, written at once through the owner's grants.
         Def {
@@ -1570,6 +1589,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "file your project's issues and keep them up to date",
+                "File an issue for the crash we just found, with the steps.",
+                Needs::Issues,
+            ),
         },
         // Boards, step 3: a project's live status board, through the owner's
         // grants, behind the `boards` flag.
@@ -1584,6 +1608,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: Some(flags::BOARDS),
             output: None,
+            human: line(
+                "read your project's status board and keep its rows current",
+                "Mark the sign-in row done on our board.",
+                Needs::Control,
+            ),
         },
         Def {
             name: super::boards::WRITE_TOOL,
@@ -1596,6 +1625,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: Some(flags::BOARDS),
             output: None,
+            human: Human::In(super::boards::READ_TOOL),
         },
         // M216: a project's runs, through the owner's grants.
         Def {
@@ -1609,6 +1639,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "start your project's runs and follow them to the end",
+                "Start the nightly eval run and tell me how it went.",
+                Needs::Runs,
+            ),
         },
         Def {
             name: super::runs::READ_TOOL,
@@ -1621,6 +1656,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In(super::runs::START_TOOL),
         },
         // M252: plan a project's deploy and ask; an owner approves.
         Def {
@@ -1634,6 +1670,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "plan a deploy and ask an owner to approve it",
+                "Plan a deploy of main to staging.",
+                Needs::Control,
+            ),
         },
         Def {
             name: super::deploys::READ_TOOL,
@@ -1646,8 +1687,44 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In(super::deploys::PLAN_TOOL),
         },
-    ]
+        // Fleet 3 (aru-121): a person's agent starts, answers and prompts
+        // agent sessions as them, by their grants.
+        Def {
+            name: super::agent_sessions::START_TOOL,
+            title: "Start an agent session",
+            description: super::agent_sessions::START_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::agent_sessions::SessionStartArgs>),
+            read_only: false,
+            destructive: false,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+            human: line(
+                "hand an issue to an agent session on your project's cloud workspaces, and answer it",
+                "Start a session on issue #260 and tell me when it pushes.",
+                Needs::Control,
+            ),
+        },
+        Def {
+            name: super::agent_sessions::REPLY_TOOL,
+            title: "Answer or prompt an agent session",
+            description: super::agent_sessions::REPLY_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::agent_sessions::SessionReplyArgs>),
+            read_only: false,
+            destructive: false,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+            human: Human::In(super::agent_sessions::START_TOOL),
+        },
+    ];
+    // A feature crate's, where each says (#232).
+    super::registry::add(&mut defs);
+    defs
 }
 
 /// A grouped tool's schema: `kind`, then every kind's arguments. One that
@@ -1872,7 +1949,7 @@ fn pick_kind(
 
 // ---------------------------------------------------------------- calls
 
-pub(crate) type Out = Result<Value, String>;
+pub type Out = Result<Value, String>;
 
 /// The `outputSchema` of a tool whose successful answer is always a `T`: the
 /// schema of `T` as `done` sends it, which is the object with `summary` in it
@@ -1938,20 +2015,20 @@ pub(crate) fn read_only_tool(tool: &str) -> bool {
     all_defs().into_iter().find(|d| d.name == tool).is_some_and(|d| d.read_only)
 }
 
-pub(crate) fn done(summary: impl Into<String>, v: impl Serialize) -> Out {
+pub fn done(summary: impl Into<String>, v: impl Serialize) -> Out {
     let mut v = serde_json::to_value(v).map_err(|e| e.to_string())?;
     v["summary"] = Value::String(summary.into());
     Ok(v)
 }
 
-pub(crate) fn parse<T: DeserializeOwned>(args: Value) -> Result<T, String> {
+pub fn parse<T: DeserializeOwned>(args: Value) -> Result<T, String> {
     serde_json::from_value(args).map_err(|e| format!("bad arguments: {e}"))
 }
 
 /// One tool call (or resource read): who, and how to tell them it's still
 /// going.
 pub struct Call<'a> {
-    app: &'a Arc<App>,
+    pub app: &'a Arc<App>,
     caller: Caller,
     /// The client's name (`claude-code`), for "started by mcp:<client>".
     client: String,
@@ -1973,11 +2050,11 @@ impl<'a> Call<'a> {
         Self { app, caller, client, progress: None, ctx: None }
     }
 
-    pub(crate) fn app(&self) -> &'a Arc<App> {
+    pub fn app(&self) -> &'a Arc<App> {
         self.app
     }
 
-    pub(crate) fn by(&self) -> String {
+    pub fn by(&self) -> String {
         format!("mcp:{}", self.client)
     }
 
@@ -2119,6 +2196,14 @@ impl<'a> Call<'a> {
                 Ok(a) => self.read_deploy(a).await,
                 Err(e) => Err(e),
             },
+            ("session_start", _) => match parse(args) {
+                Ok(a) => self.session_start(a).await,
+                Err(e) => Err(e),
+            },
+            ("session_reply", _) => match parse(args) {
+                Ok(a) => self.session_reply(a).await,
+                Err(e) => Err(e),
+            },
             ("read_cloud", Some(kind)) => self.read_cloud(kind, args).await,
             ("cloud", Some(kind)) => self.drive_cloud(kind, args).await,
             ("list", Some("threads")) => match parse::<NoArgs>(args) {
@@ -2144,27 +2229,6 @@ impl<'a> Call<'a> {
             },
             ("list", Some("agents")) => match parse(args) {
                 Ok(a) => self.team_agents(a).await,
-                Err(e) => Err(e),
-            },
-            ("doc", Some("new")) => match parse(args) {
-                Ok(a) => self.doc_new(a).await,
-                Err(e) => Err(e),
-            },
-            ("doc", Some("list")) => super::ops::call::<DocsList>(self, args).await,
-            ("doc", Some("open")) => match parse(args) {
-                Ok(a) => self.doc_open(a).await,
-                Err(e) => Err(e),
-            },
-            ("doc", Some("fill")) => match parse(args) {
-                Ok(a) => self.doc_fill(a).await,
-                Err(e) => Err(e),
-            },
-            ("doc", Some("asset")) => match parse(args) {
-                Ok(a) => self.doc_asset(a).await,
-                Err(e) => Err(e),
-            },
-            ("doc", Some("share")) => match parse(args) {
-                Ok(a) => self.doc_share(a).await,
                 Err(e) => Err(e),
             },
             // show
@@ -2247,8 +2311,14 @@ impl<'a> Call<'a> {
                 }
                 Err(e) => Err(e),
             },
-            (_, Some(k)) => Err(format!("{name} kind {k} isn't wired up")),
-            (_, None) => Err(format!("no tool {name}")),
+            // A feature crate's (#232).
+            (_, kind) => match super::registry::run_of(name, kind) {
+                Some(run) => run(self, kind, args).await,
+                None => match kind {
+                    Some(k) => Err(format!("{name} kind {k} isn't wired up")),
+                    None => Err(format!("no tool {name}")),
+                },
+            },
         };
         match out {
             Ok(v) => CallToolResult::structured(v),
@@ -2299,7 +2369,7 @@ impl<'a> Call<'a> {
 
     /// Whether this caller is an agent on a machine (a guest's, say): what
     /// it creates must land on a machine too ([`confine`]).
-    pub(crate) async fn on_machine(&self) -> Result<bool, String> {
+    pub async fn on_machine(&self) -> Result<bool, String> {
         match self.me() {
             Some(me) => Ok(self.readable(me).await?.info.host.is_some()),
             None => Ok(false),
@@ -2336,7 +2406,7 @@ impl<'a> Call<'a> {
 
     /// Where a tool defaults to when it's given no pane: the caller's own
     /// (an agent block, or the terminal pane `arugula mcp` runs in).
-    pub(crate) fn own_pane(&self) -> Option<PaneId> {
+    pub fn own_pane(&self) -> Option<PaneId> {
         self.caller.pane
     }
 
@@ -2363,7 +2433,7 @@ impl<'a> Call<'a> {
     }
 
     /// The agent block whose token this is: what confines a caller.
-    pub(crate) fn me(&self) -> Option<PaneId> {
+    pub fn me(&self) -> Option<PaneId> {
         self.caller.scope.block()
     }
 
@@ -2378,7 +2448,7 @@ impl<'a> Call<'a> {
     }
 
     /// An open pane or block, if this caller may see it.
-    pub(crate) async fn readable(&self, pane: PaneId) -> Result<PaneSummary, String> {
+    pub async fn readable(&self, pane: PaneId) -> Result<PaneSummary, String> {
         let panes = self.panes().await;
         let Some(p) = panes.iter().find(|p| p.info.id == pane).cloned() else {
             return Err(self.gone(pane).await);
@@ -2394,7 +2464,7 @@ impl<'a> Call<'a> {
 
     /// An open pane or block this caller may type in, answer for or close:
     /// anything, or for an agent block's token, what it started.
-    pub(crate) async fn drivable(&self, pane: PaneId) -> Result<PaneSummary, String> {
+    pub async fn drivable(&self, pane: PaneId) -> Result<PaneSummary, String> {
         let p = self.readable(pane).await?;
         if let Some(me) = self.me()
             && p.info.started_by.as_ref().and_then(|s| s.block) != Some(me)
@@ -2407,7 +2477,7 @@ impl<'a> Call<'a> {
     /// Why a pane isn't there, as specifically as history can say.
     pub(crate) async fn gone(&self, pane: PaneId) -> String {
         let store = self.app.mux.store.clone();
-        let last = tokio::task::spawn_blocking(move || {
+        let last = crate::task::spawn_blocking(move || {
             history::history(
                 &store,
                 &Filter { pane: Some(pane), kind: Some(HistoryKind::Command), ..Default::default() },
@@ -2431,7 +2501,7 @@ impl<'a> Call<'a> {
         }
     }
 
-    async fn started(&self, pane: PaneId) {
+    pub async fn started(&self, pane: PaneId) {
         let by = StartedBy { by: self.by(), block: self.me() };
         self.app.mux.send(crate::mux::Cmd::Api(Api::StartedBy(pane, by)));
     }
@@ -2447,7 +2517,7 @@ impl<'a> Call<'a> {
 
     /// `fut`, with progress every 15s, for at most `limit`: `None` if it
     /// took longer (or the client gave up).
-    pub(crate) async fn waiting<T>(&self, what: &str, limit: Duration, fut: impl Future<Output = T>) -> Option<T> {
+    pub async fn waiting<T>(&self, what: &str, limit: Duration, fut: impl Future<Output = T>) -> Option<T> {
         let start = Instant::now();
         let every = progress_every();
         let mut tick = tokio::time::interval_at(start + every, every);
@@ -2917,7 +2987,7 @@ impl<'a> Call<'a> {
         let text = if p.info.kind == BlockType::Terminal {
             let h =
                 self.app.mux.api(|r| Api::Pane(pane, r)).await.flatten().ok_or_else(|| format!("no pane %{pane}"))?;
-            tokio::task::spawn_blocking(move || h.capture(CaptureFormat::Text, CaptureScope::Screen))
+            crate::task::spawn_blocking(move || h.capture(CaptureFormat::Text, CaptureScope::Screen))
                 .await
                 .ok()
                 .flatten()
@@ -3041,7 +3111,7 @@ impl<'a> Call<'a> {
         };
         let store = self.app.mux.store.clone();
         let all =
-            tokio::task::spawn_blocking(move || history::history(&store, &filter, 100_000)).await.unwrap_or_default();
+            crate::task::spawn_blocking(move || history::history(&store, &filter, 100_000)).await.unwrap_or_default();
         let cut = before.map(|b| now_ms().saturating_sub(b * 1000));
         let mut hits: Vec<HistoryEntry> = all
             .into_iter()
@@ -3089,11 +3159,12 @@ impl<'a> Call<'a> {
         let kinds = self.app.mux.kinds.clone();
         let want = if only.is_some() { 2000 } else { limit };
         let docs_re = re.clone();
-        let mut hits = tokio::task::spawn_blocking(move || history::search(&store, &kinds, &re, since, want))
+        let mut hits = crate::task::spawn_blocking(move || history::search(&store, &kinds, &re, since, want))
             .await
             .unwrap_or_default();
-        // The Doc library's lines (#1493), for an agent that reaches the machine.
-        hits.extend(crate::ops::docs::search_library(self.app, docs_re, since, want.saturating_sub(hits.len())).await);
+        // The feature crates' lines (the Doc library's, #1493), for an agent
+        // that reaches the machine.
+        hits.extend(crate::features::search(self.app, docs_re, since, want.saturating_sub(hits.len())).await);
         let hits: Vec<results::Hit> = hits
             .into_iter()
             .filter(|h| only.as_ref().is_none_or(|o| o.contains(&h.pane)))
@@ -3142,7 +3213,7 @@ impl<'a> Call<'a> {
     }
 
     /// Beside `beside`, or the agent itself; on its machine.
-    pub(super) async fn beside(&self, beside: Option<&PaneArg>) -> Result<(Option<PaneId>, Option<u32>), String> {
+    pub async fn beside(&self, beside: Option<&PaneArg>) -> Result<(Option<PaneId>, Option<u32>), String> {
         let beside = match (beside.map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(b), _) => Some(b),
             (None, own) => own,
@@ -3274,220 +3345,25 @@ impl<'a> Call<'a> {
         let block = self.open(req).await?;
         done(format!("Showing board {board} in block %{block}"), results::BlockOnly { block })
     }
+}
 
-    /// `doc new`: a Doc in the library, its block beside the caller's pane,
-    /// then its outline.
-    async fn doc_new(&self, a: DocNewArgs) -> Out {
-        let state = self.app.control.state_dir().to_owned();
-        let (beside, host) = self.beside(a.beside.as_ref()).await?;
-        // Two doc new make two Docs: each is made here, before its block.
-        let by = self.by();
-        let title = a.title.clone();
-        let meta = {
-            let state = state.clone();
-            tokio::task::spawn_blocking(move || crate::docs::library::make(&state, &title, &by))
-                .await
-                .map_err(|e| e.to_string())??
-        };
-        // A Doc with no outline is nothing to keep: undone if it fails.
-        let undo = || {
-            let (state, id) = (state.clone(), meta.id.clone());
-            let _ = crate::docs::library::remove(&state, &id);
-        };
-        let req = OpenRequest {
-            kind: BlockType::Doc,
-            config: json!({ "doc": meta.id, "title": a.title }),
-            session: None,
-            split: beside,
-            from_pane: beside,
-            vm: false,
-            image: None,
-            host,
-            local: host.is_none(),
-        };
-        // Through `open`, which records who started it: an agent block may
-        // drive only what it started, so it could not fill its own Doc
-        // otherwise.
-        let block = match self.open(req).await {
-            Ok(b) => b,
-            Err(e) => {
-                undo();
-                return Err(e);
-            }
-        };
-        let sections: Vec<Value> =
-            a.sections.iter().map(|s| json!({ "heading": s.heading, "intent": s.intent })).collect();
-        let args = json!({ "title": a.title, "sections": sections });
-        let outlined = match self.app.mux.api(|r| Api::Block(block, r)).await.flatten() {
-            Some(b) => b.call_by("doc_outline", args, Some(&self.by())).await,
-            None => Err("the Doc's block closed".into()),
-        };
-        let outline = match outlined {
-            Ok(o) => o,
-            Err(e) => {
-                let _ = self.app.mux.api(|r| Api::Close(block, r)).await;
-                undo();
-                return Err(e);
-            }
-        };
-        let sections = outline["sections"].clone();
-        let ids: Vec<&str> = sections.as_array().into_iter().flatten().filter_map(|s| s["id"].as_str()).collect();
-        done(
-            format!(
-                "Doc block %{block} with {} sections ({}): fill them in order with doc fill",
-                ids.len(),
-                ids.join(", ")
-            ),
-            json!({ "block": block, "doc": meta.id, "sections": sections }),
-        )
+impl Call<'_> {
+    /// Labs' (`lab_hooks`): a build without it says so.
+    async fn open_app(&self, a: OpenAppArgs) -> Out {
+        crate::lab_hooks::labs().open_app(self, a).await
     }
 
-    /// `doc open`: a Doc from the library in a block beside the caller's
-    /// pane, or the block that has it. The caller drives a block it made;
-    /// one the user (or another agent) had open stays theirs unless nobody
-    /// started it, which the caller then does.
-    async fn doc_open(&self, a: DocOpenArgs) -> Out {
-        let (beside, host) = self.beside(a.beside.as_ref()).await?;
-        confine(self.on_machine().await?, host.is_some())?;
-        let req = DocOpenRequest { id: Some(a.doc.clone()), link: None, session: None, split: beside };
-        let (block, made) =
-            crate::ops::docs::open_doc(self.app, None, req).await.map_err(crate::ops::OpError::sentence)?;
-        let unclaimed = match self.app.mux.api(Api::Panes).await {
-            Some(panes) => panes.iter().find(|p| p.info.id == block).is_some_and(|p| p.info.started_by.is_none()),
-            None => false,
-        };
-        if made || unclaimed {
-            self.started(block).await;
-        }
-        let b =
-            self.app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
-        let state = b.state();
-        let sections: Vec<&str> =
-            state["entries"].as_array().into_iter().flatten().filter_map(|e| e["id"].as_str()).collect();
-        let what = if made { "Opened" } else { "It was already open:" };
-        done(
-            format!("{what} Doc {} in block %{block} ({} sections); doc fill goes on with it", a.doc, sections.len()),
-            json!({ "block": block, "doc": a.doc, "title": state["title"], "sections": sections }),
-        )
+    async fn delegate(&self, kind: &str, a: DelegateArgs) -> Out {
+        crate::lab_hooks::labs().delegate(self, kind, a).await
     }
 
-    /// `doc fill`: one section of a Doc this caller may drive.
-    async fn doc_fill(&self, a: DocFillArgs) -> Out {
-        let block = a.block.id()?;
-        let p = self.drivable(block).await?;
-        if p.info.kind != BlockType::Doc {
-            return Err(format!("%{block} isn't a Doc: doc new makes one"));
-        }
-        let b =
-            self.app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
-        let args = json!({ "section": a.section, "markdown": a.markdown });
-        let out = b.call_by("doc_fill", args, Some(&self.by())).await?;
-        done(
-            format!("Filled {} of Doc %{block} ({} bytes)", a.section, out["bytes"]),
-            json!({ "block": block, "section": a.section, "bytes": out["bytes"] }),
-        )
-    }
-
-    /// `doc share`: ask the owner to share a Doc this caller may drive, or
-    /// say what became of the ask. It never publishes: the owner's tap does.
-    async fn doc_share(&self, a: DocShareArgs) -> Out {
-        let block = a.block.id()?;
-        let p = self.drivable(block).await?;
-        if p.info.kind != BlockType::Doc {
-            return Err(format!("%{block} isn't a Doc: doc new makes one"));
-        }
-        let b =
-            self.app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
-        let out = b.call_by("doc_share_ask", json!({}), Some(&self.by())).await?;
-        let status = out["status"].as_str().unwrap_or("waiting").to_owned();
-        let summary = match status.as_str() {
-            "shared" => format!("Doc %{block} is shared: {}", out["url"].as_str().unwrap_or_default()),
-            "waiting" => format!("Asked the user to share Doc %{block}; call share again to see what they chose"),
-            "failed" => {
-                format!("Sharing Doc %{block} failed: {}", out["why"].as_str().unwrap_or("it didn't go through"))
-            }
-            "declined" => format!("The user chose not to share Doc %{block} now; sharing again asks again"),
-            _ => format!("Nobody answered the ask to share Doc %{block} in time; sharing again asks again"),
-        };
-        done(summary, out)
-    }
-
-    /// `doc asset`: a picture into a Doc this caller may drive, from a file
-    /// of the caller's or from base64.
-    async fn doc_asset(&self, a: DocAssetArgs) -> Out {
-        use base64::Engine;
-        let block = a.block.id()?;
-        let p = self.drivable(block).await?;
-        if p.info.kind != BlockType::Doc {
-            return Err(format!("%{block} isn't a Doc: doc new makes one"));
-        }
-        let cap = crate::docs::ASSET_MAX as u64;
-        let data = match (a.path, a.data) {
-            (Some(path), None) => {
-                // As `attach` reads one: its paths are on its machine, not here.
-                if let Some(me) = self.me()
-                    && self.app.mux.api(|r| Api::MachineOf(me, r)).await.flatten().is_some()
-                {
-                    return Err("this agent runs on a machine of its own: send the file as data".into());
-                }
-                // The daemon's working directory is not the agent's.
-                if !std::path::Path::new(&path).is_absolute() {
-                    return Err(format!("{path}: give an absolute path, or send data"));
-                }
-                let size = tokio::fs::metadata(&path).await.map_err(|e| format!("{path}: {e}"))?.len();
-                if size > cap {
-                    return Err(format!("{path} is {size} bytes; a picture is {cap} (2 MB) at most: shrink it"));
-                }
-                let bytes = tokio::fs::read(&path).await.map_err(|e| format!("{path}: {e}"))?;
-                base64::engine::general_purpose::STANDARD.encode(bytes)
-            }
-            (None, Some(data)) => data,
-            _ => return Err("give path or data".into()),
-        };
-        let b =
-            self.app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
-        let out = b.call_by("doc_asset_put", json!({ "name": a.name, "data": data }), Some(&self.by())).await?;
-        let path = out["path"].as_str().unwrap_or_default().to_owned();
-        done(
-            format!("Saved {path} in Doc %{block}: show it with ![what it shows]({path}) in a section"),
-            json!({ "block": block, "path": path, "mime": out["mime"], "size": out["size"] }),
-        )
+    async fn team_agents(&self, a: ListTeamAgentsArgs) -> Out {
+        crate::lab_hooks::labs().team_agents(self, a).await
     }
 }
 
 #[cfg(feature = "labs")]
 impl Call<'_> {
-    async fn open_app(&self, a: OpenAppArgs) -> Out {
-        crate::labs::flag(self.app.control.state_dir(), flags::STUDIO)?;
-        let studio = crate::labs::apps::studio::get().ok_or("no studio here")?;
-        let Some(name) = a.app else {
-            let apps = studio.apps().await?;
-            let names: Vec<&str> = apps.iter().map(|a| a.name.as_str()).collect();
-            return done(format!("{} apps: {}", apps.len(), names.join(", ")), results::Apps { apps });
-        };
-        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
-            (Some(b), _) => Some(b),
-            (None, own) => own,
-        };
-        if let Some(b) = beside {
-            self.readable(b).await?;
-        }
-        let config = crate::labs::app_config(&json!({ "app": name })).await?;
-        let req = OpenRequest {
-            kind: BlockType::App,
-            config,
-            session: None,
-            split: beside,
-            from_pane: beside,
-            vm: false,
-            image: None,
-            host: None,
-            local: true,
-        };
-        let block = self.open(req).await?;
-        done(format!("Opened app {name} in block %{block}"), results::AppOpened { block, app: name })
-    }
-
     async fn open_workspace(&self, a: OpenWorkspaceArgs) -> Out {
         let (beside, host) = self.beside(a.beside.as_ref()).await?;
         let dir = a.dir.trim_end_matches('/').to_owned();
@@ -3547,134 +3423,12 @@ impl Call<'_> {
             results::WorkspaceOpened { block, root: state["root"].clone(), members, gates },
         )
     }
-
-    /// Delegating (M78): a task for another machine's agent.
-    async fn delegate(&self, kind: &str, a: DelegateArgs) -> Out {
-        use crate::labs::agents::delegate as d;
-        if !crate::labs::on(self.app.control.state_dir(), flags::AGENT_DELEGATION) {
-            return Err("delegating is in Labs: `arugulad flags agent-delegation on` turns it on here".into());
-        }
-        // The owner's agents': a guest's agent asks no one's agents.
-        if let Some(me) = self.me()
-            && self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
-        {
-            return Err("only the owner's own agents delegate to other machines".into());
-        }
-        let app = self.app.clone();
-        // M80: the work comes back, from what's kept here.
-        if kind == "review" || kind == "apply" {
-            let task = a.task.as_deref().filter(|t| !t.is_empty()).ok_or_else(|| format!("{kind} needs task"))?;
-            let dir = match a.dir.as_deref().filter(|d| !d.is_empty()) {
-                Some(d) => d.to_owned(),
-                None => match self.me() {
-                    Some(me) => self.readable(me).await?.info.cwd.ok_or("say where your checkout is: dir")?,
-                    None => return Err("say where your checkout is: dir".into()),
-                },
-            };
-            let state = app.control.state_dir().to_owned();
-            if kind == "apply" {
-                let r = d::apply(&state, &d::review_root(), task, std::path::Path::new(&dir)).await?;
-                return done(r.text(task), json!({ "task": task, "applied": r }));
-            }
-            let (wt, r) = d::review(&state, &d::review_root(), task, std::path::Path::new(&dir)).await?;
-            let beside = self.own_pane();
-            let req = OpenRequest {
-                kind: BlockType::Diff,
-                config: json!({ "repo": wt }),
-                split: beside,
-                from_pane: beside,
-                local: true,
-                ..Default::default()
-            };
-            let block = self.open(req).await?;
-            let text = format!(
-                "Task {task}'s patch is in diff block %{block}, on a copy of {dir}; nothing here changed yet. {}",
-                r.text(task)
-            );
-            return done(text, json!({ "task": task, "block": block, "worktree": wt, "applied": r }));
-        }
-        let machine = d::locate(&app, a.machine.as_deref(), &a.agent).await?;
-        let (machine, agent) = (machine.as_str(), a.agent.as_str());
-        let limit = Duration::from_secs(a.wait.unwrap_or(300).min(1800));
-        let task_of = || a.task.as_deref().filter(|t| !t.is_empty()).ok_or_else(|| format!("{kind} needs task"));
-        let text_of = || a.text.as_deref().filter(|t| !t.trim().is_empty()).ok_or_else(|| format!("{kind} needs text"));
-        let claims = json!({ "machine": app.hosts.name(), "pane": self.me() });
-        let t = match kind {
-            "send" => d::send(&app, machine, agent, text_of()?, None, claims, a.pr).await?,
-            "answer" => d::send(&app, machine, agent, text_of()?, Some(task_of()?), claims, false).await?,
-            "cancel" => d::cancel(&app, machine, agent, task_of()?).await?,
-            _ => d::get(&app, machine, agent, task_of()?).await?,
-        };
-        let id = t["id"].as_str().unwrap_or_default().to_owned();
-        let t = if kind != "cancel" && !limit.is_zero() && !d::settled(&t) && !id.is_empty() {
-            let what = format!("{agent} on {machine}");
-            match self.waiting(&what, limit, d::wait(&app, machine, agent, &id, limit)).await {
-                Some(r) => r?,
-                None => d::get(&app, machine, agent, &id).await?,
-            }
-        } else {
-            t
-        };
-        done(d::summary(machine, agent, &t), json!({ "machine": machine, "agent": agent, "task": t }))
-    }
-
-    /// The team's agent catalog (M77): the cards each machine offers.
-    async fn team_agents(&self, a: ListTeamAgentsArgs) -> Out {
-        use crate::labs::agents::catalog;
-        if !crate::labs::on(self.app.control.state_dir(), flags::AGENT_DELEGATION) {
-            return Err("the agent catalog is in Labs: `arugulad flags agent-delegation on` turns it on here".into());
-        }
-        // The owner's agents': a guest's agent sees no catalog (#234's rule).
-        if let Some(me) = self.me()
-            && self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
-        {
-            return Err("only the owner's own agents read the team's agent catalog".into());
-        }
-        let c = catalog::get(self.app, if a.fresh { 0 } else { catalog::FRESH_MS }).await;
-        let q = a.query.as_deref().map(str::to_lowercase).filter(|q| !q.trim().is_empty());
-        let hit = |s: &catalog::Shelf, card: &Value| {
-            q.as_ref().is_none_or(|q| {
-                let hay = format!("{} {} {} {}", card["name"], card["description"], s.name, s.owner).to_lowercase();
-                q.split_whitespace().all(|w| hay.contains(w))
-            })
-        };
-        let rows: Vec<(&catalog::Shelf, &Value)> = c.agents().filter(|(s, card)| hit(s, card)).collect();
-        let total = c.agents().count();
-        let mut text = match rows.len() {
-            0 if total == 0 => "No agents offered on any machine the user's team can reach.\n".to_owned(),
-            n => format!("{n} of {total} agents on {} machines:\n", c.machines.len()),
-        };
-        for (s, card) in &rows {
-            text.push_str(&catalog::Catalog::line(s, card));
-            text.push('\n');
-        }
-        for s in c.machines.iter().filter(|s| s.note.is_some()) {
-            text.push_str(&format!("{}: {}\n", s.name, s.note.as_deref().unwrap_or_default()));
-        }
-        if let Some(n) = &c.note {
-            text.push_str(n);
-            text.push('\n');
-        }
-        done(text, &c)
-    }
 }
 
 #[cfg(not(feature = "labs"))]
 impl Call<'_> {
-    async fn open_app(&self, _: OpenAppArgs) -> Out {
-        Err(crate::labs::not_built("An app block"))
-    }
-
     async fn open_workspace(&self, _: OpenWorkspaceArgs) -> Out {
-        Err(crate::labs::not_built("A chant workspace"))
-    }
-
-    async fn team_agents(&self, _: ListTeamAgentsArgs) -> Out {
-        Err(crate::labs::not_built("The agent catalog"))
-    }
-
-    async fn delegate(&self, _: &str, _: DelegateArgs) -> Out {
-        Err(crate::labs::not_built("Delegating"))
+        Err(crate::lab_flags::not_built("A chant workspace"))
     }
 }
 
@@ -4043,7 +3797,7 @@ impl Call<'_> {
         }
         // Its block was closed: what it said then.
         let root = self.app.mux.store.root().to_owned();
-        let kept = tokio::task::spawn_blocking(move || crate::invite::card::closed(&root)).await.unwrap_or_default();
+        let kept = crate::task::spawn_blocking(move || crate::invite::card::closed(&root)).await.unwrap_or_default();
         if let Some(c) = kept.into_iter().rev().find(|c| c.drafter == drafter && c.draft.id == id) {
             let status = serde_json::to_value(&c.draft).unwrap_or_default()["status"].as_str().unwrap_or("").to_owned();
             let block = c.block;
@@ -4055,7 +3809,7 @@ impl Call<'_> {
         Err(format!("no invite {id} of yours (invite_person returns one)"))
     }
 
-    pub(super) async fn open(&self, req: OpenRequest) -> Result<PaneId, String> {
+    pub async fn open(&self, req: OpenRequest) -> Result<PaneId, String> {
         confine(self.on_machine().await?, open_lands_on_machine(&req))?;
         match self.app.mux.api(|r| Api::Open(req, None, r)).await {
             Some(Ok(b)) => {
@@ -4584,7 +4338,7 @@ fn ago(ms: u64) -> String {
 /// a block): an agent on a machine (a guest's, say) creates things on a
 /// machine, never on this host, where they'd run as the owner (with the
 /// owner's logins and, for a worn recipe, secrets).
-pub(crate) fn confine(caller_on_machine: bool, lands_on_machine: bool) -> Result<(), String> {
+pub fn confine(caller_on_machine: bool, lands_on_machine: bool) -> Result<(), String> {
     if caller_on_machine && !lands_on_machine {
         return Err("an agent on a machine creates things on its machine (or a new VM), not on this host".into());
     }
@@ -4610,6 +4364,12 @@ fn may_start(caller_on_machine: bool, on_machine: bool, vm: bool, worn: bool) ->
     }
     Ok(())
 }
+
+/// Checks of the whole tool list, for the binary's tests.
+#[cfg(feature = "whole-tests")]
+#[doc(hidden)]
+#[path = "tools_whole.rs"]
+pub mod whole;
 
 #[cfg(test)]
 mod tests {
@@ -4670,35 +4430,6 @@ mod tests {
 
     use super::*;
 
-    /// `tools/list` for every scope, with and without labs, against the
-    /// checked-in file: names, descriptions, annotations and every input
-    /// schema. `ARUGULA_BLESS=1` rewrites the file after a change meant to
-    /// alter what agents see. The file is a Labs build's (which has the
-    /// forge too): a build without Labs has no golden of its own, so it
-    /// checks the listing in
-    /// `unlisted_tools_are_not_listed_without_labs_but_are_there`.
-    #[test]
-    fn the_tool_list_and_each_schema_are_unchanged() {
-        if !crate::labs::BUILT {
-            return;
-        }
-        let mut all = serde_json::Map::new();
-        for (scope_name, scope) in [("full", Scope::Full), ("read", Scope::Read), ("block", Scope::Block(1))] {
-            for labs in [true, false] {
-                let tools = serde_json::to_value(list(scope, fl(labs))).unwrap();
-                all.insert(format!("{scope_name}, labs {labs}"), tools);
-            }
-        }
-        let got = serde_json::to_string_pretty(&Value::Object(all)).unwrap() + "\n";
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp-tool-list.json");
-        if std::env::var_os("ARUGULA_BLESS").is_some() {
-            std::fs::write(&path, &got).unwrap();
-        }
-        let want =
-            std::fs::read_to_string(&path).expect("tests/fixtures/mcp-tool-list.json (ARUGULA_BLESS=1 writes it)");
-        assert!(got == want, "the tool list changed; ARUGULA_BLESS=1 rewrites {}", path.display());
-    }
-
     /// #580: an `outputSchema` is an object at the root (MCP's rule) that
     /// says what `done` adds, `summary`, and no grouped tool lists one.
     #[test]
@@ -4746,7 +4477,7 @@ mod tests {
             arugula_proto::flags::set(&dir, f.name, true).unwrap();
         }
         assert_eq!(arugula_proto::flags::on(&dir), arugula_proto::flags::On::all(), "the flags are on");
-        let labs = crate::labs::flags(&dir).any();
+        let labs = crate::lab_flags::flags(&dir).any();
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(!labs, "labs is on in a build without it");
         for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
@@ -4757,7 +4488,10 @@ mod tests {
             let tools = tools.replace("cloud workspace", "").replace("cloud_workspace", "");
             assert!(!tools.contains("workspace"), "the tool list mentions workspaces");
         }
-        let shown = kinds_of(labs, "show");
+        let shown: Vec<&str> = match defs(fl(labs)).into_iter().find(|d| d.name == "show").map(|d| d.args) {
+            Some(Args::Kinds { kinds, .. }) => kinds.iter().map(|k| k.name).collect(),
+            _ => Vec::new(),
+        };
         assert!(!shown.contains(&"app") && !shown.contains(&"workspace"), "{shown:?}");
     }
 
@@ -4805,160 +4539,6 @@ mod tests {
         assert_eq!(PaneArg::Name("%7".into()).id(), Ok(7));
         assert_eq!(PaneArg::Id(3).id(), Ok(3));
         assert!(PaneArg::Name("x".into()).id().is_err());
-    }
-
-    #[test]
-    fn annotations_are_honest() {
-        let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 33 - NO_FORGE);
-        let ro: Vec<&str> = all
-            .iter()
-            .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
-            .map(|t| t.name.as_ref())
-            .collect();
-        let mut want = vec![
-            "read_output",
-            "wait",
-            "list",
-            "capabilities",
-            "history",
-            "read_forge",
-            "forge_read",
-            "read_invite",
-            "read_file",
-            "read_cloud",
-            "read_thread",
-            "search_threads",
-            "read_run",
-            "read_deploy",
-        ];
-        want.retain(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n));
-        assert_eq!(ro, want);
-        assert_eq!(list(Scope::Read, fl(false)).len(), ro.len(), "a read token sees the read-only tools only");
-        let hint = |n: &str| all.iter().find(|t| t.name == n).unwrap().annotations.clone().unwrap();
-        assert_eq!(hint("close").destructive_hint, Some(true));
-        // A group is as careful as its most careful kind: draft has merge.
-        if crate::forges::BUILT {
-            assert_eq!(hint("draft").destructive_hint, Some(true));
-        }
-        assert_eq!((hint("show").destructive_hint, hint("show").open_world_hint), (Some(false), Some(true)));
-    }
-
-    /// The thread tools (M198): agents are in conversations again
-    /// (aru-091), through control's platform, with no thread kept here.
-    const THREAD_TOOLS: [&str; 3] = ["read_thread", "search_threads", "post_thread"];
-
-    /// How many of the tools a build without the forge doesn't list.
-    const NO_FORGE: usize = if crate::forges::BUILT { 0 } else { FORGE_TOOLS.len() };
-
-    /// The kinds that aren't listed without a flag: the table's, and the
-    /// operations' own (`Op::FLAG`).
-    fn flagged_kinds() -> Vec<(&'static str, &'static str)> {
-        let mut all: Vec<_> = UNLISTED.iter().map(|(t, k, _)| (*t, *k)).collect();
-        for d in all_defs() {
-            if let Args::Kinds { kinds, .. } = &d.args {
-                all.extend(kinds.iter().filter(|k| k.flag.is_some()).map(|k| (d.name, k.name)));
-            }
-        }
-        all
-    }
-
-    /// The kinds of a group a tool has, listed with `labs` or without.
-    fn kinds_of(labs: bool, tool: &str) -> Vec<&'static str> {
-        defs(fl(labs))
-            .into_iter()
-            .find(|d| d.name == tool)
-            .map(|d| match d.args {
-                Args::Kinds { kinds, .. } => kinds.iter().map(|k| k.name).collect(),
-                Args::One(_) => Vec::new(),
-            })
-            .unwrap_or_default()
-    }
-
-    /// Studio apps and chant workspaces are for what a stranger doesn't
-    /// have: without `labs` their kinds (and the `delegate` and `doc` tools)
-    /// aren't listed, with it all are, and a caller who names one reaches it
-    /// either way.
-    #[test]
-    fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
-        for scope in [Scope::Full, Scope::Read] {
-            let with: Vec<String> = list(scope, fl(true)).iter().map(|t| t.name.to_string()).collect();
-            for d in all_defs().iter().filter(|d| scope == Scope::Full || d.read_only) {
-                if !crate::forges::BUILT && FORGE_TOOLS.contains(&d.name) {
-                    continue;
-                }
-                assert!(with.contains(&d.name.to_string()), "{} isn't listed for {scope:?} with labs", d.name);
-            }
-        }
-        // A hidden kind is filtered out of its group: not in kind's enum,
-        // nor its line in the description, nor the arguments only it takes.
-        for (tool, kind) in flagged_kinds() {
-            assert!(!kinds_of(false, tool).contains(&kind), "{tool} kind {kind} is listed without labs");
-            assert!(kinds_of(true, tool).contains(&kind), "{tool} kind {kind} isn't listed with labs");
-            // Still there by its kind.
-            route(tool, json!({ "kind": kind }), fl(false)).unwrap_or_else(|e| panic!("{tool} {kind}: {e}"));
-            // A tool all of whose kinds are flagged (`doc`) isn't listed at all.
-            let Some(t) = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == tool) else {
-                assert!(defs(fl(false)).iter().all(|d| d.name != tool), "{tool}");
-                continue;
-            };
-            let kinds = t.input_schema["properties"]["kind"]["enum"].clone();
-            assert!(!kinds.as_array().unwrap().contains(&json!(kind)), "{tool}: {kinds}");
-            assert!(!t.description.as_deref().unwrap().contains(&format!("\n- {kind}")), "{tool}: {kind}");
-        }
-        let show = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "show").unwrap();
-        for arg in ["app", "env"] {
-            assert!(show.input_schema["properties"].get(arg).is_none(), "show takes {arg} without labs");
-        }
-        // Daemon-side Managoat was removed: its kinds, by either name, and
-        // its old tools say where cloud agents went; none is listed.
-        let list_tool = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "list").unwrap();
-        for (tool, kind) in [
-            ("show", "managoat"),
-            ("show", "fountain"),
-            ("list", "managoat_agents"),
-            ("list", "managoat_agent"),
-            ("list", "managoat_conversations"),
-            ("list", "fountain_agents"),
-        ] {
-            assert!(!kinds_of(true, tool).contains(&kind), "{tool} kind {kind}");
-            let e = route(tool, json!({ "kind": kind }), fl(true)).err().unwrap();
-            assert_eq!(e, crate::agent::defs::CLOUD_MIGRATION, "{tool} {kind}");
-        }
-        for old in ["open_fountain", "list_agents", "read_agent"] {
-            assert!(route(old, json!({}), fl(true)).is_err(), "{old}");
-        }
-        for args in [
-            json!({ "agent": "managoat", "prompt": "hi" }),
-            json!({ "agent": "fountain", "fountain_agent": "arena", "prompt": "hi" }),
-            json!({ "managoat_agent": "arena", "prompt": "hi" }),
-            json!({ "recipe": "r", "on": "managoat", "prompt": "hi" }),
-        ] {
-            assert!(managoat_start(&args), "{args}");
-        }
-        assert!(!managoat_start(&json!({ "recipe": "r", "on": "here", "prompt": "hi" })));
-        for (t, arg) in
-            [(&show, "query"), (&show, "source"), (&show, "profile"), (&list_tool, "name"), (&list_tool, "source")]
-        {
-            assert!(t.input_schema["properties"].get(arg).is_none(), "{} {arg}", t.name);
-        }
-        let start = list(Scope::Full, fl(true)).into_iter().find(|t| t.name == "start_agent").unwrap();
-        for arg in ["managoat_agent", "on", "vault", "environment"] {
-            assert!(start.input_schema["properties"].get(arg).is_none(), "start_agent {arg}");
-        }
-        // An error names only the kinds that are listed.
-        let e = route("show", json!({ "kind": "terminal" }), fl(false)).err().unwrap();
-        // (The Managoat-backed `cloud_workspace` block went in M190.)
-        let named = |k: &str| e.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').any(|w| w == k);
-        assert!(named("port") && !named("cloud_workspace") && !e.contains("managoat") && !named("workspace"), "{e}");
-        let every: Vec<&str> = all_defs().iter().map(|d| d.name).collect();
-        for name in THREAD_TOOLS {
-            assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
-        }
-        assert_eq!(every.len(), 36);
-        assert_eq!(defs(fl(false)).len(), 33 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 36 - NO_FORGE);
-        assert_eq!(every.len(), defs(fl(false)).len() + 3 + NO_FORGE, "and delegate and the board tools");
     }
 
     /// A grouped call says what's wrong with it: no kind, a kind it doesn't
@@ -5063,7 +4643,7 @@ mod tests {
         for text in &prose {
             let mut lower = text.to_lowercase();
             // A sandbox provider is named with VMs' setup.
-            if crate::labs::BUILT {
+            if crate::lab_flags::BUILT {
                 lower = lower.replace("sandbox provider", "");
             }
             // Cloud workspaces (#1094) are everyone's; chant's are Labs'.
@@ -5112,54 +4692,27 @@ mod tests {
         assert!(text.contains("show it (kind pr)"), "{text}");
     }
 
-    /// #963: `doc` is a tool, with `new` and `fill`, and `capabilities`
-    /// offers it: everywhere, with no flag, since Docs left Labs (native
-    /// #204).
+    /// Every tool has its place on the card *What your agent can do here*:
+    /// a line of its own, an "Ask it to …" and a prompt to copy, or a part
+    /// of a tool that has one. A new tool without one fails here.
     #[test]
-    fn doc_is_listed_with_no_flag() {
-        use arugula_proto::flags::On;
-        let Some(Def { args: Args::Kinds { kinds, .. }, .. }) = defs(On::none()).into_iter().find(|d| d.name == "doc")
-        else {
-            panic!("doc has kinds")
-        };
-        assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "list", "open", "fill", "asset", "share"]);
-        let offers = block_offers(On::none());
-        let offer = offers.iter().find(|o| o.kind == "doc").expect("capabilities offers a doc");
-        assert_eq!(offer.open, "doc {kind: \"new\"}");
-        // The schema carries the outline's shape.
-        let tool = list(Scope::Full, On::none()).into_iter().find(|t| t.name == "doc").unwrap();
-        let schema = Value::Object((*tool.input_schema).clone()).to_string();
-        assert!(schema.contains("heading") && schema.contains("intent") && schema.contains("markdown"), "{schema}");
-        // ...and the picture's: a file or its bytes.
-        assert!(schema.contains("\"path\"") && schema.contains("\"data\""), "{schema}");
-    }
-
-    /// docs/mcp-permissions.json allows the read-only tools and asks for the
-    /// rest, every one of them: a new tool fails this until it's listed there
-    /// (#114). docs.arugula.io shows the same snippet, and the site repo's
-    /// check-code holds it to this file.
-    #[test]
-    fn permissions_snippet_is_every_tool() {
-        const SNIPPET: &str = include_str!("../../../../docs/mcp-permissions.json");
-        let list = |key: &str| -> Vec<&str> {
-            let at = SNIPPET
-                .find(&format!("\"{key}\": ["))
-                .unwrap_or_else(|| panic!("no {key} list in docs/mcp-permissions.json"));
-            let body = &SNIPPET[at..];
-            let body = &body[..body.find(']').unwrap()];
-            body.split('"')
-                .filter_map(|s| s.strip_prefix("mcp__arugula__"))
-                .filter(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n))
-                .collect()
-        };
-        // The snippet lists what a stranger sees.
-        let defs = defs(fl(false));
-        let want = |ro: bool| -> Vec<&str> { defs.iter().filter(|d| d.read_only == ro).map(|d| d.name).collect() };
-        assert_eq!(
-            list("allow"),
-            want(true),
-            "docs/mcp-permissions.json's allow list: the read-only tools, in defs() order"
-        );
-        assert_eq!(list("ask"), want(false), "docs/mcp-permissions.json's ask list: every other tool, in defs() order");
+    fn every_tool_has_a_human_line() {
+        let defs = all_defs();
+        let lined = |name: &str| defs.iter().any(|d| d.name == name && matches!(d.human, Human::Line(_)));
+        for d in &defs {
+            match &d.human {
+                Human::Line(a) => {
+                    assert!(!a.ask.trim().is_empty(), "{} has no line for the person", d.name);
+                    assert!(!a.example.trim().is_empty(), "{} has no example prompt", d.name);
+                    assert!(
+                        a.ask.chars().next().is_some_and(char::is_lowercase),
+                        "{}: it reads after \"Ask it to\"",
+                        d.name
+                    );
+                    assert!(!a.ask.ends_with('.'), "{}: a line, not a sentence", d.name);
+                }
+                Human::In(of) => assert!(lined(of), "{} is part of {of}, which has no line of its own", d.name),
+            }
+        }
     }
 }

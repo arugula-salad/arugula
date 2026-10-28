@@ -8,11 +8,12 @@ import { useEffect, useState } from "preact/hooks";
 import { CopyText } from "../../shared/ui/copy";
 import { Time } from "../../shared/ui/time";
 import { cameToRecover, DEVICE_HASH, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, signInNext, wholeJoinInHash, type ControlSession } from "../control";
-import { fingerprint } from "../e2e/cert.ts";
+import { fingerprint, type Cert } from "../e2e/cert.ts";
 import { AddedAt, Center, QrCode, useControl, WaitingLine } from "./common";
 import { Mark } from "../ui/shell/icons";
 import { DeviceDetails } from "./devices";
 import { RecoveryForm } from "./recovery";
+import { ResetOffer } from "./reset";
 
 /** The hosted control's terms (#172); a control you run yourself has its
  * own, or none. */
@@ -296,14 +297,53 @@ function Waiting({ s }: { s: ControlSession }) {
           <WaitingLine />
         </>
       )}
+      <WhyAgain s={s} name={name} />
       <p class="control-aside" data-waiting-machine>
         Here to add a machine to your account or a team? That's a separate approval, and it doesn't need this one. The machine shows a code (in
         Getting started, or where you ran <code>arugulad join</code>): approve that code on a device you already use.
       </p>
       <PasskeyInstead s={s} />
       <RecoveryForm s={s} open={recovering()} />
+      {inApp() ? null : <ResetOffer />}
       <SignOuts s={s} />
     </Center>
+  );
+}
+
+/** #1581: an account that has devices already, asking this browser to be
+ * approved: say why, since it may have been approved before. Its approval
+ * is kept per address, so one made at another address (control moved), or
+ * saved data cleared, leaves it asking again. A browser of the same name
+ * leads. */
+function WhyAgain({ s, name }: { s: ControlSession; name: string }) {
+  const [others, setOthers] = useState<Cert[] | null>(null);
+  useEffect(() => {
+    s.otherDevices()
+      .then(setOthers)
+      .catch(() => setOthers([]));
+  }, [s]);
+  if (inApp() || !others?.length) return null;
+  const host = new URL(s.info.url).host;
+  const same = others.filter((c) => c.name === name).sort((a, b) => b.created - a.created)[0];
+  return (
+    <div class="control-aside" data-why-again={same ? "same-name" : "others"}>
+      <p>
+        {same ? (
+          <>
+            Your account already has <b>{same.name}</b>, added <AddedAt at={same.created} />. If that's this browser, it's asked again because its approval
+            is saved for one address: it was approved at an earlier address of Arugula's, or its saved data for {host} was cleared.
+          </>
+        ) : (
+          <>
+            Your account has {others.length === 1 ? "another device" : `${others.length} other devices`}. If you approved this browser before, its approval
+            was saved for another address, or its saved data for {host} was cleared, so it's asked again here.
+          </>
+        )}
+      </p>
+      <p>
+        Approve it from a device that opens {host} now. If none does, use a recovery code below.
+      </p>
+    </div>
   );
 }
 

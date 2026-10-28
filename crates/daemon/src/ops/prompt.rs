@@ -53,7 +53,7 @@ pub(crate) fn secs(s: Option<f64>, default: Duration) -> Duration {
 /// before anything is typed, so a quick turn can't slip past it. An agent
 /// already waiting on someone isn't typed at, unless `answering`: typing
 /// into its approval dialog would answer it.
-pub(crate) async fn prompt(
+pub async fn prompt(
     app: &App,
     id: PaneId,
     text: String,
@@ -181,7 +181,7 @@ pub(crate) async fn turn_result(app: &App, id: PaneId) -> Option<TurnResult> {
 /// when no agent's screen is read there.
 async fn screen_state(app: &App, id: PaneId) -> Option<Option<&'static str>> {
     let p = pane(app, id).await.ok()?;
-    tokio::task::spawn_blocking(move || p.detection()).await.ok().flatten().filter(|d| !d.unread).map(|d| d.shown)
+    crate::task::spawn_blocking(move || p.detection()).await.ok().flatten().filter(|d| !d.unread).map(|d| d.shown)
 }
 
 async fn pane_info(app: &App, id: PaneId) -> Option<arugula_proto::PaneInfo> {
@@ -198,7 +198,7 @@ async fn screen(app: &App, id: PaneId) -> String {
             None => String::new(),
         };
     };
-    let text = tokio::task::spawn_blocking(move || p.capture(CaptureFormat::Text, CaptureScope::Screen))
+    let text = crate::task::spawn_blocking(move || p.capture(CaptureFormat::Text, CaptureScope::Screen))
         .await
         .ok()
         .flatten()

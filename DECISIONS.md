@@ -73,6 +73,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-101](docs/decisions/aru-101-a-deploy-needs-an-owner-device-s-approval-and-ag.md): A deploy needs an owner device's approval, and agents never approve
 - [aru-106](docs/decisions/aru-106-the-hub-is-an-issuer-one-identity-for-every-prod.md): The hub is an issuer: one identity for every product
 - [aru-113](docs/decisions/aru-113-accounts-link-by-numeric-github-id-old-sign-ins.md): Accounts link by numeric GitHub id; old sign-ins run 90 days beside the new
+- [aru-121](docs/decisions/aru-121-a-person-s-agent-starts-and-answers-sessions-by-grant.md): A person's agent starts and answers sessions as them, by grant
 
 ## Clients
 
@@ -155,6 +156,8 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-110](docs/decisions/aru-110-hud-is-an-in-app-client-platform-assertions-a-pr.md): hud is an in-app client: platform assertions, a project roster
 - [aru-114](docs/decisions/aru-114-experimental-is-archived.md): experimental is archived
 - [aru-118](docs/decisions/aru-118-a-project-has-docs-of-its-own-on-the-platform.md): A project has Docs of its own, on the platform
+- [aru-119](docs/decisions/aru-119-an-account-can-reset-its-devices-from-a-fresh-github-sign-in.md): An account can reset its devices from a fresh GitHub sign-in, after a wait
+- [aru-120](docs/decisions/aru-120-a-shared-doc-s-page-loads-its-fonts-from-its-own-origin.md): A shared Doc's page loads its fonts from its own origin
 
 ## Build and release
 

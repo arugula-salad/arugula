@@ -156,6 +156,8 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__issue_write",
     "mcp__arugula__start_run",
     "mcp__arugula__plan_deploy",
+    "mcp__arugula__session_start",
+    "mcp__arugula__session_reply",
 ];
 
 #[derive(Subcommand)]

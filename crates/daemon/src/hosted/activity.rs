@@ -87,7 +87,7 @@ fn matters(kind: &EventKind) -> bool {
 /// Keep `out` saying whether this machine is working, from the mux's
 /// panes as they change.
 pub fn start(mux: MuxHandle, out: tokio::sync::watch::Sender<Option<String>>) {
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let mut events = mux.events();
         let mut signal = Signal::default();
         loop {

@@ -16,7 +16,7 @@ pub(crate) struct Args {
 }
 
 #[derive(Subcommand, Debug)]
-pub(crate) enum Command {
+pub enum Command {
     /// Install as a service that starts at boot (a systemd user service) or
     /// at login (a launchd agent on macOS): copies this binary to
     /// ~/.local/bin, writes the unit or plist, enables and (re)starts it. On
@@ -164,7 +164,7 @@ pub(crate) enum Command {
 
 /// What `arugulad telemetry` is told to do.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TelemetryCmd {
+pub enum TelemetryCmd {
     On,
     Off,
     Status,
@@ -172,21 +172,21 @@ pub(crate) enum TelemetryCmd {
 
 /// A sharing setting (`arugulad sharing NAME`, native #205).
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SharingSetting {
+pub enum SharingSetting {
     /// Guest SSH access.
     GuestSsh,
 }
 
 /// What `arugulad sharing NAME` is told.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum OnOff {
+pub enum OnOff {
     On,
     Off,
 }
 
 /// What `arugulad flags NAME` is told to do.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Switch {
+pub enum Switch {
     On,
     Off,
     /// This machine says nothing: control's word, or the default.
@@ -263,7 +263,7 @@ pub(crate) struct RunArgs {
     /// Where the ssh server for invited guests listens (`arugula
     /// share --guest`, with Guest SSH access on: `arugulad sharing`), only
     /// while an invite exists; `off` turns it off. Port 0 picks a free one.
-    #[arg(long, env = "ARUGULA_GUEST_SSH", default_value = crate::labs::GUEST_SSH_LISTEN)]
+    #[arg(long, env = "ARUGULA_GUEST_SSH", default_value = crate::lab_hooks::GUEST_SSH_LISTEN)]
     pub(crate) guest_ssh: String,
 
     /// The address guests are told to ssh to [default: the hostname].
@@ -476,9 +476,11 @@ const LABS_OPTIONS: [(&str, &str); 5] = [
 ];
 
 /// The command line, listing in `--help` the options `flags` turns on.
+/// Named and versioned as the binary: this crate is `arugulad-base` 0.0.0,
+/// and `arugulad update` reads `--version` from what it downloads (#279).
 pub(crate) fn labs_command(on: On) -> clap::Command {
     use clap::CommandFactory;
-    let mut cmd = Args::command();
+    let mut cmd = Args::command().name("arugulad").version(arugula_core::version::get());
     for (opt, _) in LABS_OPTIONS.iter().filter(|(_, f)| on.has(f)) {
         cmd = cmd.mut_arg(*opt, |a| a.hide(false));
     }

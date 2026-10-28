@@ -18,7 +18,7 @@
 //!   draws it with the session's look, apart from people's and from the
 //!   session's card (`via` `session:<ses>`). Its turns are still its
 //!   asker's (aru-115), but the words are the agent's: they aren't
-//!   counted as the asker's own anywhere (`chat::sessions::own`).
+//!   counted as the asker's own anywhere (`chat::sessions::follows`).
 //! - **Cut from its start** to its last [`ANSWER_MAX`] characters (Arugula
 //!   #215): a final message ends with its summary and caveats, which are
 //!   what the thread must not lose. It starts with a line linking the

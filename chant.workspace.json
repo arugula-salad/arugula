@@ -7,7 +7,7 @@
       "name": "daemon",
       "dir": "crates/daemon",
       "kind": "other",
-      "because": "a Rust crate, arugulad: owns the terminals and serves the API, the web client and the editors' socket (the VS Code extension lives in src/editor/ext)",
+      "because": "the daemon's Rust crates, arugulad-base here with its binary (crates/arugulad) and feature crates (crates/arugulad-*): owns the terminals and serves the API, the web client and the editors' socket (the VS Code extension lives in crates/arugulad-editor/src/editor/ext)",
       "outputs": ["arugulad", "editor-socket"],
       "links": [
         { "member": "web", "output": "dist" },
@@ -222,12 +222,13 @@
       "phases": {
         "lint": ["lint", "changes", "suite-changed"],
         "build": { "runs": ["build", "static", "clippy"], "skipped": "pass" },
-        "test": { "runs": ["test", "test-2"], "skipped": "pass" },
+        "test": { "runs": ["test", "test-2", "test-postgres", "core"], "skipped": "pass" },
         "e2e": { "runs": ["e2e*"], "skipped": "pass" },
+        "claims": { "runs": ["testnet", "stack", "desktop-xvfb"], "skipped": "pass" },
         "macos": { "runs": ["macos*"], "skipped": "pass" },
         "windows": { "runs": ["workspace", "workspace-clippy", "desktop"], "skipped": "pass" }
       },
-      "require": ["lint", "build", "test", "e2e", "macos", "windows"]
+      "require": ["lint", "build", "test", "e2e", "claims", "macos", "windows"]
     }
   },
   "agents": [

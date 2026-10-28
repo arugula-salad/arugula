@@ -1,5 +1,6 @@
 # Every push to main, as parallel as it goes (#287):
-# - lint: the quick checks, on GitHub's runners;
+# - on GitHub's runners: lint, the quick checks, and e2e, the Playwright
+#   specs in seven shards (build's binaries, from the pods);
 # - on the home cloud's runners (arugula-amd64: a fresh pod per job,
 #   docs/development.md):
 #   - build and static: the debug and the box's (static) binaries, once;
@@ -8,13 +9,15 @@
 #     server/Cargo.toml), the desktop app (when the push
 #     changes it: scripts/app-changed), the workspaces apart
 #     (`just workspace-guard`), and notices;
-#   - test: `just test` (the Rust tests under nextest), built beside static
-#     and run once static's binaries are in (scripts/ci-wait-job), then the
-#     platform's again on Postgres (`just test-platform-postgres`, M143);
+#   - test: `just test` (the Rust tests under nextest), built beside static;
+#     the server's suite runs while static builds, the rest once static's
+#     binaries are in (scripts/ci-wait-job);
+#   - test-postgres: the platform's tests again on Postgres
+#     (`just test-platform-postgres`, M143), beside test;
 #   - core: the daemon and the CLI without Labs (`just check-core`, #452);
 #   - testnet: the test stack's claims (ssh, then control);
-#   - e2e: the Playwright specs in six shards; stack: those on the test
-#     stack; perf: the specs that time things, once the shards are done;
+#   - stack: the Playwright specs on the test
+#     stack (the specs that time things run nightly: perf-nightly.yml);
 #   - desktop-xvfb: the Linux desktop app's claims under Xvfb, against
 #     static's binaries, in a test image kept on GHCR;
 # - macos: test and, beside it, the WebKit specs, on our Macs' Tart VMs
@@ -76,26 +79,8 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
-      - name: shellcheck
-        # The version geek has: the runner image's changes what it reports.
-        run: |
-          curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz | tar -xJ -C /tmp
-          sudo install /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
-          shellcheck --version
-      - name: Formatting
-        # rust-toolchain.toml's toolchain, rustfmt only. Pull requests run it
-        # too (binaries.yml's quick).
-        run: rustup component add rustfmt && just fmt-check
-      - name: install.sh and the release's glibc check
-        run: shellcheck -s sh scripts/install.sh scripts/glibc-floor && shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
-      - name: Release scripts and ratchets
-        run: just test-scripts
-      - name: The web client's wire types are current (web/src/proto.gen.ts)
-        run: just proto-ts check
-      - name: DECISIONS.md lists the decision records (docs/decisions/)
-        run: just decisions check
-      - name: The CI's and the test stack's scripts
-        run: shellcheck -x scripts/ci-* scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/hosts/*.sh testnet/editors/*.sh testnet/macos/*.sh && shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
+      # Pull requests run the same (binaries.yml's quick).
+      - uses: ./.github/actions/lint
       - name: No secrets
         # The whole history; a pull request's quick job scans its own commits.
         run: scripts/ci-gitleaks
@@ -227,9 +212,11 @@ jobs:
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
 
-  # Starts beside static, not after it: it builds the tests first, and
-  # waits for static's binaries (the ssh tests' ARUGULA_SSH_BINARIES, all
-  # it takes from static) only before they run. With `needs: static` it
+  # Starts beside static, not after it: it builds the tests first, runs
+  # the server workspace's (which need nothing of static's), and waits for
+  # static's binaries (the ssh tests' ARUGULA_SSH_BINARIES, all it takes
+  # from static) only before the rest run: they had waited ~1 min for
+  # static with nothing running (#259). With `needs: static` it
   # started 4 min into the run, after static and a pod's queue, and was
   # the run's longest path (2026-10-18). #466 left it behind static while
   # the jobs shared geek; each has a pod of its own now.
@@ -237,7 +224,9 @@ jobs:
   # Half the Rust tests each, on a pod each (`just test-run PART`): on one
   # pod the run took 9-10 min, the run's longest path with the e2e shards
   # (2026-10-23). test runs the first half, the doctests and
-  # control-smoke; test-2 the second half and the platform on Postgres.
+  # control-smoke; test-2 the second half. The platform on Postgres had
+  # run after test-2's half, 2 min on the run's longest path: it's
+  # test-postgres now, a job of its own (#259).
   # Two jobs, not a matrix: a skipped matrix job's check run is named
   # without its part, and chant's test phase names both.
   test:
@@ -267,6 +256,12 @@ jobs:
         # Four, not ci-env's six: since platform step 8 three test compiles
         # of ~3.2-3.5 GiB each ran at once and the pod was OOM-killed.
         run: CARGO_BUILD_JOBS=4 just test-build
+      # The server's suite needs nothing of static's: it runs while static
+      # builds (#259).
+      - name: The server's tests, the first half
+        run: just test-run 1 server
+        env:
+          ARUGULA_REQUIRE_SYSTEMD: "1"
       - name: Wait for static
         run: scripts/ci-wait-job static
       - name: static's binaries
@@ -278,7 +273,7 @@ jobs:
         run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
       # The suite, on what test-build built: `just test` would build the web
       # client again first, for nothing.
-      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 1
+      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 1 rest
         env:
           # The service tests run, or fail (testkit's user_manager).
           ARUGULA_REQUIRE_SYSTEMD: "1"
@@ -313,6 +308,12 @@ jobs:
         # Four, not ci-env's six: since platform step 8 three test compiles
         # of ~3.2-3.5 GiB each ran at once and the pod was OOM-killed.
         run: CARGO_BUILD_JOBS=4 just test-build
+      # The server's suite needs nothing of static's: it runs while static
+      # builds (#259).
+      - name: The server's tests, the second half
+        run: just test-run 2 server
+        env:
+          ARUGULA_REQUIRE_SYSTEMD: "1"
       - name: Wait for static
         run: scripts/ci-wait-job static
       - name: static's binaries
@@ -322,20 +323,46 @@ jobs:
           path: ${{ runner.temp }}/artifacts
       - name: Into the run directory
         run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
-      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 2
+      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 2 rest
         env:
           ARUGULA_REQUIRE_SYSTEMD: "1"
-      # The platform's suite again, on Postgres (M143): a postgres:17
-      # container on the pod's Docker (its dind sidecar), reached as the
-      # test stack is, rather than a `services:` container.
-      - name: The platform on Postgres
-        run: just test-platform-postgres
       - name: sccache's hits
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
       - name: Take the test stack down
         if: always()
         run: just testnet down
+
+  # The platform's suite again, on Postgres (M143): a postgres:17 container
+  # on the pod's Docker (its dind sidecar), reached as the test stack is,
+  # rather than a `services:` container. A job of its own beside test and
+  # test-2 (#259): after test-2's half it was 2 min on the run's longest
+  # path. It builds only the server workspace's tests (no Ghostty, no
+  # daemon), the same units as test-build's, so sccache has them.
+  test-postgres:
+    needs: changes
+    if: needs.changes.outputs.suite == 'true'
+    runs-on: arugula-amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: test-postgres
+          cache-workspace: server
+          ghostty: "false"
+      - run: just bootstrap
+      # The platform embeds web/dist-platform, and control web/dist.
+      - run: just web
+      - name: The platform on Postgres
+        run: just test-platform-postgres
+        env:
+          # As test's (scripts/ci-env): the platform's tests compile at
+          # ~3.2-3.5 GiB each (four, not six), and six threads.
+          CARGO_BUILD_JOBS: "4"
+          NEXTEST_TEST_THREADS: "6"
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
 
   # The test stack's claims on fresh boxes, then, when the claims change,
   # each under BREAK=1, where it must fail (nightly: testnet-break.yml). One stack, the control profile's: it has every box the
@@ -380,13 +407,19 @@ jobs:
         if: always()
         run: just testnet down
 
+  # On GitHub's runners since 2026-10-28, not the pods: the shards build
+  # nothing (build's run-debug artifact, 109 MB), were a third of the pods'
+  # time, and their timing flakes came under shared nodes' load (#271's
+  # census); each hosted job is a VM of its own, free for a public repo.
+  # Ubuntu 24.04, not ubuntu-latest: build's binaries need glibc 2.39, the
+  # pods' image's, which 24.04 has; a newer pod image needs a newer runner.
   e2e:
     needs: build
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -400,13 +433,17 @@ jobs:
         run: just browsers
       # Shards by recorded time (web/scripts/e2e-shard.mjs, e2e/durations.json),
       # not Playwright's --shard by count: six of those ran 155-316 s (#868).
+      # Seven since #259: six ran ~280 s of specs each, seven ~240 s, and a
+      # shard more costs ~0.5 pod CPU-min of setup. A stale durations.json
+      # unbalances them (a 125 s spec weighed as 7 s held one 2 min longer):
+      # refresh it when a shard runs well over the rest.
       # Each keeps its JSON report so `just e2e-durations RUN` can refresh
       # the times.
-      - name: The Playwright specs, shard ${{ matrix.shard }} of 6
+      - name: The Playwright specs, shard ${{ matrix.shard }} of 7
         run: |
           port=$(scripts/free-port)
           cd web
-          mapfile -t files < <(node scripts/e2e-shard.mjs ${{ matrix.shard }} 6)
+          mapfile -t files < <(node scripts/e2e-shard.mjs ${{ matrix.shard }} 7)
           # No files would run every spec in every shard.
           [ ${#files[@]} -gt 0 ] || { echo "e2e-shard listed nothing" >&2; exit 1; }
           E2E_PORT=$port pnpm exec playwright test "${files[@]}"
@@ -466,52 +503,6 @@ jobs:
       - name: Take the test stack down
         if: always()
         run: just testnet down
-
-  # The specs that time things (E2E_SET=perf: the frame rates, editors'
-  # times to a file), beside the shards since #868. The editors' times are
-  # reported against their 3 s budget in the job's summary, not asserted
-  # (web/e2e/timing.ts): shared pods put them over with nothing broken. They waited for the
-  # shards when six browsers shared geek with them, and the wait put ~3 min
-  # on the end of every run; each job has its own pod now and the nodes
-  # sit at 13-28% CPU (its one recent failure came while it waited, under
-  # four overlapping runs). Not a required check (chant.workspace.json).
-  perf:
-    needs: build
-    runs-on: arugula-amd64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-        with:
-          rust: "false"
-          fetch: run-debug
-          claude-code: "true"
-      - run: scripts/ci-env use
-      - run: just bootstrap
-      # editors.spec opens a file from an iPhone (WebKit) too.
-      - name: Playwright's browsers
-        run: just browsers
-      # Google Chrome itself, not Playwright's Chromium: editors.spec's blocked third-party cookies are a real Chrome profile's. geek had it.
-      - name: Google Chrome
-        run: command -v google-chrome >/dev/null || (cd web && pnpm exec playwright install --with-deps chrome)
-      - name: The specs that time things
-        run: port=$(scripts/free-port) && cd web && E2E_PORT=$port pnpm exec playwright test
-        env:
-          E2E_CHROMIUM: "1"
-          E2E_SET: perf
-          E2E_TIMINGS: ${{ runner.temp }}/perf-report.json
-      # Each timing against its budget, over budget marked (web/scripts/perf-summary.mjs).
-      - name: The timings, in the summary
-        if: always()
-        run: node web/scripts/perf-summary.mjs "$RUNNER_TEMP/perf-report.json" >> "$GITHUB_STEP_SUMMARY"
-      # A failed spec's screenshot (playwright.config.ts), kept a week.
-      - name: Failed specs' screenshots
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: perf-failures
-          path: web/test-results/
-          retention-days: 7
-          if-no-files-found: ignore
 
   # The Linux desktop app under Xvfb, in a container (#317): `just
   # desktop-xvfb`'s join, app (bare, links and nautilus among its claims)

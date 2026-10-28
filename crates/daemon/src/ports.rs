@@ -13,7 +13,6 @@ use std::{
     time::Duration,
 };
 
-#[cfg(feature = "editor")]
 use futures_util::future::BoxFuture;
 
 pub use crate::provider::Conn;
@@ -30,13 +29,11 @@ pub enum Target {
     /// A machine's, through its provider.
     Sprite { provider: Arc<dyn Provider>, sprite: String, port: u16 },
     /// A server of Arugula's own, reached however it says (the editor's).
-    #[cfg(feature = "editor")]
     Service(Arc<dyn Service>),
 }
 
 /// A server Arugula runs itself: dialing it starts it if it isn't
 /// running (it stops itself when idle).
-#[cfg(feature = "editor")]
 pub trait Service: Send + Sync {
     fn dial(&self) -> BoxFuture<'static, io::Result<Conn>>;
     /// What to call it in errors.
@@ -48,7 +45,6 @@ impl std::fmt::Debug for Target {
         match self {
             Self::Local(p) => write!(f, "localhost:{p}"),
             Self::Sprite { sprite, port, .. } => write!(f, "{sprite}:{port}"),
-            #[cfg(feature = "editor")]
             Self::Service(s) => write!(f, "{}", s.name()),
         }
     }
@@ -59,7 +55,6 @@ impl PartialEq for Target {
         match (self, other) {
             (Self::Local(a), Self::Local(b)) => a == b,
             (Self::Sprite { sprite: a, port: p, .. }, Self::Sprite { sprite: b, port: q, .. }) => a == b && p == q,
-            #[cfg(feature = "editor")]
             (Self::Service(a), Self::Service(b)) => Arc::ptr_eq(a, b),
             _ => false,
         }
@@ -72,7 +67,6 @@ impl Target {
     pub fn authority(&self) -> String {
         match self {
             Self::Local(p) | Self::Sprite { port: p, .. } => format!("localhost:{p}"),
-            #[cfg(feature = "editor")]
             Self::Service(_) => "localhost".into(),
         }
     }
@@ -81,7 +75,6 @@ impl Target {
     pub fn what(&self) -> String {
         match self {
             Self::Local(p) | Self::Sprite { port: p, .. } => format!("port {p}"),
-            #[cfg(feature = "editor")]
             Self::Service(s) => s.name(),
         }
     }
@@ -106,7 +99,6 @@ impl Target {
                 Ok(Box::new(s))
             }
             Self::Sprite { provider, sprite, port } => provider.dial(sprite, *port).await,
-            #[cfg(feature = "editor")]
             Self::Service(s) => s.dial().await,
         }
     }
@@ -143,7 +135,7 @@ mod tests {
     async fn local_ports_dial_and_refuse() {
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let (mut s, _) = l.accept().await.unwrap();
             s.write_all(b"hi").await.unwrap();
         });
@@ -155,7 +147,7 @@ mod tests {
         // Listening on ::1 only, as a dev server bound to "localhost" may.
         if let Ok(l6) = tokio::net::TcpListener::bind("[::1]:0").await {
             let port = l6.local_addr().unwrap().port();
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let _ = l6.accept().await;
             });
             assert!(Target::Local(port).dial().await.is_ok(), "::1 only");

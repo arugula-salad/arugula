@@ -401,14 +401,15 @@ export class Fleet {
 
   /** Shows a pane in the tab view, and with `share` its session's share
    * picker (#237): set by the page. */
-  onOpen: (host: string, pane: number, share?: boolean, reveal?: string) => void = () => {};
+  onOpen: (host: string, pane: number, share?: boolean, reveal?: string, missed?: string) => void = () => {};
 
   /** Open a pane of the merged list in its tab, connected for real (a
    * sleeping sandbox wakes for it); `share` opens the share picker for
-   * its session there. */
-  open(host: string, pane: number, share = false, reveal?: string) {
+   * its session there; `reveal` scrolls to those lines, and `missed` is
+   * the note shown when they aren't in its scrollback (a search hit's). */
+  open(host: string, pane: number, share = false, reveal?: string, missed?: string) {
     this.touch(host);
-    this.onOpen(host, pane, share, reveal);
+    this.onOpen(host, pane, share, reveal, missed);
   }
 
   /** Someone opened this host (or a pane on it): it counts as used. */

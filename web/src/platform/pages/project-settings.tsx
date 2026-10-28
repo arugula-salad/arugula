@@ -27,7 +27,7 @@ import { PageHeader } from "../../shared/ui/page-header";
 import { names } from "../links";
 import { follow, go, pathOf, REPO } from "../router";
 import { session } from "../session";
-import { Missing } from "./project";
+import { Missing, REPOS_MEAN } from "./project";
 import { IssueHomeSetting } from "./issues";
 import { RunGrant } from "../settings/runs";
 import { FinishStep } from "../settings/finish-step";
@@ -141,7 +141,11 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
             }
           >
             <div data-linked-repos>
-              {repos?.length === 0 && <p class="dim">None yet.</p>}
+              {repos?.length === 0 && (
+                <p class="dim" data-linked-repos-none>
+                  {REPOS_MEAN} {changes ? "Link one below: its name on GitHub, owner/name." : ""}
+                </p>
+              )}
               {repos?.length ? (
                 <table class="settings-table repo-table">
                   <thead>
@@ -210,7 +214,16 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
             </div>
             {changes ? (
               <form class="platform-link-repo" aria-label="Link a repo" onSubmit={submit}>
-                <input required aria-label="Repo" placeholder="Owner/name" value={repo} data-link-repo onInput={(e) => setRepo(e.currentTarget.value)} />
+                <input
+                  required
+                  aria-label="Repo"
+                  placeholder="Owner/name"
+                  value={repo}
+                  data-link-repo
+                  // The project home's Link a repo comes here, to type one.
+                  autofocus={location.hash === "#repos"}
+                  onInput={(e) => setRepo(e.currentTarget.value)}
+                />
                 <button class="primary" disabled={busy}>
                   Link
                 </button>

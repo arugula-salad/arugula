@@ -19,6 +19,9 @@
 //!   testnet) or else its sandbox id, at `ARUGULA_CONTROL_URL` (or
 //!   `--control`), and then dials the relay like any machine.
 //! - **Redials at once after a resume** ([`resume`]).
+//! - **Ends `/etc/resolv.conf` with a newline** ([`resolv`], Arugula #263),
+//!   at its start and after each resume, as envd leaves none and Zig
+//!   can't read it then.
 //! - **Says busy or idle** on its relay socket ([`activity`]).
 //! - **Takes runs** from the platform and runs each at most once
 //!   (`crate::work`, M212).
@@ -43,6 +46,7 @@ pub mod activity;
 pub mod archive;
 pub mod enroll;
 pub mod reseed;
+pub mod resolv;
 pub mod resume;
 pub mod runs;
 pub mod setup;
@@ -145,7 +149,12 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
     }
     let control = app.control.clone();
     let c = control.clone();
-    resume::watch(Arc::new(move || c.resumed()));
+    resume::watch(Arc::new(move || {
+        c.resumed();
+        resolv::after_resume();
+    }));
+    // Arugula #263: the newline Zig needs at the end of /etc/resolv.conf.
+    crate::task::spawn(resolv::fix());
     activity::start(app.mux.clone(), control.activity.clone());
     // Its runs (M212), once it's in control.
     crate::work::start(app.clone());
@@ -160,7 +169,7 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
     let ticket = std::env::var(TICKET_ENV).ok().filter(|t| !t.is_empty());
     let url = std::env::var(CONTROL_ENV).ok().filter(|u| !u.is_empty()).unwrap_or(control_url);
     let url = url.trim_end_matches('/').to_owned();
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         // In the snapshot (or the template's build): wait for a box of our
         // own, then start over in it.
         if ticket.is_none() && own_box(&state_dir, &id_file) == Some(false) {

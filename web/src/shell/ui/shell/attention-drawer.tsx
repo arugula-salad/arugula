@@ -5,7 +5,9 @@
 // Allow and Deny (or the question's answer) go through the existing
 // `act`, and Go to pane only goes there. Looking at the drawer, or closing
 // it, never answers or dismisses anything. Viewers see the items without
-// buttons.
+// buttons. Empty, it says what lands here and offers what would bring it:
+// Claude Code's hooks where they're missing, and this device's
+// notifications where they're off (Discovery 5).
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { type Client } from "../../client";
@@ -21,7 +23,8 @@ import { DiffCard } from "../diff-card";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { getFleet } from "../hosts";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";
-import { agentNotifyItems, notificationItems } from "../notify";
+import { agentNotifyItems, notificationItems, pushNow, subscribePush, toggleNotify } from "../notify";
+import { hooksInstalled, setUpClaude } from "../agents-setup";
 import { addPane } from "./add-pane";
 import { closePlace, currentPlace } from "../places";
 
@@ -268,9 +271,7 @@ export function AttentionDrawer({ client }: { client: Client }) {
       </header>
       <div class="ws-att-list" role="listbox" aria-label="What needs you" ref={list} tabIndex={-1}>
         {items.length === 0 && (
-          <div class="ws-empty" role="status" data-attention-empty>
-            <p>Nothing needs you on any machine.</p>
-          </div>
+          <Empty client={client} />
         )}
         {items.map((i) => (
           <button
@@ -302,6 +303,51 @@ export function AttentionDrawer({ client }: { client: Client }) {
           Notifications…
         </button>
       </footer>
+    </div>
+  );
+}
+
+/** Nothing waits: what would land here, and the steps that make it land.
+ * Set up only on the owner's own daemon while Claude Code's settings lack
+ * Arugula's hooks; Notify this device only while it could be on. */
+function Empty({ client }: { client: Client }) {
+  useSubscribe(subscribePush);
+  const mine = !client.e2e && !client.state?.roles;
+  const [hooks, setHooks] = useState<"missing" | "busy" | { ok: boolean; said: string } | null>(null);
+  useEffect(() => {
+    if (!mine) return;
+    let live = true;
+    void hooksInstalled().then((has) => live && !has && setHooks("missing"));
+    return () => void (live = false);
+  }, [mine]);
+  const setUp = async () => {
+    setHooks("busy");
+    setHooks(await setUpClaude());
+  };
+  const push = pushNow() === "off";
+  return (
+    <div class="ws-empty ws-att-empty" role="status" data-attention-empty>
+      <p>Nothing needs you on any machine.</p>
+      <p class="dim">Claude in a terminal? Its questions land here, to answer from any device.</p>
+      {typeof hooks === "object" && hooks !== null && (
+        <p class={hooks.ok ? "dim" : "control-error"} data-attention-setup-said={hooks.ok ? "done" : "failed"}>
+          {hooks.ok ? `${hooks.said} A Claude started from now on asks here.` : hooks.said}
+        </p>
+      )}
+      {(hooks === "missing" || hooks === "busy" || push) && (
+        <div class="ws-att-acts">
+          {(hooks === "missing" || hooks === "busy") && (
+            <button class="primary" disabled={hooks === "busy"} onClick={() => void setUp()} data-attention-setup title="Install Arugula's hooks in Claude Code's settings">
+              {hooks === "busy" ? "Setting up…" : "Set up"}
+            </button>
+          )}
+          {push && (
+            <button class="secondary" onClick={() => void toggleNotify(client)} data-attention-notify title="Notifications on this device when something needs you">
+              Notify this device
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

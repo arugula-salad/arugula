@@ -228,6 +228,11 @@ Rules:
 work on this branch; don't push. When your turn ends, the box runs the project's finish step and pushes the branch for \
 you, so don't say whether it's pushed: the thread says what the box pushed. No pull request: b sends the draft from the \
 card.
+- Don't commit files the repository generates (code generated from a schema, blessed test fixtures) unless the ask is \
+about them: regenerate them in your checkout to build and test, and leave them out of your commits. Sessions run side by \
+side, and whoever combines their branches regenerates them once. Say in your answer which ones you left out.
+- Run the tests you wrote or changed, end-to-end and browser specs included, one at a time, and say in your answer \
+whether each passed. If one can't run here, say what stopped it.
 - To ask the person something, use your tool for asking (AskUserQuestion in Claude Code): they answer on the card in the \
 thread. A question written only in your reply ends your turn without an answer.
 - A question you ask waits for the person: their answer comes back as the tool's result. It's what they chose, so do \

@@ -4,14 +4,16 @@
 // `Chart` turns that tree into SVG. A chart that can't be drawn says why
 // and shows its source: never an empty box.
 //
-// The rules are the daemon's (`crates/daemon/src/docs/embeds.rs`, which has
+// The rules are the daemon's (`crates/arugulad-docs/src/docs/embeds.rs`, which has
 // the grammar) and say the same things: `doc_fill` refuses a chart that
 // breaks them, so they only matter here for a chart that arrives another
 // way, but a spec runs both over the same files (`tests/fixtures/docs/`).
 // Colours are `--c1` to `--c4` (style.css, from the palette) with light
-// fallbacks; text and axes are `currentColor`, so both themes read.
+// fallbacks, or the Doc's hues the spec names in `colors` (#256); text and
+// axes are `currentColor`, so both themes read.
 
 import { h, type ComponentChildren } from "preact";
+import { chartColour, HUES } from "../docs/colours";
 
 export const MAX_ROWS = 200;
 export const MAX_SERIES = 4;
@@ -101,6 +103,13 @@ export function checkSpec(spec: unknown): string | null {
   if (ys.length < 1 || ys.length > MAX_SERIES || ys.some((y) => typeof y !== "string" || !y)) {
     return `y must be a key, or a list of 1 to ${MAX_SERIES} keys`;
   }
+  if (spec.colors !== undefined) {
+    const colors = spec.colors;
+    const hues = HUES.join(", ");
+    if (!Array.isArray(colors) || colors.length !== ys.length) return `colors must name one colour for each y series, from ${hues}`;
+    const bad = colors.find((c) => typeof c !== "string" || !HUES.includes(c));
+    if (bad !== undefined) return `colors: ${oneLine(JSON.stringify(bad))} is not one of ${hues}`;
+  }
   const rows = spec.rows;
   if (!Array.isArray(rows) || rows.length === 0) return "rows must be a non-empty list";
   if (rows.length > MAX_ROWS) return `${rows.length} rows; the cap is ${MAX_ROWS}`;
@@ -148,6 +157,7 @@ export interface Spec {
   y: string | string[];
   rows: Record<string, number | string>[];
   order?: string[];
+  colors?: string[];
 }
 
 /** A node of the drawing, as data. */
@@ -191,7 +201,7 @@ export function buildChart(spec: Spec): El {
     kids: [],
     ...(text !== undefined ? { text: String(text) } : {}),
   });
-  const color = (i: number) => `var(--c${i + 1}, ${FALLBACK[i]})`;
+  const color = (i: number) => (spec.colors ? chartColour(spec.colors[i]) : `var(--c${i + 1}, ${FALLBACK[i]})`);
   const label = describe(spec);
   const svg = make("svg", {
     viewBox: `0 0 ${W} ${H}`,

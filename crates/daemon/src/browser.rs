@@ -249,7 +249,7 @@ impl Browser {
             Err(e) => return self.failed(epoch, &page.show(), e),
         };
         let Some(b) = self.me.upgrade() else { return };
-        self.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&self.ctx.rt, async move {
             let probed = match (&target, &page) {
                 (Some(t), Page::Port { path, .. }) => sites::probe(t, path).await.map(|(_, body)| (true, title(&body))),
                 _ => probe(&b.http, &url).await,
@@ -300,7 +300,7 @@ impl Browser {
             return;
         }
         let Some(b) = self.me.upgrade() else { return };
-        self.ctx.rt.spawn(async move {
+        crate::task::spawn_on(&self.ctx.rt, async move {
             loop {
                 tokio::time::sleep(RETRY).await;
                 let live = !b.closed.load(Ordering::Relaxed) && b.epoch.load(Ordering::Relaxed) == epoch;
@@ -368,7 +368,7 @@ impl Browser {
                 // Its title, from the page itself.
                 let Some(b) = self.me.upgrade() else { return };
                 let Some(t) = site.target() else { return };
-                self.ctx.rt.spawn(async move {
+                crate::task::spawn_on(&self.ctx.rt, async move {
                     let title = sites::probe(&t, &path).await.ok().and_then(|(_, body)| title(&body));
                     if b.state.lock().unwrap().url != url {
                         return;
@@ -479,7 +479,7 @@ fn usable(page: &Page, on_machine: bool) -> Result<(), String> {
 }
 
 /// A random name part: 20 letters and digits (about 103 bits).
-pub(crate) fn new_key() -> String {
+pub fn new_key() -> String {
     let b = crate::push::random::<20>();
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
     b.iter().map(|x| ALPHABET[*x as usize % ALPHABET.len()] as char).collect()

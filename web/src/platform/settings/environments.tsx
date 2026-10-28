@@ -15,11 +15,12 @@
 // environment holds it or the platform mints it per run, and its deploys a
 // compact table under mono column heads, as the repos' are.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { holdable, historyPath, secretNote, environmentBody, type DeployHistory, type Driver, type Environment } from "../deploys-text";
 import { names } from "../links";
 import { DeployRow } from "../pages/deploy";
+import { ENVIRONMENTS_MEAN } from "../pages/project";
 import { follow, pathOf } from "../router";
 import type { PlatformProject } from "../session";
 import { deployTone, toneClass } from "../swarm";
@@ -43,7 +44,10 @@ export const roleIn = (p: PlatformProject) => p.team?.role ?? "owner";
 export function Environments({ p }: { p: PlatformProject }) {
   const [envs, setEnvs] = useState<Environment[] | null>(null);
   const [drivers, setDrivers] = useState<Driver[]>([]);
+  // The project home's Make an environment comes here (`#environments`):
+  // with none yet, the form is open for an owner.
   const [making, setMaking] = useState(false);
+  const asked = useRef(location.hash === "#environments");
   const [err, setErr] = useState("");
   const base = `/api/projects/${encodeURIComponent(p.id)}`;
   const load = () =>
@@ -58,6 +62,11 @@ export function Environments({ p }: { p: PlatformProject }) {
   const role = roleIn(p);
   const owner = role === "owner";
   const plans = role !== "viewer";
+  useEffect(() => {
+    if (!asked.current || envs === null || !drivers.length) return;
+    asked.current = false;
+    if (owner && !envs.length) setMaking(true);
+  }, [envs, drivers, owner]);
   const deployPath = (env: string) => pathOf({ page: "new-deploy", project: p.id, env }, names);
   return (
     <Section
@@ -75,7 +84,11 @@ export function Environments({ p }: { p: PlatformProject }) {
       }
     >
       {err && <p class="control-error">{err}</p>}
-      {envs?.length === 0 && <p class="dim">None yet.</p>}
+      {envs?.length === 0 && (
+        <p class="dim" data-environments-none>
+          {ENVIRONMENTS_MEAN}
+        </p>
+      )}
       {envs?.length ? (
         <div class="sw-cards settings-cards env-cards">
           {envs.map((env) => (
@@ -101,8 +114,8 @@ export function Environments({ p }: { p: PlatformProject }) {
             }}
           />
         ) : (
-          <button class="secondary settings-new" data-environment-new onClick={() => setMaking(true)} disabled={!drivers.length}>
-            New environment
+          <button class={envs?.length === 0 ? "primary settings-new" : "secondary settings-new"} data-environment-new onClick={() => setMaking(true)} disabled={!drivers.length}>
+            {envs?.length === 0 ? "Make an environment" : "New environment"}
           </button>
         )
       ) : (

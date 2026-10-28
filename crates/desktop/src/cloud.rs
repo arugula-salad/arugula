@@ -224,6 +224,21 @@ pub fn signed_in(app: &AppHandle, control: &str) -> bool {
         .is_some_and(|v| v["signed_in"][control].as_bool() == Some(true))
 }
 
+/// A control the app was signed in to that isn't `control`: where it was
+/// before control moved (#1580), or before the machine joined another.
+pub fn signed_in_elsewhere(app: &AppHandle, control: &str) -> Option<String> {
+    let v: Value = serde_json::from_slice(&std::fs::read(state_file(app)?).ok()?).ok()?;
+    elsewhere(&v, control)
+}
+
+fn elsewhere(v: &Value, control: &str) -> Option<String> {
+    v["signed_in"]
+        .as_object()?
+        .iter()
+        .find(|(c, on)| c.as_str() != control && on.as_bool() == Some(true))
+        .map(|(c, _)| c.clone())
+}
+
 pub fn set_signed_in(app: &AppHandle, control: &str, on: bool) {
     let Some(f) = state_file(app) else { return };
     let mut v: Value =
@@ -412,9 +427,11 @@ fn associated_domains() -> &'static [String] {
 }
 
 /// Script for every page in the app's windows: the name control's page
-/// gives this device, no passkey button where passkeys can't work
-/// (`passkeys_on`), and window dragging (`DRAG_SCRIPT`).
-pub fn init_script() -> String {
+/// gives this device, whether the app is signed in to the machine's control
+/// (`signed_in`: the daemon's page offers signing in when it isn't, #1580),
+/// no passkey button where passkeys can't work (`passkeys_on`), and window
+/// dragging (`DRAG_SCRIPT`).
+pub fn init_script(signed_in: bool) -> String {
     let control = control().unwrap_or_default();
     let hide = !passkeys_on(&control);
     // Debug builds only: a test's script for the page, to drive the window
@@ -425,7 +442,7 @@ pub fn init_script() -> String {
     #[cfg(not(debug_assertions))]
     let test = String::new();
     let s = format!(
-        "window.__arugulaApp = {{ name: {}, platform: {:?} }};\n\
+        "window.__arugulaApp = {{ name: {}, platform: {:?}, signedIn: {signed_in} }};\n\
          if ({hide} && {control:?} && location.origin === new URL({control:?}).origin) {{\n\
            addEventListener('DOMContentLoaded', () => {{\n\
              const s = document.createElement('style');\n\
@@ -460,13 +477,18 @@ pub struct Status {
     place: Option<String>,
     /// `ARUGULA_SIGNIN_AUTO=1` (for tests): start signing in on load.
     auto: bool,
+    /// The control the app was signed in to before, when it isn't this
+    /// one (#1580): the page says signing in again is why it's here.
+    was: Option<String>,
 }
 
 #[tauri::command]
-pub fn cloud_status() -> Status {
+pub fn cloud_status(app: AppHandle) -> Status {
     let local = LOCAL.lock().unwrap().clone().unwrap_or_default();
+    let control = control();
     Status {
-        control: control(),
+        was: control.as_deref().and_then(|c| signed_in_elsewhere(&app, c)),
+        control,
         name: device_name(),
         machine: local.name,
         place: local.place,
@@ -655,8 +677,25 @@ mod tests {
         assert!(!associated_with("https://control.example.com", &d));
         assert!(!associated_with("https://control.arugula.io", &d[..1]));
         assert!(!associated_with("", &d));
-        let script = init_script();
+        let script = init_script(false);
         assert!(script.contains("if (true && "), "the button stays hidden: {script}");
+        assert!(script.contains("signedIn: false"), "{script}");
+    }
+
+    /// The control the app was signed in to before a move, not this one,
+    /// nor one it was signed out of (#1580).
+    #[test]
+    fn signed_in_elsewhere_is_another_control() {
+        let v = json!({ "signed_in": {
+            "https://control.illogical.widgets.wtf": true,
+            "https://control.example.com": false,
+        } });
+        assert_eq!(
+            elsewhere(&v, "https://control.arugula.io").as_deref(),
+            Some("https://control.illogical.widgets.wtf")
+        );
+        assert_eq!(elsewhere(&v, "https://control.illogical.widgets.wtf"), None);
+        assert_eq!(elsewhere(&json!({}), "https://control.arugula.io"), None);
     }
 
     /// Sign-in leaves the window; a link of the signed-in account's GitHub

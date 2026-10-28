@@ -11,7 +11,8 @@
 //
 // Panes (M110): Ctrl+Shift+Enter toggles the tab's focus on the active
 // pane, Ctrl+Shift+E opens + Pane (the pane toolbar's), and
-// Ctrl+Alt+Shift+arrows grow (→ ↓) or shrink (← ↑) the active pane. Each
+// Ctrl+Alt+Shift+arrows grow (→ ↓) or shrink (← ↑) the active pane, and
+// Ctrl+Shift+L goes to the next pane that needs you. Each
 // takes its key only when it can act (a tab with more than one pane, a
 // split that way), so otherwise the terminal still gets it. The resize
 // chord is one no shell, editor or browser binds; GNOME's default
@@ -25,7 +26,7 @@ import { desktopPlatform, openInNewWindow } from "../../shared/desktop";
 import { swarmRoute } from "../swarm/route";
 import { agentsRoute } from "./agents-route";
 import { docsRoute } from "./docs-route";
-import { togglePalette } from "./palette";
+import { nextNeedingYou, togglePalette } from "./palette";
 import { openPicker } from "./picker";
 import { paneIds } from "../client";
 import { layoutRefusal, resizeActive, toggleFocus, type Way } from "./panes/layout";
@@ -117,6 +118,19 @@ const table: Binding[] = [
     keys: { mac: ctrlOrCmd("KeyE"), other: ["Ctrl+Shift+KeyE"] },
     when: () => addPane.available && focusTarget(true) !== null,
     run: () => addPane.toggle(),
+  },
+  {
+    id: "pane.next-needs-you",
+    label: "Go to the next pane that needs you",
+    keys: { mac: ctrlOrCmd("KeyL"), other: ["Ctrl+Shift+KeyL"] },
+    // Taken only when a pane needs you, and not from under a dialog.
+    when: () => !!workspace?.client.state && !document.querySelector(".prompt-backdrop") && nextNeedingYou(workspace.client) !== undefined,
+    run: () => {
+      const c = workspace!.client;
+      const pane = nextNeedingYou(c)!;
+      c.setActive(pane);
+      requestAnimationFrame(() => c.viewOf(pane)?.focus());
+    },
   },
   {
     id: "pane.resize",

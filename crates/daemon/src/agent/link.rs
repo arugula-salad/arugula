@@ -254,12 +254,10 @@ pub fn forget_fds(id: PaneId) {
 #[cfg(unix)]
 fn run_local(id: PaneId, dir: PathBuf, in_w: OwnedFd, out: OwnedFd, pid: u32, fd_store: bool, sink: Sink) -> Link {
     let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
-    // The daemon takes SIGPIPE's default (`main`, #682), which ends the
-    // process: a write to an agent that already exited (a command that isn't
-    // there) would take the whole daemon down (#947). It mustn't be ignored
-    // process-wide instead: what the daemon forks (panes' shells, through
-    // the shim) would inherit that. So the write fails with EPIPE, and the
-    // reader says why the agent ended.
+    // A write to an agent that already exited (a command that isn't there)
+    // raises SIGPIPE (#947). The serving daemon ignores it (`main`), and
+    // this keeps it off this write even where it's taken: the write fails
+    // with EPIPE, and the reader says why the agent ended.
     no_sigpipe(&in_w);
     let mut writer = File::from(in_w);
     let _ = std::thread::Builder::new().name(format!("agent{id}-write")).spawn(move || {
@@ -491,7 +489,7 @@ pub fn spawn_vm(
 ) -> Link {
     let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (stop_tx, stop_rx) = mpsc::unbounded_channel::<()>();
-    rt.spawn(drive_vm(provider, sprite, dir, begin, rx, stop_rx, sink));
+    crate::task::spawn_on(rt, drive_vm(provider, sprite, dir, begin, rx, stop_rx, sink));
     Link {
         tx,
         stop: Box::new(move || {

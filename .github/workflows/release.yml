@@ -310,5 +310,12 @@ jobs:
           allow-no-subscriptions: true
       - run: npx -y @vscode/vsce@4.0.0 publish --azure-credential --skip-duplicate --packagePath vsix/*.vsix
       # Each store on its own: one refusing (Open VSX 406'd 0.2.1) doesn't hold back the other.
-      - if: ${{ !cancelled() }}
-        run: npx -y ovsx@1.2.0 publish --trusted-publishing --skip-duplicate --packagePath vsix/*.vsix
+      # Open VSX has refused every release since 0.44.0 with a 406 on its
+      # side (#1015), which left every release run red: a warning on the
+      # run until it takes them again, not a failed release.
+      - name: Open VSX
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          npx -y ovsx@1.2.0 publish --trusted-publishing --skip-duplicate --packagePath vsix/*.vsix ||
+            { echo "::warning::Open VSX refused the extension (#1015): the release went on without it"; exit 1; }

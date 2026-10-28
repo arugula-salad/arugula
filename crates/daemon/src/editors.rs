@@ -1,170 +1,216 @@
-//! The editor server (`editor/`: VS Code as code-server in an editor block,
-//! the editors that join the swarm, Arugula's extension) and Claude Code's
-//! IDE (`ide/`: the daemon as the IDE Claude Code connects to), behind the
-//! cargo feature `editor`. It's on by default; `--no-default-features`
-//! leaves it out.
+//! The editor server (VS Code as code-server in an editor block, the
+//! editors that join the swarm, Arugula's extension) and Claude Code's IDE
+//! (the daemon as the IDE Claude Code connects to) are a crate of their own,
+//! `arugulad-editor` (crates/arugulad-editor, #232). The binary registers it
+//! ([`register`]) when its `editor` feature is on, which it is by default.
 //!
-//! **The pattern** is Labs' (see `labs/mod.rs`): `editor/` and `ide/` are
-//! declared in `main.rs` under the feature, and nothing outside them names
-//! them but this file. What the rest of the daemon calls is below, each with
-//! a twin under `#[cfg(not(feature = "editor"))]` that does nothing or says
-//! [`not_built`], so no caller needs a `cfg` of its own. A build without the
-//! feature has no editor blocks (a saved one says so when it's opened), no
+//! **The surface:** what the rest of the daemon calls is below. Each asks the
+//! registered [`Editors`] or, with none, does nothing or says
+//! [`not_built`], so no caller needs to know whether it's there. A build
+//! without it has no editor blocks (a saved one says so when it's opened), no
 //! socket for editors to join on, so none ever does, no extension to
-//! download and no IDE settings. The mux's half of each is the core's
-//! (the `EditorLink` and `PaneCards` traits).
-//!
-//! Tests that need the editor are `#[cfg(feature = "editor")]`.
+//! download and no IDE settings. The mux's half of each is the core's (the
+//! `EditorLink` and `PaneCards` traits). The IDE's operations are the editor
+//! crate's too (`impl Handle<Editor> for IdeGet`, routed with `op_of`).
 
 use std::{
+    io,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
-use arugula_proto::{BlockType, DiffInfo, Driver, PaneId};
+use arugula_proto::{BlockType, DiffInfo, Driver, PaneId, api::IdeInfo};
 use axum::Router;
-#[cfg(not(feature = "editor"))]
+use futures_util::future::BoxFuture;
 use serde_json::Value;
 
-use crate::block::BlockKinds;
-#[cfg(not(feature = "editor"))]
-use crate::block::{Block, BlockCtx, BlockKind};
-#[cfg(feature = "editor")]
-use crate::mux::Api;
-use crate::{mux::MuxHandle, pane::Launcher, server::App};
+use crate::{
+    block::{Block, BlockCtx, BlockKind, BlockKinds},
+    mux::{MuxHandle, PaneCards},
+    pane::Launcher,
+    server::App,
+};
 
 /// Where code-server's releases are downloaded from. (The flag that says
 /// otherwise is in every build, so its default is too.)
 pub const RELEASES: &str = "https://github.com/coder/code-server/releases/download";
 
+/// The editor server's settings, from the command line.
+pub struct Settings {
+    /// `<state>/editor`: settings, extensions, workspaces, logs.
+    pub dir: PathBuf,
+    /// This host's server's socket (kept short: Unix socket paths are).
+    pub socket: PathBuf,
+    /// A code-server to run instead of the pinned release.
+    pub binary: Option<PathBuf>,
+    /// Where releases are unpacked.
+    pub cache: PathBuf,
+    /// Where releases come from (tests point it elsewhere).
+    pub releases: String,
+    /// Seconds without a client before a server stops (at least 60).
+    pub idle: u64,
+    /// Seconds a window may be away and still reconnect to its session.
+    pub grace: u64,
+    pub launch: Launcher,
+}
+
+/// The editor crate, as the daemon calls it.
+pub trait Editors: Send + Sync + 'static {
+    /// Registers the editor block type.
+    fn kinds(&self, kinds: &mut BlockKinds);
+    /// Adds its HTTP routes to the API's: the extension's download, and the
+    /// IDE's operations.
+    fn routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>>;
+    /// Adds the route editors on this machine join the swarm on (M28).
+    fn local_routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>>;
+    /// Turns editor blocks on (once per process).
+    fn install(&self, s: Settings);
+    /// Starts being Claude Code's IDE (M28), if it can.
+    fn start_ide(
+        &self,
+        state_dir: &Path,
+        lock_dir: Option<PathBuf>,
+        home: &Path,
+        launch: Launcher,
+    ) -> BoxFuture<'static, Option<Arc<dyn Ide>>>;
+    /// Runs `argv` if it's one of its own subcommands (`_vsix`,
+    /// `_ide_relay`), before the daemon starts.
+    fn subcommand(&self, argv: &[String]) -> Option<anyhow::Result<()>>;
+}
+
+/// Claude Code's IDE, as `App` holds it.
+pub trait Ide: Send + Sync + std::fmt::Debug {
+    /// The port Claude Code finds it by (`CLAUDE_CODE_SSE_PORT`).
+    fn port(&self) -> u16;
+    /// What it is here, for `GET /api/ide`.
+    fn info(&self) -> IdeInfo;
+    /// Where its diffs go now (its name, or another IDE's).
+    fn diffs_to(&self) -> String;
+    /// Send its diffs to another IDE (`Some`), or keep them (`None`).
+    fn set_diffs_to(&self, name: Option<String>) -> io::Result<()>;
+    /// Tell Claude Code something: one connection, or every one (`None`).
+    fn notify(&self, conn: Option<u64>, method: &str, params: Value);
+    /// Lets it follow the mux, once it runs.
+    fn run(self: Arc<Self>, mux: MuxHandle);
+    /// The edits Claude Code proposes, as the mux holds them (#699): cards
+    /// that make a pane wait.
+    fn cards(self: Arc<Self>) -> Box<dyn PaneCards>;
+    /// The IDE connections of Claude Code in a pane.
+    fn conns_of(&self, mux: &MuxHandle, pane: PaneId) -> BoxFuture<'static, Vec<u64>>;
+    /// The edit a pane's diff card shows: before and after.
+    fn diff_of(&self, mux: &MuxHandle, pane: PaneId) -> BoxFuture<'static, Option<(DiffInfo, String, String)>>;
+    /// Someone accepted (`accept`) or rejected an edit waiting as a diff.
+    #[allow(clippy::too_many_arguments)]
+    fn answer_diff(
+        &self,
+        mux: &MuxHandle,
+        pane: PaneId,
+        id: Option<String>,
+        accept: bool,
+        text: Option<String>,
+        by: Driver,
+    ) -> BoxFuture<'static, Result<(), String>>;
+}
+
+static EDITORS: OnceLock<Box<dyn Editors>> = OnceLock::new();
+
+/// Puts the editor in this daemon: the binary calls it before `main`.
+pub fn register(e: Box<dyn Editors>) {
+    let _ = EDITORS.set(e);
+}
+
+fn editors() -> Option<&'static dyn Editors> {
+    EDITORS.get().map(|e| &**e)
+}
+
 /// What a request that needs the editor, in a build without it, answers.
-#[cfg(not(feature = "editor"))]
 pub fn not_built(what: &str) -> String {
     format!("{what} isn't in this build (built without the editor feature)")
 }
 
-/// Claude Code's IDE, as `App` holds it.
-#[cfg(feature = "editor")]
-pub use crate::ide::Ide;
-
-/// There is none: a build without the editor is never Claude Code's IDE.
-#[cfg(not(feature = "editor"))]
-pub enum Ide {}
-
-/// Registers the editor block type.
-#[cfg(feature = "editor")]
-pub fn kinds(kinds: &mut BlockKinds) {
-    kinds.add(BlockType::Editor, crate::block::Make(crate::editor::Editor::create));
-}
-
 /// A kind this build doesn't have: it says so ([`not_built`]).
-#[cfg(not(feature = "editor"))]
 struct NotBuilt(&'static str);
 
-#[cfg(not(feature = "editor"))]
 impl BlockKind for NotBuilt {
     fn create(&self, _ctx: BlockCtx, _config: Value) -> Result<Arc<dyn Block>, String> {
         Err(not_built(self.0))
     }
 }
 
-#[cfg(not(feature = "editor"))]
+/// Registers the editor block type, or one that says it isn't built.
 pub fn kinds(kinds: &mut BlockKinds) {
-    kinds.add(BlockType::Editor, NotBuilt("An editor block"));
+    match editors() {
+        Some(e) => e.kinds(kinds),
+        None => kinds.add(BlockType::Editor, NotBuilt("An editor block")),
+    }
 }
 
 /// Adds the editor's HTTP routes to the API's: the extension's download, and
 /// the IDE's settings and mentions.
-#[cfg(feature = "editor")]
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    use crate::ops::OpRoutes;
-    use arugula_proto::op::ops::{IdeGet, IdeMention, IdeSet};
-    r.route("/api/editors/vsix", axum::routing::get(crate::editor::vsix::download))
-        .op::<IdeGet>()
-        .op::<IdeSet>()
-        .op::<IdeMention>()
-}
-
-#[cfg(not(feature = "editor"))]
-pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    r
+    match editors() {
+        Some(e) => e.routes(r),
+        None => r,
+    }
 }
 
 /// Adds the route editors on this machine join the swarm on (M28), to the
 /// Unix socket's router.
-#[cfg(feature = "editor")]
 pub fn local_routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    r.route("/api/editors/connect", axum::routing::get(crate::editor::link::connect))
+    match editors() {
+        Some(e) => e.local_routes(r),
+        None => r,
+    }
 }
 
-#[cfg(not(feature = "editor"))]
-pub fn local_routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    r
+/// Whether editors can join here at all: the editor is in this build.
+pub fn joinable() -> bool {
+    editors().is_some()
+}
+
+/// Turns editor blocks on, if they're in this build.
+pub fn install(s: Settings) {
+    if let Some(e) = editors() {
+        e.install(s);
+    }
+}
+
+/// Runs `argv` if it's one of the editor's subcommands.
+pub fn subcommand(argv: &[String]) -> Option<anyhow::Result<()>> {
+    editors()?.subcommand(argv)
 }
 
 /// Starts being Claude Code's IDE (M28), unless `off` says not to or it
 /// can't be.
-#[cfg(feature = "editor")]
 pub async fn start_ide(
     off: bool,
     lock_dir: Option<PathBuf>,
     state_dir: &Path,
     home: &Path,
     launch: Launcher,
-) -> Option<Arc<Ide>> {
-    if off {
-        return None;
+) -> Option<Arc<dyn Ide>> {
+    match editors() {
+        Some(e) if !off => e.start_ide(state_dir, lock_dir, home, launch).await,
+        _ => None,
     }
-    let lock_dir = lock_dir.unwrap_or_else(|| crate::ide::default_lock_dir(home));
-    match Ide::start(state_dir.join("ide"), lock_dir, launch).await {
-        Ok(i) => Some(i),
-        Err(e) => {
-            tracing::warn!(error = %e, "can't be Claude Code's IDE");
-            None
-        }
-    }
-}
-
-#[cfg(not(feature = "editor"))]
-pub async fn start_ide(
-    _off: bool,
-    _lock_dir: Option<PathBuf>,
-    _state_dir: &Path,
-    _home: &Path,
-    _launch: Launcher,
-) -> Option<Arc<Ide>> {
-    None
 }
 
 /// The edits Claude Code proposes through the IDE, as the mux holds them
 /// (#699): cards that make a pane wait.
-#[cfg(feature = "editor")]
-pub fn pane_cards(ide: &Option<Arc<Ide>>) -> Option<Box<dyn crate::mux::PaneCards>> {
-    ide.clone().map(|i| Box::new(crate::ide::Cards::new(i)) as Box<dyn crate::mux::PaneCards>)
-}
-
-#[cfg(not(feature = "editor"))]
-pub fn pane_cards(_ide: &Option<Arc<Ide>>) -> Option<Box<dyn crate::mux::PaneCards>> {
-    None
+pub fn pane_cards(ide: &Option<Arc<dyn Ide>>) -> Option<Box<dyn PaneCards>> {
+    ide.clone().map(|i| i.cards())
 }
 
 /// What every pane's environment gets from the IDE: the port Claude Code
 /// finds it by.
-#[cfg(feature = "editor")]
-pub fn pane_env(ide: &Option<Arc<Ide>>) -> Vec<(String, String)> {
-    ide.iter().map(|i| ("CLAUDE_CODE_SSE_PORT".to_owned(), i.port.to_string())).collect()
-}
-
-#[cfg(not(feature = "editor"))]
-pub fn pane_env(_ide: &Option<Arc<Ide>>) -> Vec<(String, String)> {
-    Vec::new()
+pub fn pane_env(ide: &Option<Arc<dyn Ide>>) -> Vec<(String, String)> {
+    ide.iter().map(|i| ("CLAUDE_CODE_SSE_PORT".to_owned(), i.port().to_string())).collect()
 }
 
 /// Someone accepted (`accept`) or rejected an edit waiting as a diff in a
 /// pane, by its id or whichever waits; accepting may change it first (M28).
-#[cfg(feature = "editor")]
 pub async fn answer_diff(
-    ide: &Option<Arc<Ide>>,
+    ide: &Option<Arc<dyn Ide>>,
     mux: &MuxHandle,
     pane: PaneId,
     id: Option<String>,
@@ -172,59 +218,20 @@ pub async fn answer_diff(
     text: Option<String>,
     by: Driver,
 ) -> Result<(), String> {
-    if ide.is_none() {
-        return Err("Arugula isn't Claude Code's IDE here".into());
+    match ide {
+        Some(i) => i.answer_diff(mux, pane, id, accept, text, by).await,
+        None => Err("Arugula isn't Claude Code's IDE here".into()),
     }
-    mux.api(|r| {
-        Api::Cards(Box::new(move |cards, cx| {
-            if let Some(c) = crate::ide::Cards::of(cards) {
-                let _ = r.send(c.answer(cx, pane, id, accept, text, by));
-            }
-        }))
-    })
-    .await
-    .unwrap_or_else(|| Err("the daemon is stopping".into()))
-}
-
-#[cfg(not(feature = "editor"))]
-pub async fn answer_diff(
-    _ide: &Option<Arc<Ide>>,
-    _mux: &MuxHandle,
-    _pane: PaneId,
-    _id: Option<String>,
-    _accept: bool,
-    _text: Option<String>,
-    _by: Driver,
-) -> Result<(), String> {
-    Err("Arugula isn't Claude Code's IDE here".into())
 }
 
 /// The edit a pane's diff card shows: before and after.
-#[cfg(feature = "editor")]
-pub async fn diff_of(mux: &MuxHandle, pane: PaneId) -> Option<(DiffInfo, String, String)> {
-    mux.api(|r| {
-        Api::Cards(Box::new(move |cards, _| {
-            if let Some(c) = crate::ide::Cards::of(cards) {
-                let _ = r.send(c.diff_of(pane));
-            }
-        }))
-    })
-    .await
-    .flatten()
-}
-
-#[cfg(not(feature = "editor"))]
-pub async fn diff_of(_mux: &MuxHandle, _pane: PaneId) -> Option<(DiffInfo, String, String)> {
-    None
+pub async fn diff_of(ide: &Option<Arc<dyn Ide>>, mux: &MuxHandle, pane: PaneId) -> Option<(DiffInfo, String, String)> {
+    ide.as_ref()?.diff_of(mux, pane).await
 }
 
 /// Lets the IDE follow the mux, once it runs.
-#[cfg(feature = "editor")]
-pub fn run_ide(ide: &Option<Arc<Ide>>, mux: MuxHandle) {
+pub fn run_ide(ide: &Option<Arc<dyn Ide>>, mux: MuxHandle) {
     if let Some(i) = ide {
-        i.run(mux);
+        i.clone().run(mux);
     }
 }
-
-#[cfg(not(feature = "editor"))]
-pub fn run_ide(_ide: &Option<Arc<Ide>>, _mux: MuxHandle) {}

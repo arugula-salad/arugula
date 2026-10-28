@@ -14,6 +14,12 @@ inputs:
   ghostty-key:
     description: Ghostty's cache's key, when jobs share one (they build Ghostty for the same targets); the cache-key otherwise
     default: ""
+  ghostty:
+    description: Ghostty's cache (false for jobs that build no Ghostty, such as the server workspace's alone)
+    default: "true"
+  cache-workspace:
+    description: The workspace whose dependencies the build cache keeps (server for jobs that build only server/Cargo.toml's)
+    default: "."
   fetch:
     description: This run's binaries to fetch into $CI_RUN (scripts/ci-env), by artifact - any of run-debug, run-static
     default: ""
@@ -152,11 +158,11 @@ runs:
     # no restore-keys, so a new Ghostty starts clean rather than growing the
     # old one.
     - name: Ghostty's cache
-      if: inputs.rust == 'true'
+      if: inputs.rust == 'true' && inputs.ghostty == 'true'
       shell: bash
       run: echo "LIBGHOSTTY_VT_SYS_CACHE_DIR=$HOME/.cache/libghostty-vt-sys" >> "$GITHUB_ENV"
     - uses: actions/cache@v4
-      if: inputs.rust == 'true'
+      if: inputs.rust == 'true' && inputs.ghostty == 'true'
       with:
         path: ~/.cache/libghostty-vt-sys
         key: ghostty-${{ runner.os }}-${{ inputs.ghostty-key || inputs.cache-key }}-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
@@ -166,12 +172,13 @@ runs:
     # into the same target dir, and rust-cache cleans a target dir once per
     # workspace it's given, each pass keeping only that workspace's
     # dependencies, so listing both would keep neither's. sccache covers
-    # the server's own.
+    # the server's own. A job that builds only the server's names it
+    # (cache-workspace: server), and keeps its dependencies instead.
     - uses: Swatinem/rust-cache@v2
       if: inputs.rust == 'true'
       with:
         key: ${{ inputs.cache-key }}
-        workspaces: ". -> target"
+        workspaces: ${{ inputs.cache-workspace == '.' && '. -> target' || format('{0} -> ../target', inputs.cache-workspace) }}
         save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: This run's debug binaries and web client
       if: contains(inputs.fetch, 'run-debug')

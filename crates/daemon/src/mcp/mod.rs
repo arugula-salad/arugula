@@ -29,22 +29,24 @@
 //! starts says so: the pane shows "started by mcp:<client>", and what the
 //! client typed is in history as theirs.
 
+mod agent_sessions;
 mod boards;
-mod capabilities;
+pub(crate) mod capabilities;
 mod cloud;
 mod deploys;
 mod forge_ops;
 pub(crate) mod hosted;
 mod issues;
-pub(crate) mod ops;
+pub mod ops;
+pub mod registry;
 pub mod relay;
 mod repos;
-pub(crate) mod results;
+pub mod results;
 pub(crate) mod runs;
 pub mod session;
 mod threads;
 pub mod tokens;
-pub(crate) mod tools;
+pub mod tools;
 
 use std::sync::Arc;
 
@@ -176,7 +178,7 @@ pub fn pipe_server(app: &Arc<App>) -> relay::Serve {
         let Some(app) = app.upgrade() else { return };
         let caller = Caller::new(Scope::Block(id), Some(format!("%{id}")), None);
         let server = McpServer { app, fallback: Some(caller) };
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             match rmcp::ServiceExt::serve(server, tokio::io::split(io)).await {
                 Ok(running) => {
                     let _ = running.waiting().await;
@@ -245,7 +247,7 @@ impl McpServer {
     /// This machine's Labs flags: read on each call, so a change needs no
     /// restart.
     fn flags(&self) -> On {
-        crate::labs::flags(self.app.control.state_dir())
+        crate::lab_flags::flags(self.app.control.state_dir())
     }
 
     fn caller(&self, ctx: &RequestContext<RoleServer>) -> Caller {
@@ -339,7 +341,7 @@ impl ServerHandler for McpServer {
 
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
-            .with_server_info(Implementation::new("arugula", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("arugula", arugula_core::version::get()))
             .with_instructions(instructions())
     }
 

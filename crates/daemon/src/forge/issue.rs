@@ -499,7 +499,7 @@ impl ForgeBlock {
                         let (reply, by) = rx.await.unwrap_or((AskReply::Withdrawn, None));
                         me.settle_new(token, reply, by).await;
                     });
-                    self.ctx.rt.spawn(settle);
+                    crate::task::spawn_on(&self.ctx.rt, settle);
                 }
                 Err(e) => warn!(pane = self.ctx.id, error = e, "can't show the new issue's draft"),
             }
@@ -698,7 +698,7 @@ impl ForgeBlock {
             Some(e) => Err(e),
             None => {
                 if let Some(me) = self.me.upgrade() {
-                    self.ctx.rt.spawn(async move { me.read(true).await });
+                    crate::task::spawn_on(&self.ctx.rt, async move { me.read(true).await });
                 }
                 Ok(())
             }

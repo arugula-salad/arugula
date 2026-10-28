@@ -67,13 +67,9 @@
 pub mod github;
 pub mod issue;
 pub mod live;
-// The part of a forge block that connects to Forgejo and GitLab, which are
-// Labs: it needs the block's private fields, so it is here and not in
-// `labs/`; the twins are below, after `connect`.
-#[cfg(feature = "labs")]
-mod labs_forges;
 pub mod login;
 pub mod native;
+pub mod others;
 pub mod pin;
 pub mod platform;
 pub mod send_op;
@@ -113,6 +109,59 @@ use crate::{
     review::{Live, Runner},
     store::now_ms,
 };
+
+/// Puts the forge in this daemon: the binary calls it before `main` when
+/// its `forge` feature is on. The daemon reaches it through `forges.rs`.
+pub fn register() {
+    crate::forges::install(Box::new(Forge));
+}
+
+/// The forge, as `forges.rs` calls it.
+struct Forge;
+
+impl crate::forges::Forges for Forge {
+    fn kinds(&self, kinds: &mut crate::block::BlockKinds) {
+        kinds.add(BlockType::Forge, crate::block::Make(ForgeBlock::create));
+    }
+
+    fn start(&self, state_dir: std::path::PathBuf, control: Option<&Arc<crate::control::Control>>, urls: Vec<String>) {
+        live::init(state_dir, control, urls);
+        shadow::start();
+    }
+
+    fn open_config<'a>(&'a self, c: &'a Value, state_dir: &'a Path) -> BoxFuture<'a, Result<Value, String>> {
+        Box::pin(open_config(c, state_dir))
+    }
+
+    fn gh_signed_in<'a>(&'a self, runner: &'a Runner, host: &'a str) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move { github::GhToken::new(runner.clone(), host).get(true).await.map(|_| ()) })
+    }
+
+    fn heard(&self, text: &str) {
+        live::from_control(text);
+    }
+
+    fn watch_messages(&self) -> Option<tokio::sync::watch::Receiver<Option<String>>> {
+        live::watch_messages()
+    }
+
+    fn linked<'a>(&'a self, st: &'a ForgeState) -> BoxFuture<'a, bool> {
+        Box::pin(async move {
+            st.provider == Provider::Github
+                && st.number != 0
+                && st.host.as_deref().is_none_or(github::is_github_host)
+                && matches!(platform::link(&st.repo).await, Ok(Some(_)))
+        })
+    }
+
+    fn send<'a>(
+        &'a self,
+        app: &'a Arc<crate::server::App>,
+        s: arugula_control_wire::forge::ForgeSend,
+    ) -> BoxFuture<'a, arugula_control_wire::forge::OpAnswer> {
+        Box::pin(send_op::forge_send(app, s))
+    }
+}
 
 /// How often it polls: while drawn or wanting you, and otherwise.
 pub fn intervals() -> (Duration, Duration) {
@@ -228,7 +277,6 @@ pub trait Adapter: Send + Sync {
     fn write<'a>(&'a self, repo: &'a str, number: u64, w: &'a Write) -> BoxFuture<'a, Result<Sent, Error>>;
     /// The repository's clone URLs, for matching a remote to a login (only
     /// Forgejo's `tea` logins are matched that way, so only Labs asks).
-    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     fn repo_urls<'a>(&'a self, repo: &'a str) -> BoxFuture<'a, Result<Vec<String>, Error>>;
 
     // M37: issues. Defaults say the forge can't yet, so an adapter that
@@ -302,12 +350,12 @@ pub trait Adapter: Send + Sync {
 
 /// The HTTP client forge blocks (and M43's Managoat client) use: a
 /// timeout, and Arugula's own User-Agent.
-pub(crate) fn http() -> reqwest::Client {
+pub fn http() -> reqwest::Client {
     static C: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     C.get_or_init(|| {
         crate::roots::http()
             .timeout(Duration::from_secs(20))
-            .user_agent(concat!("arugula/", env!("CARGO_PKG_VERSION")))
+            .user_agent(format!("arugula/{}", arugula_core::version::get()))
             .build()
             .expect("an HTTP client")
     })
@@ -440,7 +488,7 @@ impl ForgeBlock {
         let mut config: Config = serde_json::from_value(config).map_err(|e| format!("forge config: {e}"))?;
         // Forgejo's and GitLab's are Labs'. One saved while Labs was on is
         // still brought back, as unavailable, and reads again when it is.
-        let allowed = crate::labs::forge_allowed(config.provider, &ctx.state_dir);
+        let allowed = crate::lab_flags::forge_allowed(config.provider, &ctx.state_dir);
         if !ctx.restoring {
             allowed.clone()?;
         }
@@ -513,7 +561,7 @@ impl ForgeBlock {
         b.sync_drafts();
         live::register(Arc::downgrade(&b));
         let me = b.clone();
-        b.ctx.rt.spawn(async move { me.run().await });
+        crate::task::spawn_on(&b.ctx.rt, async move { me.run().await });
         Ok(b)
     }
 
@@ -642,7 +690,7 @@ impl ForgeBlock {
         // (and writes nothing) where Labs is off, and does again when it is
         // on.
         let provider = self.config.lock().unwrap().provider;
-        crate::labs::forge_allowed(provider, &self.ctx.state_dir)?;
+        crate::lab_flags::forge_allowed(provider, &self.ctx.state_dir)?;
         if let Some(a) = self.adapter.lock().unwrap().clone() {
             return Ok(a);
         }
@@ -1084,7 +1132,7 @@ impl ForgeBlock {
             self.sync_drafts();
             self.ctx.changed();
             if let Some(me) = self.me.upgrade() {
-                self.ctx.rt.spawn(async move { me.raise_draft().await });
+                crate::task::spawn_on(&self.ctx.rt, async move { me.raise_draft().await });
             }
             let waiting = self.state.lock().unwrap().drafts.iter().filter(|d| d.status == DraftStatus::Waiting).count();
             return to_value(Drafted {
@@ -1116,7 +1164,7 @@ impl ForgeBlock {
         self.state.lock().unwrap().said = Some(format!("{} by {}", sent.said, by.unwrap_or("the owner")));
         // What it changed, read now.
         if let Some(me) = self.me.upgrade() {
-            self.ctx.rt.spawn(async move { me.read(true).await });
+            crate::task::spawn_on(&self.ctx.rt, async move { me.read(true).await });
         }
         Ok(sent)
     }
@@ -1164,7 +1212,7 @@ impl ForgeBlock {
             self.state.lock().unwrap().said = Some(format!("{} by {by}", sent.said));
         }
         if let Some(me) = self.me.upgrade() {
-            self.ctx.rt.spawn(async move { me.read(true).await });
+            crate::task::spawn_on(&self.ctx.rt, async move { me.read(true).await });
         }
     }
 
@@ -1202,7 +1250,7 @@ impl ForgeBlock {
                     let (reply, by) = rx.await.unwrap_or((AskReply::Withdrawn, None));
                     me.settle(&d.id, token, reply, by).await;
                 });
-                self.ctx.rt.spawn(settle);
+                crate::task::spawn_on(&self.ctx.rt, settle);
             }
             Err(e) => warn!(pane = self.ctx.id, error = e, "can't show the draft"),
         }
@@ -2009,7 +2057,7 @@ impl Block for ForgeBlock {
                 if me.config.lock().unwrap().provider == Provider::Gitlab {
                     return Err("a GitLab block uses glab's login for its host: `glab auth login`, then refresh".into());
                 }
-                crate::labs::forge_allowed(Provider::Forgejo, &me.ctx.state_dir)?;
+                crate::lab_flags::forge_allowed(Provider::Forgejo, &me.ctx.state_dir)?;
                 me.login_tea(name).await
             }),
             "review" | "merge" | "rerun_checks" if self.config.lock().unwrap().kind == ItemKind::Issue => {
@@ -2095,21 +2143,95 @@ impl Block for ForgeBlock {
     }
 }
 
-/// What a build without Labs answers for Forgejo and GitLab: they are not
-/// in it (a block of theirs is refused first, by `connect`, so these are
-/// asked only if that changes).
-#[cfg(not(feature = "labs"))]
+/// What a Forgejo block asks Labs for ([`others`]): the `tea` login it
+/// reads with, from its config, resolved for its host, or picked.
+pub struct TeaAsk {
+    /// The login the config names.
+    pub want: Option<String>,
+    pub host: Option<String>,
+    pub provider: Provider,
+    pub repo: String,
+}
+
+/// The login a Forgejo block reads with, and its adapter.
+pub struct TeaFound {
+    pub name: String,
+    pub api: String,
+    pub adapter: Arc<dyn Adapter>,
+}
+
+/// Why no login was found, and the logins to pick from (`None`: leave
+/// what the block shows).
+pub struct TeaMissed {
+    pub candidates: Option<Vec<arugula_proto::forge::ForgeLogin>>,
+    pub error: String,
+}
+
+/// Forgejo and GitLab, which are Labs (#457): what Labs connects is kept
+/// here. A build without Labs says it lacks them (a block of theirs is
+/// refused first, by `connect`, so these are asked only if that changes).
 impl ForgeBlock {
-    async fn connect_tea(&self, _runner: Runner) -> Result<Arc<dyn Adapter>, String> {
-        Err(crate::labs::not_built("A Forgejo block"))
+    /// A Forgejo block (or a host `gh` doesn't know): the `tea` login for
+    /// its host, from the config, resolved, or picked.
+    async fn connect_tea(&self, runner: Runner) -> Result<Arc<dyn Adapter>, String> {
+        let ask = {
+            let c = self.config.lock().unwrap();
+            TeaAsk {
+                want: c.login.clone(),
+                host: c.host.clone().or_else(|| c.api.as_deref().and_then(login::url_host)),
+                provider: c.provider,
+                repo: c.repo.clone(),
+            }
+        };
+        match others::others().tea_connect(runner, ask).await {
+            Ok(f) => Ok(self.attach(f.name, f.api, f.adapter)),
+            Err(m) => {
+                if let Some(c) = m.candidates {
+                    self.state.lock().unwrap().logins = c;
+                }
+                Err(m.error)
+            }
+        }
     }
 
+    /// GitLab (M39): glab's token for the host, or anonymous and read-only.
     async fn connect_gitlab(&self) -> Result<Arc<dyn Adapter>, String> {
-        Err(crate::labs::not_built("A GitLab block"))
+        let runner = Runner::user(&self.ctx).await?;
+        let (host, api) = {
+            let c = self.config.lock().unwrap();
+            let host = c.host.clone().or_else(|| c.api.as_deref().and_then(login::url_host));
+            let host = host.ok_or("which GitLab? open it from a link or a clone")?;
+            let api = c.api.clone().unwrap_or_else(|| format!("https://{host}/api/v4"));
+            (host, api)
+        };
+        let (a, login) = others::others().gitlab_connect(runner, &host, &api).await?;
+        {
+            let mut c = self.config.lock().unwrap();
+            c.login = login.clone();
+            c.api = Some(api.clone());
+        }
+        {
+            let mut st = self.state.lock().unwrap();
+            st.login = login.clone();
+            st.api = Some(api);
+            st.read_only = a.read_only();
+            st.logins.clear();
+        }
+        info!(pane = self.ctx.id, host, login, "gitlab block connected");
+        *self.adapter.lock().unwrap() = Some(a.clone());
+        Ok(a)
     }
 
-    async fn login_tea(self: &Arc<Self>, _name: &str) -> Result<Value, String> {
-        Err(crate::labs::not_built("A Forgejo login"))
+    /// `login {name}` on a Forgejo block: use that `tea` login from now on.
+    async fn login_tea(self: &Arc<Self>, name: &str) -> Result<Value, String> {
+        let runner = self.runner().await?;
+        let provider = self.config.lock().unwrap().provider;
+        let f = others::others().tea_login(runner, provider, name).await?;
+        *self.you.lock().unwrap() = None;
+        self.attach(f.name, f.api, f.adapter);
+        self.read(true).await;
+        self.ctx.changed();
+        to_value(arugula_proto::forge::LoggedIn { login: name.to_owned() })
     }
 }
 
@@ -2123,16 +2245,16 @@ impl ForgeBlock {
 /// (`{repo, number}`).
 ///
 /// Forgejo's and GitLab's are Labs': a link that comes out as one of theirs
-/// is refused where Labs is off (see [`crate::labs::forge_allowed`]), asked
+/// is refused where Labs is off (see [`crate::lab_flags::forge_allowed`]), asked
 /// of the result so no default or fallback of [`resolve_config`] gets round it.
 pub async fn open_config(c: &Value, state_dir: &Path) -> Result<Value, String> {
     // M203: a project's own issue (`iss_…`, or `#N` in a project).
     if let Some(out) = native::open_config(c).await? {
         return Ok(out);
     }
-    let out = resolve_for(c, crate::labs::on(state_dir, arugula_proto::flags::ADDITIONAL_FORGES)).await?;
+    let out = resolve_for(c, crate::lab_flags::on(state_dir, arugula_proto::flags::ADDITIONAL_FORGES)).await?;
     let provider = serde_json::from_value::<Provider>(out["provider"].clone()).unwrap_or_default();
-    crate::labs::forge_allowed(provider, state_dir)?;
+    crate::lab_flags::forge_allowed(provider, state_dir)?;
     Ok(out)
 }
 

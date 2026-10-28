@@ -17,6 +17,7 @@ import { Modal } from "../../shared/ui/modal";
 import { ADD_PASSKEY_HASH, DEVICE_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
 import { SharedDocs } from "../ui/shared-docs";
 import { ACCOUNT_HASH, AccountPanel, GITHUB_LINK_HASH } from "./account";
+import { EMAIL_HASH } from "./email";
 import { DeviceLinkPrompt, DevicePrompt, JoinPrompt } from "./approve";
 import { DEPLOY_HASH, DeployPrompt } from "./deploy";
 import { openPanel, useControl, usedLink, type Panel } from "./common";
@@ -25,6 +26,9 @@ import { AddMachine } from "./machines";
 import { AddPasskeyAgain, AdmitPrompt, AppLoginDone, AppLoginPrompt, ConfirmPasskey, InvitePrompt, Joined, Notice, PresignedPrompt, ShareOfferPrompt } from "./prompts";
 import { RecoveryCodes } from "./recovery";
 import { Teams } from "./teams";
+
+/** Control's address that opens Teams (where a team's owner turns chat on). */
+const TEAMS_HASH = "#teams";
 
 /** Over the app: approval prompts, a daemon's join, the device list. */
 export function ControlOverlay({ s }: { s: ControlSession }) {
@@ -86,6 +90,20 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   if (s.joined) return <Joined s={s} />;
   const notice = s.notices[0];
   if (notice) return <Notice s={s} n={notice} />;
+  // Back from an email's verify link (#1609): Sign-in and account says how
+  // it went.
+  const emailBack = EMAIL_HASH.exec(hash)?.[1];
+  if (emailBack) {
+    const done = () => {
+      history.replaceState(history.state, "", location.pathname + location.search);
+      setHash("");
+    };
+    return (
+      <Modal close={done}>
+        <AccountPanel s={s} close={done} emailBack={emailBack} />
+      </Modal>
+    );
+  }
   // Back from linking GitHub (#208): Sign-in and account says how it went.
   const linked = GITHUB_LINK_HASH.exec(hash)?.[1];
   if (linked) {
@@ -110,6 +128,14 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
         <AccountPanel s={s} close={done} />
       </Modal>
     );
+  }
+  // The platform page's Turn on chat comes here, to the teams (Discovery 5).
+  if (hash === TEAMS_HASH) {
+    const done = () => {
+      history.replaceState(history.state, "", location.pathname + location.search);
+      setHash("");
+    };
+    return <Teams s={s} close={done} />;
   }
   if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
   if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;

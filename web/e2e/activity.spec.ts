@@ -92,3 +92,34 @@ test("System survives a reload: a closed pane's events show once", async ({ page
   await expect(row("Pane opened")).toHaveAttribute("data-activity-id", opened!);
   await expect(drawer.locator("[data-activity-since]")).toHaveCount(0);
 });
+
+// Native #245: All sessions reads what `arugula history` does: a command
+// run in another session shows, says which session, and brings it back.
+test("All sessions shows another session's command, and it goes there", async ({ page }) => {
+  await newWorkspace(page);
+  const home = await page.evaluate(() => window.__arugula.client.session!);
+  const first = await active(page);
+  await ready(page, first);
+  await run(page, first, "echo far-$((8*8))", "far-64");
+
+  await page.evaluate(() => window.__arugula.client.intent({ op: "new_session", name: "other", from_pane: null }));
+  let other: number | undefined;
+  await expect.poll(async () => (other = await page.evaluate(() => window.__arugula.client.state!.sessions.find((s) => s.name === "other")?.id))).not.toBeUndefined();
+  await page.evaluate((s) => window.__arugula.client.selectSession(s), other!);
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(other);
+
+  await page.locator("[data-activity-toggle]").click();
+  const drawer = page.locator("[data-activity-drawer]");
+  await drawer.locator('[data-activity-filter="commands"]').click();
+  const entry = drawer.locator(".ws-activity-row", { hasText: "echo far-$((8*8))" });
+  await expect(drawer).toHaveAttribute("data-activity-status", "ready");
+  await expect(entry).toHaveCount(0);
+
+  await drawer.locator('[data-activity-scope="session"]').click();
+  await expect(drawer.locator('[data-activity-scope="all"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(entry).toHaveCount(1);
+  await expect(entry.locator(".ws-activity-session")).toBeVisible();
+  await entry.click();
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(home);
+  await expect.poll(() => active(page)).toBe(first);
+});

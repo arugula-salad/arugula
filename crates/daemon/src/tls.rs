@@ -461,7 +461,7 @@ mod tests {
             .with_state(fake.clone());
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let api = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(axum::serve(l, app).into_future());
+        crate::task::spawn(axum::serve(l, app).into_future());
 
         let cf = Cloudflare::with_api("tok".into(), &api, "http://127.0.0.1:1/");
         let (zone, id) = cf.present("_acme-challenge.arugula.example.com", "v4lue").await.unwrap();

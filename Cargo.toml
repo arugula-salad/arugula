@@ -19,7 +19,7 @@ exclude = [
 libghostty-vt-sys = { path = "vendor/libghostty-vt-sys" }
 
 [workspace.package]
-version = "0.63.7"
+version = "0.64.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/arugula-salad/arugula"
@@ -35,6 +35,13 @@ arugula-forge-github = { path = "crates/forge-github" }
 arugula-mux = { path = "crates/mux" }
 arugula-proto = { path = "crates/proto" }
 arugula-vt = { path = "crates/vt" }
+# The daemon's crates (#232). The binary, crates/arugulad, picks their
+# features, so their defaults are off here.
+arugulad-base = { path = "crates/daemon", default-features = false }
+arugulad-docs = { path = "crates/arugulad-docs" }
+arugulad-drivers = { path = "crates/arugulad-drivers" }
+arugulad-editor = { path = "crates/arugulad-editor" }
+arugulad-labs = { path = "crates/arugulad-labs" }
 aes-gcm = "0.11.1"
 anyhow = "1.0.104"
 axum = "0.8.9"

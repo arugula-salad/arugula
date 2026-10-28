@@ -52,9 +52,12 @@ pub const SWEEP_AFTER_MS: u64 = 24 * 3600 * 1000;
 /// Opens counted in memory reach the database this often.
 pub const FLUSH_EVERY: Duration = Duration::from_secs(60);
 
-/// What the viewer's pages are served under (#1064, decision 5).
+/// What the viewer's pages are served under (#1064, decision 5), with the
+/// Doc's own fonts from the build (DECISIONS.md "A shared Doc's page loads
+/// its fonts from its own origin").
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; \
-                   connect-src 'self'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+                   font-src 'self'; connect-src 'self'; worker-src 'none'; base-uri 'none'; form-action 'none'; \
+                   frame-ancestors 'none'";
 
 /// Reads of the viewer's data, per client address and hour. A 48-part Doc
 /// is about 50 requests, so this is a couple of hundred opens an hour from
@@ -369,7 +372,7 @@ fn answer(
     }
     let segs: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     match segs.as_slice() {
-        [id] if valid_id(id) => page(app),
+        [id] if valid_id(id) => page(app, id),
         [id, "data", what] if valid_id(id) => {
             if let Some(peer) = peer
                 && let Err(e) = app.limits.check(VIEWS, app.limits.client_ip(peer, headers))
@@ -400,11 +403,18 @@ fn answer(
 }
 
 /// `doc.html` of the web build when there is one (#1066 adds it as a Vite
-/// input beside `share.html`), else a page that says it isn't ready.
-fn page(app: &App) -> Response {
-    let body = match crate::static_file(app, "doc.html") {
-        Some((b, _)) => b,
-        None => PLACEHOLDER.as_bytes().to_vec(),
+/// input beside `share.html`), else a page that says it isn't ready, with
+/// the link preview's tags ([`preview`]) in its head.
+fn page(app: &App, id: &str) -> Response {
+    let html = match crate::static_file(app, "doc.html") {
+        Some((b, _)) => String::from_utf8_lossy(&b).into_owned(),
+        None => PLACEHOLDER.to_owned(),
+    };
+    let viewer = viewer_url(&app.cfg.public_url, app.cfg.block_domain.as_deref());
+    let tags = preview(&viewer, id);
+    let body = match html.find("</head>") {
+        Some(at) => format!("{}{tags}{}", &html[..at], &html[at..]),
+        None => format!("{tags}{html}"),
     };
     Response::builder()
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
@@ -413,11 +423,46 @@ fn page(app: &App) -> Response {
         .unwrap()
 }
 
-const PLACEHOLDER: &str = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">\
+const PLACEHOLDER: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Arugula</title>\
 <style>body{font:16px system-ui,sans-serif;max-width:32rem;margin:20vh auto;padding:0 1rem;color:#222}\
-@media(prefers-color-scheme:dark){body{background:#111;color:#ddd}}</style>\
-<h1>A shared Doc</h1><p>This page can't show Docs yet.</p></html>";
+@media(prefers-color-scheme:dark){body{background:#111;color:#ddd}}</style></head>\
+<body><h1>A shared Doc</h1><p>This page can't show Docs yet.</p></body></html>";
+
+/// What a link preview (Slack, iMessage, X) shows for any shared Doc.
+/// Control can't read the Doc (the key is in the fragment, which no
+/// request carries), so the title and description are the same for every
+/// link; nothing here says whether the id is shared.
+pub const PREVIEW_TITLE: &str = "A shared Doc";
+pub const PREVIEW_TEXT: &str = "A Doc made with Arugula. It's encrypted: only its link opens it.";
+/// The picture: the site's own card, one for every Doc. Only a preview bot
+/// fetches it; the page never does, so the CSP doesn't name it.
+pub const PREVIEW_CARD: &str = "https://arugula.io/img/og.jpg";
+const PREVIEW_CARD_ALT: &str = "Your team and its agents, in one project: a map of one project holding chat, issues, \
+                                GitHub, Cloud workspaces, runs and deploys, with its people and their agents.";
+
+/// The page's Open Graph and Twitter tags, with absolute URLs.
+fn preview(viewer: &str, id: &str) -> String {
+    let attr = |s: &str| s.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;");
+    let (title, text, url, card, alt) = (
+        attr(PREVIEW_TITLE),
+        attr(PREVIEW_TEXT),
+        attr(&format!("{viewer}/{id}")),
+        attr(PREVIEW_CARD),
+        attr(PREVIEW_CARD_ALT),
+    );
+    format!(
+        "<meta name=\"description\" content=\"{text}\">\
+<meta property=\"og:type\" content=\"article\"><meta property=\"og:site_name\" content=\"Arugula\">\
+<meta property=\"og:title\" content=\"{title}\"><meta property=\"og:description\" content=\"{text}\">\
+<meta property=\"og:url\" content=\"{url}\"><meta property=\"og:image\" content=\"{card}\">\
+<meta property=\"og:image:type\" content=\"image/jpeg\">\
+<meta property=\"og:image:width\" content=\"1200\"><meta property=\"og:image:height\" content=\"630\">\
+<meta property=\"og:image:alt\" content=\"{alt}\">\
+<meta name=\"twitter:card\" content=\"summary_large_image\"><meta name=\"twitter:title\" content=\"{title}\">\
+<meta name=\"twitter:description\" content=\"{text}\"><meta name=\"twitter:image\" content=\"{card}\">"
+    )
+}
 
 /// A tag matches `If-None-Match`, weak or not, or it's `*`.
 fn fresh(headers: &HeaderMap, tag: &str) -> bool {

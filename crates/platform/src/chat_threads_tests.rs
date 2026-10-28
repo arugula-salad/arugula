@@ -581,3 +581,39 @@ async fn arugula_asks_which_repo() {
     let r = post_in(&base, "ch_general", "b", "@arugula again", None).await["seq"].as_i64().unwrap();
     assert_eq!(lines(&base, "ch_general", Some(r)).await, [crate::chat::sessions::NO_BOX]);
 }
+
+/// A thread whose only reply is the platform's (a session's card, with no
+/// author) is listed in the Threads view like any other, with nobody among
+/// its repliers: its unread is in the badge, so its row must be there to
+/// read or unfollow.
+#[tokio::test]
+async fn a_thread_with_only_the_platforms_reply_is_listed() {
+    let (_hub, app, base, _t, _u) = seeded().await;
+    let p = say(&base, "a", "what is 2+2").await;
+    app.db
+        .add_chat_message(
+            "ch_general",
+            &crate::db::chat::NewMessage {
+                author: "",
+                at: arugula_e2e::now_ms(),
+                text: "Agent session 1234abcd on arugula/1234abcd-what-is-2-2",
+                quote: None,
+                ref_machine: None,
+                ref_pane: None,
+                mentions: &[],
+                agent: None,
+                via: Some("session-card:ses_1234abcd"),
+                parent: Some(p),
+                also: false,
+            },
+        )
+        .unwrap();
+    // a wrote the parent, so follows, with the card unread.
+
+    let badge = room_of(&base, "a").await.1;
+    let (_, v) = call(&base, "a", "GET", "/api/chat/threads", None).await;
+    assert_eq!((&v["unread"], &badge["unread"]), (&json!(1), &json!(1)), "{v}");
+    let t = &v["threads"][0]["parent"]["thread"];
+    assert_eq!((&t["replies"], &t["unread"], &t["repliers"]), (&json!(1), &json!(1), &json!([])), "{v}");
+    assert_eq!(list(&base, "a").await[0]["thread"]["replies"], 1, "and the room's list says so");
+}

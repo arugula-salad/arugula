@@ -1,0 +1,50 @@
+[package]
+name = "arugulad-labs"
+description = "The daemon's Labs: studio apps, chant workspaces, VMs, guest ssh, agent recipes, and the Forgejo and GitLab forges"
+# Not the workspace's version: a release bump would rebuild this crate and
+# everything on it. The binary carries the release (arugula_core::version).
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+arugula-control-wire = { workspace = true }
+arugula-core = { workspace = true }
+arugula-e2e = { workspace = true }
+arugula-mux = { workspace = true, features = ["labs"] }
+arugula-proto = { workspace = true, features = ["schema"] }
+# Labs needs the forge (Forgejo and GitLab are forges) and the base's
+# `labs` feature (this build has Labs).
+arugulad-base = { workspace = true, features = ["labs", "forge"] }
+axum = { workspace = true, features = ["ws"] }
+base64 = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+hmac = { workspace = true }
+hyper = { version = "1.11.1", features = ["http1", "client", "server"] }
+regex = { workspace = true }
+reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
+# The guest ssh server (M65).
+russh = { workspace = true, features = ["aws-lc-rs"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+# Agent recipes (#398): a Claude Code subagent file's frontmatter.
+serde_norway = "0.9.42"
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["term", "process", "fs", "signal", "poll", "socket", "user"] }
+
+[dev-dependencies]
+arugula-proto = { workspace = true, features = ["fixtures"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[lints]
+workspace = true

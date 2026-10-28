@@ -30,6 +30,16 @@
 //! | `POST` [`SESSION_MOVE`] [`SessionMove`]: [`SessionView`] | its asker, owners and editors |
 //! | `GET` [`ASK`]: [`ChatAsk`] | whoever reads its room |
 //! | `POST` [`ASK`] [`ChatAskAnswer`]: [`ChatAsk`] | its asker |
+//! | `POST` [`AGENT_SESSIONS`] [`AgentSessionStart`]: [`AgentSessionStarted`] | a machine's agents, with `sessions.start` |
+//! | `POST` [`AGENT_SESSION_REPLY`] [`AgentSessionReply`]: [`AgentSessionReplied`] | a machine's agents, with `sessions.reply` |
+//!
+//! **A person's agent** (Fleet 3, aru-121). The agents on a machine whose
+//! owner gave it `sessions.start` over a project start sessions there as
+//! the owner (MCP's `session_start`: the agent's `@arugula`, posted as
+//! "<owner>'s agent on <machine>"), and with `sessions.reply` answer a
+//! session's question or prompt it (`session_reply`: its reply in the
+//! session's thread). The asker, and the bill, are the owner's; the card
+//! says who started it ([`SessionCard::started_by`]).
 //!
 //! **Which box** (Arugula #214). The project's "agents run on" setting, or
 //! its only workspace; with several and none chosen, the session picks
@@ -118,6 +128,19 @@ pub const SESSION_MOVE: &str = "/api/sessions/{ses}/move";
 /// `POST` [`ChatAskAnswer`]: answer it.
 pub const ASK: &str = "/api/chat/rooms/{room}/asks/{seq}";
 
+/// `POST` [`AgentSessionStart`]: a machine's agent starts a session as its
+/// owner (`sessions.start`, aru-121), signed by the machine.
+pub const AGENT_SESSIONS: &str = "/api/daemon/sessions";
+/// `POST` [`AgentSessionReply`]: a machine's agent replies in a session's
+/// thread (`sessions.reply`, aru-121): an answer to its question, or a
+/// prompt.
+pub const AGENT_SESSION_REPLY: &str = "/api/daemon/sessions/{ses}/reply";
+
+/// [`AGENT_SESSION_REPLY`] for session `ses`.
+pub fn agent_session_reply(ses: &str) -> String {
+    AGENT_SESSION_REPLY.replace("{ses}", ses)
+}
+
 /// What an ask's message has for `via`, before what it asks of: `repo`,
 /// or the session's id.
 pub const ASK_VIA: &str = "ask:";
@@ -179,6 +202,11 @@ pub struct SessionCard {
     /// Who asked, and their name now ("" once they're gone).
     pub asker: String,
     pub asker_name: String,
+    /// Who started it, when it was its asker's agent and not the asker by
+    /// hand (aru-121, a `sessions.start` grant): "<asker>'s agent on
+    /// <machine>", by their names now. The asker is still the asker.
+    #[serde(default)]
+    pub started_by: Option<String>,
     /// The hosted workspace it runs on, and its name ("" once it's gone).
     pub workspace: String,
     pub workspace_name: String,
@@ -584,6 +612,66 @@ pub struct IssueAgent {
     pub room: String,
     pub seq: i64,
     pub session: Option<String>,
+}
+
+/// [`AGENT_SESSIONS`]'s body: where to ask, and what. On a native issue
+/// (`issue`: its id, `iss_…`; or `number` in `project`), or in a project's
+/// channel (`room`), in the thread of one of its messages (`thread`, its
+/// seq) or as a message of its own.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionStart {
+    #[serde(default)]
+    pub issue: Option<String>,
+    #[serde(default)]
+    pub number: Option<u64>,
+    #[serde(default)]
+    pub project: Option<String>,
+    #[serde(default)]
+    pub room: Option<String>,
+    #[serde(default)]
+    pub thread: Option<i64>,
+    /// What `@arugula` is asked: it may name the repo (`owner/name`) and a
+    /// model, as a person's ask does. On an issue, by default, to work on
+    /// it.
+    #[serde(default)]
+    pub prompt: Option<String>,
+}
+
+/// [`AGENT_SESSIONS`]'s answer: the ask's message (`room`, `seq`), and the
+/// session it started; with none, the platform's lines since in its thread
+/// (why not, or which repo it asks the owner).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionStarted {
+    pub room: String,
+    pub seq: i64,
+    /// The thread it's in: its first message's seq (0: an issue's thread).
+    pub thread: i64,
+    pub session: Option<String>,
+    pub said: Vec<String>,
+}
+
+/// [`AGENT_SESSION_REPLY`]'s body.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionReply {
+    pub text: String,
+}
+
+/// [`AGENT_SESSION_REPLY`]'s answer: the reply's message, and what it did:
+/// `answered` (the session's open question), `queued` (its next prompt,
+/// `prompt`; `permission` when it waits on a person's approval first),
+/// `refused` (`why`) or `chat` (its owner only views the project).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionReplied {
+    pub session: String,
+    pub room: String,
+    pub seq: i64,
+    pub did: String,
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub permission: bool,
+    #[serde(default)]
+    pub why: Option<String>,
 }
 
 #[cfg(test)]

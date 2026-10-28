@@ -328,6 +328,13 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   hub's copies stay only as long as a rollback to in process, or to a
   release before M161, may need them, and the hub logs at start that
   they're unused.
+- `ARUGULA_CONTROL_SMTP_URL`, `ARUGULA_CONTROL_MAIL_FROM` (`mail.rs`,
+  #1609): email for security notices and the link that verifies an
+  address. The URL is the provider's SMTP with its credentials
+  (`smtps://USER:PASS@HOST:465`); From is `Arugula <security@arugula.io>`.
+  Both or neither: unset, control sends no email and Account settings say
+  so. The domain needs the provider's SPF and DKIM records, and a DMARC
+  record (docs/design/control-email.md).
 - `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT` (`backup.rs`), and
   `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` (checked by
   `backup.rs`, read by Litestream from the environment it inherits).
@@ -1033,6 +1040,36 @@ give. It prints account ids, device ids and names only:
 fly ssh console -a illogical-control -C "/arugula-control device-review --db /data/control.db"
 ```
 
+### Resetting an account's devices (aru-119)
+
+For someone none of whose devices can approve and who has no recovery code
+left (#1582): support checks who's asking by its own means, then resets
+the account's devices. Read what it would do first:
+
+```
+fly ssh console -a illogical-control -C "/arugula-control account-reset --account ACCOUNT --by NAME --why 'ticket N: how we checked' --db /data/control.db"
+```
+
+It lists the devices the account loses and changes nothing. Add `--yes`
+to do it. In one transaction every device and revocation of the account
+is archived in `account_resets` (with `--by` and `--why`) and its root is
+cleared. Then tell the person:
+
+- Sign in at control in a browser: it becomes the account's first device
+  and shows new recovery codes to keep.
+- Each machine is dropped (it keeps its pin of the old root) and shows
+  *Join again*: approve its code from the new browser.
+- Teammates see that your key changed, and check it again.
+- Anything end to end encrypted to the old devices can't be read.
+
+A second reset within a week is refused unless `--again`.
+
+People can also start one themselves, from *Approve this browser*: a
+fresh GitHub sign-in, then a 48-hour wait that any device or recovery code
+can cancel (`reset.rs`, docs/design/self-service-reset.md). It's the same
+step when it's done, logged as `by = self-service`. Support's is for
+someone who can't wait or lost GitHub too.
+
 ### Deploys
 
 Each release tag deploys control (M133, #1129). It's automatic, with no
@@ -1485,6 +1522,42 @@ What it writes, and never:
 - **Never a read of a value, never a delete.** The identity can't anyway.
 - **In process** (`arugula-control --platform in-process`) the projection
   is off: production runs the platform as its own app.
+
+### Moving control to a new address
+
+Device keys and approvals are kept per origin, in each browser and each
+desktop app window. A browser approved at the old address has nothing at
+the new one: there it's a new browser, asking to be approved. The move
+from `control.illogical.widgets.wtf` to `control.arugula.io` (#507) left
+accounts whose every approval was on the old address, with nothing that
+could approve on the new one but a recovery code (#1581).
+
+What went wrong then: `--also-redirect` (0.36.0) sent every browser that
+opened the old address to the new one, so a browser approved there never
+stayed long enough to approve its replacement, and the old address was
+later taken down.
+
+For the next move:
+
+1. **Run both** with `--also-url` (the old one), without
+   `--also-redirect`. The old page shows *Arugula control is moving* with
+   the way across: sign in at the new address, then approve that browser
+   from this one (`MovingNote`, `web/src/shell/ui/moving-note.tsx`).
+2. **Announce it** in a release note and on the old page, with the date
+   the old address stops.
+3. **Watch who's left.** Before turning on `--also-redirect`, find the
+   accounts with no device approved since the move started (control
+   doesn't count this by origin yet, #1581). Those people need the old
+   page to approve, so tell them directly.
+4. **Only then** turn on `--also-redirect`, and keep the old address
+   answering for at least as long again. Never take the old name's DNS
+   down while accounts are stranded on it.
+5. **Desktop apps** keep their sign-in per control URL (`cloud.json`); after
+   the move their windows show the local page with *Sign the app in*
+   (#1580), and the app needs approving at the new address too.
+
+An account stranded anyway has the reset (aru-119, "An account can reset
+its devices from a fresh GitHub sign-in, after a wait").
 
 ### Retired domains (M239)
 
@@ -3272,8 +3345,17 @@ with the link. **Control holds ciphertext only and can't read it.**
 - **`?v=<ver>` on a part** (`…/data/<n>?v=<ver>`, #1066): control answers
   404 unless that is the version it serves, so a page that began on one
   version, when an Update lands mid-load, starts over from `meta` and never
-  mixes two. The viewer page (`web/doc.html`) loads no font, so the CSP
-  needs no `font-src`.
+  mixes two.
+- **The page's fonts** (#255) are the build's own woff2 files, under the
+  CSP's `font-src 'self'` (DECISIONS.md "A shared Doc's page loads its
+  fonts from its own origin", which amends #1064's decision 5).
+- **A link preview** (#255): the page's head carries Open Graph and
+  Twitter tags that control writes in, the same for every id, shared or
+  not ("A shared Doc", and that it's encrypted), since control can't read
+  a title. Their picture is the site's own card,
+  `https://arugula.io/img/og.jpg` (`doc_links.rs`, `PREVIEW_CARD`), which
+  only a preview bot fetches. `curl -s https://docs.arugula.run/<id> |
+  grep -o '<meta property="og:[^>]*>'` shows them.
 
 ### Backups (Litestream to Cloudflare R2)
 
@@ -3810,7 +3892,7 @@ A project's runs and deploys (platform step 7) are background jobs in
   with no job.
 
 The tests in `crates/platform/src/failure_tests.rs` and
-`crates/daemon/tests/integration/hosted_work.rs` make each failure below
+`crates/arugulad/tests/integration/hosted_work.rs` make each failure below
 happen, in CI.
 
 **Seeing it.**

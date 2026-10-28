@@ -28,7 +28,9 @@
 //!   block.
 //! - **Its checkout is a clone, not a worktree** ([`checkout`]): the
 //!   daemon's user clones the workspace's clone of the session's repo,
-//!   hands it to the session user, and everything the daemon does in it
+//!   moves it to the repo's default branch as GitHub has it now (Arugula
+//!   #263: the clone is as old as the box's setup), hands it to the session
+//!   user, and everything the daemon does in it
 //!   after that (switching to the session's branch, the turn's work) runs
 //!   as the session user, never as `user` (who can't get in) or root
 //!   (whose git would run the agent's planted repo config).
@@ -142,6 +144,11 @@ const BLOCK_GRACE: Duration = Duration::from_secs(30);
 /// The most of one of the repo's notes (`CLAUDE.md`) the first prompt
 /// carries.
 const NOTES_MAX: usize = 32 * 1024;
+/// The most a session's checkout waits for its repo's head from GitHub
+/// ([`fresh_base`]) before it starts from the box's clone.
+const FRESH_MAX: Duration = Duration::from_secs(60);
+/// Free space under which a prompt says the disk is low ([`disk_note`]).
+const DISK_LOW: u64 = 10 << 30;
 /// The most of any one text a report's detail carries: the whole detail is
 /// at most 16 KiB.
 const TEXT_MAX: usize = 4 * 1024;
@@ -914,11 +921,18 @@ async fn here(argv: &[&str], root: bool) -> Result<String, String> {
 /// metadata would stay in the workspace's clone, which the session user
 /// can't write. The repo's `CLAUDE.md` and `AGENTS.md`, read before it's
 /// handed over, are the first prompt's notes.
+///
+/// Its branch starts from the repo's default branch as GitHub has it now
+/// ([`fresh_base`], Arugula #263), not as the workspace's clone had it at
+/// setup, which is a box's age behind: sessions cut from it built on code
+/// from before the last waves merged. When that fetch fails, it starts
+/// from the clone, and the first prompt says so ([`stale_note`]).
 async fn checkout(dir: &Path, l: &Session, src: Option<&Path>, real: bool) -> Result<Option<String>, String> {
     let stage = dir.join(super::DIR).join(DIR).join(format!("{}.stage", l.session));
     let dest = PathBuf::from(&l.checkout);
     let s = stage.display().to_string();
     let _ = std::fs::remove_dir_all(&stage);
+    let mut stale = None;
     match src {
         Some(src) => {
             let from = src.display().to_string();
@@ -927,10 +941,27 @@ async fn checkout(dir: &Path, l: &Session, src: Option<&Path>, real: bool) -> Re
             if let Ok(url) = here(&["git", "-C", &from, "remote", "get-url", "origin"], false).await {
                 here(&["git", "-C", &s, "remote", "set-url", "origin", url.trim()], false).await?;
             }
+            if let Some(repo) = l.repo.as_deref() {
+                let fresh = tokio::time::timeout(FRESH_MAX, fresh_base(&s, repo))
+                    .await
+                    .unwrap_or_else(|_| Err(format!("it took over {} s", FRESH_MAX.as_secs())));
+                match fresh {
+                    Ok(branch) => {
+                        info!(session = l.session, repo, branch, "hosted: a session starts from its repo's head")
+                    }
+                    Err(why) => {
+                        warn!(session = l.session, repo, error = why, "hosted: a session starts from the box's clone");
+                        stale = Some(stale_note(repo, &why));
+                    }
+                }
+            }
         }
         None => here(&["git", "init", "-q", &s], false).await.map(|_| ())?,
     }
-    let notes = notes(&stage);
+    let notes = match (notes(&stage), stale) {
+        (Some(n), Some(s)) => Some(format!("{s}{n}")),
+        (n, s) => n.or(s),
+    };
     let work = Path::new(&l.user.home).join("work");
     let w = work.display().to_string();
     let d = dest.display().to_string();
@@ -953,6 +984,85 @@ async fn checkout(dir: &Path, l: &Session, src: Option<&Path>, real: bool) -> Re
     as_user(&l.user, &["git", "-C", &d, "config", "user.email", &email]).await?;
     as_user(&l.user, &["git", "-C", &d, "switch", "-q", "-c", &l.branch]).await?;
     Ok(notes)
+}
+
+/// Move the staging clone `stage` to `repo`'s default branch as it is on
+/// GitHub now ([`push::remote_for`]: where its pushes go): fetched there
+/// by this daemon's user, before the clone is handed over (nothing in it
+/// is the agent's yet), into `origin/<default>`, which `origin/HEAD`
+/// names (a push counts the session's commits from it), and checked out
+/// as the local default branch the session's branch is cut from. With no
+/// credentials: a private repo's fetch fails, and the clone stays as the
+/// box's setup made it. The default branch's name.
+async fn fresh_base(stage: &str, repo: &str) -> Result<String, String> {
+    let remote =
+        push::remote_for(repo).ok_or_else(|| format!("{} isn't a GitHub repo's name", super::printable(repo)))?;
+    let heads = here(&["git", "ls-remote", "--symref", &remote, "HEAD"], false).await?;
+    let branch = default_branch_of(&heads).ok_or("GitHub named no default branch")?;
+    let tracking = format!("refs/remotes/origin/{branch}");
+    let spec = format!("+refs/heads/{branch}:{tracking}");
+    here(&["git", "-C", stage, "fetch", "-q", "--no-tags", &remote, &spec], false).await?;
+    here(&["git", "-C", stage, "symbolic-ref", "refs/remotes/origin/HEAD", &tracking], false).await?;
+    here(&["git", "-C", stage, "checkout", "-q", "-B", &branch, &tracking], false).await?;
+    Ok(branch)
+}
+
+/// The default branch `git ls-remote --symref URL HEAD` names (`ref:
+/// refs/heads/main\tHEAD`), if it's a plain branch name.
+pub fn default_branch_of(listing: &str) -> Option<String> {
+    let line = listing.lines().find_map(|l| l.strip_prefix("ref: "))?;
+    let (target, name) = line.split_once('\t')?;
+    let branch = target.strip_prefix("refs/heads/")?;
+    let plain = !branch.is_empty()
+        && !branch.starts_with(['-', '.', '/'])
+        && !branch.contains("..")
+        && branch.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_./".contains(&b));
+    (name.trim() == "HEAD" && plain).then(|| branch.to_owned())
+}
+
+/// What the first prompt says when its checkout couldn't start from the
+/// repo's head ([`fresh_base`]).
+pub fn stale_note(repo: &str, why: &str) -> String {
+    let mut why = why.to_owned();
+    cut(&mut why, 300);
+    format!(
+        "\n\n---\nThis checkout is the box's clone of {repo} as its setup made it: fetching the default branch's \
+         head from GitHub failed ({why}), so your branch may start behind it. Say so in your answer if the base \
+         matters to the work."
+    )
+}
+
+/// What a prompt says when the disk the session's checkout is on is low:
+/// `free` and `total` bytes. A Rust target is 8 to 40 GB, and the box's
+/// sessions share its disk (Arugula #263).
+pub fn disk_note(free: u64, total: u64) -> Option<String> {
+    const GIB: u64 = 1 << 30;
+    (free < DISK_LOW).then(|| {
+        format!(
+            "\n\n---\nThe box's disk is low: {:.1} GiB free of {:.0} GiB, shared with its other sessions. Remove what \
+             you don't need of your own (a Rust target's `incremental` directories first) before a big build, and \
+             say in your answer if a build ran out of space.",
+            free as f64 / GIB as f64,
+            total as f64 / GIB as f64
+        )
+    })
+}
+
+/// [`disk_note`] for the disk `path` is on, on a box with the template's
+/// session users (a test's host disk is nobody's business).
+#[cfg(unix)]
+fn disk_now(path: &str) -> Option<String> {
+    if !slots().is_some_and(|s| s.real) {
+        return None;
+    }
+    let s = nix::sys::statvfs::statvfs(path).ok()?;
+    let frag = s.fragment_size() as u64;
+    disk_note(s.blocks_available() as u64 * frag, s.blocks() as u64 * frag)
+}
+
+#[cfg(not(unix))]
+fn disk_now(_: &str) -> Option<String> {
+    None
 }
 
 /// The repo's `CLAUDE.md` and `AGENTS.md` (at its top), as the first
@@ -1038,7 +1148,7 @@ fn follow(app: &Arc<App>, id: &str) {
     }
     let app = app.clone();
     let id = id.to_owned();
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         let mut missing: Option<std::time::Instant> = None;
         while step(&app, &id, &mut missing).await {
             tokio::time::sleep(FOLLOW).await;
@@ -1503,7 +1613,8 @@ async fn hand(
 }
 
 /// Give the block prompt `p` (the turn's, handed), as its author's, and say
-/// the turn started. The first prompt carries the repo's notes.
+/// the turn started. The first prompt carries the repo's notes; any says
+/// when the disk is low ([`disk_note`]).
 async fn give(
     app: &App,
     b: &Arc<dyn crate::block::Block>,
@@ -1517,6 +1628,13 @@ async fn give(
     let mut text = p.for_agent();
     if let Some(n) = &l.notes {
         text.push_str(n);
+    }
+    // Arugula #263: what the turn builds with. A resume since the last turn
+    // took resolv.conf's newline again; the disk is shared with the box's
+    // other sessions.
+    crate::hosted::resolv::fix().await;
+    if let Some(n) = disk_now(&l.user.home) {
+        text.push_str(&n);
     }
     match b.call_by("send", json!({ "text": text }), Some(p.who())).await {
         Ok(_) => {
@@ -1879,7 +1997,7 @@ async fn send(app: &Arc<App>, id: &str) {
             let app = app.clone();
             let id = id.to_owned();
             // Not under the sender's lock: stopping sends nothing.
-            tokio::spawn(async move { end(&app, &id, &format!("control says it's {s}")).await });
+            crate::task::spawn(async move { end(&app, &id, &format!("control says it's {s}")).await });
             return;
         }
     }

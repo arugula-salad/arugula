@@ -186,7 +186,7 @@ pub struct DeviceSig {
 
 /// A GitHub sign-in from the last [`REAUTH_MS`]: what adding a first
 /// passkey to an account with no browser or phone takes.
-fn fresh_github(info: &SessionInfo) -> bool {
+pub(crate) fn fresh_github(info: &SessionInfo) -> bool {
     info.via.as_deref() == Some(auth::Via::Github.as_str()) && now_ms().saturating_sub(info.created) <= REAUTH_MS
 }
 

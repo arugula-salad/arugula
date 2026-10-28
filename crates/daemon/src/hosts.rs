@@ -420,7 +420,7 @@ impl Hosts {
 
     pub fn spawn_probe(self: &Arc<Self>) {
         let me = Arc::downgrade(self);
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let mut tick = tokio::time::interval(PROBE_EVERY);
             loop {
                 tick.tick().await;
@@ -526,7 +526,7 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
     let saved = joined.as_ref().map(|e| &e.saved);
     let info = HostInfo {
         name: app.hosts.name().to_owned(),
-        version: env!("CARGO_PKG_VERSION").to_owned(),
+        version: arugula_core::version::get().to_owned(),
         protocol: Some(arugula_proto::PROTOCOL),
         tailnet_url: app.access.tailnet_url(),
         tailnet_seen: app.tailnet_seen.load(std::sync::atomic::Ordering::Relaxed),
@@ -547,16 +547,16 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
 /// their own setup.
 pub(crate) fn features(app: &App) -> HostFeatures {
     let dir = app.control.state_dir();
-    let on = crate::labs::flags(dir);
+    let on = crate::lab_flags::flags(dir);
     HostFeatures {
         labs: on.any(),
         dev: arugula_proto::flags::unlocked(dir),
         blocks: crate::sites::get().is_some_and(|s| s.listens()),
         block_channels: crate::sites::control_blocks(),
         vms: on.has(flags::SANDBOX_PROVIDERS) && app.mux.provider.is_some(),
-        studio: on.has(flags::STUDIO) && crate::labs::studio_here(),
+        studio: on.has(flags::STUDIO) && crate::lab_hooks::labs().studio_here(),
         // A sharing setting, not a flag (native #205).
-        guest_ssh: Some(crate::labs::BUILT && arugula_proto::sharing::guest_ssh(dir)),
+        guest_ssh: Some(crate::lab_flags::BUILT && arugula_proto::sharing::guest_ssh(dir)),
         flags: Some(on.names().map(str::to_owned).collect()),
     }
 }
@@ -575,7 +575,7 @@ async fn join(State(app): AppState, Json(req): Json<JoinRequest>) -> Response {
     match app.hosts.join(req) {
         Ok((h, token)) => {
             let hosts = app.hosts.clone();
-            tokio::spawn(async move { hosts.probe().await });
+            crate::task::spawn(async move { hosts.probe().await });
             Json(Joined { host: h, owner: app.access.owner().map(str::to_owned), token }).into_response()
         }
         Err(e) => {

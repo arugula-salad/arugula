@@ -1446,7 +1446,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- list: The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.\n- open {doc, beside?}: Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.\n\nTwo kinds of fenced block draw as more than code, in the section that talks about them.\nA chart: a ```chart fence holding a JSON spec. type is \"bar\" or \"line\"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with \"order\": [...]. For example:\n```chart\n{\"type\": \"bar\", \"title\": \"Sales by month\", \"x\": \"month\", \"y\": [\"sales\"], \"rows\": [{\"month\": \"Jan\", \"sales\": 12}, {\"month\": \"Feb\", \"sales\": 19}]}\n```\nA drawing: a ```svg fence holding one <svg> element, with xmlns=\"http://www.w3.org/2000/svg\" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run. For example:\n```svg Idea to app\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 40\"><rect x=\"2\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e8f0fe\" stroke=\"#335\"/><path d=\"M62 20 H98\" stroke=\"#335\"/><rect x=\"98\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e6f4ea\" stroke=\"#335\"/></svg>\n```\nEvery fence is checked before anything is written: a bad chart or drawing is refused with one line saying what to fix, and the section stays as it was.\n- asset {block, name, data?, path?}: Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {\"kind\": \"asset\", \"block\": 7, \"name\": \"flow.png\", \"path\": \"/tmp/flow.png\"}.\n- share {block}: Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: \"waiting\"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- list: The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.\n- open {doc, beside?}: Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.\n\nA callout is a quote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION], as on GitHub: \"> [!TIP]\" then \"> Run it twice.\" Keep them for what the reader mustn't miss.\n\nThree kinds of fenced block draw as more than code, in the section that talks about them.\nStat tiles: a ```stats fence holding a list of 1 to 6 tiles; label and value are text, delta and its tone (up, down or flat) are optional. For example:\n```stats\n[{\"label\": \"Sessions\", \"value\": \"1,284\", \"delta\": \"+12%\", \"tone\": \"up\"}, {\"label\": \"Errors\", \"value\": \"3\"}]\n```\nA chart: a ```chart fence holding a JSON spec. type is \"bar\" or \"line\"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with \"order\": [...]. For example:\n```chart\n{\"type\": \"bar\", \"title\": \"Sales by month\", \"x\": \"month\", \"y\": [\"sales\"], \"rows\": [{\"month\": \"Jan\", \"sales\": 12}, {\"month\": \"Feb\", \"sales\": 19}]}\n```\nA drawing: a ```svg fence holding one <svg> element, with xmlns=\"http://www.w3.org/2000/svg\" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run.\nColours are named, so a Doc reads in light and dark: leaf, pepper, sky, plum, sun, stone, ink (text) and paper (the page), each with a soft fill (leaf-soft, stone-soft, …). In a drawing, fill, stroke, stop-color and color take a name; a chart's optional \"colors\" names one of the six hues for each y series (\"colors\": [\"leaf\", \"stone\"]).\nGrey first (stone and ink), one accent per figure. Text stays ink. For example:\n```svg Idea to app\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 40\" font-size=\"11\" text-anchor=\"middle\"><rect x=\"2\" y=\"8\" width=\"60\" height=\"24\" rx=\"4\" fill=\"stone-soft\" stroke=\"stone\"/><text x=\"32\" y=\"24\" fill=\"ink\">Idea</text><path d=\"M62 20 H98\" stroke=\"ink\"/><rect x=\"98\" y=\"8\" width=\"60\" height=\"24\" rx=\"4\" fill=\"leaf-soft\" stroke=\"leaf\"/><text x=\"128\" y=\"24\" fill=\"ink\">App</text></svg>\n```\nEvery fence is checked before anything is written: a bad chart, tile or drawing is refused with one line saying what to fix, and the section stays as it was.\n- asset {block, name, data?, path?}: Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {\"kind\": \"asset\", \"block\": 7, \"name\": \"flow.png\", \"path\": \"/tmp/flow.png\"}.\n- share {block}: Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: \"waiting\"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it.",
       "inputSchema": {
         "$defs": {
           "DocSection": {
@@ -3740,6 +3740,97 @@
       },
       "name": "read_deploy",
       "title": "Read a deploy"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start an agent session"
+      },
+      "description": "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "issue": {
+            "default": null,
+            "description": "A native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "\"#N\"'s project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "default": null,
+            "description": "What to ask @arugula: plain words, which may name the repo\n(owner/name) and a model. On an issue, by default, to work on it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "Or a project's channel: its room id (list kind threads).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread": {
+            "default": null,
+            "description": "In the room, the thread of this message (its seq); without it, the\nask is a message of its own, starting its thread.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "SessionStartArgs",
+        "type": "object"
+      },
+      "name": "session_start",
+      "title": "Start an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Answer or prompt an agent session"
+      },
+      "description": "Reply to an agent session in Arugula control as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          },
+          "text": {
+            "description": "The answer or the prompt, in markdown.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "text"
+        ],
+        "title": "SessionReplyArgs",
+        "type": "object"
+      },
+      "name": "session_reply",
+      "title": "Answer or prompt an agent session"
     }
   ],
   "block, labs true": [
@@ -5344,7 +5435,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- list: The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.\n- open {doc, beside?}: Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.\n\nTwo kinds of fenced block draw as more than code, in the section that talks about them.\nA chart: a ```chart fence holding a JSON spec. type is \"bar\" or \"line\"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with \"order\": [...]. For example:\n```chart\n{\"type\": \"bar\", \"title\": \"Sales by month\", \"x\": \"month\", \"y\": [\"sales\"], \"rows\": [{\"month\": \"Jan\", \"sales\": 12}, {\"month\": \"Feb\", \"sales\": 19}]}\n```\nA drawing: a ```svg fence holding one <svg> element, with xmlns=\"http://www.w3.org/2000/svg\" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run. For example:\n```svg Idea to app\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 40\"><rect x=\"2\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e8f0fe\" stroke=\"#335\"/><path d=\"M62 20 H98\" stroke=\"#335\"/><rect x=\"98\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e6f4ea\" stroke=\"#335\"/></svg>\n```\nEvery fence is checked before anything is written: a bad chart or drawing is refused with one line saying what to fix, and the section stays as it was.\n- asset {block, name, data?, path?}: Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {\"kind\": \"asset\", \"block\": 7, \"name\": \"flow.png\", \"path\": \"/tmp/flow.png\"}.\n- share {block}: Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: \"waiting\"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- list: The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.\n- open {doc, beside?}: Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.\n\nA callout is a quote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION], as on GitHub: \"> [!TIP]\" then \"> Run it twice.\" Keep them for what the reader mustn't miss.\n\nThree kinds of fenced block draw as more than code, in the section that talks about them.\nStat tiles: a ```stats fence holding a list of 1 to 6 tiles; label and value are text, delta and its tone (up, down or flat) are optional. For example:\n```stats\n[{\"label\": \"Sessions\", \"value\": \"1,284\", \"delta\": \"+12%\", \"tone\": \"up\"}, {\"label\": \"Errors\", \"value\": \"3\"}]\n```\nA chart: a ```chart fence holding a JSON spec. type is \"bar\" or \"line\"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with \"order\": [...]. For example:\n```chart\n{\"type\": \"bar\", \"title\": \"Sales by month\", \"x\": \"month\", \"y\": [\"sales\"], \"rows\": [{\"month\": \"Jan\", \"sales\": 12}, {\"month\": \"Feb\", \"sales\": 19}]}\n```\nA drawing: a ```svg fence holding one <svg> element, with xmlns=\"http://www.w3.org/2000/svg\" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run.\nColours are named, so a Doc reads in light and dark: leaf, pepper, sky, plum, sun, stone, ink (text) and paper (the page), each with a soft fill (leaf-soft, stone-soft, …). In a drawing, fill, stroke, stop-color and color take a name; a chart's optional \"colors\" names one of the six hues for each y series (\"colors\": [\"leaf\", \"stone\"]).\nGrey first (stone and ink), one accent per figure. Text stays ink. For example:\n```svg Idea to app\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 40\" font-size=\"11\" text-anchor=\"middle\"><rect x=\"2\" y=\"8\" width=\"60\" height=\"24\" rx=\"4\" fill=\"stone-soft\" stroke=\"stone\"/><text x=\"32\" y=\"24\" fill=\"ink\">Idea</text><path d=\"M62 20 H98\" stroke=\"ink\"/><rect x=\"98\" y=\"8\" width=\"60\" height=\"24\" rx=\"4\" fill=\"leaf-soft\" stroke=\"leaf\"/><text x=\"128\" y=\"24\" fill=\"ink\">App</text></svg>\n```\nEvery fence is checked before anything is written: a bad chart, tile or drawing is refused with one line saying what to fix, and the section stays as it was.\n- asset {block, name, data?, path?}: Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {\"kind\": \"asset\", \"block\": 7, \"name\": \"flow.png\", \"path\": \"/tmp/flow.png\"}.\n- share {block}: Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: \"waiting\"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it.",
       "inputSchema": {
         "$defs": {
           "DocSection": {
@@ -7919,6 +8010,97 @@
       },
       "name": "read_deploy",
       "title": "Read a deploy"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start an agent session"
+      },
+      "description": "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "issue": {
+            "default": null,
+            "description": "A native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "\"#N\"'s project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "default": null,
+            "description": "What to ask @arugula: plain words, which may name the repo\n(owner/name) and a model. On an issue, by default, to work on it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "Or a project's channel: its room id (list kind threads).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread": {
+            "default": null,
+            "description": "In the room, the thread of this message (its seq); without it, the\nask is a message of its own, starting its thread.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "SessionStartArgs",
+        "type": "object"
+      },
+      "name": "session_start",
+      "title": "Start an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Answer or prompt an agent session"
+      },
+      "description": "Reply to an agent session in Arugula control as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          },
+          "text": {
+            "description": "The answer or the prompt, in markdown.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "text"
+        ],
+        "title": "SessionReplyArgs",
+        "type": "object"
+      },
+      "name": "session_reply",
+      "title": "Answer or prompt an agent session"
     }
   ],
   "full, labs false": [
@@ -9368,7 +9550,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- list: The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.\n- open {doc, beside?}: Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.\n\nTwo kinds of fenced block draw as more than code, in the section that talks about them.\nA chart: a ```chart fence holding a JSON spec. type is \"bar\" or \"line\"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with \"order\": [...]. For example:\n```chart\n{\"type\": \"bar\", \"title\": \"Sales by month\", \"x\": \"month\", \"y\": [\"sales\"], \"rows\": [{\"month\": \"Jan\", \"sales\": 12}, {\"month\": \"Feb\", \"sales\": 19}]}\n```\nA drawing: a ```svg fence holding one <svg> element, with xmlns=\"http://www.w3.org/2000/svg\" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run. For example:\n```svg Idea to app\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 40\"><rect x=\"2\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e8f0fe\" stroke=\"#335\"/><path d=\"M62 20 H98\" stroke=\"#335\"/><rect x=\"98\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e6f4ea\" stroke=\"#335\"/></svg>\n```\nEvery fence is checked before anything is written: a bad chart or drawing is refused with one line saying what to fix, and the section stays as it was.\n- asset {block, name, data?, path?}: Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {\"kind\": \"asset\", \"block\": 7, \"name\": \"flow.png\", \"path\": \"/tmp/flow.png\"}.\n- share {block}: Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: \"waiting\"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- list: The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.\n- open {doc, beside?}: Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.\n\nA callout is a quote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION], as on GitHub: \"> [!TIP]\" then \"> Run it twice.\" Keep them for what the reader mustn't miss.\n\nThree kinds of fenced block draw as more than code, in the section that talks about them.\nStat tiles: a ```stats fence holding a list of 1 to 6 tiles; label and value are text, delta and its tone (up, down or flat) are optional. For example:\n```stats\n[{\"label\": \"Sessions\", \"value\": \"1,284\", \"delta\": \"+12%\", \"tone\": \"up\"}, {\"label\": \"Errors\", \"value\": \"3\"}]\n```\nA chart: a ```chart fence holding a JSON spec. type is \"bar\" or \"line\"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with \"order\": [...]. For example:\n```chart\n{\"type\": \"bar\", \"title\": \"Sales by month\", \"x\": \"month\", \"y\": [\"sales\"], \"rows\": [{\"month\": \"Jan\", \"sales\": 12}, {\"month\": \"Feb\", \"sales\": 19}]}\n```\nA drawing: a ```svg fence holding one <svg> element, with xmlns=\"http://www.w3.org/2000/svg\" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run.\nColours are named, so a Doc reads in light and dark: leaf, pepper, sky, plum, sun, stone, ink (text) and paper (the page), each with a soft fill (leaf-soft, stone-soft, …). In a drawing, fill, stroke, stop-color and color take a name; a chart's optional \"colors\" names one of the six hues for each y series (\"colors\": [\"leaf\", \"stone\"]).\nGrey first (stone and ink), one accent per figure. Text stays ink. For example:\n```svg Idea to app\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 40\" font-size=\"11\" text-anchor=\"middle\"><rect x=\"2\" y=\"8\" width=\"60\" height=\"24\" rx=\"4\" fill=\"stone-soft\" stroke=\"stone\"/><text x=\"32\" y=\"24\" fill=\"ink\">Idea</text><path d=\"M62 20 H98\" stroke=\"ink\"/><rect x=\"98\" y=\"8\" width=\"60\" height=\"24\" rx=\"4\" fill=\"leaf-soft\" stroke=\"leaf\"/><text x=\"128\" y=\"24\" fill=\"ink\">App</text></svg>\n```\nEvery fence is checked before anything is written: a bad chart, tile or drawing is refused with one line saying what to fix, and the section stays as it was.\n- asset {block, name, data?, path?}: Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {\"kind\": \"asset\", \"block\": 7, \"name\": \"flow.png\", \"path\": \"/tmp/flow.png\"}.\n- share {block}: Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: \"waiting\"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it.",
       "inputSchema": {
         "$defs": {
           "DocSection": {
@@ -11662,6 +11844,97 @@
       },
       "name": "read_deploy",
       "title": "Read a deploy"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start an agent session"
+      },
+      "description": "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "issue": {
+            "default": null,
+            "description": "A native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "\"#N\"'s project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "default": null,
+            "description": "What to ask @arugula: plain words, which may name the repo\n(owner/name) and a model. On an issue, by default, to work on it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "Or a project's channel: its room id (list kind threads).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread": {
+            "default": null,
+            "description": "In the room, the thread of this message (its seq); without it, the\nask is a message of its own, starting its thread.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "SessionStartArgs",
+        "type": "object"
+      },
+      "name": "session_start",
+      "title": "Start an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Answer or prompt an agent session"
+      },
+      "description": "Reply to an agent session in Arugula control as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          },
+          "text": {
+            "description": "The answer or the prompt, in markdown.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "text"
+        ],
+        "title": "SessionReplyArgs",
+        "type": "object"
+      },
+      "name": "session_reply",
+      "title": "Answer or prompt an agent session"
     }
   ],
   "full, labs true": [
@@ -13266,7 +13539,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- list: The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.\n- open {doc, beside?}: Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.\n\nTwo kinds of fenced block draw as more than code, in the section that talks about them.\nA chart: a ```chart fence holding a JSON spec. type is \"bar\" or \"line\"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with \"order\": [...]. For example:\n```chart\n{\"type\": \"bar\", \"title\": \"Sales by month\", \"x\": \"month\", \"y\": [\"sales\"], \"rows\": [{\"month\": \"Jan\", \"sales\": 12}, {\"month\": \"Feb\", \"sales\": 19}]}\n```\nA drawing: a ```svg fence holding one <svg> element, with xmlns=\"http://www.w3.org/2000/svg\" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run. For example:\n```svg Idea to app\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 40\"><rect x=\"2\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e8f0fe\" stroke=\"#335\"/><path d=\"M62 20 H98\" stroke=\"#335\"/><rect x=\"98\" y=\"8\" width=\"60\" height=\"24\" fill=\"#e6f4ea\" stroke=\"#335\"/></svg>\n```\nEvery fence is checked before anything is written: a bad chart or drawing is refused with one line saying what to fix, and the section stays as it was.\n- asset {block, name, data?, path?}: Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {\"kind\": \"asset\", \"block\": 7, \"name\": \"flow.png\", \"path\": \"/tmp/flow.png\"}.\n- share {block}: Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: \"waiting\"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- list: The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.\n- open {doc, beside?}: Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.\n\nA callout is a quote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION], as on GitHub: \"> [!TIP]\" then \"> Run it twice.\" Keep them for what the reader mustn't miss.\n\nThree kinds of fenced block draw as more than code, in the section that talks about them.\nStat tiles: a ```stats fence holding a list of 1 to 6 tiles; label and value are text, delta and its tone (up, down or flat) are optional. For example:\n```stats\n[{\"label\": \"Sessions\", \"value\": \"1,284\", \"delta\": \"+12%\", \"tone\": \"up\"}, {\"label\": \"Errors\", \"value\": \"3\"}]\n```\nA chart: a ```chart fence holding a JSON spec. type is \"bar\" or \"line\"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with \"order\": [...]. For example:\n```chart\n{\"type\": \"bar\", \"title\": \"Sales by month\", \"x\": \"month\", \"y\": [\"sales\"], \"rows\": [{\"month\": \"Jan\", \"sales\": 12}, {\"month\": \"Feb\", \"sales\": 19}]}\n```\nA drawing: a ```svg fence holding one <svg> element, with xmlns=\"http://www.w3.org/2000/svg\" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run.\nColours are named, so a Doc reads in light and dark: leaf, pepper, sky, plum, sun, stone, ink (text) and paper (the page), each with a soft fill (leaf-soft, stone-soft, …). In a drawing, fill, stroke, stop-color and color take a name; a chart's optional \"colors\" names one of the six hues for each y series (\"colors\": [\"leaf\", \"stone\"]).\nGrey first (stone and ink), one accent per figure. Text stays ink. For example:\n```svg Idea to app\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 40\" font-size=\"11\" text-anchor=\"middle\"><rect x=\"2\" y=\"8\" width=\"60\" height=\"24\" rx=\"4\" fill=\"stone-soft\" stroke=\"stone\"/><text x=\"32\" y=\"24\" fill=\"ink\">Idea</text><path d=\"M62 20 H98\" stroke=\"ink\"/><rect x=\"98\" y=\"8\" width=\"60\" height=\"24\" rx=\"4\" fill=\"leaf-soft\" stroke=\"leaf\"/><text x=\"128\" y=\"24\" fill=\"ink\">App</text></svg>\n```\nEvery fence is checked before anything is written: a bad chart, tile or drawing is refused with one line saying what to fix, and the section stays as it was.\n- asset {block, name, data?, path?}: Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {\"kind\": \"asset\", \"block\": 7, \"name\": \"flow.png\", \"path\": \"/tmp/flow.png\"}.\n- share {block}: Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: \"waiting\"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it.",
       "inputSchema": {
         "$defs": {
           "DocSection": {
@@ -15841,6 +16114,97 @@
       },
       "name": "read_deploy",
       "title": "Read a deploy"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start an agent session"
+      },
+      "description": "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "issue": {
+            "default": null,
+            "description": "A native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "\"#N\"'s project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "default": null,
+            "description": "What to ask @arugula: plain words, which may name the repo\n(owner/name) and a model. On an issue, by default, to work on it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "Or a project's channel: its room id (list kind threads).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread": {
+            "default": null,
+            "description": "In the room, the thread of this message (its seq); without it, the\nask is a message of its own, starting its thread.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "SessionStartArgs",
+        "type": "object"
+      },
+      "name": "session_start",
+      "title": "Start an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Answer or prompt an agent session"
+      },
+      "description": "Reply to an agent session in Arugula control as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          },
+          "text": {
+            "description": "The answer or the prompt, in markdown.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "text"
+        ],
+        "title": "SessionReplyArgs",
+        "type": "object"
+      },
+      "name": "session_reply",
+      "title": "Answer or prompt an agent session"
     }
   ],
   "read, labs false": [

@@ -1,13 +1,15 @@
-// Fences in a Doc section's Markdown, and the two that are more than code:
-// ```chart (a JSON spec, `chart.tsx`) and ```svg (one drawing, shown only
-// through <img>); and its pictures, `![alt](assets/<name>)` in a line of
+// Fences in a Doc section's Markdown, and the three that are more than code:
+// ```chart (a JSON spec, `chart.tsx`), ```stats (tiles, `stats.tsx`) and
+// ```svg (one drawing, shown only through <img>); and its pictures, `![alt](assets/<name>)` in a line of
 // text (#965). Plain TypeScript, so a spec can import it. The daemon checks
-// all three before it writes a section (`crates/daemon/src/docs/embeds.rs`,
+// all three before it writes a section (`crates/arugulad-docs/src/docs/embeds.rs`,
 // which has the grammar); `checkSvg`, `checkImages` and `plain` here say the
 // same things, and a spec runs both over the same files
 // (`tests/fixtures/docs/`).
 
+import { checkPaint } from "../docs/colours";
 import { checkChart, summary } from "./chart";
+import { checkStats, statsSummary } from "./stats";
 
 /** A fence from line `i`: its language (the first word after the mark), the
  * rest of that line, what is inside (each line without up to `strip` columns
@@ -108,11 +110,11 @@ export function checkImages(text: string, assets: string[]): string | null {
   return null;
 }
 
-/** The first problem with a body's charts, drawings and pictures, or null.
+/** The first problem with a body's charts, tiles, drawings and pictures, or null.
  * `assets`: the names the Doc has. */
 export function checkEmbeds(text: string, assets: string[] = []): string | null {
   for (const f of fences(text)) {
-    const why = f.lang === "chart" ? checkChart(f.code) : f.lang === "svg" ? checkSvg(f.code) : null;
+    const why = f.lang === "chart" ? checkChart(f.code) : f.lang === "svg" ? checkSvg(f.code) : f.lang === "stats" ? checkStats(f.code) : null;
     if (why) return why;
   }
   return checkImages(text, assets);
@@ -130,8 +132,8 @@ function standIn(line: string): string {
   return out + line.slice(at);
 }
 
-/** The body as plain Markdown: a chart is a line saying what it is, a
- * drawing is `[drawing]` and a picture `[image: alt]`. */
+/** The body as plain Markdown: a chart and tiles are a line saying what they
+ * are, a drawing is `[drawing]` and a picture `[image: alt]`. */
 export function plain(text: string): string {
   const lines = bodyLines(text);
   const out: string[] = [];
@@ -140,6 +142,7 @@ export function plain(text: string): string {
     out.push(...lines.slice(at, f.start).map(standIn));
     if (f.lang === "chart") out.push(summary(f.code));
     else if (f.lang === "svg") out.push("[drawing]");
+    else if (f.lang === "stats") out.push(statsSummary(f.code));
     else out.push(...lines.slice(f.start, f.end)); // code, pictures in it included
     at = f.end;
   }
@@ -172,7 +175,7 @@ export function checkSvg(svg: string): string | null {
   if (!tag.includes(`xmlns="${SVG_NS}"`) && !tag.includes(`xmlns='${SVG_NS}'`)) {
     return bad(`the <svg> needs xmlns="${SVG_NS}", or the picture shows nothing`);
   }
-  return null;
+  return checkPaint(svg);
 }
 
 /** The URL an <img> shows a drawing from. A data: URL and not a blob: URL:

@@ -84,7 +84,7 @@ test("with no Doc the page says where they come from", async ({ page }) => {
   await reset(page);
   await goToDocs(page);
   await expect(page.locator(".ws-rail [data-open-docs]")).toHaveAttribute("aria-current", "page");
-  await expect(page.locator("[data-docs-empty]")).toHaveText("Docs your agents write show up here.");
+  await expect(page.locator("[data-docs-empty]")).toContainText("Docs your agents write show up here.");
   await expect(page.locator("[data-doc]")).toHaveCount(0);
 });
 

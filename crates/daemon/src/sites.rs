@@ -176,7 +176,6 @@ impl Site {
 
     /// Put `js` first in this site's pages (HTML navigations), served from
     /// [`HEAD_SCRIPT`]. Once per site.
-    #[cfg(feature = "editor")]
     pub fn set_head_script(&self, js: &'static str) {
         let _ = self.head.set(js);
     }
@@ -427,7 +426,7 @@ pub async fn serve(sites: Arc<Sites>, listener: TcpListener, tls: Option<Arc<tok
             }
         };
         let (sites, acceptor) = (sites.clone(), acceptor.clone());
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             let _ = tcp.set_nodelay(true);
             let admitted = sites.admit(peer).await;
             if let Err(why) = &admitted {

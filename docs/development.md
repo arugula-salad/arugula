@@ -172,6 +172,24 @@ about 270 MB. The Zig cache has no cap: it grows by
 about 550 MB for each Ghostty commit and Zig optimize mode, and is safe to
 delete. Windows isn't covered (the wrapper is a shell script).
 
+### Sweeping target directories
+
+Cargo keys each build of a crate by its version, features, profile and
+whether it's a test, and never deletes a build that a change of those
+left behind. Every release bump leaves the daemon's and the CLI's
+behind, and so does each feature combination: `just check-features`,
+`cargo build -p arugulad` against `--workspace`, clippy. Each daemon build
+is about 1 GB of incremental cache and a 270 MB binary. On geek a
+worktree used for four days reached 40 GB, 31 GB of it incremental caches
+nothing would use again (2026-10-27).
+
+`just sweep` deletes them: for each crate it keeps the newest build and
+any other used in the last 48 hours (`just sweep 12` for 12), in
+incremental/, deps/ and build/ of every profile. Cargo rebuilds whatever
+it then misses. `just sweep 48 DIR...` sweeps other target directories
+(they must have cargo's `CACHEDIR.TAG`); a machine with many worktrees
+can run that daily over all of them.
+
 ## Releasing
 
 The daemon and the desktop app release apart (#388): a daemon or web change
@@ -183,7 +201,13 @@ daemon's update check read it.
 **The daemon (`v*`).**
 
 1. Notes go in `docs/releases/X.Y.Z.md`; merge them to main (they needn't
-   pass CI first).
+   pass CI first). They end with a headline section, a ```` ```whats-new ````
+   block of a few items (each a feature id, a title, one line, and maybe
+   a **Try it** command or route and who it `needs`): the web client's
+   What's new panel shows them after the update, and the format is in
+   `scripts/whats-new.mjs` (`just whats-new` checks them).
+   `scripts/release bump` refuses notes without one (a dry run says so and
+   goes on), and `publish` leaves it out of the GitHub release.
 2. `just release` (a patch; `just release minor`, `just release major`)
    bumps the version on top of the newest commit on main that passed CI
    (below), copies the client fixtures to
@@ -209,7 +233,7 @@ daemon's update check read it.
    that trusts the `marketplace` environment, #934), both by the
    workflow's OIDC token with no secret, skipping a version that's
    already there, and trying each store even if the other refuses: bump
-   `crates/daemon/src/editor/ext/package.json` to ship a new one. Its
+   `crates/arugulad-editor/src/editor/ext/package.json` to ship a new one. Its
    `platform` job deploys control's platform (`arugula-platform`) from the
    tag's x86_64 static build, once that app exists (the
    `FLY_PLATFORM_API_TOKEN` secret; without it the job deploys nothing and
@@ -380,7 +404,7 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   gave every thread a zeroed copy: 1.3 MB per pane. Check `readelf -S`
   for `.tbss` after a libghostty upgrade. glibc also kept about half a busy
   daemon's peak after panes closed, until `heap.rs` fixed the mmap
-  threshold. `crates/daemon/tests/integration/memory.rs` guards both.
+  threshold. `crates/arugulad/tests/integration/memory.rs` guards both.
 - **Offsets need an epoch.** A reconnecting client's offset is only valid for
   the stream it came from; the pane's epoch changes when the daemon restarts.
 - **Size travels in order with output.** A client must resize before drawing
@@ -543,5 +567,5 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   window storage in memory when it's refused (`editor/storage.js`), and
   `editors.spec.ts` runs a block in a Chrome profile that blocks
   third-party cookies (`sec-fetch-storage-access: none` says it's
-  refused). When a block's page fails in a frame, `RUST_LOG=arugulad::sites=debug`
+  refused). When a block's page fails in a frame, `RUST_LOG=arugulad_base::sites=debug`
   logs every request its site refuses, and why.

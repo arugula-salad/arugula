@@ -269,6 +269,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::DocsList);
         $m!($crate::op::ops::DocOpen);
         $m!($crate::op::ops::DocDelete);
+        $m!($crate::op::ops::AgentCanGet);
         $m!($crate::op::ops::PaneWait);
         $m!($crate::op::ops::PaneSend);
         $m!($crate::op::ops::PaneKeys);
@@ -359,10 +360,10 @@ pub mod ops {
     use crate::{
         Machine, PaneId,
         api::{
-            AclSetRequest, Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConversationList,
-            ConversationsQuery, DetectionAnswer, DocLinkUrl, DocOpenRequest, DocOpened, DocRow, DriverEntry, Empty,
-            FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs,
-            IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
+            AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
+            ConversationList, ConversationsQuery, DetectionAnswer, DocLinkUrl, DocOpenRequest, DocOpened, DocRow,
+            DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest,
+            IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
             InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest,
             OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest,
             Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse,
@@ -645,6 +646,20 @@ pub mod ops {
         type Path = String;
         type Req = Empty;
         type Res = Empty;
+    }
+
+    /// `GET /api/agent-can`: the card *What your agent can do here*, a line
+    /// per MCP tool this machine offers its agents.
+    pub struct AgentCanGet;
+
+    impl Op for AgentCanGet {
+        const NAME: &'static str = "agent_can.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/agent-can";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = Vec<AgentCan>;
     }
 
     /// `GET /api/panes/N/wait?until=…`: wait for a command's end, an exit, a

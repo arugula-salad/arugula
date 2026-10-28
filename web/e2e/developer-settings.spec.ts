@@ -1,8 +1,9 @@
 // Developer settings (#665): each Labs feature has a flag of its own, which
-// the owner turns on for a machine in a dialog. A machine that hasn't asked
-// isn't offered the dialog (`#developer` opens it all the same, as the
-// desktop app's Daemon menu does); one flag turns on its feature and no
-// other, with no restart and no reload; and off takes it away again.
+// the owner turns on for a machine in a dialog. The machine menu offers the
+// dialog to the owner on a fresh daemon too, with no `flags.json` yet
+// (`#developer` opens it as well, as the desktop app's Daemon menu does);
+// one flag turns on its feature and no other, with no restart and no
+// reload; and off takes it away again.
 //
 // The daemon is set up for every Labs feature, like labs-off.spec.ts's, so
 // only the flags decide what shows. That spec is the proof of the default
@@ -103,21 +104,23 @@ async function start(page: Page) {
 
 const dialog = (page: Page) => page.getByRole("dialog", { name: "Developer settings" });
 
-test("a machine that hasn't asked isn't offered Developer settings, and #developer opens them", async ({ page }) => {
+test("a fresh daemon's machine menu offers Developer settings, and #developer opens them", async ({ page }) => {
   const pane = await start(page);
   expect(existsSync(join(state, "flags.json"))).toBe(false);
   expect(await shown(page, pane)).toEqual([]);
   await page.locator(".ws-head [data-account-menu]").click();
-  await expect(page.getByRole("menuitem", { name: "Permission rules…" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Developer settings…" })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Developer settings…" }).click();
+  await expect(dialog(page)).toBeVisible();
+  await expect(dialog(page).locator("[data-flag]")).toHaveCount(FLAGS.length);
   await page.keyboard.press("Escape");
+  await expect(dialog(page)).toBeHidden();
 
   // As the desktop app's Daemon menu opens it: every flag, all off.
   await page.goto("/#developer");
   await expect(dialog(page)).toBeVisible();
   await expect(dialog(page).locator("[data-flag]")).toHaveCount(FLAGS.length);
   await expect(dialog(page).locator("[data-flag] input:checked")).toHaveCount(0);
-  // Looking makes no file: the machine still hasn't asked.
+  // Looking makes no file.
   expect(existsSync(join(state, "flags.json"))).toBe(false);
 });
 
@@ -141,7 +144,7 @@ test("turning chant workspaces on in the dialog turns on them, and nothing else,
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 });
 
-test("once asked for, the account menu offers them; off takes chant workspaces away again", async ({ page }) => {
+test("with a flag on, the account menu still offers them; off takes chant workspaces away again", async ({ page }) => {
   const pane = await start(page);
   expect(await workspacesFlag(page)).toBe(true);
   await page.locator(".ws-head [data-account-menu]").click();
@@ -152,7 +155,7 @@ test("once asked for, the account menu offers them; off takes chant workspaces a
   expect(onNow()).toEqual([]);
   await page.keyboard.press("Escape");
   expect(await shown(page, pane)).toEqual([]);
-  // Still offered: the machine asked, and all off is an answer.
+  // Still offered, all off.
   await page.locator(".ws-head [data-account-menu]").click();
   await expect(page.getByRole("menuitem", { name: "Developer settings…" })).toBeVisible();
 });

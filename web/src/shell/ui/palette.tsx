@@ -32,6 +32,9 @@ import { ariaKeys, keyHint } from "./keys";
 import { newTabItems, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
 import { currentAccount } from "./app-bar";
 import { needsYou } from "../../shared/needs-you";
+import { ago } from "../../shared/time";
+import { getFleet } from "./hosts";
+import { openHit, searchOutput, type Asked, type OutputHit } from "./output-search";
 
 export interface Command {
   /** Stable enough to remember as a recent pick. */
@@ -58,17 +61,20 @@ export interface Command {
   id?: string;
 }
 
-let open: { client: Client; phone: boolean } | null = null;
+/** Commands, or Search output (native #245): the output of every pane. */
+type Mode = "commands" | "output";
+
+let open: { client: Client; phone: boolean; mode: Mode; query: string } | null = null;
 /** What had the keys before it opened: Escape gives them back (M111). */
 let back: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 
-export function openPalette(client: Client, phone = false) {
+export function openPalette(client: Client, phone = false, mode: Mode = "commands", query = "") {
   countView("palette");
   closeMenu();
   if (!open) back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  open = { client, phone };
+  open = { client, phone, mode, query };
   changed();
 }
 
@@ -98,7 +104,8 @@ export function PaletteLayer() {
     };
   }, []);
   if (!open) return null;
-  return <Palette client={open.client} phone={open.phone} close={closePalette} />;
+  // Its own each time the mode changes: what's typed, the selection.
+  return <Palette key={open.mode} client={open.client} phone={open.phone} mode={open.mode} initial={open.query} close={closePalette} />;
 }
 
 // ---------------------------------------------------------------- recents
@@ -260,8 +267,7 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   }
 
   // The swarm, and the next pane that wants you after the active one.
-  const wanting = state.panes.filter(needsYou).map((p) => p.id);
-  const next: PaneId | undefined = wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
+  const next = nextNeedingYou(client);
   // "Go to Swarm" and "Go to Chat" are the places' (UI audit #176: each
   // was here twice).
   out.push({
@@ -270,11 +276,23 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     kind: "Panes",
     place: true,
     label: "Go to the next pane that needs you",
+    shortcut: keyHint("pane.next-needs-you"),
     disabled: next === undefined,
     detail: next === undefined ? "nothing needs you" : client.title(next) || `pane %${next}`,
     run: () => next !== undefined && client.setActive(next),
   });
   out.push(...places(client, phone));
+  // The owner's, as `arugula search` is: not for someone it's shared with.
+  if (!state.roles)
+    out.push({
+      key: "Search/output",
+      group: "Search",
+      kind: "Output",
+      label: "Search output…",
+      detail: "every pane's output, on each machine of yours that's connected",
+      also: "find grep text printed",
+      run: () => openPalette(client, phone, "output"),
+    });
   out.push({
     key: "Swarm/next-in-swarm",
     group: "Swarm",
@@ -292,6 +310,14 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     const k = c.id ? `id/${c.id}` : c.key;
     return !seen.has(k) && !!seen.add(k);
   });
+}
+
+/** The next pane that needs you after the active one, wrapping round:
+ * the palette's *Go to the next pane that needs you* and its key. */
+export function nextNeedingYou(client: Client): PaneId | undefined {
+  const pane = client.active();
+  const wanting = (client.state?.panes ?? []).filter(needsYou).map((p) => p.id);
+  return wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
 }
 
 /** Where the palette was opened: the panes, or a place over them. */
@@ -383,6 +409,7 @@ function iconOf(c: Command) {
   const k = kindOf(c);
   const to = c.group === "Places" ? c.key.slice("Places/".length) : "";
   if (k === "Settings" || k === "Account") return <SettingsIcon />;
+  if (k === "Output") return <SearchIcon />;
   if (k === "Docs" || to === "docs") return <DocsIcon />;
   if (to === "swarm") return <SwarmIcon />;
   if (to === "chat" || to === "activity" || to === "threads") return <ChatIcon />;
@@ -391,8 +418,69 @@ function iconOf(c: Command) {
   return <PanesIcon />;
 }
 
-function Palette({ client, phone, close }: { client: Client; phone: boolean; close: (restore?: boolean) => void }) {
-  const [query, setQuery] = useState("");
+/** A search hit as a row: its line, then where and when. */
+function hitCommand(client: Client, h: OutputHit): Command {
+  const fleetPane = h.here ? undefined : getFleet()?.panes.find((p) => p.host === h.machine && p.id === h.pane);
+  const info = h.here ? client.info(h.pane) : fleetPane?.info;
+  const pane = h.doc
+    ? "a Doc"
+    : !h.open || !info
+      ? "closed pane"
+      : h.here
+        ? paneName(client, info)
+        : info.title || info.command || `pane %${h.pane}`;
+  const machine = h.machine || "this machine";
+  return {
+    key: `Output/${h.machine}/${h.doc ?? h.pane}/${h.offset}`,
+    group: "Output",
+    kind: "Output",
+    label: h.line.trim() || "(blank line)",
+    detail: [machine, pane, h.command ? `in ${h.command}` : null, h.at_ms ? ago(h.at_ms) : null].filter(Boolean).join(" · "),
+    disabled: !h.doc && (!h.open || !h.pane),
+    run: () => openHit(client, h),
+  };
+}
+
+/** Which machines were asked, and which couldn't be. */
+function askedText(asked: Asked[]): string {
+  const name = (a: Asked) => (a.here ? `${a.machine || "this machine"} (this one)` : a.machine);
+  const ok = asked.filter((a) => a.state === "ok").map(name);
+  const bad = asked.filter((a) => a.state === "error").map((a) => `${name(a)} (${a.why})`);
+  return [ok.length ? `Searched ${ok.join(", ")}` : "", bad.length ? `couldn't search ${bad.join(", ")}` : ""].filter(Boolean).join("; ");
+}
+
+/** Search output: what's typed, on every machine, a moment after typing
+ * stops; only the newest search's answer is shown. */
+function useOutputSearch(client: Client, on: boolean, query: string) {
+  const [found, setFound] = useState<{ q: string; hits: OutputHit[]; asked: Asked[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const q = query.trim();
+    if (!on || q.length < 2) {
+      setFound(null);
+      setBusy(false);
+      return;
+    }
+    let live = true;
+    setBusy(true);
+    const t = window.setTimeout(() => {
+      void searchOutput(client, q).then((r) => {
+        if (!live) return;
+        setFound({ q, ...r });
+        setBusy(false);
+      });
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [client, on, query]);
+  return { found, busy };
+}
+
+function Palette({ client, phone, mode, initial, close }: { client: Client; phone: boolean; mode: Mode; initial: string; close: (restore?: boolean) => void }) {
+  const output = mode === "output";
+  const [query, setQuery] = useState(initial);
   const [sel, setSel] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -421,10 +509,23 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
     };
   }, [client]);
 
-  const rows = useMemo(
-    () => rank(commands(client, phone, isWorkspace ? cwd : null, docs), query, recent),
-    [client, phone, isWorkspace, cwd, query, recent, client.state?.rev, pane, docs],
-  );
+  const search = useOutputSearch(client, output, query);
+  const rows = useMemo(() => {
+    if (output) return (search.found?.hits ?? []).map((h) => hitCommand(client, h));
+    const list = rank(commands(client, phone, isWorkspace ? cwd : null, docs), query, recent);
+    // What's typed, as output to find: always the last row.
+    const q = query.trim();
+    if (q && !client.state?.roles)
+      list.push({
+        key: "Search/output-for",
+        group: "Search",
+        kind: "Output",
+        label: `Search output for “${q}”`,
+        detail: "every pane's output, on each machine of yours that's connected",
+        run: () => openPalette(client, phone, "output", q),
+      });
+    return list;
+  }, [client, phone, isWorkspace, cwd, query, recent, client.state?.rev, pane, docs, output, search.found]);
 
   // A phone's keyboard would cover half the list: only on request there.
   useLayoutEffect(() => {
@@ -437,7 +538,8 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
 
   const run = (c: Command | undefined) => {
     if (!c || c.disabled) return;
-    remember(c.key);
+    // A hit is found again by searching, not kept as a recent pick.
+    if (c.group !== "Output" && c.key !== "Search/output-for") remember(c.key);
     close(false);
     // The panes are under the swarm and agents: show them, unless it's a
     // place's (it goes there itself).
@@ -477,9 +579,10 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
         <div class="palette-search"><SearchIcon size={20} /><input
           ref={input}
           class="picker-filter"
-          placeholder="Type a command, a tab or a pane"
+          placeholder={output ? "Search the output of every pane" : "Type a command, a tab or a pane"}
           role="combobox"
-          aria-label="Command"
+          aria-label={output ? "Search output" : "Command"}
+          data-palette-mode={mode}
           aria-expanded="true"
           aria-autocomplete="list"
           aria-controls="palette-results"
@@ -494,9 +597,27 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
             setSel(0);
           }}
         />
-        </div><div class="palette-results-heading"><span>{query ? "Search results" : "Commands & destinations"}</span><span>{rows.length} available</span></div>
-        <ul id="palette-results" class="picker-list" role="listbox" aria-label="Commands" ref={listRef}>
-          {rows.length === 0 && <li class="picker-empty">Nothing matches</li>}
+        </div>
+        {output ? (
+          <div class="palette-results-heading" data-output-asked={search.found ? search.found.asked.map((a) => a.machine).join(",") : undefined}>
+            <span>{search.busy ? "Searching…" : search.found ? askedText(search.found.asked) : "Output"}</span>
+            {search.found && <span>{rows.length} found</span>}
+          </div>
+        ) : (
+          <div class="palette-results-heading"><span>{query ? "Search results" : "Commands & destinations"}</span><span>{rows.length} available</span></div>
+        )}
+        <ul id="palette-results" class="picker-list" role="listbox" aria-label={output ? "Output" : "Commands"} ref={listRef}>
+          {rows.length === 0 && (
+            <li class="picker-empty" data-output-empty={output ? "" : undefined}>
+              {!output
+                ? "Nothing matches"
+                : query.trim().length < 2
+                  ? "Type what was printed: the output of every pane, on each machine of yours that's connected"
+                  : search.busy || !search.found
+                    ? "Searching…"
+                    : "No output matches"}
+            </li>
+          )}
           {rows.map((c, i) => (
             <li
               key={c.key}
@@ -525,7 +646,7 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
             </li>
           ))}
         </ul>
-        <footer class="palette-help"><span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Run command</span><span><kbd>Esc</kbd> Close</span></footer>
+        <footer class="palette-help"><span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> {output ? "Show it in its pane" : "Run command"}</span><span><kbd>Esc</kbd> Close</span></footer>
         {phone && (
           <div class="picker-actions">
             <button onClick={() => close()}>Cancel</button>

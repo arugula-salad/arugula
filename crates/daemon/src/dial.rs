@@ -233,7 +233,7 @@ async fn forward(app: Arc<App>, name: String, path: String, mut req: Request) ->
 }
 
 /// A host's answer, made safe to serve on our origin.
-pub(crate) fn defang(h: &mut HeaderMap) {
+pub fn defang(h: &mut HeaderMap) {
     h.remove(header::SET_COOKIE);
     let cors: Vec<_> = h.keys().filter(|k| k.as_str().starts_with("access-control-")).cloned().collect();
     for k in cors {
@@ -491,7 +491,7 @@ pub async fn serve_mux(
         Some(t) => {
             for mut w in t.out {
                 let say_tx = say_tx.clone();
-                sayers.push(tokio::spawn(async move {
+                sayers.push(crate::task::spawn(async move {
                     loop {
                         if let Some(m) = w.borrow_and_update().clone()
                             && say_tx.send(m).is_err()
@@ -506,7 +506,7 @@ pub async fn serve_mux(
             }
             if let Some(mut q) = t.queue {
                 let say_tx = say_tx.clone();
-                sayers.push(tokio::spawn(async move {
+                sayers.push(crate::task::spawn(async move {
                     while let Some(m) = q.recv().await {
                         if say_tx.send(m).is_err() {
                             return;
@@ -615,7 +615,7 @@ mod tests {
             .route("/no", get(|| async { (StatusCode::TOO_MANY_REQUESTS, "slow down") }));
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let at = l.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        crate::task::spawn(async move { axum::serve(l, app).await.unwrap() });
         let url = |p: &str| reqwest::Url::parse(&format!("ws://{at}{p}")).unwrap();
         let e = open_ws(&url("/full"), &[]).await.err().unwrap();
         assert_eq!(e.downcast_ref::<Busy>().unwrap().wait, Duration::from_secs(30));

@@ -1,0 +1,1299 @@
+//! arugulad-base: the daemon, as a library. `arugulad` (crates/arugulad)
+//! is its binary: it calls [`main`] with its version. The daemon owns the
+//! terminals; clients attach over WebSocket.
+
+mod access;
+mod acl {
+    pub(crate) use crate::acl_api as api;
+    pub use arugula_mux::acl::*;
+}
+mod acl_api;
+pub mod agent;
+use arugula_mux::agentenv;
+pub mod api;
+pub mod args;
+mod authz;
+use arugula_mux::block;
+mod block_channel;
+pub mod browser;
+mod callers;
+mod chat_readers;
+use arugula_mux::classify;
+pub mod control;
+// Windows panes on a pseudoconsole (M56).
+#[cfg(windows)]
+use arugula_mux::conpty;
+mod conversations;
+pub mod dial;
+pub mod doc_shares;
+pub mod e2e;
+pub mod editors;
+pub mod features;
+#[cfg(feature = "forge")]
+pub mod forge;
+pub mod forges;
+pub mod fs;
+mod git_remote;
+// The gates a forge block and Labs' blocks raise.
+pub mod gate;
+mod hand;
+use arugula_mux::heap;
+use arugula_mux::history;
+#[cfg(unix)]
+use arugula_mux::holder;
+// The pane host on Windows (M58): the shim's part there.
+#[cfg(windows)]
+use arugula_mux::host;
+mod hosted;
+pub mod hosts;
+pub mod http1;
+pub mod install;
+mod run_logs;
+pub mod work;
+mod worktree;
+use arugula_mux::inventory;
+pub mod invite;
+use arugula_mux::keys;
+pub mod lab_flags;
+// What the base asks of Labs (crates/arugulad-labs), which registers it.
+pub mod lab_hooks;
+mod listening;
+mod localauth;
+pub mod mcp;
+use arugula_mux::mux;
+pub mod ops;
+use arugula_mux::osc;
+use arugula_mux::pane;
+use arugula_mux::paths;
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+pub mod peer;
+use arugula_mux::perm;
+// The local socket on Windows: a named pipe (M56).
+#[cfg(windows)]
+mod pipe;
+pub mod ports;
+mod public_preview;
+use arugula_mux::procinfo;
+use arugula_mux::provider;
+mod board_block;
+mod board_state;
+pub mod push;
+mod remote;
+pub mod review;
+pub mod roots;
+mod rules;
+mod seal;
+mod selfupdate;
+pub mod server;
+mod setup;
+mod share;
+mod team_chat;
+use arugula_mux::shellenv;
+use arugula_mux::shellint;
+use arugula_mux::shim;
+pub mod sites;
+pub mod task;
+use arugula_mux::store;
+pub mod subcommands;
+mod sync;
+use arugula_mux::sys;
+pub(crate) use arugula_mux::sys::home;
+pub mod tailscale;
+mod telemetry;
+mod tls;
+mod update;
+#[cfg(unix)]
+mod upload;
+
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+
+use args::{Args, BlockArgs, Command, ReachArgs, RunArgs};
+use axum::serve::ListenerExt;
+use clap::FromArgMatches;
+use tracing::{info, warn};
+
+/// Start serving block sites, if asked to. Without `--block-listen` the
+/// registry is still installed, with no listener (M50): blocks then show
+/// through control's block origins while this daemon is joined to a
+/// control that has a block domain, and not on this daemon's own page.
+fn start_sites(
+    b: &BlockArgs,
+    app: &access::Access,
+    owner: Option<String>,
+    listen: SocketAddr,
+    state_dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    let Some(mut addr) = b.block_listen else {
+        sites::install(sites::Settings {
+            scheme: sites::Scheme::Channel,
+            owner,
+            app_origins: app.origins(),
+            reserved: vec![listen.port()],
+        });
+        return Ok(());
+    };
+    // Port 0: bound now, so blocks are named with the port it got (#67).
+    let mut bound = None;
+    if addr.port() == 0 {
+        let l = std::net::TcpListener::bind(addr).map_err(|e| anyhow::anyhow!("can't listen on {addr}: {e}"))?;
+        l.set_nonblocking(true)?;
+        addr = l.local_addr()?;
+        bound = Some(l);
+        if let Err(e) = store::write_atomic(&state_dir.join("block-listen"), addr.to_string().as_bytes()) {
+            warn!(error = %e, "can't record the block sites' address");
+        }
+    }
+    let (scheme, tls) = match &b.block_domain {
+        None => {
+            if !addr.ip().is_loopback() {
+                anyhow::bail!("--block-listen {addr}: without --block-domain, block sites are loopback only");
+            }
+            (sites::Scheme::Dev { port: addr.port() }, None)
+        }
+        Some(domain) => {
+            let domain = domain.trim_matches('.').to_ascii_lowercase();
+            let store = match (&b.block_cert, &b.block_key, &b.block_acme_cloudflare_token_file) {
+                (Some(cert), Some(key), _) => {
+                    let store = tls::CertStore::new(cert.clone(), key.clone());
+                    store.load()?;
+                    crate::task::spawn(store.clone().watch());
+                    store
+                }
+                (_, _, Some(token)) => {
+                    let directory = match b.block_acme_directory.as_str() {
+                        "staging" => tls::LETS_ENCRYPT_STAGING.to_owned(),
+                        d => d.to_owned(),
+                    };
+                    let acme = tls::Acme {
+                        domain: domain.clone(),
+                        email: b.block_acme_email.clone(),
+                        directory,
+                        dir: state_dir.join("acme"),
+                        dns: tls::Cloudflare::from_file(token)?,
+                    };
+                    let store = tls::CertStore::new(acme.cert_file(), acme.key_file());
+                    crate::task::spawn(acme.run(store.clone()));
+                    store
+                }
+                _ => anyhow::bail!(
+                    "--block-domain needs a certificate: --block-cert/--block-key or --block-acme-cloudflare-token-file"
+                ),
+            };
+            if owner.is_none() {
+                warn!("no tailnet owner: block sites will refuse everyone");
+            }
+            (sites::Scheme::Tailnet { domain, port: addr.port() }, Some(tls::server_config(store)?))
+        }
+    };
+    let settings =
+        sites::Settings { scheme, owner, app_origins: app.origins(), reserved: vec![listen.port(), addr.port()] };
+    // Known before any block is restored; served once the address is up.
+    let sites = sites::install(settings);
+    crate::task::spawn(async move {
+        // The tailnet address may not be up yet at boot.
+        let listener = loop {
+            if let Some(l) = bound.take() {
+                match tokio::net::TcpListener::from_std(l) {
+                    Ok(l) => break l,
+                    Err(e) => warn!(%addr, error = %e, "can't serve block sites"),
+                }
+            }
+            match tokio::net::TcpListener::bind(addr).await {
+                Ok(l) => break l,
+                Err(e) => {
+                    warn!(%addr, error = %e, "can't listen for block sites yet");
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                }
+            }
+        };
+        info!(%addr, "serving block sites");
+        sites::serve(sites, listener, tls).await;
+    });
+    Ok(())
+}
+
+/// No uploads on Windows: nothing to forget when a pane closes.
+#[cfg(not(unix))]
+#[derive(Debug)]
+struct NoUploads;
+
+#[cfg(not(unix))]
+impl mux::PaneGone for NoUploads {
+    fn forget(&self, _pane: arugula_proto::PaneId) {}
+
+    fn forget_on(&self, _provider: Arc<dyn provider::Provider>, _sprite: String, _pane: arugula_proto::PaneId) {}
+}
+
+/// Dial out to the home daemon and push history there, if asked to.
+fn start_reach(r: &ReachArgs, app: &std::sync::Arc<server::App>, name: String) -> anyhow::Result<()> {
+    if let (Some(peer), Some(token_file)) = (&r.peer, &r.token) {
+        dial::dial_url(peer)?;
+        let opts = dial::PeerOpts { url: peer.clone(), token_file: token_file.clone(), join: r.join.clone(), name };
+        let (accept, streams) = tokio::sync::mpsc::unbounded_channel();
+        info!(peer, "dialing out to the home daemon");
+        crate::task::spawn(axum::serve(dial::Streams(streams), server::tunnel_router(app.clone())).into_future());
+        crate::task::spawn(dial::keep_dialing(opts, accept));
+    }
+    if r.sync {
+        let origin = match (&r.sync_to, &r.peer) {
+            (Some(to), _) => to.trim_end_matches('/').to_owned(),
+            (None, Some(peer)) => dial::home_origin(peer)?,
+            (None, None) => anyhow::bail!("--sync needs --peer or --sync-to"),
+        };
+        let opts = sync::PushOpts {
+            origin,
+            token_file: r.token.clone().expect("clap requires --token"),
+            live: r.sync_live,
+            every: std::time::Duration::from_secs(r.sync_every.max(1)),
+        };
+        info!(to = opts.origin, live = opts.live, "syncing history to the home daemon");
+        crate::task::spawn(sync::keep_pushing(opts, app.mux.store.clone()));
+    }
+    // Control hears what the agent blocks' rows on a board should say.
+    crate::task::spawn(board_state::keep_reporting(app.clone()));
+    // M70: uploads older than a day go, from now.
+    #[cfg(unix)]
+    crate::task::spawn(upload::keep_sweeping());
+    // Synced history expires a day at a time.
+    let synced = app.synced.clone();
+    crate::task::spawn(async move {
+        let mut day = tokio::time::interval(std::time::Duration::from_secs(24 * 3600));
+        day.tick().await;
+        loop {
+            day.tick().await;
+            synced.prune(sync::RETAIN_MS);
+        }
+    });
+    Ok(())
+}
+
+/// A random name for this daemon's state directory, kept in it: the
+/// machines it creates carry it, so it never sweeps away another daemon's.
+fn daemon_id(store: &store::StateDir) -> String {
+    let path = store.root().join("daemon-id");
+    if let Ok(id) = std::fs::read_to_string(&path)
+        && !id.trim().is_empty()
+    {
+        return id.trim().to_owned();
+    }
+    let b = push::random::<4>();
+    let id: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    if let Err(e) = store::write_atomic(&path, id.as_bytes()) {
+        warn!(error = %e, "can't save the daemon id");
+    }
+    id
+}
+
+/// `$SHELL`, else the login shell from the user database: launchd and some
+/// service managers don't set `$SHELL`, and macOS's `/bin/bash` is 3.2.
+/// Windows: PowerShell 7 if it's installed, else Windows PowerShell, else
+/// `%COMSPEC%` (cmd).
+#[cfg(windows)]
+fn login_shell() -> String {
+    let on_path =
+        |exe: &str| std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(exe).is_file()));
+    for exe in ["pwsh.exe", "powershell.exe"] {
+        if on_path(exe) {
+            return exe.trim_end_matches(".exe").into();
+        }
+    }
+    std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into())
+}
+
+/// What the login shell starts with: a login shell on Unix; PowerShell
+/// without its banner.
+fn login_args(shell: &str) -> Vec<String> {
+    if cfg!(windows) {
+        let name = std::path::Path::new(shell).file_stem().map(|s| s.to_string_lossy().to_lowercase());
+        return match name.as_deref() {
+            Some("pwsh" | "powershell") => vec!["-NoLogo".into()],
+            _ => vec![],
+        };
+    }
+    vec!["-l".into()]
+}
+
+#[cfg(unix)]
+fn login_shell() -> String {
+    std::env::var("SHELL")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            let user = nix::unistd::User::from_uid(nix::unistd::getuid()).ok()??;
+            Some(user.shell.to_string_lossy().into_owned()).filter(|s| !s.is_empty())
+        })
+        .unwrap_or_else(|| "/bin/bash".into())
+}
+
+/// The CLI's socket: `sock` in the state directory, unless that path is too
+/// long for a Unix socket (about 108 bytes); then `sock` in a directory of
+/// our own (0700) in `$XDG_RUNTIME_DIR` (else /tmp), named by a hash of the
+/// state directory, recorded in `sock.path`.
+#[cfg(unix)]
+fn socket_path(state_dir: &std::path::Path) -> anyhow::Result<PathBuf> {
+    let plain = state_dir.join("sock");
+    let record = state_dir.join("sock.path");
+    if plain.as_os_str().len() < 100 {
+        let _ = std::fs::remove_file(record);
+        return Ok(plain);
+    }
+    // FNV-1a: stable across runs, unlike std's hasher.
+    let hash = state_dir
+        .as_os_str()
+        .as_encoded_bytes()
+        .iter()
+        .fold(0xcbf29ce484222325u64, |h, b| (h ^ *b as u64).wrapping_mul(0x100000001b3));
+    let base = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    let uid = nix::unistd::geteuid().as_raw();
+    let dir = base.join(format!("arugula-{uid}-{hash:016x}"));
+    private_socket_dir(&dir)?;
+    let socket = dir.join("sock");
+    if let Err(e) = store::write_atomic(&record, socket.as_os_str().as_encoded_bytes()) {
+        warn!(error = %e, "can't record the socket's path");
+    }
+    Ok(socket)
+}
+
+/// Windows: a named pipe, named by a hash of the state directory (so test
+/// daemons with their own state each have one), recorded in `sock.path`
+/// for the CLI.
+#[cfg(windows)]
+fn socket_path(state_dir: &std::path::Path) -> anyhow::Result<PathBuf> {
+    let hash = state_dir
+        .as_os_str()
+        .as_encoded_bytes()
+        .iter()
+        .fold(0xcbf29ce484222325u64, |h, b| (h ^ *b as u64).wrapping_mul(0x100000001b3));
+    let user = std::env::var("USERNAME").unwrap_or_default().to_lowercase();
+    let user: String = user.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+    let pipe = PathBuf::from(format!(r"\\.\pipe\arugula-{user}-{hash:016x}"));
+    if let Err(e) = store::write_atomic(&state_dir.join("sock.path"), pipe.as_os_str().as_encoded_bytes()) {
+        warn!(error = %e, "can't record the socket's path");
+    }
+    Ok(pipe)
+}
+
+/// `dir`, made 0700, or there already as a directory (not a link) of ours,
+/// made 0700: in a shared directory like /tmp, one someone else made first
+/// is refused, never used.
+#[cfg(unix)]
+fn private_socket_dir(dir: &std::path::Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => anyhow::bail!("can't make {}: {e}", dir.display()),
+    }
+    let m = std::fs::symlink_metadata(dir)?;
+    if !m.file_type().is_dir() || m.uid() != nix::unistd::geteuid().as_raw() {
+        anyhow::bail!("{} isn't a directory of this account's: remove it and start again", dir.display());
+    }
+    if m.mode() & 0o077 != 0 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+/// A daemon is listening on `state_dir`'s CLI socket.
+#[cfg(unix)]
+fn daemon_running(state_dir: &std::path::Path) -> bool {
+    use std::os::unix::ffi::OsStringExt;
+    let path = std::fs::read(state_dir.join("sock.path"))
+        .map(|b| PathBuf::from(std::ffi::OsString::from_vec(b)))
+        .unwrap_or_else(|_| state_dir.join("sock"));
+    std::os::unix::net::UnixStream::connect(path).is_ok()
+}
+
+/// `<state>/editors/sock`, in a 0700 directory with nothing else in it, for
+/// a dev container to mount (M28).
+#[cfg(unix)]
+fn editors_socket(state_dir: &std::path::Path) -> std::io::Result<tokio::net::UnixListener> {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = state_dir.join("editors");
+    std::fs::create_dir_all(&dir)?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
+    let sock = dir.join("sock");
+    let _ = std::fs::remove_file(&sock);
+    let l = tokio::net::UnixListener::bind(&sock)?;
+    std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o600))?;
+    Ok(l)
+}
+
+/// Windows: beside the desktop app, which its installer puts in
+/// %LOCALAPPDATA%\arugula (M54). A machine set up as illogical has its
+/// `illogical` one moved there.
+fn default_state_dir() -> PathBuf {
+    arugula_proto::dirs::default_state_dir().unwrap_or_else(|| home().join(".local/state/arugula"))
+}
+
+/// A daemon is serving `state_dir`'s named pipe.
+#[cfg(windows)]
+fn daemon_running(state_dir: &std::path::Path) -> bool {
+    std::fs::read_to_string(state_dir.join("sock.path")).is_ok_and(|p| pipe::answering(p.trim()))
+}
+
+/// This computer's name, for joining.
+pub fn hostname() -> Option<String> {
+    #[cfg(unix)]
+    return nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok());
+    #[cfg(not(unix))]
+    std::env::var("COMPUTERNAME").ok()
+}
+
+/// `ARUGULA_LOG_FILE` (or `--log-file`): stdout and stderr appended to
+/// that file (a leading `~/` is the home directory). The desktop app's
+/// launch agent sets it (M46): launchd can't put a log in each user's home
+/// itself; Windows' logon task passes the flag (M59).
+fn log_to_file(argv: &[String]) {
+    let flag = argv.iter().position(|a| a == "--log-file").and_then(|i| argv.get(i + 1)).map(std::ffi::OsString::from);
+    let Some(path) = flag.or_else(|| std::env::var_os("ARUGULA_LOG_FILE")).filter(|p| !p.is_empty()) else {
+        return;
+    };
+    let path = PathBuf::from(path);
+    let path = match path.strip_prefix("~") {
+        Ok(rest) => home().join(rest),
+        Err(_) => path,
+    };
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let Ok(f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) else { return };
+    #[cfg(unix)]
+    {
+        let _ = nix::unistd::dup2_stdout(&f);
+        let _ = nix::unistd::dup2_stderr(&f);
+    }
+    // Windows: the std handles become the file (std's stdout and stderr
+    // look them up on every write). It stays open for the process's life.
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::IntoRawHandle;
+        use windows_sys::Win32::System::Console::{STD_ERROR_HANDLE, STD_OUTPUT_HANDLE, SetStdHandle};
+        let h = f.into_raw_handle();
+        // SAFETY: a handle we own and never close.
+        unsafe {
+            SetStdHandle(STD_OUTPUT_HANDLE, h);
+            SetStdHandle(STD_ERROR_HANDLE, h);
+        }
+    }
+    // Panes don't inherit it.
+    unsafe { std::env::remove_var("ARUGULA_LOG_FILE") };
+}
+
+/// The daemon: the binary's `main`, given the release it is (its
+/// `CARGO_PKG_VERSION`).
+pub fn main(version: &'static str) -> anyhow::Result<()> {
+    // The libraries are 0.0.0 (a release rebuilds only the binaries): what
+    // they report as the version is the binary's.
+    arugula_core::version::set(version);
+    arugula_vt::set_version(version);
+    // A closed pipe (`| head`) ends the process quietly, not with a panic
+    // from `println!` (#682): Rust starts with SIGPIPE ignored. The daemon
+    // itself ignores it again before it serves (below).
+    // SAFETY: nothing else runs yet, and SIG_DFL is no handler.
+    #[cfg(unix)]
+    unsafe {
+        let _ = nix::sys::signal::signal(nix::sys::signal::Signal::SIGPIPE, nix::sys::signal::SigHandler::SigDfl);
+    }
+    // The pane shim forks, so it runs before any threads exist.
+    let argv: Vec<String> = std::env::args().collect();
+    #[cfg(unix)]
+    if argv.get(1).map(String::as_str) == Some("_shim") {
+        shim::run(&argv[2..]);
+    }
+    // A hosted box's reseed (M180), as root: nothing else of the daemon runs.
+    if argv.get(1).map(String::as_str) == Some("_reseed") {
+        hosted::reseed::cli(argv.get(2).map_or("", String::as_str));
+    }
+    // A snapshot builder's wipe (M263), as root, what to look for on its
+    // stdin: nothing else of the daemon runs.
+    if argv.get(1).map(String::as_str) == Some("_seal") {
+        hosted::snapshot::cli();
+    }
+    // A feature crate's own program (the deploy drivers, `_planter` and
+    // the rest, as a deploy's run user): nothing else of the daemon runs.
+    if let Some(run) = subcommands::find(&argv) {
+        run(&argv[2..]);
+    }
+    #[cfg(windows)]
+    if argv.get(1).map(String::as_str) == Some("_host") {
+        host::run(&argv[2..]);
+    }
+    // Before anything opens a file in them (Windows won't move a folder
+    // with one open): illogical's directories, under Arugula's name (#509).
+    arugula_proto::dirs::migrate();
+    // The macOS app's agent, onto a newer daemon an update put in place.
+    #[cfg(target_os = "macos")]
+    selfupdate::hand_on();
+    // The app's agent runs it with no flags; `arugulad install` keeps
+    // them for it (#550).
+    #[cfg(target_os = "macos")]
+    let argv = install::app_agent_argv(argv, std::env::var("XPC_SERVICE_NAME").ok().as_deref(), &default_state_dir());
+    log_to_file(&argv);
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "arugulad=info,arugula_mux=info".into()),
+        )
+        .init();
+    // The editor's own (`_vsix`, Arugula's VS Code extension for the
+    // marketplaces; `_ide_relay`, Claude Code's IDE connections, kept
+    // across daemon restarts, M28).
+    if let Some(r) = editors::subcommand(&argv) {
+        return r;
+    }
+    let args = Args::from_arg_matches(&args::labs_command(args::labs_here()).get_matches_from(&argv))
+        .unwrap_or_else(|e| e.exit());
+    // A panic is written down as a crash, if telemetry is on (M102).
+    use arugula_proto::telemetry::crash;
+    let crash_dir = args.run.state_dir.clone().unwrap_or_else(default_state_dir);
+    crash::install_hook(crash::Process::Daemon, version, &crash_dir);
+    // A debug build crashes as it starts, for the live check (M106).
+    #[cfg(debug_assertions)]
+    if args.command.is_none() && std::env::var_os(crash::TEST_PANIC_ENV).is_some_and(|v| !v.is_empty() && v != "0") {
+        panic!("{} is set: crashing as asked", crash::TEST_PANIC_ENV);
+    }
+    match args.command {
+        #[cfg(unix)]
+        Some(install @ Command::Install { tailnet: Some(_), .. }) => lab_hooks::labs().tailnet_install(install),
+        Some(Command::Install { no_service: true, .. }) => install::binaries_only(),
+        Some(Command::Install { no_start, reset_args, system, daemon_args, .. }) => {
+            install::install(!no_start, &daemon_args, reset_args, system)
+        }
+        Some(Command::Uninstall) => install::uninstall(),
+        Some(Command::Update { yes }) => selfupdate::cli(yes, &args.run.update_url),
+        Some(Command::Sandbox) => lab_hooks::labs().supervise_sandbox(),
+        Some(Command::Join { url, name, team, account, state_dir }) => {
+            let name = name.unwrap_or_else(|| hostname().unwrap_or_else(|| "arugula".into()));
+            let dir = state_dir.unwrap_or_else(default_state_dir);
+            tokio::runtime::Runtime::new()?.block_on(control::join(
+                &url,
+                &name,
+                team.as_deref(),
+                account.as_deref(),
+                &dir,
+            ))?;
+            if daemon_running(&dir) {
+                println!("  The running daemon picks this up within a few seconds.");
+            } else {
+                println!("  arugulad isn't running here: start it with `arugulad install`.");
+            }
+            Ok(())
+        }
+        Some(Command::Flags { name, switch, state_dir }) => {
+            flags_cli(name.as_deref(), switch, &state_dir.unwrap_or_else(default_state_dir))
+        }
+        Some(Command::Telemetry { what, json, state_dir }) => {
+            telemetry_cli(what, json, &state_dir.unwrap_or_else(default_state_dir))
+        }
+        Some(Command::Sharing { name, switch, state_dir }) => {
+            sharing_cli(name, switch, &state_dir.unwrap_or_else(default_state_dir))
+        }
+        Some(Command::Leave { state_dir }) => {
+            let dir = state_dir.unwrap_or_else(default_state_dir);
+            let listen = std::fs::read_to_string(dir.join("listen")).unwrap_or_else(|_| "127.0.0.1:7681".into());
+            tokio::runtime::Runtime::new()?.block_on(control::leave(&dir, listen.trim()))
+        }
+        // Nothing is kept across a restart on Windows yet (M58, #221).
+        #[cfg(windows)]
+        None => {
+            heap::tune();
+            tokio::runtime::Runtime::new()?.block_on(run(args.run, Default::default()))
+        }
+        #[cfg(unix)]
+        None => {
+            // Serving, a peer gone as we write (a client or hook that hung
+            // up as its answer went out, a child that exited before it read
+            // its stdin) is that write's EPIPE, not the daemon's end: SIGPIPE
+            // is ignored again, as Rust starts. Its default (above) killed
+            // the daemon outright, and every client after it found no
+            // daemon. What it starts gets the default back: std's spawn
+            // resets SIGPIPE in the child, and the pane shim is this binary,
+            // which sets the default above.
+            // SAFETY: no threads yet, and SIG_IGN is no handler.
+            unsafe {
+                let _ =
+                    nix::sys::signal::signal(nix::sys::signal::Signal::SIGPIPE, nix::sys::signal::SigHandler::SigIgn);
+            }
+            heap::tune();
+            // Pane terminals kept for us across a restart; taken before any
+            // threads start.
+            let kept = sys::take_listen_fds();
+            tokio::runtime::Runtime::new()?.block_on(run(args.run, kept))
+        }
+    }
+}
+
+/// `arugulad flags`: the flags with their state, one's state, or one set.
+/// It works on the state directory, not through the daemon.
+fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::Path) -> anyhow::Result<()> {
+    use arugula_proto::flags;
+    let state = |on| if on { "on" } else { "off" };
+    // Where it comes from (#347): this machine, or control.
+    let from = |s: flags::Source| match s {
+        flags::Source::Machine => "here",
+        flags::Source::Account => "account",
+        flags::Source::Team => "team",
+        flags::Source::Default => "default",
+    };
+    // The flags file may change below: keep what it said of guest ssh
+    // first, as a sharing setting (native #205).
+    arugula_proto::sharing::migrate(dir).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let Some(name) = name else {
+        // Asking is what makes Developer settings show in the menus (#665).
+        flags::unlock(dir).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let rows = flags::explain(dir);
+        let width = rows.iter().map(|(f, _)| f.name.len()).max().unwrap_or(0);
+        for (f, s) in rows {
+            println!("{:width$}  {:3}  {:7}  {}", f.name, state(s.on), from(s.source), f.about);
+        }
+        return Ok(());
+    };
+    match switch {
+        None if flags::lookup(name).is_some() => println!("{}", state(flags::get(dir, name))),
+        None => match flags::retired(name) {
+            Some(why) => anyhow::bail!("{why}"),
+            None => anyhow::bail!("no flag named {name} (see `arugulad flags`)"),
+        },
+        Some(s) => {
+            match s {
+                args::Switch::On => flags::set(dir, name, true),
+                args::Switch::Off => flags::set(dir, name, false),
+                args::Switch::Unset => flags::unset(dir, name),
+            }
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            // An old name (aru-117) says the flag's name now.
+            let name = flags::canonical(name);
+            let now = flags::explain(dir).into_iter().find(|(f, _)| f.name == name).map(|(_, s)| s);
+            let now = now.expect("set accepted a known flag");
+            println!("{name} is {} ({})", state(now.on), from(now.source));
+            if !lab_flags::BUILT {
+                println!("  This build of Arugula has no Labs, so nothing changes.");
+            } else if daemon_running(dir) {
+                println!("  The running daemon follows at once.");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `arugulad sharing`: the machine's sharing settings, one's state, or one
+/// set (native #205). It works on the state directory, not through the
+/// daemon, so only someone at the machine as its owner can.
+fn sharing_cli(
+    name: Option<args::SharingSetting>,
+    switch: Option<args::OnOff>,
+    dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    use arugula_proto::sharing;
+    let state = |on| if on { "on" } else { "off" };
+    let about = "Invite a guest with only OpenSSH to a pane (`arugula share --guest`).";
+    match (name, switch) {
+        (None, _) => println!("guest-ssh  {:3}  {about}", state(sharing::guest_ssh(dir))),
+        (Some(args::SharingSetting::GuestSsh), None) => println!("{}", state(sharing::guest_ssh(dir))),
+        (Some(args::SharingSetting::GuestSsh), Some(s)) => {
+            let on = s == args::OnOff::On;
+            sharing::set_guest_ssh(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("guest-ssh is {}", state(on));
+            if !lab_flags::BUILT {
+                println!("  This build of Arugula has no guest ssh, so nothing changes.");
+            } else if daemon_running(dir) {
+                println!("  The running daemon follows at once.");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `arugulad telemetry`: the owner's answer, or what is sent. It works on
+/// the state directory, not through the daemon.
+fn telemetry_cli(what: args::TelemetryCmd, json: bool, dir: &std::path::Path) -> anyhow::Result<()> {
+    use arugula_proto::telemetry as consent;
+    match what {
+        args::TelemetryCmd::On | args::TelemetryCmd::Off => {
+            let on = what == args::TelemetryCmd::On;
+            consent::set(dir, on, "cli", arugula_e2e::now_ms()).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let state = consent::enabled(dir);
+            println!("Telemetry is {}", state.why.line());
+            if on && !state.on {
+                println!("  Nothing is sent while that holds.");
+            } else if on {
+                println!("  See what is sent with `arugulad telemetry status`.");
+            } else {
+                println!("  The install id and anything not yet sent are deleted.");
+            }
+            if daemon_running(dir) {
+                println!("  The running daemon follows within a minute.");
+            }
+        }
+        args::TelemetryCmd::Status => {
+            let t = telemetry::Telemetry::from_env(dir, &home());
+            t.set_signer(Arc::new(telemetry::FromFile(control::joined_in(dir))));
+            let info = t.info();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&info)?);
+                return Ok(());
+            }
+            println!("Telemetry is {}", info.why.line());
+            if let Some(install) = &info.install {
+                println!("  install  {install}");
+            }
+            println!("  sent to  {} ({})", info.url, if info.signed { "signed as this machine" } else { "unsigned" });
+            if let Some(p) = &info.preview {
+                let head = if info.on {
+                    "The next report, as it would be sent:"
+                } else {
+                    "Nothing is sent. With `arugulad telemetry on`, the first report would be (docs/telemetry.md):"
+                };
+                println!("\n{head}\n{}", serde_json::to_string_pretty(p)?);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The block types this build makes. A type with no entry here is refused
+/// when someone opens one (`BlockKinds::create` says why).
+fn kinds(
+    mcp: Option<mcp::Link>,
+    secrets: block::Secrets,
+    rules: std::sync::Arc<rules::Rules>,
+    invite: &invite::Hook,
+) -> block::BlockKinds {
+    use arugula_proto::BlockType;
+    use block::Make;
+    let mut kinds = block::BlockKinds::default();
+    kinds.add(BlockType::Browser, Make(browser::Browser::create));
+    kinds.add(BlockType::Agent, agent::AgentKind { mcp, secrets, rules: rules.clone() });
+    kinds.add(BlockType::Chat, agent::ChatKind { rules });
+    editors::kinds(&mut kinds);
+    kinds.add(BlockType::Remote, remote::RemoteKind);
+    kinds.add(BlockType::Diff, Make(review::diff::Diff::create));
+    kinds.add(BlockType::File, Make(review::file::FileView::create));
+    forges::kinds(&mut kinds);
+    kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
+    kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
+    kinds.add(BlockType::Board, board_block::BoardKind);
+    lab_hooks::labs().kinds(&mut kinds, invite);
+    // The feature crates' (#232): Docs.
+    features::kinds(&mut kinds);
+    kinds
+}
+
+async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane::Kept>) -> anyhow::Result<()> {
+    // Bound first: a port that's taken fails at once, and port 0 is known
+    // before anything uses it (#66).
+    let listener = tokio::net::TcpListener::bind(args.listen)
+        .await
+        .map_err(|e| anyhow::anyhow!("can't listen on {}: {e}", args.listen))?;
+    args.listen = listener.local_addr()?;
+    if args.hosted {
+        hosted::headless(&mut args);
+        // A box from a workspace's snapshot (M263): nothing of the
+        // builder's daemon is kept, before anything here reads its state.
+        let state_dir = args.state_dir.clone().unwrap_or_else(default_state_dir);
+        hosted::snapshot::first_boot(&state_dir, &hosted::resume::sandbox_id_file(), &hosted::snapshot::dir());
+    }
+    let mut public_hosts = args.public_hosts.clone();
+    let mut owner = args.owner.clone();
+    // A hosted box has no tailnet (M180).
+    let local_api = if args.hosted { None } else { tailscale::LocalApi::find(args.tailscale_socket.as_deref()) };
+    let status = match &local_api {
+        Some(api) => api
+            .settled_status(std::time::Duration::from_secs(30))
+            .await
+            .map_err(|e| info!(error = %e, "no tailnet"))
+            .ok(),
+        None => None,
+    };
+    let mut direct_urls = args.direct_urls.clone();
+    for u in &mut direct_urls {
+        let mut host = reqwest::Url::parse(u).map_err(|e| anyhow::anyhow!("--direct-url {u}: {e}"))?;
+        // Port 0: the one --listen got (#67).
+        if host.port() == Some(0) {
+            let _ = host.set_port(Some(args.listen.port()));
+            *u = host.as_str().trim_end_matches('/').to_owned();
+        }
+        let host = match (host.host_str(), host.port()) {
+            (Some(h), Some(p)) => format!("{h}:{p}"),
+            (Some(h), None) => h.to_owned(),
+            _ => anyhow::bail!("--direct-url {u} has no host"),
+        };
+        public_hosts.push(host);
+    }
+    if let Some(t) = &status {
+        info!(host = %t.host, userspace = t.userspace, "accepting tailnet host");
+        public_hosts.push(t.host.clone());
+        direct_urls.push(format!("https://{}", t.host));
+        owner = owner.or(t.login.clone());
+    }
+    info!(owner = owner.as_deref().unwrap_or("<none: tailnet requests refused>"), "tailnet owner");
+    let owner_login = owner.clone();
+    // Reachable without serve, on our own port: when not bound to loopback
+    // (at the listen address, or bound to every address, at this node's
+    // tailnet ones), or when tailscaled's netstack forwards the port to us.
+    let userspace = status.as_ref().is_some_and(|t| t.userspace);
+    let everywhere = args.listen.ip().is_unspecified();
+    let mut direct: Vec<String> = access::direct_address(args.listen).into_iter().collect();
+    if everywhere || userspace {
+        direct.extend(status.iter().flat_map(|t| &t.ips).map(|ip| access::host_name(*ip)));
+    }
+    if !direct.is_empty() || everywhere || userspace {
+        direct.extend(public_hosts.iter().cloned());
+    }
+    let mut access =
+        access::Access::new(args.listen.port(), &public_hosts, &direct, &args.allow_origins, owner.clone());
+    if let Some(digest) = &args.provider_token_sha256 {
+        access = access.require_tunnel_token(digest)?;
+        info!("resident: loopback connections need the home daemon's tunnel token");
+    }
+    if let Some(t) = &status {
+        access = access.with_tailnet_name(&t.host);
+    }
+    // Loopback is everyone's on this machine: callers there show the local
+    // token (a resident's tunnel token stands in for it).
+    let local_token_file = localauth::path(&args.state_dir.clone().unwrap_or_else(default_state_dir));
+    if !access.tunnelled() {
+        let file = &local_token_file;
+        let token = localauth::load_or_create(file)
+            .map_err(|e| anyhow::anyhow!("the local token ({}): {e:#}", file.display()))?;
+        access = access.require_local_token(&token, args.listen);
+        info!(file = %file.display(), "loopback callers need the local token; `arugula web` opens the page signed in");
+    }
+    let identify = tailscale::Identify::new(local_api, userspace);
+    let name = args.name.clone().unwrap_or_else(|| {
+        status
+            .as_ref()
+            .and_then(|t| t.host.split('.').next().map(str::to_owned))
+            .or_else(hostname)
+            .unwrap_or_else(|| "arugula".into())
+    });
+    info!(name, "this host");
+
+    let (shell, shell_args) = match &args.shell {
+        Some(cmd) => {
+            let mut words = cmd.split_whitespace().map(String::from);
+            let program = words.next().ok_or_else(|| anyhow::anyhow!("--shell is empty"))?;
+            (program, words.collect())
+        }
+        None => {
+            let shell = login_shell();
+            let args = login_args(&shell);
+            (shell, args)
+        }
+    };
+    let state_dir = args.state_dir.clone().unwrap_or_else(default_state_dir);
+    let store = store::StateDir::open(state_dir.clone())?;
+    info!(state = %state_dir.display(), "state directory");
+    if let Err(e) = store::write_atomic(&state_dir.join("listen"), args.listen.to_string().as_bytes()) {
+        warn!(error = %e, "can't record the listen address");
+    }
+    start_sites(&args.blocks, &access, owner, args.listen, &state_dir)?;
+    #[cfg_attr(unix, allow(unused_mut))]
+    let mut launch = pane::Launcher::detect(args.keep_panes);
+    // Windows: pane hosts run from a copy of this exe (M58).
+    #[cfg(windows)]
+    {
+        launch.host = host::exe(&state_dir);
+    }
+    #[cfg(unix)]
+    if launch.hold {
+        // Terminals the last daemon's pane shims kept, adopted like the FD
+        // store's.
+        kept.extend(holder::collect(&state_dir));
+    }
+    // Windows: panes whose hosts outlived the last daemon (M58).
+    #[cfg(windows)]
+    kept.extend(host::collect(&state_dir));
+    info!(scopes = launch.scopes, fd_store = launch.fd_store, hold = launch.hold, kept = kept.len(), "pane launcher");
+    // What the feature crates keep moves before the layout is restored and
+    // before closed folders are pruned (the Docs of the old layout into the
+    // library: the blocks' configs name their Doc).
+    features::prepare(&state_dir);
+    store.prune_closed(store::CLOSED_RETENTION_MS);
+    let integration = if args.no_shell_integration {
+        None
+    } else {
+        match shellint::Integration::install(state_dir.join("shell")) {
+            Ok(i) => Some(i),
+            Err(e) => {
+                tracing::warn!(error = %e, "can't install shell integration; panes run without it");
+                None
+            }
+        }
+    };
+    let socket = socket_path(&state_dir)?;
+    editors::install(editors::Settings {
+        dir: state_dir.join("editor"),
+        // Beside the CLI's socket, which is kept short enough.
+        socket: PathBuf::from(format!("{}-code", socket.display())),
+        binary: args.editors.code_server.clone(),
+        cache: std::env::var_os("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home().join(".cache"))
+            .join("arugula/code-server"),
+        releases: args.editors.code_server_releases.clone(),
+        idle: args.editors.editor_idle,
+        // Long enough to ride out a daemon restart, short enough that a
+        // closed block's extension host goes.
+        grace: 300,
+        launch: launch.clone(),
+    });
+    update::start(update::Settings {
+        state_dir: state_dir.clone(),
+        url: args.update_url.clone(),
+        enabled: !args.no_update_check,
+    });
+    let subject = format!("mailto:{}", owner_login.clone().unwrap_or_else(|| "arugula@localhost".into()));
+    let push = match push::Push::open(state_dir.join("push"), subject) {
+        Ok(p) => Some(p),
+        Err(e) => {
+            tracing::warn!(error = %e, "web push is off");
+            None
+        }
+    };
+    let token_file = args.wisp_token_file.clone().unwrap_or_else(|| {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home().join(".local/share"))
+            .join("wisp/token")
+    });
+    // loam, when it's named; wispd (or Fly's sprites) otherwise.
+    let loam_key_file = args.loam_key_file.clone().unwrap_or_else(|| {
+        arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula")).join("loam-key")
+    });
+    let provider: Option<std::sync::Arc<dyn provider::Provider>> = match args.loam_url.as_deref() {
+        Some(url) if !url.is_empty() => {
+            let p = lab_hooks::labs().open_loam(url, &loam_key_file);
+            info!(url, on = p.is_some(), "VM panes on loam");
+            p
+        }
+        _ => {
+            let p = lab_hooks::labs().open_provider(
+                &args.wisp_url,
+                &token_file,
+                args.wisp_token_file.is_some() || args.wisp_url != args::DEFAULT_WISP_URL,
+            );
+            info!(url = args.wisp_url, on = p.is_some(), "VM panes");
+            p
+        }
+    };
+    let secrets = {
+        let config = arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula"));
+        block::Secrets {
+            anthropic_key: args.anthropic_key_file.clone().unwrap_or_else(|| config.join("anthropic-key")),
+            claude_token: args.claude_token_file.clone().unwrap_or_else(|| config.join("claude-oauth-token")),
+        }
+    };
+    // Studio apps (M35): the token that lists them and mints ways in.
+    let studio_file = args.studio_file.clone().unwrap_or_else(|| state_dir.join("studio.json"));
+    lab_hooks::labs().install_studio(studio_file.clone(), args.studio_file.is_some());
+    // What `fs` never serves, besides the state directory.
+    let private = vec![
+        token_file.clone(),
+        loam_key_file,
+        secrets.anthropic_key.clone(),
+        secrets.claude_token.clone(),
+        studio_file.clone(),
+        local_token_file,
+    ];
+    let acl = std::sync::Arc::new(acl::Acl::open(&state_dir));
+    let mcp_tokens = mcp::Tokens::open(&state_dir);
+    // Agent blocks reach MCP on loopback (M16); not where loopback needs
+    // the provider's tunnel token (a resident daemon).
+    let mcp_link = args.provider_token_sha256.is_none().then(|| {
+        let ip = match args.listen.ip() {
+            std::net::IpAddr::V4(v4) if v4.is_unspecified() => std::net::Ipv4Addr::LOCALHOST.into(),
+            std::net::IpAddr::V6(v6) if v6.is_unspecified() => std::net::Ipv6Addr::LOCALHOST.into(),
+            ip => ip,
+        };
+        let cli = std::env::current_exe()
+            .map(|e| e.with_file_name(format!("arugula{}", std::env::consts::EXE_SUFFIX)))
+            .ok()
+            .filter(|c| c.exists());
+        mcp::Link {
+            url: format!("http://{}/mcp", SocketAddr::new(ip, args.listen.port())),
+            cli: cli.unwrap_or_else(|| "arugula".into()),
+            socket: socket.clone(),
+            tokens: mcp_tokens.clone(),
+            serve: Default::default(),
+        }
+    });
+    let mcp_serve = mcp_link.as_ref().map(|l| l.serve.clone());
+    let control = control::Control::new(
+        &state_dir,
+        direct_urls.clone(),
+        args.control_url.trim_end_matches('/').to_owned(),
+        acl.clone(),
+        args.no_relay,
+    );
+    // The feature crates' use of control (Doc blocks share through it, #1066).
+    features::with_control(&control);
+    // M185: a hosted box's agent turns ask the platform whose key pays.
+    agent::hosted::init(control.clone(), args.hosted);
+    // M40: forge blocks' live updates (control's GitHub App, hooks here).
+    forges::start(state_dir.clone(), Some(&control), direct_urls.clone());
+    // Claude Code's IDE (M28): its relay keeps the connections.
+    let ide =
+        editors::start_ide(args.no_claude_ide, args.claude_ide_dir.clone(), &state_dir, &home(), launch.clone()).await;
+    let invite_hook = invite::Hook::default();
+    let rules = rules::Rules::open(store.root().join("rules.json"));
+    let kinds = std::sync::Arc::new(kinds(mcp_link.clone(), secrets.clone(), rules.clone(), &invite_hook));
+    #[cfg(unix)]
+    let pane_gone: Arc<dyn mux::PaneGone> = Arc::new(upload::Uploads);
+    #[cfg(not(unix))]
+    let pane_gone: Arc<dyn mux::PaneGone> = Arc::new(NoUploads);
+    let config = mux::Config {
+        acl: acl.clone(),
+        notify: Arc::new(push::Notifier { push: push.clone(), control: control.clone() }),
+        people: control.clone(),
+        owner_name: owner_login.clone().unwrap_or_else(|| "owner".into()),
+        owner_pic: None,
+        guest_machines: args.guest_machines,
+        shell,
+        shell_args,
+        home: home(),
+        manager_env: !args.no_manager_env,
+        launch,
+        integration,
+        socket: socket.clone(),
+        provider: provider.clone(),
+        daemon_id: daemon_id(&store),
+        private,
+        kinds,
+        pane_env: editors::pane_env(&ide),
+        shell_env_skip: vec!["CLAUDE_CODE_SSE_PORT".into()],
+        sessions: Arc::new(conversations::Sessions),
+        pane_gone,
+        usage: Arc::new(telemetry::Hooks),
+        at_exit: Some(mux::AtExit(Arc::new(|| lab_hooks::labs().at_exit()))),
+    };
+    // M101: counting starts with the mux; reports, once control is known.
+    let telemetry = telemetry::Telemetry::from_env(&state_dir, &home());
+    telemetry.start(control.clone());
+    let mux = mux::start(config, store, kept, editors::pane_cards(&ide));
+    editors::run_ide(&ide, mux.clone());
+
+    let hosts = hosts::Hosts::open(&state_dir, name.clone(), provider);
+    hosts.spawn_probe();
+    let shares = share::Shares::open(&state_dir);
+    // Guest SSH access was the `guest-ssh` flag: a machine that had it on
+    // keeps it on (native #205).
+    if let Err(e) = arugula_proto::sharing::migrate(&state_dir) {
+        warn!(error = %e, "couldn't keep the guest-ssh flag as Guest SSH access");
+    }
+    let guest_listen = match args.guest_ssh.as_str() {
+        "off" => None,
+        a => Some(a.parse::<SocketAddr>().map_err(|e| anyhow::anyhow!("--guest-ssh {a}: {e}"))?),
+    };
+    let guest_given =
+        !["off", lab_hooks::GUEST_SSH_LISTEN].contains(&args.guest_ssh.as_str()) || args.guest_ssh_host.is_some();
+    let synced = sync::Synced::new(&state_dir, args.reach.sync_key_file.clone());
+    synced.prune(sync::RETAIN_MS);
+    let static_dir = args.static_dir.clone().unwrap_or_else(|| {
+        let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".local/share"));
+        // The one from before the rename, where it is.
+        arugula_proto::dirs::named_in(&data, "arugula", "illogical").join("static")
+    });
+    // Labs' guest invites and the static binaries for resident daemons.
+    lab_hooks::labs().open(lab_hooks::Start {
+        state_dir: state_dir.clone(),
+        guest_listen,
+        guest_host: args.guest_ssh_host.clone(),
+        guest_given,
+        static_dir,
+    });
+    let app = server::App::new(
+        access,
+        identify,
+        mux.clone(),
+        push,
+        ide,
+        hosts,
+        shares,
+        synced,
+        control.clone(),
+        acl.clone(),
+        mcp_tokens,
+        hand::Hands::open(&state_dir),
+        rules,
+    );
+    // Labs' guest ssh server, and (M78) tasks for this machine's agents
+    // that a restart interrupted.
+    lab_hooks::labs().start(&app);
+    // Daemon-side Managoat was removed: an old service file's flag still
+    // parses, and says so.
+    if args.managoat_account_stream {
+        tracing::warn!(
+            "--managoat-account-stream does nothing: daemon-side Managoat was removed (cloud agents run through Arugula control)"
+        );
+    }
+    control.start(app.clone());
+    if args.hosted {
+        hosted::start(&app, state_dir.clone(), args.control_url.clone());
+    }
+    if let Some(serve) = mcp_serve {
+        let _ = serve.set(mcp::pipe_server(&app));
+    }
+    let _ = invite_hook.set(std::sync::Arc::downgrade(&app));
+    // Read-only links end on time (M19).
+    {
+        let (acl, mux, control) = (acl.clone(), mux.clone(), control.clone());
+        crate::task::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                if acl.prune_links() {
+                    mux.send(mux::Cmd::AclChanged);
+                    control.poke();
+                }
+            }
+        });
+    }
+    start_reach(&args.reach, &app, name)?;
+    // TCP_NODELAY on every accepted connection (axum leaves Nagle on).
+    // Dial-out tunnels write a DATA frame and a GRANT back to back, and
+    // with Nagle the second waits for the peer's delayed ACK: 40 ms on
+    // every keystroke relayed through `/h/<name>/ws` (found in S15).
+    let listener = listener.tap_io(|tcp| {
+        let _ = tcp.set_nodelay(true);
+    });
+    info!(addr = %args.listen, "listening");
+    #[cfg(unix)]
+    {
+        // The CLI's socket: replace a stale one from a previous run.
+        let _ = std::fs::remove_file(&socket);
+        let local = tokio::net::UnixListener::bind(&socket)?;
+        {
+            // Owner only, wherever it is (its directory is private too).
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
+        }
+        crate::task::spawn(axum::serve(local, server::local_router(app.clone())).into_future());
+        // Editors in dev containers join here (M28): a directory of its own.
+        if editors::joinable() {
+            match editors_socket(&state_dir) {
+                Ok(l) => {
+                    crate::task::spawn(axum::serve(l, server::editors_router(app.clone())).into_future());
+                }
+                Err(e) => warn!(error = %e, "no socket for editors in containers"),
+            }
+        }
+    }
+    // Windows: a named pipe this user alone can open. Another daemon on
+    // the same state directory has it already: say so rather than share.
+    #[cfg(windows)]
+    {
+        let local = pipe::PipeListener::bind(&socket.display().to_string())
+            .map_err(|e| anyhow::anyhow!("can't serve {} (another arugulad here?): {e}", socket.display()))?;
+        crate::task::spawn(axum::serve(local, server::local_router(app.clone())).into_future());
+    }
+    info!(socket = %socket.display(), "listening");
+    sys::notify("READY=1");
+    tokio::select! {
+        r = axum::serve(listener, server::router(app).into_make_service_with_connect_info::<SocketAddr>()) => r?,
+        _ = signalled() => {
+            sys::notify("STOPPING=1");
+            info!("shutting down: saving every pane");
+            mux.shutdown().await;
+            telemetry.save();
+        }
+    }
+    // Returning drops open connections; panes' shells are hung up as their
+    // terminals close, after everything is saved.
+    Ok(())
+}
+
+/// `POST /api/daemon/stop` (on the local socket): stop as on a signal.
+static STOP: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
+/// Windows: Ctrl-C, the console closing, logoff or shutdown.
+#[cfg(windows)]
+async fn signalled() {
+    use tokio::signal::windows;
+    let (mut close, mut shutdown, mut logoff) = (
+        windows::ctrl_close().expect("ctrl_close"),
+        windows::ctrl_shutdown().expect("ctrl_shutdown"),
+        windows::ctrl_logoff().expect("ctrl_logoff"),
+    );
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = STOP.notified() => {}
+        _ = close.recv() => {}
+        _ = shutdown.recv() => {}
+        _ = logoff.recv() => {}
+    }
+}
+
+#[cfg(unix)]
+async fn signalled() {
+    let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("SIGTERM");
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = STOP.notified() => {}
+        _ = term.recv() => {}
+    }
+}
+
+/// Checks of the whole daemon, with every feature crate registered: the
+/// binary's tests run them (`crates/arugulad/src/whole_tests.rs`), with the
+/// cargo feature `whole-tests` (#232).
+#[cfg(feature = "whole-tests")]
+#[doc(hidden)]
+pub mod whole {
+    use arugula_proto::BlockType;
+
+    /// Every type that was made when `block::create` was a `match` has an
+    /// entry in the table, in a build with Labs and in one without; the
+    /// two that never were (`Terminal`, `Unknown`) still have none.
+    pub fn every_type_the_daemon_makes_has_a_kind() {
+        let kinds = super::kinds(
+            None,
+            Default::default(),
+            crate::rules::Rules::open(std::env::temp_dir().join("arugula-kinds-test-rules.json")),
+            &Default::default(),
+        );
+        let all = [
+            BlockType::Terminal,
+            BlockType::Browser,
+            BlockType::Agent,
+            BlockType::Editor,
+            BlockType::Diff,
+            BlockType::File,
+            BlockType::Remote,
+            BlockType::Workspace,
+            BlockType::App,
+            BlockType::Forge,
+            BlockType::Invite,
+            BlockType::Agents,
+            BlockType::Doc,
+            BlockType::Chat,
+            BlockType::TeamChat,
+            BlockType::Board,
+            BlockType::Unknown,
+        ];
+        // A new type is a compile error here until it is listed above.
+        for kind in all {
+            match kind {
+                BlockType::Terminal
+                | BlockType::Browser
+                | BlockType::Agent
+                | BlockType::Editor
+                | BlockType::Diff
+                | BlockType::File
+                | BlockType::Remote
+                | BlockType::Workspace
+                | BlockType::App
+                | BlockType::Forge
+                | BlockType::Invite
+                | BlockType::Agents
+                | BlockType::Doc
+                | BlockType::Chat
+                | BlockType::TeamChat
+                | BlockType::Board
+                | BlockType::Unknown => {}
+            }
+            let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);
+            assert_eq!(kinds.has(kind), made, "{kind:?}");
+        }
+    }
+}

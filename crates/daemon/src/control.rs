@@ -521,6 +521,9 @@ pub struct Control {
     state_dir: PathBuf,
     acl: Arc<Acl>,
     now: RwLock<Option<Arc<Enrolled>>>,
+    /// `control.json`'s stamp as [`Control::reload`] last read it, taken
+    /// before the read: where the watcher starts from.
+    loaded: std::sync::Mutex<Option<std::time::SystemTime>>,
     /// Bumped whenever the trusted set changes: open channels re-check
     /// their device and close if it's gone.
     pub changed: watch::Sender<u64>,
@@ -777,6 +780,7 @@ impl Control {
             state_dir: state_dir.to_owned(),
             acl,
             now: RwLock::new(None),
+            loaded: Default::default(),
             changed: watch::channel(0).0,
             direct_urls,
             default_url,
@@ -943,8 +947,7 @@ impl Control {
 
     /// Control's ssh jump host for guests (M65), from its `/control.json`;
     /// `None` when it runs none.
-    #[cfg(feature = "labs")]
-    pub async fn guest_jump(&self) -> anyhow::Result<Option<crate::labs::GuestJump>> {
+    pub async fn guest_jump(&self) -> anyhow::Result<Option<wire::GuestJump>> {
         let Some(e) = self.enrolled() else { return Ok(None) };
         let about: wire::ControlJump = self
             .http
@@ -954,7 +957,7 @@ impl Control {
             .error_for_status()?
             .json()
             .await?;
-        Ok(about.guest_ssh.map(|j| crate::labs::GuestJump { host: j.host, port: j.port, known_hosts: j.known_hosts }))
+        Ok(about.guest_ssh)
     }
 
     /// Control's directory, as this daemon reaches it (#399): the
@@ -975,7 +978,7 @@ impl Control {
     /// Whether this machine offers agents to its teams (#399): the `agents`
     /// flag is on and something is offered.
     fn open_agents(&self) -> bool {
-        crate::labs::offers_agents(&self.state_dir)
+        crate::lab_hooks::labs().offers_agents(&self.state_dir)
     }
 
     /// What this daemon tells control it understands, and (#347) whether
@@ -1362,6 +1365,7 @@ impl Control {
 
     /// Read `control.json` (and the key) again.
     fn reload(&self) {
+        *self.loaded.lock().unwrap() = file_stamp(&self.state_dir);
         let next = match read_saved(&self.state_dir).and_then(|s| {
             let Some(saved) = s else { return Ok(None) };
             let keys = DeviceKeys::load(&self.state_dir.join(KEY_FILE))?;
@@ -1545,7 +1549,7 @@ impl Control {
         let pq = format!(
             "{}&version={}&os={}&arch={}",
             wire::Features::path(&self.features()),
-            env!("CARGO_PKG_VERSION").replace('+', "%2B"),
+            arugula_core::version::get().replace('+', "%2B"),
             std::env::consts::OS,
             std::env::consts::ARCH,
         );
@@ -1701,7 +1705,7 @@ impl Control {
     ) {
         let Some((e, subs, payload)) = self.to_push(pane, title, body, extra, to) else { return };
         let me = self.clone();
-        tokio::spawn(async move { me.relay_push(&e, subs, &payload).await });
+        crate::task::spawn(async move { me.relay_push(&e, subs, &payload).await });
     }
 
     /// [`Control::push`], waited for (#232): how many subscriptions `to`
@@ -1756,7 +1760,7 @@ impl Control {
         payload["daemon"] = e.saved.cert.device.clone().into();
         let payload = payload.to_string();
         let me = self.clone();
-        tokio::spawn(async move { me.relay_push(&e, subs, &payload).await });
+        crate::task::spawn(async move { me.relay_push(&e, subs, &payload).await });
         true
     }
 
@@ -1794,7 +1798,6 @@ impl Control {
     /// M40: a read-only installation token for a GitHub repository from
     /// control's GitHub App (for a box with no `gh` login), and the
     /// account's GitHub login. Never logged.
-    #[cfg(feature = "forge")]
     pub async fn github_token(&self, repo: &str) -> Result<wire::forge::GithubToken, String> {
         let e = self.enrolled().ok_or("not joined to Arugula control")?;
         let res = self
@@ -1996,7 +1999,7 @@ impl Control {
         let (a, r) = (app.clone(), app.clone());
         self.run(
             move || app.mux.send(crate::mux::Cmd::AclChanged),
-            move |me| tokio::spawn(keep_relay(me, a.clone())),
+            move |me| crate::task::spawn(keep_relay(me, a.clone())),
             move |url| crate::setup::rejoin(r.clone(), url),
         );
     }
@@ -2011,8 +2014,12 @@ impl Control {
         rejoin: impl Fn(String) + Send + 'static,
     ) {
         let me = self.clone();
-        tokio::spawn(async move {
-            let mut stamp = file_stamp(&me.state_dir);
+        crate::task::spawn(async move {
+            // From the file as it was last read (`new` reads it), not as
+            // this task first runs: a hosted box's enrollment, written in
+            // between, would look like nothing changed, and the daemon would
+            // never know it's in.
+            let mut stamp = *me.loaded.lock().unwrap();
             // When certificates were last fetched; `None`: fetch now.
             let mut last_refresh: Option<std::time::Instant> = None;
             let mut relay: Option<tokio::task::JoinHandle<()>> = None;
@@ -2061,7 +2068,7 @@ impl Control {
                                 });
                                 acl_changed();
                                 let m = me.clone();
-                                tokio::spawn(async move { m.retry_invites().await });
+                                crate::task::spawn(async move { m.retry_invites().await });
                             }
                             // Removed from a browser (#330): dropped (#325),
                             // and a new key asks to join the same control
@@ -2132,20 +2139,18 @@ const RESUME_QUIET: Duration = Duration::from_secs(2);
 async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
     let (accept, mut streams) = mpsc::unbounded_channel();
     let a = app.clone();
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         while let Some(s) = streams.recv().await {
-            tokio::spawn(crate::e2e::serve_stream(a.clone(), s));
+            crate::task::spawn(crate::e2e::serve_stream(a.clone(), s));
         }
     });
     // Raw streams: a guest's ssh connection through control's jump host
     // (M65), which ends here.
     let (raw, mut raws) = mpsc::unbounded_channel::<(Vec<u8>, tokio::io::DuplexStream)>();
     let a = app.clone();
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         while let Some((kind, s)) = raws.recv().await {
-            if kind == crate::labs::GUEST_STREAM_KIND {
-                a.guests.serve_relayed(&a, s);
-            }
+            crate::lab_hooks::labs().serve_raw(&a, &kind, s);
         }
     });
     let mut backoff = Duration::from_secs(1);
@@ -2250,15 +2255,15 @@ async fn relay_once(
     // M40: forge subscriptions out, pokes and heartbeats in. M65: guest
     // routes out, control's answers in. M168: the ops this machine knows
     // out, control's asks in, and their answers out.
-    let guests = app.guests.clone();
     let (answers, queue) = mpsc::unbounded_channel();
     let ops_app = app.clone();
     let on_text = move |t: &str| {
-        if !guests.heard_from_control(t) && !crate::forges::op_from_control(&ops_app, t, &answers) {
+        if !crate::lab_hooks::labs().heard_from_control(t) && !crate::forges::op_from_control(&ops_app, t, &answers) {
             crate::forges::from_control(t);
         }
     };
-    let mut out = vec![app.guests.routes_messages(), crate::forges::ops_message(), control.activity.subscribe()];
+    let mut out = vec![crate::forges::ops_message(), control.activity.subscribe()];
+    out.extend(crate::lab_hooks::labs().control_out());
     out.extend(crate::forges::watch_messages());
     let texts = crate::dial::Texts { on_text: &on_text, out, queue: Some(queue) };
     crate::dial::serve_mux(ws, accept, Some(raw), Some(&control.nudge), Some(texts)).await
@@ -3106,7 +3111,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let dir = std::env::temp_dir().join(format!("arugula-docinfo-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -3163,7 +3168,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let dir = std::env::temp_dir().join(format!("arugula-maintenance-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -3297,7 +3302,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let dir = std::env::temp_dir().join(format!("arugula-join-fp-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
 
@@ -3375,7 +3380,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         (url, fake)
     }
 
@@ -3575,7 +3580,7 @@ pub(crate) mod tests {
             .with_state((fake.clone(), hold.clone(), hit));
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
 
         let dir = std::env::temp_dir().join(format!("arugula-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -3609,7 +3614,7 @@ pub(crate) mod tests {
         /// its first refreshes over: none left to refresh by chance.
         async fn daemon(&self) -> Arc<Control> {
             let c = Control::new(&self.dir, vec![], String::new(), self.acl.clone(), false);
-            c.run(|| {}, |_| tokio::spawn(std::future::pending()), |_| {});
+            c.run(|| {}, |_| crate::task::spawn(std::future::pending()), |_| {});
             assert!(c.refresh_now(REFRESH_WAIT).await, "the first refresh");
             tokio::time::sleep(Duration::from_millis(300)).await;
             c
@@ -3788,7 +3793,7 @@ pub(crate) mod tests {
         r.at_peers.recv().await.unwrap();
         r.grant();
         let c2 = c.clone();
-        let waiting = tokio::spawn(async move { c2.refresh_now(REFRESH_WAIT).await });
+        let waiting = crate::task::spawn(async move { c2.refresh_now(REFRESH_WAIT).await });
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(!waiting.is_finished());
         drop(held);
@@ -3828,6 +3833,28 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 
+    /// A join saved after the daemon read its state, but before the watcher
+    /// first ran, is noticed: a hosted box enrolls as it starts, and its
+    /// watcher used to take the joined file as where it started, so the
+    /// daemon never knew it was in (its runs never pulled, its agents'
+    /// turns refused).
+    #[tokio::test]
+    async fn a_join_saved_before_the_watcher_runs_is_noticed() {
+        let r = rig("join-before-watch").await;
+        let aside = r.dir.join(format!("{FILE}.aside"));
+        std::fs::rename(r.dir.join(FILE), &aside).unwrap();
+        let c = Control::new(&r.dir, vec![], String::new(), r.acl.clone(), false);
+        assert!(c.enrolled().is_none());
+        std::fs::rename(&aside, r.dir.join(FILE)).unwrap();
+        c.run(|| {}, |_| crate::task::spawn(std::future::pending()), |_| {});
+        let t = std::time::Instant::now();
+        while c.enrolled().is_none() && t.elapsed() < Duration::from_secs(10) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(c.enrolled().is_some(), "the daemon noticed it joined");
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
     /// Only a refresh that went through counts (#232): not a reload or a
     /// change of trust (`changed`), and not one that failed. With control
     /// unreachable, `refresh_now` gives up after the timeout.
@@ -3850,7 +3877,7 @@ pub(crate) mod tests {
         c.reload();
         assert!(c.refresh().await.is_err());
         assert_eq!(*c.refreshed.borrow(), 1);
-        c.run(|| {}, |_| tokio::spawn(std::future::pending()), |_| {});
+        c.run(|| {}, |_| crate::task::spawn(std::future::pending()), |_| {});
         let t = std::time::Instant::now();
         assert!(!c.refresh_now(Duration::from_millis(500)).await);
         assert!(t.elapsed() >= Duration::from_millis(500));
@@ -3983,7 +4010,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let mut s = read_saved(&dir).unwrap().unwrap();
         s.url = url.clone();
         write_saved(&dir, &s).unwrap();
@@ -4040,7 +4067,7 @@ pub(crate) mod tests {
         );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let dir = std::env::temp_dir().join(format!("arugula-join-lock-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
 
@@ -4723,7 +4750,7 @@ pub(crate) mod tests {
             );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await });
+        crate::task::spawn(async move { axum::serve(l, app).await });
         let saved = saved_for(&url, "");
         let keys = DeviceKeys::generate();
         let said_of = |f: Option<Forgot>| match f {

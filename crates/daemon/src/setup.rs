@@ -40,7 +40,7 @@ use std::{
 };
 
 use arugula_proto::{
-    op::ops::{SetupAgent, SetupClaude, SetupControl, SetupControlConfirm, SetupGet, SetupTailscale},
+    op::ops::{AgentCanGet, SetupAgent, SetupClaude, SetupControl, SetupControlConfirm, SetupGet, SetupTailscale},
     setup::{ControlConfirmRequest, ControlJoinRequest, Outcome, SetupQuery},
 };
 use axum::Router;
@@ -60,6 +60,7 @@ const TAILSCALE_DOWNLOAD: &str = "https://tailscale.com/download";
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
         .op::<SetupGet>()
+        .op::<AgentCanGet>()
         .op::<SetupTailscale>()
         .op::<SetupControl>()
         .op::<SetupControlConfirm>()
@@ -99,7 +100,7 @@ async fn cli_status() -> CliStatus {
         let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return CliStatus::default() };
         let shell = PathBuf::from(crate::login_shell());
         let h = home.clone();
-        let Ok(state) = tokio::task::spawn_blocking(move || check(&h, &shell)).await else {
+        let Ok(state) = crate::task::spawn_blocking(move || check(&h, &shell)).await else {
             return CliStatus { command: "arugula".into(), added: vec![] };
         };
         let tilde = |p: &Path| p.strip_prefix(&home).map_or(p.display().to_string(), |r| format!("~/{}", r.display()));
@@ -422,7 +423,7 @@ pub(crate) async fn control_join(app: &Arc<App>, req: ControlJoinRequest) -> Val
 /// Control said this machine's key was removed (#330): ask `url` to add
 /// it again, with a new key, unless a join is under way already.
 pub fn rejoin(app: Arc<App>, url: String) {
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         if APPROVED.lock().unwrap().is_some()
             || JOIN.lock().unwrap().0.as_ref().is_some_and(|p| p.expires_ms > now_ms())
         {
@@ -453,7 +454,7 @@ async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
             }
             *JOIN.lock().unwrap() = (Some(pending.clone()), None);
             let app = app.clone();
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let r = crate::control::join_finish(p).await;
                 // The approving device answered the link's secret (#760),
                 // or it's back in the account it was removed from (the
@@ -680,7 +681,7 @@ async fn agent_cli(app: &App, a: &Adapter) -> Option<PathBuf> {
 async fn adapters_status(app: &App) -> Vec<Value> {
     let Ok((home, env)) = crate::api::agent_env(app).await else { return Vec::new() };
     let mut list =
-        tokio::task::spawn_blocking(move || crate::agent::adapters::all(&home, &env)).await.unwrap_or_default();
+        crate::task::spawn_blocking(move || crate::agent::adapters::all(&home, &env)).await.unwrap_or_default();
     for (v, a) in list.iter_mut().zip(ADAPTERS) {
         v["found"] = agent_cli(app, a).await.is_some().into();
     }
@@ -705,7 +706,7 @@ fn installed_line(a: &Adapter, was: &AdapterState) -> String {
 /// changed (a line), or nothing when it was current.
 async fn install(app: &App, a: &'static Adapter) -> Result<Option<String>, Outcome> {
     let (home, env) = crate::api::agent_env(app).await.map_err(|e| Outcome::err(e.1))?;
-    let (st, path, home) = tokio::task::spawn_blocking(move || {
+    let (st, path, home) = crate::task::spawn_blocking(move || {
         let st = crate::agent::adapters::status(a, &home, &env);
         let path = crate::agent::adapters::node_path(&home, &env);
         (st, path, home)

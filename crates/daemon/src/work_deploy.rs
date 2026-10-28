@@ -282,8 +282,8 @@ pub fn driver_argv_for(d: &DeployWork, run: &str) -> Result<Vec<String>, Refused
         for (k, v) in &d.settings {
             argv.extend(["--setting".to_owned(), format!("{k}={v}")]);
         }
-        if super::planter::ships(&d.driver, &d.operation.source_where) {
-            argv.extend(["--artifact".to_owned(), super::planter::artifact_path(run).to_string_lossy().into_owned()]);
+        if super::ships(&d.driver, &d.operation.source_where) {
+            argv.extend(["--artifact".to_owned(), super::ship_artifact_path(run).to_string_lossy().into_owned()]);
         }
     }
     // Its settings (M221), which its plan names: the bump and the lane.
@@ -1047,7 +1047,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
     // output, which is already redacted. The box is deleted after, so this
     // is the only copy.
     let (done, follow) = tokio::sync::watch::channel(false);
-    let follower = tokio::spawn(crate::run_logs::follow(app.clone(), l.run.clone(), pane, epoch, follow));
+    let follower = crate::task::spawn(crate::run_logs::follow(app.clone(), l.run.clone(), pane, epoch, follow));
     let said = |why: &str| format!("arugula: {}\n", printable(why));
     // The short-lived tokens it was given, to revoke when its driver ends.
     let mut revocable: Vec<(String, String)> = Vec::new();
@@ -1063,7 +1063,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
         let given = secrets(&app, &l.run, &d.secrets).await?;
         // planter's Ship (M233): the source it ships, where its driver reads
         // it; not a secret (the driver checks its digest).
-        if super::planter::ships(&d.driver, &d.operation.source_where)
+        if super::ships(&d.driver, &d.operation.source_where)
             && let Err(e) = fetch_artifact(&app, &l.run).await
         {
             wipe(given);
@@ -1104,7 +1104,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
         {
             let mut r = Redactor::new(&given);
             let tx = tx.clone();
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let mut stream = stream;
                 let mut buf = vec![0u8; 8192];
                 loop {
@@ -1173,7 +1173,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
     let _ = follower.await;
     crate::run_logs::finish(&app, &l.run, pane, epoch, as_.as_ref()).await;
     remove_home(as_.as_ref(), &work_dir(&l.run, as_.as_ref(), &dir)).await;
-    let _ = std::fs::remove_file(super::planter::artifact_path(&l.run));
+    let _ = std::fs::remove_file(super::ship_artifact_path(&l.run));
     finish(end, result).await;
 }
 
@@ -1210,7 +1210,7 @@ async fn fetch_artifact(app: &App, run: &str) -> Result<(), String> {
             return Err("its artifact isn't the digest control named".into());
         }
     }
-    let at = super::planter::artifact_path(run);
+    let at = super::ship_artifact_path(run);
     let _ = std::fs::remove_file(&at);
     let mut o = std::fs::OpenOptions::new();
     o.write(true).create_new(true);

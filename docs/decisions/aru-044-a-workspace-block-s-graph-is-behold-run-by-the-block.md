@@ -26,7 +26,7 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-07"
 reviews: []
 constrains:
-  - "path:crates/daemon/src/labs/workspace/graph.rs"
+  - "path:crates/arugulad-labs/src/workspace/graph.rs"
   - "path:web/src/shell/blocks/workspace-graph.tsx"
 ---
 
@@ -55,5 +55,5 @@ origin, so no `--allow-host` is needed. A settled read tells behold
 behold draws gates without an approve button: the block approves (one
 approve path per gate). `$ARUGULA_BEHOLD` picks the behold to run. This
 host only for now.
-Where: `crates/daemon/src/labs/workspace/graph.rs`, `web/src/shell/blocks/workspace-graph.tsx`.
+Where: `crates/arugulad-labs/src/workspace/graph.rs`, `web/src/shell/blocks/workspace-graph.tsx`.
 From: #620, INTENTIUS/behold#474.

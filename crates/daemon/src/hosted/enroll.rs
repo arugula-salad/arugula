@@ -656,7 +656,7 @@ mod tests {
         std::fs::write(&file, "box1\n").unwrap();
         assert_eq!(claim(Some(String::new()), &file), Some(Claim::Sandbox("box1".into())));
         // The snapshot's id isn't a new box: only another is.
-        let waiting = tokio::spawn({
+        let waiting = crate::task::spawn({
             let file = file.clone();
             async move { new_box(&file, None).await }
         });

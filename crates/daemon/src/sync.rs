@@ -475,7 +475,7 @@ async fn push_log(
         return error(StatusCode::PAYLOAD_TOO_LARGE, "at most 1 MB a push");
     }
     let synced = app.synced.clone();
-    match tokio::task::spawn_blocking(move || synced.push_log(&host, pane, q.from, &body)).await {
+    match crate::task::spawn_blocking(move || synced.push_log(&host, pane, q.from, &body)).await {
         Ok(Ok(p)) => Json(p).into_response(),
         Ok(Err(e)) => error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
@@ -497,7 +497,7 @@ async fn push_index(
         return error(StatusCode::PAYLOAD_TOO_LARGE, "at most 1 MB a push");
     }
     let synced = app.synced.clone();
-    match tokio::task::spawn_blocking(move || synced.push_index(&host, pane, q.from, &body)).await {
+    match crate::task::spawn_blocking(move || synced.push_index(&host, pane, q.from, &body)).await {
         Ok(Ok(p)) => Json(p).into_response(),
         Ok(Err((s, e))) => error(s, e),
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),

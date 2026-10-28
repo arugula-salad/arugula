@@ -330,6 +330,8 @@ test("a phone needs the laptop's approval", async ({ browser }) => {
   await expect(phone.locator("[data-control-url]")).toHaveText(base);
   await expect(phone.locator("[data-waiting-machine]")).toContainText("doesn't need this one");
   await expect(phone.locator("[data-sign-out]")).toBeVisible();
+  // #1581: the account has a device already, so it says why this one is asked.
+  await expect(phone.locator("[data-why-again]")).toContainText("Approve it from a device that opens");
   // #761: it shows a code, as a QR code and as text, and its fingerprint
   // only for an older approving page, a click away.
   const code = await deviceCode(phone);
@@ -651,10 +653,57 @@ test("a desktop app's keys swapped by control aren't signed for anyone else: the
   await app.context().close();
 });
 
+// #1582: a browser nothing can approve offers a reset of the account's
+// devices. The laptop was used just now, so control refuses and says to
+// approve from it. As a reset that's waiting, the browser shows when, with
+// Cancel; the laptop shows a warning whose cancel it signs with its key.
+test("a browser nothing approves offers a reset; a trusted device can cancel one (#1582)", async ({ browser }) => {
+  const fresh = await (await browser.newContext()).newPage();
+  await signIn(fresh);
+  await expect(fresh.getByText("Approve this browser")).toBeVisible();
+  await fresh.locator("[data-reset-open]").click();
+  await expect(fresh.locator("[data-reset-offer]")).toContainText("Every device and recovery code you have stops working");
+  await fresh.locator("[data-reset-start]").click();
+  await expect(fresh.locator("[data-reset-offer] .control-error")).toContainText("one of your devices was used in the last two days");
+
+  const due = Date.now() + 47 * 3600_000;
+  await fresh.route("**/api/me/reset", (r) => r.fulfill({ json: { pending: { started_at: Date.now(), due, mine: true }, done: false } }));
+  await fresh.reload();
+  await expect(fresh.locator("[data-reset-pending=mine]")).toContainText("this browser becomes your first device");
+  await expect(fresh.locator("[data-reset-cancel]")).toBeVisible();
+  // The laptop was asked to approve it: turned down, so the next test's
+  // browser is the one it's asked about.
+  await expect(laptop.locator("[data-pending]")).toBeVisible({ timeout: 20_000 });
+  await laptop.locator("[data-reject]").click();
+  await expect(laptop.locator("[data-pending]")).toHaveCount(0);
+  await fresh.context().close();
+
+  const startedAt = Date.now() - 3600_000;
+  let cancel: { device?: string; sig?: string } = {};
+  await laptop.route("**/api/me/reset", (r) => r.fulfill({ json: { pending: { started_at: startedAt, due, mine: false }, done: false } }));
+  await laptop.route("**/api/me/reset/cancel", (r) => {
+    cancel = r.request().postDataJSON();
+    return r.fulfill({ json: { cancelled: true } });
+  });
+  await controlPanel(laptop, "devices");
+  await expect(laptop.locator("[data-reset-warning]")).toContainText("A reset of your devices is waiting");
+  await laptop.locator("[data-reset-warning-cancel]").click();
+  await expect.poll(() => cancel.device).toBe(await laptop.evaluate(() => window.__arugula.control!.keys.id));
+  expect(cancel.sig).toMatch(/^[0-9a-f]{128}$/);
+  await laptop.unroute("**/api/me/reset");
+  await laptop.unroute("**/api/me/reset/cancel");
+  await laptop.getByRole("button", { name: "Done" }).click();
+});
+
 test("with every device lost, a recovery code lets a new browser in, once", async ({ browser }) => {
   const fresh = await (await browser.newContext()).newPage();
   await signIn(fresh);
   await expect(fresh.getByText("Approve this browser")).toBeVisible();
+  // #1581: the laptop is a browser of the same name, so it's named, and why
+  // this one is asked again.
+  await expect(fresh.locator("[data-why-again]")).toHaveAttribute("data-why-again", "same-name");
+  await expect(fresh.locator("[data-why-again]")).toContainText("Your account already has");
+  await expect(fresh.locator("[data-why-again]")).toContainText("its approval is saved for one address");
   await fresh.locator("[data-use-recovery]").click();
   await fresh.getByLabel("Recovery code").fill(recoveryCodes[0]);
   await fresh.getByRole("button", { name: "Use it" }).click();
@@ -854,6 +903,9 @@ test("Getting started joins as soon as a device approves: nothing to compare (#7
   // Straight to joined: no fingerprint to check.
   await expect(start.locator("[data-start-joined]")).toHaveText("Joined to your account", { timeout: 20_000 });
   await expect(start.locator("[data-start-confirm]")).toHaveCount(0);
+  // Joined: sharing next, a team to share with and a session to share.
+  await expect(start.locator("[data-start-make-team]")).toBeVisible();
+  await expect(start.locator("[data-start-share]")).toBeVisible();
   await page.context().close();
   await laptop.goto("/");
   await expect.poll(() => hostNames(laptop), { timeout: 20_000 }).toContain("sealed");
@@ -1155,6 +1207,47 @@ test("the app's Link GitHub opens the browser, and the window asks again when it
   await expect(laptop.getByRole("heading", { name: "Sign-in and account" })).toBeVisible();
   await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
   expect(new URL(laptop.url()).hash).toBe("");
+});
+
+// #1609: the account's email for security notices. This control sends no
+// email (no SMTP URL), so the real answer says so; then, as a control that
+// does, adding one sends a link and says it's waiting, and the link's way
+// back says it's verified.
+test("Sign-in and account has the account's email for notices (#1609)", async () => {
+  await controlPanel(laptop, "account");
+  await expect(laptop.locator("[data-email-address]")).toHaveText("No email");
+  await expect(laptop.locator("[data-email]")).toContainText("this control doesn't send email");
+  await expect(laptop.locator("[data-email-change]")).toHaveCount(0);
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+
+  let state = { email: null as string | null, source: null as string | null, verified: false, pending: null as string | null, sends: true };
+  let asked = "";
+  await laptop.route("**/api/me/email", async (r) => {
+    if (r.request().method() === "POST") {
+      asked = (r.request().postDataJSON() as { email: string }).email;
+      state = { ...state, pending: asked };
+      return r.fulfill({ json: { sent: true } });
+    }
+    return r.fulfill({ json: state });
+  });
+  await controlPanel(laptop, "account");
+  await expect(laptop.locator("[data-email]")).toContainText("add one so a reset of your devices reaches you");
+  await laptop.locator("[data-email-change]").click();
+  await laptop.locator("[data-email-input]").fill("lex@example.com");
+  await laptop.locator("[data-email-send]").click();
+  // The route answers after the click returns.
+  await expect.poll(() => asked).toBe("lex@example.com");
+  await expect(laptop.locator("[data-email-said]")).toContainText("A link went to lex@example.com");
+  await expect(laptop.locator("[data-email-pending]")).toContainText("lex@example.com");
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+
+  // Back from the link: the dialog opens and says so.
+  state = { email: "lex@example.com", source: "typed", verified: true, pending: null, sends: true };
+  await laptop.goto("/#email=verified");
+  await expect(laptop.locator("[data-email-said]")).toContainText("Your address is verified");
+  await expect(laptop.locator("[data-email]")).toContainText("security notices go here, typed here");
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+  await laptop.unroute("**/api/me/email");
 });
 
 test("the app's passkey buttons open the browser up front and never call their route; a plain browser keeps its dialog (#251)", async () => {

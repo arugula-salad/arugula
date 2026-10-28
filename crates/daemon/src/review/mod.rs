@@ -57,7 +57,7 @@ const RUN_TIMEOUT: Duration = Duration::from_secs(30);
 /// Where a view's commands run: this host, or a machine through its
 /// provider.
 #[derive(Clone)]
-pub(crate) enum Runner {
+pub enum Runner {
     Local {
         env: Vec<(String, String)>,
         home: PathBuf,
@@ -158,7 +158,7 @@ impl Runner {
 /// the block a new round begins; it ends when none does, or the block
 /// closes.
 #[derive(Default)]
-pub(crate) struct Live {
+pub struct Live {
     drawn: AtomicBool,
     round: AtomicU64,
     closed: AtomicBool,
@@ -199,7 +199,7 @@ pub(crate) fn every(local: bool, here: Duration) -> Duration {
 }
 
 /// One line for a block's log.
-pub(crate) fn log(ctx: &BlockCtx, event: &Value) {
+pub fn log(ctx: &BlockCtx, event: &Value) {
     if let Ok(mut log) = ctx.log() {
         let mut line = event.to_string().into_bytes();
         line.push(b'\n');
@@ -209,6 +209,6 @@ pub(crate) fn log(ctx: &BlockCtx, event: &Value) {
 
 /// The repository a local directory is in, for summaries (a machine's
 /// isn't looked at: that would wake it).
-pub(crate) fn project(dir: &str, local: bool) -> Option<arugula_proto::Project> {
+pub fn project(dir: &str, local: bool) -> Option<arugula_proto::Project> {
     local.then(|| crate::classify::project(dir)).flatten()
 }

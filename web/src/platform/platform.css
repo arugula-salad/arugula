@@ -878,6 +878,39 @@ html[data-corners="square"] .platform-section {
   margin: 0;
 }
 
+.hosted-none {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+/* Create a cloud workspace's dialog: its sizes, one radio each. */
+.hosted-new-sizes {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 0;
+  border: 0;
+}
+
+.hosted-new-sizes legend {
+  margin-bottom: 4px;
+  padding: 0;
+}
+
+/* An empty section's next step (Discovery 5): what it's for in a line,
+   then its button. */
+.platform-empty {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin: 6px 0 14px;
+}
+
+.platform-empty > p {
+  margin: 0;
+}
+
 .platform .copy-text > .control-cmd {
   font-family: var(--f-mono);
 }

@@ -385,7 +385,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let sock = dir.join("ts.sock");
         let listener = tokio::net::UnixListener::bind(&sock).unwrap();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             loop {
                 let Ok((mut s, _)) = listener.accept().await else { return };
                 let mut buf = vec![0u8; 2048];

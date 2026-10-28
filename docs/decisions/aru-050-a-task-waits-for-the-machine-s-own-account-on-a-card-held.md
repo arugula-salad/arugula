@@ -28,7 +28,7 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-09"
 reviews: []
 constrains:
-  - "path:crates/daemon/src/labs/agents/tasks.rs"
+  - "path:crates/arugulad-labs/src/agents/tasks.rs"
   - "path:crates/daemon/src/api.rs"
 ---
 
@@ -46,5 +46,5 @@ the channel's caller (`act`, a block's `answer`), and those refuse a device
 of another account. *Allow for an hour* is a grant for that account and
 agent, kept on disk, listed and revocable. The caller polls rather than
 streams, and a channel request answers within seconds; tasks take minutes.
-Where: `crates/daemon/src/labs/agents/tasks.rs`, `block.rs` (the hub), `delegate.rs`, `crates/daemon/src/api.rs` (`foreign`, `is_agents`).
+Where: `crates/arugulad-labs/src/agents/tasks.rs`, `block.rs` (the hub), `delegate.rs`, `crates/daemon/src/api.rs` (`foreign`, `is_agents`).
 From: [S34](https://github.com/arugula-salad/arugula/issues/397) q4, q6; M78 (#400), M79 (#401).

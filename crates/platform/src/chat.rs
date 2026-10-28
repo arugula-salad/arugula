@@ -107,6 +107,7 @@ use crate::{
 };
 
 pub(crate) mod agent_notice;
+pub(crate) mod agent_sessions;
 pub(crate) mod agent_threads;
 pub(crate) mod alerts;
 pub(crate) mod files;
@@ -2055,6 +2056,20 @@ pub(crate) async fn post_full(
     id: &str,
     b: ChatPost,
 ) -> Result<ChatPosted, ApiError> {
+    Ok(post_replied(app, author, agent, via, id, b).await?.0)
+}
+
+/// [`post_full`], and what it did as a reply in an agent session's thread
+/// ([`sessions::posted`]), if it was one: for an agent's `session_reply`
+/// (aru-121), which says whether it answered or prompted.
+pub(crate) async fn post_replied(
+    app: &Platform,
+    author: &str,
+    agent: Option<&AgentPrincipal>,
+    via: Option<&str>,
+    id: &str,
+    b: ChatPost,
+) -> Result<(ChatPosted, Option<sessions::Replied>), ApiError> {
     let s = Person { account: author.to_owned() };
     gate(app, &s.account).await?;
     let (room, from, facts) = room_for(app, &s.account, id).await?;
@@ -2171,8 +2186,8 @@ pub(crate) async fn post_full(
         b.notify_anyway.unwrap_or(false),
     )
     .await?;
-    sessions::posted(app, &room, &s.account, agent.is_some() || via.is_some(), seq, b.parent, text).await;
-    Ok(ChatPosted { seq, mentions: stored, unreached, pushed })
+    let replied = sessions::posted(app, &room, &s.account, agent, via.is_some(), seq, b.parent, text).await;
+    Ok((ChatPosted { seq, mentions: stored, unreached, pushed }, replied))
 }
 
 /// A reply being pushed (#106): its thread, whether it was also sent to the

@@ -10,7 +10,7 @@ use super::{Cx, Handle, OpError};
 use crate::{
     mcp::{
         ops::{McpOp, Surface},
-        tools::{Call, Out, PaneOnly, done},
+        tools::{Call, Human, Out, PaneOnly, done},
     },
     mux::Api,
 };
@@ -53,6 +53,7 @@ impl McpOp for ClosePane {
         destructive: true,
         idempotent: false,
         open_world: false,
+        human: Human::In("run"),
     };
     type Args = PaneOnly;
     type Answer = crate::mcp::results::ClosedPane;

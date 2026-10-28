@@ -15,6 +15,9 @@ accepted = [
     "CC0-1.0",
     "Unlicense",
     "OpenSSL",
+    # quoted_printable, through lettre (#1609): public-domain-like, no
+    # attribution asked.
+    "0BSD",
 ]
 targets = [
     "x86_64-unknown-linux-musl",

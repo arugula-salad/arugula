@@ -66,7 +66,7 @@ impl crate::mux::Notify for Notifier {
     }
 }
 
-pub(crate) fn random<const N: usize>() -> [u8; N] {
+pub fn random<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
     getrandom::fill(&mut b).expect("the OS's random source");
     b
@@ -143,7 +143,7 @@ impl Push {
         }
         let payload = serde_json::Value::Object(payload(pane, title, body, extra)).to_string();
         let this = self.clone();
-        tokio::spawn(async move { this.post_all(subs, &payload).await });
+        crate::task::spawn(async move { this.post_all(subs, &payload).await });
     }
 
     /// [`Push::send_to`], waited for (#233): how many subscriptions `to`

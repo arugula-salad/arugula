@@ -82,9 +82,9 @@ control pushes, in `PUT /api/flags/NAME` and in `arugulad flags NAME on`
 Or, as the machine's owner, in the web client: *Developer settings…* in the
 session menu (and the command palette, and the phone's sheet) has a switch
 for each flag, and the page follows a switch at once, with no reload. The
-menus offer it only on a machine that has asked: one where `arugulad flags`
-has been run, or a flag set. The desktop app's *Daemon* menu has *Developer
-settings…* either way, and so does the page at `/#developer`.
+machine menu offers it to the owner on every machine, whether or not
+`flags.json` exists yet; so do the desktop app's *Daemon* menu and the page
+at `/#developer`.
 
 The flags are `{"flags": {"vms": true}}` in `flags.json` in the state
 directory, which is `$ARUGULA_STATE_DIR` if set, else
@@ -150,11 +150,11 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
 
 One provider per daemon (the `Provider` trait, `crates/mux/src/provider/`):
 
-- **A Sprites API** (`crates/daemon/src/labs/sprites.rs`): a wispd
+- **A Sprites API** (`crates/arugulad-labs/src/sprites.rs`): a wispd
   (`--wisp-url`, default `http://127.0.0.1:7788`, token in
   `--wisp-token-file`, default `~/.local/share/wisp/token`) or Fly's
   sprites. The default.
-- **loam** (`crates/daemon/src/labs/loam.rs`), when `--loam-url` (or
+- **loam** (`crates/arugulad-labs/src/loam.rs`), when `--loam-url` (or
   `LOAM_API_URL`) is given, e.g. `https://api.loam.inevitable.fyi`. Its
   project key (`loam_…`, from the loam operator) is read from
   `--loam-key-file` (`ARUGULA_LOAM_KEY_FILE`), default
@@ -423,7 +423,7 @@ waiting for a person, a card for each member, and the workspace's records.
 From a member's card you open a shell, an agent, its changes or its graph
 there, or run one of its ops. The block reads the workspace through chant's
 read contract (contract 1), with the workspace's own chant, so what it shows
-is what chant says (`crates/daemon/src/labs/workspace/`,
+is what chant says (`crates/arugulad-labs/src/workspace/`,
 `web/src/shell/blocks/workspace.tsx`). DECISIONS.md has what it reads and joins
 itself ("A workspace block asks chant, and keeps a few reads of its own").
 
@@ -613,7 +613,7 @@ work isn't shown. A menu on the bar compares with the last commit, the last
 block keeps the choice.
 
 With a file open, each hunk names what made its added lines
-(`crates/daemon/src/labs/workspace/why.rs`):
+(`crates/arugulad-labs/src/workspace/why.rs`):
 
 ```
 @@ -1,8 +1,8 @@
@@ -640,7 +640,7 @@ block, on that member. The first time, the block starts `behold serve
 as an editor block frames code-server, so it needs `--block-listen`. It runs
 `$ARUGULA_BEHOLD` (a command) if the daemon has it, else
 `node_modules/.bin/behold` in the root, else `behold` on `PATH`. *Graph* on
-another member moves the view there (`crates/daemon/src/labs/workspace/graph.rs`,
+another member moves the view there (`crates/arugulad-labs/src/workspace/graph.rs`,
 `web/src/shell/blocks/workspace-graph.tsx`).
 
 The graph opens on the source. *live {env}* on its bar reads the block's

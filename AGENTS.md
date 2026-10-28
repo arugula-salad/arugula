@@ -37,8 +37,32 @@ Each has a `README.md` with where to start reading.
   `mux/outside.rs`, `Config::at_exit` and `MuxHandle`; `just mux-guard` checks
   its dependency tree (see [its README](crates/mux/README.md)). Its `labs`
   feature is on when the daemon's is.
-- `crates/daemon`: `arugulad`, the binary: the edge and the integrations
-  around `arugula-mux`, wired together in `main.rs`.
+- `crates/daemon`: `arugulad-base`, the daemon as a library: the edge and
+  the integrations around `arugula-mux`, wired together in `lib.rs`'s
+  `main`. It's being split into feature crates (`arugulad-<area>`, #232),
+  each named `arugulad…` so `RUST_LOG=arugulad=…` reaches it.
+- `crates/arugulad-editor`: `arugulad-editor`, the editor server and
+  Claude Code's IDE (`editor/`, `ide/`). The daemon reaches it only through
+  `editors.rs` (the `Editors` and `Ide` traits); the binary registers it.
+- `crates/arugulad-docs`: `arugulad-docs`, Docs: the Doc block, its library
+  and links, their operations and the `doc` MCP tool. The daemon reaches it
+  through `features.rs`' hooks and `mcp/registry.rs`; who may share a Doc
+  is said in the base (`doc_shares.rs`). Feature crates register through
+  `features.rs`; the checks that need them all are the base's `whole`
+  modules, run by the binary's tests (`whole_tests.rs`).
+- `crates/arugulad-drivers`: `arugulad-drivers`, the deploy drivers the
+  binary runs as programs of their own (`_planter`, `_apps-platform`,
+  `_arugula-release`), through the base's subcommand registry
+  (`subcommands.rs`).
+- `crates/arugulad-labs`: `arugulad-labs`, Labs (studio apps, chant
+  workspaces, VMs and resident daemons, guest ssh, agent recipes and
+  delegating, the Forgejo and GitLab forges). The daemon reaches it only
+  through `lab_hooks.rs` (the `Hooks` trait, whose defaults are a build
+  without Labs); its operations are `Handle<Labs>`. The binary registers it
+  with its `labs` feature.
+- `crates/arugulad`: `arugulad`, the binary on `arugulad-base`, which
+  registers the feature crates, and the daemon's integration tests
+  (`tests/integration/`; their fixtures stay in `crates/daemon/tests/`).
 - `crates/cli`: `arugula`, the CLI. It doesn't link `arugula-vt`, so it
   builds without libghostty and Zig.
 The server crates (`crates/control`, `crates/platform`,
@@ -89,7 +113,9 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Operations:** `ops/`: each operation (a route, its access, its MCP tool
   or kind) handled once (`mod.rs` holds the list and `HAND_WRITTEN`), with
   `mcp/ops.rs`; declared in `crates/proto/src/op.rs`
-  ([docs/operations.md](docs/operations.md)).
+  ([docs/operations.md](docs/operations.md)). A feature crate handles its
+  own as `Handle<Mine>`, routed with `op_of`, and adds MCP tools and kinds
+  through `mcp/registry.rs`.
 - **The mux:** `mux/` (`mux:`, with `block.rs`, `history.rs`
   and `agentenv.rs`): the task that owns the layout, the
   panes and every client (`mod.rs`), with one file per area: `attention.rs`,
@@ -111,10 +137,10 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Blocks:** what every block provides and the registry of kinds (`mux:block.rs`), agents (`agent/`),
   browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`,
   and `block_channel.rs` for control's block origins),
-  editors (`editor/`), review (`review/`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`),
+  editors (`editor/`, in `arugulad-editor`), review (`review/`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`),
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
-  conversations (`conversations/`), the IDE bridge (`ide/`, with the mux's half in `mux:ide/`), invites
+  conversations (`conversations/`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
   (`invite/`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
   configured agent harnesses
   (`mux:inventory.rs`).
@@ -123,7 +149,7 @@ nothing marked `mux:` names the edge or the block kinds.
   Sprites adapter, `labs/provider_tunnel.rs`, `labs/resident.rs` and
   `labs/sandbox.rs` in Labs), synced history (`sync.rs`, `seal.rs`),
   tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
-- **Lifecycle:** the command line (`args.rs`), startup (`main.rs`), a
+- **Lifecycle:** the command line (`args.rs`), startup (`lib.rs`), a
   hosted workspace's box (`hosted/`: `--hosted`, its own keys per box,
   enrolling, redialling on resume, busy and idle for control), `install`
   (`install.rs`), Getting started (`setup.rs`), updates (`update.rs`,
@@ -189,14 +215,14 @@ by `ops::flagged`), `labs::Flagged` on its block types, and
 says how to turn it on. `labs` in the file, or the old empty `labs`
 file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
-code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it
-only through the surface in `labs/mod.rs`, which explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
+code in or out: it lives in the crate `arugulad-labs` (`crates/arugulad-labs`), and core reaches it
+only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; the crate's `lib.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
 daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
-(`labs/guest_ssh.rs`; `russh` is an optional dependency, and a build without
+(`guest_ssh.rs`; `russh` is Labs' dependency, and a build without
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
-(`labs/forgejo.rs`, `labs/gitlab.rs`, `labs/tea.rs`, `labs/forge_live.rs`,
-and `forge/labs_forges.rs`, the block's own connecting, which needs its
-fields; GitHub's PR and issue blocks are core, and `labs::forge_allowed`
+(`forgejo.rs`, `gitlab.rs`, `tea.rs`, `forge_live.rs`,
+and `forges.rs`, the connecting a block asks of Labs through the
+forge's trait `forge::others::OtherForges`; GitHub's PR and issue blocks are core, and `lab_flags::forge_allowed`
 refuses the others unless Labs is on, in a block's creation, `open_config`
 and each read, so a saved one comes back unavailable; with Labs off a bare
 `OWNER/REPO#N` is GitHub's) are there (#452 to #457). The `Provider` trait stays
@@ -204,9 +230,11 @@ in core (`provider/`); a build without Labs never has a provider, and a saved
 VM pane comes back exited, with the reason. `just check-core`
 runs clippy and the tests of `arugulad` and `arugula` with the feature off.
 The GitHub forge (`forge/`, surface `forges.rs`) and the editor server with
-Claude Code's IDE (`editor/` and `ide/`, surface `editors.rs`) are features of
-their own, `forge` and `editor`, on by default the way `labs` is, and built
-on the same pattern: one surface, a twin for each item, no `cfg` at call sites.
+Claude Code's IDE (crate `arugulad-editor`, surface `editors.rs`) are features
+of their own, `forge` and `editor`, on by default the way `labs` is. Both
+are registered by the binary (#232): the surface asks the registered
+`Forges` or `Editors`, and with none it does what a build without them did
+(nothing, or "isn't in this build"), so no call site needs a `cfg`.
 `labs` turns `forge` on (Forgejo and GitLab are forges); `just check-features`
 lints the daemon with neither, and with each alone.
 
@@ -219,6 +247,13 @@ lints the daemon with neither, and with each alone.
   the `proto-ts` check, fmt and clippy, for both workspaces (the root's
   and the server's).
 - `just e2e`: the browser specs. `just e2e-webkit`: WebKit's.
+  `just e2e-spec e2e/<name>.spec.ts`: only the ones named.
+- In a session on a hosted dev box (your branch is `arugula/...`): run the
+  specs you wrote or changed with `just e2e-spec`, one at a time
+  (docs/testing.md, "On a dev box"), and don't commit
+  `web/src/shared/proto.gen.ts` or blessed fixtures (`ARUGULA_BLESS=1`'s
+  `tests/fixtures/`): regenerate them to build and test, leave them out of
+  your commits, and say so; the lead regenerates them on the rollup.
 - `just dev`: a dev daemon on 7682 (state in `~/.local/state/arugula-dev`)
   and Vite on 5173, leaving your daily daemon alone.
 - `just proto-ts`: regenerate `web/src/shared/proto.gen.ts`.
