@@ -14,7 +14,8 @@ reaches its log lines (log targets are module paths, matched by prefix). So far:
 `arugulad-editor` ([crates/arugulad-editor](../arugulad-editor/README.md)),
 `arugulad-drivers` (crates/arugulad-drivers, the deploy drivers), `arugulad-docs`
 ([crates/arugulad-docs](../arugulad-docs/README.md)), `arugulad-forge`
-([crates/arugulad-forge](../arugulad-forge/README.md)) and `arugulad-labs`
+([crates/arugulad-forge](../arugulad-forge/README.md)), `arugulad-review`
+([crates/arugulad-review](../arugulad-review/README.md)) and `arugulad-labs`
 ([crates/arugulad-labs](../arugulad-labs/README.md)).
 Like every library here it's version 0.0.0: what it reports as the version
 comes from `arugula_core::version`, which the binary sets.

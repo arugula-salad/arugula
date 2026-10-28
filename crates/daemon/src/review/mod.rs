@@ -1,10 +1,12 @@
 //! M11: views for checking an agent's work, from anywhere and especially
 //! the phone. Both are read-only blocks on a host (this one, or the VM a
-//! tab or pane runs on):
+//! tab or pane runs on), and both are the crate `arugulad-review`'s (#232):
 //!
-//! - a **diff block** ([`diff`]): what changed in a git repository, as a
+//! - a **diff block** (`diff.rs`): what changed in a git repository, as a
 //!   file list with +/− first, each file opening to its unified hunks;
-//! - a **file block** ([`file`]): one file, followed live, at a line.
+//! - a **file block** (`file.rs`): one file, followed live, at a line.
+//!
+//! This module is what they share, which the forge and Labs use too.
 //!
 //! A diff block opened from a chant workspace member's card also says which
 //! decision and run made each hunk (#619), through Labs' chant workspaces.
@@ -30,9 +32,6 @@
 //!   [`Provider::run`](crate::provider::Provider::run) on a machine, with
 //!   `GIT_OPTIONAL_LOCKS=0` so a poll never takes a lock an agent's own
 //!   `git` wants.
-
-pub mod diff;
-pub mod file;
 
 use std::{
     path::PathBuf,
@@ -194,7 +193,7 @@ impl Live {
 }
 
 /// How often a view polls its host while drawn.
-pub(crate) fn every(local: bool, here: Duration) -> Duration {
+pub fn every(local: bool, here: Duration) -> Duration {
     if local { here } else { Duration::from_secs(3) }
 }
 

@@ -12,6 +12,8 @@ arugulad-base = { workspace = true }
 arugulad-docs = { workspace = true }
 # The deploy drivers (`_planter` and the rest), in every build.
 arugulad-drivers = { workspace = true }
+# The diff and file blocks, in every build.
+arugulad-review = { workspace = true }
 # The editor server and Claude Code's IDE, for the `editor` feature.
 arugulad-editor = { workspace = true, optional = true }
 # The GitHub forge, for the `forge` feature.

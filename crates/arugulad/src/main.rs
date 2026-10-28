@@ -19,6 +19,8 @@ fn register() {
         arugulad_docs::register();
         // The deploy drivers, programs of their own (crates/arugulad-drivers).
         arugulad_drivers::register();
+        // The diff and file blocks (crates/arugulad-review).
+        arugulad_review::register();
         // The GitHub forge, which Labs' forges are built on
         // (crates/arugulad-forge).
         #[cfg(feature = "forge")]

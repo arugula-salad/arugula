@@ -315,6 +315,7 @@ dependencies = [
  "arugulad-editor",
  "arugulad-forge",
  "arugulad-labs",
+ "arugulad-review",
  "axum",
  "base64 0.23.1",
  "futures-util",
@@ -503,6 +504,19 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "arugulad-review"
+version = "0.0.0"
+dependencies = [
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
