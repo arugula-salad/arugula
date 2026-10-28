@@ -111,6 +111,13 @@ html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
   padding-left: 78px;
 }
 
+/* With AppKit's tab bar showing, the page starts below it, as the shell's
+   does (shared/style.css, #323, #288). */
+html[data-native-tabs] .platform {
+  margin-top: var(--native-tabs);
+  height: calc(100% - var(--native-tabs));
+}
+
 .platform-section {
   margin: 0;
   /* The panel is the frame's width; what's in it keeps the old column's

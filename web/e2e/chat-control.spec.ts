@@ -155,17 +155,23 @@ test("the rail's Chat opens the platform page, where Alice makes #general and me
   await expect(quoted.locator(".thread-quote pre")).toHaveText("MEAN-TEST-FAILED");
 });
 
-// #1596: in the desktop app, Chat opens the platform page in a window of its
-// own (the app reuses one), and the terminals stay where they were.
-test("in the app, the rail's Chat opens a window of its own, beside the terminals", async () => {
+// #288: in the desktop app, Chat goes to the platform page in this window,
+// not a new one (macOS would show it as a second native tab).
+test("in the app, the rail's Chat goes to the platform page in this window", async () => {
   const shell = await alice.context().newPage();
   await shell.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac", signedIn: true } }));
   await shell.goto(`${t.base}/`);
-  const [opened] = await Promise.all([alice.context().waitForEvent("page"), shell.locator(".ws-rail [data-open-chat]").click()]);
-  await expect(opened).toHaveURL(new RegExp(`^${app}/`), { timeout: 15_000 });
-  // The terminals' window is still Control's page.
-  expect(new URL(shell.url()).origin).toBe(new URL(t.base).origin);
-  await opened.close();
+  const pages = alice.context().pages().length;
+  await shell.locator(".ws-rail [data-open-chat]").click();
+  await expect(shell).toHaveURL(new RegExp(`^${app}/`), { timeout: 15_000 });
+  expect(alice.context().pages().length).toBe(pages);
+  // With AppKit's tab strip showing (a second window), its bar starts below it.
+  await expect(shell.locator(".platform-bar")).toBeVisible();
+  await shell.evaluate(() => {
+    document.documentElement.dataset.nativeTabs = "";
+    document.documentElement.style.setProperty("--native-tabs", "64px");
+  });
+  expect((await shell.locator(".platform-bar").boundingBox())!.y).toBe(64);
   await shell.close();
 });
 
