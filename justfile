@@ -536,8 +536,12 @@ test-platform-postgres:
     #!/usr/bin/env bash
     set -euo pipefail
     name="arugula-platform-pg-$$"
+    # No fsync: a test database needn't survive a crash, and with it every
+    # commit waited on the disk. In a job of its own beside test and
+    # test-2 the suite took 23-27 min instead of 2.
     docker run -d --rm --name "$name" -e POSTGRES_PASSWORD=platform -p 127.0.0.1::5432 \
-        postgres:17 -c max_connections=500 >/dev/null
+        postgres:17 -c max_connections=500 -c fsync=off -c synchronous_commit=off \
+        -c full_page_writes=off >/dev/null
     trap 'docker rm -f "$name" >/dev/null' EXIT
     port=$(docker port "$name" 5432/tcp | head -1 | sed 's/.*://')
     # Over TCP: the image's first start answers on its socket only while it
