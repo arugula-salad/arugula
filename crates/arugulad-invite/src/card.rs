@@ -45,8 +45,8 @@ use serde_json::{Value, json};
 use tracing::{info, warn};
 
 use crate::{
+    Hook,
     block::{Block, BlockCtx, BlockKind, Summary, no_method},
-    invite::Hook,
     mux::AskReply,
     store::now_ms,
 };

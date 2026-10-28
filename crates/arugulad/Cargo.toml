@@ -14,6 +14,8 @@ arugulad-docs = { workspace = true }
 arugulad-drivers = { workspace = true }
 # The diff and file blocks, in every build.
 arugulad-review = { workspace = true }
+# Inviting a person into a session, in every build.
+arugulad-invite = { workspace = true }
 # The editor server and Claude Code's IDE, for the `editor` feature.
 arugulad-editor = { workspace = true, optional = true }
 # The GitHub forge, for the `forge` feature.

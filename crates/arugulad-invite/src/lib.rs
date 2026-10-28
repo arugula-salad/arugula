@@ -18,13 +18,21 @@
 //! agent's on the owner's CLI (`X-Arugula-Agent`): an agent asks with
 //! `invite_person`, and the owner sends it.
 //!
-//! An agent's invite (#234, MCP's `invite_person`) is a draft on a card
-//! ([`card`]) that only the owner sends: then [`run`] does the same, as
-//! them.
+//! An agent's invite (#234, MCP's `invite_person`, [`tool`]) is a draft on
+//! a card ([`card`]) that only the owner sends: then [`run`] does the same,
+//! as them.
+//!
+//! This is the crate `arugulad-invite` (#232): the binary calls
+//! [`register`], and the daemon (`arugulad-base`) reaches it only through
+//! its `features` hooks and `mcp::registry`. The base keeps what its API
+//! checks too (`invite.rs`: the agent header, the owner-only words, and the
+//! [`Hook`] an invite card runs through).
 
 pub mod card;
+pub mod ops;
+pub mod tool;
 
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::Arc;
 
 use arugula_core::{Role, SessionId};
 use arugula_proto::{
@@ -32,23 +40,42 @@ use arugula_proto::{
     api::{InviteDelivery, InviteGrant, InviteRequest, Invited, TeamPins, TeamPinsRequest},
     op::ops::{InviteSend, TeamPinsGet, TeamPinsSet},
 };
-use axum::{
-    Router,
-    http::{HeaderMap, StatusCode},
-};
+use axum::{Router, http::StatusCode};
 use serde_json::json;
+
+// What the code here names as `crate::…`: the mux's modules and the daemon's,
+// as it named them when it was the daemon's.
+use arugula_mux::{acl, block, mux, store};
+pub use arugulad_base::invite::{CLOSE_OWNER_ONLY, Hook, OWNER_ONLY};
+use arugulad_base::{control, push, server, task};
 
 use crate::{
     acl::Principal,
     control::{REFRESH_WAIT, Waiting},
     mux::{Api, Cmd},
-    ops::OpRoutes,
     server::App,
     store::now_ms,
 };
 
-pub fn routes() -> Router<Arc<App>> {
-    Router::new().op::<InviteSend>().op::<TeamPinsGet>().op::<TeamPinsSet>()
+/// Whose the invite operations are (`impl Handle<Invite> for InviteSend`):
+/// this crate's, so it may handle `arugula-proto`'s operation types.
+pub struct Invite;
+
+/// Puts invites in the daemon. Call it before `arugulad_base::main`.
+pub fn register() {
+    arugulad_base::features::register(Box::new(Invite));
+    tool::register();
+}
+
+impl arugulad_base::features::Feature for Invite {
+    fn kinds(&self, kinds: &mut block::BlockKinds, app: &Hook) {
+        kinds.add(arugula_proto::BlockType::Invite, card::InviteKind(app.clone()));
+    }
+
+    fn routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
+        use arugulad_base::ops::OpRoutes;
+        r.op_of::<InviteSend, Invite>().op_of::<TeamPinsGet, Invite>().op_of::<TeamPinsSet, Invite>()
+    }
 }
 
 fn no(status: StatusCode, why: impl Into<String>) -> (StatusCode, String) {
@@ -59,19 +86,8 @@ fn ok_id(rest: &str) -> bool {
     !rest.is_empty() && rest.len() <= 200 && !rest.chars().any(|c| c.is_control() || c.is_whitespace())
 }
 
-/// What runs an approved invite card (#234): blocks are made before the
-/// server is, so it's set once it is.
-pub type Hook = Arc<OnceLock<Weak<App>>>;
-
-pub use crate::mux::{CLOSE_OWNER_ONLY, OWNER_ONLY};
-
 /// An agent on the owner's CLI asks; the owner sends.
 pub const AGENT_ASKS: &str = "an agent doesn't invite: ask the user with Arugula's invite_person tool";
-
-/// Whether the owner's CLI says an agent runs it (as for a forge's drafts).
-pub(crate) fn agent(headers: &HeaderMap) -> bool {
-    headers.contains_key("x-arugula-agent")
-}
 
 /// An invite an agent drafted and the owner sent (#234), for the audit
 /// log: who drafted it, from which pane, and who sent it.
@@ -346,13 +362,13 @@ async fn deliver(
     (InviteDelivery::Pending, Some(why.into()))
 }
 
-pub(crate) fn team_pins(app: &App) -> TeamPins {
+pub fn team_pins(app: &App) -> TeamPins {
     TeamPins { pins: app.control.team_pins(), checked: app.control.checked_teams() }
 }
 
 /// The owner's browser hands over the teams it pinned (#233), and those
 /// it left; their rosters are fetched and checked against these, now.
-pub(crate) async fn add_pins(app: &App, agent: bool, b: TeamPinsRequest) -> Result<TeamPins, (StatusCode, String)> {
+pub async fn add_pins(app: &App, agent: bool, b: TeamPinsRequest) -> Result<TeamPins, (StatusCode, String)> {
     if agent {
         return Err(no(StatusCode::FORBIDDEN, "the owner's browser pins teams, not an agent"));
     }

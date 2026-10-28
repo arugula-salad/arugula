@@ -59,6 +59,10 @@ Each has a `README.md` with where to start reading.
   daemon reaches it only through `forges.rs` (the `Forges` trait); the
   binary registers it with its `forge` feature. Labs' Forgejo and GitLab
   register into its `OtherForges`.
+- `crates/arugulad-invite`: `arugulad-invite`, inviting a person into a
+  session: its operations, the invite card and MCP's `invite_person` and
+  `read_invite`. The base keeps `invite.rs` (the agent header, the
+  owner-only words, the `Hook` a card runs through).
 - `crates/arugulad-review`: `arugulad-review`, the diff and file blocks;
   what they share (`Runner`, `Live`) stays in the base's `review/`.
 - `crates/arugulad-labs`: `arugulad-labs`, Labs (studio apps, chant
@@ -148,7 +152,7 @@ nothing marked `mux:` names the edge or the block kinds.
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
   conversations (`conversations/`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
-  (`invite/`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
+  (`invite/`, in `arugulad-invite`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
   configured agent harnesses
   (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host

@@ -314,6 +314,7 @@ dependencies = [
  "arugulad-drivers",
  "arugulad-editor",
  "arugulad-forge",
+ "arugulad-invite",
  "arugulad-labs",
  "arugulad-review",
  "axum",
@@ -471,6 +472,25 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "arugulad-invite"
+version = "0.0.0"
+dependencies = [
+ "arugula-core",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "axum",
+ "futures-util",
+ "hex",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

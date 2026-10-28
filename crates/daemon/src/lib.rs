@@ -767,12 +767,11 @@ fn kinds(
     editors::kinds(&mut kinds);
     kinds.add(BlockType::Remote, remote::RemoteKind);
     forges::kinds(&mut kinds);
-    kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     kinds.add(BlockType::Board, board_block::BoardKind);
     lab_hooks::labs().kinds(&mut kinds, invite);
     // The feature crates' (#232): Docs.
-    features::kinds(&mut kinds);
+    features::kinds(&mut kinds, invite);
     kinds
 }
 
