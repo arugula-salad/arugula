@@ -657,11 +657,11 @@ impl Workspace {
 
     /// Who chant records for `by` (ws-080). `relayed` is set by the
     /// daemon, never the caller: someone other than the owner asked.
-    fn chant_by(&self, args: &Value, by: Option<&str>, version: Option<String>) -> crate::gate::ChantBy {
+    fn chant_by(&self, args: &Value, by: Option<&str>, version: Option<String>) -> crate::labs::gates::ChantBy {
         let relayed = args["relayed"].as_bool().unwrap_or(false);
         let who = self.who.lock().unwrap().clone();
         let named = by.map(|n| model::principal(n, &who.principals));
-        crate::gate::ChantBy {
+        crate::labs::gates::ChantBy {
             actor: if relayed { named } else { who.actor.clone().or(named) },
             relayed,
             relayed_by: who.actor.filter(|_| version.is_some_and(|v| model::at_least(&v, model::RELAYED_BY))),
@@ -681,15 +681,15 @@ impl Workspace {
             (st.chant.clone().ok_or(model::NO_CHANT)?, st.version.clone())
         };
         let runner = self.runner().await?;
-        let via = crate::gate::Via::Chant {
+        let via = crate::labs::gates::Via::Chant {
             runner: &runner,
             chant: &chant,
             by: self.chant_by(&args, by.as_deref(), version),
         };
         let result = if expire {
-            crate::gate::expire(&gate, &via).await
+            crate::labs::gates::expire(&gate, &via).await
         } else {
-            crate::gate::approve(&gate, by.as_deref(), &via).await
+            crate::labs::gates::approve(&gate, by.as_deref(), &via).await
         };
         let (ok, said) = match &result {
             Ok(s) | Err(s) => (result.is_ok(), s.clone()),
@@ -745,12 +745,12 @@ impl Workspace {
             (st.chant.clone().ok_or(model::NO_CHANT)?, st.version.clone())
         };
         let runner = self.runner().await?;
-        let via = crate::gate::Via::Chant {
+        let via = crate::labs::gates::Via::Chant {
             runner: &runner,
             chant: &chant,
             by: self.chant_by(&args, by.as_deref(), version),
         };
-        let result = crate::gate::answer(&gate, &value, &via).await;
+        let result = crate::labs::gates::answer(&gate, &value, &via).await;
         let (ok, said) = match &result {
             Ok(s) | Err(s) => (result.is_ok(), s.clone()),
         };

@@ -67,11 +67,6 @@
 pub mod github;
 pub mod issue;
 pub mod live;
-// The part of a forge block that connects to Forgejo and GitLab, which are
-// Labs: it needs the block's private fields, so it is here and not in
-// `labs/`; the twins are below, after `connect`.
-#[cfg(feature = "labs")]
-mod labs_forges;
 pub mod login;
 pub mod native;
 pub mod pin;
@@ -2095,21 +2090,96 @@ impl Block for ForgeBlock {
     }
 }
 
-/// What a build without Labs answers for Forgejo and GitLab: they are not
-/// in it (a block of theirs is refused first, by `connect`, so these are
-/// asked only if that changes).
-#[cfg(not(feature = "labs"))]
+/// What a Forgejo block asks Labs for (`lab_hooks`): the `tea` login it
+/// reads with, from its config, resolved for its host, or picked.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+pub struct TeaAsk {
+    /// The login the config names.
+    pub want: Option<String>,
+    pub host: Option<String>,
+    pub provider: Provider,
+    pub repo: String,
+}
+
+/// The login a Forgejo block reads with, and its adapter.
+pub struct TeaFound {
+    pub name: String,
+    pub api: String,
+    pub adapter: Arc<dyn Adapter>,
+}
+
+/// Why no login was found, and the logins to pick from (`None`: leave
+/// what the block shows).
+pub struct TeaMissed {
+    pub candidates: Option<Vec<arugula_proto::forge::ForgeLogin>>,
+    pub error: String,
+}
+
+/// Forgejo and GitLab, which are Labs (#457): what Labs connects is kept
+/// here. A build without Labs says it lacks them (a block of theirs is
+/// refused first, by `connect`, so these are asked only if that changes).
 impl ForgeBlock {
-    async fn connect_tea(&self, _runner: Runner) -> Result<Arc<dyn Adapter>, String> {
-        Err(crate::lab_flags::not_built("A Forgejo block"))
+    /// A Forgejo block (or a host `gh` doesn't know): the `tea` login for
+    /// its host, from the config, resolved, or picked.
+    async fn connect_tea(&self, runner: Runner) -> Result<Arc<dyn Adapter>, String> {
+        let ask = {
+            let c = self.config.lock().unwrap();
+            TeaAsk {
+                want: c.login.clone(),
+                host: c.host.clone().or_else(|| c.api.as_deref().and_then(login::url_host)),
+                provider: c.provider,
+                repo: c.repo.clone(),
+            }
+        };
+        match crate::lab_hooks::labs().tea_connect(runner, ask).await {
+            Ok(f) => Ok(self.attach(f.name, f.api, f.adapter)),
+            Err(m) => {
+                if let Some(c) = m.candidates {
+                    self.state.lock().unwrap().logins = c;
+                }
+                Err(m.error)
+            }
+        }
     }
 
+    /// GitLab (M39): glab's token for the host, or anonymous and read-only.
     async fn connect_gitlab(&self) -> Result<Arc<dyn Adapter>, String> {
-        Err(crate::lab_flags::not_built("A GitLab block"))
+        let runner = Runner::user(&self.ctx).await?;
+        let (host, api) = {
+            let c = self.config.lock().unwrap();
+            let host = c.host.clone().or_else(|| c.api.as_deref().and_then(login::url_host));
+            let host = host.ok_or("which GitLab? open it from a link or a clone")?;
+            let api = c.api.clone().unwrap_or_else(|| format!("https://{host}/api/v4"));
+            (host, api)
+        };
+        let (a, login) = crate::lab_hooks::labs().gitlab_connect(runner, &host, &api).await?;
+        {
+            let mut c = self.config.lock().unwrap();
+            c.login = login.clone();
+            c.api = Some(api.clone());
+        }
+        {
+            let mut st = self.state.lock().unwrap();
+            st.login = login.clone();
+            st.api = Some(api);
+            st.read_only = a.read_only();
+            st.logins.clear();
+        }
+        info!(pane = self.ctx.id, host, login, "gitlab block connected");
+        *self.adapter.lock().unwrap() = Some(a.clone());
+        Ok(a)
     }
 
-    async fn login_tea(self: &Arc<Self>, _name: &str) -> Result<Value, String> {
-        Err(crate::lab_flags::not_built("A Forgejo login"))
+    /// `login {name}` on a Forgejo block: use that `tea` login from now on.
+    async fn login_tea(self: &Arc<Self>, name: &str) -> Result<Value, String> {
+        let runner = self.runner().await?;
+        let provider = self.config.lock().unwrap().provider;
+        let f = crate::lab_hooks::labs().tea_login(runner, provider, name).await?;
+        *self.you.lock().unwrap() = None;
+        self.attach(f.name, f.api, f.adapter);
+        self.read(true).await;
+        self.ctx.changed();
+        to_value(arugula_proto::forge::LoggedIn { login: name.to_owned() })
     }
 }
 
