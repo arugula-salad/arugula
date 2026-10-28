@@ -1399,8 +1399,9 @@ export type Edge = "left" | "right" | "top" | "bottom" | "center";
 
 /**
  * What an editor says about itself in summaries (M28, S17's schema):
- * what changes about once in ten seconds. The cursor and the file's text
- * are content and go only to followers ([`ServerMsg::Follow`]).
+ * what changes about once in ten seconds, and the cursor's line. The
+ * file's text and the cursor's moves are content and go only to followers
+ * ([`ServerMsg::Follow`]).
  */
 export type EditorInfo = { 
 /**
@@ -1435,7 +1436,17 @@ conflict?: string | null,
 /**
  * How many people follow it now: the editor says so.
  */
-followers: number, };
+followers: number, 
+/**
+ * The cursor's line in its file (from 1), for its card.
+ */
+line?: number | null, 
+/**
+ * It can't be followed: an nvim the daemon found in a pane and reads
+ * over its RPC socket, without arugula.nvim to send a follow stream
+ * (#1730).
+ */
+no_follow?: boolean, };
 
 export type Event = { 
 /**

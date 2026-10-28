@@ -65,6 +65,18 @@ pub trait Editors: Send + Sync + 'static {
     fn local_routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>>;
     /// Turns editor blocks on (once per process).
     fn install(&self, s: Settings);
+    /// Starts looking for the editors that run in terminals (#1730: nvim,
+    /// read over its own RPC socket), once the mux runs.
+    fn watch(&self, mux: MuxHandle);
+    /// Opens `file` at `line` in the editor terminal `pane` runs (see
+    /// [`open_in_pane`]).
+    fn open_in_pane(
+        &self,
+        mux: &MuxHandle,
+        pane: PaneId,
+        file: &Path,
+        line: Option<u32>,
+    ) -> BoxFuture<'static, Result<(), String>>;
     /// Starts being Claude Code's IDE (M28), if it can.
     fn start_ide(
         &self,
@@ -172,6 +184,32 @@ pub fn joinable() -> bool {
 pub fn install(s: Settings) {
     if let Some(e) = editors() {
         e.install(s);
+    }
+}
+
+/// Starts looking for the editors that run in terminals (#1730), if the
+/// editor is in this build: a pane running nvim shows its file, cursor and
+/// diagnostics, without arugula.nvim.
+pub fn watch_panes(mux: MuxHandle) {
+    if let Some(e) = editors() {
+        e.watch(mux);
+    }
+}
+
+/// Opens `file` at `line` (from 1; `None`: wherever the editor had it) in
+/// the nvim that terminal `pane` runs in its foreground, as Open in editor
+/// does when the Editor preference is nvim (#1731). It goes over nvim's
+/// own RPC socket, with or without arugula.nvim, and is nvim's `:drop`: the
+/// file's window if it shows the file, else the current one.
+///
+/// `Err` says why it couldn't, for the person who asked: no such terminal,
+/// it doesn't run nvim, its nvim can't be reached (older than 0.10, or its
+/// server stopped), or the editor isn't in this build. The caller decides
+/// what to do instead (a new nvim pane, say).
+pub async fn open_in_pane(mux: &MuxHandle, pane: PaneId, file: &Path, line: Option<u32>) -> Result<(), String> {
+    match editors() {
+        Some(e) => e.open_in_pane(mux, pane, file, line).await,
+        None => Err(not_built("Opening a file in nvim")),
     }
 }
 

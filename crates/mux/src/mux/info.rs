@@ -185,6 +185,23 @@ impl Daemon {
             && command.as_deref().and_then(agent_in).as_deref() == Some("claude");
         let project = cwd.as_deref().and_then(crate::classify::project);
         let head = project.as_ref().and_then(|p| crate::classify::head(&p.root));
+        // The editor running in it (#1730): its file, relative to where the
+        // pane is, and the cursor's line on the card.
+        let editor = self.editors.get(&p.id).map(|l| (l.info(), l.file()));
+        let file = editor.as_ref().and_then(|(_, f)| f.as_deref()).map(|f| match cwd.as_deref() {
+            Some(dir) => crate::paths::relative(dir, f),
+            None => f.to_owned(),
+        });
+        let title = match (&editor, &file) {
+            (Some((i, _)), Some(f)) => {
+                let name = f.rsplit('/').next().unwrap_or(f);
+                Some(match i.line {
+                    Some(l) => format!("{name}:{l} ({})", i.app),
+                    None => format!("{name} ({})", i.app),
+                })
+            }
+            _ => status.title.clone(),
+        };
         PaneInfo {
             resumes,
             id: p.id,
@@ -196,9 +213,9 @@ impl Daemon {
             command,
             work: Some(work),
             activity: self.activity.get(&p.id).map(|(_, a)| *a).filter(|a| a.last_ms > 0),
-            title: status.title.clone(),
-            file: None,
-            editor: None,
+            title,
+            file,
+            editor: editor.map(|(i, _)| i),
             diff: self.card_of.get(&p.id).map(|c| c.1.clone()),
             claude_ide: self.cards.as_ref().is_some_and(|c| c.linked(p.id)),
             started_by: meta.started_by.clone(),

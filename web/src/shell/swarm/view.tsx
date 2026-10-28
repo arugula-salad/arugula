@@ -25,7 +25,7 @@ import { DiffCard } from "../ui/diff-card";
 import { GateWhy } from "../ui/gate-why";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { finished, needsYou, NEEDS_YOU } from "../../shared/needs-you";
-import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
+import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
 const THEME_KEY = "arugula.swarm.theme";
@@ -547,7 +547,7 @@ export function SwarmView({
       {peek && (
         <div class="swarm-peek" style={{ left: `${Math.min(peek.x + 16, innerWidth - 700)}px`, top: `${Math.min(peek.y + 16, innerHeight - 160)}px` }}>
           <div class="ph">
-            <b>{byKey(peek.key) ? `%${byKey(peek.key)!.id}  ${byKey(peek.key)!.info.current?.text ?? byKey(peek.key)!.info.command ?? ""}` : ""}</b>
+            <b>{byKey(peek.key) ? `%${byKey(peek.key)!.id}  ${editorAt(byKey(peek.key)!) ?? byKey(peek.key)!.info.current?.text ?? byKey(peek.key)!.info.command ?? ""}` : ""}</b>
             <span>{byKey(peek.key) ? `${byKey(peek.key)!.host} · ${groupOf(byKey(peek.key)!, by)}` : ""}</span>
           </div>
           <pre>{peek.text}</pre>

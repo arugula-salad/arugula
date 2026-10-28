@@ -1159,8 +1159,9 @@ pub struct PaneInfo {
 }
 
 /// What an editor says about itself in summaries (M28, S17's schema):
-/// what changes about once in ten seconds. The cursor and the file's text
-/// are content and go only to followers ([`ServerMsg::Follow`]).
+/// what changes about once in ten seconds, and the cursor's line. The
+/// file's text and the cursor's moves are content and go only to followers
+/// ([`ServerMsg::Follow`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct EditorInfo {
@@ -1190,6 +1191,14 @@ pub struct EditorInfo {
     /// How many people follow it now: the editor says so.
     #[serde(default)]
     pub followers: u32,
+    /// The cursor's line in its file (from 1), for its card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    /// It can't be followed: an nvim the daemon found in a pane and reads
+    /// over its RPC socket, without arugula.nvim to send a follow stream
+    /// (#1730).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_follow: bool,
 }
 
 /// Diagnostic counts: errors, warnings, information.
