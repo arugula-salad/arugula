@@ -13,7 +13,7 @@ import { reset } from "./helpers";
 const ITEM = "fi_000000000000000000000000000000a1";
 const now = Date.now();
 
-/** What the daemon makes of the mirror's rows (crates/daemon/src/forge/pin.rs). */
+/** What the daemon makes of the mirror's rows (crates/arugulad-forge/src/pin.rs). */
 function item(kind: "pr" | "issue", number: number, title: string) {
   return {
     kind, number, title, body: "", author: "jake-gh", state: "open", draft: false, labels: ["bug"], assignees: kind === "issue" ? ["jake-gh"] : [],

@@ -42,7 +42,7 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-06"
 reviews: []
 constrains:
-  - "path:crates/daemon/src/forge"
+  - "path:crates/arugulad-forge/src"
 ---
 
 # Forge blocks use the person's own CLI, and agents draft while people send
@@ -83,5 +83,5 @@ minted for each push and never written to disk. That's the one push a
 machine makes. The PR stays a draft the session's asker sends, with their
 one-use user token: machines never send, merge or approve ("A thread's agent
 session runs on the project's hosted box").
-Where: `crates/daemon/src/forge/`.
+Where: `crates/arugulad-forge/src/`.
 From: [Forge track](docs/plan-archive.md#forge-track-s23-m36m40-added-2026-10-02), [M36](docs/plan-archive.md#m36-forgejo-pull-request-blocks-88), #457, #1204 (step 4), M159 (#1205), M168 (#1214), #1263 (step 6), M193 (#1264), M200 (#1271), M205 (#1276).

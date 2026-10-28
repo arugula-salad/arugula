@@ -79,6 +79,12 @@ pub mod shadow;
 pub use arugula_forge_github::model;
 pub mod util;
 
+// What the code here names as `crate::…`: the mux's modules and the daemon's,
+// as it named them when it was the daemon's.
+use arugula_mux::{block, mux, perm, store};
+use arugulad_base::forges::Forges;
+use arugulad_base::{api, control, forges, gate, git_remote, lab_flags, review, roots, server, task, worktree};
+
 use std::{
     collections::HashSet,
     path::Path,
@@ -111,15 +117,16 @@ use crate::{
 };
 
 /// Puts the forge in this daemon: the binary calls it before `main` when
-/// its `forge` feature is on. The daemon reaches it through `forges.rs`.
+/// its `forge` feature is on. The daemon (`arugulad-base`) never names this
+/// crate; it reaches it through its `forges.rs`, the [`Forges`] trait.
 pub fn register() {
-    crate::forges::install(Box::new(Forge));
+    forges::install(Box::new(Forge));
 }
 
 /// The forge, as `forges.rs` calls it.
 struct Forge;
 
-impl crate::forges::Forges for Forge {
+impl Forges for Forge {
     fn kinds(&self, kinds: &mut crate::block::BlockKinds) {
         kinds.add(BlockType::Forge, crate::block::Make(ForgeBlock::create));
     }
@@ -194,7 +201,6 @@ const UPLOADED: usize = 50;
 // crate's, and every forge's adapter uses them.
 pub use arugula_forge_github::{Error, Polled, Sent};
 // Forgejo's adapter (Labs) logs URLs with it.
-#[cfg(feature = "labs")]
 pub use arugula_forge_github::redact;
 
 /// What the daemon does with a [`Write`] (the type is proto's).

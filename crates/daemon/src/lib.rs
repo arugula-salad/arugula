@@ -29,11 +29,9 @@ pub mod doc_shares;
 pub mod e2e;
 pub mod editors;
 pub mod features;
-#[cfg(feature = "forge")]
-pub mod forge;
 pub mod forges;
 pub mod fs;
-mod git_remote;
+pub mod git_remote;
 // The gates a forge block and Labs' blocks raise.
 pub mod gate;
 mod hand;
@@ -50,7 +48,7 @@ pub mod http1;
 pub mod install;
 mod run_logs;
 pub mod work;
-mod worktree;
+pub mod worktree;
 use arugula_mux::inventory;
 pub mod invite;
 use arugula_mux::keys;

@@ -5,7 +5,6 @@
 //! build or machine without Labs needs as much as the adapter does.
 
 // Forgejo's and GitLab's (Labs) use them; GitHub's are the crate's own.
-#[cfg(feature = "labs")]
 pub use arugula_forge_github::util::{EVENTS, short, time};
 
 /// A host that's GitLab by its name alone (the rest are GitLab when `glab`
