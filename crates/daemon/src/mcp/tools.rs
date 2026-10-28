@@ -878,29 +878,29 @@ pub struct ListTeamAgentsArgs {
 
 type Schema = Arc<serde_json::Map<String, Value>>;
 
-pub(crate) struct Def {
-    pub(crate) name: &'static str,
-    pub(crate) title: &'static str,
-    pub(crate) description: &'static str,
-    pub(crate) args: Args,
-    pub(crate) read_only: bool,
-    pub(crate) destructive: bool,
-    pub(crate) idempotent: bool,
-    pub(crate) open_world: bool,
+pub struct Def {
+    pub name: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub args: Args,
+    pub read_only: bool,
+    pub destructive: bool,
+    pub idempotent: bool,
+    pub open_world: bool,
     /// The flag the machine needs on for it to be listed (`Op::FLAG`).
-    pub(crate) flag: Option<&'static str>,
+    pub flag: Option<&'static str>,
     /// Its answer's schema (`outputSchema`), when it is always one type: the
     /// answer's, with `summary`. A grouped tool answers by kind, and a tool
     /// that answers with more than one type in some case, has none.
-    pub(crate) output: Option<fn() -> Schema>,
+    pub output: Option<fn() -> Schema>,
     /// What it lets the person ask for, in their words: the card *What your
     /// agent can do here* is these ([`can_do`]).
-    pub(crate) human: Human,
+    pub human: Human,
 }
 
 /// A tool's place on the person's card. Every tool has one, so a new tool
 /// shows there and a removed one goes (`every_tool_has_a_human_line`).
-pub(crate) enum Human {
+pub enum Human {
     /// A line of its own.
     Line(About),
     /// Part of another tool's line, named: `wait` is how `run`'s line works,
@@ -910,19 +910,19 @@ pub(crate) enum Human {
 }
 
 /// One line of the card.
-pub(crate) struct About {
+pub struct About {
     /// The rest of "Ask it to …".
-    pub(crate) ask: &'static str,
+    pub ask: &'static str,
     /// A prompt the person can copy.
-    pub(crate) example: &'static str,
+    pub example: &'static str,
     /// What this machine needs for it to work, as `capabilities` says.
-    pub(crate) needs: Needs,
+    pub needs: Needs,
 }
 
 /// What a line needs beyond its tool's flag, each as `capabilities` reports
 /// it: a forge login here, or control, and a grant there.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Needs {
+pub enum Needs {
     Nothing,
     /// The user signed in to a forge here (`forges`).
     Forge,
@@ -938,7 +938,7 @@ pub(crate) enum Needs {
     Runs,
 }
 
-const fn line(ask: &'static str, example: &'static str, needs: Needs) -> Human {
+pub const fn line(ask: &'static str, example: &'static str, needs: Needs) -> Human {
     Human::Line(About { ask, example, needs })
 }
 
@@ -957,7 +957,7 @@ pub(crate) fn can_do(on: On, has: impl Fn(Needs) -> bool) -> Vec<arugula_proto::
 }
 
 /// What a tool takes.
-pub(crate) enum Args {
+pub enum Args {
     /// One set of arguments, for a tool that does one thing.
     One(fn() -> Schema),
     /// A grouped tool (#349): its `kind` argument picks one of these jobs,
@@ -969,13 +969,13 @@ pub(crate) enum Args {
 /// One job of a grouped tool, like `show {kind: "port", port: 3000}`. Each
 /// is a row, so the kinds that belong to one feature (the studio's) can be left out of their group, and their arguments with them,
 /// by filtering its table ([`defs`]).
-pub(crate) struct Kind {
-    pub(crate) name: &'static str,
+pub struct Kind {
+    pub name: &'static str,
     /// What it does, for the tool's description.
-    pub(crate) description: &'static str,
-    pub(crate) schema: fn() -> Schema,
+    pub description: &'static str,
+    pub schema: fn() -> Schema,
     /// The flag the machine needs on for it to be listed (`Op::FLAG`).
-    pub(crate) flag: Option<&'static str>,
+    pub flag: Option<&'static str>,
 }
 
 /// `show`'s blocks.
@@ -1288,7 +1288,7 @@ fn table(kinds: &'static [Kind]) -> Vec<&'static Kind> {
 
 /// Every tool there is, listed or not, with every kind.
 fn all_defs() -> Vec<Def> {
-    vec![
+    let mut defs = vec![
         Def {
             name: "run",
             title: "Run a command in a pane",
@@ -1851,7 +1851,10 @@ fn all_defs() -> Vec<Def> {
             output: None,
             human: Human::In(super::agent_sessions::START_TOOL),
         },
-    ]
+    ];
+    // A feature crate's, where each says (#232).
+    super::registry::add(&mut defs);
+    defs
 }
 
 /// A grouped tool's schema: `kind`, then every kind's arguments. One that
@@ -2076,7 +2079,7 @@ fn pick_kind(
 
 // ---------------------------------------------------------------- calls
 
-pub(crate) type Out = Result<Value, String>;
+pub type Out = Result<Value, String>;
 
 /// The `outputSchema` of a tool whose successful answer is always a `T`: the
 /// schema of `T` as `done` sends it, which is the object with `summary` in it
@@ -2177,7 +2180,7 @@ impl<'a> Call<'a> {
         Self { app, caller, client, progress: None, ctx: None }
     }
 
-    pub(crate) fn app(&self) -> &'a Arc<App> {
+    pub fn app(&self) -> &'a Arc<App> {
         self.app
     }
 
@@ -2459,8 +2462,14 @@ impl<'a> Call<'a> {
                 }
                 Err(e) => Err(e),
             },
-            (_, Some(k)) => Err(format!("{name} kind {k} isn't wired up")),
-            (_, None) => Err(format!("no tool {name}")),
+            // A feature crate's (#232).
+            (_, kind) => match super::registry::run_of(name, kind) {
+                Some(run) => run(self, args).await,
+                None => match kind {
+                    Some(k) => Err(format!("{name} kind {k} isn't wired up")),
+                    None => Err(format!("no tool {name}")),
+                },
+            },
         };
         match out {
             Ok(v) => CallToolResult::structured(v),

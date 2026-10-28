@@ -9,13 +9,14 @@ use arugula_proto::{
 };
 use axum::http::StatusCode;
 
-use crate::{
+use arugulad_base::{
     api::bad,
-    mux::Api,
     ops::{Cx, Handle, OpError},
 };
 
-impl Handle for IdeGet {
+use crate::{Editor, mux::Api};
+
+impl Handle<Editor> for IdeGet {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<IdeInfo, OpError> {
         Ok(match &cx.app.ide {
             Some(ide) => ide.info(),
@@ -24,7 +25,7 @@ impl Handle for IdeGet {
     }
 }
 
-impl Handle for IdeSet {
+impl Handle<Editor> for IdeSet {
     async fn handle(cx: &Cx<'_>, _: (), req: IdeDiffsRequest) -> Result<IdeDiffs, OpError> {
         let ide = cx.app.ide.as_ref().ok_or_else(|| bad("arugulad isn't Claude Code's IDE here (--no-claude-ide)"))?;
         ide.set_diffs_to(Some(req.diffs)).map_err(|e| OpError::Failed(e.to_string()))?;
@@ -32,7 +33,7 @@ impl Handle for IdeSet {
     }
 }
 
-impl Handle for IdeMention {
+impl Handle<Editor> for IdeMention {
     async fn handle(cx: &Cx<'_>, _: (), m: IdeMentionRequest) -> Result<IdeMentioned, OpError> {
         let who = cx.principal()?;
         if !who.is_owner() {

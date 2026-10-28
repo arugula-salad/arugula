@@ -101,7 +101,9 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Operations:** `ops/`: each operation (a route, its access, its MCP tool
   or kind) handled once (`mod.rs` holds the list and `HAND_WRITTEN`), with
   `mcp/ops.rs`; declared in `crates/proto/src/op.rs`
-  ([docs/operations.md](docs/operations.md)).
+  ([docs/operations.md](docs/operations.md)). A feature crate handles its
+  own as `Handle<Mine>`, routed with `op_of`, and adds MCP tools and kinds
+  through `mcp/registry.rs`.
 - **The mux:** `mux/` (`mux:`, with `block.rs`, `history.rs`
   and `agentenv.rs`): the task that owns the layout, the
   panes and every client (`mod.rs`), with one file per area: `attention.rs`,
@@ -126,7 +128,7 @@ nothing marked `mux:` names the edge or the block kinds.
   editors (`editor/`, in `arugulad-editor`), review (`review/`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`),
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
-  conversations (`conversations/`), the IDE bridge (`ide/` in `arugulad-editor`, its operations in `ops/ide.rs`, the mux's half in `mux:ide/`), invites
+  conversations (`conversations/`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
   (`invite/`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
   configured agent harnesses
   (`mux:inventory.rs`).
