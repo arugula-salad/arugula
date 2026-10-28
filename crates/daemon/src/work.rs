@@ -93,17 +93,20 @@ use crate::{mux::Api, server::App};
 #[path = "work_deploy.rs"]
 mod deploy;
 
-#[path = "work_apps_platform.rs"]
-pub mod apps_platform;
-
-#[path = "work_arugula_release.rs"]
-pub mod arugula_release;
-
-#[path = "work_planter.rs"]
-pub mod planter;
-
 #[path = "work_sessions.rs"]
 pub mod sessions;
+
+/// What a box hands planter's Ship (`arugulad-drivers`): where the
+/// artifact was fetched to, by run.
+pub fn ship_artifact_path(run: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("arugula-ship-{run}.tgz"))
+}
+
+/// Whether `where` is Ship's: the artifact the platform keeps.
+pub fn ships(driver: &str, source_where: &str) -> bool {
+    use arugula_e2e::deploy::planter::{ARTIFACT_WHERE, SHIP};
+    driver == SHIP && source_where == ARTIFACT_WHERE
+}
 
 /// The ledger's directory, in the state directory.
 pub const DIR: &str = "work";

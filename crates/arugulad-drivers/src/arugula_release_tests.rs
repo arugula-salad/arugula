@@ -292,7 +292,7 @@ async fn gh() -> Gh {
 /// app's 0.2.0 on `main`; and a green commit only a pull request's ref
 /// holds.
 #[cfg(unix)]
-const SEED: &str = include_str!("work_arugula_release_seed.sh");
+const SEED: &str = include_str!("arugula_release_seed.sh");
 
 #[cfg(unix)]
 struct Rig {

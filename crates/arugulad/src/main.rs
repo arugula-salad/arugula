@@ -9,6 +9,8 @@
 static VERSION_MARK: &str = concat!("\0arugula-version=", env!("CARGO_PKG_VERSION"), "\0");
 
 fn main() -> anyhow::Result<()> {
+    // The deploy drivers, programs of their own (crates/arugulad-drivers).
+    arugulad_drivers::register();
     // The editor server and Claude Code's IDE (crates/arugulad-editor).
     #[cfg(feature = "editor")]
     arugulad_editor::register();

@@ -44,6 +44,10 @@ Each has a `README.md` with where to start reading.
 - `crates/arugulad-editor`: `arugulad-editor`, the editor server and
   Claude Code's IDE (`editor/`, `ide/`). The daemon reaches it only through
   `editors.rs` (the `Editors` and `Ide` traits); the binary registers it.
+- `crates/arugulad-drivers`: `arugulad-drivers`, the deploy drivers the
+  binary runs as programs of their own (`_planter`, `_apps-platform`,
+  `_arugula-release`), through the base's subcommand registry
+  (`subcommands.rs`).
 - `crates/arugulad`: `arugulad`, the binary on `arugulad-base`, which
   registers the feature crates, and the daemon's integration tests
   (`tests/integration/`; their fixtures stay in `crates/daemon/tests/`).

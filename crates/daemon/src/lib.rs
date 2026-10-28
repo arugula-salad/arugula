@@ -49,7 +49,7 @@ mod hosts;
 mod http1;
 mod install;
 mod run_logs;
-mod work;
+pub mod work;
 mod worktree;
 use arugula_mux::inventory;
 mod invite;
@@ -92,6 +92,7 @@ use arugula_mux::shim;
 pub mod sites;
 pub mod task;
 use arugula_mux::store;
+pub mod subcommands;
 mod sync;
 use arugula_mux::sys;
 pub(crate) use arugula_mux::sys::home;
@@ -506,20 +507,10 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
     if argv.get(1).map(String::as_str) == Some("_seal") {
         hosted::snapshot::cli();
     }
-    // The apps-platform driver's apply (M222), as a deploy's run user:
-    // nothing else of the daemon runs.
-    if argv.get(1).map(String::as_str) == Some("_apps-platform") {
-        work::apps_platform::cli(&argv[2..]);
-    }
-    // planter's drivers (M233), as a deploy's run user: nothing else of the
-    // daemon runs.
-    if argv.get(1).map(String::as_str) == Some("_planter") {
-        work::planter::cli(&argv[2..]);
-    }
-    // Arugula's own release (M221), as a deploy's run user: nothing else
-    // of the daemon runs.
-    if argv.get(1).map(String::as_str) == Some("_arugula-release") {
-        work::arugula_release::cli(&argv[2..]);
+    // A feature crate's own program (the deploy drivers, `_planter` and
+    // the rest, as a deploy's run user): nothing else of the daemon runs.
+    if let Some(run) = subcommands::find(&argv) {
+        run(&argv[2..]);
     }
     #[cfg(windows)]
     if argv.get(1).map(String::as_str) == Some("_host") {
