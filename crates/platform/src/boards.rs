@@ -358,7 +358,8 @@ async fn resolve(app: &Platform, account: &str, v: &mut wire::BoardView) -> Resu
     if !issues.is_empty() {
         let ids: Vec<&str> = issues.iter().map(String::as_str).collect();
         let found = app.db.issue_states(&v.board.project, &ids)?;
-        // One read of every account named, as the issues page names them.
+        // One read of every account named, named as the issues page names
+        // them: login, else name, else someone who left.
         let accounts: Vec<String> = found
             .iter()
             .flat_map(|f| f.assignees.iter().cloned())
@@ -372,9 +373,9 @@ async fn resolve(app: &Platform, account: &str, v: &mut wire::BoardView) -> Resu
             let assignees = who
                 .into_iter()
                 .map(|a| match people.get(&a) {
-                    Some(p) if !p.name.is_empty() => p.name.clone(),
                     Some(p) if !p.login.is_empty() => p.login.clone(),
-                    _ => a,
+                    Some(p) if !p.name.is_empty() => p.name.clone(),
+                    _ => "someone who left".to_owned(),
                 })
                 .collect();
             live.insert(id, wire::Live { state, kind: "native".to_owned(), repo: None, number, title, assignees });

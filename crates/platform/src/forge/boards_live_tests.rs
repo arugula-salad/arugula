@@ -91,7 +91,7 @@ async fn a_row_reports_what_it_points_at_now() {
 }
 
 /// A row on an issue or a PR carries who it is assigned to: a mirrored
-/// item's logins, a native issue's names. A stale mirror row (`null`, or
+/// item's logins, a native issue's as its issue list names them. A stale mirror row (`null`, or
 /// not a list) reads as no one; a note has no `live` at all.
 #[tokio::test]
 async fn a_row_on_an_issue_or_pr_names_its_assignees() {
