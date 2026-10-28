@@ -199,8 +199,9 @@ and run `just quarantine` again.
 
 `scripts/quarantine.mjs check`, in `just test-scripts` and so in lint, fails
 when an entry has no issue, is past its `until` or more than 14 days out,
-names a test that isn't there, or the nextest configs don't match the
-manifest. So an expired quarantine turns lint red: fix the test and delete
+names a test that isn't there, names one in a serial spec (its later
+tests depend on it: fix it, or make its timing report-only through
+`web/e2e/timing.ts`), or the nextest configs don't match the manifest. So an expired quarantine turns lint red: fix the test and delete
 the entry, or delete the test. A new `until` needs a reason in the issue.
 `scripts/tests/quarantine.sh` tests the script.
 
