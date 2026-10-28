@@ -301,7 +301,10 @@ registerBlock("team_chat", (client: Client, id): BlockView => {
   const host = document.createElement("div");
   host.className = "block block-team-chat";
   let state: TeamChatState | null = null;
-  let visible = true;
+  // Not shown until the layout puts it in a pane (setVisible): a block
+  // made in a tab that isn't shown is never put in one, and would read
+  // whatever comes into its room.
+  let visible = false;
   const draw = () => render(<TeamChatBlock client={client} id={id} s={state} shown={visible} />, host);
   draw();
   const pinnedTo = () => (state?.pinned && state.room ? state.room : undefined);
