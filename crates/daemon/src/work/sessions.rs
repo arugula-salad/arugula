@@ -2,7 +2,7 @@
 //! rest of the daemon reads them: the agent blocks (which users an agent
 //! may run as, and which block is a session's), the hosted box and a
 //! session's MCP. The engine that takes, follows and reports them is
-//! `work_engine::sessions`, which writes what these read.
+//! `arugulad-work`'s `sessions`, which writes what these read.
 
 use std::{
     collections::BTreeMap,

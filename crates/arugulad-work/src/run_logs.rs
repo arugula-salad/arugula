@@ -48,12 +48,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use tracing::{info, warn};
 
-use crate::{
-    control::Saved,
-    mux::Api,
-    server::App,
-    work_engine::{self as work, RunAs},
-};
+use crate::{RunAs, control::Saved, mux::Api, server::App};
 
 /// How often a running run's log is looked at.
 pub const TICK: Duration = Duration::from_secs(2);
@@ -140,13 +135,13 @@ async fn put(app: &App, http: &reqwest::Client, u: &Upload, bytes: Vec<u8>) -> R
 
 /// Keep `f`'s change to run `run`'s [`Sent`].
 fn note(app: &App, run: &str, f: impl FnOnce(&mut Sent)) {
-    if let Err(e) = work::update(app.control.state_dir(), run, |l| f(&mut l.logs)) {
+    if let Err(e) = crate::update(app.control.state_dir(), run, |l| f(&mut l.logs)) {
         warn!(run, error = %format!("{e:#}"), "hosted: can't keep what was sent of a run's log");
     }
 }
 
 fn sent(app: &App, run: &str) -> Sent {
-    work::read(app.control.state_dir(), run).ok().flatten().map(|l| l.logs).unwrap_or_default()
+    crate::read(app.control.state_dir(), run).ok().flatten().map(|l| l.logs).unwrap_or_default()
 }
 
 /// The pane's log, if pane `pane` is still the run's (its `epoch`).
@@ -355,9 +350,51 @@ pub async fn finish(app: &App, run: &str, pane: u32, epoch: Option<u64>, as_: Op
 mod tests {
     use super::*;
 
+    /// A hosted machine of an account's project, enrolled under a
+    /// delegation from the account's root device (the base's
+    /// `hosted::runs` tests make the same).
+    fn machine() -> Saved {
+        use arugula_e2e::{
+            Cert, DeviceKeys, Kind, Trust,
+            hosted::{Delegation, HostedCert, HostedKey},
+        };
+        let root = DeviceKeys::generate();
+        let mut root_cert = Cert::new(&root, "acct1", Kind::Browser, "laptop");
+        root_cert.sign_with(&root);
+        let key = HostedKey::generate();
+        let mut d = Delegation {
+            project: "prj_1".into(),
+            owner: "account:acct1".into(),
+            key: key.public(),
+            at: 1,
+            by: String::new(),
+            sig: String::new(),
+        };
+        d.sign_with(&root);
+        let keys = DeviceKeys::generate();
+        let (noise, sign) = (hex::encode(keys.noise_public), hex::encode(keys.sign_public()));
+        let mut cert = HostedCert::new(&d, "hw_1", "box", &noise, &sign, 2);
+        key.sign(&mut cert);
+        let got = arugula_control_wire::hosted::Enrollment {
+            url: "http://control".into(),
+            cert,
+            delegation: d,
+            revocations: vec![],
+            team: None,
+            roster: None,
+            certs: Default::default(),
+            trust: Some(Trust { account: "acct1".into(), root: root.id() }),
+            account_certs: vec![root_cert],
+            account_revocations: vec![],
+            legacy_app_children: None,
+            purpose: None,
+        };
+        crate::hosted::trust::saved_from(got, &keys, None).unwrap()
+    }
+
     #[test]
     fn only_a_hosted_machine_sends_a_runs_log() {
-        let (saved, ..) = crate::hosted::runs::tests::machine();
+        let saved = machine();
         assert_eq!(may_upload(Some(&saved)), Ok(()));
         let personal = Saved { hosted: None, ..saved };
         assert!(may_upload(Some(&personal)).is_err());

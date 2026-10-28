@@ -45,10 +45,7 @@ pub mod hosted;
 pub mod hosts;
 pub mod http1;
 pub mod install;
-mod run_logs;
 pub mod work;
-// The runs engine (`work::Work`), until it is a crate of its own (#232).
-pub mod work_engine;
 pub mod worktree;
 use arugula_mux::inventory;
 pub mod invite;
@@ -486,8 +483,6 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
     // they report as the version is the binary's.
     arugula_core::version::set(version);
     arugula_vt::set_version(version);
-    // The runs engine, until it's a crate of its own (#232).
-    work_engine::register();
     // A closed pipe (`| head`) ends the process quietly, not with a panic
     // from `println!` (#682): Rust starts with SIGPIPE ignored. The daemon
     // itself ignores it again before it serves (below).

@@ -1,7 +1,7 @@
 //! A hosted machine's runs and agent sessions (M212, M255), as the rest of
 //! the daemon sees them. The engine that pulls, runs and reports them is
-//! `work_engine` (#232), which registers itself as [`Work`]; the daemon
-//! reaches it only through that. What stays here is what others read
+//! the crate `arugulad-work` (#232), which registers itself as [`Work`]; the
+//! daemon reaches it only through that. What stays here is what others read
 //! without it:
 //!
 //! - [`printable`], which the deploy drivers use to show what they run;

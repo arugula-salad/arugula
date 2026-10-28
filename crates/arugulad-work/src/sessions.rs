@@ -1783,9 +1783,9 @@ async fn send_all(app: &Arc<App>) {
     }
 }
 
-#[path = "work_sessions_push.rs"]
+#[path = "sessions_push.rs"]
 pub mod push;
 
 #[cfg(test)]
-#[path = "work_sessions_tests.rs"]
+#[path = "sessions_tests.rs"]
 mod tests;

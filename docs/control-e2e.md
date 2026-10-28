@@ -738,7 +738,7 @@ later expiry, another project or delegation), point a revoke at another
 grant, or bring back one a machine has heard revoked.
 
 **Running one** (M212; `crates/platform/src/work.rs`,
-`crates/daemon/src/work.rs`). A run is S37's operation (`arugula op v1`,
+`crates/arugulad-work/src/lib.rs`). A run is S37's operation (`arugula op v1`,
 `arugula_e2e::run::Op`): a command and its arguments, or an instruction for
 an agent, and a directory, for one hosted machine.
 

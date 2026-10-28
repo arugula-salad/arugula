@@ -321,6 +321,7 @@ dependencies = [
  "arugulad-labs",
  "arugulad-mcp",
  "arugulad-review",
+ "arugulad-work",
  "axum",
  "base64 0.23.1",
  "futures-util",
@@ -629,6 +630,27 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "arugulad-work"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "arugula-control-wire",
+ "arugula-e2e",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "base64 0.23.1",
+ "hex",
+ "nix",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

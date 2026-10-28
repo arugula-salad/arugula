@@ -49,6 +49,7 @@ arugulad-invite = { path = "crates/arugulad-invite" }
 arugulad-labs = { path = "crates/arugulad-labs" }
 arugulad-mcp = { path = "crates/arugulad-mcp" }
 arugulad-review = { path = "crates/arugulad-review" }
+arugulad-work = { path = "crates/arugulad-work" }
 aes-gcm = "0.11.1"
 anyhow = "1.0.104"
 axum = "0.8.9"

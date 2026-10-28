@@ -59,6 +59,14 @@
 //! - **Agent sessions** ride the same pull (M255, [`sessions`]): a box
 //!   with session users takes up to three at once, beside its one run at a
 //!   time, each an ACP agent block run as its own session user.
+//!
+//! This is the crate `arugulad-work` (#232), beside the other feature crates
+//! on the base: the binary calls [`register`], which installs the base's
+//! `work::Work`, and the daemon reaches the engine only through that. The
+//! base's `work` keeps what others read without it: `printable`, the
+//! ledger's directory, the fenced ports, and the session users and the
+//! sessions' ledger as it's read (`work::sessions`). The agent, hosted and
+//! MCP crates use only those, so none of them is built on this.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -88,17 +96,34 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use tracing::{info, warn};
 
+// What the code here names as `crate::…`: the mux's modules and the daemon's,
+// as it named them when it was the daemon's.
+use arugula_mux::{block, mux, store};
+use arugulad_base::{agent, control, roots, server, task, work};
+
 use crate::{
     mux::Api,
     server::App,
     work::{DIR, PROVIDER_PORTS, printable},
 };
 
-#[path = "work_deploy.rs"]
 mod deploy;
-
-#[path = "work_sessions.rs"]
+mod run_logs;
 pub mod sessions;
+
+/// The base's `hosted`, and the temp directories the tests work in.
+mod hosted {
+    pub use arugulad_base::hosted::*;
+
+    /// A fresh directory for `name` in this test process.
+    #[cfg(test)]
+    pub fn scratch(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("arugula-hosted-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+}
 
 /// What a box hands planter's Ship (`arugulad-drivers`): where the
 /// artifact was fetched to, by run.
@@ -1290,7 +1315,7 @@ pub fn start(app: Arc<App>) {
 /// The runs engine, as the daemon reaches it (`work::Work`).
 struct Engine;
 
-/// Puts the runs engine in the daemon.
+/// Puts the runs engine in the daemon. Call it before `arugulad_base::main`.
 pub fn register() {
     crate::work::install(Box::new(Engine));
 }
