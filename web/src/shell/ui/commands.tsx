@@ -30,7 +30,7 @@ import { sessionThreadItems, threadItems } from "./threads";
 import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
 import { watchingNote } from "./shell/live";
-import { setTips, tipsOn } from "../../shared/seen";
+import { bigTipsOn, setBigTips, setTips, tipsOn } from "../../shared/seen";
 import { openWhatsNew } from "./whats-new";
 import { openPanel } from "../trust/common";
 
@@ -336,6 +336,14 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
       hint: "A one-time mention when something you can use turns up, like a port listening in a pane",
       checked: tipsOn(),
       run: () => setTips(!tipsOn()),
+    },
+    // A pane modal's "Don't show tips like this again" turns these off;
+    // this says so, and turns them back on. Tips off hides them too.
+    {
+      label: "Big tips",
+      hint: "Tips that cover a pane until you close them, like a feature's help card",
+      checked: bigTipsOn(),
+      run: () => setBigTips(!bigTipsOn()),
     },
     ...(client?.state
       ? [

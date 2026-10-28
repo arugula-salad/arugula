@@ -248,6 +248,14 @@ pub enum View {
     HintShown,
     HintActed,
     HintDismissed,
+    /// A pane modal (a big tip) shown, acted on, closed (× or Escape), or
+    /// closed with "Don't show tips like this again" ticked: every pane
+    /// modal's together. One counted on its own adds its own four, named
+    /// for its hint id (`Hint.views` in web/src/shell/hints).
+    PaneTipShown,
+    PaneTipActed,
+    PaneTipClosed,
+    PaneTipOptedOut,
     #[serde(other)]
     Other,
 }
@@ -355,6 +363,19 @@ mod tests {
         assert_eq!(c.agents_started[&AgentRuntime::Other], 1);
         assert_eq!(c.views[&View::Swarm], 4);
         assert!(r.check().is_ok());
+    }
+
+    #[test]
+    fn pane_tip_views_are_spelled_as_the_page_sends_them() {
+        for (name, v) in [
+            ("pane-tip-shown", View::PaneTipShown),
+            ("pane-tip-acted", View::PaneTipActed),
+            ("pane-tip-closed", View::PaneTipClosed),
+            ("pane-tip-opted-out", View::PaneTipOptedOut),
+        ] {
+            assert_eq!(serde_json::from_value::<View>(json!(name)).unwrap(), v);
+            assert_eq!(serde_json::to_value(v).unwrap(), json!(name));
+        }
     }
 
     #[test]
