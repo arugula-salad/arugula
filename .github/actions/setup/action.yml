@@ -48,13 +48,35 @@ runs:
       shell: bash
       run: |
         missing=()
-        for p in vim-tiny neovim libnss-myhostname zstd ${{ inputs.packages }}; do
+        for p in vim-tiny libnss-myhostname zstd ${{ inputs.packages }}; do
           dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing+=("$p")
         done
         if [ ${#missing[@]} -gt 0 ]; then
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends "${missing[@]}" >/dev/null
         fi
+    # nvim from its release, pinned: Ubuntu's package is 0.9, and the nvim
+    # tests (arugula.nvim, editor_swarm.rs, the nvim tips' :help check) need
+    # 0.10 or later (#1736). neovim publishes no checksums, so these are the
+    # tarballs' own SHA-256, taken when the pin moved.
+    - name: nvim
+      shell: bash
+      run: |
+        v=0.11.6
+        case "$(uname -m)" in
+          x86_64) a=x86_64 sum=2fc90b962327f73a78afbfb8203fd19db8db9cdf4ee5e2bef84704339add89cc ;;
+          aarch64 | arm64) a=arm64 sum=8ddc0c101846145e830b17bbca50782ca9307eee4fab539d9e2ddaf8793c06f1 ;;
+          *) echo "no nvim release for $(uname -m)"; exit 0 ;;
+        esac
+        if nvim --version 2>/dev/null | head -1 | grep -qx "NVIM v$v"; then exit 0; fi
+        dir=$RUNNER_TEMP/nvim-$v
+        if [ ! -x "$dir/bin/nvim" ]; then
+          curl -fsSL -o "$RUNNER_TEMP/nvim.tar.gz" "https://github.com/neovim/neovim/releases/download/v$v/nvim-linux-$a.tar.gz"
+          echo "$sum  $RUNNER_TEMP/nvim.tar.gz" | sha256sum -c --quiet
+          mkdir -p "$dir" && tar -xzf "$RUNNER_TEMP/nvim.tar.gz" -C "$dir" --strip-components 1
+        fi
+        echo "$dir/bin" >> "$GITHUB_PATH"
+        "$dir/bin/nvim" --version | head -1
     - name: Rust (rust-toolchain.toml's)
       if: inputs.rust == 'true'
       shell: bash

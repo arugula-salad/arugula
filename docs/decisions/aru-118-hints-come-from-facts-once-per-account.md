@@ -9,8 +9,8 @@ source:
 question: "How does the app mention a feature when it becomes useful: what a hint is, where it shows, how often, how it's turned off and counted, and where \"seen\" is kept?"
 options:
   - id: "a"
-    label: "One registry of hints, each from a fact, shown once in one of three places, seen kept as an account pref on the hub (else in the browser)"
-    how: "A hint is an id, a fact (a predicate over the client's state, or an answer the client asks for), one line of copy, an action (a command id or a route) and its place: a pane-header chip, a toast or an empty state. One shows at a time, none new while someone types; once shown it's seen. Seen, Tips and What's new's last version are prefs in one small store (web/src/shared/seen.ts): through control, `GET`/`POST /api/me/prefs` (a new `account_prefs` table on the hub); otherwise localStorage."
+    label: "One registry of hints, each from a fact, said once in one of four places, seen kept as an account pref on the hub (else in the browser)"
+    how: "A hint is an id, a fact (a predicate over the client's state, or an answer the client asks for), one line of copy, an action (a command id or a route) and its place: a pane-header chip, a toast, an empty state, or a pane modal over the fact's pane (a big tip, with a short body, up to two buttons and \"Don't show tips like this again\"). One shows at a time, none new while someone types; it's seen once shown, or, for a pane modal (and any hint that says `seenOn: \"answer\"`), once answered. Seen, Tips, Big tips (`tips.modal`) and What's new's last version are prefs in one small store (web/src/shared/seen.ts): through control, `GET`/`POST /api/me/prefs` (a new `account_prefs` table on the hub); otherwise localStorage."
     tradeoff: "A new hub table and route for what is a handful of keys an account; a daemon's own page, even for a joined machine, still remembers per browser, since it has no session with control."
   - id: "b"
     label: "Keep seen in the machine's state dir"
@@ -33,11 +33,13 @@ rejected:
   - option: "c"
     why: "Kept, but only as the fallback off control."
   - option: "d"
-    why: "No modals, no coach-marks, no timers."
+    why: "No coach-marks, no timers, no modal over the window. The one modal is a pane modal, from a fact, over that pane alone, closed for good with \"Don't show tips like this again\" (#1737)."
 supersedes: []
 evidence:
   - title: "Arugula #241 (Discovery 0)"
     url: "https://app.arugula.io/issues/iss_cedaab33ef116a6f060daece807933fa"
+  - title: "#1737 A pane-modal tip place, with \"Don't show tips like this again\" (epic #1736, ruling 7)"
+    url: "https://github.com/arugula-salad/arugula/issues/1737"
 decided_by: "jhgaylor"
 decided_on: "2026-10-27"
 reviews: []
@@ -48,6 +50,8 @@ constrains:
   - "path:crates/mux/src/osc.rs"
   - "path:crates/mux/src/classify.rs"
   - "path:web/src/shell/ui/hints.tsx"
+  - "path:web/src/shell/ui/panes/pane-slot.tsx"
+  - "path:web/src/shared/ui/modal.tsx"
   - "path:web/src/shell/ui/commands.tsx"
   - "path:web/src/shared/seen.ts"
   - "path:web/src/shared/telemetry.ts"
@@ -70,20 +74,44 @@ a tour.
   values the copy and the action take. It's asked only while the hint is
   unseen and Tips are on, so a fact that costs a request stops costing
   once it's been said.
-- `copy(fact)`: one line.
+- `copy(fact)`: one line (a pane modal's title).
 - `action`: a label (which may name the fact's values: *Split right on
   HOST*), and a command id of `COMMANDS` in
   `web/src/shell/ui/commands.tsx` (given the fact's values) or a route
   (`#swarm`). `COMMANDS` is new: the menus had no ids to name. What's
   new's *Try it* names them too (Discovery 2, `shell/ui/whats-new.tsx`).
 - `place`: where it renders.
+- `seenOn`: `"show"` (a chip's, a toast's, an empty state's) or
+  `"answer"` (a pane modal's), below.
+- A pane modal's alone: `body(fact)`, paragraphs and lists of text and key
+  caps (`{ kbd }`), and `second`, a second button (a command, a route, or
+  only closing it).
 
-**Three places only:** a chip in a pane's header (`HintChip`), a toast at
-the bottom of the workspace (`HintToast`), or a view's empty state
-(`HintEmpty`, today the no-sessions view), in `web/src/shell/ui/hints.tsx`.
-No modals and no coach-marks. Each has its action and ×. A renderer tells
-the hints it's drawn, and a hint is shown (and so seen) only where one is:
-a phone has no pane headers, so a chip hint waits for a computer.
+**Four places only:** a chip in a pane's header (`HintChip`), a toast at
+the bottom of the workspace (`HintToast`), a view's empty state
+(`HintEmpty`, today the no-sessions view), or a pane modal over the fact's
+pane (`HintPaneModal`), in `web/src/shell/ui/hints.tsx`. No coach-marks,
+and no modal over the window. Each has its action and ×. A renderer tells
+the hints it's drawn, and a hint is shown only where one is: a phone has
+no pane headers, so a chip hint waits for a computer, and draws no pane
+modals.
+
+**A pane modal** (a big tip, #1737) covers its pane between the pane's
+header and its edges, drawn by the pane's slot
+(`web/src/shell/ui/panes/pane-slot.tsx`), for any kind of pane: a
+terminal, an agent, chat or Docs block, a framed block (browser, editor,
+port), here or on another machine. The pane keeps running and drawing
+under it, dimmed; the rest of the workspace stays usable. It's `useModal`
+with `covers` (`web/src/shared/ui/modal.tsx`): the pane's view is `inert`
+while it's up, so no click, key or focus reaches it, a frame's neither;
+the focus moves in when it was on that pane (a terminal, a composer, a
+frame) or nowhere, and back to it on close; Escape and Tab are the
+modal's while the focus is in it, so Escape closes it before the terminal
+hears it. It has a title, a short body, up to two buttons (the action is
+the primary one), a × and the checkbox **Don't show tips like this
+again**. Closing it with ×, Escape or a button answers it. It never opens
+under a dialog over the window, over a pane someone else drives (pair
+mode: its `driver` isn't this person), or with Big tips off.
 
 **Pacing:** at most one hint on screen. None new while someone types: a key
 in the page in the last 1.5 s, or the daemon's `typing` on a pane someone
@@ -95,6 +123,11 @@ changes), so does it.
 
 **Once:** a hint is seen when it's shown, not when it's acted on, so a hint
 someone ignored doesn't come back either. Dismissing or acting closes it.
+A hint with `seenOn: "answer"` is seen only when it's answered (acted on,
+or closed): one hidden before that, by a tab switch or its fact going,
+shows again the next time its fact holds. Every pane modal is, since it
+asks for an answer and a tab switch shouldn't use it up; chips may opt in
+(#1735's).
 
 **Seen, per account through control, else per browser.** One store,
 `web/src/shared/seen.ts`: `seen(id)`, `markSeen(id)`, `pref`/`setPref` for
@@ -115,14 +148,22 @@ before we know.
 - A control that can't answer the prefs falls back to the browser's.
 
 **Turning hints off:** *Tips* in Settings (the account menu) turns them all
-off: the pref `tips: false`, in the same store, so through control it's the
-account's. Each hint has × too.
+off, pane modals too: the pref `tips: false`, in the same store, so
+through control it's the account's. Each hint has × too. A pane modal's
+**Don't show tips like this again**, ticked when it's answered, sets
+`tips.modal: "off"`: every pane modal stops on that account (its devices,
+on control's page), and chips and toasts carry on. *Big tips* in Settings,
+under Tips, shows that and turns them back on.
 
 **Counting:** through `countView` (opt-in usage counts,
 docs/telemetry.md): three views, `hint-shown`, `hint-acted` and
-`hint-dismissed`, every hint's together. The views are a closed set on the
-wire (`View` in `crates/control-wire/src/telemetry.rs`); a hint that needs
-counting on its own adds its own variant.
+`hint-dismissed`, every chip's, toast's and empty state's together; and
+four, `pane-tip-shown`, `pane-tip-acted`, `pane-tip-closed` and
+`pane-tip-opted-out`, every pane modal's together. The views are a closed
+set on the wire (`View` in `crates/control-wire/src/telemetry.rs`); a hint
+counted on its own adds its own variants and names them in its entry
+(`views`: shown, acted, closed, opted out), counted beside the shared
+ones.
 
 **Facts from the daemon, or the client's alone:**
 - *A port listening in a pane* (the example, `port-listening`): no daemon
@@ -166,10 +207,16 @@ counting on its own adds its own variant.
 
 **Under a test runner** (`navigator.webdriver`) hints keep quiet unless the
 page sets `window.__arugulaHints`, as telemetry's ask does: a toast would
-land on what other specs click. The hints' own specs set it.
+land on what other specs click. The hints' own specs set it. A spec may
+also bring hints of its own, `window.__arugulaTestHints`, read only under
+a test runner and offered before the registry's: the pane modal's spec
+(`web/e2e/hints-pane-modal.spec.ts`) does, so the place is tested apart
+from any feature's tip.
 
 Where: `web/src/shell/hints/` (the registry, the engine, a module per fact),
-`web/src/shell/ui/hints.tsx` (the three places), `web/src/shell/ui/commands.tsx`
-(`COMMANDS`, *Tips*), `web/src/shared/seen.ts`, `web/src/shell/main.tsx`
-(which store), `crates/control/src/prefs.rs` and `db.rs` (`account_prefs`).
-From: Discovery 0, Arugula #241 (part of #238); Discovery 3, 4, 5 and 11 add entries.
+`web/src/shell/ui/hints.tsx` (the four places), `web/src/shell/ui/panes/pane-slot.tsx`
+(where a pane modal is drawn), `web/src/shared/ui/modal.tsx` (`useModal`'s
+`covers`), `web/src/shell/ui/commands.tsx` (`COMMANDS`, *Tips*, *Big tips*),
+`web/src/shared/seen.ts`, `web/src/shell/main.tsx` (which store),
+`crates/control/src/prefs.rs` and `db.rs` (`account_prefs`).
+From: Discovery 0, Arugula #241 (part of #238); Discovery 3, 4, 5 and 11 add entries; #1737 the pane modal.

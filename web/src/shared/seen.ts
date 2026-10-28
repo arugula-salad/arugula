@@ -1,6 +1,7 @@
 // What this person has seen (DECISIONS.md "Hints come from facts, once per
 // account"): the hints already mentioned (`seen:<id>`), whether they want
-// tips at all (`tips`), the last version What's new showed. Per account
+// tips at all (`tips`) and big ones (`tips.modal`), the last version What's
+// new showed. Per account
 // on control's page (an account pref on the hub, `/api/me/prefs`), else
 // per browser (localStorage). The page says which with `setSeenBackend`;
 // until it does, and until the prefs have loaded once, nothing counts as
@@ -112,6 +113,12 @@ export function markSeen(id: string, at = Date.now()) {
 /** Tips are on unless this person turned them off. */
 export const tipsOn = () => pref("tips") !== false;
 export const setTips = (on: boolean) => setPref("tips", on ? null : false);
+
+/** Big tips (pane modals) are on unless this person ticked "Don't show
+ * tips like this again" on one, or turned Big tips off in Settings:
+ * `tips.modal = "off"`. Chips and toasts don't ask. */
+export const bigTipsOn = () => pref("tips.modal") !== "off";
+export const setBigTips = (on: boolean) => setPref("tips.modal", on ? null : "off");
 
 export function subscribeSeen(fn: () => void) {
   listeners.add(fn);
