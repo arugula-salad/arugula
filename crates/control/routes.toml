@@ -2597,6 +2597,14 @@ auth = "session"
 clients = ["page", "cli"]
 note = "Reorders a row or a zone, within or between zones: owners and editors."
 
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/work"  # wire::boards::PROJECT_WORK
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The project's work items for a board's picker and Triage: its native issues, the GitHub issues and PRs of linked repos the reader may read, and its runs, newest first; untriaged=true keeps open issues no row of its boards points at."
+
 # ---- platform: project Docs (aru-118)
 # A project's own Docs, for its members: a team's owners and editors make,
 # write and delete them, its viewers read them; anyone else gets 404. With
