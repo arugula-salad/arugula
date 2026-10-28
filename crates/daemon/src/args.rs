@@ -263,7 +263,7 @@ pub(crate) struct RunArgs {
     /// Where the ssh server for invited guests listens (`arugula
     /// share --guest`, with Guest SSH access on: `arugulad sharing`), only
     /// while an invite exists; `off` turns it off. Port 0 picks a free one.
-    #[arg(long, env = "ARUGULA_GUEST_SSH", default_value = crate::labs::GUEST_SSH_LISTEN)]
+    #[arg(long, env = "ARUGULA_GUEST_SSH", default_value = crate::lab_hooks::GUEST_SSH_LISTEN)]
     pub(crate) guest_ssh: String,
 
     /// The address guests are told to ssh to [default: the hostname].

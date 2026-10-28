@@ -119,7 +119,7 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<HostedSetupGet>()
         .route("/api/hosted/setup/archive", get(setup_archive));
     // Labs' routes, if this build has them, and the editor's.
-    let r = crate::labs::routes(r);
+    let r = crate::lab_hooks::labs().routes(r);
     let r = crate::editors::routes(r);
     // The feature crates' (#232).
     let r = crate::features::routes(r);
@@ -681,7 +681,7 @@ async fn open_block(
     }
     // A studio box (M35), by its app's name: where it is, from studio.
     if req.kind == arugula_proto::BlockType::App {
-        req.config = crate::labs::app_config(&req.config).await.map_err(bad)?;
+        req.config = crate::lab_hooks::labs().app_config(&req.config).await.map_err(bad)?;
     }
     // Someone else's block is an agent's on a VM (the mux's `guest_block`):
     // refused before a forge's config is worked out, which asks Arugula

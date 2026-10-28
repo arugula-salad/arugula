@@ -26,7 +26,7 @@
 //! each open file's hunks also say which decision and run made them, read
 //! from that workspace's chant when the file opens and again when its diff
 //! or `HEAD` moves, one read at a time (`labs/workspace/why.rs`, through
-//! [`crate::labs::file_why`]; a build without Labs says it can't). With `base: true`
+//! `lab_hooks::Hooks::file_why`; a build without Labs says it can't). With `base: true`
 //! and no revisions, the working tree is compared with where `HEAD` left
 //! the default branch (the merge base with `origin/HEAD`, `main` or
 //! `master`), so a member's committed work shows beside what isn't
@@ -52,7 +52,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::{Live, Runner};
-use crate::labs::FileWhy;
+use crate::lab_hooks::FileWhy;
 use crate::{
     block::{Block, BlockCtx, Summary, no_method},
     store::now_ms,
@@ -185,7 +185,7 @@ const WHY_GAP_MAX: Duration = Duration::from_secs(30);
 struct WhyRead {
     /// [`why_key`] of the added lines and `HEAD` read for.
     key: u64,
-    read: Option<Result<FileWhy, String>>,
+    read: Option<Result<Box<dyn FileWhy>, String>>,
     reading: bool,
     last: Option<Instant>,
     gap: Option<Duration>,
@@ -577,11 +577,13 @@ impl Diff {
     }
 
     /// One file's why from the workspace's chant (a Labs feature).
-    async fn why(&self, path: &str) -> Result<FileWhy, String> {
+    async fn why(&self, path: &str) -> Result<Box<dyn FileWhy>, String> {
         let c = self.config.chant.clone().ok_or("not from a workspace")?;
         let top = self.state.lock().unwrap().repo.clone().ok_or("no repository yet")?;
         let file = format!("{}/{path}", top.trim_end_matches('/'));
-        crate::labs::file_why(&self.ctx, &c.root, c.chant.as_deref(), &file, self.config.rev_b.as_deref()).await
+        crate::lab_hooks::labs()
+            .file_why(&self.ctx, &c.root, c.chant.as_deref(), &file, self.config.rev_b.as_deref())
+            .await
     }
 
     /// Open or close a file's hunks.

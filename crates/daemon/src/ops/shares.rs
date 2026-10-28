@@ -2,16 +2,13 @@
 //! makes, lists and ends (`arugula share`, `arugula shares`, `arugula guests`).
 //! All are the owner's (`serve` checks that before the handler runs), and
 //! both lists are credentials. A share is small enough to be done here;
-//! guests are Labs', so each goes through `crate::labs`, whose twin in a
-//! build without it answers the 501 every method of `/api/guests` gave.
-//! Guests need Guest SSH access on, a sharing setting (native #205; it was
-//! the `guest-ssh` flag): off, each is refused as a route that isn't there,
-//! saying how to turn it on, as a flag's are.
+//! guests are Labs' (`labs/guest_ssh.rs`, which a build without Labs
+//! answers with the 501 every method of `/api/guests` gave).
 
 use arugula_proto::{
     BlockType,
-    api::{Empty, GuestInvite, GuestInviteRequest, Share, ShareRequest},
-    op::ops::{GuestMint, GuestRevoke, GuestsList, ShareMint, ShareRevoke, SharesList},
+    api::{Empty, Share, ShareRequest},
+    op::ops::{ShareMint, ShareRevoke, SharesList},
 };
 use axum::http::StatusCode;
 
@@ -51,37 +48,5 @@ impl Handle for ShareRevoke {
         } else {
             Err(OpError::Status(StatusCode::NOT_FOUND, format!("no share {id}")))
         }
-    }
-}
-
-/// `Ok` where the owner has turned on Guest SSH access. A build without
-/// Labs answers past it, with what it lacks ([`crate::labs::guest_list`]'s
-/// twin), as it did past the flag.
-fn guest_ssh_on(cx: &Cx<'_>) -> Result<(), OpError> {
-    if crate::lab_flags::BUILT && !arugula_proto::sharing::guest_ssh(cx.app.control.state_dir()) {
-        return Err(OpError::Status(StatusCode::NOT_FOUND, arugula_proto::sharing::GUEST_SSH_OFF.into()));
-    }
-    Ok(())
-}
-
-impl Handle for GuestsList {
-    async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Vec<GuestInvite>, OpError> {
-        guest_ssh_on(cx)?;
-        Ok(crate::labs::guest_list(cx.app)?)
-    }
-}
-
-impl Handle for GuestMint {
-    async fn handle(cx: &Cx<'_>, _: (), req: GuestInviteRequest) -> Result<GuestInvite, OpError> {
-        guest_ssh_on(cx)?;
-        Ok(crate::labs::guest_mint(cx.app, req).await?)
-    }
-}
-
-impl Handle for GuestRevoke {
-    async fn handle(cx: &Cx<'_>, id: u32, _: Empty) -> Result<Empty, OpError> {
-        guest_ssh_on(cx)?;
-        crate::labs::guest_revoke(cx.app, id).await?;
-        Ok(Empty {})
     }
 }

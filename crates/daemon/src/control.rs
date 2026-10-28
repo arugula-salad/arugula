@@ -947,8 +947,7 @@ impl Control {
 
     /// Control's ssh jump host for guests (M65), from its `/control.json`;
     /// `None` when it runs none.
-    #[cfg(feature = "labs")]
-    pub async fn guest_jump(&self) -> anyhow::Result<Option<crate::labs::GuestJump>> {
+    pub async fn guest_jump(&self) -> anyhow::Result<Option<wire::GuestJump>> {
         let Some(e) = self.enrolled() else { return Ok(None) };
         let about: wire::ControlJump = self
             .http
@@ -958,7 +957,7 @@ impl Control {
             .error_for_status()?
             .json()
             .await?;
-        Ok(about.guest_ssh.map(|j| crate::labs::GuestJump { host: j.host, port: j.port, known_hosts: j.known_hosts }))
+        Ok(about.guest_ssh)
     }
 
     /// Control's directory, as this daemon reaches it (#399): the
@@ -979,7 +978,7 @@ impl Control {
     /// Whether this machine offers agents to its teams (#399): the `agents`
     /// flag is on and something is offered.
     fn open_agents(&self) -> bool {
-        crate::labs::offers_agents(&self.state_dir)
+        crate::lab_hooks::labs().offers_agents(&self.state_dir)
     }
 
     /// What this daemon tells control it understands, and (#347) whether
@@ -2152,9 +2151,7 @@ async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
     let a = app.clone();
     crate::task::spawn(async move {
         while let Some((kind, s)) = raws.recv().await {
-            if kind == crate::labs::GUEST_STREAM_KIND {
-                a.guests.serve_relayed(&a, s);
-            }
+            crate::lab_hooks::labs().serve_raw(&a, &kind, s);
         }
     });
     let mut backoff = Duration::from_secs(1);
@@ -2259,15 +2256,15 @@ async fn relay_once(
     // M40: forge subscriptions out, pokes and heartbeats in. M65: guest
     // routes out, control's answers in. M168: the ops this machine knows
     // out, control's asks in, and their answers out.
-    let guests = app.guests.clone();
     let (answers, queue) = mpsc::unbounded_channel();
     let ops_app = app.clone();
     let on_text = move |t: &str| {
-        if !guests.heard_from_control(t) && !crate::forges::op_from_control(&ops_app, t, &answers) {
+        if !crate::lab_hooks::labs().heard_from_control(t) && !crate::forges::op_from_control(&ops_app, t, &answers) {
             crate::forges::from_control(t);
         }
     };
-    let mut out = vec![app.guests.routes_messages(), crate::forges::ops_message(), control.activity.subscribe()];
+    let mut out = vec![crate::forges::ops_message(), control.activity.subscribe()];
+    out.extend(crate::lab_hooks::labs().control_out());
     out.extend(crate::forges::watch_messages());
     let texts = crate::dial::Texts { on_text: &on_text, out, queue: Some(queue) };
     crate::dial::serve_mux(ws, accept, Some(raw), Some(&control.nudge), Some(texts)).await

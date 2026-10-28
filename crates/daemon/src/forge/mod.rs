@@ -440,7 +440,7 @@ impl ForgeBlock {
         let mut config: Config = serde_json::from_value(config).map_err(|e| format!("forge config: {e}"))?;
         // Forgejo's and GitLab's are Labs'. One saved while Labs was on is
         // still brought back, as unavailable, and reads again when it is.
-        let allowed = crate::labs::forge_allowed(config.provider, &ctx.state_dir);
+        let allowed = crate::lab_flags::forge_allowed(config.provider, &ctx.state_dir);
         if !ctx.restoring {
             allowed.clone()?;
         }
@@ -642,7 +642,7 @@ impl ForgeBlock {
         // (and writes nothing) where Labs is off, and does again when it is
         // on.
         let provider = self.config.lock().unwrap().provider;
-        crate::labs::forge_allowed(provider, &self.ctx.state_dir)?;
+        crate::lab_flags::forge_allowed(provider, &self.ctx.state_dir)?;
         if let Some(a) = self.adapter.lock().unwrap().clone() {
             return Ok(a);
         }
@@ -2009,7 +2009,7 @@ impl Block for ForgeBlock {
                 if me.config.lock().unwrap().provider == Provider::Gitlab {
                     return Err("a GitLab block uses glab's login for its host: `glab auth login`, then refresh".into());
                 }
-                crate::labs::forge_allowed(Provider::Forgejo, &me.ctx.state_dir)?;
+                crate::lab_flags::forge_allowed(Provider::Forgejo, &me.ctx.state_dir)?;
                 me.login_tea(name).await
             }),
             "review" | "merge" | "rerun_checks" if self.config.lock().unwrap().kind == ItemKind::Issue => {
@@ -2123,7 +2123,7 @@ impl ForgeBlock {
 /// (`{repo, number}`).
 ///
 /// Forgejo's and GitLab's are Labs': a link that comes out as one of theirs
-/// is refused where Labs is off (see [`crate::labs::forge_allowed`]), asked
+/// is refused where Labs is off (see [`crate::lab_flags::forge_allowed`]), asked
 /// of the result so no default or fallback of [`resolve_config`] gets round it.
 pub async fn open_config(c: &Value, state_dir: &Path) -> Result<Value, String> {
     // M203: a project's own issue (`iss_…`, or `#N` in a project).
@@ -2132,7 +2132,7 @@ pub async fn open_config(c: &Value, state_dir: &Path) -> Result<Value, String> {
     }
     let out = resolve_for(c, crate::lab_flags::on(state_dir, arugula_proto::flags::ADDITIONAL_FORGES)).await?;
     let provider = serde_json::from_value::<Provider>(out["provider"].clone()).unwrap_or_default();
-    crate::labs::forge_allowed(provider, state_dir)?;
+    crate::lab_flags::forge_allowed(provider, state_dir)?;
     Ok(out)
 }
 

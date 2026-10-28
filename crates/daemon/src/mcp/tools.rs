@@ -2028,7 +2028,7 @@ pub fn parse<T: DeserializeOwned>(args: Value) -> Result<T, String> {
 /// One tool call (or resource read): who, and how to tell them it's still
 /// going.
 pub struct Call<'a> {
-    app: &'a Arc<App>,
+    pub app: &'a Arc<App>,
     caller: Caller,
     /// The client's name (`claude-code`), for "started by mcp:<client>".
     client: String,
@@ -3347,39 +3347,23 @@ impl<'a> Call<'a> {
     }
 }
 
-#[cfg(feature = "labs")]
 impl Call<'_> {
+    /// Labs' (`lab_hooks`): a build without it says so.
     async fn open_app(&self, a: OpenAppArgs) -> Out {
-        crate::lab_flags::flag(self.app.control.state_dir(), flags::STUDIO)?;
-        let studio = crate::labs::apps::studio::get().ok_or("no studio here")?;
-        let Some(name) = a.app else {
-            let apps = studio.apps().await?;
-            let names: Vec<&str> = apps.iter().map(|a| a.name.as_str()).collect();
-            return done(format!("{} apps: {}", apps.len(), names.join(", ")), results::Apps { apps });
-        };
-        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
-            (Some(b), _) => Some(b),
-            (None, own) => own,
-        };
-        if let Some(b) = beside {
-            self.readable(b).await?;
-        }
-        let config = crate::labs::app_config(&json!({ "app": name })).await?;
-        let req = OpenRequest {
-            kind: BlockType::App,
-            config,
-            session: None,
-            split: beside,
-            from_pane: beside,
-            vm: false,
-            image: None,
-            host: None,
-            local: true,
-        };
-        let block = self.open(req).await?;
-        done(format!("Opened app {name} in block %{block}"), results::AppOpened { block, app: name })
+        crate::lab_hooks::labs().open_app(self, a).await
     }
 
+    async fn delegate(&self, kind: &str, a: DelegateArgs) -> Out {
+        crate::lab_hooks::labs().delegate(self, kind, a).await
+    }
+
+    async fn team_agents(&self, a: ListTeamAgentsArgs) -> Out {
+        crate::lab_hooks::labs().team_agents(self, a).await
+    }
+}
+
+#[cfg(feature = "labs")]
+impl Call<'_> {
     async fn open_workspace(&self, a: OpenWorkspaceArgs) -> Out {
         let (beside, host) = self.beside(a.beside.as_ref()).await?;
         let dir = a.dir.trim_end_matches('/').to_owned();
@@ -3439,134 +3423,12 @@ impl Call<'_> {
             results::WorkspaceOpened { block, root: state["root"].clone(), members, gates },
         )
     }
-
-    /// Delegating (M78): a task for another machine's agent.
-    async fn delegate(&self, kind: &str, a: DelegateArgs) -> Out {
-        use crate::labs::agents::delegate as d;
-        if !crate::lab_flags::on(self.app.control.state_dir(), flags::AGENT_DELEGATION) {
-            return Err("delegating is in Labs: `arugulad flags agent-delegation on` turns it on here".into());
-        }
-        // The owner's agents': a guest's agent asks no one's agents.
-        if let Some(me) = self.me()
-            && self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
-        {
-            return Err("only the owner's own agents delegate to other machines".into());
-        }
-        let app = self.app.clone();
-        // M80: the work comes back, from what's kept here.
-        if kind == "review" || kind == "apply" {
-            let task = a.task.as_deref().filter(|t| !t.is_empty()).ok_or_else(|| format!("{kind} needs task"))?;
-            let dir = match a.dir.as_deref().filter(|d| !d.is_empty()) {
-                Some(d) => d.to_owned(),
-                None => match self.me() {
-                    Some(me) => self.readable(me).await?.info.cwd.ok_or("say where your checkout is: dir")?,
-                    None => return Err("say where your checkout is: dir".into()),
-                },
-            };
-            let state = app.control.state_dir().to_owned();
-            if kind == "apply" {
-                let r = d::apply(&state, &d::review_root(), task, std::path::Path::new(&dir)).await?;
-                return done(r.text(task), json!({ "task": task, "applied": r }));
-            }
-            let (wt, r) = d::review(&state, &d::review_root(), task, std::path::Path::new(&dir)).await?;
-            let beside = self.own_pane();
-            let req = OpenRequest {
-                kind: BlockType::Diff,
-                config: json!({ "repo": wt }),
-                split: beside,
-                from_pane: beside,
-                local: true,
-                ..Default::default()
-            };
-            let block = self.open(req).await?;
-            let text = format!(
-                "Task {task}'s patch is in diff block %{block}, on a copy of {dir}; nothing here changed yet. {}",
-                r.text(task)
-            );
-            return done(text, json!({ "task": task, "block": block, "worktree": wt, "applied": r }));
-        }
-        let machine = d::locate(&app, a.machine.as_deref(), &a.agent).await?;
-        let (machine, agent) = (machine.as_str(), a.agent.as_str());
-        let limit = Duration::from_secs(a.wait.unwrap_or(300).min(1800));
-        let task_of = || a.task.as_deref().filter(|t| !t.is_empty()).ok_or_else(|| format!("{kind} needs task"));
-        let text_of = || a.text.as_deref().filter(|t| !t.trim().is_empty()).ok_or_else(|| format!("{kind} needs text"));
-        let claims = json!({ "machine": app.hosts.name(), "pane": self.me() });
-        let t = match kind {
-            "send" => d::send(&app, machine, agent, text_of()?, None, claims, a.pr).await?,
-            "answer" => d::send(&app, machine, agent, text_of()?, Some(task_of()?), claims, false).await?,
-            "cancel" => d::cancel(&app, machine, agent, task_of()?).await?,
-            _ => d::get(&app, machine, agent, task_of()?).await?,
-        };
-        let id = t["id"].as_str().unwrap_or_default().to_owned();
-        let t = if kind != "cancel" && !limit.is_zero() && !d::settled(&t) && !id.is_empty() {
-            let what = format!("{agent} on {machine}");
-            match self.waiting(&what, limit, d::wait(&app, machine, agent, &id, limit)).await {
-                Some(r) => r?,
-                None => d::get(&app, machine, agent, &id).await?,
-            }
-        } else {
-            t
-        };
-        done(d::summary(machine, agent, &t), json!({ "machine": machine, "agent": agent, "task": t }))
-    }
-
-    /// The team's agent catalog (M77): the cards each machine offers.
-    async fn team_agents(&self, a: ListTeamAgentsArgs) -> Out {
-        use crate::labs::agents::catalog;
-        if !crate::lab_flags::on(self.app.control.state_dir(), flags::AGENT_DELEGATION) {
-            return Err("the agent catalog is in Labs: `arugulad flags agent-delegation on` turns it on here".into());
-        }
-        // The owner's agents': a guest's agent sees no catalog (#234's rule).
-        if let Some(me) = self.me()
-            && self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
-        {
-            return Err("only the owner's own agents read the team's agent catalog".into());
-        }
-        let c = catalog::get(self.app, if a.fresh { 0 } else { catalog::FRESH_MS }).await;
-        let q = a.query.as_deref().map(str::to_lowercase).filter(|q| !q.trim().is_empty());
-        let hit = |s: &catalog::Shelf, card: &Value| {
-            q.as_ref().is_none_or(|q| {
-                let hay = format!("{} {} {} {}", card["name"], card["description"], s.name, s.owner).to_lowercase();
-                q.split_whitespace().all(|w| hay.contains(w))
-            })
-        };
-        let rows: Vec<(&catalog::Shelf, &Value)> = c.agents().filter(|(s, card)| hit(s, card)).collect();
-        let total = c.agents().count();
-        let mut text = match rows.len() {
-            0 if total == 0 => "No agents offered on any machine the user's team can reach.\n".to_owned(),
-            n => format!("{n} of {total} agents on {} machines:\n", c.machines.len()),
-        };
-        for (s, card) in &rows {
-            text.push_str(&catalog::Catalog::line(s, card));
-            text.push('\n');
-        }
-        for s in c.machines.iter().filter(|s| s.note.is_some()) {
-            text.push_str(&format!("{}: {}\n", s.name, s.note.as_deref().unwrap_or_default()));
-        }
-        if let Some(n) = &c.note {
-            text.push_str(n);
-            text.push('\n');
-        }
-        done(text, &c)
-    }
 }
 
 #[cfg(not(feature = "labs"))]
 impl Call<'_> {
-    async fn open_app(&self, _: OpenAppArgs) -> Out {
-        Err(crate::lab_flags::not_built("An app block"))
-    }
-
     async fn open_workspace(&self, _: OpenWorkspaceArgs) -> Out {
         Err(crate::lab_flags::not_built("A chant workspace"))
-    }
-
-    async fn team_agents(&self, _: ListTeamAgentsArgs) -> Out {
-        Err(crate::lab_flags::not_built("The agent catalog"))
-    }
-
-    async fn delegate(&self, _: &str, _: DelegateArgs) -> Out {
-        Err(crate::lab_flags::not_built("Delegating"))
     }
 }
 

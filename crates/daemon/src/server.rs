@@ -52,9 +52,6 @@ pub struct App {
     /// Claude Code's IDE (M28), if on.
     pub ide: Option<Arc<dyn crate::editors::Ide>>,
     pub hosts: Arc<Hosts>,
-    /// The static binaries a daemon made resident in a sandbox runs.
-    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
-    pub binaries: Option<crate::labs::Binaries>,
     /// Dial-out hosts connected to us (M4c).
     pub dial_outs: Arc<crate::dial::DialOuts>,
     /// Read-only share links.
@@ -67,8 +64,6 @@ pub struct App {
     pub acl: Arc<crate::acl::Acl>,
     /// MCP's tokens (M16).
     pub mcp: Arc<crate::mcp::Tokens>,
-    /// Invites for guests with only OpenSSH (M65).
-    pub guests: Arc<crate::labs::Guests>,
     /// Devices lending their tools to agents (S33).
     pub hands: Arc<crate::hand::Hands>,
     /// Standing permission rules (#166).
@@ -93,11 +88,9 @@ impl App {
         hosts: Arc<Hosts>,
         shares: Arc<crate::share::Shares>,
         synced: Arc<crate::sync::Synced>,
-        binaries: Option<crate::labs::Binaries>,
         control: Arc<crate::control::Control>,
         acl: Arc<crate::acl::Acl>,
         mcp: Arc<crate::mcp::Tokens>,
-        guests: Arc<crate::labs::Guests>,
         hands: Arc<crate::hand::Hands>,
         rules: Arc<crate::rules::Rules>,
     ) -> Arc<Self> {
@@ -111,11 +104,9 @@ impl App {
             dial_outs: Default::default(),
             shares,
             synced,
-            binaries,
             control,
             acl,
             mcp,
-            guests,
             hands,
             rules,
             next_client: AtomicU64::new(1),
@@ -147,7 +138,7 @@ fn own_routes(app: &Arc<App>) -> Router<Arc<App>> {
 /// the way through to dial-out hosts (`/h/NAME`), its provider's sandboxes,
 /// and the provider tunnel to resident daemons in them (`/tunnel/NAME`).
 fn api_routes(app: &Arc<App>) -> Router<Arc<App>> {
-    crate::labs::home_routes(own_routes(app).merge(crate::dial::routes()).merge(crate::sync::routes()))
+    crate::lab_hooks::labs().home_routes(own_routes(app).merge(crate::dial::routes()).merge(crate::sync::routes()))
 }
 
 /// Over TCP (loopback, behind `tailscale serve`, or a tailnet address):
@@ -167,7 +158,8 @@ pub fn router(app: Arc<App>) -> Router {
         .merge(crate::share::viewer_routes());
     // M40: Forgejo's and GitLab's webhooks, by their signatures (the handler
     // checks); they are Labs'.
-    crate::labs::forge_hook_routes(r)
+    crate::lab_hooks::labs()
+        .hook_routes(r)
         .fallback(asset)
         .layer(middleware::from_fn_with_state(app.clone(), cors))
         .layer(middleware::from_fn_with_state(app.clone(), guard))
@@ -402,7 +394,7 @@ fn class(req: &Request, access: &Access) -> Class {
         || (m == Method::GET && path == crate::dial::DIAL_PATH)
         || (m == Method::GET && path == crate::e2e::PATH)
         || path.starts_with(crate::sync::PUSH_PREFIX)
-        || (m == Method::POST && crate::labs::is_forge_hook(path))
+        || (m == Method::POST && crate::lab_hooks::labs().is_hook(path))
     {
         Class::Token
     } else if path == crate::mcp::PATH

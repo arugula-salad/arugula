@@ -50,11 +50,23 @@ pub struct Binaries {
     pub dir: PathBuf,
 }
 
-/// The sandboxes routes, as operations (`ops/sandboxes.rs`).
+static BINARIES: std::sync::OnceLock<Option<Binaries>> = std::sync::OnceLock::new();
+
+/// Looks for the static binaries in `dir`, as the daemon starts.
+pub fn find_binaries(dir: PathBuf) {
+    let _ = BINARIES.set(dir.join("arugulad").exists().then_some(Binaries { dir }));
+}
+
+/// The static binaries to copy into a sandbox, if they were there.
+fn binaries() -> Option<Binaries> {
+    BINARIES.get().cloned().flatten()
+}
+
+/// The sandboxes routes, as operations (below).
 pub fn routes() -> Router<Arc<App>> {
     use crate::ops::OpRoutes;
     use arugula_proto::op::ops::{SandboxDemote, SandboxPromote, SandboxesList};
-    Router::new().op::<SandboxesList>().op::<SandboxPromote>().op::<SandboxDemote>()
+    Router::new().op_of::<SandboxesList, Labs>().op_of::<SandboxPromote, Labs>().op_of::<SandboxDemote, Labs>()
 }
 
 pub async fn list(app: &App) -> Result<SandboxList, Failed> {
@@ -133,7 +145,7 @@ pub async fn make_resident(app: &App, sandbox: &str, req: PromoteRequest) -> Res
     if ephemeral(sandbox) {
         return Err(bad(format!("{sandbox} is a VM pane's machine")));
     }
-    let binaries = app.binaries.clone().ok_or((
+    let binaries = binaries().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "no static daemon to copy in: build it with `just static` and start arugulad with --static-dir".into(),
     ))?;
@@ -215,6 +227,41 @@ async fn ask_host(p: &dyn crate::provider::Provider, sandbox: &str, port: u16, t
     let json = body.find('{').and_then(|a| body.rfind('}').map(|b| &body[a..=b])).unwrap_or("");
     let v: serde_json::Value = serde_json::from_str(json)?;
     Ok(v["name"].as_str().unwrap_or_default().to_owned())
+}
+
+// ---------------------------------------------------------------- operations
+
+// `sandboxes`: the home daemon's provider sandboxes, and making a daemon
+// resident in one (`arugula sandboxes`). The owner's.
+
+use arugula_proto::{
+    api::Empty,
+    op::ops::{SandboxDemote, SandboxPromote, SandboxesList},
+};
+
+use super::Labs;
+use crate::ops::{Cx, Handle, OpError};
+
+fn failed((code, why): Failed) -> OpError {
+    OpError::Status(code, why)
+}
+
+impl Handle<Labs> for SandboxesList {
+    async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<SandboxList, OpError> {
+        list(cx.app).await.map_err(failed)
+    }
+}
+
+impl Handle<Labs> for SandboxPromote {
+    async fn handle(cx: &Cx<'_>, sandbox: String, req: PromoteRequest) -> Result<Host, OpError> {
+        make_resident(cx.app, &sandbox, req).await.map_err(failed)
+    }
+}
+
+impl Handle<Labs> for SandboxDemote {
+    async fn handle(cx: &Cx<'_>, sandbox: String, _: Empty) -> Result<Demoted, OpError> {
+        demote(cx.app, &sandbox).await.map_err(failed)
+    }
 }
 
 #[cfg(test)]

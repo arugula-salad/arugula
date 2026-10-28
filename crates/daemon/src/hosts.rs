@@ -554,7 +554,7 @@ pub(crate) fn features(app: &App) -> HostFeatures {
         blocks: crate::sites::get().is_some_and(|s| s.listens()),
         block_channels: crate::sites::control_blocks(),
         vms: on.has(flags::SANDBOX_PROVIDERS) && app.mux.provider.is_some(),
-        studio: on.has(flags::STUDIO) && crate::labs::studio_here(),
+        studio: on.has(flags::STUDIO) && crate::lab_hooks::labs().studio_here(),
         // A sharing setting, not a flag (native #205).
         guest_ssh: Some(crate::lab_flags::BUILT && arugula_proto::sharing::guest_ssh(dir)),
         flags: Some(on.names().map(str::to_owned).collect()),

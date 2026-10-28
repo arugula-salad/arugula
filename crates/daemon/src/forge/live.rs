@@ -381,7 +381,7 @@ fn base() -> Result<String, String> {
 /// A new hook's record (not yet made on the forge): its URL and secret.
 pub fn new_hook(provider: Provider, host: &str, repo: &str) -> Result<HookRec, String> {
     let k = hex::encode(arugula_e2e::random::<12>());
-    let path = crate::labs::hook_path(provider)?;
+    let path = crate::lab_hooks::labs().hook_path(provider)?;
     Ok(HookRec {
         url: format!("{}{path}?k={k}", base()?),
         k,
