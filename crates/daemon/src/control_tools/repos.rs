@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::tools::{Call, Kind, Out, done};
+use crate::mcp::tools::{Call, Kind, Out, done};
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ProjectArgs {
@@ -88,32 +88,30 @@ fn line(r: &Value) -> String {
     }
 }
 
-impl Call<'_> {
-    async fn repos_call(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
-        self.app().control.cloud(method, path, body.as_ref()).await.map_err(|e| e.to_string())
-    }
+async fn repos_call(c: &Call<'_>, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
+    c.app().control.cloud(method, path, body.as_ref()).await.map_err(|e| e.to_string())
+}
 
-    pub(crate) async fn list_linked_repos(&self, a: ProjectArgs) -> Out {
-        let v = self.repos_call(Method::GET, &project_path(a.project.as_deref())?, None).await?;
-        let repos = v["repos"].as_array().cloned().unwrap_or_default();
-        let summary = if repos.is_empty() {
-            "No GitHub repos are linked to the project.".to_owned()
-        } else {
-            format!("{} linked: {}", repos.len(), repos.iter().map(line).collect::<Vec<_>>().join(", "))
-        };
-        done(summary, json!({ "project": v["project"], "repos": repos }))
-    }
+pub(crate) async fn list_linked_repos(c: &Call<'_>, a: ProjectArgs) -> Out {
+    let v = repos_call(c, Method::GET, &project_path(a.project.as_deref())?, None).await?;
+    let repos = v["repos"].as_array().cloned().unwrap_or_default();
+    let summary = if repos.is_empty() {
+        "No GitHub repos are linked to the project.".to_owned()
+    } else {
+        format!("{} linked: {}", repos.len(), repos.iter().map(line).collect::<Vec<_>>().join(", "))
+    };
+    done(summary, json!({ "project": v["project"], "repos": repos }))
+}
 
-    pub(crate) async fn link_repo(&self, kind: &str, a: RepoArgs) -> Out {
-        let (owner, name) = owner_name(&a.repo)?;
-        let path = project_path(a.project.as_deref())?;
-        let v = match kind {
-            "link" => self.repos_call(Method::POST, &path, Some(json!({ "repo": format!("{owner}/{name}") }))).await?,
-            _ => self.repos_call(Method::DELETE, &format!("{path}/{owner}/{name}"), None).await?,
-        };
-        let said = if kind == "link" { "Linked" } else { "Unlinked" };
-        done(format!("{said} {}", line(&v)), v)
-    }
+pub(crate) async fn link_repo(c: &Call<'_>, kind: &str, a: RepoArgs) -> Out {
+    let (owner, name) = owner_name(&a.repo)?;
+    let path = project_path(a.project.as_deref())?;
+    let v = match kind {
+        "link" => repos_call(c, Method::POST, &path, Some(json!({ "repo": format!("{owner}/{name}") }))).await?,
+        _ => repos_call(c, Method::DELETE, &format!("{path}/{owner}/{name}"), None).await?,
+    };
+    let said = if kind == "link" { "Linked" } else { "Unlinked" };
+    done(format!("{said} {}", line(&v)), v)
 }
 
 #[cfg(test)]

@@ -20,7 +20,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{
+use crate::mcp::{
     issues::Native,
     tools::{Call, Out, done},
 };
@@ -103,73 +103,71 @@ pub(crate) fn start_body(a: &SessionStartArgs, project: Option<String>) -> Resul
     }
 }
 
-impl Call<'_> {
-    /// They act as this machine's owner: only the owner's own agents may.
-    async fn owners_sessions(&self, tool: &str) -> Result<(), String> {
-        if let Some(me) = self.me()
-            && self.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
-        {
-            return Err(format!("{tool} acts as this machine's owner: only their own agents may"));
+/// They act as this machine's owner: only the owner's own agents may.
+async fn owners_sessions(c: &Call<'_>, tool: &str) -> Result<(), String> {
+    if let Some(me) = c.me()
+        && c.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
+    {
+        return Err(format!("{tool} acts as this machine's owner: only their own agents may"));
+    }
+    Ok(())
+}
+
+async fn sessions_call(c: &Call<'_>, path: &str, body: Value) -> Result<Value, String> {
+    c.app().control.cloud(Method::POST, path, Some(&body)).await.map_err(said)
+}
+
+/// `session_start`.
+pub(crate) async fn session_start(c: &Call<'_>, a: SessionStartArgs) -> Out {
+    owners_sessions(c, START_TOOL).await?;
+    let number = a.issue.as_deref().and_then(Native::parse).is_some_and(|n| matches!(n, Native::Number(_)));
+    let project = match number {
+        true => Some(c.current_project(a.project.as_deref()).await?),
+        false => None,
+    };
+    let body = serde_json::to_value(start_body(&a, project)?).map_err(|e| e.to_string())?;
+    let v = sessions_call(c, AGENT_SESSIONS, body).await?;
+    let at = format!("seq {} in {}", v["seq"], v["room"].as_str().unwrap_or("?"));
+    let s = match v["session"].as_str() {
+        Some(ses) => format!(
+            "Started session {ses} as your person, asked by their agent on this machine ({at}). Its answers come in that thread (read_thread); session_reply answers or prompts it."
+        ),
+        None => {
+            let said: Vec<&str> = v["said"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+            match said.as_slice() {
+                [] => format!("Asked @arugula ({at}), but no session started and the platform said nothing."),
+                lines => format!("Asked @arugula ({at}); no session yet. The platform said:\n{}", lines.join("\n")),
+            }
         }
-        Ok(())
-    }
+    };
+    done(s, v)
+}
 
-    async fn sessions_call(&self, path: &str, body: Value) -> Result<Value, String> {
-        self.app().control.cloud(Method::POST, path, Some(&body)).await.map_err(said)
+/// `session_reply`.
+pub(crate) async fn session_reply(c: &Call<'_>, a: SessionReplyArgs) -> Out {
+    owners_sessions(c, REPLY_TOOL).await?;
+    let ses = a.session.trim();
+    if !ses.starts_with("ses_") {
+        return Err(format!("session: its id, ses_…, not {ses:?}"));
     }
-
-    /// `session_start`.
-    pub(crate) async fn session_start(&self, a: SessionStartArgs) -> Out {
-        self.owners_sessions(START_TOOL).await?;
-        let number = a.issue.as_deref().and_then(Native::parse).is_some_and(|n| matches!(n, Native::Number(_)));
-        let project = match number {
-            true => Some(self.current_project(a.project.as_deref()).await?),
-            false => None,
-        };
-        let body = serde_json::to_value(start_body(&a, project)?).map_err(|e| e.to_string())?;
-        let v = self.sessions_call(AGENT_SESSIONS, body).await?;
-        let at = format!("seq {} in {}", v["seq"], v["room"].as_str().unwrap_or("?"));
-        let s = match v["session"].as_str() {
-            Some(ses) => format!(
-                "Started session {ses} as your person, asked by their agent on this machine ({at}). Its answers come in that thread (read_thread); session_reply answers or prompts it."
-            ),
-            None => {
-                let said: Vec<&str> = v["said"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-                match said.as_slice() {
-                    [] => format!("Asked @arugula ({at}), but no session started and the platform said nothing."),
-                    lines => format!("Asked @arugula ({at}); no session yet. The platform said:\n{}", lines.join("\n")),
-                }
-            }
-        };
-        done(s, v)
-    }
-
-    /// `session_reply`.
-    pub(crate) async fn session_reply(&self, a: SessionReplyArgs) -> Out {
-        self.owners_sessions(REPLY_TOOL).await?;
-        let ses = a.session.trim();
-        if !ses.starts_with("ses_") {
-            return Err(format!("session: its id, ses_…, not {ses:?}"));
+    let v = sessions_call(c, &agent_session_reply(ses), json!({ "text": a.text })).await?;
+    let s = match v["did"].as_str() {
+        Some("answered") => format!("Answered session {ses}'s question, as your person's agent on this machine."),
+        Some("queued") if v["permission"] == true => format!(
+            "Session {ses} waits on a permission, which a person allows or denies: your reply is queued as its prompt for after."
+        ),
+        Some("queued") => {
+            format!("Queued as session {ses}'s next prompt (it starts when the turn under way ends).")
         }
-        let v = self.sessions_call(&agent_session_reply(ses), json!({ "text": a.text })).await?;
-        let s = match v["did"].as_str() {
-            Some("answered") => format!("Answered session {ses}'s question, as your person's agent on this machine."),
-            Some("queued") if v["permission"] == true => format!(
-                "Session {ses} waits on a permission, which a person allows or denies: your reply is queued as its prompt for after."
-            ),
-            Some("queued") => {
-                format!("Queued as session {ses}'s next prompt (it starts when the turn under way ends).")
-            }
-            Some("refused") => format!(
-                "Posted in session {ses}'s thread, but it took no prompt: {}",
-                v["why"].as_str().unwrap_or("it said no")
-            ),
-            _ => {
-                format!("Posted in session {ses}'s thread, but your person only views its project: it took no prompt.")
-            }
-        };
-        done(s, v)
-    }
+        Some("refused") => format!(
+            "Posted in session {ses}'s thread, but it took no prompt: {}",
+            v["why"].as_str().unwrap_or("it said no")
+        ),
+        _ => {
+            format!("Posted in session {ses}'s thread, but your person only views its project: it took no prompt.")
+        }
+    };
+    done(s, v)
 }
 
 #[cfg(test)]

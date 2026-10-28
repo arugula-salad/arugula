@@ -199,12 +199,10 @@ pub fn the_card_lists_what_this_machine_offers() {
     // Parts of another's line never show on their own.
     assert!(!all.contains(&"wait".to_owned()) && !all.contains(&"close".to_owned()));
     // A flag: boards, and delegating (the agent catalog's).
-    assert!(all.contains(&super::super::boards::READ_TOOL.to_owned()));
+    assert!(all.contains(&"board_read".to_owned()));
     assert!(all.contains(&"delegate".to_owned()) && !bare.contains(&"delegate".to_owned()));
     // What control and its grants give.
-    for t in
-        ["cloud", super::super::runs::START_TOOL, super::super::threads::READ_TOOL, super::super::issues::WRITE_TOOL]
-    {
+    for t in ["cloud", "start_run", "read_thread", "issue_write"] {
         assert!(all.contains(&t.to_owned()) && !bare.contains(&t.to_owned()), "{t}");
     }
     if crate::forges::built() {
