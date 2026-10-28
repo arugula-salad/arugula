@@ -16,8 +16,8 @@ fn register() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         // MCP's server: `/mcp`, the tool table and the tools' calls
-        // (`mcp_server`).
-        arugulad_base::mcp_server::register();
+        // (crates/arugulad-mcp).
+        arugulad_mcp::register();
         // Docs (crates/arugulad-docs).
         arugulad_docs::register();
         // The deploy drivers, programs of their own (crates/arugulad-drivers).

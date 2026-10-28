@@ -57,8 +57,6 @@ pub mod lab_hooks;
 mod listening;
 mod localauth;
 pub mod mcp;
-#[doc(hidden)]
-pub mod mcp_server;
 use arugula_mux::mux;
 pub mod ops;
 use arugula_mux::osc;

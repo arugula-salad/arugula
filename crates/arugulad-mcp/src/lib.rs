@@ -8,11 +8,24 @@
 //! feature crates share. The base reaches this through `mcp::Mcp`, and
 //! the card *What your agent can do here* is `AgentCanGet`, an operation
 //! of ours ([`Server`]); the binary calls [`register`].
+//!
+//! This is the crate `arugulad-mcp` (#232), beside the other feature crates
+//! on the base: the base's `mcp` is what `arugulad-control-tools` and
+//! `arugulad-agent` use, so neither is built on this.
 
 mod capabilities;
 mod hosted;
 mod session;
 pub mod tools;
+
+// What the code here names as `crate::…`: the mux's modules and the daemon's,
+// as it named them when it was the daemon's.
+use arugula_mux::{acl, block, history, keys, mux, osc, pane, store};
+#[cfg(unix)]
+use arugulad_base::upload;
+use arugulad_base::{
+    agent, api, features, forges, fs, lab_flags, lab_hooks, mcp, ops, review, server, task, telemetry, work, worktree,
+};
 
 use std::sync::Arc;
 

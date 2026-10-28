@@ -20,7 +20,7 @@
 //! page does; control routes it only while the grant is live, and the
 //! hosted machine lets in its project's owners' and editors' machines as
 //! their person (`Enrolled::drivers`). The call goes to its
-//! `POST /api/mcp/call` (`mcp_server`'s `call_here`), which runs the tool there as the
+//! `POST /api/mcp/call` (`arugulad-mcp`'s `call_here`), which runs the tool there as the
 //! owner would, with this machine named as who started what it starts.
 //! A read-only caller here stays read only there.
 

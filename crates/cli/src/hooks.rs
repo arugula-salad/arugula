@@ -88,7 +88,7 @@ const READ_RULES: &[&str] = &[
     "Bash(arugula runs ls:*)",
     "Bash(arugula runs show:*)",
     "Bash(arugula runs logs:*)",
-    // The MCP tools with `read_only_hint` in crates/daemon/src/mcp_server/tools.rs
+    // The MCP tools with `read_only_hint` in crates/arugulad-mcp/src/tools.rs
     // (the CLI can't depend on the daemon; docs/mcp-permissions.json lists
     // the same, and a test here checks it).
     "mcp__arugula__read_output",
