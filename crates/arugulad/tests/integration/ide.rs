@@ -387,3 +387,206 @@ async fn only_those_who_may_drive_answer_a_diff() {
         .unwrap();
     assert_eq!(r.status(), 403);
 }
+
+/// nvim's version, if it's here (`NVIM v0.11.6`): arugula.nvim needs 0.10.
+fn nvim_ok() -> bool {
+    let Ok(out) = std::process::Command::new("nvim").arg("--version").output() else {
+        eprintln!("SKIPPED: no nvim here (CI installs it; 0.10 or later)");
+        return false;
+    };
+    let first = String::from_utf8_lossy(&out.stdout).lines().next().unwrap_or("").to_owned();
+    let v: Vec<u32> = first
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("")
+        .trim_start_matches('v')
+        .split('.')
+        .filter_map(|p| p.parse().ok())
+        .collect();
+    if v.len() < 2 || (v[0], v[1]) < (0, 10) {
+        eprintln!("SKIPPED: {first} is older than 0.10, which arugula.nvim needs (CI must install 0.10+)");
+        return false;
+    }
+    true
+}
+
+/// A headless nvim with arugula.nvim, running in a pane, driven over its
+/// own RPC socket.
+struct Nvim {
+    rpc: PathBuf,
+}
+
+impl Nvim {
+    fn expr(&self, e: &str) -> String {
+        let out = std::process::Command::new("nvim")
+            .arg("--server")
+            .arg(&self.rpc)
+            .args(["--remote-expr", e])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    }
+
+    /// Lua, its value as a string.
+    fn lua(&self, l: &str) -> String {
+        self.expr(&format!("luaeval(\"{}\")", l.replace('"', "\\\"")))
+    }
+
+    fn keys(&self, k: &str) {
+        let ok = std::process::Command::new("nvim")
+            .arg("--server")
+            .arg(&self.rpc)
+            .args(["--remote-send", k])
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(ok, "sending {k}");
+    }
+
+    /// The diffs it shows, in order.
+    fn diffs(&self) -> Vec<String> {
+        serde_json::from_str(&self.lua("vim.json.encode(require('arugula.diff').list())")).unwrap_or_default()
+    }
+
+    fn tabs(&self) -> String {
+        self.expr("tabpagenr('$')")
+    }
+
+    /// The diff the tab in front shows.
+    fn front(&self) -> String {
+        self.expr("get(t:, 'arugula_diff', '')")
+    }
+}
+
+/// #1732: with Claude Code and nvim (arugula.nvim) in one tab, each edit
+/// Claude Code proposes is a vimdiff tab in nvim as well as a card, and
+/// the daemon owns the answer: accepting in nvim (as proposed or edited)
+/// or rejecting there answers Claude Code and closes the card; the card or
+/// the terminal answering first closes nvim's tab; two diffs queue, a tab
+/// each, in order; with nvim gone, the card is as it always was.
+#[test]
+fn diffs_show_in_nvim_and_answer_with_the_card() {
+    if !nvim_ok() {
+        return;
+    }
+    let s = setup("nvim");
+    let d = &s.d;
+    let claude = claude(d);
+    d.wait_for("Claude Code found in its pane", || info(d, claude)["claude_ide"] == true);
+    // nvim with the plugin, beside Claude Code in its tab.
+    let pane = d.post("/api/run", json!({ "split": claude, "cwd": d.sessions.display().to_string() }))["pane"]
+        .as_u64()
+        .unwrap();
+    d.wait_for("a prompt", || info(d, pane)["cwd"].is_string());
+    let plugin = std::fs::canonicalize(concat!(env!("CARGO_MANIFEST_DIR"), "/../../editors/nvim")).unwrap();
+    let nv = Nvim { rpc: PathBuf::from(format!("/tmp/aru-nd-{}.sock", std::process::id())) };
+    let _ = std::fs::remove_file(&nv.rpc);
+    say(
+        d,
+        pane,
+        &format!(
+            "XDG_DATA_HOME={} nvim --headless --clean --listen {} --cmd 'set rtp^={}' -c 'runtime plugin/arugula.lua'",
+            d.sessions.join("nvim-data").display(),
+            nv.rpc.display(),
+            plugin.display(),
+        ),
+    );
+    d.wait_for("arugula.nvim on its pane", || {
+        let e = &info(d, pane)["editor"];
+        e["app"] == "nvim" && e["no_follow"] != true
+    });
+    assert_eq!(nv.expr("exists(':ArugulaAccept') && exists(':ArugulaReject')"), "1");
+    let file = d.sessions.join("a.txt");
+    std::fs::write(&file, "one\ntwo\n").unwrap();
+    let edit = |f: &Path, text: &str| say(d, claude, &format!("edit {} {text}", f.display()));
+    let card = || info(d, claude)["diff"].clone();
+
+    // A proposal: the card, and a vimdiff tab within 1 s of it.
+    edit(&file, "one\\nTWO\\n");
+    d.wait_for("the card", || card().is_object());
+    let shown = Instant::now();
+    d.wait_for("the vimdiff tab", || nv.diffs().len() == 1);
+    assert!(shown.elapsed() < Duration::from_secs(1), "took {:?}", shown.elapsed());
+    let id = card()["id"].as_str().unwrap().to_owned();
+    assert_eq!(nv.diffs(), vec![id.clone()]);
+    assert_eq!((nv.tabs(), nv.front()), ("2".into(), id.clone()));
+    let header = nv.expr("&l:winbar");
+    assert!(header.contains("Claude Code wants to edit a.txt") && header.contains("<leader>aa accept"), "{header}");
+    // The proposed side, against the file as it is.
+    assert_eq!(nv.lua("table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '|')"), "one|TWO");
+    assert_eq!(nv.expr("&diff"), "1");
+    d.wait_for("the card says nvim has it", || card()["nvim"] == pane);
+    // Accepted in nvim: Claude Code writes it, the card and the tab close.
+    nv.keys("\\aa");
+    wait_text(d, claude, "result FILE_SAVED");
+    d.wait_for("the edit written", || std::fs::read_to_string(&file).unwrap_or_default() == "one\nTWO\n");
+    d.wait_for("the card to go", || card().is_null());
+    let answered = &info(d, claude)["answered"];
+    assert_eq!((answered["how"].as_str(), answered["who"].as_str()), (Some("accepted"), Some("nvim")));
+    assert_eq!(answered["name"], format!("nvim (pane %{pane})"));
+    assert_eq!((nv.diffs().len(), nv.tabs()), (0, "1".into()));
+
+    // Edited, then accepted: Claude Code takes the edit.
+    edit(&file, "x = 1\\n");
+    d.wait_for("the second tab", || nv.diffs().len() == 1);
+    nv.keys("ggcwy<Esc>:ArugulaAccept<CR>");
+    d.wait_for("the edit written", || std::fs::read_to_string(&file).unwrap_or_default() == "y = 1\n");
+    d.wait_for("accepted with changes", || info(d, claude)["answered"]["how"] == "accepted with changes");
+    d.wait_for("the card to go", || card().is_null());
+    assert_eq!(nv.tabs(), "1");
+
+    // Rejected in nvim: nothing written.
+    edit(&file, "gone\\n");
+    d.wait_for("the third tab", || nv.diffs().len() == 1);
+    nv.keys("\\ar");
+    wait_text(d, claude, "result DIFF_REJECTED");
+    d.wait_for("rejected", || info(d, claude)["answered"]["how"] == "rejected");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "y = 1\n");
+    d.wait_for("the card to go", || card().is_null());
+    assert!(nv.diffs().is_empty());
+
+    // The card answers first: nvim's tab closes.
+    edit(&file, "from the card\\n");
+    d.wait_for("a tab", || nv.diffs().len() == 1);
+    d.post("/api/attention/act", json!({ "action": "accept", "pane": claude }));
+    d.wait_for("the tab to close", || nv.diffs().is_empty() && nv.tabs() == "1");
+    d.wait_for("the edit written", || std::fs::read_to_string(&file).unwrap_or_default() == "from the card\n");
+
+    // Claude Code's terminal answers first: so does the tab.
+    edit(&file, "never\\n");
+    d.wait_for("a tab", || nv.diffs().len() == 1);
+    say(d, claude, "close");
+    d.wait_for("the tab to close", || nv.diffs().is_empty());
+    d.wait_for("the card to close", || card().is_null());
+    assert_eq!(info(d, claude)["answered"]["who"], "terminal");
+
+    // Two in a row: a tab each, in order, the first in front.
+    let other = d.sessions.join("b.txt");
+    edit(&file, "first\\n");
+    d.wait_for("the first card", || card().is_object());
+    let first = card()["id"].as_str().unwrap().to_owned();
+    edit(&other, "second\\n");
+    d.wait_for("two tabs", || nv.diffs().len() == 2);
+    let both = nv.diffs();
+    assert_eq!(both[0], first);
+    assert_eq!((nv.tabs(), nv.front()), ("3".into(), first.clone()));
+    nv.keys("\\aa");
+    d.wait_for("the first written", || std::fs::read_to_string(&file).unwrap_or_default() == "first\n");
+    // The second is in front now, on the card and in nvim.
+    d.wait_for("the second card", || card()["id"] == both[1].as_str());
+    assert_eq!(card()["nvim"], pane);
+    d.wait_for("the second tab in front", || nv.front() == both[1]);
+    nv.keys("\\aa");
+    d.wait_for("the second written", || std::fs::read_to_string(&other).unwrap_or_default() == "second\n");
+    d.wait_for("no tabs left", || nv.diffs().is_empty() && nv.tabs() == "1");
+
+    // nvim closed: the card is as it always was.
+    nv.keys("<Esc>:qa!<CR>");
+    d.wait_for("nvim gone", || info(d, pane)["editor"].is_null());
+    edit(&file, "after nvim\\n");
+    d.wait_for("the card", || card().is_object());
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(card().get("nvim").is_none(), "{}", card());
+    d.post("/api/attention/act", json!({ "action": "accept", "pane": claude }));
+    d.wait_for("the edit written", || std::fs::read_to_string(&file).unwrap_or_default() == "after nvim\n");
+    let _ = std::fs::remove_file(&nv.rpc);
+}

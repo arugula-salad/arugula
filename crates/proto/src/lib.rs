@@ -1250,6 +1250,11 @@ pub struct DiffInfo {
     pub at_ms: u64,
     /// Which IDE shows it: `arugula`, or the one diffs go to.
     pub ide: String,
+    /// The terminal whose nvim shows it too, as a vimdiff (#1732): the card
+    /// says "Also open in nvim (pane %N)".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub nvim: Option<PaneId>,
 }
 
 /// Who started a pane or block through MCP (M16).

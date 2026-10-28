@@ -74,6 +74,8 @@ pub trait CardsCx {
     fn pane_of_pid(&self, pid: u32) -> Option<PaneId>;
     /// A terminal's working directory.
     fn pane_cwd(&self, pane: PaneId) -> Option<String>;
+    /// Where a pane is: its session and its tab.
+    fn place(&self, pane: PaneId) -> Option<(arugula_core::SessionId, arugula_core::TabId)>;
     /// This pane's card is now `card`, or gone: its reason and what it shows
     /// (`PaneInfo.diff`). Its attention follows.
     fn card(&mut self, pane: PaneId, card: Option<(Reason, DiffInfo)>);

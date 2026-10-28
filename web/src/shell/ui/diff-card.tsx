@@ -68,6 +68,11 @@ export function DiffCard({
           </>
         )}
       </div>
+      {diff.nvim != null && (
+        <p class="diff-nvim" data-diff-nvim={diff.nvim}>
+          Also open in nvim (pane %{diff.nvim})
+        </p>
+      )}
       {editing === null ? (
         <DiffText text={diff.text} />
       ) : (

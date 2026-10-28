@@ -14,10 +14,13 @@
 //! link to it. "Which IDE gets diffs" is a setting here: Arugula's cards,
 //! or another IDE that registered with Claude Code (VS Code with Claude
 //! Code's extension, say), to which the daemon passes each `openDiff` on.
+//! With Arugula's cards, an nvim running arugula.nvim near Claude Code shows
+//! each diff as a vimdiff too, answering the same card (`nvim.rs`, #1732).
 
 mod cards;
 pub use cards::Cards;
 pub mod diff;
+pub mod nvim;
 mod ops;
 // Over Unix sockets, which Claude Code's IDE support uses.
 #[cfg(unix)]

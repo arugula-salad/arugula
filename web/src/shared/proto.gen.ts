@@ -1299,7 +1299,12 @@ new?: boolean, at_ms: number,
 /**
  * Which IDE shows it: `arugula`, or the one diffs go to.
  */
-ide: string, };
+ide: string, 
+/**
+ * The terminal whose nvim shows it too, as a vimdiff (#1732): the card
+ * says "Also open in nvim (pane %N)".
+ */
+nvim?: number, };
 
 export type Dir = "row" | "column";
 

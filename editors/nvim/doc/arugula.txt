@@ -1,0 +1,73 @@
+*arugula.txt*  Your nvim in the Arugula swarm
+
+==============================================================================
+CONTENTS                                                      *arugula*
+
+  1. Joining the swarm .................... |arugula-join|
+  2. Claude Code's proposed edits ......... |arugula-diff|
+  3. Options .............................. |arugula-options|
+
+arugula.nvim connects nvim to the Arugula daemon on this machine
+($ARUGULA_SOCK, else ~/.local/state/arugula/sock). Core nvim 0.10 or later,
+no dependencies.
+
+==============================================================================
+1. Joining the swarm                                          *arugula-join*
+
+In an Arugula pane ($ARUGULA_PANE), nvim is that pane already: the plugin
+connects by itself, and following the pane follows your buffer.
+
+                                                              *:ArugulaJoin*
+:ArugulaJoin            Show the current folder in the swarm, and remember
+                        it: nvim joins by itself when it starts there again.
+
+                                                              *:ArugulaLeave*
+:ArugulaLeave           Leave at once, and forget the folder.
+
+                                                              *:ArugulaStatus*
+:ArugulaStatus          Say whether it's in, and how many follow it.
+
+==============================================================================
+2. Claude Code's proposed edits                               *arugula-diff*
+
+When Claude Code runs in an Arugula pane in the same session as this nvim
+(the same tab, if there's one there), each edit it proposes opens here as a
+vimdiff tab: the file as it is on the left, the proposed text on the right.
+The header over the right side names the agent, the file and the keys.
+
+The diff card on Claude Code's pane and on the swarm's rail shows the same
+edit, and says "Also open in nvim (pane %N)". The daemon owns the answer:
+answering here, on the card, or in Claude Code's terminal closes the tab and
+the card.
+
+                                              *arugula-accept* *:ArugulaAccept*
+<leader>aa
+:ArugulaAccept          Accept the edit in this tab. Claude Code writes the
+                        file. If you edited the right side first, Claude Code
+                        gets your text instead, as the card's "Change..."
+                        does.
+
+                                              *arugula-reject* *:ArugulaReject*
+<leader>ar
+:ArugulaReject          Reject the edit in this tab. The file stays as it is.
+
+Two edits in a row open a tab each, in the order they came; the first takes
+focus and the next waits behind it. Closing a tab without answering leaves
+the card waiting.
+
+Without this plugin, or with nvim closed, the cards work as they always do.
+
+==============================================================================
+3. Options                                                    *arugula-options*
+
+Set `vim.g.arugula` before the plugin loads, or call setup() yourself: >lua
+
+    require("arugula").setup({
+      socket = "/path/to/sock",   -- the daemon's socket
+      keys = {
+        accept = "<leader>aa",    -- false: no key, :ArugulaAccept only
+        reject = "<leader>ar",
+      },
+    })
+<
+ vim:tw=78:ts=8:ft=help:norl:

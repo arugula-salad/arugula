@@ -869,6 +869,11 @@ impl super::CardsCx for Daemon {
         self.panes.get(&pane).and_then(|h| h.status().cwd.or_else(|| h.cwd().map(|c| c.display().to_string())))
     }
 
+    fn place(&self, pane: PaneId) -> Option<(arugula_core::SessionId, arugula_core::TabId)> {
+        let tab = self.mux.tab_of(pane).ok()?;
+        Some((self.mux.session_of_tab(tab).ok()?, tab))
+    }
+
     fn card(&mut self, pane: PaneId, card: Option<(Reason, arugula_proto::DiffInfo)>) {
         self.card_changed(pane, card);
     }
