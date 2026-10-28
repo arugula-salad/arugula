@@ -14,7 +14,7 @@ use arugula_proto::api::SearchHit;
 use axum::Router;
 use futures_util::future::BoxFuture;
 
-use crate::{block::BlockKinds, control::Control, server::App};
+use crate::{block::BlockKinds, control::Control, invite::Hook, server::App};
 
 /// What a feature crate adds.
 pub trait Feature: Send + Sync + 'static {
@@ -23,8 +23,9 @@ pub trait Feature: Send + Sync + 'static {
     fn prepare(&self, _state_dir: &Path) {}
     /// Once control is there (before any block is made).
     fn with_control(&self, _control: &Arc<Control>) {}
-    /// Its block types.
-    fn kinds(&self, _kinds: &mut BlockKinds) {}
+    /// Its block types. `app` is the app once it's made (blocks are made
+    /// before the server is).
+    fn kinds(&self, _kinds: &mut BlockKinds, _app: &Hook) {}
     /// Its routes and operations, beside the API's.
     fn routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
         r
@@ -64,9 +65,9 @@ pub(crate) fn with_control(control: &Arc<Control>) {
     }
 }
 
-pub(crate) fn kinds(kinds: &mut BlockKinds) {
+pub(crate) fn kinds(kinds: &mut BlockKinds, app: &Hook) {
     for f in all() {
-        f.kinds(kinds);
+        f.kinds(kinds, app);
     }
 }
 

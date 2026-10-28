@@ -21,6 +21,8 @@ fn register() {
         arugulad_drivers::register();
         // The diff and file blocks (crates/arugulad-review).
         arugulad_review::register();
+        // Inviting a person into a session (crates/arugulad-invite).
+        arugulad_invite::register();
         // The GitHub forge, which Labs' forges are built on
         // (crates/arugulad-forge).
         #[cfg(feature = "forge")]

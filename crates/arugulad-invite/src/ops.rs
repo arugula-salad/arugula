@@ -9,10 +9,11 @@ use arugula_proto::{
     op::ops::{InviteSend, TeamPinsGet, TeamPinsSet},
 };
 
-use super::{Cx, Handle, OpError};
-use crate::invite::{AGENT_ASKS, add_pins, run, team_pins};
+use arugulad_base::ops::{Cx, Handle, OpError};
 
-impl Handle for InviteSend {
+use crate::{AGENT_ASKS, Invite, add_pins, run, team_pins};
+
+impl Handle<Invite> for InviteSend {
     async fn handle(cx: &Cx<'_>, _: (), req: InviteRequest) -> Result<Invited, OpError> {
         if cx.agent_or_guest() {
             return Err(OpError::Forbidden(AGENT_ASKS.into()));
@@ -21,13 +22,13 @@ impl Handle for InviteSend {
     }
 }
 
-impl Handle for TeamPinsGet {
+impl Handle<Invite> for TeamPinsGet {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<TeamPins, OpError> {
         Ok(team_pins(cx.app))
     }
 }
 
-impl Handle for TeamPinsSet {
+impl Handle<Invite> for TeamPinsSet {
     async fn handle(cx: &Cx<'_>, _: (), req: TeamPinsRequest) -> Result<TeamPins, OpError> {
         add_pins(cx.app, cx.agent_or_guest(), req).await.map_err(|(code, why)| OpError::Status(code, why))
     }

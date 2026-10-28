@@ -56,7 +56,7 @@ impl arugulad_base::features::Feature for Docs {
         docs::link::init(control.clone());
     }
 
-    fn kinds(&self, kinds: &mut block::BlockKinds) {
+    fn kinds(&self, kinds: &mut block::BlockKinds, _app: &arugulad_base::invite::Hook) {
         kinds.add(BlockType::Doc, docs::DocKind);
     }
 

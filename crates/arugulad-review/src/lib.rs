@@ -29,7 +29,7 @@ pub fn register() {
 }
 
 impl arugulad_base::features::Feature for Review {
-    fn kinds(&self, kinds: &mut block::BlockKinds) {
+    fn kinds(&self, kinds: &mut block::BlockKinds, _app: &arugulad_base::invite::Hook) {
         kinds.add(BlockType::Diff, block::Make(diff::Diff::create));
         kinds.add(BlockType::File, block::Make(file::FileView::create));
     }

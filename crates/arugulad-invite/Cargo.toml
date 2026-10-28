@@ -1,0 +1,29 @@
+[package]
+name = "arugulad-invite"
+description = "The daemon's invites: sharing a session with a person and telling them, the invite card, and MCP's invite_person"
+# Not the workspace's version: a release bump would rebuild this crate and
+# everything on it. The binary carries the release (arugula_core::version).
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+arugula-core = { workspace = true }
+arugula-mux = { workspace = true }
+arugula-proto = { workspace = true, features = ["schema"] }
+arugulad-base = { workspace = true }
+axum = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+# MCP (M16), pinned as the base pins it.
+rmcp = { version = "=3.5.0", default-features = false, features = ["server", "schemars"] }
+schemars = "1.0"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+
+[lints]
+workspace = true
