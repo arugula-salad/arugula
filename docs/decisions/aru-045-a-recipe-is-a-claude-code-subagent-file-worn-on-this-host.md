@@ -28,8 +28,8 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-15"
 reviews: []
 constrains:
-  - "path:crates/daemon/src/labs/agents"
-  - "path:crates/daemon/src/labs/wearing.rs"
+  - "path:crates/arugulad-labs/src/agents"
+  - "path:crates/arugulad-labs/src/wearing.rs"
   - "path:crates/cli/src/cmd/agents.rs"
 ---
 
@@ -55,5 +55,5 @@ owner's (`<state>/agent-offers.json`). A card is A2A 1.0 with an
 `arugula://` JSON-RPC interface and a required channel extension. `agent
 --as` names a recipe (Fountain's `--as-fountain`, which it once was, went
 with M44).
-Where: `crates/daemon/src/labs/agents/`, `crates/daemon/src/labs/wearing.rs` (`Worn`), `crates/cli/src/cmd/agents.rs`.
+Where: `crates/arugulad-labs/src/agents/`, `crates/arugulad-labs/src/wearing.rs` (`Worn`), `crates/cli/src/cmd/agents.rs`.
 From: [S34](https://github.com/arugula-salad/arugula/issues/397), M76 (#398), #403.

@@ -22,6 +22,9 @@ fn register() {
         // The editor server and Claude Code's IDE (crates/arugulad-editor).
         #[cfg(feature = "editor")]
         arugulad_editor::register();
+        // Labs (crates/arugulad-labs).
+        #[cfg(feature = "labs")]
+        arugulad_labs::register();
     });
 }
 

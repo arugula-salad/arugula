@@ -15,7 +15,7 @@
 //!
 //! With `.points`, two of the workspace's decision points have questions
 //! open for people (#621: the real `points --open` of e2e's toy, in
-//! `src/labs/workspace/fixtures`); `points answer` writes where it ran and
+//! `crates/arugulad-labs/src/workspace/fixtures`); `points answer` writes where it ran and
 //! its arguments to `approvals` and closes them, and refuses `large` for
 //! want of a quorum.
 
@@ -65,7 +65,7 @@ fn workspace(d: &Daemon, name: &str, gated: bool) -> PathBuf {
     let ws = d.sessions.join(name);
     let fixtures = format!("{}/tests/fixtures/chant", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
     let points =
-        format!("{}/src/labs/workspace/fixtures/points-open.json", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"));
+        format!("{}/src/workspace/fixtures/points-open.json", concat!(env!("CARGO_MANIFEST_DIR"), "/../arugulad-labs"));
     std::fs::create_dir_all(ws.join("node_modules/.bin")).unwrap();
     for m in ["app", "delivery", "design-client", "design"] {
         std::fs::create_dir_all(ws.join(m)).unwrap();

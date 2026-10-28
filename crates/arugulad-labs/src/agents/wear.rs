@@ -37,9 +37,9 @@ use tracing::info;
 
 use super::{Recipe, RecipeServer};
 use crate::{
-    labs::wearing::{self as fw, Info, LeftOut, Lookup, McpServer, Worn},
     review::Runner,
     store::now_ms,
+    wearing::{self as fw, Info, LeftOut, Lookup, McpServer, Worn},
 };
 
 /// The prompt: a line naming the agent, its body, then each skill it

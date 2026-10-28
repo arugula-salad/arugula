@@ -53,7 +53,7 @@ pub(crate) fn secs(s: Option<f64>, default: Duration) -> Duration {
 /// before anything is typed, so a quick turn can't slip past it. An agent
 /// already waiting on someone isn't typed at, unless `answering`: typing
 /// into its approval dialog would answer it.
-pub(crate) async fn prompt(
+pub async fn prompt(
     app: &App,
     id: PaneId,
     text: String,

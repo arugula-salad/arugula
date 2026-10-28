@@ -2406,7 +2406,7 @@ impl<'a> Call<'a> {
 
     /// Where a tool defaults to when it's given no pane: the caller's own
     /// (an agent block, or the terminal pane `arugula mcp` runs in).
-    pub(crate) fn own_pane(&self) -> Option<PaneId> {
+    pub fn own_pane(&self) -> Option<PaneId> {
         self.caller.pane
     }
 
@@ -2448,7 +2448,7 @@ impl<'a> Call<'a> {
     }
 
     /// An open pane or block, if this caller may see it.
-    pub(crate) async fn readable(&self, pane: PaneId) -> Result<PaneSummary, String> {
+    pub async fn readable(&self, pane: PaneId) -> Result<PaneSummary, String> {
         let panes = self.panes().await;
         let Some(p) = panes.iter().find(|p| p.info.id == pane).cloned() else {
             return Err(self.gone(pane).await);
@@ -2517,7 +2517,7 @@ impl<'a> Call<'a> {
 
     /// `fut`, with progress every 15s, for at most `limit`: `None` if it
     /// took longer (or the client gave up).
-    pub(crate) async fn waiting<T>(&self, what: &str, limit: Duration, fut: impl Future<Output = T>) -> Option<T> {
+    pub async fn waiting<T>(&self, what: &str, limit: Duration, fut: impl Future<Output = T>) -> Option<T> {
         let start = Instant::now();
         let every = progress_every();
         let mut tick = tokio::time::interval_at(start + every, every);

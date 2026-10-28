@@ -804,7 +804,7 @@ mod tests {
     use crate::forge::model::{ItemText, Pr, Want, attention, rollup};
 
     fn fixture(f: &str) -> Value {
-        let p = format!("{}/tests/fixtures/gitlab/gitlab-cli-3941/{f}", env!("CARGO_MANIFEST_DIR"));
+        let p = format!("{}/../daemon/tests/fixtures/gitlab/gitlab-cli-3941/{f}", env!("CARGO_MANIFEST_DIR"));
         std::fs::read_to_string(&p).map(|s| serde_json::from_str(&s).unwrap()).unwrap_or(Value::Null)
     }
 

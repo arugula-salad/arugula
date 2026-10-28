@@ -27,7 +27,7 @@ constrains:
   - "path:crates/daemon/src/agent/mod.rs"
   - "path:crates/daemon/src/review/mod.rs"
   - "path:crates/daemon/src/mcp/tools.rs"
-  - "path:crates/daemon/src/labs/agents/mod.rs"
+  - "path:crates/arugulad-labs/src/agents/mod.rs"
   - "path:crates/proto/src/lib.rs"
   - "path:crates/daemon/tests/integration/agents.rs"
   - "path:crates/daemon/tests/integration/flag_gates.rs"
@@ -49,7 +49,7 @@ is its UI" (#942, 2026-10-15), and with it the entries on the daemon's
 sign-in, the account view's cards, recipes on Managoat and the rename's
 aliases; S34's "no Fountain dependency" holds again for the daemon. Revive
 any of it from git: everything is in the tree at 50daf913
-(`crates/daemon/src/labs/fountain/`, `crates/cli/src/cmd/fountain.rs`,
+(`crates/arugulad-labs/src/fountain/`, `crates/cli/src/cmd/fountain.rs`,
 `web/src/blocks/fountain.tsx`, `web/src/ui/fountain-run.tsx` and their
 tests). What stays, for saved state and a fleet whose versions are mixed:
 - **A saved Managoat agent block is an archived transcript.** `agent:
@@ -76,5 +76,5 @@ tests). What stays, for saved state and a fleet whose versions are mixed:
   reads it. `/api/fountain/…`, `/api/agent-approvals` and `/api/a2a/
   fountain/…` are gone; `agent-approvals.json` and `managoat/` in a state
   dir are left as they are.
-Where: `crates/daemon/src/agent/defs.rs` (`Kind::Managoat`, `CLOUD_MIGRATION`), `crates/daemon/src/agent/mod.rs` (`begin`), `crates/daemon/src/review/mod.rs` (`SANDBOX_GONE`), `crates/daemon/src/mcp/tools.rs` (`managoat_kind`, `managoat_start`), `crates/daemon/src/labs/agents/mod.rs` (`run_anywhere`), `crates/proto/src/lib.rs` (`BlockType`, `WorkKind`), `crates/daemon/tests/integration/agents.rs` (`legacy_cloud_transcript_restores_without_launching_or_accepting_commands`), `crates/daemon/tests/integration/flag_gates.rs`.
+Where: `crates/daemon/src/agent/defs.rs` (`Kind::Managoat`, `CLOUD_MIGRATION`), `crates/daemon/src/agent/mod.rs` (`begin`), `crates/daemon/src/review/mod.rs` (`SANDBOX_GONE`), `crates/daemon/src/mcp/tools.rs` (`managoat_kind`, `managoat_start`), `crates/arugulad-labs/src/agents/mod.rs` (`run_anywhere`), `crates/proto/src/lib.rs` (`BlockType`, `WorkKind`), `crates/daemon/tests/integration/agents.rs` (`legacy_cloud_transcript_restores_without_launching_or_accepting_commands`), `crates/daemon/tests/integration/flag_gates.rs`.
 From: Jake, 2026-10-18.

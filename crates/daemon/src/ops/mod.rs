@@ -21,7 +21,7 @@ mod inspect;
 mod invite;
 mod notify;
 mod panes;
-pub(crate) mod prompt;
+pub mod prompt;
 mod rules;
 mod settings;
 mod setup;
@@ -436,7 +436,7 @@ const ROUTERS: &[(&str, &str)] = &[
     ("src/acl_api.rs", "pub fn routes()"),
     ("src/invite/mod.rs", "pub fn routes()"),
     ("src/mcp/tokens.rs", "pub fn api_routes()"),
-    ("src/labs/guest_ssh.rs", "pub fn routes()"),
+    ("../arugulad-labs/src/guest_ssh.rs", "pub fn routes()"),
     // The editor's: the IDE's operations here, and from its own crate the
     // extension's download and the socket's route editors join on.
     ("src/editors.rs", "pub fn routes("),
@@ -448,8 +448,8 @@ const ROUTERS: &[(&str, &str)] = &[
     ("src/server.rs", "pub fn local_router("),
     // #578 part c.
     ("src/sync.rs", "pub fn routes()"),
-    ("src/labs/resident.rs", "pub fn routes()"),
-    ("src/labs/apps/routes.rs", "pub fn routes("),
+    ("../arugulad-labs/src/resident.rs", "pub fn routes()"),
+    ("../arugulad-labs/src/apps/routes.rs", "pub fn routes("),
 ];
 
 /// The routes in [`ROUTERS`] that are not operations, each with why. A new

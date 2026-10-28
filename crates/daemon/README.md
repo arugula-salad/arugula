@@ -11,8 +11,10 @@ recompile the rest (#232). This crate is what hasn't moved out yet. Feature
 crates go on top of it, `arugulad-<area>`, and the binary wires them in.
 Each new crate's name starts with `arugulad`, so `RUST_LOG=arugulad=…` still
 reaches its log lines (log targets are module paths, matched by prefix). So far:
-`arugulad-editor` ([crates/arugulad-editor](../arugulad-editor/README.md))
-and `arugulad-drivers` (crates/arugulad-drivers, the deploy drivers).
+`arugulad-editor` ([crates/arugulad-editor](../arugulad-editor/README.md)),
+`arugulad-drivers` (crates/arugulad-drivers, the deploy drivers), `arugulad-docs`
+([crates/arugulad-docs](../arugulad-docs/README.md)) and `arugulad-labs`
+([crates/arugulad-labs](../arugulad-labs/README.md)).
 Like every library here it's version 0.0.0: what it reports as the version
 comes from `arugula_core::version`, which the binary sets.
 

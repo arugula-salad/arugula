@@ -34,7 +34,7 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-07"
 reviews: []
 constrains:
-  - "path:crates/daemon/src/labs/workspace/model.rs"
+  - "path:crates/arugulad-labs/src/workspace/model.rs"
 ---
 
 # A workspace block asks chant, and keeps a few reads of its own
@@ -108,5 +108,5 @@ because chant has no document that does them (#618):
   `constrains` (chant's statement that it covers the member).
 - A lease's pane: the run whose `lease` is the lease's token, and that run's
   pane. A lease is never linked by its holder's name.
-Where: `crates/daemon/src/labs/workspace/model.rs` (`READER`, `FINGERPRINT`, `INTENT`, `member_why`) and `why.rs`, `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `wearing.rs`, `forge/issue.rs`.
+Where: `crates/arugulad-labs/src/workspace/model.rs` (`READER`, `FINGERPRINT`, `INTENT`, `member_why`) and `why.rs`, `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `wearing.rs`, `forge/issue.rs`.
 From: [M34](docs/plan-archive.md#m34-chant-workspace-blocks-73), #303, #305, #617, #618, #619.

@@ -396,8 +396,8 @@ mod tests {
     /// line 3 committed by run `arugula-7-1790848800000` (the member's
     /// agent session `app`), line 7 not committed, why-001 constraining
     /// the file by path, and W-001 on the member, its lease held by `app`.
-    const INTENT: &str = include_str!("../../../tests/fixtures/chant/why/intent.json");
-    const STATUS: &str = include_str!("../../../tests/fixtures/chant/why/status.json");
+    const INTENT: &str = include_str!("../../../daemon/tests/fixtures/chant/why/intent.json");
+    const STATUS: &str = include_str!("../../../daemon/tests/fixtures/chant/why/status.json");
 
     fn docs() -> (Value, Value) {
         (serde_json::from_str(INTENT).unwrap(), serde_json::from_str(STATUS).unwrap())

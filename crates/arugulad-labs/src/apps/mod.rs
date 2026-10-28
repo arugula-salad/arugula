@@ -207,8 +207,8 @@ impl AppBlock {
             }
         };
         let session = self.session.lock().unwrap().clone().ok_or("not in the box yet: try again in a moment")?;
-        let via = crate::labs::gates::Via::Hud { session: &session, follower: self.config.follower };
-        let result = crate::labs::gates::approve(&gate, by.as_deref(), &via).await;
+        let via = crate::gates::Via::Hud { session: &session, follower: self.config.follower };
+        let result = crate::gates::approve(&gate, by.as_deref(), &via).await;
         let (ok, said) = match &result {
             Ok(s) | Err(s) => (result.is_ok(), s.clone()),
         };

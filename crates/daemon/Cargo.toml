@@ -36,10 +36,6 @@ percent-encoding = "2.3.2"
 regex = { workspace = true }
 reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
 rustls-platform-verifier = { workspace = true }
-# The guest ssh server (M65), part of Labs.
-russh = { workspace = true, features = ["aws-lc-rs"], optional = true }
-# Agent recipes (#398): a Claude Code subagent file's frontmatter.
-serde_norway = { version = "0.9.42", optional = true }
 rust-embed = { workspace = true, features = ["mime-guess"] }
 # MCP (M16), pinned: 3.x moves fast (S14).
 rmcp = { version = "=3.5.0", default-features = false, features = ["server", "schemars", "transport-io", "transport-streamable-http-server"] }
@@ -87,17 +83,18 @@ rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs"
 rmcp = { version = "=3.5.0", default-features = false, features = ["transport-streamable-http-client-unix-socket"] }
 
 [features]
-# Labs (Managoat first; see src/labs/mod.rs) and the GitHub forge
-# (src/forge/, surface src/forges.rs): each on by default. Release builds
-# have them all; `--no-default-features` leaves them out. Only the forge has
-# a dependency of its own (arugula-forge-github, which the rest of the
-# daemon's dependencies cover): what the others use, the rest of the daemon
-# uses too. The editor is a crate of its own (arugulad-editor), which the
+# Labs and the GitHub forge (src/forge/, surface src/forges.rs): each on by
+# default. Release builds have them all; `--no-default-features` leaves them
+# out. Labs is a crate of its own (arugulad-labs, surface src/lab_hooks.rs):
+# the feature says this build has it, for what the base keeps of Labs (its
+# flags, the machines VM panes run on). Only the forge has a dependency of
+# its own (arugula-forge-github, which the rest of the daemon's dependencies
+# cover). The editor is a crate of its own too (arugulad-editor), which the
 # binary registers or not (src/editors.rs).
 default = ["labs", "forge"]
 forge = ["dep:arugula-forge-github"]
 # Labs' GitLab and Forgejo are forges built on the forge module.
-labs = ["forge", "arugula-mux/labs", "dep:russh", "dep:serde_norway"]
+labs = ["forge", "arugula-mux/labs"]
 # Embed web/dist even in a debug build (rust-embed reads it from the source
 # tree at run time otherwise): CI's e2e shards run binaries built in another
 # job's checkout.

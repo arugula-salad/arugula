@@ -16,7 +16,7 @@ pub(crate) struct Args {
 }
 
 #[derive(Subcommand, Debug)]
-pub(crate) enum Command {
+pub enum Command {
     /// Install as a service that starts at boot (a systemd user service) or
     /// at login (a launchd agent on macOS): copies this binary to
     /// ~/.local/bin, writes the unit or plist, enables and (re)starts it. On
@@ -164,7 +164,7 @@ pub(crate) enum Command {
 
 /// What `arugulad telemetry` is told to do.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TelemetryCmd {
+pub enum TelemetryCmd {
     On,
     Off,
     Status,
@@ -172,21 +172,21 @@ pub(crate) enum TelemetryCmd {
 
 /// A sharing setting (`arugulad sharing NAME`, native #205).
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SharingSetting {
+pub enum SharingSetting {
     /// Guest SSH access.
     GuestSsh,
 }
 
 /// What `arugulad sharing NAME` is told.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum OnOff {
+pub enum OnOff {
     On,
     Off,
 }
 
 /// What `arugulad flags NAME` is told to do.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Switch {
+pub enum Switch {
     On,
     Off,
     /// This machine says nothing: control's word, or the default.

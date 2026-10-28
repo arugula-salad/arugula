@@ -196,7 +196,7 @@ pub fn resubscribe() {
     });
 }
 
-pub(crate) fn hear(k: &str) {
+pub fn hear(k: &str) {
     if let Some(h) = hub() {
         h.heard.lock().unwrap().insert(k.to_owned(), (Instant::now(), crate::store::now_ms()));
     }
@@ -397,7 +397,7 @@ pub fn new_hook(provider: Provider, host: &str, repo: &str) -> Result<HookRec, S
 /// The hook this daemon made whose URL carries `k`, for `provider`: what the
 /// Forgejo and GitLab routes look a delivery up by.
 #[cfg(feature = "labs")]
-pub(crate) fn rec_by(k: &str, provider: Provider) -> Option<HookRec> {
+pub fn rec_by(k: &str, provider: Provider) -> Option<HookRec> {
     hub()?.hooks.lock().unwrap().iter().find(|r| r.k == k && r.provider == provider && !k.is_empty()).cloned()
 }
 
