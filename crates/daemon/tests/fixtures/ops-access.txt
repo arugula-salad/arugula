@@ -40,7 +40,7 @@ mcp_token.revoke DELETE /api/mcp/tokens/{name} Owner drives=false credential=fal
 mcp_tokens.list GET /api/mcp/tokens Owner drives=false credential=true
 notify.get GET /api/notify Handler drives=false credential=false
 notify.set POST /api/notify Handler drives=false credential=false
-nvim_plugin.get GET /api/nvim-plugin Owner drives=false credential=false
+nvim_plugin.get GET /api/nvim-plugin Owner drives=false credential=true
 nvim_plugin.install POST /api/panes/{id}/nvim-plugin Owner drives=false credential=false
 nvim_plugin.remove DELETE /api/nvim-plugin Owner drives=false credential=false
 pane.ask POST /api/panes/{id}/ask Pane(Editor) drives=false credential=false

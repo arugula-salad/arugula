@@ -986,6 +986,9 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/nvim-plugin";
         const ACCESS: Access = Access::Owner;
+        /// It names install paths on this machine: the owner's, like
+        /// install and remove, and not a read-only MCP token's.
+        const CREDENTIAL: bool = true;
         type Path = ();
         type Req = Empty;
         type Res = NvimPluginCopies;

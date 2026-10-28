@@ -15,7 +15,6 @@ hosts.list GET /api/hosts
 ide.get GET /api/ide
 machines.list GET /api/machines
 notify.get GET /api/notify
-nvim_plugin.get GET /api/nvim-plugin
 pane.detection GET /api/panes/{id}/detection
 pane.diff GET /api/panes/{id}/diff
 pane.drivers GET /api/panes/{id}/drivers
