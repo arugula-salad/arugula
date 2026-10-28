@@ -107,6 +107,7 @@ mod setup;
 mod share;
 mod sites;
 mod ssh;
+mod stop_output;
 mod summaries;
 mod team_answers;
 mod telemetry;

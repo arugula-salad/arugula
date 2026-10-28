@@ -807,6 +807,10 @@ struct Process {
     stop: Arc<AtomicBool>,
     /// Disconnects once the reader is done.
     reading: Receiver<()>,
+    /// Something keeps the terminal for the next daemon: its shim
+    /// (`--keep-panes`) or the FD store. Otherwise it closes with this
+    /// daemon, and so does what's left in it.
+    kept: bool,
 }
 
 /// A running process on its own pseudoconsole, which its pane host owns
@@ -913,20 +917,24 @@ impl Process {
         };
         info!(pane, pid, program = %spawn.program, cwd = %cwd.display(), scope = launch.scopes, "started process");
         let master = File::from(pty.master);
+        let mut kept = false;
         if let Some(socket) = &hold {
             // Our lease on the shim's copy: while we hold it, the shim keeps
             // the pane; we have the master already.
-            if let Err(e) = crate::holder::borrow(pane, socket) {
-                warn!(pane, error = %e, "the shim isn't keeping the terminal; the pane ends with the daemon");
+            match crate::holder::borrow(pane, socket) {
+                Ok(_) => kept = true,
+                Err(e) => warn!(pane, error = %e, "the shim isn't keeping the terminal; the pane ends with the daemon"),
             }
         }
         if launch.fd_store {
             crate::sys::remove_fd(&fd_name(pane));
-            if !crate::sys::store_fd(&fd_name(pane), std::os::fd::AsRawFd::as_raw_fd(&master)) {
+            if crate::sys::store_fd(&fd_name(pane), std::os::fd::AsRawFd::as_raw_fd(&master)) {
+                kept = true;
+            } else {
                 warn!(pane, "couldn't keep the terminal in the FD store");
             }
         }
-        Self::run(pid, Some(child), master, record.to_owned(), pane, events)
+        Self::run(pid, Some(child), master, record.to_owned(), pane, events, kept)
     }
 
     /// Take over a pane whose terminal and program outlived the previous
@@ -937,7 +945,8 @@ impl Process {
             return Err(std::io::Error::other("the pane's program is gone"));
         };
         info!(pane, pid, "adopted process");
-        Self::run(pid, None, File::from(master), record.to_owned(), pane, events)
+        // Kept for us, so it's kept for the next daemon too.
+        Self::run(pid, None, File::from(master), record.to_owned(), pane, events, true)
     }
 
     /// `shim` is the shim (or systemd-run) when we started it: our child, to
@@ -949,6 +958,7 @@ impl Process {
         record: PathBuf,
         pane: PaneId,
         events: Sender<Cmd>,
+        kept: bool,
     ) -> std::io::Result<Self> {
         let mut reader = master.try_clone()?;
         let out = events.clone();
@@ -1014,7 +1024,7 @@ impl Process {
             }
         })?;
 
-        Ok(Self { pid, master, writer, record, stop, reading })
+        Ok(Self { pid, master, writer, record, stop, reading, kept })
     }
 
     fn resize(&self, cols: u16, rows: u16) {
@@ -1043,12 +1053,40 @@ impl Process {
 
     /// Stop taking output off the terminal: what this daemon reads from
     /// now on goes with it, and what it doesn't stays in the terminal (the
-    /// shim's or the FD store's) for the next daemon (#1515). The reader
+    /// shim's or the FD store's) for the next daemon (#1515), or, where
+    /// nothing keeps it, is read by [`Process::read_left`]. The reader
     /// stops between reads, after sending what it read; the receiver
     /// disconnects once it has.
     fn stop_reading(&self) -> Receiver<()> {
         self.stop.store(true, Ordering::SeqCst);
         self.reading.clone()
+    }
+
+    /// Once the reader has stopped: what's still in a terminal nothing
+    /// keeps, which would close with this daemon (#287). Up to `until`, so
+    /// a program that never stops writing can't hold up the shutdown.
+    fn read_left(&self, until: Instant) -> Vec<u8> {
+        use std::os::fd::AsFd;
+        let mut out = Vec::new();
+        if self.kept {
+            return out;
+        }
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut master = &self.master;
+        while Instant::now() < until {
+            let mut fds = [PollFd::new(master.as_fd(), PollFlags::POLLIN)];
+            match poll(&mut fds, PollTimeout::ZERO) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(nix::errno::Errno::EINTR) => continue,
+                Err(_) => break,
+            }
+            match master.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => out.extend_from_slice(&buf[..n]),
+            }
+        }
+        out
     }
 }
 
@@ -1256,6 +1294,17 @@ impl Backend {
             _ => None,
         }
     }
+    /// [`Process::read_left`]: nothing for a terminal that's kept.
+    fn read_left(&self, until: Instant) -> Vec<u8> {
+        match self {
+            #[cfg(unix)]
+            Backend::Local(p) => p.read_left(until),
+            _ => {
+                let _ = until;
+                Vec::new()
+            }
+        }
+    }
 }
 
 /// Keys for machine execs, above any pid.
@@ -1272,7 +1321,7 @@ const DRAIN_AFTER_EXIT: Duration = Duration::from_secs(1);
 const READ_POLL_MS: u16 = 50;
 
 /// How long a shutdown waits for a pane's reader to stop and its output to
-/// reach the log.
+/// reach the log, and then reads what's left in a terminal nothing keeps.
 const SHUTDOWN_DRAIN: Duration = Duration::from_secs(1);
 
 /// Wait for a process that may not be our child (a restarted daemon is no
@@ -1636,6 +1685,7 @@ fn run(mut st: State, rx: Receiver<Cmd>, program: Receiver<Cmd>) {
                 // Output still on its way (read, or queued behind what
                 // clients ask) would go with this daemon: stop the reader,
                 // put what it read in the log, then checkpoint (#1515).
+                let mut stopped = false;
                 if let Some(reading) = st.process.as_ref().and_then(Backend::stop_reading) {
                     let until = Instant::now() + SHUTDOWN_DRAIN;
                     loop {
@@ -1643,7 +1693,10 @@ fn run(mut st: State, rx: Receiver<Cmd>, program: Receiver<Cmd>) {
                             recv(program) -> cmd => if let Ok(Cmd::Output(data)) = cmd {
                                 st.output(&data);
                             },
-                            recv(reading) -> _ => break,
+                            recv(reading) -> _ => {
+                                stopped = true;
+                                break;
+                            },
                             default(until.saturating_duration_since(Instant::now())) => break,
                         }
                     }
@@ -1652,6 +1705,17 @@ fn run(mut st: State, rx: Receiver<Cmd>, program: Receiver<Cmd>) {
                     if let Cmd::Output(data) = cmd {
                         st.output(&data);
                     }
+                }
+                // What the reader left in a terminal nothing keeps for the
+                // next daemon closes with this one: read it here (#287).
+                // A wait for the reader that ran out leaves it; it may
+                // still be reading.
+                let left = match &st.process {
+                    Some(p) if stopped => p.read_left(Instant::now() + SHUTDOWN_DRAIN),
+                    _ => Vec::new(),
+                };
+                if !left.is_empty() {
+                    st.output(&left);
                 }
                 st.checkpoint();
                 let _ = done.send(());
