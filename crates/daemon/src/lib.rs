@@ -57,6 +57,8 @@ pub mod lab_hooks;
 mod listening;
 mod localauth;
 pub mod mcp;
+#[doc(hidden)]
+pub mod mcp_server;
 use arugula_mux::mux;
 pub mod ops;
 use arugula_mux::osc;
@@ -1117,8 +1119,10 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     if args.hosted {
         hosted::start(&app, state_dir.clone(), args.control_url.clone());
     }
-    if let Some(serve) = mcp_serve {
-        let _ = serve.set(mcp::pipe_server(&app));
+    if let Some(serve) = mcp_serve
+        && let Some(pipe) = mcp::pipe_server(&app)
+    {
+        let _ = serve.set(pipe);
     }
     let _ = invite_hook.set(std::sync::Arc::downgrade(&app));
     // Read-only links end on time (M19).

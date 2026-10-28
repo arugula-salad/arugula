@@ -270,7 +270,6 @@ pub struct DiffOpened {
 }
 
 /// A member of a workspace block. The fields are the block's own.
-#[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct Member {
     pub name: Value,
@@ -281,7 +280,6 @@ pub struct Member {
 }
 
 /// A workspace block opened.
-#[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct WorkspaceOpened {
     pub block: PaneId,

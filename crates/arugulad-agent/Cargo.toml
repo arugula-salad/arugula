@@ -19,6 +19,7 @@ arugulad-base = { workspace = true }
 axum = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
+schemars = "1.0"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

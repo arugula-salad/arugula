@@ -5,6 +5,7 @@
 //! `whole-tests`. Each panics with what's wrong.
 
 use super::*;
+use crate::mcp::tools::STANDARD_FORMATS;
 
 /// Every Labs flag on, or none.
 fn fl(labs: bool) -> arugula_proto::flags::On {
