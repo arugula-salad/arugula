@@ -24,8 +24,6 @@ hyper-util = { version = "0.1.21", features = ["tokio"] }
 arugula-control-wire = { workspace = true }
 arugula-core = { workspace = true }
 arugula-e2e = { workspace = true }
-# The GitHub reader and the forge model (M160), for the `forge` feature.
-arugula-forge-github = { workspace = true, optional = true }
 arugula-mux = { workspace = true }
 arugula-proto = { workspace = true, features = ["schema"] }
 arugula-vt = { workspace = true }
@@ -83,18 +81,15 @@ rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs"
 rmcp = { version = "=3.5.0", default-features = false, features = ["transport-streamable-http-client-unix-socket"] }
 
 [features]
-# Labs and the GitHub forge (src/forge/, surface src/forges.rs): each on by
-# default. Release builds have them all; `--no-default-features` leaves them
-# out. Labs is a crate of its own (arugulad-labs, surface src/lab_hooks.rs):
-# the feature says this build has it, for what the base keeps of Labs (its
-# flags, the machines VM panes run on). Only the forge has a dependency of
-# its own (arugula-forge-github, which the rest of the daemon's dependencies
-# cover). The editor is a crate of its own too (arugulad-editor), which the
-# binary registers or not (src/editors.rs).
-default = ["labs", "forge"]
-forge = ["dep:arugula-forge-github"]
-# Labs' GitLab and Forgejo are forges built on the forge module.
-labs = ["forge", "arugula-mux/labs"]
+# Labs is a crate of its own (arugulad-labs, surface src/lab_hooks.rs): the
+# feature says this build has it, for what the base keeps of Labs (its
+# flags, the machines VM panes run on). On by default; release builds have
+# it, `--no-default-features` leaves it out. The GitHub forge
+# (arugulad-forge, surface src/forges.rs) and the editor (arugulad-editor,
+# src/editors.rs) are crates the binary registers or not, with no feature
+# here.
+default = ["labs"]
+labs = ["arugula-mux/labs"]
 # Embed web/dist even in a debug build (rust-embed reads it from the source
 # tree at run time otherwise): CI's e2e shards run binaries built in another
 # job's checkout.

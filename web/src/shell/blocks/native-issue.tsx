@@ -1,6 +1,6 @@
 // A project's own issue as an issue block (M203): a pin onto the
 // platform's issue (`pin: {kind: "issue", global_id: "iss_…"}`), which the
-// daemon reads as its machine for the owner (crates/daemon/src/forge/
+// daemon reads as its machine for the owner (crates/arugulad-forge/src/
 // native.rs). This draws it with the platform page's issue view
 // (../../shared/issues/view), the way a Cloud workspace block once drew
 // control's views: the view reads through `IssueApiContext`.

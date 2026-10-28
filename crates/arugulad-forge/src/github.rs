@@ -131,7 +131,7 @@ impl GhToken {
 
     async fn app_token(&self, fresh: bool) -> Result<String, String> {
         let repo = self.repo.as_deref().unwrap_or_default();
-        let (t, login) = crate::forge::live::app_token(repo, fresh).await?;
+        let (t, login) = crate::live::app_token(repo, fresh).await?;
         *self.app.lock().unwrap() = Some(login);
         Ok(t)
     }
