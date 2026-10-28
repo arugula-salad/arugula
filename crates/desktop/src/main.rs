@@ -482,13 +482,7 @@ fn home(app: &AppHandle) -> tauri::Url {
 fn ours(url: &tauri::Url) -> bool {
     match url.scheme() {
         "tauri" | "about" | "blob" | "data" => true,
-        "http" | "https" => {
-            let control = cloud::control().and_then(|c| c.parse::<tauri::Url>().ok());
-            if control.is_some_and(|c| c.origin() == url.origin()) {
-                return true;
-            }
-            daemons(url) || url.host_str() == Some("tauri.localhost")
-        }
+        "http" | "https" => control_page(url) || daemons(url) || url.host_str() == Some("tauri.localhost"),
         _ => false,
     }
 }
@@ -504,6 +498,30 @@ fn platform_page(url: &tauri::Url) -> bool {
 fn block_frame(url: &tauri::Url) -> bool {
     let control = cloud::control().and_then(|c| c.parse::<tauri::Url>().ok());
     frames::is_block(url, control.as_ref(), cloud::block_domain().as_deref())
+}
+
+/// Control's own page.
+fn control_page(url: &tauri::Url) -> bool {
+    cloud::control().and_then(|c| c.parse::<tauri::Url>().ok()).is_some_and(|c| c.origin() == url.origin())
+}
+
+/// Picks a kind of page by its URL.
+type Page = fn(&tauri::Url) -> bool;
+
+/// The pages that keep one window each (#1596, #1661), and whether a
+/// target=_blank link from that page to itself goes to it too: the
+/// platform page's does; control's and the daemon's open another window
+/// (*Open in a new window*, web/src/shared/desktop.ts).
+fn one_window(url: &tauri::Url) -> Option<(Page, bool)> {
+    if platform_page(url) {
+        Some((platform_page, true))
+    } else if control_page(url) {
+        Some((control_page, false))
+    } else if daemons(url) {
+        Some((daemons, false))
+    } else {
+        None
+    }
 }
 
 /// The local daemon's own page (or its sign-in link).
@@ -622,6 +640,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
     let label = format!("w{n}");
     let handle = app.clone();
     let nav = (app.clone(), label.clone());
+    let opener = label.clone();
     let mut builder = WebviewWindowBuilder::new(app, label, url);
     if let Some(dir) = profile::dir() {
         builder = builder.data_directory(dir);
@@ -661,12 +680,21 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         // platform page's) in a window of ours, anything else in the
         // browser. A webview drops these unless the app handles them.
         .on_new_window(move |url, _| {
-            // The platform page (chat, projects) in one window of its own,
-            // beside the terminals: a window already showing it goes there
-            // and comes forward (#1596).
-            if platform_page(&url) {
-                let h = handle.clone();
-                let _ = handle.run_on_main_thread(move || match showing(&h, platform_page) {
+            // The platform page (chat, projects), control's page and the
+            // daemon's each in one window of their own: a window already
+            // showing it goes there and comes forward (#1596, #1661). A
+            // link from that page to itself (*Open in a new window*) still
+            // opens another.
+            if !ours(&url) && !platform_page(&url) {
+                open_outside(&url);
+                return tauri::webview::NewWindowResponse::Deny;
+            }
+            let (h, opener) = (handle.clone(), opener.clone());
+            let _ = handle.run_on_main_thread(move || {
+                let from = h.get_webview_window(&opener).and_then(|w| w.url().ok());
+                let page =
+                    one_window(&url).filter(|&(page, from_itself)| from_itself || !from.as_ref().is_some_and(page));
+                match page.and_then(|(page, _)| showing(&h, page)) {
                     Some(w) => {
                         let _ = w.navigate(url);
                         bring_forward(&w);
@@ -674,15 +702,8 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
                     None => {
                         let _ = open_window(&h, WebviewUrl::External(url));
                     }
-                });
-            } else if ours(&url) {
-                let h = handle.clone();
-                let _ = handle.run_on_main_thread(move || {
-                    let _ = open_window(&h, WebviewUrl::External(url));
-                });
-            } else {
-                open_outside(&url);
-            }
+                }
+            });
             tauri::webview::NewWindowResponse::Deny
         })
         // macOS: the window's title, which its native tab shows (#323),

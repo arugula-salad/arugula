@@ -23,7 +23,9 @@
 #    (the app's drag script, start_dragging) and a double-click there
 #    maximizes it. A target=_blank link to it goes to the window already
 #    showing it, with no second window (#1596); one to control's page
-#    opens a window of ours, whose close() closes it.
+#    opens a window of ours, and another goes to that window (#1661),
+#    while one from control's page to itself opens a third; close()
+#    closes them.
 # 3. Lookalikes go to the browser and the window stays on the platform
 #    page: another host on its port (127.0.0.3:P), its host on another
 #    port (127.0.0.2:Q), https on its host and port, and a target=_blank
@@ -81,13 +83,17 @@ call() {
   local line; line=$(tail -n +$((n + 1)) "$work/control.log" | grep -E "$want" | head -1)
   case "$line" in *what=call-ok*) return 0 ;; *) echo "${line##*err=}"; return 1 ;; esac
 }
-# `click_link ORIGIN URL`: the page at ORIGIN shows a target=_blank link
-# to URL, and the mouse clicks it.
+# `click_link ORIGIN[PATH] URL [WINDOW]`: the page at ORIGIN shows a
+# target=_blank link to URL, and the mouse clicks it in WINDOW (the first
+# one by default).
 click_link() {
+  local at=${1#*://} path=/
+  case "$at" in */*) path=/${at#*/} ;; esac
+  local origin=${1%%://*}://${at%%/*}
   tell "$1" link "$2"
-  wait_for 10 grep -qF "report ${1#*://} what=link origin=$1 path=/ to=$2" "$work/control.log" || fail "the page at $1 showed no link"
+  wait_for 10 grep -qF "report ${origin#*://} what=link origin=$origin path=$path to=$2" "$work/control.log" || fail "the page at $1 showed no link"
   sleep 0.3
-  local w; w=$(window)
+  local w=${3:-$(window)}
   xdotool windowactivate --sync "$w" 2>/dev/null || true
   xdotool mousemove --window "$w" 250 250 click 1
 }
@@ -191,9 +197,21 @@ click_link "$platform" "$control/second"
 wait_for 20 reported "$control" loaded /second || fail "a target=_blank link to control's page loaded nowhere"
 wait_for 10 windows_are 2 || fail "a target=_blank link to control's page made $(windows | wc -l) windows"
 echo "ok: a target=_blank link to control's page opened a window of ours on it"
-tell "$control/second" call close
+cw=$(windows | grep -vx "$w" | head -1)
+click_link "$platform" "$control/third" "$w"
+wait_for 20 reported "$control" loaded /third || fail "a second target=_blank link to control's page loaded nowhere"
+sleep 1
+windows_are 2 || fail "a link to control's page while one is open made $(windows | wc -l) windows, not 2"
+echo "ok: a target=_blank link to control's page while one is open went to that window (#1661)"
+click_link "$control/third" "$control/fourth" "$cw"
+wait_for 20 reported "$control" loaded /fourth || fail "a target=_blank link from control's page to itself loaded nowhere"
+wait_for 10 windows_are 3 || fail "a link from control's page to itself made $(windows | wc -l) windows, not 3"
+echo "ok: one from control's page to itself (Open in a new window) opened another"
+tell "$control/fourth" call close
+wait_for 10 windows_are 2 || fail "close() on control's third window left $(windows | wc -l) windows"
+tell "$control/third" call close
 wait_for 10 windows_are 1 || fail "close() on control's second window left $(windows | wc -l) windows"
-echo "ok: close() on it closed that window"
+echo "ok: close() on them closed those windows"
 
 # 3. Lookalikes.
 for look in "http://127.0.0.3:$port/" "http://127.0.0.2:$other/" "https://127.0.0.2:$port/"; do
