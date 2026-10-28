@@ -134,7 +134,7 @@ impl Daemon {
     pub(super) fn shutdown(&mut self) {
         self.shutting_down = true;
         for p in self.panes.values() {
-            p.checkpoint(Duration::from_secs(3));
+            p.shutdown(Duration::from_secs(3));
         }
         self.last_saved = None;
         self.save();
