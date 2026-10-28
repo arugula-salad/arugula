@@ -536,6 +536,30 @@ cd web && pnpm exec playwright test e2e/palette.spec.ts e2e/palette.webkit.spec.
 
 WebKit needs `pnpm exec playwright install webkit` once.
 
+<a id="on-a-dev-box"></a>**On a dev box (Arugula #264).** A session on one of
+this repo's hosted dev boxes runs the specs it wrote or changed itself,
+one command for any number of them (paths under `web/`):
+
+```sh
+just e2e-spec e2e/hints.spec.ts
+```
+
+It installs the web dependencies if the checkout has none, builds the web
+client and the binaries the specs run (into the checkout's `target/`, or
+`CARGO_TARGET_DIR` with `target` linked to it), and runs Playwright on a
+free port, so two sessions' runs don't collide on `E2E_PORT`. The box's
+setup (`packaging/hosted/examples/arugula-dev-setup.sh`) puts in what that
+needs: python3, Playwright's Chromium with its system libraries in
+`/opt/arugula/tools/ms-playwright` (`PLAYWRIGHT_BROWSERS_PATH`,
+`E2E_CHROMIUM=1` in every session user's environment), and one suite lock
+for the whole box (`ARUGULA_SUITE_LOCK_FILE=/opt/arugula/locks/suite.lock`):
+the box's sessions share its 8 GiB, so a spec run (or a `just test`) waits
+while another session's runs. Run the specs one at a time, never the whole
+of `just e2e`. When the checkout's Playwright wants a Chromium newer than
+the box's setup installed ("Executable doesn't exist"), install it for
+yourself: `cd web && PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright pnpm
+exec playwright install chromium`, and run with that variable set.
+
 ### Spike: blocks through control (S27)
 
 S27 (`spikes/s27-blocks/`, now on the `archive/spikes` branch) has its own

@@ -46,7 +46,10 @@
 //! - **Rules** say where it works, to commit on its branch and not push
 //!   (the box pushes it after the finish step) nor say whether it's
 //!   pushed (the agent can't know; its answer says, Arugula #215), that
-//!   the asker sends the PR, to name an Arugula issue the thread is on by its link (never
+//!   the asker sends the PR, to leave generated files out of its commits
+//!   (Arugula #263: parallel sessions' regenerations conflict, and whoever
+//!   combines the branches regenerates once), to run the tests and specs
+//!   it wrote or changed and say whether they passed (Arugula #264), to name an Arugula issue the thread is on by its link (never
 //!   `#N`, which on GitHub is another), to ask with the agent's tool for
 //!   asking (AskUserQuestion in Claude Code; a Try 3's Codex runs the same
 //!   prompt, M264), since a question only in its reply ends the turn
@@ -152,6 +155,21 @@ fn rules(t: &Thread) -> String {
             t.asker
         )),
         None => out.push_str("- You work in no repo: this session has none to push to.\n"),
+    }
+    if t.repo.is_some() {
+        // Arugula #263, #264: sessions run side by side, and whoever
+        // combines their branches regenerates once and runs what they
+        // proved.
+        out.push_str(
+            "- Don't commit files the repository generates (code generated from a schema, blessed test fixtures) \
+             unless the ask is about them: regenerate them in your checkout to build and test, and leave them out \
+             of your commits. Sessions run side by side, and whoever combines their branches regenerates them once. \
+             Say in your answer which ones you left out.\n",
+        );
+        out.push_str(
+            "- Run the tests you wrote or changed, end-to-end and browser specs included, one at a time, and say in \
+             your answer whether each passed. If one can't run here, say what stopped it.\n",
+        );
     }
     if let Some((n, url)) = &t.issue {
         out.push_str(&format!(
