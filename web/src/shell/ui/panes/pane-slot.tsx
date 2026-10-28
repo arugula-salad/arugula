@@ -14,6 +14,7 @@ import { PaneMarks } from "../people";
 import { HooksChip } from "../agents-setup";
 import { drawsItsOwn, TermAnswered, TermAsk, TermDiff } from "../term-ask";
 import { ThreadBadge } from "../threads";
+import { HintPaneModal } from "../hints";
 import { drop } from "./drop";
 import { px } from "./geometry";
 
@@ -162,6 +163,8 @@ export function PaneSlot({
           {client.info(id)?.policy.kind === "rerun" ? "Re-run" : "Start shell"}
         </button>
       )}
+      {/* A big tip over this pane (shell/hints): a computer's alone. */}
+      {!phone && <HintPaneModal client={client} pane={id} />}
       {!phone && (
         <div
           class="grip"

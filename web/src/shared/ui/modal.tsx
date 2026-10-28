@@ -6,6 +6,13 @@
 // stays there (Tab wraps), Escape closes it before the terminal under it can
 // hear the key, and focus goes back to what opened it. Dialogs drawn by hand
 // (Permission rules, Appearance, Getting started…) use `useModal` for this.
+//
+// A pane modal (a big tip, shell/hints) is a dialog over one pane, not the
+// window: `useModal`'s `covers` names the pane. The pane under it is inert
+// (no clicks, keys or focus reach it, a frame's neither), focus moves in
+// when it was on that pane, and Escape and Tab are its own only while the
+// focus is in it. The rest of the workspace stays usable: focus may leave
+// for another pane, and nothing pulls it back.
 
 import { useLayoutEffect, useRef } from "preact/hooks";
 import { escapeTaken } from "./menu";
@@ -13,14 +20,27 @@ import { escapeTaken } from "./menu";
 interface Open {
   el: () => HTMLElement | null;
   close: () => (() => void) | undefined;
+  /** A pane modal's: the pane it covers. */
+  covers?: () => HTMLElement | null;
 }
 
 /** The dialogs up, latest (the one on top) last. */
 const stack: Open[] = [];
 
-/** The dialog on top that's drawn. */
+/** The dialog over the window on top that's drawn. */
 function top(): Open | undefined {
-  for (let i = stack.length - 1; i >= 0; i--) if (stack[i].el()?.isConnected) return stack[i];
+  for (let i = stack.length - 1; i >= 0; i--) if (!stack[i].covers && stack[i].el()?.isConnected) return stack[i];
+  return undefined;
+}
+
+/** The pane modal drawn that has `at`, in it or in the pane it covers. */
+function paneModalAt(at: Element | null): Open | undefined {
+  if (!at) return undefined;
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const o = stack[i];
+    const el = o.el();
+    if (o.covers && el?.isConnected && (el.contains(at) || o.covers()?.contains(at))) return o;
+  }
   return undefined;
 }
 
@@ -55,7 +75,9 @@ function focusInto(root: HTMLElement) {
 }
 
 function onKey(e: KeyboardEvent) {
-  const up = top();
+  // A pane modal's keys are its own while the focus is in it; a dialog
+  // over the window's always are.
+  const up = paneModalAt(document.activeElement) ?? top();
   const root = up?.el();
   if (!up || !root) return;
   if (e.key === "Escape") {
@@ -91,8 +113,12 @@ function onKey(e: KeyboardEvent) {
 /** Focus that wanders out (the terminal taking it back) comes back in. A
  * menu or a prompt over the dialog keeps what it takes. */
 function onFocusIn(e: FocusEvent) {
-  const root = top()?.el();
   const t = e.target as HTMLElement | null;
+  // Into a pane a pane modal covers: the modal takes it.
+  const over = paneModalAt(t);
+  const mine = over?.el();
+  if (mine && t && !mine.contains(t)) return focusInto(mine);
+  const root = top()?.el();
   if (!root || !t || root.contains(t) || t.closest?.(".menu, .prompt-backdrop")) return;
   focusInto(root);
 }
@@ -108,8 +134,12 @@ function install() {
 
 /** Make `ref` a modal dialog while `open`: it takes the focus and keeps it,
  * Escape calls `close` (and never reaches what's under it, even when there
- * is no `close`), and the focus goes back where it was when it shuts. */
-export function useModal(ref: { current: HTMLElement | null }, close: (() => void) | undefined, open = true) {
+ * is no `close`), and the focus goes back where it was when it shuts.
+ *
+ * With `covers`, it's a pane modal over that pane alone (above): the pane
+ * is inert while it's up, and the focus moves in only from that pane (or
+ * from nowhere), and back to it after. */
+export function useModal(ref: { current: HTMLElement | null }, close: (() => void) | undefined, open = true, covers?: () => HTMLElement | null) {
   const latest = useRef(close);
   latest.current = close;
   useLayoutEffect(() => {
@@ -118,17 +148,23 @@ export function useModal(ref: { current: HTMLElement | null }, close: (() => voi
     // A menu's item gives the focus back to what opened the menu before it
     // runs (menu.tsx), so this is the account button, a pane, the palette's.
     const opener = document.activeElement as HTMLElement | null;
-    const me: Open = { el: () => ref.current, close: () => latest.current };
+    const me: Open = { el: () => ref.current, close: () => latest.current, covers };
+    const pane = covers?.() ?? null;
+    // A pane modal takes the focus from its pane (a terminal, a composer,
+    // a frame) or from nowhere, never from another pane or a dialog.
+    const take = !covers || !opener || opener === document.body || (pane?.contains(opener) ?? false);
     stack.push(me);
+    if (pane) pane.inert = true;
     const root = ref.current;
     if (root) {
       if (!root.hasAttribute("tabindex")) root.tabIndex = -1;
-      focusInto(root);
+      if (take) focusInto(root);
     }
     dialogsChanged();
     return () => {
       const i = stack.indexOf(me);
       if (i !== -1) stack.splice(i, 1);
+      if (pane) pane.inert = false;
       dialogsChanged();
       // Only when the focus was ours: a dialog shut because another opened
       // leaves the new one's focus be.
@@ -136,6 +172,12 @@ export function useModal(ref: { current: HTMLElement | null }, close: (() => voi
       const ours = !at || at === document.body || !at.isConnected || (root?.contains(at) ?? false);
       const under = top()?.el();
       if (!ours) return;
+      if (covers) {
+        // Back to what had the focus in the pane (the caller gives a pane
+        // that had none its own).
+        if (take && opener?.isConnected && opener !== document.body) opener.focus({ preventScroll: true });
+        return;
+      }
       if (under && !under.contains(opener)) focusInto(under);
       else if (opener?.isConnected && opener !== document.body) opener.focus({ preventScroll: true });
     };
