@@ -36,6 +36,7 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 use nix::{
     fcntl::{FcntlArg, FdFlag, fcntl},
     libc,
+    poll::{PollFd, PollFlags, PollTimeout, poll},
     pty::{Winsize, openpty},
 };
 use tokio::sync::mpsc;
@@ -318,7 +319,7 @@ enum Cmd {
     /// follow-up), for the pane's history.
     Note(String, String, HistoryKind),
     Purge,
-    Checkpoint(Sender<()>),
+    Shutdown(Sender<()>),
     /// Text as a paste into this pane: bracketed if its program asked
     /// (M70).
     #[cfg_attr(windows, allow(dead_code))] // Uploads are Unix only, as serving is.
@@ -465,10 +466,11 @@ impl PaneHandle {
     pub fn close(&self) {
         let _ = self.tx.send(Cmd::Close);
     }
-    /// Write a checkpoint now and wait for it (on shutdown).
-    pub fn checkpoint(&self, timeout: Duration) {
+    /// Before the daemon exits: stop reading the terminal, write what was
+    /// read and a checkpoint, and wait for it.
+    pub fn shutdown(&self, timeout: Duration) {
         let (tx, rx) = bounded(1);
-        if self.tx.send(Cmd::Checkpoint(tx)).is_ok() {
+        if self.tx.send(Cmd::Shutdown(tx)).is_ok() {
             let _ = rx.recv_timeout(timeout);
         }
     }
@@ -801,6 +803,10 @@ struct Process {
     writer: Sender<Vec<u8>>,
     /// The shim's record of it.
     record: PathBuf,
+    /// Tells the reader to stop ([`Process::stop_reading`]).
+    stop: Arc<AtomicBool>,
+    /// Disconnects once the reader is done.
+    reading: Receiver<()>,
 }
 
 /// A running process on its own pseudoconsole, which its pane host owns
@@ -949,10 +955,26 @@ impl Process {
         // Dropped when the reader is done: the terminal hung up, and
         // everything the program wrote has gone out before it.
         let (read_done, drained) = bounded::<()>(0);
+        let reading = drained.clone();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopping = stop.clone();
         thread::Builder::new().name(format!("pane{pane}-read")).spawn(move || {
+            use std::os::fd::AsFd;
             let _done = read_done;
             let mut buf = vec![0u8; 64 * 1024];
             loop {
+                // Polled, not blocked in a read, so a shutdown can stop it
+                // between reads.
+                let mut fds = [PollFd::new(reader.as_fd(), PollFlags::POLLIN)];
+                let ready = poll(&mut fds, PollTimeout::from(READ_POLL_MS));
+                if stopping.load(Ordering::SeqCst) {
+                    break;
+                }
+                match ready {
+                    Ok(0) | Err(nix::errno::Errno::EINTR) => continue,
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
                 match reader.read(&mut buf) {
                     // EIO is how a PTY master reports that the slave closed.
                     Ok(0) | Err(_) => break,
@@ -992,7 +1014,7 @@ impl Process {
             }
         })?;
 
-        Ok(Self { pid, master, writer, record })
+        Ok(Self { pid, master, writer, record, stop, reading })
     }
 
     fn resize(&self, cols: u16, rows: u16) {
@@ -1017,6 +1039,16 @@ impl Process {
             thread::sleep(Duration::from_secs(3));
             unsafe { libc::killpg(pgid, libc::SIGKILL) };
         });
+    }
+
+    /// Stop taking output off the terminal: what this daemon reads from
+    /// now on goes with it, and what it doesn't stays in the terminal (the
+    /// shim's or the FD store's) for the next daemon (#1515). The reader
+    /// stops between reads, after sending what it read; the receiver
+    /// disconnects once it has.
+    fn stop_reading(&self) -> Receiver<()> {
+        self.stop.store(true, Ordering::SeqCst);
+        self.reading.clone()
     }
 }
 
@@ -1215,6 +1247,15 @@ impl Backend {
             Backend::Vm { exec, .. } => exec.hang_up(),
         }
     }
+    /// [`Process::stop_reading`], for a terminal the next daemon takes
+    /// over (not Windows' host, nor a machine's exec).
+    fn stop_reading(&self) -> Option<Receiver<()>> {
+        match self {
+            #[cfg(unix)]
+            Backend::Local(p) => Some(p.stop_reading()),
+            _ => None,
+        }
+    }
 }
 
 /// Keys for machine execs, above any pid.
@@ -1224,6 +1265,15 @@ static NEXT_EXEC: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::n
 /// How long a program's exit waits for its terminal to hang up (to read the
 /// last of its output first).
 const DRAIN_AFTER_EXIT: Duration = Duration::from_secs(1);
+
+#[cfg(unix)]
+/// How often a pane's reader looks up from its terminal to see whether
+/// it's been told to stop.
+const READ_POLL_MS: u16 = 50;
+
+/// How long a shutdown waits for a pane's reader to stop and its output to
+/// reach the log.
+const SHUTDOWN_DRAIN: Duration = Duration::from_secs(1);
 
 /// Wait for a process that may not be our child (a restarted daemon is no
 /// longer its parent), then read how it ended from the shim's record.
@@ -1582,7 +1632,27 @@ fn run(mut st: State, rx: Receiver<Cmd>, program: Receiver<Cmd>) {
             Cmd::Detection(reply) => {
                 let _ = reply.send(st.detection());
             }
-            Cmd::Checkpoint(done) => {
+            Cmd::Shutdown(done) => {
+                // Output still on its way (read, or queued behind what
+                // clients ask) would go with this daemon: stop the reader,
+                // put what it read in the log, then checkpoint (#1515).
+                if let Some(reading) = st.process.as_ref().and_then(Backend::stop_reading) {
+                    let until = Instant::now() + SHUTDOWN_DRAIN;
+                    loop {
+                        crossbeam_channel::select! {
+                            recv(program) -> cmd => if let Ok(Cmd::Output(data)) = cmd {
+                                st.output(&data);
+                            },
+                            recv(reading) -> _ => break,
+                            default(until.saturating_duration_since(Instant::now())) => break,
+                        }
+                    }
+                }
+                while let Ok(cmd) = program.try_recv() {
+                    if let Cmd::Output(data) = cmd {
+                        st.output(&data);
+                    }
+                }
                 st.checkpoint();
                 let _ = done.send(());
             }
