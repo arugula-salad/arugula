@@ -67,7 +67,10 @@ jobs:
             have=$(crane digest "$dst" 2>/dev/null || true)
             if [ "$want" = "$have" ]; then
               what=unchanged
-            elif crane copy "docker.io/$image" "$dst"; then
+            # A new package's first push can be DENIED for one of its
+            # platforms' manifests (crane pushes them side by side while
+            # GHCR creates the package): again, once it exists.
+            elif crane copy "docker.io/$image" "$dst" || { sleep 10; crane copy "docker.io/$image" "$dst"; }; then
               what=copied
             else
               echo "::error::$image: couldn't copy it to $dst"
