@@ -144,7 +144,10 @@ test("vim in a pane: Open the editor beside it", async ({ page }) => {
   // No vim here: `sleep` under nvim's name is the foreground command.
   const bin = temp("bin");
   symlinkSync(SLEEP, join(bin, "nvim"));
-  await seenAlready(page, ["command-mark"]);
+  // The editor's VS Code fails here by design, so its pane needs you,
+  // which is the push hint's fact; whether that toast is up by the count
+  // below is timing (#300). This test is about the editor's chip.
+  await seenAlready(page, ["command-mark", "push-device"]);
   await reset(page);
   const [term] = await panes(page);
   await type(page, term, `${join(bin, "nvim")} 60\n`);
