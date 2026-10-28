@@ -5434,6 +5434,7 @@ Used by:
 - [arugulad-docs 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-drivers 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-editor 0.0.0](https://github.com/arugula-salad/arugula)
+- [arugulad-labs 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula 0.64.0](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)

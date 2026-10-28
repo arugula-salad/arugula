@@ -288,7 +288,7 @@ impl AgentsBlock {
                 return self.ctx.changed();
             }
         };
-        if !crate::labs::on(&self.ctx.state_dir, arugula_proto::flags::AGENT_DELEGATION) {
+        if !crate::on(&self.ctx.state_dir, arugula_proto::flags::AGENT_DELEGATION) {
             let mut st = self.state.lock().unwrap();
             st.loading = false;
             st.error =

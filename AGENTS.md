@@ -54,6 +54,12 @@ Each has a `README.md` with where to start reading.
   binary runs as programs of their own (`_planter`, `_apps-platform`,
   `_arugula-release`), through the base's subcommand registry
   (`subcommands.rs`).
+- `crates/arugulad-labs`: `arugulad-labs`, Labs (studio apps, chant
+  workspaces, VMs and resident daemons, guest ssh, agent recipes and
+  delegating, the Forgejo and GitLab forges). The daemon reaches it only
+  through `lab_hooks.rs` (the `Hooks` trait, whose defaults are a build
+  without Labs); its operations are `Handle<Labs>`. The binary registers it
+  with its `labs` feature.
 - `crates/arugulad`: `arugulad`, the binary on `arugulad-base`, which
   registers the feature crates, and the daemon's integration tests
   (`tests/integration/`; their fixtures stay in `crates/daemon/tests/`).
@@ -209,13 +215,13 @@ by `ops::flagged`), `labs::Flagged` on its block types, and
 says how to turn it on. `labs` in the file, or the old empty `labs`
 file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
-code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it
-only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; `labs/mod.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
+code in or out: it lives in the crate `arugulad-labs` (`crates/arugulad-labs`), and core reaches it
+only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; the crate's `lib.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
 daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
-(`labs/guest_ssh.rs`; `russh` is an optional dependency, and a build without
+(`guest_ssh.rs`; `russh` is Labs' dependency, and a build without
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
-(`labs/forgejo.rs`, `labs/gitlab.rs`, `labs/tea.rs`, `labs/forge_live.rs`,
-and `labs/forges.rs`, the connecting a block asks of Labs through
+(`forgejo.rs`, `gitlab.rs`, `tea.rs`, `forge_live.rs`,
+and `forges.rs`, the connecting a block asks of Labs through
 `lab_hooks`; GitHub's PR and issue blocks are core, and `lab_flags::forge_allowed`
 refuses the others unless Labs is on, in a block's creation, `open_config`
 and each read, so a saved one comes back unavailable; with Labs off a bare

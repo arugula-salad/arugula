@@ -146,7 +146,7 @@ pub fn bad(msg: impl Into<String>) -> ApiError {
     ApiError(StatusCode::BAD_REQUEST, msg.into())
 }
 
-pub(crate) type Res<T> = Result<T, ApiError>;
+pub type Res<T> = Result<T, ApiError>;
 
 pub(crate) async fn pane(app: &App, id: PaneId) -> Res<PaneHandle> {
     app.mux.api(|r| Api::Pane(id, r)).await.flatten().ok_or(ApiError(StatusCode::NOT_FOUND, format!("no pane %{id}")))

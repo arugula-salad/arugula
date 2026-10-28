@@ -29,7 +29,7 @@ decided_on: "2026-10-08"
 reviews: []
 constrains:
   - "path:crates/proto/src/flags.rs"
-  - "path:crates/daemon/src/labs/mod.rs"
+  - "path:crates/arugulad-labs/src/lib.rs"
   - "path:crates/daemon/src/hosts.rs"
   - "path:crates/daemon/src/mcp/tools.rs"
   - "path:crates/cli/src/main.rs"
@@ -84,5 +84,5 @@ and sharing a Doc still asks the owner.)
   *Daemon* menu and `/#developer` open it regardless.
 Not done: per-flag enforcement of routes and block constructors (done since,
 next entry), and flags per team on control (#347).
-Where: `crates/proto/src/flags.rs`, `crates/daemon/src/labs/mod.rs` (`flags`, `on`), `crates/daemon/src/hosts.rs` (`features`), `crates/daemon/src/mcp/tools.rs` (`UNLISTED*`), `crates/cli/src/main.rs` and `crates/daemon/src/args.rs` (`LABS_*`), `web/src/shell/client.ts` (`flag`), `web/src/shell/ui/developer.tsx`, `crates/desktop/src/daemon.rs`.
+Where: `crates/proto/src/flags.rs`, `crates/arugulad-labs/src/lib.rs` (`flags`, `on`), `crates/daemon/src/hosts.rs` (`features`), `crates/daemon/src/mcp/tools.rs` (`UNLISTED*`), `crates/cli/src/main.rs` and `crates/daemon/src/args.rs` (`LABS_*`), `web/src/shell/client.ts` (`flag`), `web/src/shell/ui/developer.tsx`, `crates/desktop/src/daemon.rs`.
 From: #665, #464, #347.

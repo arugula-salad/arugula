@@ -297,7 +297,7 @@ pub trait Adapter: Send + Sync {
 
 /// The HTTP client forge blocks (and M43's Managoat client) use: a
 /// timeout, and Arugula's own User-Agent.
-pub(crate) fn http() -> reqwest::Client {
+pub fn http() -> reqwest::Client {
     static C: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     C.get_or_init(|| {
         crate::roots::http()

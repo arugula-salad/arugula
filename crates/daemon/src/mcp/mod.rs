@@ -41,7 +41,7 @@ pub mod ops;
 pub mod registry;
 pub mod relay;
 mod repos;
-pub(crate) mod results;
+pub mod results;
 pub(crate) mod runs;
 pub mod session;
 mod threads;

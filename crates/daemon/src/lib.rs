@@ -11,7 +11,7 @@ mod acl_api;
 pub mod agent;
 use arugula_mux::agentenv;
 pub mod api;
-mod args;
+pub mod args;
 mod authz;
 use arugula_mux::block;
 mod block_channel;
@@ -24,19 +24,19 @@ pub mod control;
 #[cfg(windows)]
 use arugula_mux::conpty;
 mod conversations;
-mod dial;
+pub mod dial;
 pub mod doc_shares;
-mod e2e;
+pub mod e2e;
 pub mod editors;
 pub mod features;
 #[cfg(feature = "forge")]
-mod forge;
+pub mod forge;
 mod forges;
 pub mod fs;
 mod git_remote;
 // The gates a forge block and Labs' blocks raise.
 #[cfg(feature = "forge")]
-mod gate;
+pub mod gate;
 mod hand;
 use arugula_mux::heap;
 use arugula_mux::history;
@@ -46,22 +46,18 @@ use arugula_mux::holder;
 #[cfg(windows)]
 use arugula_mux::host;
 mod hosted;
-mod hosts;
-mod http1;
-mod install;
+pub mod hosts;
+pub mod http1;
+pub mod install;
 mod run_logs;
 pub mod work;
 mod worktree;
 use arugula_mux::inventory;
-mod invite;
+pub mod invite;
 use arugula_mux::keys;
 pub mod lab_flags;
-// Labs registers what it adds; until it is a crate of its own (#232) a
-// build without it uses none of the registering.
-#[cfg_attr(not(feature = "labs"), allow(dead_code))]
-pub(crate) mod lab_hooks;
-#[cfg(feature = "labs")]
-mod labs;
+// What the base asks of Labs (crates/arugulad-labs), which registers it.
+pub mod lab_hooks;
 mod listening;
 mod localauth;
 pub mod mcp;
@@ -71,7 +67,7 @@ use arugula_mux::osc;
 use arugula_mux::pane;
 use arugula_mux::paths;
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
-mod peer;
+pub mod peer;
 use arugula_mux::perm;
 // The local socket on Windows: a named pipe (M56).
 #[cfg(windows)]
@@ -84,7 +80,7 @@ mod board_block;
 mod board_state;
 pub mod push;
 mod remote;
-mod review;
+pub mod review;
 pub mod roots;
 mod rules;
 mod seal;
@@ -103,7 +99,7 @@ pub mod subcommands;
 mod sync;
 use arugula_mux::sys;
 pub(crate) use arugula_mux::sys::home;
-mod tailscale;
+pub mod tailscale;
 mod telemetry;
 mod tls;
 mod update;
@@ -438,7 +434,7 @@ fn daemon_running(state_dir: &std::path::Path) -> bool {
 }
 
 /// This computer's name, for joining.
-fn hostname() -> Option<String> {
+pub fn hostname() -> Option<String> {
     #[cfg(unix)]
     return nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok());
     #[cfg(not(unix))]
@@ -492,9 +488,6 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
     // they report as the version is the binary's.
     arugula_core::version::set(version);
     arugula_vt::set_version(version);
-    // Labs, while it's in the base (#232).
-    #[cfg(feature = "labs")]
-    labs::register();
     // A closed pipe (`| head`) ends the process quietly, not with a panic
     // from `println!` (#682): Rust starts with SIGPIPE ignored. The daemon
     // itself ignores it again before it serves (below).

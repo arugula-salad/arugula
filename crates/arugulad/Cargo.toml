@@ -14,6 +14,8 @@ arugulad-docs = { workspace = true }
 arugulad-drivers = { workspace = true }
 # The editor server and Claude Code's IDE, for the `editor` feature.
 arugulad-editor = { workspace = true, optional = true }
+# Labs, for the `labs` feature.
+arugulad-labs = { workspace = true, optional = true }
 
 [lints]
 workspace = true
@@ -52,11 +54,11 @@ nix = { workspace = true, features = ["term", "process", "fs", "signal", "poll",
 rmcp = { version = "=3.5.0", default-features = false, features = ["transport-streamable-http-client-unix-socket"] }
 
 [features]
-# The daemon's features: Labs and the forge are the library's (see
-# crates/daemon/Cargo.toml); the editor is a crate of its own, which main.rs
-# registers.
+# The daemon's features: the forge is the library's (see
+# crates/daemon/Cargo.toml); Labs and the editor are crates of their own,
+# which main.rs registers.
 default = ["labs", "forge", "editor"]
 forge = ["arugulad-base/forge"]
 editor = ["dep:arugulad-editor"]
-labs = ["arugulad-base/labs"]
+labs = ["arugulad-base/labs", "dep:arugulad-labs"]
 debug-embed = ["arugulad-base/debug-embed"]

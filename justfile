@@ -886,7 +886,7 @@ daemon_crates := "-p arugulad -p arugulad-base -p arugulad-docs -p arugulad-driv
 
 # The daemon and the CLI without Labs (#452): clippy and the tests with the
 # `labs` feature off, which CI runs as the `core` job. Run it after touching
-# anything in or beside crates/daemon/src/labs; `just check` covers the rest.
+# anything in or beside crates/arugulad-labs; `just check` covers the rest.
 # The forge and the editor stay on (#461): "core" is everything but Labs.
 check-core: web mux-guard
     {{cargo}} clippy {{daemon_crates}} -p arugula-mux -p arugula --no-default-features --features arugulad/forge,arugulad/editor --all-targets -- -D warnings

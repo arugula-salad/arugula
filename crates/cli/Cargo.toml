@@ -29,7 +29,7 @@ nix = { workspace = true, features = ["term", "poll", "signal", "ioctl", "hostna
 
 [features]
 # Labs (`arugula studio` and the like): on by default, as in the
-# daemon (see crates/daemon/src/labs/mod.rs). `--no-default-features` leaves
+# daemon (see crates/arugulad-labs/src/lib.rs). `--no-default-features` leaves
 # it out.
 default = ["labs"]
 labs = []

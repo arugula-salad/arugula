@@ -6,13 +6,14 @@
 //! flags in the state dir, are separate: they decide what a machine
 //! shows, and [`flags`](crate::lab_flags::flags) ANDs them with this build.)
 //!
-//! **The pattern.** A Labs feature is a module in this directory, and
-//! nothing outside `labs/` names it. The rest of the daemon reaches Labs only
+//! **The pattern.** Labs is this crate, `arugulad-labs` (#232), and the
+//! daemon (`arugulad-base`) never names it. The daemon reaches Labs only
 //! through its surface, the trait `lab_hooks::Hooks`, which [`register`]
-//! installs; each of its defaults is what a build without Labs does (nothing,
-//! or "X isn't in this build"). So the rest of the daemon never needs a `cfg`
-//! of its own to call Labs, and Labs is on its way to a crate of its own
-//! (#232). Its operations are `Handle<Labs>`, routed with `op_of`.
+//! installs (the binary calls it when its `labs` feature is on); each of its
+//! defaults is what a build without Labs does (nothing, or "X isn't in this
+//! build"). So the daemon never needs a `cfg` of its own to call Labs, and an
+//! edit here rebuilds this crate and the binary, not the daemon. Its
+//! operations are `Handle<Labs>`, routed with `op_of`.
 //!
 //! **What stays unconditional.** Everything in `arugula-proto` (block types,
 //! agent kinds, request and answer types), so every client and daemon speaks
@@ -20,7 +21,7 @@
 //! filtered by the flags, not by the build). Only the daemon's handling is
 //! gated.
 //!
-//! **Adding a feature.** Put its code in `labs/<name>/`, declare it below,
+//! **Adding a feature.** Put its code in `src/<name>/`, declare it below,
 //! and add what the rest of the daemon needs to `lab_hooks::Hooks`, with the
 //! default a build without Labs has, and its body to [`Labs`]'s impl here:
 //! a route set goes into `routes`, a block type into `kinds`, host info into
@@ -36,7 +37,6 @@ use axum::Router;
 use futures_util::future::BoxFuture;
 use serde_json::Value;
 
-#[cfg(feature = "forge")]
 use crate::forge::model::Provider as ForgeProvider;
 use crate::{
     block::{BlockCtx, BlockKinds},
@@ -50,21 +50,30 @@ use crate::{
     server::App,
 };
 
+// What the code here names as `crate::…`: the mux's modules and the daemon's,
+// as it named them when it was the daemon's.
+use arugula_mux::{acl, block, mux, pane, perm, procinfo, provider, store, sys, sys::home};
+#[cfg(unix)]
+use arugulad_base::install;
+use arugulad_base::{
+    agent, api, args, browser, dial, e2e, forge, fs, gate, hostname, hosts, http1, invite, lab_flags, lab_hooks, mcp,
+    ops, peer, ports, push, review, roots, server, sites, tailscale, task,
+};
+
 // Agent recipes and their A2A cards (M76): the `agent-delegation` flag.
 pub mod agents;
 pub mod apps;
 // Approving a gate where it came from: chant or hud.
 pub mod gates;
 // Forgejo and GitLab as forges (#457): their adapters, the `tea` logins
-// Forgejo reads with, and the webhooks they send. GitHub is core's.
+// Forgejo reads with, the webhooks they send, and what a forge block asks to
+// reach them (`forges.rs`: `lab_hooks`'s `tea_connect` and the rest).
+// GitHub is core's.
 pub mod forge_live;
-// What a forge block asks to reach them (`lab_hooks`'s `tea_connect` and the
-// rest).
 pub mod forgejo;
 pub mod forges;
 pub mod gitlab;
-// Guest ssh: the russh server and its invites (M65). `russh` is an optional
-// dependency of the daemon, enabled by this feature.
+// Guest ssh: the russh server and its invites (M65).
 pub mod guest_ssh;
 // VMs: the machines panes run on, and the sandboxes they come from. The
 // terminal on one is the core's (`arugula_mux::labs::machine`).
@@ -246,7 +255,6 @@ impl Hooks for Labs {
         Box::pin(async move { Ok(forges::gitlab_connect(runner, host, api).await) })
     }
 
-    #[cfg(feature = "forge")]
     fn hook_path(&self, provider: ForgeProvider) -> Result<&'static str, String> {
         Ok(forge_live::path(provider))
     }

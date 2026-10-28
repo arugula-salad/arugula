@@ -35,7 +35,7 @@ constrains:
   - "path:crates/proto/src/flags.rs"
   - "path:crates/proto/src/op.rs"
   - "path:crates/daemon/src/ops/flags.rs"
-  - "path:crates/daemon/src/labs/mod.rs"
+  - "path:crates/arugulad-labs/src/lib.rs"
   - "path:crates/daemon/src/main.rs"
   - "path:crates/daemon/src/args.rs"
   - "path:crates/daemon/src/mcp/mod.rs"
@@ -93,5 +93,5 @@ and `HostFeatures.labs` tells the page.
 Flags per account and per team on control (#347's last item, #464's option
 2) were decided on 2026-10-12: **control pushes, and the machine can
 override.** See "Control pushes Labs flags; the machine overrides" below.
-Where: `crates/proto/src/flags.rs`, `crates/proto/src/op.rs` (`FlagsList`, `FlagSet`), `crates/daemon/src/ops/flags.rs`, `crates/daemon/src/labs/mod.rs` (`enabled`), `crates/daemon/src/main.rs` (`flags_cli`, the startup migration), `crates/daemon/src/args.rs` (`labs_command`), `crates/daemon/src/mcp/mod.rs`, `crates/cli/src/main.rs`. The dialog is now `web/src/shell/ui/developer.tsx` (next entry).
+Where: `crates/proto/src/flags.rs`, `crates/proto/src/op.rs` (`FlagsList`, `FlagSet`), `crates/daemon/src/ops/flags.rs`, `crates/arugulad-labs/src/lib.rs` (`enabled`), `crates/daemon/src/main.rs` (`flags_cli`, the startup migration), `crates/daemon/src/args.rs` (`labs_command`), `crates/daemon/src/mcp/mod.rs`, `crates/cli/src/main.rs`. The dialog is now `web/src/shell/ui/developer.tsx` (next entry).
 From: #385, #342, #347, #387, #464.

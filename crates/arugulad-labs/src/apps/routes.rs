@@ -125,7 +125,7 @@ use arugula_proto::{
 };
 
 use crate::{
-    labs::Labs,
+    Labs,
     ops::{Cx, Handle, OpError},
 };
 

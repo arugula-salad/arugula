@@ -233,7 +233,7 @@ async fn forward(app: Arc<App>, name: String, path: String, mut req: Request) ->
 }
 
 /// A host's answer, made safe to serve on our origin.
-pub(crate) fn defang(h: &mut HeaderMap) {
+pub fn defang(h: &mut HeaderMap) {
     h.remove(header::SET_COOKIE);
     let cors: Vec<_> = h.keys().filter(|k| k.as_str().starts_with("access-control-")).cloned().collect();
     for k in cors {
