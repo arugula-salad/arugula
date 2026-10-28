@@ -139,6 +139,9 @@ test("a presigned invite in real Safari: signed out, through GitHub sign-in, joi
   await s.goto(github);
   await s.cookie("as", "carol");
   await s.goto(link);
+  // The team's name once the invite's preview answers; until then it says
+  // "You've been invited to a team." (#1653).
+  await s.shown("[data-why-team]");
   expect(await s.shown("[data-why=invite]")).toContain("alice invited you to Acme.");
   // Signing in leaves the page for GitHub and back; the link's key waits
   // in sessionStorage, never in the URL control sees.
