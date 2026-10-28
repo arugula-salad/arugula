@@ -97,8 +97,8 @@ test("the Share dialog warns a pane may show secrets: Make this pane private", a
   await seenAlready(page, ["command-mark"]);
   await reset(page);
   const [term] = await panes(page);
-  // A made-up token, printed (gitleaks:allow).
-  await run(page, term, "printf 'GH=%s\\n' ghp_0123456789abcdefghijABCDEFGHIJ012345", "GH=ghp_");
+  // A made-up token, printed.
+  await run(page, term, "printf 'GH=%s\\n' ghp_0123456789abcdefghijABCDEFGHIJ012345", "GH=ghp_"); // gitleaks:allow
   await page.locator(`[data-pane="${term}"]`).click({ button: "right", position: { x: 60, y: 60 } });
   await (await menuItem(page, "Share this pane…")).click();
   await expect(page.locator(`[data-secret="${term}"]`)).toContainText("a GitHub token");
