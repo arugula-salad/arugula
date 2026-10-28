@@ -385,18 +385,23 @@ export class ChatStore {
         this.typers.set(`${ev.room} ${ev.account}`, { ...ev, until: Date.now() + TYPING_MS });
         this.emit();
         return;
-      case "resync":
+      case "resync": {
         void this.loadSaved();
         this.typers.clear();
         this.threads.clear();
         this.objectChanged();
+        // The rooms shown read again: a view loads its room only when it
+        // opens it, so one cleared here would say "Loading…" for good.
+        const shown = new Set([...this.loaded.keys()].filter((r) => [...this.open.values()].includes(r)));
         this.loaded.clear();
         this.detail.clear();
         this.pinned.clear();
         this.roomsSoon();
         void this.loadSidebar();
+        for (const r of shown) void this.load(r).then(() => this.emit());
         this.emit();
         return;
+      }
     }
   }
 
@@ -702,6 +707,14 @@ export class ChatStore {
   /** The rooms whose first read is out. */
   private loading(): string[] {
     return [...this.fetching.keys()].filter((k) => k.startsWith("load:")).map((k) => k.slice("load:".length));
+  }
+
+  /** What's new in a room something here just changed (an Agent on this
+   * that posted in it): read now, not only when the stream says. */
+  readNew(id: string): Promise<void> {
+    if (this.loaded.has(id)) return this.newer(id);
+    if (this.fetching.has(`load:${id}`)) this.again.add(id);
+    return Promise.resolve();
   }
 
   /** The page before the oldest loaded. */
