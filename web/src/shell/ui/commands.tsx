@@ -367,10 +367,26 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   /** A PR's or an issue's link it printed, as a block beside it. */
   "forge.open-link": (client, { pane, url }) => void client.openForgeLink(Number(pane), String(url)),
   /** Pane settings › After a restart, under the pane's header. */
-  "pane.restart-settings": (client, { pane }) => {
-    const at = document.querySelector(`[data-pane-header="${pane}"]`)?.getBoundingClientRect();
-    openMenu({ clientX: at ? at.left + 8 : innerWidth / 2, clientY: at ? at.bottom : innerHeight / 3, preventDefault() {} }, restartItems(client, Number(pane)));
-  },
+  "pane.restart-settings": (client, { pane }) => openMenu(under(`[data-pane-header="${pane}"]`), restartItems(client, Number(pane))),
+  /** The last command's mark menu: Copy output, Run again. */
+  "mark.menu": (client, { pane }) => void client.panes.get(Number(pane))?.view.openMarkMenu(),
+  /** Pane › Share › Private, under the pane's header. */
+  "pane.private": (client, { pane }) =>
+    openMenu(under(`[data-pane-header="${pane}"]`), [
+      { header: "Share" },
+      ...driveItems(client, Number(pane)).filter((i) => typeof i === "object" && "label" in i && i.label.startsWith("Private")),
+    ]),
+  /** The Notifications items (what control pushes about), under the
+   * account menu's button. */
+  "push.kinds": (client) => openMenu(under("[data-account-menu]"), notificationItems(client)),
+  /** Notify me about its agents (M29), for a session shared with you. */
+  "agents.notify": (client, { session }) => void client.setNotify({ session: Number(session), on: true }),
+  "changes.open": (client, { pane }) => openChanges(client, Number(pane)),
+  "editor.open": (client, { pane }) => openEditor(client, Number(pane)),
+  /** A shell on another host, split right of the pane (#17). */
+  "remote.split": (client, { pane, host }) => void newRemote(client, String(host), { split: Number(pane) }),
+  /** Sign-in and account, where Add a passkey is. */
+  "control.passkeys": () => openPanel("account")(),
   "pane.attach": (client, { pane }) => void client.attachFiles(Number(pane)),
   "pane.picker": (client, { pane }) => openPicker(client, Number(pane)),
   "push.enable": (client) => notifyThisDevice(client),
@@ -382,6 +398,12 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
     pickConversation(client, pane === undefined ? { session: client.session ?? undefined } : { split: pane, cwd: client.cwd(pane) ?? undefined });
   },
 };
+
+/** Where a menu opens under the element `selector` finds (else mid-page). */
+function under(selector: string) {
+  const at = document.querySelector(selector)?.getBoundingClientRect();
+  return { clientX: at ? at.left + 8 : innerWidth / 2, clientY: at ? at.bottom : innerHeight / 3, preventDefault() {} };
+}
 
 /** The shown machine's settings: its standing permission rules (#166), its
  * usage and crash reports (M103) and its Labs flags (#665), the owner's.

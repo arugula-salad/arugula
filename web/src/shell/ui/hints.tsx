@@ -30,7 +30,7 @@ function Body({ client, cls }: { client: Client; cls: string }) {
       <span class="hint-copy">{s.hint.copy(s.fact)}</span>
       {s.hint.action && (
         <button class="hint-act" data-hint-act onClick={() => act(client)}>
-          {s.hint.action.label}
+          {typeof s.hint.action.label === "string" ? s.hint.action.label : s.hint.action.label(s.fact)}
         </button>
       )}
       <button class="hint-dismiss" data-hint-dismiss aria-label="Dismiss this tip" title="Dismiss (Tips in Settings turns them all off)" onClick={dismiss}>

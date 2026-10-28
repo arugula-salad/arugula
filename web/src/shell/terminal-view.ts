@@ -122,6 +122,7 @@ export class TerminalView {
   private pendingText = "";
   private pending: { text: string; start: IMarker } | null = null;
   private markMenu: ((mark: CommandMark, e: MouseEvent) => void) | undefined;
+  private markCb: (() => void) | undefined;
   private offAppearance: () => void;
   /** Palette colors programs set (OSC 4), by index. */
   private custom = new Map<number, string>();
@@ -456,6 +457,7 @@ export class TerminalView {
       if (i >= 0) this.marks.splice(i, 1);
     });
     this.marks.push(mark);
+    this.markCb?.();
   }
 
   /** A mark's stripe, and its tick on the scrollbar's ruler in the
@@ -543,6 +545,24 @@ export class TerminalView {
 
   onMarkMenu(cb: (mark: CommandMark, e: MouseEvent) => void) {
     this.markMenu = cb;
+  }
+
+  /** A command finished and has its mark (the mark hint, shell/hints/marks). */
+  onMark(cb: () => void) {
+    this.markCb = cb;
+  }
+
+  /** The last command's mark menu, where right-clicking its mark opens it
+   * (the mark hint's action); at the terminal's corner when it's scrolled
+   * away. */
+  openMarkMenu(): boolean {
+    const mark = this.marks.at(-1);
+    if (!mark || !this.markMenu) return false;
+    const r = mark.deco?.element?.getBoundingClientRect();
+    const h = this.host.getBoundingClientRect();
+    const [x, y] = r?.height ? [r.right, r.top] : [h.left + 8, h.top + 8];
+    this.markMenu(mark, new MouseEvent("contextmenu", { clientX: x, clientY: y }));
+    return true;
   }
 
   private filesCb: ((files: File[]) => void) | undefined;
