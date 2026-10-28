@@ -11,16 +11,26 @@
 //!   has, named by `owner/name`, is said so ([`Settled::Missing`]);
 //!   several and named none, the asker is asked ([`Settled::Ambiguous`]).
 //! - **Then the box** ([`ranked`], [`Load::rank`]): of the candidates
-//!   that have the repo, one that's awake (ready, and online at the hub;
-//!   ready alone when the hub can't say) with a free slot first (fewer
-//!   than `MAX_SESSIONS_PER_BOX` running, counting queued ones and done
-//!   ones not yet parked, and fewer than `MAX_HELD_SESSIONS_PER_BOX`
-//!   held, parked ones too; fewer on a box with fewer session users, as
-//!   [`Caps`] says), then one asleep with a free slot (woken for
-//!   it), then a full one. Within each: the fewest live sessions (queued,
-//!   or a turn under way), then the fewest done ones, parked or not, then
-//!   by name. So asks in a row spread over the awake boxes, and a box is
-//!   woken only when no awake one has room.
+//!   that have the repo, one with a free slot (fewer than
+//!   `MAX_SESSIONS_PER_BOX` running, counting queued ones and done ones
+//!   not yet parked, and fewer than `MAX_HELD_SESSIONS_PER_BOX` held,
+//!   parked ones too; fewer on a box with fewer session users, as
+//!   [`Caps`] says), spreading before it packs (Arugula #266): an idle
+//!   one awake (ready, and online at the hub; ready alone when the hub
+//!   can't say) first, then an idle one asleep that can wake (ready or
+//!   paused, or waking already: its session's job wakes it, as `arugula
+//!   cloud open` does, `sessions::job`), then one awake that's already
+//!   building, then any other with a slot, then a full one. A box is
+//!   **idle** when it has no live session (queued, or a turn under way,
+//!   as its box last reported); one with only done or parked sessions is
+//!   idle, since they wait without building. Within each: the fewest live
+//!   sessions, then the fewest done ones, parked or not, then by name. So
+//!   asks in a row land on a box each while there are idle ones, and only
+//!   then double up.
+//! - **Leftovers** (Arugula #266): a session its box took before the
+//!   workspace's box changed (a rebuild: `machine` isn't the workspace's
+//!   now) isn't counted: the new box doesn't hold it
+//!   (`db::sessions::BoxLoad`).
 //! - **Move to…** lists the others that have the session's repo the same
 //!   way ([`crate::sessions::moves`]).
 
@@ -173,6 +183,9 @@ pub fn linked(app: &Platform, project: &str) -> Result<Vec<String>> {
 pub struct Load {
     /// Ready, and online at the hub (or the hub can't say).
     pub awake: bool,
+    /// Asleep but it can be woken for a session: ready (off the relay),
+    /// paused, or waking already. Not one being made, or failed.
+    pub wakeable: bool,
     /// The project's sessions it has queued or with a turn under way.
     pub live: u32,
     /// The project's done sessions it holds with their agent up, each
@@ -187,8 +200,9 @@ pub struct Load {
 }
 
 impl Load {
-    pub fn of(awake: bool, l: BoxLoad, caps: Caps) -> Self {
-        Load { awake, live: l.live, done: l.done, parked: l.parked, caps }
+    pub fn of(state: &str, awake: bool, l: BoxLoad, caps: Caps) -> Self {
+        let wakeable = !awake && matches!(state, "ready" | "paused" | "waking");
+        Load { awake, wakeable, live: l.live, done: l.done, parked: l.parked, caps }
     }
 
     /// The sessions it holds or has queued, parked ones too: each has a
@@ -203,21 +217,25 @@ impl Load {
         ((self.live + self.done) as usize) < self.caps.run && (self.busy() as usize) < self.caps.hold
     }
 
-    /// Awake, with a slot for one more.
-    pub fn free(self) -> bool {
-        self.awake && self.room()
+    /// Building: a session queued there or with a turn under way. Done and
+    /// parked ones only wait.
+    pub fn building(self) -> bool {
+        self.live > 0
     }
 
-    /// Where it goes in the pick, best first: awake with room, then asleep
-    /// with room (woken only when no awake one has room), then full;
-    /// within each, the fewest live sessions, then the fewest done ones,
-    /// parked or not. A live session works the box's CPU and memory now; a
-    /// done one only waits, and a parked one only keeps its checkout.
+    /// Where it goes in the pick, best first (the module's rule): idle and
+    /// awake, idle and asleep but wakeable (woken for it), awake and
+    /// building, any other with room, full; within each, the fewest live
+    /// sessions, then the fewest done ones, parked or not. A live session
+    /// works the box's CPU and memory now; a done one only waits, and a
+    /// parked one only keeps its checkout.
     pub fn rank(self) -> (u8, u32, u32) {
-        let tier = match (self.free(), self.room()) {
-            (true, _) => 0,
-            (false, true) => 1,
-            (false, false) => 2,
+        let tier = match (self.room(), self.awake, self.wakeable, self.building()) {
+            (false, ..) => 4,
+            (true, true, _, false) => 0,
+            (true, false, true, false) => 1,
+            (true, true, _, true) => 2,
+            (true, false, ..) => 3,
         };
         (tier, self.live, self.done + self.parked)
     }
@@ -243,7 +261,7 @@ pub async fn ranked(app: &Platform, project: &str, ws: Vec<HostedWorkspace>) -> 
             let up = w.state == "ready"
                 && w.machine.as_ref().is_some_and(|m| online.as_ref().is_none_or(|on| on.contains(m)));
             let caps = caps.get(&w.id).copied().unwrap_or(Caps::of(None));
-            let load = Load::of(up, held.get(&w.id).copied().unwrap_or_default(), caps);
+            let load = Load::of(&w.state, up, held.get(&w.id).copied().unwrap_or_default(), caps);
             (w, load)
         })
         .collect();
@@ -287,20 +305,34 @@ mod tests {
         assert_eq!(named("use p/web.", &repos), Some("p/web"));
     }
 
-    /// Awake with room first, then asleep with room, then full; within
+    /// Idle and awake first, then idle and asleep (woken for it), then
+    /// awake and building, then any other with room, then full; within
     /// each, fewest live, then fewest done. A box with three session users
     /// (one from before Arugula #215, or that says nothing) is full at
     /// three held.
     #[test]
-    fn live_sessions_weigh_more_than_done() {
-        let l = |awake, live, done, parked| Load { awake, live, done, parked, caps: Caps::of(Some(6)) };
+    fn idle_boxes_first_then_live_sessions_weigh_more_than_done() {
+        let l = |awake: bool, live, done, parked| Load {
+            awake,
+            wakeable: !awake,
+            live,
+            done,
+            parked,
+            caps: Caps::of(Some(6)),
+        };
         let mut boxes = [
             ("full-awake", l(true, 0, 3, 0)),
             ("asleep-empty", l(false, 0, 0, 0)),
             ("one-live", l(true, 1, 0, 0)),
             ("two-done", l(true, 0, 2, 0)),
             ("one-each", l(true, 1, 1, 0)),
-            // Three parked: none running, so room, but last of the awake.
+            // Asleep with one queued: building, after the awake ones that
+            // are.
+            ("asleep-one-live", l(false, 1, 0, 0)),
+            // Failed: it won't wake, so not before a building one awake.
+            ("failed-empty", Load { wakeable: false, ..l(false, 0, 0, 0) }),
+            // Three parked: none running, so room and idle, but last of
+            // the idle awake.
             ("three-parked", l(true, 0, 0, 3)),
             // Six held, though only two run: full.
             ("six-held", l(true, 0, 2, 4)),
@@ -316,15 +348,26 @@ mod tests {
             [
                 "two-done",
                 "three-parked",
+                "asleep-empty",
                 "one-live",
                 "one-each",
-                "asleep-empty",
+                "failed-empty",
+                "asleep-one-live",
                 "full-awake",
                 "three-users",
                 "unsaid",
                 "six-held"
             ]
         );
+    }
+
+    /// Only a ready, paused or waking box that isn't awake can be woken.
+    #[test]
+    fn a_box_wakes_from_ready_paused_or_waking() {
+        let wakes = |state, awake| Load::of(state, awake, BoxLoad::default(), Caps::of(None)).wakeable;
+        assert!(wakes("ready", false) && wakes("paused", false) && wakes("waking", false));
+        assert!(!wakes("ready", true), "awake already");
+        assert!(!wakes("creating", false) && !wakes("failed", false));
     }
 
     /// The repo an ask is about: the one it names, the only one, none at

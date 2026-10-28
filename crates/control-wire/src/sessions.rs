@@ -297,7 +297,9 @@ pub struct SessionPlace {
     pub name: String,
     /// Its box is up now (ready and online).
     pub awake: bool,
-    /// How many of its project's sessions it holds or has queued.
+    /// How many of its project's sessions are going there: queued, or a
+    /// turn under way. Not done or parked ones, which only wait, nor one
+    /// left from before its box was rebuilt.
     pub busy: u32,
 }
 
