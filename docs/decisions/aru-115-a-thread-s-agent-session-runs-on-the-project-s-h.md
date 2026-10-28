@@ -27,7 +27,7 @@ options:
     tradeoff: "A machine would act on GitHub as the project with nobody sending it, against \"agents draft, people send\", and a token that pushes any ref can push to main."
 choice:
   option: "a"
-  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them. Amended again (Jake, 2026-10-27, Arugula #215): a box runs three sessions and holds six (or as many session users as it says it has, three when it doesn't say); a done one idle 30 minutes is parked (its agent closed, its user, checkout and conversation kept) and opens again on a reply when there's a running slot. Amended again (Jake, 2026-10-27, Arugula #216): a session's agent reads and comments on its own project's native issues, with its asker's rights and as the session itself, through a server of its own and a route that takes the session as the authority, not machine grants. Amended again (Jake, 2026-10-27, the session Docs ask): it also opens issues in that project, as the session's own, telling nobody, and makes, writes (its own) and reads the project's Docs (aru-118)."
+  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them. Amended again (Jake, 2026-10-27, Arugula #215): a box runs three sessions and holds six (or as many session users as it says it has, three when it doesn't say); a done one idle 30 minutes is parked (its agent closed, its user, checkout and conversation kept) and opens again on a reply when there's a running slot. Amended again (Jake, 2026-10-27, Arugula #216): a session's agent reads and comments on its own project's native issues, with its asker's rights and as the session itself, through a server of its own and a route that takes the session as the authority, not machine grants. Amended again (Jake, 2026-10-27, the session Docs ask): it also opens issues in that project, as the session's own, telling nobody, and makes, writes (its own) and reads the project's Docs (aru-118). Amended again (Jake, 2026-10-27, Arugula #265, aru-121): a person's agent on a machine, by its owner's sessions.start grant, starts a session as them (they stay the asker and the payer; the card says it was their agent), and by sessions.reply answers a session's question or prompts it; a message an agent posts without those grants still starts and prompts nothing."
 rejected:
   - option: "b"
     why: "Agents on personal machines are never woken by other people's mentions: a person's machine runs what its person starts."
@@ -237,6 +237,16 @@ agents draft while people send".
   result as an append-only event, as run events are ("A run is a platform
   object on a hosted workspace"). The platform marks a session whose box
   goes quiet for 60 s mid-turn `unresponsive`, until it's heard from again.
+
+- **A person's agent, by grant** (amended 2026-10-27, Arugula #265,
+  "A person's agent starts and answers sessions as them, by grant",
+  aru-121). A message an agent posted never started or prompted a session.
+  Now, with its owner's `sessions.start` grant over the project, a
+  machine's agent's `@arugula` starts one as its owner, who is the asker
+  and pays, and the card says "started by <owner>'s agent on <machine>";
+  with `sessions.reply`, its reply in the session's thread answers the
+  question it waits on, or else prompts it. Without them, nothing changes.
+  It never allows or denies a permission.
 
 What doesn't change: agents on people's machines read and post through
 their machine's grants ("Agents are in conversations"), an agent's

@@ -1655,6 +1655,32 @@ fn all_defs() -> Vec<Def> {
             flag: None,
             output: None,
         },
+        // Fleet 3 (aru-121): a person's agent starts, answers and prompts
+        // agent sessions as them, by their grants.
+        Def {
+            name: super::agent_sessions::START_TOOL,
+            title: "Start an agent session",
+            description: super::agent_sessions::START_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::agent_sessions::SessionStartArgs>),
+            read_only: false,
+            destructive: false,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
+        Def {
+            name: super::agent_sessions::REPLY_TOOL,
+            title: "Answer or prompt an agent session",
+            description: super::agent_sessions::REPLY_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::agent_sessions::SessionReplyArgs>),
+            read_only: false,
+            destructive: false,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
     ]
 }
 
@@ -2125,6 +2151,14 @@ impl<'a> Call<'a> {
             },
             ("read_deploy", _) => match parse(args) {
                 Ok(a) => self.read_deploy(a).await,
+                Err(e) => Err(e),
+            },
+            ("session_start", _) => match parse(args) {
+                Ok(a) => self.session_start(a).await,
+                Err(e) => Err(e),
+            },
+            ("session_reply", _) => match parse(args) {
+                Ok(a) => self.session_reply(a).await,
                 Err(e) => Err(e),
             },
             ("read_cloud", Some(kind)) => self.read_cloud(kind, args).await,
@@ -4818,7 +4852,7 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 33 - NO_FORGE);
+        assert_eq!(all.len(), 35 - NO_FORGE);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -4963,9 +4997,9 @@ mod tests {
         for name in THREAD_TOOLS {
             assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
         }
-        assert_eq!(every.len(), 36);
-        assert_eq!(defs(fl(false)).len(), 33 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 36 - NO_FORGE);
+        assert_eq!(every.len(), 38);
+        assert_eq!(defs(fl(false)).len(), 35 - NO_FORGE);
+        assert_eq!(defs(fl(true)).len(), 38 - NO_FORGE);
         assert_eq!(every.len(), defs(fl(false)).len() + 3 + NO_FORGE, "and delegate and the board tools");
     }
 

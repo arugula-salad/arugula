@@ -3740,6 +3740,97 @@
       },
       "name": "read_deploy",
       "title": "Read a deploy"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start an agent session"
+      },
+      "description": "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "issue": {
+            "default": null,
+            "description": "A native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "\"#N\"'s project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "default": null,
+            "description": "What to ask @arugula: plain words, which may name the repo\n(owner/name) and a model. On an issue, by default, to work on it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "Or a project's channel: its room id (list kind threads).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread": {
+            "default": null,
+            "description": "In the room, the thread of this message (its seq); without it, the\nask is a message of its own, starting its thread.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "SessionStartArgs",
+        "type": "object"
+      },
+      "name": "session_start",
+      "title": "Start an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Answer or prompt an agent session"
+      },
+      "description": "Reply to an agent session in Arugula control as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          },
+          "text": {
+            "description": "The answer or the prompt, in markdown.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "text"
+        ],
+        "title": "SessionReplyArgs",
+        "type": "object"
+      },
+      "name": "session_reply",
+      "title": "Answer or prompt an agent session"
     }
   ],
   "block, labs true": [
@@ -7902,6 +7993,97 @@
       },
       "name": "read_deploy",
       "title": "Read a deploy"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start an agent session"
+      },
+      "description": "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "issue": {
+            "default": null,
+            "description": "A native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "\"#N\"'s project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "default": null,
+            "description": "What to ask @arugula: plain words, which may name the repo\n(owner/name) and a model. On an issue, by default, to work on it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "Or a project's channel: its room id (list kind threads).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread": {
+            "default": null,
+            "description": "In the room, the thread of this message (its seq); without it, the\nask is a message of its own, starting its thread.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "SessionStartArgs",
+        "type": "object"
+      },
+      "name": "session_start",
+      "title": "Start an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Answer or prompt an agent session"
+      },
+      "description": "Reply to an agent session in Arugula control as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          },
+          "text": {
+            "description": "The answer or the prompt, in markdown.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "text"
+        ],
+        "title": "SessionReplyArgs",
+        "type": "object"
+      },
+      "name": "session_reply",
+      "title": "Answer or prompt an agent session"
     }
   ],
   "full, labs false": [
@@ -11645,6 +11827,97 @@
       },
       "name": "read_deploy",
       "title": "Read a deploy"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start an agent session"
+      },
+      "description": "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "issue": {
+            "default": null,
+            "description": "A native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "\"#N\"'s project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "default": null,
+            "description": "What to ask @arugula: plain words, which may name the repo\n(owner/name) and a model. On an issue, by default, to work on it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "Or a project's channel: its room id (list kind threads).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread": {
+            "default": null,
+            "description": "In the room, the thread of this message (its seq); without it, the\nask is a message of its own, starting its thread.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "SessionStartArgs",
+        "type": "object"
+      },
+      "name": "session_start",
+      "title": "Start an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Answer or prompt an agent session"
+      },
+      "description": "Reply to an agent session in Arugula control as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          },
+          "text": {
+            "description": "The answer or the prompt, in markdown.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "text"
+        ],
+        "title": "SessionReplyArgs",
+        "type": "object"
+      },
+      "name": "session_reply",
+      "title": "Answer or prompt an agent session"
     }
   ],
   "full, labs true": [
@@ -15807,6 +16080,97 @@
       },
       "name": "read_deploy",
       "title": "Read a deploy"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start an agent session"
+      },
+      "description": "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "issue": {
+            "default": null,
+            "description": "A native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "\"#N\"'s project: its id (prj_…) or personal. Default: the one this\nclone's GitHub repo is linked to, else your person's personal one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "default": null,
+            "description": "What to ask @arugula: plain words, which may name the repo\n(owner/name) and a model. On an issue, by default, to work on it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "default": null,
+            "description": "Or a project's channel: its room id (list kind threads).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread": {
+            "default": null,
+            "description": "In the room, the thread of this message (its seq); without it, the\nask is a message of its own, starting its thread.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "SessionStartArgs",
+        "type": "object"
+      },
+      "name": "session_start",
+      "title": "Start an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Answer or prompt an agent session"
+      },
+      "description": "Reply to an agent session in Arugula control as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "session": {
+            "description": "The session: its id (ses_…).",
+            "type": "string"
+          },
+          "text": {
+            "description": "The answer or the prompt, in markdown.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "text"
+        ],
+        "title": "SessionReplyArgs",
+        "type": "object"
+      },
+      "name": "session_reply",
+      "title": "Answer or prompt an agent session"
     }
   ],
   "read, labs false": [

@@ -38,6 +38,8 @@ pub mod agent_mcp;
 #[cfg(test)]
 mod agent_mcp_tests;
 #[cfg(test)]
+mod agent_sessions_tests;
+#[cfg(test)]
 mod agent_threads_tests;
 pub mod agent_tokens;
 #[cfg(test)]

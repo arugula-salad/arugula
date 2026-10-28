@@ -29,6 +29,7 @@
 //! starts says so: the pane shows "started by mcp:<client>", and what the
 //! client typed is in history as theirs.
 
+mod agent_sessions;
 mod boards;
 mod capabilities;
 mod cloud;

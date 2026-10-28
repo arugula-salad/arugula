@@ -374,7 +374,7 @@ html[data-corners="square"] .platform input.sw-switch {
 }
 
 .platform .agent-matrix-wide thead th:first-child {
-  width: 24%;
+  width: 20%;
 }
 
 .platform .agent-matrix tbody th,
@@ -868,9 +868,10 @@ html[data-corners="square"] .platform input.sw-switch {
   .platform .agent-matrix-wide tbody {
     display: block;
   }
+  /* Six switches (aru-121's two sessions ones too): two rows of three. */
   .platform .agent-matrix-wide tr {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     padding: 8px 0;
   }
   .platform .agent-matrix-wide tbody tr + tr {
