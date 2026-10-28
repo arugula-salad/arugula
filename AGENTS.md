@@ -215,8 +215,8 @@ daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
 (`labs/guest_ssh.rs`; `russh` is an optional dependency, and a build without
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
 (`labs/forgejo.rs`, `labs/gitlab.rs`, `labs/tea.rs`, `labs/forge_live.rs`,
-and `forge/labs_forges.rs`, the block's own connecting, which needs its
-fields; GitHub's PR and issue blocks are core, and `lab_flags::forge_allowed`
+and `labs/forges.rs`, the connecting a block asks of Labs through
+`lab_hooks`; GitHub's PR and issue blocks are core, and `lab_flags::forge_allowed`
 refuses the others unless Labs is on, in a block's creation, `open_config`
 and each read, so a saved one comes back unavailable; with Labs off a bare
 `OWNER/REPO#N` is GitHub's) are there (#452 to #457). The `Provider` trait stays

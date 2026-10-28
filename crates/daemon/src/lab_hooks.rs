@@ -161,6 +161,40 @@ pub trait Hooks: Send + Sync + 'static {
         Err(not_built(&format!("A {provider:?} webhook")))
     }
 
+    /// A Forgejo block's `tea` login and adapter (`forge::TeaAsk`).
+    #[cfg(feature = "forge")]
+    fn tea_connect<'a>(
+        &'a self,
+        _runner: Runner,
+        _ask: crate::forge::TeaAsk,
+    ) -> BoxFuture<'a, Result<crate::forge::TeaFound, crate::forge::TeaMissed>> {
+        Box::pin(async { Err(crate::forge::TeaMissed { candidates: None, error: not_built("A Forgejo block") }) })
+    }
+
+    /// A Forgejo block's `login {name}`: that `tea` login and its adapter.
+    #[cfg(feature = "forge")]
+    fn tea_login<'a>(
+        &'a self,
+        _runner: Runner,
+        _provider: crate::forge::model::Provider,
+        _name: &'a str,
+    ) -> BoxFuture<'a, Result<crate::forge::TeaFound, String>> {
+        Box::pin(async { Err(not_built("A Forgejo login")) })
+    }
+
+    /// A GitLab block's adapter (glab's token for `host`, or anonymous and
+    /// read-only) and the login it reads as.
+    #[cfg(feature = "forge")]
+    #[allow(clippy::type_complexity)]
+    fn gitlab_connect<'a>(
+        &'a self,
+        _runner: Runner,
+        _host: &'a str,
+        _api: &'a str,
+    ) -> BoxFuture<'a, Result<(Arc<dyn crate::forge::Adapter>, Option<String>), String>> {
+        Box::pin(async { Err(not_built("A GitLab block")) })
+    }
+
     // ------------------------------------------------------------ control
 
     /// Whether this machine offers agents to its teams' members (#399).

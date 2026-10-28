@@ -53,12 +53,15 @@ use crate::{
 // Agent recipes and their A2A cards (M76): the `agent-delegation` flag.
 pub mod agents;
 pub mod apps;
+// Approving a gate where it came from: chant or hud.
+pub mod gates;
 // Forgejo and GitLab as forges (#457): their adapters, the `tea` logins
-// Forgejo reads with, and the webhooks they send. GitHub is core's. The
-// parts of a forge block that connect to them are `forge/labs_forges.rs`,
-// which needs the block's private fields; `forge/mod.rs` has their twins.
+// Forgejo reads with, and the webhooks they send. GitHub is core's.
 pub mod forge_live;
+// What a forge block asks to reach them (`lab_hooks`'s `tea_connect` and the
+// rest).
 pub mod forgejo;
+pub mod forges;
 pub mod gitlab;
 // Guest ssh: the russh server and its invites (M65). `russh` is an optional
 // dependency of the daemon, enabled by this feature.
@@ -215,6 +218,32 @@ impl Hooks for Labs {
 
     fn is_hook(&self, path: &str) -> bool {
         forge_live::is_hook(path)
+    }
+
+    fn tea_connect<'a>(
+        &'a self,
+        runner: Runner,
+        ask: crate::forge::TeaAsk,
+    ) -> BoxFuture<'a, Result<crate::forge::TeaFound, crate::forge::TeaMissed>> {
+        Box::pin(forges::tea_connect(runner, ask))
+    }
+
+    fn tea_login<'a>(
+        &'a self,
+        runner: Runner,
+        provider: ForgeProvider,
+        name: &'a str,
+    ) -> BoxFuture<'a, Result<crate::forge::TeaFound, String>> {
+        Box::pin(forges::tea_login(runner, provider, name))
+    }
+
+    fn gitlab_connect<'a>(
+        &'a self,
+        runner: Runner,
+        host: &'a str,
+        api: &'a str,
+    ) -> BoxFuture<'a, Result<(Arc<dyn crate::forge::Adapter>, Option<String>), String>> {
+        Box::pin(async move { Ok(forges::gitlab_connect(runner, host, api).await) })
     }
 
     #[cfg(feature = "forge")]
