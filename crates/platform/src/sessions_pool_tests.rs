@@ -92,10 +92,11 @@ async fn the_pool_picks_a_box_with_the_repo() {
     assert_eq!(s.map(|s| (s.workspace, s.repo)), Some(("hw_api".into(), Some("o/app".into()))));
 }
 
-/// Of the boxes with the repo: awake with a free slot first, then the
-/// least busy, then by name. A box that's down, or full, waits its turn.
+/// Of the boxes with the repo: an idle one awake first, then an idle one
+/// asleep (woken for it), then the least busy awake, then by name. A full
+/// one waits its turn.
 #[tokio::test]
-async fn the_pool_prefers_awake_with_a_free_slot_then_least_busy() {
+async fn the_pool_prefers_idle_boxes_then_least_busy() {
     let (hub, app, base, t, _u, _keys) = platform(&["https://github.com/o/app"]).await;
     // dev is ready but off the relay: not awake.
     add_box(&app, &t, "hw_c", "c-three", &["https://github.com/o/app"], Some("m_c"));
@@ -107,10 +108,13 @@ async fn the_pool_prefers_awake_with_a_free_slot_then_least_busy() {
         let (_, s) = ask(&app, &base, &t, "b", &format!("@arugula task {i}")).await;
         went.push(s.expect("started").workspace);
     }
-    // b and c take turns, by name when even, until both hold three; then
-    // dev, down but the least busy.
-    assert_eq!(went, ["hw_b", "hw_c", "hw_b", "hw_c", "hw_b", "hw_c", "hw_dev"]);
-    // The hub can't say who's online: ready is awake, and dev is free.
+    // One each first, dev woken for its own (Arugula #266); then b and c
+    // take turns, awake, by name when even, until both run three; then
+    // dev, asleep with one queued.
+    assert_eq!(went, ["hw_b", "hw_c", "hw_dev", "hw_b", "hw_c", "hw_b", "hw_c"]);
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 7").await;
+    assert_eq!(s.unwrap().workspace, "hw_dev");
+    // The hub can't say who's online: ready is awake, and dev has room.
     hub.online_down(true);
     let (_, s) = ask(&app, &base, &t, "b", "@arugula task 8").await;
     assert_eq!(s.unwrap().workspace, "hw_dev");
@@ -128,8 +132,8 @@ fn set_state(app: &Platform, s: &Session, state: &str) {
 /// Live sessions weigh more than done ones (Arugula #215, edge 3): asks
 /// in a row spread over the awake boxes whether the last one is still
 /// working or done, a box holding only done sessions beats one with a
-/// turn under way, and a paused box is woken only when no awake one has
-/// room. "Agents run on" still wins.
+/// turn under way, and a paused box is woken before an awake one that's
+/// building takes a second (Arugula #266). "Agents run on" still wins.
 #[tokio::test]
 async fn the_pool_spreads_by_live_sessions_then_done() {
     let (hub, app, base, t, _u, _keys) = platform(&["https://github.com/o/app"]).await;
@@ -159,27 +163,97 @@ async fn the_pool_spreads_by_live_sessions_then_done() {
     let (_, s) = ask(&app, &base, &t, "b", "@arugula task 4").await;
     assert_eq!(s.unwrap().workspace, "hw_b", "b: no live sessions, c: one");
 
-    // b is full (one live, two done); c, awake with room, takes the next
-    // two before dev is woken. Then both are full: dev, asleep with room,
-    // is woken for the next.
-    for i in 5..7 {
+    // b is full (one live, two done) and c is building: dev, asleep and
+    // idle, is woken for the next. Then c, awake, takes two before dev's
+    // second.
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 5").await;
+    assert_eq!(s.unwrap().workspace, "hw_dev");
+    for i in 6..8 {
         let (_, s) = ask(&app, &base, &t, "b", &format!("@arugula task {i}")).await;
         assert_eq!(s.unwrap().workspace, "hw_c");
     }
-    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 7").await;
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 8").await;
     assert_eq!(s.unwrap().workspace, "hw_dev");
 
     // An explicit "agents run on" wins over the pool, full or not.
     assert!(app.db.set_agents_run_on(&t, Some("hw_b")).unwrap());
-    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 8").await;
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 9").await;
     assert_eq!(s.unwrap().workspace, "hw_b");
 }
 
-/// It asks only when it must: which repo when the boxes have several and
-/// the ask names none; it says so when the ask names a linked repo no box
-/// has. An explicit "agents run on" wins over the pool.
+/// A wave spreads by itself (Arugula #266): four asks back to back, none
+/// done yet, land on four boxes, three of them asleep (ready off the
+/// relay, or paused) and woken by their sessions' jobs, rather than
+/// packing the awake one. A fifth doubles up on the awake one, the least
+/// busy awake.
 #[tokio::test]
-async fn it_asks_only_when_the_repo_is_missing_or_ambiguous() {
+async fn four_asks_land_on_four_boxes() {
+    let (hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
+    hub.set_online(&keys.id(), true);
+    for (id, name) in [("hw_b", "b-two"), ("hw_c", "c-three"), ("hw_d", "d-four")] {
+        add_box(&app, &t, id, name, &["https://github.com/o/app"], Some(&format!("m_{name}")));
+    }
+    app.db.c().execute("UPDATE hosted_workspaces SET state = 'paused' WHERE id = 'hw_d'", params![]).unwrap();
+    let mut went = Vec::new();
+    for i in 0..4 {
+        let (_, s) = ask(&app, &base, &t, "b", &format!("@arugula build {i}")).await;
+        went.push(s.expect("started").workspace);
+    }
+    assert_eq!(went, ["hw_dev", "hw_b", "hw_c", "hw_d"], "awake first, then the sleeping ones by name");
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula build 4").await;
+    assert_eq!(s.unwrap().workspace, "hw_dev", "the fifth doubles up on the awake one");
+}
+
+/// A session its box took before the workspace's box was rebuilt, which
+/// didn't move to the new one, isn't counted there (Arugula #266): not
+/// in Move to…'s "going", not by the pool, and not against the new box's
+/// slots.
+#[tokio::test]
+async fn sessions_from_before_a_rebuild_arent_counted() {
+    let (hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
+    hub.set_online(&keys.id(), true);
+    add_box(&app, &t, "hw_b", "b-two", &["https://github.com/o/app"], Some("m_b"));
+    assert!(app.db.set_agents_run_on(&t, Some("hw_b")).unwrap());
+    let mut old = vec![];
+    for i in 0..2 {
+        let (_, s) = ask(&app, &base, &t, "b", &format!("@arugula task {i}")).await;
+        let s = s.unwrap();
+        app.db
+            .c()
+            .execute("UPDATE agent_sessions SET machine = 'm_b', state = 'working' WHERE id = ?1", params![s.id])
+            .unwrap();
+        old.push(s);
+    }
+    assert!(app.db.set_agents_run_on(&t, Some("hw_dev")).unwrap());
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula fix the canary").await;
+    let s = s.unwrap();
+    let going = |v: &Value| {
+        v["card"]["moves"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| (m["name"].clone(), m["busy"].clone()))
+            .collect::<Vec<_>>()
+    };
+    let (_, v) = call(&base, "b", "GET", &format!("/api/sessions/{}", s.id), None).await;
+    assert_eq!(going(&v), [(json!("b-two"), json!(2))], "two going on b");
+    // b's box is rebuilt, off the relay: its two were the old box's.
+    app.db.c().execute("UPDATE hosted_workspaces SET machine = 'm_b2' WHERE id = 'hw_b'", params![]).unwrap();
+    let (_, v) = call(&base, "b", "GET", &format!("/api/sessions/{}", s.id), None).await;
+    assert_eq!(going(&v), [(json!("b-two"), json!(0))], "none going on the new box");
+    assert!(app.db.box_has_room("hw_b", "", arugula_e2e::now_ms()).unwrap());
+    assert!(app.db.set_agents_run_on(&t, None).unwrap());
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula task 3").await;
+    assert_eq!(s.unwrap().workspace, "hw_b", "idle, woken, rather than doubling up on dev");
+}
+
+/// It asks only when it must: which repo when the boxes have several and
+/// the ask names none, with the linked repos no box has among its
+/// choices. A linked repo no box has, named by `owner/name`, gets a
+/// session (Fleet 6: its box clones it), by the ask or by its button. An
+/// explicit "agents run on" wins over the pool.
+#[tokio::test]
+async fn a_linked_repo_no_box_has_gets_a_session() {
     let (hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
     hub.set_online(&keys.id(), true);
     add_box(&app, &t, "hw_web", "web", &["https://github.com/o/web"], Some("m_web"));
@@ -188,18 +262,59 @@ async fn it_asks_only_when_the_repo_is_missing_or_ambiguous() {
     link(&app, &t, 3, "o/docs");
     let (p, s) = ask(&app, &base, &t, "b", "@arugula fix the canary").await;
     assert!(s.is_none());
-    let ask_text = "Which repo should @arugula work in? Reply with one: o/app or o/web.";
+    let ask_text = "Which repo should @arugula work in? Reply with one: o/app, o/web or o/docs.";
     assert_eq!(asks_in(&base, "a", p).await, [("ask:repo".into(), ask_text.into(), json!(["b"]))]);
     assert!(lines(&base, ROOM, Some(p)).await.is_empty(), "an ask, not a system line");
     let (q, s) = ask(&app, &base, &t, "b", "@arugula update o/docs").await;
-    assert!(s.is_none());
-    assert_eq!(lines(&base, ROOM, Some(q)).await, [crate::chat::sessions::missing("o/docs")]);
+    let s = s.expect("a session, though no box has o/docs");
+    assert_eq!(s.repo.as_deref(), Some("o/docs"));
+    assert!(["hw_web", "hw_dev"].contains(&s.workspace.as_str()), "{}", s.workspace);
+    assert!(lines(&base, ROOM, Some(q)).await.is_empty(), "no line saying it's missing");
     assert!(asks_in(&base, "a", q).await.is_empty());
+
+    // The ask's button for it starts one too.
+    let (st, all) = call(&base, "b", "GET", &format!("/api/chat/rooms/{ROOM}/messages?thread={p}"), None).await;
+    assert_eq!(st, 200);
+    let seq = all["messages"].as_array().unwrap().iter().find(|m| m["via"] == "ask:repo").unwrap()["seq"].clone();
+    let form = format!("/api/chat/rooms/{ROOM}/asks/{seq}");
+    let (st, f) = call(&base, "b", "POST", &form, Some(json!({ "choice": "o/docs" }))).await;
+    assert_eq!(st, 200, "{f}");
+    let s = sessions(&app, &t).into_iter().find(|s| s.parent_seq == p as u64).expect("started");
+    assert_eq!(s.repo.as_deref(), Some("o/docs"));
 
     // Agents run on web: there, in its repo, though dev has app and is free.
     assert!(app.db.set_agents_run_on(&t, Some("hw_web")).unwrap());
     let (_, s) = ask(&app, &base, &t, "b", "@arugula fix the app").await;
     assert_eq!(s.map(|s| (s.workspace, s.repo)), Some(("hw_web".into(), Some("o/web".into()))));
+    // And a linked repo it hasn't goes there too.
+    let (_, s) = ask(&app, &base, &t, "b", "@arugula update o/docs").await;
+    assert_eq!(s.map(|s| (s.workspace, s.repo)), Some(("hw_web".into(), Some("o/docs".into()))));
+}
+
+/// Agent on this on an issue whose title names a linked repo no box has
+/// (Fleet 6: a site issue) starts a session in that repo; one whose title
+/// names none goes to the box's repo, whatever its body mentions.
+#[tokio::test]
+async fn agent_on_this_works_in_the_linked_repo_its_issue_names() {
+    use crate::db::issues::{Actor, NewIssue};
+
+    let (_hub, app, base, t, _u, _keys) = platform(&["https://github.com/o/app"]).await;
+    link(&app, &t, 1, "o/app");
+    link(&app, &t, 2, "o/site");
+    let agent_on = |title: &'static str, body: &'static str| {
+        let n = NewIssue { project: &t, title, body, labels: &[], assignees: &[] };
+        format!("/api/issues/{}/agent", app.db.create_issue(&n, Actor::person("a"), 1).unwrap().unwrap().id)
+    };
+    let site = agent_on("o/site: the guest SSH page", "Say that turning it off keeps invites.");
+    let (st, v) = call(&base, "b", "POST", &site, None).await;
+    assert_eq!(st, 200, "{v}");
+    let s = app.db.session(v["session"].as_str().expect("a session")).unwrap().unwrap();
+    assert_eq!((s.repo.as_deref(), s.workspace.as_str()), (Some("o/site"), "hw_dev"));
+    let app_issue = agent_on("Login's slow", "Its docs in o/site say otherwise.");
+    let (st, v) = call(&base, "b", "POST", &app_issue, None).await;
+    assert_eq!(st, 200, "{v}");
+    let s = app.db.session(v["session"].as_str().expect("a session")).unwrap().unwrap();
+    assert_eq!(s.repo.as_deref(), Some("o/app"), "not by its body");
 }
 
 /// The which-repo ask is a form (`/api/chat/rooms/{room}/asks/{seq}`), in

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Browser, type Locator, type Page } from "@playwright/test";
@@ -6,6 +6,11 @@ import type { Client } from "../src/shell/client";
 import type { HostDirectory } from "../src/shell/hosts";
 import type { ControlSession } from "../src/shell/control";
 import type { PaneId, TabView } from "../src/shared/proto";
+
+/** A `sleep` that runs under another name (a link called `nvim` or
+ *  `claude`): uutils' (/bin/sleep on newer Ubuntu) is one binary that picks
+ *  the program by that name, and refuses; GNU's is there as `gnusleep`. */
+export const SLEEP = existsSync("/usr/bin/gnusleep") ? "/usr/bin/gnusleep" : "/bin/sleep";
 
 declare global {
   interface Window {

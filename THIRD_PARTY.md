@@ -15,7 +15,7 @@ Arugula is MIT OR Apache-2.0. Its binaries include the software below.
   It also carries the swarm's fonts, Big Shoulders Display, Instrument Sans and JetBrains Mono (Fontsource's builds, SIL Open Font License 1.1, below).
 - **Rust crates**, by license:
 
-- Apache License 2.0 (257)
+- Apache License 2.0 (259)
 - MIT License (57)
 - Unicode License v3 (19)
 - BSD 3-Clause "New" or "Revised" License (11)
@@ -5430,7 +5430,9 @@ limitations under the License.
 
 Used by:
 - [libghostty-vt 0.2.1](https://github.com/uzaaft/libghostty-rs)
-- [arugulad 0.64.1](https://github.com/arugula-salad/arugula)
+- [arugulad 0.65.0](https://github.com/arugula-salad/arugula)
+- [arugulad-agent 0.0.0](https://github.com/arugula-salad/arugula)
+- [arugulad-control-tools 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-docs 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-drivers 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-editor 0.0.0](https://github.com/arugula-salad/arugula)
@@ -5439,7 +5441,7 @@ Used by:
 - [arugulad-invite 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-labs 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-review 0.0.0](https://github.com/arugula-salad/arugula)
-- [arugula 0.64.1](https://github.com/arugula-salad/arugula)
+- [arugula 0.65.0](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad-base 0.0.0](https://github.com/arugula-salad/arugula)

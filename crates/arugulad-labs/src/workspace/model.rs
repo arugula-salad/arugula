@@ -21,14 +21,16 @@ use arugula_proto::{
 use serde::Serialize;
 use serde_json::Value;
 
-/// `sh -c SCRIPT sh ROOT READER ENV`: the reads, as one JSON document on
-/// stdout, whatever happens. It runs with the user's shell environment
-/// (#74), so node from mise, nvm or fnm is on PATH as in a pane.
+/// `sh -c SCRIPT sh ROOT READER ENV [ONLY]`: the reads, as one JSON
+/// document on stdout, whatever happens. It runs with the user's shell
+/// environment (#74), so node from mise, nvm or fnm is on PATH as in a pane.
 pub const SCRIPT: &str = r#"cd "$1" 2>/dev/null || { printf '{"error":"no such directory: %s"}' "$1"; exit 0; }
 command -v node >/dev/null 2>&1 || { printf '{"error":"node is not on PATH on this host, even in your shell'"'"'s environment"}'; exit 0; }
-exec node -e "$2" "$1" "$3""#;
+exec node -e "$2" "$1" "$3" "${4-}""#;
 
-/// The reads. `process.argv`: root, env. Which chant: `$CHANT`, else
+/// The reads. `process.argv`: root, env, and the reads to run (`status`,
+/// `status,points`: [`GATE_READS`]), or all of them when that's empty.
+/// Which chant: `$CHANT`, else
 /// `node_modules/.bin/chant` here or in the nearest parent, else PATH.
 ///
 /// That only finds a chant to start (#305, ws-021). Which chant reads the
@@ -45,7 +47,7 @@ exec node -e "$2" "$1" "$3""#;
 /// taken out; `null` when neither parses.
 pub const READER: &str = r#"
 const { execFile } = require("child_process"), fs = require("fs"), path = require("path");
-const [root, env] = process.argv.slice(1);
+const [root, env, only] = process.argv.slice(1);
 const here = path.resolve(root);
 function which() {
   if (process.env.CHANT) return [process.env.CHANT, "env"];
@@ -94,16 +96,21 @@ function run(args) {
 (async () => {
   const doc = { root: here, declared, gitRoot, chant, how, env };
   if (!chant) return console.log(JSON.stringify(doc));
+  const all = {
+    ls: ["workspace", "ls", "--json"],
+    check: ["workspace", "check", "--format", "json"],
+    records: ["workspace", "records", "--current", "--json"],
+    status: ["workspace", "status", env, "--json"],
+    points: ["workspace", "points", "--open", "--json"],
+  };
+  const names = only ? only.split(",").filter((n) => n in all) : Object.keys(all);
   const t = Date.now();
-  const [ls, check, records, status, points] = await Promise.all([
-    run(["workspace", "ls", "--json"]),
-    run(["workspace", "check", "--format", "json"]),
-    run(["workspace", "records", "--current", "--json"]),
-    run(["workspace", "status", env, "--json"]),
-    run(["workspace", "points", "--open", "--json"]),
-  ]);
+  const got = await Promise.all(names.map((n) => run(all[n])));
   doc.ms = Date.now() - t;
-  doc.reads = { ls, check, records, status, points };
+  doc.reads = Object.fromEntries(names.map((n, i) => [n, got[i]]));
+  // Some of them: the rest, and what's made from them, are the last read's.
+  if (only) return console.log(JSON.stringify(doc));
+  const { ls, check, records, status } = doc.reads;
   const members = ls.json && Array.isArray(ls.json.members) ? ls.json.members : [];
   if (!members.some((m) => Array.isArray(m.agents))) doc.agents = declaredAgents();
   // A chant older than the contract writes none of it: its version, to
@@ -117,6 +124,36 @@ function run(args) {
   console.log(JSON.stringify(doc));
 })();
 "#;
+
+/// The reads that say what waits on a person, which are all a move of the
+/// lifecycle ref alone (`chant run` stopping at a gate, a release) can
+/// change: `status` (gates and releases, read off that ref), and `points`
+/// (decision points) from a chant that has them. `ls`, `check` and
+/// `records` read the declaration, the members and the records, which are
+/// in `HEAD` and the working tree (#278: each read is a chant process,
+/// about 1.4 CPU-seconds, mostly loading chant; a gate waited on five).
+pub fn gate_reads(version: Option<&str>) -> &'static str {
+    if version.is_some_and(|v| !at_least(v, POINTS_FLOOR)) { "status" } else { GATE_READS }
+}
+
+/// [`gate_reads`] with `points`.
+pub const GATE_READS: &str = "status,points";
+
+/// The last full read's `raw` with `part`'s reads in place of its own (a
+/// read of [`gate_reads`]), or `None` when `part` didn't read (no chant,
+/// another chant, an error).
+pub fn with_reads(raw: &Value, part: &Value) -> Option<Value> {
+    let reads = part["reads"].as_object().filter(|r| !r.is_empty())?;
+    if part["error"].is_string() || part["chant"] != raw["chant"] || part["env"] != raw["env"] {
+        return None;
+    }
+    let mut out = raw.clone();
+    for (name, r) in reads {
+        out["reads"][name] = r.clone();
+    }
+    out["ms"] = part["ms"].clone();
+    Some(out)
+}
 
 /// `sh -c FINGERPRINT sh ROOT`: one line that changes when anything a read
 /// would see might have: the `chant/lifecycle` ref (releases and gates)
@@ -1852,8 +1889,36 @@ mod tests {
     }
 
     #[test]
+    fn a_read_of_the_gates_goes_over_the_last_full_one() {
+        assert_eq!(gate_reads(Some("0.87.0")), "status");
+        assert_eq!(gate_reads(Some(POINTS_FLOOR)), "status,points");
+        assert_eq!(gate_reads(None), "status,points");
+        let read = |code: i64| serde_json::json!({ "code": code, "ms": 5, "json": null, "err": "" });
+        let raw = serde_json::json!({
+            "chant": "/c", "env": "local", "ms": 1500, "agents": [],
+            "reads": { "ls": read(0), "check": read(0), "records": read(0), "status": read(0), "points": read(1) },
+        });
+        let part = serde_json::json!({ "chant": "/c", "env": "local", "ms": 700, "reads": { "status": read(3) } });
+        let out = with_reads(&raw, &part).unwrap();
+        assert_eq!(out["reads"]["status"]["code"], 3);
+        assert_eq!(out["reads"]["ls"], raw["reads"]["ls"]);
+        assert_eq!(out["reads"]["points"], raw["reads"]["points"]);
+        assert_eq!((out["ms"].as_u64(), &out["agents"]), (Some(700), &raw["agents"]));
+        // Another chant, another env, no chant at all, nothing read: a full read instead.
+        for other in [
+            serde_json::json!({ "chant": "/d", "env": "local", "reads": { "status": read(0) } }),
+            serde_json::json!({ "chant": "/c", "env": "staging", "reads": { "status": read(0) } }),
+            serde_json::json!({ "chant": null, "env": "local" }),
+            serde_json::json!({ "chant": "/c", "env": "local", "reads": {} }),
+            serde_json::json!({ "error": "no such directory: /x" }),
+        ] {
+            assert!(with_reads(&raw, &other).is_none(), "{other}");
+        }
+    }
+
+    #[test]
     fn the_script_takes_its_arguments_and_no_shell_of_its_own() {
-        assert!(SCRIPT.starts_with(r#"cd "$1""#) && SCRIPT.ends_with(r#""$1" "$3""#));
+        assert!(SCRIPT.starts_with(r#"cd "$1""#) && SCRIPT.ends_with(r#""$1" "$3" "${4-}""#));
         assert!(!SCRIPT.contains("-ic"));
     }
 }

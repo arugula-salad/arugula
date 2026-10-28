@@ -1088,6 +1088,16 @@ impl Control {
         self.nudge.notify_one();
     }
 
+    /// A join this daemon saved itself (Getting started's): read it now,
+    /// so the machine counts as joined from here on, then let the loop
+    /// take it up (the relay, certificates). Waiting for the loop left a
+    /// moment when the page saw no code and no join, and stopped looking
+    /// (Arugula #284).
+    pub fn saved_join(&self) {
+        self.reload();
+        self.poke();
+    }
+
     /// The VM this daemon runs in was paused and has resumed (M180): its
     /// relay socket is likely dead, so drop it and dial again at once.
     /// Only a dial under way or a wait between dials hears it: one that
@@ -3852,6 +3862,25 @@ pub(crate) mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         assert!(c.enrolled().is_some(), "the daemon noticed it joined");
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// A join Getting started saved counts at once (Arugula #284), with no
+    /// watcher round in between: Getting started clears its code right
+    /// after, and a page that looked then saw neither a code nor a join,
+    /// and stopped looking.
+    #[tokio::test]
+    async fn a_join_this_daemon_saved_counts_at_once() {
+        let r = rig("saved-join").await;
+        let aside = r.dir.join(format!("{FILE}.aside"));
+        std::fs::rename(r.dir.join(FILE), &aside).unwrap();
+        let c = Control::new(&r.dir, vec![], String::new(), r.acl.clone(), false);
+        // The watcher runs, but never gets a turn before the check.
+        c.run(|| {}, |_| crate::task::spawn(std::future::pending()), |_| {});
+        assert!(c.enrolled().is_none());
+        std::fs::rename(&aside, r.dir.join(FILE)).unwrap();
+        c.saved_join();
+        assert!(c.enrolled().is_some(), "joined as soon as it's saved");
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 

@@ -1996,6 +1996,10 @@ fly logs -a arugula-platform | grep 'forge mirror:'
   in whole seconds, so up to a second pessimistic). The window starts
   again at each deploy, so just after one its p95 is a handful of
   samples'; read the gate from the next line.
+- `forge mirror: late delivery`: a delivery whose rows landed more than
+  30 s after GitHub's time for the change: its `event`, `action`,
+  `delivery` id, `repo`, item `numbers` and check `checks` (head shas),
+  and `event_ms`. Ids only. What the day's slowest samples were.
 - `forge mirror: webhook to row by day`: the same event times counted per
   UTC `day` in `buckets` (`le_ms:count`, the slower as `inf`), with this
   process's `run`. For a day, add up each (machine, `run`)'s last line:

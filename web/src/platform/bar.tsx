@@ -25,7 +25,7 @@ import { InboxCount } from "./inbox-count";
 /** The bar's place a route is under (UI audit #159): a project's cloud
  * workspaces and its deploys (Deploy… and a deploy) have places of their
  * own (Discovery 5). */
-type Section = "home" | "issues" | "runs" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
+type Section = "home" | "issues" | "runs" | "sessions" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
 function sectionOf(r: Route): Section | null {
   switch (r.page) {
     case "project":
@@ -43,8 +43,10 @@ function sectionOf(r: Route): Section | null {
       return "issues";
     case "runs":
     case "run":
-    case "session":
       return "runs";
+    case "sessions":
+    case "session":
+      return "sessions";
     case "chat":
     case "dm":
       return "chat";
@@ -164,6 +166,11 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
           <Place to={pathOf({ page: "runs", project }, names)} here={here === "runs"} data="runs">
             Runs
             <PlaceUnread project={project} prefix="run_" />
+          </Place>
+        )}
+        {project && (
+          <Place to={pathOf({ page: "sessions", project }, names)} here={here === "sessions"} data="sessions">
+            Sessions
           </Place>
         )}
         {/* Where the reader may have them (the beta's list), or is in one. */}

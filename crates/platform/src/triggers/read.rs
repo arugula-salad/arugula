@@ -86,7 +86,7 @@ pub(crate) fn hold(who: &[String]) -> Result<Held, ApiError> {
     if who.iter().any(|k| open.get(k).is_some_and(|n| *n >= OPEN_WAITS)) {
         return Err(err(
             StatusCode::TOO_MANY_REQUESTS,
-            &format!("at most {OPEN_WAITS} waits on runs at once: try again when one ends"),
+            &format!("at most {OPEN_WAITS} waits on runs and sessions at once: try again when one ends"),
         ));
     }
     for k in who {

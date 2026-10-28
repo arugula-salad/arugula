@@ -204,8 +204,10 @@ fn how_to_grant(machine_name: &str, power: &str, scope: &AgentScope, scope_name:
         AgentScope::Account(_) => "--dms".to_owned(),
     };
     if BOARD_POWERS.contains(&power) {
-        // The page has no switch for boards yet.
-        return format!("its owner gives it with `arugula grants add {machine_name} {power} {flag}`");
+        return format!(
+            "its owner gives it with `arugula grants add {machine_name} {power} {flag}`, or sets {machine_name}'s \
+             Boards for {scope_name} under Settings → Agents on the platform page"
+        );
     }
     let switch = if RUN_POWERS.contains(&power) {
         "Agents and runs"

@@ -28,6 +28,7 @@ import { Installed, ProjectSettings } from "./pages/project-settings";
 import { SettingsPage } from "./pages/settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
+import { SessionsPage } from "./pages/sessions";
 import { BoardPage, BoardsPage } from "./pages/boards";
 import { DocPage, DocsPage } from "./pages/docs";
 import { projectDocs } from "../shared/docs/store";
@@ -83,6 +84,8 @@ function body(r: Route, lost: string | null) {
       return <RunsPage project={r.project} filter={{ state: r.state, trigger: r.trigger, spec: r.spec }} />;
     case "run":
       return <RunPage project={r.project} run={r.run} msg={r.msg} />;
+    case "sessions":
+      return <SessionsPage project={r.project} filter={{ label: r.label, tracker: r.tracker, asker: r.asker, going: r.going }} />;
     case "session":
       return <SessionPage project={r.project} session={r.session} />;
     case "workspaces":

@@ -306,6 +306,39 @@ async fn a_group_dm_is_its_people_alone() {
     assert_eq!(v["people"].as_array().unwrap().len(), 3);
 }
 
+/// Back in a DM in the millisecond of the last thing said there (said just
+/// before they came back): they read from after it, not from it. Later,
+/// from when they came back (Arugula #294).
+#[tokio::test]
+async fn back_in_a_dm_in_the_millisecond_of_its_last_message_reads_from_after_it() {
+    let (hub, app, base, _t, _u) = seeded().await;
+    hub.flag("account:x", true);
+    let (_, dm) = call(&base, "a", "POST", DMS, Some(json!({ "with": "b", "and": ["x"] }))).await;
+    let id = dm["id"].as_str().unwrap().to_owned();
+    assert_eq!(status(&base, "x", "POST", &format!("/api/chat/rooms/{id}/leave"), None).await, 204);
+    let at = arugula_e2e::now_ms() + 60_000;
+    let m = crate::db::chat::NewMessage {
+        author: "b",
+        at,
+        text: "while away",
+        quote: None,
+        ref_machine: None,
+        ref_pane: None,
+        mentions: &[],
+        agent: None,
+        via: None,
+        parent: None,
+        also: false,
+    };
+    app.db.add_chat_message(&id, &m).unwrap();
+    assert!(app.db.add_chat_member_from_now(&id, "x", at).unwrap());
+    assert_eq!(app.db.chat_member_from(&id, "x").unwrap(), Some(at + 1));
+    assert!(!app.db.add_chat_member_from_now(&id, "x", at).unwrap(), "a member already");
+    assert!(app.db.remove_chat_member(&id, "x").unwrap());
+    assert!(app.db.add_chat_member_from_now(&id, "x", at + 5).unwrap());
+    assert_eq!(app.db.chat_member_from(&id, "x").unwrap(), Some(at + 5));
+}
+
 /// One who leaves a group DM doesn't see it; the rest do, and write while
 /// two are left; the same people asking again bring them back, from then.
 /// One who leaves the team is the same: the rest still read it.

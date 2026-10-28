@@ -16,6 +16,13 @@
 // Control is at http://127.0.0.1:PORT, where passkeys are off (WebAuthn
 // refuses an IP address); DEV_CONTROL_HOST=localhost puts it at
 // http://localhost:PORT, with passkeys, in a state directory of its own.
+// DEV_CONTROL_HOST=<tailnet address> (or name) puts it, and the fake
+// GitHub a browser signs in at, on that address alone, for a Chrome on
+// another machine; the platform page and the block sites move to names
+// under <address>.sslip.io, which public DNS answers with the address.
+// That Chrome needs flags: plain HTTP to an address isn't a secure context
+// (no WebCrypto, no service workers), so this prints the command line
+// that makes these origins one.
 // `web/dev-browser.ts` drives either from a headless Chrome, with a
 // virtual passkey authenticator and a login of its choosing, for
 // screenshots.
@@ -24,7 +31,8 @@
 //                      or arugula-dev-control-HOST with DEV_CONTROL_HOST]
 //   DEV_CONTROL_PORT   control's port [default: 7690]
 //   DEV_CONTROL_HOST   control's host name [default: 127.0.0.1]; localhost
-//                      for passkeys
+//                      for passkeys; a tailnet address or name for a
+//                      browser on another machine
 //   DEV_CONTROL_LOGIN  who signs in [default: $USER]
 //   DEV_CONTROL_LOGINS others the fake GitHub offers, comma-separated
 //                      (sam,riley): it asks who on each sign-in. Their
@@ -34,12 +42,14 @@
 //   DEV_CONTROL_BLOCK_DOMAIN
 //                      control's block domain (M50) [default:
 //                      blocks.localhost, which Chrome sends to loopback;
-//                      none with DEV_CONTROL_HOST=localhost]: ports and
+//                      none with DEV_CONTROL_HOST=localhost;
+//                      blocks.<address>.sslip.io with another host]: ports and
 //                      editors on the machines open in control's page,
 //                      at http://b-<key>.<domain>:PORT. Empty for none.
 //   DEV_CONTROL_PLATFORM_HOST
 //                      the platform page's host (M151) [default:
-//                      app.localhost, which Chrome sends to loopback]: the
+//                      app.localhost, which Chrome sends to loopback;
+//                      app.<address>.sslip.io with another host]: the
 //                      platform page, rebuilt on every change like the
 //                      shell, at http://<host>:PORT. Empty for none.
 //   DEV_CONTROL_APPROVE_BROWSERS=0
@@ -80,6 +90,8 @@
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import type { Server } from "node:http";
@@ -93,15 +105,23 @@ import { fingerprint, type Cert } from "./src/shell/e2e/cert.ts";
 for (const k of Object.keys(process.env)) if (/^(ARUGULA|ILLOGICAL)_/.test(k)) delete process.env[k];
 
 const host = process.env.DEV_CONTROL_HOST || "127.0.0.1";
+/** Only this machine's browsers, or others' too (a tailnet's). */
+const loopback = host === "127.0.0.1" || host === "localhost";
+/** What control and the fake GitHub listen on: loopback, or the host's own
+ * address, never every interface: the fake GitHub signs anyone in as you,
+ * and the machines are your shells. */
+const bind = loopback ? "127.0.0.1" : isIP(host) ? host : (await lookup(host, { family: 4 })).address;
 // What's joined to control (and the device) names it by its URL: a host
 // of its own, a state directory of its own.
 const dir = process.env.DEV_CONTROL_DIR ?? join(homedir(), ".local/state", host === "127.0.0.1" ? "arugula-dev-control" : `arugula-dev-control-${host}`);
 const port = Number(process.env.DEV_CONTROL_PORT ?? 7690);
 const login = process.env.DEV_CONTROL_LOGIN ?? userInfo().username;
 // A block domain can't be a parent or child of control's host.
-const blockDomain = process.env.DEV_CONTROL_BLOCK_DOMAIN ?? (host === "localhost" ? "" : "blocks.localhost");
+// Another machine's Chrome sends *.localhost to its own loopback: names
+// that resolve to the address instead.
+const blockDomain = process.env.DEV_CONTROL_BLOCK_DOMAIN ?? (host === "localhost" ? "" : loopback ? "blocks.localhost" : `blocks.${bind}.sslip.io`);
 // Never one of control's own hosts, nor under the block domain.
-const platformHost = process.env.DEV_CONTROL_PLATFORM_HOST ?? "app.localhost";
+const platformHost = process.env.DEV_CONTROL_PLATFORM_HOST ?? (loopback ? "app.localhost" : `app.${bind}.sslip.io`);
 const logins = (process.env.DEV_CONTROL_LOGINS ?? "").split(",").map((l) => l.trim()).filter(Boolean);
 const labs = process.env.DEV_CONTROL_LABS !== "0";
 const approveAll = process.env.DEV_CONTROL_APPROVE_BROWSERS !== "0";
@@ -114,7 +134,7 @@ const bin = process.env.TARGET_DIR ?? "../target/debug";
 const base = `http://${host}:${port}`;
 /** Where control listens: localhost may be ::1 first to a resolver, and
  * control listens on IPv4. */
-const direct = `http://127.0.0.1:${port}`;
+const direct = `http://${bind}:${port}`;
 const via = { [base]: direct };
 const web = join(dir, "web");
 /** The platform page's build (M151), which control serves on its host. */
@@ -220,9 +240,10 @@ async function portFree() {
 }
 
 async function startControl() {
-  github = fakeGithub(0, "127.0.0.1", () => login, logins);
+  // Where control sends a browser to sign in, so where control is.
+  github = fakeGithub(0, bind, () => login, logins);
   await new Promise((r) => github!.once("listening", r));
-  const gh = `http://127.0.0.1:${(github.address() as { port: number }).port}`;
+  const gh = `http://${bind}:${(github.address() as { port: number }).port}`;
   // DEV_CONTROL_CLOUD: a fake E2B that answers (its key is the one it
   // takes), and boxes that enroll by the ticket in their env, as testnet's.
   let e2bUrl = "http://127.0.0.1:9";
@@ -234,7 +255,7 @@ async function startControl() {
   const control = spawn(
     `${bin}/arugula-control`,
     [
-      ...["--listen", `127.0.0.1:${port}`, "--public-url", base, "--db", join(dir, "control/control.db")],
+      ...["--listen", `${bind}:${port}`, "--public-url", base, "--db", join(dir, "control/control.db")],
       ...["--static-dir", web, "--github-client-id", "dev", "--github-client-secret", "dev"],
       ...["--github-url", gh, "--github-api", gh],
       ...(blockDomain ? ["--block-domain", blockDomain] : []),
@@ -418,6 +439,18 @@ async function approveBrowsers(d: Device, who = login) {
   }
 }
 
+/** DEV_CONTROL_HOST on the tailnet: a Chrome elsewhere takes these
+ * origins for secure ones (WebCrypto's keys, the blocks' service worker)
+ * only when told to, in a profile of its own. The block sites are a host
+ * pattern: Chrome takes `*.` in a bare host, not in an origin. */
+function remoteChrome(): string {
+  const origins = [base, ...(platformHost ? [`http://${platformHost}:${port}`] : []), ...(blockDomain ? [`*.${blockDomain}`] : [])];
+  return `  From another machine on the tailnet, a Chrome that takes these origins for secure ones:
+    google-chrome --user-data-dir="$HOME/.cache/arugula-dev-control-chrome" \\
+      --unsafely-treat-insecure-origin-as-secure=${origins.join(",")} ${base}
+  (on a Mac, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"). No passkeys on an address.`;
+}
+
 await portFree();
 console.log("dev-control: building the web client…");
 await webBuild();
@@ -430,8 +463,8 @@ console.log(`
 dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DEV_CONTROL_HOST=localhost)" : ""}
   Sign in with GitHub (the fake one signs you in as ${login}${logins.length ? `, or asks: ${[login, ...logins].join(", ")}` : ""});
   ${approveAll ? `${login}'s browsers are approved (press It matches: the account is ${fingerprint(d.root)})` : `${login}'s browsers stay waiting to be approved (DEV_CONTROL_APPROVE_BROWSERS=0)`}. Machines: ${machines.join(", ")}${labs ? ", with Labs" : ""}.
-  ${platformHost ? `The platform page (M151): http://${platformHost}:${port} (Chrome sends *.localhost to loopback; nobody's signed in there until M152).` : "No platform page (DEV_CONTROL_PLATFORM_HOST is empty)."}
-  ${blockDomain ? `Ports and editors open on b-<key>.${blockDomain} (Chrome; DEV_CONTROL_BLOCK_DOMAIN= for none; the block scripts aren't rebuilt on change).` : "No block domain: ports and editors are off on the machines."}
+  ${platformHost ? `The platform page (M151): http://${platformHost}:${port} (${loopback ? "Chrome sends *.localhost to loopback; " : ""}nobody's signed in there until M152).` : "No platform page (DEV_CONTROL_PLATFORM_HOST is empty)."}
+  ${blockDomain ? `Ports and editors open on b-<key>.${blockDomain} (Chrome; DEV_CONTROL_BLOCK_DOMAIN= for none; the block scripts aren't rebuilt on change).` : "No block domain: ports and editors are off on the machines."}${loopback ? "" : `\n${remoteChrome()}`}
   ${chatOn ? `Chat is on: team Acme (${[login, ...chatPeople.map((o) => o.login)].join(", ")}) with #general${chatPeople.length ? " and a DM" : ""}; ${chatPeople.length ? `${chatPeople.map((o) => o.login).join(", ")}'s browsers are approved by their own devices.` : "DEV_CONTROL_LOGINS=sam for a second person."}` : "No chat in control (DEV_CONTROL_CHAT=1: team Acme with chat on)."}
   Edit web/src, wait for "web rebuilt", reload. State: ${dir}. Ctrl-C stops.
 `);

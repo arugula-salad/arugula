@@ -179,7 +179,7 @@ pub(crate) async fn actor(app: &Platform, account: &str, id: &str) -> Result<Ses
     Ok(s)
 }
 
-fn detail(e: &Event) -> SessionDetail {
+pub(crate) fn detail(e: &Event) -> SessionDetail {
     serde_json::from_str(&e.detail).unwrap_or_default()
 }
 
@@ -266,7 +266,7 @@ fn line(e: &Event, name: &dyn Fn(&str) -> String) -> String {
 }
 
 /// What its latest turn left, from its history.
-fn last_turn(events: &[Event]) -> Option<SessionTurn> {
+pub(crate) fn last_turn(events: &[Event]) -> Option<SessionTurn> {
     events.iter().rev().find(|e| e.kind == Kind::Turn).map(|e| {
         let d = detail(e);
         SessionTurn {
@@ -294,7 +294,7 @@ fn pushed_in(events: &[Event]) -> bool {
 }
 
 /// Why it ended, or why it's queued again (its box was rebuilt).
-fn reason_of(s: &Session, events: &[Event]) -> Option<String> {
+pub(crate) fn reason_of(s: &Session, events: &[Event]) -> Option<String> {
     let again = s.state == State::Queued && s.last_seq > 1;
     (s.state.terminal() || again)
         .then(|| events.iter().rev().find(|e| e.kind == Kind::State && e.to == s.state))

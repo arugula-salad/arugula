@@ -53,6 +53,9 @@ const post = (path: string, body: unknown, headers: Record<string, string> = {})
 // A page just opened has no client (or state) yet: no panes.
 const panesOf = (page: Page) => page.evaluate(() => window.__arugula?.client.state?.panes ?? []);
 const reasonOf = async (page: Page, id: PaneId): Promise<Reason | null> => (await panesOf(page)).find((p) => p.id === id)?.reason ?? null;
+type WsState = { ms: number; updated_ms: number; reads: { name: string; ms: number }[] };
+/** The block's state, as the daemon has it. */
+const blockState = async (): Promise<WsState> => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state;
 /** Who approved delivery's gates, by chant's own `status`. */
 const approvers = () => {
   const st = JSON.parse(chant(ws, "workspace", "status", "local", "--json").stdout);
@@ -118,16 +121,30 @@ test("arugula workspace shows its members; a gate reached while it's drawn is at
   await expect(shown.locator(".review-live")).toHaveText("live");
 
   // The op stops at its gate, elsewhere (a terminal, CI): the block sees
-  // chant's ledger move and reads again.
+  // chant's ledger move and reads again, only what says what waits (#278:
+  // `status`, as this chant has no `points`), not the five a full read is.
+  const before = await blockState();
   expect(run()).toBe(3);
   const t = Date.now();
   await expect(shown.locator('[data-gate="delivery/ship/approve-ship"]')).toBeVisible({ timeout: 8_000 });
-  // The lifecycle ref is looked at every second while drawn, then a read:
-  // about 1.3 s on the pods (#311 asks about 2), 3.4-3.9 s on GitHub's
-  // runners, every time. Reported against its budget, not asserted
-  // (timing.ts), while #278 finds what the hosted VM is slow at: the gate
-  // showing at all, above, is what fails the test.
-  timing("chant run exits 3 → the gate on screen", Date.now() - t, 3_000);
+  const seen = Date.now();
+  const after = await blockState();
+  const ms = (st: WsState, name: string) => st.reads.find((r) => r.name === name)?.ms;
+  expect(["ls", "check", "records"].map((n) => ms(after, n)), "the reads a gate doesn't move, kept").toEqual(["ls", "check", "records"].map((n) => ms(before, n)));
+  // Where the time goes. Arugula's: from `chant run` exiting to the read
+  // starting (the lifecycle ref is looked at every second while drawn,
+  // then the fingerprint and node), and from the read to the gate on
+  // screen. Each holds on a loaded machine (at most 1.1 s and 0.6 s at
+  // load 100 on geek), so they're asserted. chant's: the read, a chant
+  // process loading its TypeScript (1 s on geek for `--version` alone, 2-7
+  // s at load 100), which is the machine's speed and not ours, so the
+  // whole is reported against #311's budget, not asserted (timing.ts).
+  const looked = after.updated_ms - after.ms - t;
+  const drawn = seen - after.updated_ms;
+  console.log(`the gate: ${looked} ms to the read, the read ${after.ms} ms, ${drawn} ms to the screen`);
+  expect(looked, "chant run exits → the read starts").toBeLessThan(2_000);
+  expect(drawn, "the read → the gate on screen").toBeLessThan(1_500);
+  timing("chant run exits 3 → the gate on screen", seen - t, 3_000);
   // The pane's attention follows the block's state: poll it, as it may
   // come a moment after the gate is drawn.
   await expect

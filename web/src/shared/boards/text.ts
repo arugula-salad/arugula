@@ -123,6 +123,19 @@ export function pointerLabel(p: BoardPointer, live?: BoardLive | null): string {
   }
 }
 
+/** Whether a row reads as a card: it points at an issue or a PR the
+ * platform read (a run's `live` stays a link and a tag). */
+export function isCard(live?: BoardLive | null): live is BoardLive {
+  return !!live && live.kind !== "run";
+}
+
+/** Who a card is assigned to, comma-separated: three names, then `+N`. */
+export function assigneesLine(who?: string[] | null): string {
+  const list = (who ?? []).filter(Boolean);
+  if (list.length <= 3) return list.join(", ");
+  return `${list.slice(0, 2).join(", ")} +${list.length - 2}`;
+}
+
 /** The pointer as the id a person edits: none for a block's, which isn't typed. */
 export function pointerText(p: BoardPointer): string {
   return p.kind === "none" || p.kind === "block" ? "" : p.kind === "link" ? p.url : p.id;

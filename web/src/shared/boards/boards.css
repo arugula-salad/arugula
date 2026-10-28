@@ -152,6 +152,22 @@
   overflow-wrap: anywhere;
 }
 
+.board-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.board-sub {
+  margin-top: 2px;
+  font-size: 0.9em;
+}
+
+.board-who {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .board-proof.proven {
   color: var(--ok, #2f9e44);
 }

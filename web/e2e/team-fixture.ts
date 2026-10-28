@@ -23,12 +23,21 @@ export class TeamControl {
   private dirs: string[] = [];
   private gh?: Server;
 
-  constructor(private what: string) {}
+  /** `localhost`: control on a domain name, where WebAuthn makes passkeys
+   * (on 127.0.0.1 it refuses them). */
+  constructor(
+    private what: string,
+    private opts: { localhost?: boolean } = {},
+  ) {}
 
   temp(what: string) {
     const d = mkdtempSync(join(tmpdir(), `arugula-e2e-${this.what}-${what}-`));
     this.dirs.push(d);
     return d;
+  }
+
+  private get host() {
+    return this.opts.localhost ? "localhost" : "127.0.0.1";
   }
 
   /** `extra`: more arguments for control. */
@@ -61,7 +70,7 @@ export class TeamControl {
       spawn(
         "../target/debug/arugula-control",
         [
-          ...["--listen", ANY, "--public-url", "http://127.0.0.1:0", "--db", db],
+          ...["--listen", ANY, "--public-url", `http://${this.host}:0`, "--db", db],
           ...["--github-client-id", "id", "--github-client-secret", "s", "--static-dir", "dist"],
           ...["--github-url", this.github, "--github-api", this.github],
           ...extra,
@@ -69,7 +78,7 @@ export class TeamControl {
         { stdio: "ignore" },
       ),
     );
-    this.base = `http://127.0.0.1:${await controlPort(db, this.procs.at(-1))}`;
+    this.base = `http://${this.host}:${await controlPort(db, this.procs.at(-1))}`;
     for (let i = 0; i < 100; i++) {
       try {
         if ((await fetch(`${this.base}/control.json`)).ok) return;

@@ -142,7 +142,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 35 - NO_FORGE);
+    assert_eq!(tools.len(), 36 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -398,7 +398,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 35 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 36 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -559,7 +559,7 @@ async fn http_with_a_token_until_it_is_revoked() {
         d.post("/api/mcp/tokens", json!({ "name": "watcher", "scope": "read" }))["token"].as_str().unwrap().to_owned();
     let w = http(&d, &ro, Client::named("watcher")).await.unwrap();
     // (read_forge is among the read-only tools only with the forge.)
-    assert_eq!(w.list_all_tools().await.unwrap().len(), 14 - NO_FORGE / 2);
+    assert_eq!(w.list_all_tools().await.unwrap().len(), 15 - NO_FORGE / 2);
     assert!(refused(&w, "run", json!({ "command": "true" })).await.contains("may only read"));
     // Grouped, a write is still a write.
     assert!(refused(&w, "show", json!({ "kind": "port", "port": 1 })).await.contains("may only read"));
@@ -1056,7 +1056,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 35 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 36 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -1064,7 +1064,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 38, "{:?}", names(&with));
+        assert_eq!(with.len(), 39, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
@@ -1081,7 +1081,7 @@ async fn labs_lists_all_the_tools() {
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 35 - NO_FORGE);
+        assert_eq!(without.len(), 36 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -1090,7 +1090,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 35 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 36 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);

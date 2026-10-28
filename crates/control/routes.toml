@@ -2150,6 +2150,38 @@ clients = ["daemon"]
 note = "A machine's agent replies in a session's thread as its owner (aru-121, MCP's session_reply), with `sessions.reply` over its project: answers its open question, or queues a prompt (never approves a permission). Says which."
 
 [[route]]
+method = "GET"
+path = "/api/projects/{project}/sessions"  # wire::sessions::PROJECT_SESSIONS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's wave of agent sessions (Fleet 5): each one's state, box, branch, last push and what waits on the reader, newest first; narrowed by its issue's label, a tracker issue, who asked, or the ones going. Any member."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/projects/{project}/sessions"  # wire::sessions::AGENT_PROJECT_SESSIONS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A project's wave of agent sessions for a machine's agents (Fleet 5, MCP's list kind sessions), with `sessions.start`, `sessions.reply` or `threads.read` over the project."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/sessions/wait"  # wire::sessions::AGENT_SESSIONS_WAIT
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A machine's agent waits for any of a wave's sessions to finish its turn (Fleet 5, MCP's wait with session): held up to 15 s, woken by the session's live event; at most 8 waits open per account and machine, with the runs' waits. A grant to follow each session's project."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/sessions/{ses}"  # wire::sessions::AGENT_SESSION
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A session for a machine's agents (Fleet 5, MCP's read_session): its state, box, branch and head, and its last answer whole, as its box sent it. A grant to follow its project."
+
+[[route]]
 method = "POST"
 path = "/api/sessions/{ses}/move"  # wire::sessions::SESSION_MOVE
 process = "platform"
@@ -2596,6 +2628,14 @@ process = "platform"
 auth = "session"
 clients = ["page", "cli"]
 note = "Reorders a row or a zone, within or between zones: owners and editors."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/work"  # wire::boards::PROJECT_WORK
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The project's work items for a board's picker and Triage: its native issues, the GitHub issues and PRs of linked repos the reader may read, and its runs, newest first; untriaged=true keeps open issues no row of its boards points at."
 
 # ---- platform: project Docs (aru-118)
 # A project's own Docs, for its members: a team's owners and editors make,

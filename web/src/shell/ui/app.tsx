@@ -19,6 +19,7 @@ import { directory } from "../hosts";
 import { DeveloperLayer } from "./developer";
 import { RulesLayer } from "./rules";
 import { SharingLayer } from "./sharing";
+import { AgentGrantsLayer } from "./agent-grants";
 import { DocShareLayer } from "./doc-share";
 import { ConversationsLayer } from "./conversations";
 import { PickerLayer } from "./picker";
@@ -137,6 +138,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <DocShareLayer />
       <DeveloperLayer />
       <SharingLayer />
+      <AgentGrantsLayer />
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />
@@ -225,6 +227,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <DocShareLayer />
       <DeveloperLayer />
       <SharingLayer />
+      <AgentGrantsLayer />
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />

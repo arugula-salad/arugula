@@ -348,7 +348,7 @@ async fn a_push_from_a_bundle_moves_one_ref() {
     let url = remote.display().to_string();
     let push = |b: PathBuf, branch: String| {
         let (mirror, url, id, own) = (mirror.clone(), url.clone(), id.clone(), own.clone());
-        async move { push::push_bundle(&mirror, &b, &id, &own, &branch, &url, Some("ghs_not_a_real_token")).await }
+        async move { push::push_bundle(&mirror, &b, &id, &own, &branch, &url, Some("ghs_not_a_real_token"), &[]).await }
     };
 
     // main, and another session's branch: refused before git runs.
@@ -446,12 +446,15 @@ async fn a_branch_behind_a_main_that_changed_ci_pushes_with_workflows() {
     let url = remote.display().to_string();
 
     // As before: contents only, refused, and nothing moved.
-    let e = push::push_bundle(&mirror, &b, &id, &own, &own, &url, Some("ghs_contents_only")).await.unwrap_err();
+    let e = push::push_bundle(&mirror, &b, &id, &own, &own, &url, Some("ghs_contents_only"), &[]).await.unwrap_err();
     assert!(e.contains("without `workflows` permission"), "{e}");
     assert_eq!(git_in(&remote, &["for-each-ref", "--format=%(refname)"]), "refs/heads/main");
     // With workflows: through, and main is as it was.
     let main = git_in(&remote, &["rev-parse", "refs/heads/main"]);
-    assert_eq!(push::push_bundle(&mirror, &b, &id, &own, &own, &url, Some("ghs_with_workflows")).await.unwrap(), head);
+    assert_eq!(
+        push::push_bundle(&mirror, &b, &id, &own, &own, &url, Some("ghs_with_workflows"), &[]).await.unwrap(),
+        head
+    );
     assert_eq!(
         git_in(&remote, &["for-each-ref", "--format=%(refname) %(objectname)"]),
         format!("refs/heads/{own} {head}\nrefs/heads/main {main}")

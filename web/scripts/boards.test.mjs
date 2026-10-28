@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GLYPH, debounced, parsePointer, pointerHref, pointerLabel, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "../src/shared/boards/text.ts";
+import { GLYPH, assigneesLine, debounced, isCard, parsePointer, pointerHref, pointerLabel, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -27,6 +27,22 @@ test("a pointer is labelled by its item when the platform read it", () => {
   assert.equal(pointerHref({ pointer: { kind: "forge_item", id: "fi_abc123" }, live }, here), "https://github.com/acme/app/pull/7");
   assert.equal(pointerHref({ pointer: { kind: "issue", id: "iss_abc123" } }, here), "https://app.example/issues/iss_abc123");
   assert.equal(pointerHref({ pointer: { kind: "block", machine: "m", pane: "p" } }, here), undefined);
+});
+
+test("an issue or a PR reads as a card, a run does not", () => {
+  const live = (kind) => ({ state: "open", kind, number: 1, title: "x" });
+  assert.deepEqual(["pr", "issue", "native", "run"].map((k) => isCard(live(k))), [true, true, true, false]);
+  assert.equal(isCard(undefined), false);
+  assert.equal(isCard(null), false);
+});
+
+test("a card's assignees are comma-separated, and shortened past three", () => {
+  assert.equal(assigneesLine(undefined), "");
+  assert.equal(assigneesLine([]), "");
+  assert.equal(assigneesLine(["ana"]), "ana");
+  assert.equal(assigneesLine(["ana", "bo", "cy"]), "ana, bo, cy");
+  assert.equal(assigneesLine(["ana", "bo", "cy", "di"]), "ana, bo +2");
+  assert.equal(assigneesLine(["a", "b", "c", "d", "e"]), "a, b +3");
 });
 
 test("a typed pointer is an id of a kind a row may point at", () => {

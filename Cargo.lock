@@ -162,7 +162,7 @@ dependencies = [
 
 [[package]]
 name = "arugula"
-version = "0.64.1"
+version = "0.65.0"
 dependencies = [
  "anyhow",
  "arugula-control-wire",
@@ -299,7 +299,7 @@ dependencies = [
 
 [[package]]
 name = "arugulad"
-version = "0.64.1"
+version = "0.65.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
@@ -309,7 +309,9 @@ dependencies = [
  "arugula-proto",
  "arugula-testkit",
  "arugula-vt",
+ "arugulad-agent",
  "arugulad-base",
+ "arugulad-control-tools",
  "arugulad-docs",
  "arugulad-drivers",
  "arugulad-editor",
@@ -336,6 +338,27 @@ dependencies = [
  "tokio-tungstenite 0.30.0",
  "url",
  "zstd",
+]
+
+[[package]]
+name = "arugulad-agent"
+version = "0.0.0"
+dependencies = [
+ "arugula-control-wire",
+ "arugula-core",
+ "arugula-e2e",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "axum",
+ "futures-util",
+ "hex",
+ "nix",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -389,6 +412,25 @@ dependencies = [
  "windows-sys 0.60.2",
  "x509-parser",
  "zstd",
+]
+
+[[package]]
+name = "arugulad-control-tools"
+version = "0.0.0"
+dependencies = [
+ "arugula-control-wire",
+ "arugula-e2e",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "futures-util",
+ "reqwest",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]

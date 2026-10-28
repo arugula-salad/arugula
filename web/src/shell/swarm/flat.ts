@@ -5,7 +5,7 @@
 // theme lays out its panes in world units and draws them; this does the rest.
 
 import type { WorkKind } from "../../shared/proto";
-import { C, readColors, type FieldHooks, type FieldPane, type SwarmScene } from "./field";
+import { C, Meter, readColors, type FieldHooks, type FieldPane, type Measured, type SwarmScene } from "./field";
 
 export { C };
 
@@ -68,7 +68,7 @@ export abstract class Flat implements SwarmScene {
   /** Someone panned, zoomed or dived: stop fitting by ourselves. */
   protected userMoved = false;
   private raf = 0;
-  private measuring: { gaps: number[]; work: number[] } | null = null;
+  private measuring: Meter | null = null;
   private ptrs = new Map<number, { x: number; y: number }>();
   private pinch0 = 0;
   private s0 = 1;
@@ -313,10 +313,7 @@ export abstract class Flat implements SwarmScene {
       c.s += (c.ts - c.s) * k;
       this.cx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       this.draw(Date.now());
-      if (this.measuring) {
-        this.measuring.gaps.push(dt);
-        this.measuring.work.push(performance.now() - t0);
-      }
+      this.measuring?.frame(dt, performance.now() - t0);
       this.raf = requestAnimationFrame(frame);
     };
     this.raf = requestAnimationFrame(frame);
@@ -326,15 +323,8 @@ export abstract class Flat implements SwarmScene {
     cancelAnimationFrame(this.raf);
   }
 
-  async measure(ms: number): Promise<{ fps: number; workP50: number; frames: number }> {
-    this.measuring = { gaps: [], work: [] };
-    await new Promise((r) => setTimeout(r, ms));
-    const m = this.measuring;
-    this.measuring = null;
-    const gaps = m.gaps.slice(5);
-    const work = [...m.work].sort((a, b) => a - b);
-    const total = gaps.reduce((a, b) => a + b, 0);
-    return { fps: gaps.length ? (1000 * gaps.length) / total : 0, workP50: work[Math.floor(work.length / 2)] ?? 0, frames: gaps.length };
+  measure(ms: number): Promise<Measured> {
+    return Meter.run(ms, (m) => (this.measuring = m));
   }
 
   /** The world transform, for drawing in world units. */

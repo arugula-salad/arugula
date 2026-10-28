@@ -1312,6 +1312,28 @@ its reply, labelled as the agent's. The routes are `POST
 with `post_thread` (with `threads.post`) counts the same way when the
 machine holds the grant.
 
+**Following a wave (Fleet 5).** A project's sessions are one list, a wave
+of them, on the platform page's Sessions (beside Runs, `GET
+/api/projects/{project}/sessions`): each one's state, box, branch and
+HEAD, when it last pushed, who started it, and what waits on the reader
+(its question or a permission for owners and editors, CI that failed
+again, its PR to send for its asker). It narrows by its issue's label, by
+a tracker issue (`tracker=N`: the issues its body names as `#N`, those
+whose body names it, and itself), by who asked and to the ones going,
+among the project's latest 500. A machine's agents read the same with
+`sessions.start`, `sessions.reply` or `threads.read` over the project (any
+of them): MCP's `list` kind `sessions` (`GET
+/api/daemon/projects/{project}/sessions`, `mine` for those its own agents
+started), `read_session` (`GET /api/daemon/sessions/{ses}`: the row, its
+latest turn, and its last answer whole as its box sent it, where the
+thread keeps only the end), and `wait` with `session` (`POST
+/api/daemon/sessions/wait`, `until: done`): it answers once any of the
+sessions named has settled (its turn finished and no prompt queued for
+the next, or it waits on a person, or it ended), with each settled one
+read whole. The platform holds each wait up to 15 seconds, woken by the
+session's live event, and the tool asks again until its own timeout. The
+waits count with the runs' (8 open at once).
+
 A read that waits (`since` and `wait`) is woken when its platform machine
 moves the run, and looks every 2 seconds for a move another machine made.
 At most 8 are open at once per account and per machine (429 past that,

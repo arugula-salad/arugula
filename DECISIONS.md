@@ -122,6 +122,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-112](docs/decisions/aru-112-the-claude-credential-broker-and-its-metering-mo.md): The Claude credential broker and its metering move to the platform
 - [aru-115](docs/decisions/aru-115-a-thread-s-agent-session-runs-on-the-project-s-h.md): A thread's agent session runs on the project's hosted box
 - [aru-116](docs/decisions/aru-116-a-board-is-the-project-s-tracker-and-its-object-daemons.md): A board is the project's tracker, a platform object daemons report agent blocks to
+- [aru-122](docs/decisions/aru-122-boards-manage-a-project-s-issues-wherever-they-live.md): Boards manage a project's issues, wherever they live; an epic is a board
 
 ## Federation and control
 

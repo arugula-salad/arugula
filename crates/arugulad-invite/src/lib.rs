@@ -68,8 +68,8 @@ pub fn register() {
 }
 
 impl arugulad_base::features::Feature for Invite {
-    fn kinds(&self, kinds: &mut block::BlockKinds, app: &Hook) {
-        kinds.add(arugula_proto::BlockType::Invite, card::InviteKind(app.clone()));
+    fn kinds(&self, kinds: &mut block::BlockKinds, cx: &arugulad_base::features::KindsCx) {
+        kinds.add(arugula_proto::BlockType::Invite, card::InviteKind(cx.invite.clone()));
     }
 
     fn routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {

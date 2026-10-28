@@ -52,6 +52,7 @@ import type { WakeSaid } from "./e2e/relaymux.ts";
 import type { DeviceKeys } from "./e2e/keys.ts";
 import { pick, upload } from "./upload";
 import { offered } from "./hints/attach";
+import { factChanged } from "./hints/facts";
 import { desktopApp } from "../shared/desktop";
 
 /** Ack about this often (bytes drawn); the daemon allows 512 KB. */
@@ -1485,6 +1486,8 @@ export class Client {
     view.onFiles((files) => void this.sendFiles(id, files));
     // Hints (./hints/attach): a path pasted, or files dragged over it.
     view.onOffered((what) => offered(id, what));
+    // ./hints/marks: a command's mark.
+    view.onMark(factChanged);
     this.panes.set(id, entry);
     return entry;
   }

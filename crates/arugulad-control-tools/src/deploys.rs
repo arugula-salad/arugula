@@ -26,7 +26,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::tools::{Call, Out, done};
+use crate::mcp::tools::{Call, Out, done};
 use crate::{control::CloudRefused, mux::Api};
 
 pub(crate) const PLAN_TOOL: &str = "plan_deploy";
@@ -176,55 +176,53 @@ fn plan_text(d: &Value) -> String {
     }
 }
 
-impl Call<'_> {
-    /// They act as this machine's owner: only the owner's own agents may.
-    async fn owners_deploys(&self, what: &str) -> Result<(), String> {
-        if let Some(me) = self.me()
-            && self.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
-        {
-            return Err(format!("{what} acts as this machine's owner: only their own agents may"));
+/// They act as this machine's owner: only the owner's own agents may.
+async fn owners_deploys(c: &Call<'_>, what: &str) -> Result<(), String> {
+    if let Some(me) = c.me()
+        && c.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
+    {
+        return Err(format!("{what} acts as this machine's owner: only their own agents may"));
+    }
+    Ok(())
+}
+
+async fn deploys_call(c: &Call<'_>, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
+    c.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
+}
+
+/// `plan_deploy`: plan, then ask.
+pub(crate) async fn plan_deploy(c: &Call<'_>, a: PlanDeployArgs) -> Out {
+    owners_deploys(c, PLAN_TOOL).await?;
+    let project = project_of(&a.project)?;
+    let body = serde_json::to_value(plan_of(&a)?).map_err(|e| e.to_string())?;
+    let d = deploys_call(c, Method::POST, &agent_project_deploys(project), Some(body)).await?;
+    let id = d["id"].as_str().unwrap_or_default().to_owned();
+    let d = match deploys_call(c, Method::POST, &agent_deploy_request(&id), None).await {
+        Ok(d) => d,
+        Err(e) => {
+            return Err(format!(
+                "planned {id}, but asking for its approval was refused: {e}. read_deploy reads it; plan it again later to ask."
+            ));
         }
-        Ok(())
-    }
+    };
+    let s = format!(
+        "Planned and asked, as your person's agent on this machine: {}. Its owners got a card; one of them approves it on their phone or in a browser, and you can't. read_deploy {id} follows it.\n{}",
+        line(&d),
+        plan_text(&d)
+    );
+    done(s, json!({ "deploy": d }))
+}
 
-    async fn deploys_call(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
-        self.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
+/// `read_deploy`.
+pub(crate) async fn read_deploy(c: &Call<'_>, a: ReadDeployArgs) -> Out {
+    owners_deploys(c, READ_TOOL).await?;
+    let id = a.id.trim();
+    if !deploy_id(id) {
+        return Err(format!("id: a deploy is dep_ and 32 hex characters, not {id:?}"));
     }
-
-    /// `plan_deploy`: plan, then ask.
-    pub(crate) async fn plan_deploy(&self, a: PlanDeployArgs) -> Out {
-        self.owners_deploys(PLAN_TOOL).await?;
-        let project = project_of(&a.project)?;
-        let body = serde_json::to_value(plan_of(&a)?).map_err(|e| e.to_string())?;
-        let d = self.deploys_call(Method::POST, &agent_project_deploys(project), Some(body)).await?;
-        let id = d["id"].as_str().unwrap_or_default().to_owned();
-        let d = match self.deploys_call(Method::POST, &agent_deploy_request(&id), None).await {
-            Ok(d) => d,
-            Err(e) => {
-                return Err(format!(
-                    "planned {id}, but asking for its approval was refused: {e}. read_deploy reads it; plan it again later to ask."
-                ));
-            }
-        };
-        let s = format!(
-            "Planned and asked, as your person's agent on this machine: {}. Its owners got a card; one of them approves it on their phone or in a browser, and you can't. read_deploy {id} follows it.\n{}",
-            line(&d),
-            plan_text(&d)
-        );
-        done(s, json!({ "deploy": d }))
-    }
-
-    /// `read_deploy`.
-    pub(crate) async fn read_deploy(&self, a: ReadDeployArgs) -> Out {
-        self.owners_deploys(READ_TOOL).await?;
-        let id = a.id.trim();
-        if !deploy_id(id) {
-            return Err(format!("id: a deploy is dep_ and 32 hex characters, not {id:?}"));
-        }
-        let d = self.deploys_call(Method::GET, &agent_deploy(id), None).await?;
-        let s = format!("{}\n{}\nLog:\n{}", line(&d), plan_text(&d), history(&d));
-        done(s, json!({ "deploy": d }))
-    }
+    let d = deploys_call(c, Method::GET, &agent_deploy(id), None).await?;
+    let s = format!("{}\n{}\nLog:\n{}", line(&d), plan_text(&d), history(&d));
+    done(s, json!({ "deploy": d }))
 }
 
 #[cfg(test)]

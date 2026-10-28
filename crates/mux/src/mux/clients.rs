@@ -700,6 +700,7 @@ impl Daemon {
                 work: None,
                 project: None,
                 branch: None,
+                head: None,
                 activity: None,
                 title: None,
                 file: None,

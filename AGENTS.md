@@ -44,6 +44,16 @@ Each has a `README.md` with where to start reading.
 - `crates/arugulad-editor`: `arugulad-editor`, the editor server and
   Claude Code's IDE (`editor/`, `ide/`). The daemon reaches it only through
   `editors.rs` (the `Editors` and `Ide` traits); the binary registers it.
+- `crates/arugulad-agent`: `arugulad-agent`, the agent and chat blocks (an
+  ACP client) and the Claude Code conversations on this machine, with their
+  operations. The daemon reaches it through `features.rs` (`KindsCx`),
+  `mcp/registry.rs` and `agent/`'s `Agents`; the base keeps `agent/` (the
+  agents and adapters, the hosted gate, pictures, the transcript, `Worn`).
+- `crates/arugulad-control-tools`: `arugulad-control-tools`, MCP's tools for
+  what lives in control (Cloud workspaces, linked repos, conversations,
+  native issues, boards, runs, deploys, agent sessions), through
+  `mcp/registry.rs` and its `ControlTools`. The base keeps reading a native
+  issue (`mcp/issues.rs`), which `read_forge` does too.
 - `crates/arugulad-docs`: `arugulad-docs`, Docs: the Doc block, its library
   and links, their operations and the `doc` MCP tool. The daemon reaches it
   through `features.rs`' hooks and `mcp/registry.rs`; who may share a Doc
@@ -119,7 +129,9 @@ Paths are under `crates/daemon/src/`, except those marked `mux:`, which are in
 nothing marked `mux:` names the edge or the block kinds.
 
 - **Edge:** the embedded web client and `/ws` (`server.rs`), the HTTP API
-  (`api.rs`), MCP (`mcp/`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport
+  (`api.rs`), MCP (`mcp/`; its tools for what lives in control, such as
+  Cloud workspaces, conversations, native issues, runs and deploys, are
+  in `arugulad-control-tools`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport
   (`dial.rs`), end-to-end channels from client devices (`e2e.rs`), enrolment in
   control (`control.rs`), Windows' named pipe (`pipe.rs`).
 - **Who may:** who may talk to the daemon (`access.rs`, `localauth.rs`),
@@ -149,13 +161,13 @@ nothing marked `mux:` names the edge or the block kinds.
   (`shellint.rs`, `shellenv.rs`), what a pane is busy with (`classify.rs`),
   process info (`procinfo.rs`), history (`history.rs`), resuming an agent's
   conversation (`resume.rs`), named keys (`keys.rs`).
-- **Blocks:** what every block provides and the registry of kinds (`mux:block.rs`), agents (`agent/`),
+- **Blocks:** what every block provides and the registry of kinds (`mux:block.rs`), agents (the block in `arugulad-agent`, registered through `features.rs` and `agent/`'s `Agents`; what the rest shares with it in `agent/`),
   browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`,
   and `block_channel.rs` for control's block origins),
   editors (`editor/`, in `arugulad-editor`), review (`review/`, its blocks in `arugulad-review`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`, in `arugulad-forge`),
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
-  conversations (`conversations/`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
+  conversations (`conversations/`, in `arugulad-agent`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
   (`invite/`, in `arugulad-invite`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
   configured agent harnesses
   (`mux:inventory.rs`).

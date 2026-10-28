@@ -29,22 +29,14 @@
 //! starts says so: the pane shows "started by mcp:<client>", and what the
 //! client typed is in history as theirs.
 
-mod agent_sessions;
-mod boards;
 pub(crate) mod capabilities;
-mod cloud;
-mod deploys;
-mod forge_ops;
 pub(crate) mod hosted;
-mod issues;
+pub mod issues;
 pub mod ops;
 pub mod registry;
 pub mod relay;
-mod repos;
 pub mod results;
-pub(crate) mod runs;
 pub mod session;
-mod threads;
 pub mod tokens;
 pub mod tools;
 

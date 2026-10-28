@@ -307,6 +307,10 @@ test("twenty machines, nineteen of them relayed: one socket, back after a wake w
     expect(opened).toEqual([`${base.replace("http", "ws")}/api/relay/m`]);
   }
   console.log(`fleet through control: 20 machines (19 relayed); wakes: ${JSON.stringify(wakes)}`);
+  // #278: a wake's 20 machines back, measured where this runs (GitHub's
+  // runners: 69 wakes, p50 514 ms, max 1205) and on a loaded geek (load
+  // 55-127 with 8 busy loops: 87 wakes, p50 599, p95 1535, max 2165).
+  // 5 s holds with 2x to spare over the worst of them: kept.
   for (const w of wakes) {
     expect(w.failures).toBe(0);
     expect(w.allBackMs).toBeLessThan(5000);

@@ -39,8 +39,9 @@ export interface Hint {
   /** One line. */
   copy(f: Fact): string;
   /** What its button does: a command of `COMMANDS` (ui/commands), given
-   * the fact's args, or a route (`#swarm`). */
-  action?: { label: string } & ({ command: string } | { route: string });
+   * the fact's args, or a route (`#swarm`). Its label can name the fact's
+   * values. */
+  action?: { label: string | ((f: Fact) => string) } & ({ command: string } | { route: string });
 }
 
 /** The one on screen, and its fact as of now. */

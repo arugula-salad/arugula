@@ -60,10 +60,33 @@ placed() { geometry "$1"; [ "$X" = 100 ] && [ "$Y" = 100 ] && [ "$WIDTH" = 1000 
 maximized() { geometry "$1"; [ "$WIDTH" -ge 1270 ] && [ "$HEIGHT" -ge 850 ]; }
 restored() { geometry "$1"; [ "$WIDTH" -lt 1270 ]; }
 iconic() { xprop -id "$1" WM_STATE 2>/dev/null | grep -qi iconic; }
-# Every recording pane's size, as the panes have them: the window's page
-# sends a shown pane's new size once it has laid out at a new window size.
-pane_sizes() { cat "$REC_DIR"/*/size 2>/dev/null | tr '\n' ' '; }
-sizes_moved_from() { [ "$(pane_sizes)" != "$1" ]; }
+# Where the page has LABEL ($1) on the screen as WebKit lays it out now,
+# through AT-SPI (click.py --box): sets BX, BY, BW and BH.
+box() {
+  local b
+  b=$("$here/click.py" --box arugula "$1" 2 2>/dev/null) || return 1
+  read -r BX BY BW BH <<<"$b"
+}
+# The page has laid out at window $1's size: its window buttons
+# (minimize, maximize, close, 40 wide) end at the window's right edge, in
+# its top strip. The window takes a new size first and the page lays out
+# at it later, on a loaded machine seconds later: until then a click put
+# where the window's size says lands on whatever the old layout has there
+# (#295: the minimize button's place at 1000 wide is in the middle of the
+# 1280-wide page's header).
+laid_out() {
+  box Minimize || return 1
+  geometry "$1"
+  local dx=$((BX - (X + WIDTH - 120))) dy=$((BY - Y))
+  [ "$dx" -ge -2 ] && [ "$dx" -le 2 ] && [ "$dy" -ge -2 ] && [ "$dy" -le 20 ]
+}
+# Click window $1's own button $2 (Minimize, Maximize) where the page has
+# it, once the page is laid out at the window's size.
+click_button() {
+  wait_for 30 laid_out "$1" || return 1
+  box "$2" || return 1
+  xdotool mousemove $((BX + BW / 2)) $((BY + BH / 2)) click 1
+}
 
 Xvfb :99 -screen 0 1280x900x24 -nolisten tcp >/dev/null 2>&1 &
 pids+=($!)
@@ -155,36 +178,41 @@ claim_titlebar() {
   else
     bad titlebar "the window has decorations: ${hints:-no _MOTIF_WM_HINTS}"
   fi
-  geometry "$w"
-  local was="${WIDTH}x$HEIGHT" sizes; sizes=$(pane_sizes)
   xdotool windowsize "$w" 1000 700 windowmove "$w" 100 100
   wait_for 10 placed "$w" || bad titlebar "the window didn't take 1000x700 at 100,100 (${WIDTH}x$HEIGHT at $X,$Y)"
   # And the page has laid out at it, which on a loaded machine comes well
-  # after the window took it: until then the header is the one at the
-  # app's 1280 wide (the sidebar open), where 420 is on the machine's
-  # name, which doesn't drag however long it's held.
-  [ "$was" = 1000x700 ] || wait_for 20 sizes_moved_from "$sizes" ||
-    bad titlebar "the page didn't lay out at 1000x700 (its panes: $(pane_sizes))"
-  # Drag the header's empty middle (.bar-fill) right and down. At 1000
-  # wide (M113) the rail is the left 56px, the machine and session end
-  # near 300, and command search starts near 550 (the window's buttons
-  # take the right 120): 420 is between them.
-  drag "$w" $((WIDTH / 2 - 80)) 16
-  if dragged; then
-    ok titlebar "dragging the bar moved the window from $x0,$y0 to $X,$Y$(pressed)"
+  # after the window took it (laid_out).
+  wait_for 30 laid_out "$w" ||
+    bad titlebar "the page didn't lay out at ${WIDTH}x$HEIGHT (its minimize button at ${BX:-?},${BY:-?})"
+  # Drag the header's empty middle (.bar-fill) right and down: between
+  # the crumbs (the machine, the session, the tab) and Commands, where the
+  # page has them. Not a fixed point: the session's name is two random
+  # words, and the longest ("wandering thistle") put its menu button on
+  # the one this used, 420 (#295).
+  local left mid
+  if box "Where you are" && left=$((BX + BW)) && box Commands; then
+    mid=$(((left + BX) / 2 - X))
   else
-    bad titlebar "dragging the bar left the window at $X,$Y (was $x0,$y0)"
+    bad titlebar "no crumbs or Commands in the header"
+    mid=$((WIDTH / 2 - 80))
   fi
-  # The client's buttons: minimize, maximize, close from the right, 40 wide.
-  xdotool mousemove --window "$w" $((WIDTH - 60)) 16 click 1
+  drag "$w" "$mid" 16
+  if dragged; then
+    ok titlebar "dragging the bar at $mid moved the window from $x0,$y0 to $X,$Y$(pressed)"
+  else
+    bad titlebar "dragging the bar at $mid left the window at $X,$Y (was $x0,$y0)"
+  fi
+  # The client's buttons, where the page has them once it has laid out at
+  # the window's size (click_button): maximize, maximize again, minimize.
+  click_button "$w" Maximize || bad titlebar "no maximize button laid out at ${WIDTH}x$HEIGHT"
   if wait_for 10 maximized "$w"; then
     ok titlebar "its maximize button filled the screen (${WIDTH}x$HEIGHT)"
   else
     bad titlebar "after its maximize button the window is ${WIDTH}x$HEIGHT"
   fi
-  xdotool mousemove --window "$w" $((WIDTH - 60)) 16 click 1
+  click_button "$w" Maximize || bad titlebar "no maximize button laid out at ${WIDTH}x$HEIGHT"
   wait_for 10 restored "$w" || bad titlebar "its maximize button again left the window ${WIDTH}x$HEIGHT"
-  xdotool mousemove --window "$w" $((WIDTH - 100)) 16 click 1
+  click_button "$w" Minimize || bad titlebar "no minimize button laid out at ${WIDTH}x$HEIGHT"
   if wait_for 10 iconic "$w"; then
     ok titlebar "its minimize button minimized it"
   else
@@ -369,6 +397,9 @@ claim_nautilus() {
   fi
 }
 
+# How many times the app has said it took the global hotkey (settings.rs).
+registered() { grep -c '^arugula: global hotkey ' "$work/app.log" || true; }
+registered_since() { [ "$(registered)" -gt "$1" ]; }
 claim_hotkey() {
   # Off: nothing happens.
   stop_app
@@ -385,7 +416,12 @@ claim_hotkey() {
   fi
   stop_app
   echo '{"hotkey_on": true}' >"$work/desktop.json"
+  local before; before=$(registered)
   start_app
+  # The window shows well before the app is done starting; it takes the
+  # keys once it is, and says so (#295: a press before then made it open a
+  # second window).
+  wait_for 60 registered_since "$before" || bad hotkey "the app never said its hotkey was on: $(tail -3 "$work/app.log")"
   w=$(window)
   xdotool windowactivate --sync "$w"
   sleep 1.5

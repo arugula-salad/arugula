@@ -22,7 +22,7 @@ import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
 import { BoardError, STALE_REV, boards } from "./store";
 import "./boards.css";
-import { BLOCK_LABEL, GLYPH, LIVE_LABEL, PICK_DELAY_MS, PICK_LIMIT, STATUSES, STATUS_LABEL, blockClass, blockFacts, debounced, liveClass, pointerHref, pointerLabel, pointerText, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "./text";
+import { BLOCK_LABEL, GLYPH, LIVE_LABEL, PICK_DELAY_MS, PICK_LIMIT, STATUSES, STATUS_LABEL, assigneesLine, blockClass, blockFacts, debounced, isCard, liveClass, pointerHref, pointerLabel, pointerText, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -263,6 +263,13 @@ function Row({
 }) {
   const label = pointerLabel(r.pointer, r.live);
   const href = pointerHref(r, platform);
+  const card = isCard(r.live);
+  const who = card ? assigneesLine(r.live!.assignees) : "";
+  const proofTag = zone.kind === "proofs" && (
+    <span class={`ws-tag board-proof ${proven(r) ? "proven" : "unproven"}`} data-board-proof={proven(r) ? "proven" : "not-proven"}>
+      {proven(r) ? "proven" : "not proven yet"}
+    </span>
+  );
   const statusMenu = (e: MouseEvent) =>
     menuAt(
       e,
@@ -295,19 +302,26 @@ function Row({
         />
       ) : (
         <div class="board-main">
-          <div class="board-line">
+          {card && (
+            <div class="board-line board-card-title" data-board-title>
+              <span class="board-title">{r.live!.title}</span>
+              {proofTag}
+            </div>
+          )}
+          <div class={card ? "board-line board-sub" : "board-line"}>
             {label && (href ? <a class="board-ptr" href={href} target={r.pointer.kind === "forge_item" || r.pointer.kind === "link" ? "_blank" : undefined} rel="noopener noreferrer" data-board-ptr>{label}</a> : <span class="board-ptr" data-board-ptr>{label}</span>)}
             {r.live && (
               <span class={`ws-tag board-live ${liveClass(r.live.state)}`} data-board-live={r.live.state}>
                 {LIVE_LABEL[r.live.state]}
               </span>
             )}
-            {r.live && <span class="board-item dim">{r.live.title}</span>}
-            {zone.kind === "proofs" && (
-              <span class={`ws-tag board-proof ${proven(r) ? "proven" : "unproven"}`} data-board-proof={proven(r) ? "proven" : "not-proven"}>
-                {proven(r) ? "proven" : "not proven yet"}
+            {card && who && (
+              <span class="board-who dim" data-board-who>
+                {who}
               </span>
             )}
+            {r.live && !card && <span class="board-item dim">{r.live.title}</span>}
+            {!card && proofTag}
           </div>
           {r.block && (
             <div class="board-line board-block" data-board-block={r.block.state}>

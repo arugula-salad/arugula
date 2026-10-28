@@ -2,7 +2,8 @@
 // hand, its view (who started it, the exact command and its operation's
 // hash, its log, its timeline) and its thread; a running run's live pane on
 // control's page; a run that fails in the inbox, which opens it; the specs'
-// list with a schedule added and removed; and the run at a phone's width.
+// list with a schedule and an event rule added and removed; and the run at
+// a phone's width.
 // A local control (team-fixture.ts, `--platform-host app.localhost`), with
 // hosted workspaces on for everyone against an E2B nobody answers, and a
 // hosted workspace written into its database: no box runs here, so the
@@ -134,6 +135,17 @@ test("a team's runs: one started by hand, its view and its thread", async ({ bro
   // It asks first (UI audit #158).
   await alice.locator("[data-confirm-remove]").click();
   await expect(spec.locator("[data-run-schedule]")).toHaveCount(0);
+  // An event rule with the CLI's cap and outsiders (Discovery 10), then
+  // taken off.
+  await spec.locator("[data-run-rule-add]").click();
+  await spec.locator("[data-run-rule-event]").selectOption("pr_opened");
+  await spec.locator("[data-run-rule-cap]").fill("5");
+  await spec.locator("[data-run-rule-outsiders]").check();
+  await spec.locator("form button[type=submit]").click();
+  await expect(spec.locator("[data-run-rule]")).toContainText("pr opened on any linked repo · at most 5 an hour · outsiders too");
+  await spec.locator("[data-run-rule-delete]").click();
+  await alice.locator("[data-confirm-remove]").click();
+  await expect(spec.locator("[data-run-rule]")).toHaveCount(0);
 
   // A command, by hand: its view says what it runs and who started it.
   await alice.locator("[data-run-start-open]").click();

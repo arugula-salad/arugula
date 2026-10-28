@@ -22,17 +22,45 @@ export const BIN = resolve("../target/debug");
 export const asPerson = () => Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
 
 /** Getting started greets an account once on control's page too, after
- * the machine's own page greeted the browser: on control's page a journey
- * closes it as it comes (the machine's greeting is first-run.ts's step). */
-export function closeControlGreeting(ctx: BrowserContext, control: () => string) {
+ * the machine's own page greeted the browser (first-run.ts's step). On
+ * control's page every account here has seen it already, and What's new
+ * (which a first visit without it opens) past every release: in its prefs
+ * (`/api/me/prefs`, the account's), and in the browser's where the page
+ * keeps its own. So neither opens by itself over a journey's dialogs (the
+ * device-approval prompt, #280). When a link opens Getting started on
+ * control's page, it's closed as it comes; a page closing under that
+ * click doesn't stop the journey's own step. */
+export function skipControlGreeting(ctx: BrowserContext, control: () => string) {
+  const said = { "seen:getting-started": 1, "whats-new": "999.0.0" };
+  void ctx.route(
+    (url) => !!control() && url.origin === new URL(control()).origin && url.pathname === "/api/me/prefs",
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      const res = await route.fetch();
+      if (!res.ok()) return route.fulfill({ response: res });
+      const prefs = (await res.json()) as Record<string, unknown>;
+      await route.fulfill({ response: res, json: { ...said, ...prefs } });
+    },
+  );
+  void ctx.addInitScript(
+    ({ said, origin }) => {
+      if (location.origin !== origin) return;
+      const seen = JSON.parse(localStorage.getItem("arugula.seen") ?? "{}") as Record<string, unknown>;
+      localStorage.setItem("arugula.seen", JSON.stringify({ ...said, ...seen }));
+    },
+    { said, origin: control() && new URL(control()).origin },
+  );
   const add = (p: Page) => {
-    const dialog = p.getByRole("dialog", { name: "Getting started" });
+    const dialog = p.getByRole("dialog", { name: "Getting started", exact: true });
     void p
       .addLocatorHandler(
         dialog,
         async () => {
           if (!control() || new URL(p.url()).origin !== new URL(control()).origin) return;
-          await dialog.getByRole("button", { name: "Close" }).click();
+          await dialog
+            .getByRole("button", { name: "Close" })
+            .click({ timeout: 5_000 })
+            .catch(() => {});
         },
         { noWaitAfter: true },
       )
@@ -90,7 +118,7 @@ export class World {
       viewport: { width: 1100, height: 720 },
     });
     await ctx.addInitScript(asPerson);
-    closeControlGreeting(ctx, () => this.control);
+    skipControlGreeting(ctx, () => this.control);
     await ctx.addCookies([{ name: "gh_user", value: login, url: this.github }]);
     return new Person(this, login, home, ctx);
   }

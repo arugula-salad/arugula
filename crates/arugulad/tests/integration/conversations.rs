@@ -412,7 +412,7 @@ fn a_desktop_session_lists_with_the_apps_title_from_where_the_app_keeps_it() {
     };
     let records = app.join("claude-code-sessions/acct/org");
     std::fs::create_dir_all(&records).unwrap();
-    let fixture = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"))
+    let fixture = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../arugulad-agent"))
         .join("tests/fixtures/conversations/desktop/local_session.json");
     let record = std::fs::read_to_string(fixture)
         .unwrap()
