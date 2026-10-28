@@ -575,9 +575,10 @@ test-quarantined: web e2e-build
     exit "$status"
 
 # The platform's suite on Postgres (M143), as hosted control runs it: a
-# postgres:17 container of its own on a free port, removed after. The same
-# tests as on SQLite (`Db::test`); check.yml runs it in a job of its own
-# (test-postgres), beside test and test-2.
+# postgres:17 container of its own on a free port, removed after (from
+# CI's mirror: docs/testing.md, "CI's images"). The same tests as on SQLite
+# (`Db::test`); check.yml runs it in a job of its own (test-postgres),
+# beside test and test-2.
 test-platform-postgres:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -586,7 +587,7 @@ test-platform-postgres:
     # commit waited on the disk. In a job of its own beside test and
     # test-2 the suite took 23-27 min instead of 2.
     docker run -d --rm --name "$name" -e POSTGRES_PASSWORD=platform -p 127.0.0.1::5432 \
-        postgres:17 -c max_connections=500 -c fsync=off -c synchronous_commit=off \
+        "${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/postgres:17" -c max_connections=500 -c fsync=off -c synchronous_commit=off \
         -c full_page_writes=off >/dev/null
     trap 'docker rm -f "$name" >/dev/null' EXIT
     port=$(docker port "$name" 5432/tcp | head -1 | sed 's/.*://')

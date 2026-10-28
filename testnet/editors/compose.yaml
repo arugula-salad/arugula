@@ -3,7 +3,7 @@ name: arugula-testnet-editors
 
 services:
   box:
-    build: ./box
+    build: { context: ./box, args: { ARUGULA_IMAGES: "${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}" } }
     image: arugula-testnet-editors-box
     hostname: m28-box
     init: true

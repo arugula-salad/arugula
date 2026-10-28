@@ -15,7 +15,7 @@ networks:
         - subnet: "${ARUGULA_TESTNET_HOSTS_SUBNET:-172.31.77.0/24}"
 
 x-box: &box
-  image: debian:bookworm-slim
+  image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/debian:bookworm-slim
   init: true
   volumes:
     - "${ARUGULA_TESTNET_BIN:?the static build: target/ARCH-unknown-linux-musl/release}:/opt/arugula:ro"

@@ -3,7 +3,9 @@
 # JavaScript debugger, Python for the stand-in Claude Code, socat to hand the
 # daemon's loopback port to the phone. arugulad arrives mounted at
 # /opt/arugula. See testnet/editors/README.md.
-FROM debian:bookworm-slim
+# Docker Hub's image, from CI's mirror (docs/testing.md, "CI's images").
+ARG ARUGULA_IMAGES=ghcr.io/arugula-salad/ci
+FROM ${ARUGULA_IMAGES}/debian:bookworm-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssh-server openssh-client procps nodejs python3 socat ca-certificates git tar gzip \
  && rm -rf /var/lib/apt/lists/* /etc/ssh/ssh_host_* \

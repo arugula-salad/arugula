@@ -1044,6 +1044,37 @@ stack recreate the boxes they use, so give each worktree its own stack
 What the stack-based tests guard is in [The SSH track's
 tests](#the-ssh-tracks-tests).
 
+### CI's images
+
+The Docker Hub images these pull come from a
+mirror on GHCR, `ghcr.io/arugula-salad/ci/<name>`, which is public, so a
+pull needs no credentials. CI's pods start with an empty Docker and pull
+anonymously. Docker Hub's anonymous limit (429 `toomanyrequests`) once
+failed five of main's jobs in one run (2026-10-28).
+
+- **What's mirrored.** [`.github/ci-images.txt`](../.github/ci-images.txt)
+  lists it: the test stack's Debian, Postgres and Node,
+  `test-platform-postgres`'s Postgres, the desktop build's Ubuntu, and the
+  forges nightly's GitLab.
+- **How it's named.** The compose files, Dockerfiles, Containerfile and
+  recipes name each image as
+  `${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/<name>`. Dockerfiles take it
+  as a build arg, and compose passes it on.
+- **Docker Hub instead.** `ARUGULA_IMAGES=docker.io` pulls the images from
+  Docker Hub, for example to try a tag before it's mirrored.
+- **How it refreshes.** `mirror-images.yml` copies each image with
+  `crane copy`: every platform, with Docker Hub's digest. It runs weekly,
+  by hand (`gh workflow run mirror-images.yml`), and on main when the list
+  changes. It copies only images whose digest moved. Each run's summary
+  records the digests, and the run fails if an anonymous pull of a mirrored
+  image doesn't work.
+- **Adding an image.** Add its Docker Hub name to the list and merge that
+  first. Once the workflow has run on main, point the file that pulls it
+  at the mirror.
+- **A new package is private.** If the workflow's last step says so, make
+  it public: the org's Packages → the package → Package settings → Change
+  visibility. It's a setting on GitHub's site; there is no API for it.
+
 ### The test stack
 
 [`testnet/`](../testnet/README.md) is a Docker Compose stack, one profile per

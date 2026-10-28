@@ -215,7 +215,7 @@ test("a machine on another network, behind netem, in both phones' swarms", async
   });
   try {
     const dir = control.temp("netem");
-    writeFileSync(join(dir, "Dockerfile"), "FROM debian:bookworm-slim\nRUN apt-get update && apt-get install -y --no-install-recommends iproute2 socat && rm -rf /var/lib/apt/lists/*\n");
+    writeFileSync(join(dir, "Dockerfile"), `FROM ${process.env.ARUGULA_IMAGES || "ghcr.io/arugula-salad/ci"}/debian:bookworm-slim\n` + "RUN apt-get update && apt-get install -y --no-install-recommends iproute2 socat && rm -rf /var/lib/apt/lists/*\n");
     docker("build", "-q", "-t", `${project}-netem`, dir);
     docker("network", "create", net);
     const gateway = docker("network", "inspect", net, "--format", "{{(index .IPAM.Config 0).Gateway}}");

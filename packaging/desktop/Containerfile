@@ -3,7 +3,9 @@
 # and friends. Built on a newer machine, both would need that machine's
 # glibc and not start on most distros. Keep the floor in sync with
 # scripts/glibc-floor's callers and the .deb's libc6 dependency.
-FROM docker.io/library/ubuntu:22.04
+# Docker Hub's image, from CI's mirror (docs/testing.md, "CI's images").
+ARG ARUGULA_IMAGES=ghcr.io/arugula-salad/ci
+FROM ${ARUGULA_IMAGES}/ubuntu:22.04
 
 ARG RUST_TOOLCHAIN
 ARG TAURI_CLI
