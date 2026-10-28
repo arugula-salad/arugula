@@ -9,9 +9,6 @@ mod acl {
 }
 mod acl_api;
 pub mod agent;
-// The agent and chat blocks, and the conversations' operations; the
-// binary registers them. Next: crates/arugulad-agent (#232).
-pub mod agent_block;
 use arugula_mux::agentenv;
 pub mod api;
 pub mod args;
@@ -26,7 +23,6 @@ pub mod control;
 // Windows panes on a pseudoconsole (M56).
 #[cfg(windows)]
 use arugula_mux::conpty;
-mod conversations;
 pub mod dial;
 pub mod doc_shares;
 pub mod e2e;
@@ -65,7 +61,6 @@ use arugula_mux::mux;
 pub mod ops;
 use arugula_mux::osc;
 use arugula_mux::pane;
-use arugula_mux::paths;
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 pub mod peer;
 use arugula_mux::perm;
@@ -91,6 +86,7 @@ mod share;
 mod team_chat;
 use arugula_mux::shellenv;
 use arugula_mux::shellint;
+#[cfg(unix)]
 use arugula_mux::shim;
 pub mod sites;
 pub mod task;
@@ -100,11 +96,11 @@ mod sync;
 use arugula_mux::sys;
 pub(crate) use arugula_mux::sys::home;
 pub mod tailscale;
-mod telemetry;
+pub mod telemetry;
 mod tls;
 mod update;
 #[cfg(unix)]
-mod upload;
+pub mod upload;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 

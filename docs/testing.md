@@ -398,8 +398,8 @@ Recorded from real systems and checked in, so tests see real shapes:
 | `crates/vt/fixtures/screens/` | Claude Code and Codex screens, the title on the first line | by hand, from a real terminal or a recording |
 | `crates/vt/fixtures/agents/` | Claude Code and Codex sessions with their timing, for the replay agent | `crates/vt/fixtures/agents/record.py NAME` |
 | `crates/daemon/tests/fixtures/github`, `gitlab`, `forgejo` | API responses for real PRs and issues (from S23); `crates/forge-github`'s tests read the GitHub ones too | by hand, as in `archive/spikes:spikes/s23-forge/` |
-| `crates/daemon/tests/fixtures/conversations/` | Claude Code transcripts, one per shape (S20) | by hand, as in `archive/spikes:spikes/s20-conversations/` |
-| `crates/daemon/tests/fixtures/conversations/desktop/` | the Claude desktop app's Code tab session records (#81, #83), made up from the fields S20 saw | by hand |
+| `crates/arugulad-agent/tests/fixtures/conversations/` | Claude Code transcripts, one per shape (S20) | by hand, as in `archive/spikes:spikes/s20-conversations/` |
+| `crates/arugulad-agent/tests/fixtures/conversations/desktop/` | the Claude desktop app's Code tab session records (#81, #83), made up from the fields S20 saw | by hand |
 | `crates/daemon/tests/fixtures/s13-*`, `s18-*` | Claude Code hook payloads | by hand |
 | `crates/daemon/tests/fixtures/chant/` | chant output | by hand |
 | `crates/daemon/tests/fixtures/chant/why/` | `graph --intent app/server.mjs --json` and `status local --json` (chant 0.108.1) over a workspace with a committed agent run, an uncommitted line, a decision and a held lease (#619) | `make.sh DIR CHANT OUT` beside them, with the chant from `web/e2e/fixtures/chant-why` |

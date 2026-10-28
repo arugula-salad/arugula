@@ -433,7 +433,7 @@ const ROUTERS: &[(&str, &str)] = &[
     ("src/acl_api.rs", "pub fn routes()"),
     ("../arugulad-invite/src/lib.rs", "    fn routes(&self"),
     // The conversations' (M33), the agent block's.
-    ("src/agent_block/mod.rs", "    fn routes(&self"),
+    ("../arugulad-agent/src/lib.rs", "    fn routes(&self"),
     // A hosted box's setup (M183).
     ("../arugulad-hosted/src/lib.rs", "    fn routes(&self"),
     ("src/mcp/tokens.rs", "pub fn api_routes()"),
