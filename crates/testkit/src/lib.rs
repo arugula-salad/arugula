@@ -625,11 +625,15 @@ impl Daemon {
     }
 
     /// One request over the socket (the owner's, so no credential): status
-    /// and body, chunks joined. Status 0 if it doesn't answer.
+    /// and body, chunks joined. Status 0 if it doesn't answer, and the body
+    /// says what happened instead (and whether the daemon still runs).
     pub fn raw(&self, method: &str, path: &str, body: Option<Value>) -> (u16, String) {
-        let Ok(mut s) = connect(&self.sock()) else { return (0, String::new()) };
+        let mut s = match connect(&self.sock()) {
+            Ok(s) => s,
+            Err(e) => return (0, self.no_answer(&format!("connect: {e}"))),
+        };
         let body = body.map(|b| b.to_string()).unwrap_or_default();
-        let _ = s.write_all(
+        let wrote = s.write_all(
             format!(
                 "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
                 body.len()
@@ -638,8 +642,11 @@ impl Daemon {
         );
         let mut r = BufReader::new(s);
         let mut line = String::new();
-        if r.read_line(&mut line).is_err() || line.is_empty() {
-            return (0, String::new());
+        match r.read_line(&mut line) {
+            Err(e) => return (0, self.no_answer(&format!("read: {e} (write: {wrote:?})"))),
+            Ok(0) => return (0, self.no_answer(&format!("EOF before a status line (write: {wrote:?})"))),
+            Ok(_) if !line.starts_with("HTTP/") => return (0, self.no_answer(&format!("not a status line: {line:?}"))),
+            Ok(_) => {}
         }
         let status = line.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
         let mut chunked = false;
@@ -668,6 +675,38 @@ impl Daemon {
             r.read_to_end(&mut out).unwrap();
         }
         (status, String::from_utf8_lossy(&out).into_owned())
+    }
+
+    /// What [`Daemon::raw`] says when nothing answered: why, and whether
+    /// the daemon is still running.
+    fn no_answer(&self, why: &str) -> String {
+        #[cfg(unix)]
+        let alive = match self.pid() {
+            Some(pid) => match nix::sys::signal::kill(Pid::from_raw(pid as i32), None) {
+                // An exited child stays a zombie until the test reaps it;
+                // Linux keeps its wait status as the stat's last field.
+                Ok(())
+                    if let Some(stat) =
+                        std::fs::read_to_string(format!("/proc/{pid}/stat")).ok().filter(|s| s.contains(") Z ")) =>
+                {
+                    let status: i32 = stat.split_whitespace().last().and_then(|s| s.parse().ok()).unwrap_or(-1);
+                    match status & 0x7f {
+                        0 => format!("daemon {pid} exited with code {}", status >> 8),
+                        sig => format!("daemon {pid} killed by signal {sig}"),
+                    }
+                }
+                Ok(()) if std::fs::exists(format!("/proc/{pid}")).unwrap_or(false) => {
+                    format!("daemon {pid} still running")
+                }
+                // No /proc to tell (macOS): alive, or exited and not reaped.
+                Ok(()) => format!("daemon {pid} running, or exited and not reaped"),
+                Err(e) => format!("daemon {pid} gone: {e}"),
+            },
+            None => "not a child".to_owned(),
+        };
+        #[cfg(not(unix))]
+        let alive = "";
+        format!("no answer: {why}; {alive}")
     }
 
     /// GET over the socket, which must answer 200: its JSON, or its text as
