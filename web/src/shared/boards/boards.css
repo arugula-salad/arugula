@@ -241,6 +241,58 @@
   box-sizing: border-box;
 }
 
+.board-pick {
+  position: relative;
+}
+
+.board-pick-list {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin: 2px 0 0;
+  padding: 2px;
+  list-style: none;
+  max-height: 16em;
+  overflow-y: auto;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+}
+
+.board-pick-list[hidden] {
+  display: none;
+}
+
+.board-pick-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.board-pick-list li.active,
+.board-pick-list li:hover {
+  background: var(--hover, rgb(127 127 127 / 0.15));
+}
+
+.board-pick-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-pick-state {
+  flex: none;
+  font-size: 0.85em;
+}
+
 .board-form-buttons {
   display: flex;
   gap: 8px;
