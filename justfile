@@ -528,6 +528,12 @@ test-run part="" which="":
     {{server_cargo}} test --workspace --doc
     just e2e-interop control-smoke
 
+# FILTER is a nextest filterset, e.g.
+# 'test(=team_answers::the_terminal_answering_first_closes_the_card)'.
+# A flaky test's fix, shown to hold: FILTER's tests COUNT times, no retries.
+test-stress filter count="50": test-build
+    {{suite_lock}} {{cargo}} nextest run --workspace --retries 0 --stress-count {{count}} -E '{{filter}}'
+
 # Flaky tests CI leaves out for a while (.config/quarantine.toml,
 # docs/testing.md "Quarantine"). Run it after changing that manifest:
 # writes the nextest configs' default-filter from it, then checks it.
