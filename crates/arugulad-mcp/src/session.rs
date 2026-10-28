@@ -13,7 +13,7 @@
 //! - **Who is calling is the socket's owner, not a secret.** The listener
 //!   finds the uid that owns the client end of the connection
 //!   (`/proc/net/tcp`), and the session that user runs in the ledger
-//!   ([`crate::work_sessions`]). A token would sit on the command line of
+//!   (`crate::work::sessions`). A token would sit on the command line of
 //!   the agent's `sudo env -i …`, which the box's other users can read, and
 //!   they are other sessions, asked by other people. A caller that is no
 //!   session's user (the run user, the daemon's) is refused.

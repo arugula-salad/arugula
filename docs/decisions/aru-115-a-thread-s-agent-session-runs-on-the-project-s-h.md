@@ -58,7 +58,7 @@ constrains:
   - "path:crates/e2e/src/session.rs"
   - "path:crates/control-wire/src/work.rs"
   - "path:crates/platform/src/chat/objects.rs"
-  - "path:crates/daemon/src/work_sessions_push.rs"
+  - "path:crates/arugulad-work/src/sessions_push.rs"
   - "path:crates/platform/src/sessions/push.rs"
   - "path:crates/platform/src/sessions/pr.rs"
   - "path:crates/platform/src/sessions/tries.rs"
@@ -267,5 +267,5 @@ What doesn't change: agents on people's machines read and post through
 their machine's grants ("Agents are in conversations"), an agent's
 "approve" is never an approval, and an agent's GitHub write from a person's
 machine is still a draft its person sends.
-Where: a session's issues (`crates/platform/src/sessions/issues.rs`, `crates/daemon/src/mcp/session.rs`, `WORK_SESSION_ISSUES` in `crates/control-wire/src/work.rs`); the sessions tables and their rules (`crates/platform/src/db/sessions.rs`, migration `0050_agent_sessions`), the states and the signed event (`crates/e2e/src/session.rs`), what the box pulls and reports (`crates/control-wire/src/work.rs`), sessions as objects (`crates/platform/src/chat/objects.rs`); dispatch (M256), the card (M257), and the push and the PR (M259: `crates/daemon/src/work_sessions_push.rs`, `crates/platform/src/sessions/push.rs` and `pr.rs`, migration `0053_pr_drafts`).
+Where: a session's issues (`crates/platform/src/sessions/issues.rs`, `crates/daemon/src/mcp/session.rs`, `WORK_SESSION_ISSUES` in `crates/control-wire/src/work.rs`); the sessions tables and their rules (`crates/platform/src/db/sessions.rs`, migration `0050_agent_sessions`), the states and the signed event (`crates/e2e/src/session.rs`), what the box pulls and reports (`crates/control-wire/src/work.rs`), sessions as objects (`crates/platform/src/chat/objects.rs`); dispatch (M256), the card (M257), and the push and the PR (M259: `crates/arugulad-work/src/sessions_push.rs`, `crates/platform/src/sessions/push.rs` and `pr.rs`, migration `0053_pr_drafts`).
 From: thread = session (Arugula #129, native, behind #1438), M254 (Arugula #131), S42 (Arugula #130).

@@ -1,0 +1,32 @@
+[package]
+name = "arugulad-work"
+description = "The daemon's runs engine: a hosted machine's runs, deploys and agent sessions, their ledger, signed reports and logs"
+# Not the workspace's version: a release bump would rebuild this crate and
+# everything on it. The binary carries the release (arugula_core::version).
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+arugula-control-wire = { workspace = true }
+arugula-e2e = { workspace = true }
+arugula-mux = { workspace = true }
+arugula-proto = { workspace = true }
+arugulad-base = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs", "process", "signal", "user"] }
+
+[lints]
+workspace = true

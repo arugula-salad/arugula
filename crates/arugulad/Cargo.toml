@@ -24,6 +24,9 @@ arugulad-review = { workspace = true }
 arugulad-invite = { workspace = true }
 # A hosted workspace's box (`--hosted`), in every build.
 arugulad-hosted = { workspace = true }
+# The runs engine: a hosted machine's runs, deploys and agent sessions, in
+# every build.
+arugulad-work = { workspace = true }
 # The editor server and Claude Code's IDE, for the `editor` feature.
 arugulad-editor = { workspace = true, optional = true }
 # The GitHub forge, for the `forge` feature.

@@ -85,6 +85,11 @@ Each has a `README.md` with where to start reading.
   owner-only words, the `Hook` a card runs through).
 - `crates/arugulad-review`: `arugulad-review`, the diff and file blocks;
   what they share (`Runner`, `Live`) stays in the base's `review/`.
+- `crates/arugulad-work`: `arugulad-work`, the runs engine: a hosted
+  machine's runs, deploys and agent sessions, their ledger, signed reports
+  and logs. The daemon reaches it through `work.rs`' `Work`; the base's
+  `work` keeps what others read without it (`printable`, the fenced ports,
+  the session users and the sessions' ledger as it's read).
 - `crates/arugulad-labs`: `arugulad-labs`, Labs (studio apps, chant
   workspaces, VMs and resident daemons, guest ssh, agent recipes and
   delegating, the Forgejo and GitLab forges). The daemon reaches it only

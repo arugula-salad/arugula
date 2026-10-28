@@ -425,7 +425,7 @@ R2 for the hosted control), set with `ARUGULA_RUN_LOGS_BUCKET`,
 `ARUGULA_RUN_LOGS_SECRET_ACCESS_KEY` (and `ARUGULA_RUN_LOGS_DAYS`, 30);
 without it, a run's log stays in its pane. `arugula-platform run-logs --db
 …` shows the operator the bytes kept per project. The code is in
-`crates/platform/src/run_logs/` and `crates/daemon/src/run_logs.rs`.
+`crates/platform/src/run_logs/` and `crates/arugulad-work/src/run_logs.rs`.
 
 ```
 arugula runs spec add nightly --workspace dev --dir /work/app -- just e2e

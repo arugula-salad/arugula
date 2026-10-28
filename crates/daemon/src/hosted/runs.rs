@@ -81,7 +81,7 @@ const UNREADABLE: Refused = Refused {
 };
 
 /// Who may sign for the machine's project, from what it pinned.
-pub(crate) fn owners(saved: &Saved) -> Option<Owners<'_>> {
+pub fn owners(saved: &Saved) -> Option<Owners<'_>> {
     let pin = saved.hosted.as_ref()?;
     match pin.delegation.owner()? {
         Owner::Team(_) => Some(Owners::Team { roster: saved.roster.as_ref()?, certs: &saved.team_certs }),

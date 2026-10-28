@@ -17,7 +17,8 @@ reaches its log lines (log targets are module paths, matched by prefix). So far:
 ([crates/arugulad-forge](../arugulad-forge/README.md)), `arugulad-hosted`
 ([crates/arugulad-hosted](../arugulad-hosted/README.md)), `arugulad-invite`
 ([crates/arugulad-invite](../arugulad-invite/README.md)), `arugulad-review`
-([crates/arugulad-review](../arugulad-review/README.md)) and `arugulad-labs`
+([crates/arugulad-review](../arugulad-review/README.md)), `arugulad-work`
+(crates/arugulad-work, the runs engine) and `arugulad-labs`
 ([crates/arugulad-labs](../arugulad-labs/README.md)).
 Like every library here it's version 0.0.0: what it reports as the version
 comes from `arugula_core::version`, which the binary sets.
