@@ -306,8 +306,15 @@ fn github_a_red_actions_check_is_rerun_from_the_rail() {
     until("the failed check", 600, || info(&d, block)["reason"]["kind"] == "failed");
     let i = info(&d, block);
     assert_eq!(i["reason"]["actions"], json!(["rerun", "dismiss"]), "{i}");
+    // The PR's head commit's run, the one behind its check: making the
+    // branch at the default branch's commit can start a run of its own
+    // (#1652).
+    let head = gh.api("GET", &format!("/repos/{repo}/pulls/{}", pr.number), &auth, None)["head"]["sha"]
+        .as_str()
+        .expect("the PR's head")
+        .to_owned();
     let runs = || {
-        gh.api("GET", &format!("/repos/{repo}/actions/runs?branch={branch}"), &auth, None)["workflow_runs"]
+        gh.api("GET", &format!("/repos/{repo}/actions/runs?branch={branch}&head_sha={head}"), &auth, None)["workflow_runs"]
             .as_array()
             .cloned()
             .unwrap_or_default()
