@@ -16,7 +16,7 @@
 #   - core: the daemon and the CLI without Labs (`just check-core`, #452);
 #   - testnet: the test stack's claims (ssh, then control);
 #   - e2e: the Playwright specs in seven shards; stack: those on the test
-#     stack; perf: the specs that time things, once the shards are done;
+#     stack (the specs that time things run nightly: perf-nightly.yml);
 #   - desktop-xvfb: the Linux desktop app's claims under Xvfb, against
 #     static's binaries, in a test image kept on GHCR;
 # - macos: test and, beside it, the WebKit specs, on our Macs' Tart VMs
@@ -78,28 +78,8 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
-      - name: shellcheck
-        # The version geek has: the runner image's changes what it reports.
-        run: |
-          curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz | tar -xJ -C /tmp
-          sudo install /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
-          shellcheck --version
-      - name: Formatting
-        # rust-toolchain.toml's toolchain, rustfmt only. Pull requests run it
-        # too (binaries.yml's quick).
-        run: rustup component add rustfmt && just fmt-check
-      - name: install.sh and the release's glibc check
-        run: shellcheck -s sh scripts/install.sh scripts/glibc-floor && shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
-      - name: Release scripts and ratchets
-        run: just test-scripts
-      - name: The web client's wire types are current (web/src/proto.gen.ts)
-        run: just proto-ts check
-      - name: DECISIONS.md lists the decision records (docs/decisions/)
-        run: just decisions check
-      - name: The release notes' headline sections (docs/releases/, What's new)
-        run: just whats-new
-      - name: The CI's and the test stack's scripts
-        run: shellcheck -x scripts/ci-* scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/hosts/*.sh testnet/editors/*.sh testnet/macos/*.sh && shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
+      # Pull requests run the same (binaries.yml's quick).
+      - uses: ./.github/actions/lint
       - name: No secrets
         # The whole history; a pull request's quick job scans its own commits.
         run: scripts/ci-gitleaks
@@ -516,52 +496,6 @@ jobs:
       - name: Take the test stack down
         if: always()
         run: just testnet down
-
-  # The specs that time things (E2E_SET=perf: the frame rates, editors'
-  # times to a file), beside the shards since #868. The editors' times are
-  # reported against their 3 s budget in the job's summary, not asserted
-  # (web/e2e/timing.ts): shared pods put them over with nothing broken. They waited for the
-  # shards when six browsers shared geek with them, and the wait put ~3 min
-  # on the end of every run; each job has its own pod now and the nodes
-  # sit at 13-28% CPU (its one recent failure came while it waited, under
-  # four overlapping runs). Not a required check (chant.workspace.json).
-  perf:
-    needs: build
-    runs-on: arugula-amd64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-        with:
-          rust: "false"
-          fetch: run-debug
-          claude-code: "true"
-      - run: scripts/ci-env use
-      - run: just bootstrap
-      # editors.spec opens a file from an iPhone (WebKit) too.
-      - name: Playwright's browsers
-        run: just browsers
-      # Google Chrome itself, not Playwright's Chromium: editors.spec's blocked third-party cookies are a real Chrome profile's. geek had it.
-      - name: Google Chrome
-        run: command -v google-chrome >/dev/null || (cd web && pnpm exec playwright install --with-deps chrome)
-      - name: The specs that time things
-        run: port=$(scripts/free-port) && cd web && E2E_PORT=$port pnpm exec playwright test
-        env:
-          E2E_CHROMIUM: "1"
-          E2E_SET: perf
-          E2E_TIMINGS: ${{ runner.temp }}/perf-report.json
-      # Each timing against its budget, over budget marked (web/scripts/perf-summary.mjs).
-      - name: The timings, in the summary
-        if: always()
-        run: node web/scripts/perf-summary.mjs "$RUNNER_TEMP/perf-report.json" >> "$GITHUB_STEP_SUMMARY"
-      # A failed spec's screenshot (playwright.config.ts), kept a week.
-      - name: Failed specs' screenshots
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: perf-failures
-          path: web/test-results/
-          retention-days: 7
-          if-no-files-found: ignore
 
   # The Linux desktop app under Xvfb, in a container (#317): `just
   # desktop-xvfb`'s join, app (bare, links and nautilus among its claims)

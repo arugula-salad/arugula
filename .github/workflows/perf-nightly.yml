@@ -1,0 +1,99 @@
+# The specs that time things (E2E_SET=perf: the frame rates, editors'
+# times to a file), every night on main and by hand
+# (`gh workflow run perf-nightly.yml`). They ran beside check.yml's shards
+# on every push until 2026-10-28, where they weren't a required check, so
+# a failure there held nothing back and nobody heard of it: here a failed
+# night opens an issue (scripts/ci-nightly-red). The frame rates are
+# asserted; the editors' times are reported against their 3 s budget in
+# the job's summary (web/e2e/timing.ts), and kept a month as an artifact.
+# Its jobs aren't named like check.yml's: chant matches main's required
+# checks by name (chant.workspace.json), and a scheduled run lands on
+# main's latest commit.
+name: perf-nightly
+on:
+  schedule:
+    - cron: "53 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-nightly
+  cancel-in-progress: false
+
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+jobs:
+  # check.yml's build: the debug binaries, web/dist embedded.
+  perf-build:
+    runs-on: arugula-amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: build
+          ghostty-key: gnu
+      - run: just bootstrap
+      - run: just web
+      - run: mise exec -- cargo build -p arugulad -p arugula --features arugulad/debug-embed
+      - run: mise exec -- scripts/server-cargo build -p arugula-control --features arugula-control/debug-embed
+      - run: scripts/ci-env keep debug
+      - name: Hand them to the perf job
+        run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: run-debug
+          path: ${{ runner.temp }}/run-debug.tar
+          retention-days: 1
+          compression-level: 1
+
+  perf:
+    needs: perf-build
+    runs-on: arugula-amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          fetch: run-debug
+          claude-code: "true"
+      - run: scripts/ci-env use
+      - run: just bootstrap
+      # editors.spec opens a file from an iPhone (WebKit) too.
+      - name: Playwright's browsers
+        run: just browsers
+      # Google Chrome itself, not Playwright's Chromium: editors.spec's blocked third-party cookies are a real Chrome profile's.
+      - name: Google Chrome
+        run: command -v google-chrome >/dev/null || (cd web && pnpm exec playwright install --with-deps chrome)
+      - name: The specs that time things
+        run: port=$(scripts/free-port) && cd web && E2E_PORT=$port pnpm exec playwright test
+        env:
+          E2E_CHROMIUM: "1"
+          E2E_SET: perf
+          E2E_TIMINGS: ${{ runner.temp }}/perf-report.json
+      # Each timing against its budget, over budget marked (web/scripts/perf-summary.mjs).
+      - name: The timings, in the summary
+        if: always()
+        run: node web/scripts/perf-summary.mjs "$RUNNER_TEMP/perf-report.json" >> "$GITHUB_STEP_SUMMARY"
+      # Kept a month, for the trend.
+      - name: The timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-report
+          path: ${{ runner.temp }}/perf-report.json
+          retention-days: 30
+          if-no-files-found: ignore
+      # A failed spec's screenshot (playwright.config.ts), kept a week.
+      - name: Failed specs' screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-failures
+          path: web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

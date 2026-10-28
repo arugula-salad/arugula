@@ -71,15 +71,16 @@ once (#287); a new push to a branch cancels that branch's run:
     time (`web/scripts/e2e-shard.mjs` from `web/e2e/durations.json`; refresh
     it with `just e2e-durations RUN` after a main run), each with its own
     test daemon on a free port; **stack**: those on the test stack
-    (`E2E_SET=stack`); **perf**: the specs that time things (`E2E_SET=perf`:
-    the frame rates, `editors.spec.ts`), beside the shards. The frame
+    (`E2E_SET=stack`). The specs that time things (`E2E_SET=perf`: the
+    frame rates, `editors.spec.ts`) run nightly instead
+    (`.github/workflows/perf-nightly.yml`, since 2026-10-28). The frame
     rates are asserted; the editors' times to a file are reported against
     their 3 s budget (`web/e2e/timing.ts`) in the job's summary, over
     budget marked, and don't fail it (shared pods put them over with
     nothing broken: 10 red main runs in a week);
   - **desktop-xvfb**: `just desktop-xvfb` (`join`, `app`, `stale`, `platform`)
-    in its container. It isn't a required check, and isn't named
-    `desktop`, which is Windows' required one.
+    in its container. It isn't named `desktop`, which is Windows'
+    required one.
   Each job takes one of two build directories kept for its kind of job,
   and a test stack with its own name, ports and subnet (`scripts/ci-env`),
   so jobs and runs on geek don't share either.
@@ -105,10 +106,12 @@ all (lint and clippy), for anything pushed without a pull request.
 A commit on main whose required checks all passed gets a `ci/green/<sha>`
 tag, and one that passed and then failed a re-run gets `ci/revoked/<sha>`
 (chant's `ci.green`, #503). `chant.workspace.json` names the checks:
-lint; build, static and clippy; test, test-2 and test-postgres; the e2e shards; macos
-(test) and macos (webkit); and Windows' workspace, workspace-clippy and
-desktop. A skipped macos or desktop run counts as passed. testnet, stack,
-perf and the nightly workflows aren't required. `.github/workflows/chant-ci-green.yml` runs
+lint; build, static and clippy; test, test-2, test-postgres and core; the
+e2e shards; testnet, stack and desktop-xvfb (since 2026-10-28: they failed
+unseen while they weren't required); macos (test) and macos (webkit); and
+Windows' workspace, workspace-clippy and desktop. A skipped run counts as
+passed. The nightly workflows aren't required: `scripts/ci-nightly-red`
+opens an issue for each whose newest scheduled run failed (below). `.github/workflows/chant-ci-green.yml` runs
 `chant ci tick` when check, windows or windows-desktop finish on main, and
 every 15 minutes. It's generated: after changing `ci.green` or those
 workflows' job names, run `npx @intentius/chant@0.108.0 ci workflow`. A
@@ -125,6 +128,13 @@ revocation; GitHub notifies the repo's watchers and anyone the
 `ARUGULA_RED_MENTION` variable names. It closes the issue once main has a
 green commit newer than everything it reported. `scripts/tests/ci-red.sh`
 (`just test-scripts`) runs it with a fake gh.
+
+The same workflow runs `scripts/ci-nightly-red` for the scheduled
+workflows (forges-nightly, macos-vm, macos-intel, testnet-break,
+perf-nightly), which ci/green doesn't count: one issue per workflow,
+"nightly is red: WORKFLOW", opened when its newest scheduled run on main
+failed, commented on once per failed run, and closed when one passes.
+`scripts/tests/ci-nightly-red.sh` runs it with a fake gh.
 
 The Rust tests run under cargo-nextest (`.config/nextest.toml`): each in
 its own process and all at once, `ssh.rs` and `reboot.rs` one at a time

@@ -22,6 +22,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # No Docker on GitHub's Macs: the ssh and test-stack tests skip, loudly,
+  # as on check.yml's macos job (they run on Linux). Without it guest_ssh
+  # failed every week from 2026-10-05.
+  ARUGULA_SKIP_DOCKER: "1"
   # mise's GitHub downloads (nextest): unauthenticated, they share the
   # runner's IP's rate limit and ran out.
   GITHUB_TOKEN: ${{ github.token }}
