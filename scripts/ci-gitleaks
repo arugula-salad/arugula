@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # gitleaks over the history, at the version geek has (mise), fetched when
-# PATH has another: all of it (check.yml's lint, on main), or with a range,
-# only those commits (binaries.yml's quick: a pull request's own).
+# PATH has another: HEAD's whole history (check.yml's lint, on main), or with
+# a range, only those commits (binaries.yml's quick: a pull request's own).
+# Not every branch: lint's checkout fetches them all, and a session's branch
+# then turned main red (a made-up token in a spec, 2026-10-28).
 #
 #   scripts/ci-gitleaks [BASE..HEAD]
 set -euo pipefail
@@ -23,4 +25,4 @@ fi
 if [ $# -gt 0 ]; then
   exec "$gitleaks" git --no-banner --redact --log-opts="$1" .
 fi
-exec "$gitleaks" git --no-banner --redact .
+exec "$gitleaks" git --no-banner --redact --log-opts=HEAD .
