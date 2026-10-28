@@ -6,7 +6,10 @@ not the daemon:
 
 - `src/editor/`: editor blocks (M27, VS Code as code-server), the editors
   that join the swarm (`link.rs`, `presence.rs`), and Arugula's VS Code
-  extension (`ext/`, packed by `vsix.rs` for `arugulad _vsix`).
+  extension (`ext/`, packed by `vsix.rs` for `arugulad _vsix`). nvim in a
+  terminal pane is read over its own socket (`nvim.rs`, #1730), and
+  arugula.nvim is offered to it and installed into it (`nvim_plugin.rs`,
+  #1733; `build.rs` embeds `editors/nvim`, and its operations are there).
 - `src/ide/`: the daemon as Claude Code's IDE (M28): the link to the relay
   (`mod.rs`), the relay itself (`relay.rs`, `arugulad _ide_relay`), and the
   diff cards (`cards.rs`).

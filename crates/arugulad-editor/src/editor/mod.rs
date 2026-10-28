@@ -25,6 +25,7 @@
 
 pub mod link;
 pub mod nvim;
+pub mod nvim_plugin;
 pub mod presence;
 pub mod server;
 mod theme;

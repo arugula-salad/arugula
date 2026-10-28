@@ -63,6 +63,9 @@ fn generate() -> String {
     c.visit::<crate::api::Ports>();
     c.visit::<crate::api::NvimOpenRequest>();
     c.visit::<crate::api::NvimOpened>();
+    c.visit::<crate::api::NvimPluginInstalled>();
+    c.visit::<crate::api::NvimPluginCopies>();
+    c.visit::<crate::api::NvimPluginRemoved>();
     c.visit::<FlagSetRequest>();
     c.visit::<crate::flags::Source>();
     c.visit::<crate::telemetry::TelemetryInfo>();

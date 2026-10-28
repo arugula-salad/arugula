@@ -292,6 +292,9 @@ macro_rules! every_op {
         $m!($crate::op::ops::IdeGet);
         $m!($crate::op::ops::IdeSet);
         $m!($crate::op::ops::IdeMention);
+        $m!($crate::op::ops::NvimPluginInstall);
+        $m!($crate::op::ops::NvimPluginGet);
+        $m!($crate::op::ops::NvimPluginRemove);
         $m!($crate::op::ops::AgentsGet);
         $m!($crate::op::ops::AgentsRefresh);
         $m!($crate::op::ops::AdaptersList);
@@ -368,11 +371,12 @@ pub mod ops {
             DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest,
             IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
             InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest,
-            NvimOpenRequest, NvimOpened, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
-            PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
-            PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
-            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins,
-            TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
+            NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved,
+            OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest,
+            Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse,
+            SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest,
+            StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest,
+            WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -953,6 +957,53 @@ pub mod ops {
         type Path = ();
         type Req = IdeMentionRequest;
         type Res = IdeMentioned;
+    }
+
+    /// `POST /api/panes/N/nvim-plugin` (#1733): install arugula.nvim into
+    /// the nvim pane N runs, in its own package directory on the pane's
+    /// machine (never `init.lua`), then load it into that nvim and let it
+    /// join as the pane, without restarting nvim. Refused when the nvim
+    /// already has arugula.nvim from elsewhere (a plugin manager's copy).
+    /// The "Add arugula.nvim" tip calls it (#1735).
+    pub struct NvimPluginInstall;
+
+    impl Op for NvimPluginInstall {
+        const NAME: &'static str = "nvim_plugin.install";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/nvim-plugin";
+        const ACCESS: Access = Access::Owner;
+        type Path = PaneId;
+        type Req = Empty;
+        type Res = NvimPluginInstalled;
+    }
+
+    /// `GET /api/nvim-plugin` (#1733): the copies of arugula.nvim Arugula
+    /// installed on this machine, and the version it carries.
+    pub struct NvimPluginGet;
+
+    impl Op for NvimPluginGet {
+        const NAME: &'static str = "nvim_plugin.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/nvim-plugin";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = NvimPluginCopies;
+    }
+
+    /// `DELETE /api/nvim-plugin` (#1733): Settings > Editor > nvim >
+    /// "Remove arugula.nvim": deletes the copies Arugula installed here,
+    /// and only those.
+    pub struct NvimPluginRemove;
+
+    impl Op for NvimPluginRemove {
+        const NAME: &'static str = "nvim_plugin.remove";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/nvim-plugin";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = NvimPluginRemoved;
     }
 
     /// `GET /api/hosts/self/agents` (#145): the agents configured on this

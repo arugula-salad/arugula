@@ -66,7 +66,8 @@ pub trait Editors: Send + Sync + 'static {
     /// Turns editor blocks on (once per process).
     fn install(&self, s: Settings);
     /// Starts looking for the editors that run in terminals (#1730: nvim,
-    /// read over its own RPC socket), once the mux runs.
+    /// read over its own RPC socket), once the mux runs, and refreshes the
+    /// copies of arugula.nvim it installed (#1733).
     fn watch(&self, mux: MuxHandle);
     /// Opens `file` at `line` in the editor terminal `pane` runs (see
     /// [`open_in_pane`]).

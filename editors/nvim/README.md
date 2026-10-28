@@ -2,7 +2,9 @@
 
 Your nvim in your [Arugula](https://arugula.io) swarm. Core nvim (0.10 or later), no dependencies; nvim-dap's debugger stops show too if it's installed.
 
-Install it like any plugin from this directory, e.g. with lazy.nvim:
+In an Arugula pane, Arugula offers to add it: one click installs it into nvim's own package directory (`stdpath("data")/site/pack/arugula/start/arugula.nvim`, with an `ARUGULA_INSTALLED` marker file) and loads it into the running nvim, with no restart and nothing written to your config. The daemon refreshes that copy when it's upgraded; Settings > Editor > nvim > Remove arugula.nvim deletes it. A copy your plugin manager installed is never offered over or touched.
+
+Or install it like any plugin from this directory, e.g. with lazy.nvim:
 
 ```lua
 { dir = "~/src/arugula/editors/nvim" }
@@ -17,5 +19,6 @@ When Claude Code runs in an Arugula pane in the same session (the same tab first
 - `:ArugulaJoin` shows the current folder in the swarm and remembers it: nvim joins by itself next time it starts there.
 - `:ArugulaLeave` takes it out at once, and forgets it. In a pane, the pane stays, read without the plugin.
 - `:ArugulaStatus` says whether it's in, and how many follow it. `require("arugula").status()` is the same for a statusline.
+- `:checkhealth arugula` checks the daemon's socket, says which daemon answers on it, and names the pane this nvim is tied to.
 
 It talks to the Arugula daemon on the same machine (`$ARUGULA_SOCK`, else `~/.local/state/arugula/sock`). Over ssh, nvim runs on the remote machine, so that's the daemon there. Set `vim.g.arugula = { socket = "…" }` before the plugin loads to use another socket.

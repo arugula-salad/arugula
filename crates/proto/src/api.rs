@@ -54,6 +54,8 @@
 //! | POST | `/api/agents/adapters/KIND/install` | optional `{split?, session?, from_pane?}` | `RunResponse`: the install, in a pane |
 //! | GET, PUT | `/api/ide` | PUT `IdeDiffsRequest` | `IdeInfo` (PUT: `IdeDiffs`): arugulad as Claude Code's IDE (M28; the owner's) |
 //! | POST | `/api/ide/mention` | `IdeMentionRequest` | `IdeMentioned` |
+//! | POST | `/api/panes/N/nvim-plugin` | | `NvimPluginInstalled`: arugula.nvim installed into the nvim the pane runs, loaded and joined (#1733; the owner's) |
+//! | GET, DELETE | `/api/nvim-plugin` | | `NvimPluginCopies` (DELETE: `NvimPluginRemoved`): the copies of arugula.nvim Arugula installed here; DELETE removes them (#1733; the owner's) |
 //! | GET, DELETE | `/api/rules`, `/api/rules/N` | | `Rules` (DELETE: `Empty`): the standing permission rules (#166; the owner's) |
 //! | GET | `/api/panes/N/diff` | | `PaneDiff`: the edit its diff card shows (M28) |
 //! | GET | `/api/sessions/N/secrets` | | `[SecretFinding]`: panes whose recent output looks like it holds a secret |
@@ -1567,6 +1569,51 @@ pub enum NvimWhere {
     Tab,
     /// None ran there: a new pane beside it runs one.
     New,
+}
+
+/// `POST /api/panes/N/nvim-plugin` (#1733): what installing arugula.nvim
+/// into the nvim a pane runs did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NvimPluginInstalled {
+    /// Where it is: `stdpath("data")/site/pack/arugula/start/arugula.nvim`
+    /// of that nvim, on the pane's machine.
+    pub dir: String,
+    /// The copy's version stamp: the daemon's release and its files' hash.
+    pub version: String,
+    /// The plugin loaded and joined as the pane within a few seconds. When
+    /// it didn't, the copy is still there and nvim loads it next start.
+    pub joined: bool,
+}
+
+/// `GET /api/nvim-plugin` (#1733): the copies of arugula.nvim this daemon
+/// installed, and the version it carries now, for Settings > Editor >
+/// nvim.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NvimPluginCopies {
+    /// The version stamp the daemon would install now.
+    pub version: String,
+    #[serde(default)]
+    pub copies: Vec<NvimPluginCopy>,
+}
+
+/// One copy of arugula.nvim that Arugula installed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NvimPluginCopy {
+    pub dir: String,
+    /// The version stamp its marker file says.
+    pub version: String,
+}
+
+/// `DELETE /api/nvim-plugin` (#1733): the copies Arugula installed that
+/// it deleted. A copy without Arugula's marker file is never touched.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NvimPluginRemoved {
+    #[serde(default)]
+    pub removed: Vec<String>,
 }
 
 /// `GET /api/rules` (#166): the standing permission rules agent blocks

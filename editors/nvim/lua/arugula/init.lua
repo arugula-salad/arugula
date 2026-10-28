@@ -56,6 +56,8 @@ local S = {
   folder = nil,
   retry = nil,
   backoff = 500,
+  daemon = nil, -- the daemon's release, from its welcome
+  tied = nil, -- the pane the daemon put it on, from its welcome
 }
 
 -- The upgrade's protocol name.
@@ -368,6 +370,8 @@ end
 local function on_message(m)
   if m.t == "welcome" then
     S.id = m.id
+    S.daemon = type(m.version) == "string" and m.version or nil
+    S.tied = type(m.pane) == "number" and m.pane or nil
     S.backoff = 500
     S.sent = { summary = {}, peek = "", follow = "" }
     send_summary()
@@ -398,7 +402,7 @@ local function lost()
   if S.pipe then
     pcall(function() S.pipe:close() end)
   end
-  S.pipe, S.id, S.followers, S.buf, S.open = nil, nil, 0, "", nil
+  S.pipe, S.id, S.followers, S.buf, S.open, S.tied = nil, nil, 0, "", nil, nil
   pcall(diff.reset)
   if S.on and not S.retry then
     S.retry = uv.new_timer()
@@ -539,6 +543,18 @@ end
 --- The pane id the daemon gave it, if connected.
 function M.id()
   return S.id
+end
+
+--- What `:checkhealth arugula` reports (health.lua).
+function M.health_state()
+  return {
+    socket = socket_path(),
+    on = S.on,
+    id = S.id,
+    pane = S.pane,
+    tied = S.tied,
+    daemon = S.daemon,
+  }
 end
 
 function M.setup(opts)
