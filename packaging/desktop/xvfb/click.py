@@ -5,16 +5,19 @@ its items to AT-SPI the way a screen reader sees them, so this finds the
 right-click menu's entry without knowing where it is on the screen.
 `click.py --at APP LABEL` prints where LABEL is instead ("x y", its
 middle; with `--corner`, 30 px inside its bottom right), for a right-click
-there. Exits 1, listing the labels it saw, when there's no such item."""
+there; `--box` prints its extents ("x y width height"), as the app lays
+it out now (app.sh's titlebar claim). Exits 1, listing the labels it saw,
+when there's no such item."""
 import sys
 import time
 
 import pyatspi
 
 args = sys.argv[1:]
-at = "--at" in args
+box = "--box" in args
+at = "--at" in args or box
 corner = "--corner" in args
-args = [a for a in args if a not in ("--at", "--corner")]
+args = [a for a in args if a not in ("--at", "--corner", "--box")]
 app_name, label = args[0], args[1]
 until = time.time() + float(args[2] if len(args) > 2 else 15)
 
@@ -55,7 +58,9 @@ while True:
                 e = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
                 if e.width <= 1:
                     continue
-                if corner:
+                if box:
+                    print(e.x, e.y, e.width, e.height)
+                elif corner:
                     print(e.x + e.width - 30, e.y + e.height - 30)
                 else:
                     print(e.x + e.width // 2, e.y + e.height // 2)
