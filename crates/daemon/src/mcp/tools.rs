@@ -1832,6 +1832,11 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: line(
+                "hand an issue to an agent session on your project's cloud workspaces, and answer it",
+                "Start a session on issue #260 and tell me when it pushes.",
+                Needs::Control,
+            ),
         },
         Def {
             name: super::agent_sessions::REPLY_TOOL,
@@ -1844,6 +1849,7 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+            human: Human::In(super::agent_sessions::START_TOOL),
         },
     ]
 }
