@@ -23,9 +23,9 @@ fn register() {
         arugulad_review::register();
         // Inviting a person into a session (crates/arugulad-invite).
         arugulad_invite::register();
-        // A hosted workspace's box (`arugulad_base::hosted_box`): enrolling,
-        // its setup and snapshots, `_reseed` and `_seal`.
-        arugulad_base::hosted_box::register();
+        // A hosted workspace's box: enrolling, its setup and snapshots,
+        // `_reseed` and `_seal` (crates/arugulad-hosted).
+        arugulad_hosted::register();
         // The GitHub forge, which Labs' forges are built on
         // (crates/arugulad-forge).
         #[cfg(feature = "forge")]

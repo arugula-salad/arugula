@@ -2,7 +2,7 @@
 //! box (an E2B sandbox, M176/M177), with nobody at it.
 //!
 //! The box itself (enrolling, its setup, snapshots, resumes, saying busy
-//! or idle) is the hosted crate's (`hosted_box`, #232), which registers
+//! or idle) is the crate `arugulad-hosted` (#232), which registers
 //! [`Hosted`]; with none registered, `--hosted` only settles the flags and
 //! takes runs. What the rest of the daemon runs on stays here:
 //!

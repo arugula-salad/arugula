@@ -1,8 +1,11 @@
 //! A hosted workspace's box (M180, #1241): `arugulad --hosted` in an E2B
-//! sandbox (M176/M177), with nobody at it. It registers the base's
-//! `hosted::Hosted` ([`register`]); the base keeps what its runs and agent
-//! blocks need (`hosted`: the flags, the runs, the archive, the enrollment's
-//! check).
+//! sandbox (M176/M177), with nobody at it.
+//!
+//! This is the crate `arugulad-hosted` (#232): the binary calls
+//! [`register`], which installs the base's `hosted::Hosted`, and the daemon
+//! (`arugulad-base`) reaches it only through that, `features` and
+//! `subcommands`. The base keeps what its runs and agent blocks need
+//! (`hosted`: the flags, the runs, the archive, the enrollment's check).
 //!
 //! - **A box of its own.** The template snapshots this daemon already
 //!   running (M177), so every box made from it starts with the same memory
@@ -56,6 +59,11 @@ use axum::{Router, routing::get};
 use futures_util::future::BoxFuture;
 use tracing::{info, warn};
 
+// What the code here names as `crate::…`: the mux's modules and the daemon's,
+// as it named them when it was the daemon's.
+use arugula_mux::{mux, pane, store};
+use arugulad_base::{api, control, features, hosted, server, subcommands, task, work};
+
 use crate::server::App;
 
 /// The one-time project ticket, for a daemon started after its box was made.
@@ -105,7 +113,7 @@ fn seal_cli(_: &[String]) -> ! {
 
 impl crate::features::Feature for HostedBox {
     fn routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
-        use crate::ops::OpRoutes;
+        use arugulad_base::ops::OpRoutes;
         r.op_of::<HostedSetupGet, HostedBox>().route("/api/hosted/setup/archive", get(ops::setup_archive))
     }
 }

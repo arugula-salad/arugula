@@ -740,7 +740,7 @@ impl crate::telemetry::Signer for Control {
     }
 }
 
-pub(crate) fn write_saved(dir: &Path, s: &Saved) -> anyhow::Result<()> {
+pub fn write_saved(dir: &Path, s: &Saved) -> anyhow::Result<()> {
     crate::store::write_atomic(&dir.join(FILE), &serde_json::to_vec_pretty(s)?)?;
     Ok(())
 }
@@ -748,7 +748,7 @@ pub(crate) fn write_saved(dir: &Path, s: &Saved) -> anyhow::Result<()> {
 /// An HTTP client for control. It says it reads `app` certificates (the
 /// desktop app's devices), which control leaves out of lists for daemons
 /// from before them.
-pub(crate) fn control_http() -> reqwest::ClientBuilder {
+pub fn control_http() -> reqwest::ClientBuilder {
     let mut h = reqwest::header::HeaderMap::new();
     h.insert(wire::FEATURES_HEADER, reqwest::header::HeaderValue::from_static(wire::APP_DEVICES));
     crate::roots::http().default_headers(h)
