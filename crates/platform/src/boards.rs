@@ -304,7 +304,16 @@ fn live_item(i: &ForgeItem, repo: &str, checks: &[&CheckState]) -> wire::Live {
         }
         _ => Open,
     };
-    wire::Live { state, kind: i.kind.clone(), repo: Some(repo.to_owned()), number: i.number, title: i.title.clone() }
+    // A stale mirror row may hold no list, or not a list: no assignees.
+    let assignees: Vec<String> = serde_json::from_str(&i.assignees).unwrap_or_default();
+    wire::Live {
+        state,
+        kind: i.kind.clone(),
+        repo: Some(repo.to_owned()),
+        number: i.number,
+        title: i.title.clone(),
+        assignees,
+    }
 }
 
 /// A run as a board shows it: running, succeeded, failed, or other.
@@ -315,7 +324,14 @@ fn live_run(run: &Run) -> wire::Live {
         RunState::Failed => wire::LiveState::RunFailed,
         _ => wire::LiveState::Other,
     };
-    wire::Live { state, kind: "run".to_owned(), repo: None, number: 0, title: format!("{} run", run.trigger.as_str()) }
+    wire::Live {
+        state,
+        kind: "run".to_owned(),
+        repo: None,
+        number: 0,
+        title: format!("{} run", run.trigger.as_str()),
+        assignees: vec![],
+    }
 }
 
 /// Add each `fi_`, `iss_` and `run_` row's live state to `v`, as `account` may see
@@ -341,9 +357,27 @@ async fn resolve(app: &Platform, account: &str, v: &mut wire::BoardView) -> Resu
     }
     if !issues.is_empty() {
         let ids: Vec<&str> = issues.iter().map(String::as_str).collect();
-        for (id, number, title, closed) in app.db.issue_states(&v.board.project, &ids)? {
+        let found = app.db.issue_states(&v.board.project, &ids)?;
+        // One read of every account named, as the issues page names them.
+        let accounts: Vec<String> = found
+            .iter()
+            .flat_map(|f| f.assignees.iter().cloned())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let people =
+            if accounts.is_empty() { HashMap::new() } else { app.cache.accounts(&*app.hub, &accounts).await? };
+        for db::IssueState { id, number, title, closed, assignees: who } in found {
             let state = if closed { wire::LiveState::Closed } else { wire::LiveState::Open };
-            live.insert(id, wire::Live { state, kind: "native".to_owned(), repo: None, number, title });
+            let assignees = who
+                .into_iter()
+                .map(|a| match people.get(&a) {
+                    Some(p) if !p.name.is_empty() => p.name.clone(),
+                    Some(p) if !p.login.is_empty() => p.login.clone(),
+                    _ => a,
+                })
+                .collect();
+            live.insert(id, wire::Live { state, kind: "native".to_owned(), repo: None, number, title, assignees });
         }
     }
     let runs = app.db.board_run_targets(&v.board.id)?;

@@ -217,6 +217,10 @@ pub struct Live {
     pub number: u64,
     /// A run's: how it started (`manual run`).
     pub title: String,
+    /// Who an issue or PR is assigned to: a mirrored item's logins, a native
+    /// issue's names. A run has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assignees: Vec<String>,
 }
 
 /// What an agent block is doing (aru-116's second ruling).
@@ -480,6 +484,15 @@ fn fit(s: &str, max: usize) -> String {
     cut
 }
 
+/// ` (@a, @b)`, or empty for none.
+fn assignees_suffix(who: &[String]) -> String {
+    if who.is_empty() {
+        return String::new();
+    }
+    let tagged: Vec<String> = who.iter().map(|w| format!("@{}", w.replace(char::is_whitespace, "_"))).collect();
+    format!(" ({})", tagged.join(", "))
+}
+
 /// A board as plain text, no wider than [`TEXT_WIDTH`] columns: each zone
 /// is its title and a progress bar counting its done rows, then its rows,
 /// each a status glyph, a short pointer label and the note (cut to fit),
@@ -516,7 +529,14 @@ pub fn render(view: &BoardView) -> String {
                 (true, true) => "[proven] ",
                 (true, false) => "[not proven yet] ",
             };
-            let note = fit(&format!("{mark}{}", r.note), TEXT_WIDTH - lead.chars().count());
+            let room = TEXT_WIDTH - lead.chars().count();
+            let who = r.live.as_ref().map(|l| assignees_suffix(&l.assignees)).unwrap_or_default();
+            let note = if who.is_empty() || room < who.chars().count() + 8 {
+                fit(&format!("{mark}{}", r.note), room)
+            } else {
+                // The note gives way, so the assignees stay whole.
+                format!("{}{who}", fit(&format!("{mark}{}", r.note), room - who.chars().count()))
+            };
             out += format!("{lead}{note}").trim_end();
             out.push('\n');
             if let Some(b) = &r.block {
@@ -571,6 +591,7 @@ mod tests {
             repo: None,
             number: 0,
             title: "manual run".into(),
+            assignees: vec![],
         });
         let long = "Wiring the new tokenizer through every caller, then the benchmarks, then the docs";
         let zones = vec![
@@ -611,6 +632,46 @@ PROOFS                                                    ███████�
   ● ci.example.com/ru… [proven] CI on main
   ● run_aa22           [proven] Release build
   ● run_ee11           [not proven yet] Nightly";
+        assert_eq!(text, want);
+        assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
+    }
+
+    /// A row on an issue or a PR ends with its assignees as `(@a, @b)`, and
+    /// the note is what gives way when the line is full.
+    #[test]
+    fn a_row_with_assignees_ends_with_them() {
+        let board = Board {
+            id: "brd_1".into(),
+            project: "prj_1".into(),
+            title: "Launch".into(),
+            created_by: "a".into(),
+            created_at: 0,
+            updated_at: 0,
+        };
+        let on = |note: &str, who: &[&str]| {
+            let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Status::Open, note);
+            r.live = Some(Live {
+                state: LiveState::Open,
+                kind: "native".into(),
+                repo: None,
+                number: 4,
+                title: "Fix login".into(),
+                assignees: who.iter().map(|w| (*w).to_owned()).collect(),
+            });
+            r
+        };
+        let long = "Fix the login redirect for every browser we support, then the tests";
+        let zones = vec![zone(
+            "Build",
+            None,
+            vec![on("Fix login", &["ana", "Bo Li"]), on(long, &["ana"]), on("Fix login", &[])],
+        )];
+        let text = render(&BoardView { board, zones });
+        let want = "\
+Build                                                     ░░░░░░░░░░ 0/3
+  ○ iss_1a2b3c4d       Fix login (@ana, @Bo_Li)
+  ○ iss_1a2b3c4d       Fix the login redirect for every browser… (@ana)
+  ○ iss_1a2b3c4d       Fix login";
         assert_eq!(text, want);
         assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
     }
