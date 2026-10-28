@@ -113,7 +113,8 @@ pub struct Move<'a> {
     pub rev: Option<u64>,
 }
 
-const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at";
+const BOARD_COLS: &str =
+    "id, project_id, title, created_by, created_at, updated_at, goal, done_note, closed_at, closed_by";
 const ENTRY_COLS: &str = "id, kind, zone_id, rev, title, zone_kind, note, status, target_kind, target, pane, \
                           created_at, updated_at, agent";
 
@@ -125,6 +126,11 @@ fn board_row(r: &Row) -> Result<Board> {
         created_by: r.get(3)?,
         created_at: r.get(4)?,
         updated_at: r.get(5)?,
+        goal: r.get(6)?,
+        done_note: r.get(7)?,
+        closed_at: r.get(8)?,
+        closed_by: r.get(9)?,
+        progress: Default::default(),
     })
 }
 
@@ -337,10 +343,13 @@ impl Db {
         self.c().query_row(&format!("SELECT {BOARD_COLS} FROM boards WHERE id = ?1"), params![id], board_row).optional()
     }
 
-    /// A project's boards, oldest first.
+    /// A project's boards: open ones first, then closed, each oldest first.
     pub fn boards(&self, project: &str) -> Result<Vec<Board>> {
         self.c().query_map(
-            &format!("SELECT {BOARD_COLS} FROM boards WHERE project_id = ?1 ORDER BY created_at, id"),
+            &format!(
+                "SELECT {BOARD_COLS} FROM boards WHERE project_id = ?1
+                 ORDER BY closed_at IS NOT NULL, created_at, id"
+            ),
             params![project],
             board_row,
         )
@@ -369,6 +378,71 @@ impl Db {
             entries.extend(rows.iter().filter(|(r, _)| r.zone.as_deref() == Some(&z.id)).map(|(r, _)| r.clone()));
         }
         Ok(Some(Stored { board, entries }))
+    }
+
+    /// Set a board's title and goal (each only when given). `false`: no such
+    /// board.
+    pub fn edit_board(&self, id: &str, title: Option<&str>, goal: Option<&str>, at: u64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        if !lock(&tx, id)? {
+            return Ok(false);
+        }
+        if let Some(t) = title {
+            tx.execute("UPDATE boards SET title = ?2 WHERE id = ?1", params![id, t])?;
+        }
+        if let Some(g) = goal {
+            tx.execute("UPDATE boards SET goal = ?2 WHERE id = ?1", params![id, g])?;
+        }
+        touch(&tx, id, at)?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Close a board with `note` by `by`. A board closed already takes the
+    /// new note and keeps its first `closed_at` and `closed_by`. `false`: no
+    /// such board.
+    pub fn close_board(&self, id: &str, note: &str, by: &str, at: u64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        if !lock(&tx, id)? {
+            return Ok(false);
+        }
+        tx.execute(
+            "UPDATE boards SET done_note = ?2,
+                 closed_by = CASE WHEN closed_at IS NULL THEN ?3 ELSE closed_by END,
+                 closed_at = COALESCE(closed_at, ?4)
+             WHERE id = ?1",
+            params![id, note, by, at],
+        )?;
+        touch(&tx, id, at)?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Open a board again; its done note stays. `false`: no such board.
+    pub fn reopen_board(&self, id: &str, at: u64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        if !lock(&tx, id)? {
+            return Ok(false);
+        }
+        tx.execute("UPDATE boards SET closed_at = NULL, closed_by = '' WHERE id = ?1", params![id])?;
+        touch(&tx, id, at)?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// The `fi_` and `iss_` ids that the rows of `project`'s boards point at,
+    /// as (board, kind, id) with `kind` `forge_item` or `issue`: one read
+    /// for every board of the project.
+    pub fn board_issue_targets(&self, project: &str) -> Result<Vec<(String, String, String)>> {
+        self.c().query_map(
+            "SELECT e.board_id, e.target_kind, e.target FROM board_entries e JOIN boards b ON b.id = e.board_id
+             WHERE b.project_id = ?1 AND e.target_kind IN ('forge_item', 'issue')",
+            params![project],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
     }
 
     /// Make or change a zone or a row (see [`Put`]).

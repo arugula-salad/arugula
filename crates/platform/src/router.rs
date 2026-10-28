@@ -171,7 +171,9 @@ fn routes() -> Routes {
         // Boards, behind the `boards` flag.
         .route(boards::PROJECT_BOARDS, get(crate::boards::list_route).post(crate::boards::create_route))
         .route(boards::PROJECT_WORK, get(crate::boards::work::route))
-        .route(boards::BOARD, get(crate::boards::get_route))
+        .route(boards::BOARD, get(crate::boards::get_route).patch(crate::boards::edit_route))
+        .route(boards::BOARD_CLOSE, post(crate::boards::close_route))
+        .route(boards::BOARD_REOPEN, post(crate::boards::reopen_route))
         .route(boards::BOARD_ENTRIES, put(crate::boards::put_route))
         .route(boards::BOARD_ENTRY, axum::routing::delete(crate::boards::delete_route))
         .route(boards::BOARD_ENTRY_MOVE, post(crate::boards::move_route))

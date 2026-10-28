@@ -189,6 +189,19 @@ fn title_ok(t: &str) -> Result<&str, ApiError> {
     Ok(t)
 }
 
+/// A goal or done note: trimmed, in lines, at most [`wire::GOAL_MAX`]
+/// characters. `what` names it in the refusal.
+fn text_ok<'a>(t: &'a str, what: &str) -> Result<&'a str, ApiError> {
+    let t = t.trim();
+    if t.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t')) {
+        return Err(bad(&format!("{what} is text, without control characters")));
+    }
+    if t.chars().count() > wire::GOAL_MAX {
+        return Err(bad(&format!("{what} is at most {} characters", wire::GOAL_MAX)));
+    }
+    Ok(t)
+}
+
 fn note_ok(n: &str) -> Result<&str, ApiError> {
     let n = n.trim();
     if !one_line(n) {
@@ -449,6 +462,48 @@ async fn machine_writes(app: &Platform, machine: &str, project: &str) -> bool {
     false
 }
 
+/// Fill each board's progress: its issue rows, each issue once, done when
+/// closed at its source. Mirrored issues count as `account` may read them,
+/// as [`resolve`] shows them: a row they can't read counts toward neither.
+/// One read of the project's rows, and one per kind of issue.
+async fn progress(app: &Platform, account: &str, project: &str, boards: &mut [wire::Board]) -> Result<(), ApiError> {
+    let targets = app.db.board_issue_targets(project)?;
+    if targets.is_empty() {
+        return Ok(());
+    }
+    let ids = |kind: &str| -> Vec<&str> {
+        let mut v: Vec<&str> = targets.iter().filter(|t| t.1 == kind).map(|t| t.2.as_str()).collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    // Each issue the reader may read, closed or not.
+    let mut closed: HashMap<String, bool> = HashMap::new();
+    for i in app.db.issue_states(project, &ids("issue"))? {
+        closed.insert(i.id, i.closed);
+    }
+    let mirrored = ids("forge_item");
+    if !mirrored.is_empty() {
+        let repos = app.db.linked_repos(project)?;
+        let checked = viewer::check(app, &Viewer::of(app, account).await?, &repos).await?;
+        for i in app.db.forge_items_among(&checked.readable, &mirrored)?.into_iter().filter(|i| i.kind == "issue") {
+            closed.insert(i.id, i.state != "open");
+        }
+    }
+    for b in boards {
+        let mut seen: std::collections::HashSet<&str> = Default::default();
+        for (_, _, id) in targets.iter().filter(|t| t.0 == b.id) {
+            if let Some(done) = closed.get(id.as_str())
+                && seen.insert(id)
+            {
+                b.progress.total += 1;
+                b.progress.done += u32::from(*done);
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView, ApiError> {
     let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
     let mut machines: Vec<String> = stored.entries.iter().filter_map(|e| e.agent.clone()).collect();
@@ -460,6 +515,8 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         agent_names(app, &machines).await?.into_iter().map(|(id, d)| (id, d.name)).collect()
     };
     let mut v = view(stored, &names);
+    let project = v.board.project.clone();
+    progress(app, account, &project, std::slice::from_mut(&mut v.board)).await?;
     resolve(app, account, &mut v).await?;
     resolve_blocks(app, &mut v).await?;
     Ok(v)
@@ -526,7 +583,9 @@ fn agent_put_allowed(app: &Platform, board: &str, p: &wire::PutEntry) -> Result<
 /// A project's boards as `account` may read them.
 pub async fn list(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire::BoardList, ApiError> {
     let id = place(app, by, project, false).await?;
-    Ok(wire::BoardList { boards: app.db.boards(&id)?, project: id })
+    let mut boards = app.db.boards(&id)?;
+    progress(app, by.account, &id, &mut boards).await?;
+    Ok(wire::BoardList { boards, project: id })
 }
 
 /// Make a board in `project`.
@@ -550,6 +609,46 @@ pub async fn create(
 pub async fn get(app: &Platform, by: Actor<'_>, id: &str) -> Result<wire::BoardView, ApiError> {
     board_place(app, by, id, false).await?;
     read(app, by.account, id).await
+}
+
+/// Set a board's title or goal. People only.
+pub async fn edit(app: &Platform, account: &str, id: &str, e: &wire::EditBoard) -> Result<wire::BoardView, ApiError> {
+    let board = board_place(app, Actor::person(account), id, true).await?;
+    let title = e.title.as_deref().map(title_ok).transpose()?;
+    let goal = e.goal.as_deref().map(|g| text_ok(g, "a goal")).transpose()?;
+    if title.is_none() && goal.is_none() {
+        return Err(bad("nothing to change: give a title or a goal"));
+    }
+    if !app.db.edit_board(id, title, goal, now_ms())? {
+        return Err(no_board());
+    }
+    changed(app, &board.project, id);
+    read(app, account, id).await
+}
+
+/// Close a board with its done note. People only. The issues and rows are
+/// left as they are.
+pub async fn close(app: &Platform, account: &str, id: &str, c: &wire::CloseBoard) -> Result<wire::BoardView, ApiError> {
+    let board = board_place(app, Actor::person(account), id, true).await?;
+    let note = text_ok(&c.done_note, "a done note")?;
+    if note.is_empty() {
+        return Err(bad("say what was done: a board closes with a note"));
+    }
+    if !app.db.close_board(id, note, account, now_ms())? {
+        return Err(no_board());
+    }
+    changed(app, &board.project, id);
+    read(app, account, id).await
+}
+
+/// Open a closed board again, keeping its done note. People only.
+pub async fn reopen(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView, ApiError> {
+    let board = board_place(app, Actor::person(account), id, true).await?;
+    if !app.db.reopen_board(id, now_ms())? {
+        return Err(no_board());
+    }
+    changed(app, &board.project, id);
+    read(app, account, id).await
 }
 
 /// Make or change a zone or a row (see [`wire::PutEntry`]).
@@ -635,7 +734,8 @@ pub async fn delete(app: &Platform, by: Actor<'_>, id: &str, entry: &str) -> Res
 
 // ---------------------------------------------------------------- routes
 
-/// `GET /api/projects/{project}/boards`: a project's boards, oldest first.
+/// `GET /api/projects/{project}/boards`: a project's boards, open ones
+/// first, each oldest first.
 pub async fn list_route(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -657,6 +757,33 @@ pub async fn create_route(
 /// `GET /api/boards/{id}`: the board with its zones and rows in order.
 pub async fn get_route(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<String>) -> J<wire::BoardView> {
     Ok(Json(get(&app, Actor::person(&s.account), &id).await?))
+}
+
+/// `PATCH /api/boards/{id}`: set the title or the goal (owners and editors).
+pub async fn edit_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path(id): Path<String>,
+    Json(e): Json<wire::EditBoard>,
+) -> J<wire::BoardView> {
+    Ok(Json(edit(&app, &s.account, &id, &e).await?))
+}
+
+/// `POST /api/boards/{id}/close`: close it with a done note (owners and
+/// editors).
+pub async fn close_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path(id): Path<String>,
+    Json(c): Json<wire::CloseBoard>,
+) -> J<wire::BoardView> {
+    Ok(Json(close(&app, &s.account, &id, &c).await?))
+}
+
+/// `POST /api/boards/{id}/reopen`: open it again, keeping the note (owners
+/// and editors).
+pub async fn reopen_route(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<String>) -> J<wire::BoardView> {
+    Ok(Json(reopen(&app, &s.account, &id).await?))
 }
 
 /// `PUT /api/boards/{id}/entries`: make or change a zone or a row (owners

@@ -64,6 +64,8 @@ mod content_tests;
 pub mod drafts;
 #[cfg(test)]
 mod drafts_tests;
+#[cfg(test)]
+mod epic_tests;
 pub mod inbox;
 #[cfg(test)]
 mod inbox_tests;
