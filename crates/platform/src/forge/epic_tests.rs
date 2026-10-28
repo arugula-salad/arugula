@@ -209,3 +209,16 @@ async fn a_goal_is_set_and_a_board_is_closed_and_opened_again() {
     let (_, l) = call(&base, "carol", "GET", &format!("/api/projects/{team}/boards"), None).await;
     assert_eq!(l["boards"][0]["id"], json!(first), "oldest first once both are open: {l}");
 }
+
+#[tokio::test]
+async fn a_deleted_accounts_boards_keep_no_creator_or_closer() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, _base) = serve(&hub).await;
+    let (team, _) = world(&hub, &gh, &app).await;
+    let b = app.db.create_board(&team, "E", "gone", 1, 10).unwrap().unwrap();
+    assert!(app.db.close_board(&b.id, "Shipped.", "gone", 2).unwrap());
+    let d = crate::Deleted { account: "gone".into(), machines: vec![], disbanded: vec![] };
+    crate::db::boards::erase_account(&app.db.c(), &d).unwrap();
+    let b = app.db.board(&b.id).unwrap().unwrap();
+    assert_eq!((b.created_by.as_str(), b.closed_by.as_str(), b.done_note.as_str()), ("", "", "Shipped."));
+}
