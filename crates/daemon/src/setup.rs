@@ -468,7 +468,9 @@ async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
                         if saved.is_ok() {
                             *REMOVED.lock().unwrap() = None;
                         }
-                        app.control.poke();
+                        // Joined before the code goes (Arugula #284): a page that looks
+                        // in between sees one or the other, never neither.
+                        app.control.saved_join();
                         *JOIN.lock().unwrap() = (None, saved.err().map(|e| e.to_string()));
                         return;
                     }
@@ -520,7 +522,7 @@ pub(crate) async fn control_confirm(app: &Arc<App>, req: ControlConfirmRequest) 
         if r.is_ok() {
             *REMOVED.lock().unwrap() = None;
         }
-        app.control.poke();
+        app.control.saved_join();
         r.err().map(|e| e.to_string())
     };
     JOIN.lock().unwrap().1 = error;

@@ -24,6 +24,21 @@ function top(): Open | undefined {
   return undefined;
 }
 
+const watchers = new Set<() => void>();
+
+/** A dialog is up. What opens by itself (Getting started's greeting)
+ * waits until it's answered: one dialog at a time, never one under
+ * another (Arugula #280). */
+export const dialogUp = (): boolean => top() !== undefined;
+
+/** Call `fn` when a dialog opens or closes; returns the unsubscribe. */
+export function subscribeDialogs(fn: () => void): () => void {
+  watchers.add(fn);
+  return () => void watchers.delete(fn);
+}
+
+const dialogsChanged = () => watchers.forEach((fn) => fn());
+
 const FOCUSABLE = 'button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])';
 
 function focusables(root: HTMLElement): HTMLElement[] {
@@ -110,9 +125,11 @@ export function useModal(ref: { current: HTMLElement | null }, close: (() => voi
       if (!root.hasAttribute("tabindex")) root.tabIndex = -1;
       focusInto(root);
     }
+    dialogsChanged();
     return () => {
       const i = stack.indexOf(me);
       if (i !== -1) stack.splice(i, 1);
+      dialogsChanged();
       // Only when the focus was ours: a dialog shut because another opened
       // leaves the new one's focus be.
       const at = document.activeElement;
