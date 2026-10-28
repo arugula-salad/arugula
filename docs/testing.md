@@ -139,7 +139,9 @@ failed, commented on once per failed run, and closed when one passes.
 The Rust tests run under cargo-nextest (`.config/nextest.toml`): each in
 its own process and all at once, `ssh.rs` and `reboot.rs` one at a time
 (the test stack). CI's profile (`NEXTEST_PROFILE=ci`) retries a failure
-once and reports a test that passes the second time as flaky.
+once and reports a test that passes the second time as flaky; so does
+Playwright under CI (`retries: 1` in `web/playwright.config.ts`). A test
+that keeps failing both tries goes in the [quarantine](#quarantine).
 
 geek needs Docker (the testnet, `ssh.rs` in `just test`, and the
 container `just desktop-xvfb` runs in): without it the run fails. To run one shard's specs locally, in `web/`:
@@ -153,6 +155,51 @@ and Vite on 5173), `just fake-fleet` (three throwaway daemons with
 scripted work on 7730-7732, for the swarm) and `just screenshots` (the
 site's images, from a scripted session, into a checkout of
 arugula-salad/site).
+
+## Quarantine
+
+A test that fails on both tries on unrelated commits turns main red for
+everyone. Until someone fixes it, it can go in the quarantine,
+`.config/quarantine.toml`: CI's runs leave it out, and
+`.github/workflows/quarantine-nightly.yml` runs the quarantined tests
+alone every night, where a red run says one still fails and a green one
+that it may be fixed. That run gates nothing. `just test` and `just e2e`
+on your own machine still run them with the rest.
+
+Each entry names the test, the issue that tracks the fix, the day it comes
+back and why:
+
+```toml
+[[rust]]
+test = "arugulad::integration ssh::ssh_installs_runs_forwards_the_agent_pushes_and_saved_hosts_work"
+issue = "1234"           # a number or a URL
+until = "2026-11-10"     # at most 14 days out
+why = "Fails twice on unrelated commits (2ac1e89ba, c2b452072)."
+
+[[e2e]]
+spec = "web/e2e/chat-control.spec.ts"
+title = "polish: ↑ edits the last message and Esc cancels, ..."   # the test's own title, whole
+issue = "1235"
+until = "2026-11-10"
+why = "..."
+```
+
+A Rust test is named as nextest prints it in CI's log: the binary id, a
+space, the test's name. To add one, add its entry and run `just
+quarantine`, which writes the entries into `default-filter` in each
+workspace's nextest config (`.config/nextest.toml`,
+`server/.config/nextest.toml`: CI's profile skips them, and nextest says
+how many it skipped) and checks the manifest. Playwright's config reads the
+manifest itself and, under `CI`, leaves the specs out (`grepInvert`);
+`E2E_QUARANTINED=1` runs only them. To take one out, delete its entry
+and run `just quarantine` again.
+
+`scripts/quarantine.mjs check`, in `just test-scripts` and so in lint, fails
+when an entry has no issue, is past its `until` or more than 14 days out,
+names a test that isn't there, or the nextest configs don't match the
+manifest. So an expired quarantine turns lint red: fix the test and delete
+the entry, or delete the test. A new `until` needs a reason in the issue.
+`scripts/tests/quarantine.sh` tests the script.
 
 ## The daemon's integration tests
 

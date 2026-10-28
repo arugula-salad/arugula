@@ -23,6 +23,9 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 retries = 1
 failure-output = "immediate-final"
 fail-fast = false
+# The quarantined tests (.config/quarantine.toml), left out: `just
+# quarantine` writes this line from it; quarantine-nightly.yml runs them.
+default-filter = "not ((binary_id(=arugulad::integration) & test(=reboot::a_restarted_box_brings_its_daemon_back_with_no_login_and_every_pane_by_policy)) | (binary_id(=arugulad::integration) & test(=ssh::ssh_installs_runs_forwards_the_agent_pushes_and_saved_hosts_work)) | (binary_id(=arugulad::integration) & test(=guest_ssh::a_guest_reaches_a_daemon_behind_nat_through_controls_jump_host)))"
 
 # The slowest tests (15-33 s in CI) start first: started last, one alone
 # held the run's end (the tmux front end's formats_match_real_tmux, since

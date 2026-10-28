@@ -9,6 +9,8 @@ import "./e2e/scrub-env.ts";
 // shares one, which browsers carry as a cookie.
 import { labs } from "./e2e/labs.ts";
 import { tokenCookies } from "./e2e/local-token.ts";
+// Flaky specs CI leaves out for a while (.config/quarantine.toml).
+import { e2eGrep } from "../scripts/quarantine.mjs";
 
 // Directories for the run, made once (workers load this config too, and
 // inherit them) and removed when the runner exits, after the daemon (#62).
@@ -128,8 +130,19 @@ const set = process.env.E2E_SET;
 const WEBKIT = /\.webkit\.spec\.ts$/;
 const chrome = set && SETS[set] ? { testMatch: SETS[set] } : { testIgnore: set === "rest" ? [WEBKIT, ...Object.values(SETS)] : WEBKIT };
 
+// The quarantined specs (.config/quarantine.toml, docs/testing.md): CI's
+// runs leave them out; E2E_QUARANTINED=1 runs only them, as
+// quarantine-nightly.yml does. A run of your own runs them with the rest.
+const quarantined = e2eGrep();
+const quarantine = process.env.E2E_QUARANTINED
+  ? { grep: quarantined.length ? quarantined : [/$^/] }
+  : process.env.CI && quarantined.length
+    ? { grepInvert: quarantined }
+    : {};
+
 export default defineConfig({
   testDir: "e2e",
+  ...quarantine,
   timeout: 30_000,
   // CI's hosts run other jobs beside the specs (#287): an expectation gets
   // longer there, and a spec that fails once runs again, reported as flaky.

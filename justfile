@@ -528,6 +528,29 @@ test-run part="" which="":
     {{server_cargo}} test --workspace --doc
     just e2e-interop control-smoke
 
+# Flaky tests CI leaves out for a while (.config/quarantine.toml,
+# docs/testing.md "Quarantine"). Run it after changing that manifest:
+# writes the nextest configs' default-filter from it, then checks it.
+quarantine:
+    node scripts/quarantine.mjs write
+    node scripts/quarantine.mjs check
+
+# Only the quarantined tests, which CI's runs leave out (the ssh and reboot
+# tests want what `just test` does: Docker, ARUGULA_SSH_BINARIES).
+# quarantine-nightly.yml runs them every night.
+test-quarantined: web e2e-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    status=0
+    root=$(node scripts/quarantine.mjs nextest root)
+    server=$(node scripts/quarantine.mjs nextest server)
+    if [ -n "$root" ]; then {{cargo}} nextest run --workspace --ignore-default-filter -E "$root" || status=1; fi
+    if [ -n "$server" ]; then {{server_cargo}} nextest run --workspace --ignore-default-filter -E "$server" || status=1; fi
+    if [ -n "$(node scripts/quarantine.mjs e2e)" ]; then
+      (cd web && E2E_QUARANTINED=1 {{suite_lock}} pnpm exec playwright test) || status=1
+    fi
+    exit "$status"
+
 # The platform's suite on Postgres (M143), as hosted control runs it: a
 # postgres:17 container of its own on a free port, removed after. The same
 # tests as on SQLite (`Db::test`); check.yml runs it in a job of its own
@@ -773,10 +796,14 @@ macos cmd="tools" *args:
 # `scripts/release check-green` refusing a tag on a commit CI didn't pass;
 # a release deploying the hub only when what it's built from changed; the
 # hosted template's supervision of arugulad (M258); its templates, one
-# per workspace size (M266); and its tools for session users (Arugula #215).
+# per workspace size (M266); its tools for session users (Arugula #215);
+# and the flaky tests' quarantine (.config/quarantine.toml): its script,
+# and last the manifest itself, which fails when an entry has no issue or
+# is past its `until`.
 test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/ci-nightly-red.sh
+    scripts/tests/quarantine.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
     scripts/tests/notices.sh
@@ -787,6 +814,7 @@ test-scripts:
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
+    node scripts/quarantine.mjs check
 
 # The two workspaces stay apart: the root's has no server crate, and the
 # server's (server/Cargo.toml) builds none of the daemon's, the mux or
