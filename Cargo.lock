@@ -604,6 +604,7 @@ dependencies = [
  "arugula-core",
  "arugula-mux",
  "arugula-proto",
+ "arugula-testkit",
  "arugulad-base",
  "axum",
  "base64 0.23.1",
