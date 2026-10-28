@@ -290,6 +290,8 @@ for (const mode of [DOMAIN, null] as const) {
             // The page scrolls inside itself, so "full page" is a viewport as tall as the Doc.
             const tall = await v.page.evaluate(() => (document.querySelector(".doc") as HTMLElement).scrollHeight);
             await v.page.setViewportSize({ width: v.page.viewportSize()!.width, height: tall + 40 });
+            // Two frames, so Chrome paints the area the resize uncovered before the shot.
+            await v.page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
             await v.page.screenshot({ path: join(SHOTS, `viewer-${name}-${scheme}.png`) });
           }
           await v.ctx.close();
@@ -322,7 +324,7 @@ for (const mode of [DOMAIN, null] as const) {
 
     // #255: a notice wears the Doc's look and its footer, light and dark, on
     // a desktop and a phone; and the page tells a link preview what it can,
-    // the same for any id, with a card on the viewer's origin.
+    // the same for any id, with the site's card.
     test("a notice is on the Doc's paper with its footer, and the page carries a link preview", async ({ browser }) => {
       const id = randomBytes(16).toString("hex");
       const url = `${r.viewer}/${id}#k=${randomBytes(32).toString("base64url")}`;
@@ -335,7 +337,7 @@ for (const mode of [DOMAIN, null] as const) {
           const paper = await v.page.evaluate(() => getComputedStyle(document.querySelector(".doc")!).backgroundColor);
           expect(paper, scheme).toBe(scheme === "light" ? "rgb(248, 246, 240)" : "rgb(26, 27, 24)");
           expect(v.violations, "the page's CSP refused nothing").toEqual([]);
-          expect(v.seen.some((u) => u.endsWith("/card.png")), "the page never loads the card").toBe(false);
+          expect(v.seen.some((u) => u.includes("og.jpg")), "the page never loads the card").toBe(false);
           if (SHOTS && mode) {
             mkdirSync(SHOTS, { recursive: true });
             await v.page.screenshot({ path: join(SHOTS, `notice-gone-${name}-${scheme}.png`) });
@@ -346,20 +348,15 @@ for (const mode of [DOMAIN, null] as const) {
       // Read as a bot would, from the page's origin (Chromium resolves *.localhost; Node needn't).
       const v = await visitor(browser);
       await v.page.goto(url);
-      const { html, type, magic } = await v.page.evaluate(async (at) => {
-        const html = await (await fetch(at)).text();
-        const image = html.match(/<meta property="og:image" content="([^"]*)"/)![1]!;
-        const card = await fetch(new URL(image).pathname);
-        return { html, type: card.headers.get("content-type"), magic: new TextDecoder().decode(new Uint8Array(await card.arrayBuffer()).subarray(1, 4)) };
-      }, `${r.viewer}/${id}`);
+      const html = await v.page.evaluate(async (at) => (await fetch(at)).text(), `${r.viewer}/${id}`);
       await v.ctx.close();
       const og = (p: string) => html.match(new RegExp(`<meta property="og:${p}" content="([^"]*)"`))?.[1];
       expect(og("site_name")).toBe("Arugula");
       expect(og("title")).toBe("A shared Doc");
       expect(og("url")).toMatch(new RegExp(`/${id}$`));
-      expect(og("image")).toMatch(/\/card\.png$/);
+      expect(og("image")).toBe("https://arugula.io/img/og.jpg");
+      expect([og("image:type"), og("image:width"), og("image:height")]).toEqual(["image/jpeg", "1200", "630"]);
       expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
-      expect([type, magic]).toEqual(["image/png", "PNG"]);
       if (SHOTS && mode) console.log(`the link preview's tags:\n${html.match(/<meta (?:property="og|name="twitter)[^>]*>/g)!.join("\n")}`);
     });
 

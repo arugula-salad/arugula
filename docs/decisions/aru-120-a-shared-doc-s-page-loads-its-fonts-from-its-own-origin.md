@@ -66,5 +66,5 @@ system-ui.
   blob: font. Its icon (the leaf, #255) is a data: URL, which `img-src
   data:` allowed already.
 - **The link preview** (#255) changes nothing here. Its tags are in the
-  page's head, and its card is `/card.png` on the viewer, which only a
-  preview bot fetches. The page itself never loads it.
+  page's head, and its picture is the site's card on arugula.io, which
+  only a preview bot fetches. The page itself never loads it.

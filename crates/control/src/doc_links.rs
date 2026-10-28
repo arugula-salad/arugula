@@ -341,7 +341,6 @@ fn secure(h: &mut HeaderMap) {
 ///   so itself);
 /// - `/<id>/data/meta`: `{ver, parts, size}` of the served version;
 /// - `/<id>/data/<n>`: one ciphertext part of it;
-/// - `/card.png`: the link preview's picture ([`crate::doc_card`]);
 /// - `/assets/…`: the page's built files.
 ///
 /// Everything else is a 404. No answer sets a cookie (nothing here does,
@@ -374,11 +373,6 @@ fn answer(
     let segs: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     match segs.as_slice() {
         [id] if valid_id(id) => page(app, id),
-        ["card.png"] => Response::builder()
-            .header(header::CONTENT_TYPE, "image/png")
-            .header(header::CACHE_CONTROL, "public, max-age=86400")
-            .body(Body::from(crate::doc_card::png()))
-            .unwrap(),
         [id, "data", what] if valid_id(id) => {
             if let Some(peer) = peer
                 && let Err(e) = app.limits.check(VIEWS, app.limits.client_ip(peer, headers))
@@ -438,25 +432,33 @@ const PLACEHOLDER: &str = "<!doctype html><html lang=\"en\"><head><meta charset=
 /// What a link preview (Slack, iMessage, X) shows for any shared Doc.
 /// Control can't read the Doc (the key is in the fragment, which no
 /// request carries), so the title and description are the same for every
-/// link, and so is the card; nothing here says whether the id is shared.
+/// link; nothing here says whether the id is shared.
 pub const PREVIEW_TITLE: &str = "A shared Doc";
 pub const PREVIEW_TEXT: &str = "A Doc made with Arugula. It's encrypted: only its link opens it.";
+/// The picture: the site's own card, one for every Doc. Only a preview bot
+/// fetches it; the page never does, so the CSP doesn't name it.
+pub const PREVIEW_CARD: &str = "https://arugula.io/img/og.jpg";
+const PREVIEW_CARD_ALT: &str = "Your team and its agents, in one project: a map of one project holding chat, issues, \
+                                GitHub, Cloud workspaces, runs and deploys, with its people and their agents.";
 
-/// The page's Open Graph and Twitter tags: absolute URLs, so a preview bot
-/// that fetched the page finds the card.
+/// The page's Open Graph and Twitter tags, with absolute URLs.
 fn preview(viewer: &str, id: &str) -> String {
     let attr = |s: &str| s.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;");
-    let (title, text, url, card) =
-        (attr(PREVIEW_TITLE), attr(PREVIEW_TEXT), attr(&format!("{viewer}/{id}")), attr(&format!("{viewer}/card.png")));
-    let (w, h) = (crate::doc_card::W, crate::doc_card::H);
+    let (title, text, url, card, alt) = (
+        attr(PREVIEW_TITLE),
+        attr(PREVIEW_TEXT),
+        attr(&format!("{viewer}/{id}")),
+        attr(PREVIEW_CARD),
+        attr(PREVIEW_CARD_ALT),
+    );
     format!(
         "<meta name=\"description\" content=\"{text}\">\
 <meta property=\"og:type\" content=\"article\"><meta property=\"og:site_name\" content=\"Arugula\">\
 <meta property=\"og:title\" content=\"{title}\"><meta property=\"og:description\" content=\"{text}\">\
 <meta property=\"og:url\" content=\"{url}\"><meta property=\"og:image\" content=\"{card}\">\
-<meta property=\"og:image:type\" content=\"image/png\">\
-<meta property=\"og:image:width\" content=\"{w}\"><meta property=\"og:image:height\" content=\"{h}\">\
-<meta property=\"og:image:alt\" content=\"The Arugula leaf, and: Arugula, a shared Doc\">\
+<meta property=\"og:image:type\" content=\"image/jpeg\">\
+<meta property=\"og:image:width\" content=\"1200\"><meta property=\"og:image:height\" content=\"630\">\
+<meta property=\"og:image:alt\" content=\"{alt}\">\
 <meta name=\"twitter:card\" content=\"summary_large_image\"><meta name=\"twitter:title\" content=\"{title}\">\
 <meta name=\"twitter:description\" content=\"{text}\"><meta name=\"twitter:image\" content=\"{card}\">"
     )

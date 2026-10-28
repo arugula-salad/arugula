@@ -162,8 +162,7 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
   so the wildcard DNS name and certificate cover it); without one, at
   `/d/<id>` on control's own origin. Either way it's a page under a strict
   CSP, with no cookie and none of control's API. The `docs` host answers
-  only `/<id>`, `/<id>/data/meta`, `/<id>/data/<n>`, `/card.png` (the link
-  preview's picture) and `/assets/…`; with a
+  only `/<id>`, `/<id>/data/meta`, `/<id>/data/<n>` and `/assets/…`; with a
   block domain, `/d/` on control's origin is a 404. `/control.json` says
   where (`doc_links`, `doc_viewer`). More under "Shared Docs" below.
 - **The platform page's host** (M151, optional): `--platform-host`
@@ -3353,8 +3352,9 @@ with the link. **Control holds ciphertext only and can't read it.**
 - **A link preview** (#255): the page's head carries Open Graph and
   Twitter tags that control writes in, the same for every id, shared or
   not ("A shared Doc", and that it's encrypted), since control can't read
-  a title. Their picture is `/card.png` on the viewer (`doc_card.rs`, drawn
-  in control and kept in memory). `curl -s https://docs.arugula.run/<id> |
+  a title. Their picture is the site's own card,
+  `https://arugula.io/img/og.jpg` (`doc_links.rs`, `PREVIEW_CARD`), which
+  only a preview bot fetches. `curl -s https://docs.arugula.run/<id> |
   grep -o '<meta property="og:[^>]*>'` shows them.
 
 ### Backups (Litestream to Cloudflare R2)

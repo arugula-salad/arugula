@@ -612,11 +612,10 @@ async fn the_viewer_has_its_headers_its_page_its_files_and_etags() {
     assert_eq!(r.headers()[header::ETAG], format!("\"{link}-2-0\"").as_str());
 }
 
-// #255: a link preview finds the same title, words and card for any id,
-// shared or not, since control can't read a Doc; the card is a PNG on the
-// viewer's own origin.
+// #255: a link preview finds the same title, words and card (the site's)
+// for any id, shared or not, since control can't read a Doc.
 #[tokio::test]
-async fn the_page_carries_a_link_preview_and_its_card() {
+async fn the_page_carries_a_link_preview() {
     let c = control(|_| {}).await;
     let d = daemon(&c.app, "a1", "geek");
     let link = id(85);
@@ -629,10 +628,12 @@ async fn the_page_carries_a_link_preview_and_its_card() {
             "<meta property=\"og:description\" content=\"A Doc made with Arugula. It's encrypted: only its link opens it.\">"
                 .to_owned(),
             format!("<meta property=\"og:url\" content=\"{url}\">"),
-            "<meta property=\"og:image\" content=\"http://docs.blocks.test/card.png\">".to_owned(),
+            "<meta property=\"og:image\" content=\"https://arugula.io/img/og.jpg\">".to_owned(),
+            "<meta property=\"og:image:type\" content=\"image/jpeg\">".to_owned(),
             "<meta property=\"og:image:width\" content=\"1200\">".to_owned(),
+            "<meta property=\"og:image:height\" content=\"630\">".to_owned(),
             "<meta name=\"twitter:card\" content=\"summary_large_image\">".to_owned(),
-            "<meta name=\"twitter:image\" content=\"http://docs.blocks.test/card.png\">".to_owned(),
+            "<meta name=\"twitter:image\" content=\"https://arugula.io/img/og.jpg\">".to_owned(),
         ]
     };
     let unshared = id(86);
@@ -649,18 +650,14 @@ async fn the_page_carries_a_link_preview_and_its_card() {
     assert_eq!(pages[0], pages[1], "nothing says which id is shared");
     assert!(!pages[0].contains("secret"));
 
-    // The card, on the docs host and under /d/ with no block domain.
-    let card = c.view("/card.png").await;
-    assert_eq!(card.status(), 200);
-    assert_eq!(card.headers()[header::CONTENT_TYPE], "image/png");
-    assert_eq!(card.headers()[header::CONTENT_SECURITY_POLICY], CSP);
-    assert_eq!(card.bytes().await.unwrap().as_ref(), crate::doc_card::png());
+    // Under /d/ with no block domain: the page's own URL, the same card.
     let off = control(|a| a.cfg.block_domain = None).await;
     let html = off.at("control.test", reqwest::Method::GET, &format!("/d/{link}")).send().await.unwrap();
     let html = html.text().await.unwrap();
-    assert!(html.contains("<meta property=\"og:image\" content=\"http://control.test/d/card.png\">"), "{html}");
-    let r = off.at("control.test", reqwest::Method::GET, "/d/card.png").send().await.unwrap();
-    assert_eq!(r.headers()[header::CONTENT_TYPE], "image/png");
+    assert!(html.contains(&format!("<meta property=\"og:url\" content=\"http://control.test/d/{link}\">")), "{html}");
+    assert!(html.contains("<meta property=\"og:image\" content=\"https://arugula.io/img/og.jpg\">"), "{html}");
+    // Nothing on the viewer serves a picture of its own.
+    assert_eq!(c.view("/card.png").await.status(), 404);
 
     // With no web build, the placeholder has them too.
     let bare = control(|a| a.cfg.static_dir = Some(std::env::temp_dir().join("arugula-no-such-dir"))).await;
