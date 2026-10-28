@@ -488,7 +488,8 @@ fn main() -> anyhow::Result<()> {
     arugula_core::version::set(env!("CARGO_PKG_VERSION"));
     arugula_vt::set_version(env!("CARGO_PKG_VERSION"));
     // A closed pipe (`| head`) ends the process quietly, not with a panic
-    // from `println!` (#682): Rust starts with SIGPIPE ignored.
+    // from `println!` (#682): Rust starts with SIGPIPE ignored. The daemon
+    // itself ignores it again before it serves (below).
     // SAFETY: nothing else runs yet, and SIG_DFL is no handler.
     #[cfg(unix)]
     unsafe {
@@ -619,6 +620,17 @@ fn main() -> anyhow::Result<()> {
         }
         #[cfg(unix)]
         None => {
+            // Serving, a peer gone as we write (a client or hook that hung
+            // up as its answer went out, a program's closed pipe) is that
+            // write's EPIPE, not the daemon's end: SIGPIPE is ignored again,
+            // as Rust starts. Its default (above) killed the daemon outright,
+            // and every client after it found no daemon. What it starts gets
+            // the default back from std's spawn.
+            // SAFETY: no threads yet, and SIG_IGN is no handler.
+            unsafe {
+                let _ =
+                    nix::sys::signal::signal(nix::sys::signal::Signal::SIGPIPE, nix::sys::signal::SigHandler::SigIgn);
+            }
             heap::tune();
             // Pane terminals kept for us across a restart; taken before any
             // threads start.
