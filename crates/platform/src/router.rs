@@ -278,6 +278,9 @@ fn routes() -> Routes {
         )
         .route(arugula_control_wire::sessions::ISSUE_AGENT, post(crate::chat::sessions::issue_agent))
         .route(arugula_control_wire::sessions::SESSION_MOVE, post(crate::sessions::moves::route))
+        // A person's agent starts and replies to sessions, by grant (aru-121).
+        .route(arugula_control_wire::sessions::AGENT_SESSIONS, post(crate::chat::agent_sessions::start))
+        .route(arugula_control_wire::sessions::AGENT_SESSION_REPLY, post(crate::chat::agent_sessions::reply))
         .route(
             arugula_control_wire::sessions::ASK,
             get(crate::chat::sessions::ask_show).post(crate::chat::sessions::ask_answer),

@@ -35,6 +35,19 @@ export const RUN_POWERS = ["runs.read", "runs.start"];
  * commands and instructions of their own there, as yours. */
 export const COMMAND_POWERS = ["runs.command"];
 
+/** aru-121: its agents start agent sessions as you (you're the asker, and
+ * you pay), and answer or prompt them. A switch each, never given with the
+ * conversation ones. */
+export const SESSIONS_START = "sessions.start";
+export const SESSIONS_REPLY = "sessions.reply";
+
+/** The columns that are one grant each, and its power. */
+export const SINGLE: Partial<Record<Column, string>> = {
+  deploys: DEPLOYS_PLAN,
+  start: SESSIONS_START,
+  reply: SESSIONS_REPLY,
+};
+
 /** A machine's live agent grants over a scope: of `powers`, or (without)
  * those in conversations. */
 export function liveOver(grants: Grant[], machine: string, s: AgentScope, powers?: string[]): Grant[] {
@@ -45,7 +58,7 @@ export function liveOver(grants: Grant[], machine: string, s: AgentScope, powers
       g.power !== "cloud.drive" &&
       (powers
         ? powers.includes(g.power)
-        : !g.power.startsWith("runs.") && !g.power.startsWith("boards.") && g.power !== DEPLOYS_PLAN) &&
+        : !g.power.startsWith("runs.") && !g.power.startsWith("boards.") && !g.power.startsWith("sessions.") && g.power !== DEPLOYS_PLAN) &&
       g.scope.kind === s.kind &&
       (s.kind === "account" || g.scope.id === s.id),
   );
@@ -61,16 +74,22 @@ export function machinesOf(grants: Grant[]): { id: string; name: string }[] {
 
 /** A machine's live `deploys.plan` grant over a project (M218), if any. */
 export function deployGrant(grants: Grant[], machine: string, project: string): Grant | undefined {
-  return grants.find((g) => g.live && g.subject.id === machine && g.power === DEPLOYS_PLAN && g.scope.kind === "project" && g.scope.id === project);
+  return singleGrant(grants, machine, project, DEPLOYS_PLAN);
+}
+
+/** A machine's live grant of one `power` over a project, if any. */
+export function singleGrant(grants: Grant[], machine: string, project: string, power: string): Grant | undefined {
+  return grants.find((g) => g.live && g.subject.id === machine && g.power === power && g.scope.kind === "project" && g.scope.id === project);
 }
 
 /** A column of a project's matrix on /settings (./agents): one switch per
  * machine. Threads & issues is the conversation one (`powersFor`), runs and
- * commands are M216's, deploys M218's. Your DMs have only the first. */
-export type Column = "threads" | "runs" | "commands" | "deploys";
+ * commands are M216's, deploys M218's, start and reply (sessions) aru-121's.
+ * Your DMs have only the first. */
+export type Column = "threads" | "runs" | "commands" | "deploys" | "start" | "reply";
 
 /** A project's columns, in the matrix's order. */
-export const COLUMNS: Column[] = ["threads", "runs", "commands", "deploys"];
+export const COLUMNS: Column[] = ["threads", "runs", "commands", "deploys", "start", "reply"];
 
 /** One switch: on while any of its grants is live, and `only` the powers it
  * holds when that's some but not all of what it gives (a partial grant,
@@ -81,9 +100,10 @@ export interface Cell {
 }
 
 /** What one machine's switch in one column over a scope reads of the
- * grants. Deploys is one grant, so it's never partial. */
+ * grants. Deploys, start and reply are one grant each, so never partial. */
 export function cellOf(grants: Grant[], machine: string, s: AgentScope, column: Column): Cell {
-  if (column === "deploys") return { on: !!deployGrant(grants, machine, s.id ?? ""), only: null };
+  const single = SINGLE[column];
+  if (single) return { on: !!singleGrant(grants, machine, s.id ?? "", single), only: null };
   const powers = column === "runs" ? RUN_POWERS : column === "commands" ? COMMAND_POWERS : undefined;
   const live = liveOver(grants, machine, s, powers);
   const all = (powers ?? powersFor(s.kind)).every((p) => live.some((g) => g.power === p));

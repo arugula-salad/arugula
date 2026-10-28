@@ -107,5 +107,13 @@ signed by a project owner's device, as S37's standing grant: the platform
 stores it but can't make or widen it, and hosted `arugulad` checks the
 signature. There's one per project. Revoking it stops new runs, and it never
 covers a deploy.
+
+**Session powers** (amended, Jake, 2026-10-27, Arugula #265, aru-121).
+`sessions.start` and `sessions.reply`, over a project, for a machine's
+agents: with them its agents start an agent session as the owner (who stays
+its asker and its payer, the card saying it was their agent on that
+machine) and answer or prompt one in its thread. Off by default, given and
+revoked by the owner like the step 6 powers, never to an agent grant token,
+and never an approval: a session's permission waits on a person.
 Where: `crates/platform/src/db/projects.rs` (`grants`), `crates/platform/src/grants.rs`, `crates/platform/src/cloud/` (`CloudDriver`).
 From: #1094, #1122, M130 (#1126), #1263 (step 6), M193 (#1264), M197 (#1268), M175 (#1236), #1317 (step 7, planned in #1290).

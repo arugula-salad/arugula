@@ -73,6 +73,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-101](docs/decisions/aru-101-a-deploy-needs-an-owner-device-s-approval-and-ag.md): A deploy needs an owner device's approval, and agents never approve
 - [aru-106](docs/decisions/aru-106-the-hub-is-an-issuer-one-identity-for-every-prod.md): The hub is an issuer: one identity for every product
 - [aru-113](docs/decisions/aru-113-accounts-link-by-numeric-github-id-old-sign-ins.md): Accounts link by numeric GitHub id; old sign-ins run 90 days beside the new
+- [aru-121](docs/decisions/aru-121-a-person-s-agent-starts-and-answers-sessions-by-grant.md): A person's agent starts and answers sessions as them, by grant
 
 ## Clients
 

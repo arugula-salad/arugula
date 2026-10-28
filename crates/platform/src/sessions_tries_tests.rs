@@ -491,8 +491,9 @@ async fn each_turns_answer_is_posted_in_its_thread() {
     // Read back as the thread's record (a next session's first prompt),
     // it's the agent's, not a's own words.
     let room = w.app.db.chat_room("ch_general").unwrap().unwrap();
-    let record =
-        crate::sessions::hydrate::first_prompt(&w.app, &room, p as u64, &w.project, "a", None, "x").await.unwrap();
+    let record = crate::sessions::hydrate::first_prompt(&w.app, &room, p as u64, &w.project, "a", None, None, "x")
+        .await
+        .unwrap();
     let short = &s.id[4..12];
     assert!(record.contains(&format!("agent session {short} (agent): {said}")), "{record}");
     assert_eq!(record.matches(said).count(), 1, "{record}");

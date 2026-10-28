@@ -84,6 +84,18 @@ pub const BOARDS_READ: &str = "boards.read";
 pub const BOARDS_WRITE: &str = "boards.write";
 pub const BOARD_POWERS: [&str; 2] = [BOARDS_READ, BOARDS_WRITE];
 
+/// An agent's powers over a project's agent sessions (Fleet 3, aru-121): its
+/// machine's agents start one as their owner (`sessions.start`: their
+/// `@arugula` in the project's threads, or MCP's `session_start`), and
+/// answer or prompt one going there (`sessions.reply`: a reply in its
+/// thread, or `session_reply`). The asker is the owner, and so is the
+/// bill; the card says it was their agent. Over a project only, never given
+/// on join, never to an agent grant token, and never an approval: a
+/// session's permission waits on a person.
+pub const SESSIONS_START: &str = "sessions.start";
+pub const SESSIONS_REPLY: &str = "sessions.reply";
+pub const SESSION_POWERS: [&str; 2] = [SESSIONS_START, SESSIONS_REPLY];
+
 /// An agent with no machine's power to set a project's secrets by name
 /// (M230), over a project only: write-only, never read back. Only a token
 /// is given it ([`crate::agent_tokens`]), never a machine.

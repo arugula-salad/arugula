@@ -2135,6 +2135,22 @@ note = "Agent on this (M265): @arugula written in a native issue's thread as the
 
 [[route]]
 method = "POST"
+path = "/api/daemon/sessions"  # wire::sessions::AGENT_SESSIONS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A machine's agent starts an agent session as its owner (aru-121, MCP's session_start): its @arugula on a native issue or in a project's channel, posted as \"<owner>'s agent on <machine>\", with `sessions.start` over the project. The owner is the asker and the payer; answers with the session, or the platform's lines since (why not, or which repo)."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/sessions/{ses}/reply"  # wire::sessions::AGENT_SESSION_REPLY
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A machine's agent replies in a session's thread as its owner (aru-121, MCP's session_reply), with `sessions.reply` over its project: answers its open question, or queues a prompt (never approves a permission). Says which."
+
+[[route]]
+method = "POST"
 path = "/api/sessions/{ses}/move"  # wire::sessions::SESSION_MOVE
 process = "platform"
 auth = "session"

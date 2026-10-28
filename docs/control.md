@@ -1279,6 +1279,39 @@ machine reaches another only for its agents (`/api/a2a/`). The routes are
 `POST`) and `/api/daemon/runs/{run}[/log]`
 (`crates/platform/src/triggers/agent.rs`).
 
+**Agents and sessions (Fleet 3, aru-121).** Two more powers, each over one
+project, off until the owner gives them, let a machine's agents start and
+steer agent sessions as their owner: `sessions.start` (their `@arugula` on a
+native issue or in the project's channels starts a session) and
+`sessions.reply` (their reply in a session's thread answers its open
+question, or prompts it).
+
+```
+arugula grants add geek sessions.start sessions.reply --project acme
+```
+
+or the Start sessions and Answer sessions switches per machine and project
+under Settings, Agents on your machines, on the platform page. A session
+an agent starts is its owner's ask: the same checks (an owner or editor on
+`ARUGULA_HOSTED_ACCOUNTS`), box and repo as theirs, with the owner as the
+asker and the payer; the platform records the machine
+(`agent_sessions.asker_agent`), and the card and the first prompt say
+"started by <owner>'s agent on <machine>". The which-repo ask still
+mentions the owner; the agent's next reply naming a repo answers it too.
+A reply answers a question the session waits on (its ask then says
+"<owner>'s agent on <machine> answered: …"), and is otherwise queued as a
+prompt credited to the owner. Neither power approves anything: while a
+session waits on a permission, the reply is queued for after it, and a
+person allows or denies. The MCP tools are `session_start` (`issue` or
+`room`/`thread`, `prompt`, `project`) and `session_reply` (`session`,
+`text`), both in the permission snippet's ask list; an agent a guest stands
+behind is refused. They need no `threads.post`: each posts only its ask or
+its reply, labelled as the agent's. The routes are `POST
+/api/daemon/sessions` and `POST /api/daemon/sessions/{ses}/reply`
+(`crates/platform/src/chat/agent_sessions.rs`). An agent's message posted
+with `post_thread` (with `threads.post`) counts the same way when the
+machine holds the grant.
+
 A read that waits (`since` and `wait`) is woken when its platform machine
 moves the run, and looks every 2 seconds for a move another machine made.
 At most 8 are open at once per account and per machine (429 past that,

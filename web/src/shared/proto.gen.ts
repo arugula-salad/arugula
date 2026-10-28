@@ -3450,6 +3450,12 @@ was: string | null,
  */
 asker: string, asker_name: string, 
 /**
+ * Who started it, when it was its asker's agent and not the asker by
+ * hand (aru-121, a `sessions.start` grant): "<asker>'s agent on
+ * <machine>", by their names now. The asker is still the asker.
+ */
+started_by: string | null, 
+/**
  * The hosted workspace it runs on, and its name ("" once it's gone).
  */
 workspace: string, workspace_name: string, repo: string | null, branch: string, created_at: number, updated_at: number, 

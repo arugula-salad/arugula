@@ -906,7 +906,9 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           </button>
         )}
       </div>
-      <div class="session-card-foot dim">Asked by {c.asker_name || "someone who left"}</div>
+      <div class="session-card-foot dim" data-session-started-by={c.started_by ? "" : undefined}>
+        {c.started_by ? `Started by ${c.started_by}` : `Asked by ${c.asker_name || "someone who left"}`}
+      </div>
     </div>
   );
 }

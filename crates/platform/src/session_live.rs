@@ -373,6 +373,10 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         .into_iter()
         .map(|p| SessionPort { port: p.port, label: p.label, url: p.url })
         .collect();
+    let started_by = match &s.asker_agent {
+        Some(m) => Some(crate::chat::sessions::agent_asker(app, &name(&s.asker), m).await?),
+        None => None,
+    };
     let card = SessionCard {
         session: s.id.clone(),
         project: s.project.clone(),
@@ -382,6 +386,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         was: s.was.map(|w| w.as_str().into()),
         asker: s.asker.clone(),
         asker_name: name(&s.asker),
+        started_by,
         workspace: s.workspace.clone(),
         workspace_name: app.db.hosted_any(&s.project, &s.workspace)?.map(|w| w.name).unwrap_or_default(),
         repo: s.repo.clone(),

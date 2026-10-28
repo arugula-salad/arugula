@@ -1,9 +1,11 @@
 // Agents on your machines, in the account's settings: per project, a
-// matrix of the machines and four switches each. Threads & issues (M197)
+// matrix of the machines and six switches each. Threads & issues (M197)
 // lets a machine's agents read and post in the project's threads and
 // write its issues; Runs (M216) lets them read its runs and start its run
-// specs; Commands (M216, apart) start commands of their own there; and
-// Deploys (M218) plan its deploys and ask for approval: never approve.
+// specs; Commands (M216, apart) start commands of their own there; Deploys
+// (M218) plan its deploys and ask for approval: never approve; and Start
+// sessions and Answer sessions (aru-121) start agent sessions as you, and
+// answer or prompt them.
 // Your DMs get one more, one switch per machine (M197). Off until you turn
 // one on, and only over what you read; what they write is labelled as your
 // agent's, and every room they reach says so. The same grants as `arugula
@@ -19,14 +21,14 @@ import {
   cellKey,
   COLUMNS,
   COMMAND_POWERS,
-  DEPLOYS_PLAN,
-  deployGrant,
   liveOver,
   machinesOf,
   matrixOf,
   powersFor,
   reaching,
   RUN_POWERS,
+  SINGLE,
+  singleGrant,
   type AgentScope,
   type Cell,
   type Column,
@@ -54,6 +56,18 @@ const HEADS: Record<Column, Head> = {
   runs: { head: "Runs", name: "runs", gives: "read its runs, and start its run specs on its cloud workspaces" },
   commands: { head: "Commands", name: "commands", gives: "start commands of their own on its cloud workspaces" },
   deploys: { head: "Deploys", name: "deploys", gives: "plan its deploys and ask its owners to approve them" },
+  start: {
+    head: "Start sessions",
+    short: "Start",
+    name: "start sessions",
+    gives: "start agent sessions on its cloud workspaces as you: you're the asker, and you pay",
+  },
+  reply: {
+    head: "Answer sessions",
+    short: "Answer",
+    name: "answer sessions",
+    gives: "answer its agent sessions' questions and prompt them, as you (never approve a permission)",
+  },
 };
 
 /** A switch in a matrix: on, off, or partly on (some of what it gives,
@@ -93,13 +107,14 @@ export function AgentGrants() {
   useEffect(() => void load(), []);
   if (grants === null) return err ? <p class="control-error">{err}</p> : null;
   const machines = machinesOf(grants);
-  const turnDeploys = async (machine: string, s: AgentScope, on: boolean) => {
+  // A column that's one grant: deploys, start and reply.
+  const turnSingle = async (machine: string, s: AgentScope, column: Column, power: string, on: boolean) => {
     const project = s.id!;
     setErr("");
-    setBusy(cellKey(machine, s, "deploys"));
+    setBusy(cellKey(machine, s, column));
     try {
-      const g = deployGrant(grants, machine, project);
-      if (on && !g) await call("/api/grants", { daemon: machine, power: DEPLOYS_PLAN, scope: { kind: "project", id: project } });
+      const g = singleGrant(grants, machine, project, power);
+      if (on && !g) await call("/api/grants", { daemon: machine, power, scope: { kind: "project", id: project } });
       if (!on && g) await call(`/api/grants/${encodeURIComponent(g.id)}/revoke`, {});
     } catch (e) {
       setErr((e as Error).message);
@@ -126,8 +141,11 @@ export function AgentGrants() {
     await load();
     setBusy("");
   };
-  const turnCell = (machine: string, s: AgentScope, column: Column, on: boolean) =>
-    void (column === "deploys" ? turnDeploys(machine, s, on) : turn(machine, s, on, column === "threads" ? undefined : column));
+  const turnCell = (machine: string, s: AgentScope, column: Column, on: boolean) => {
+    const single = SINGLE[column];
+    if (single) return void turnSingle(machine, s, column, single, on);
+    void turn(machine, s, on, column === "threads" ? undefined : column === "runs" ? "runs" : "commands");
+  };
 
   // A scope's card: its name, how many machines reach it (0/5 too, UI
   // audit #168), and the matrix. The bar says whether any machine's agents
@@ -193,7 +211,12 @@ export function AgentGrants() {
             says so to everyone in it. A run they start is yours, labelled as started by your agent on that machine.
           </p>
           <p>
-            They never approve anything: an owner approves a deploy, on their phone or in a browser, with a passkey. A switch marked
+            An agent session one of them starts is yours: you're its asker and you pay for it, and its card says your agent on that
+            machine started it.
+          </p>
+          <p>
+            They never approve anything: an owner approves a deploy, on their phone or in a browser, with a passkey, and a session's
+            permission waits on a person. A switch marked
             "only …" holds part of what it gives (from <code>arugula grants add</code>, say): turning it off takes that away, and on
             again gives all of it.
           </p>
