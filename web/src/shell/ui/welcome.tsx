@@ -21,7 +21,9 @@
 // can't, and checks the MCP server and the hooks; "Use Claude Code with
 // Arugula" does all three in one click (`POST /api/setup/agents/claude`),
 // then says what changed, naming the settings file. Where Claude Code is on the machine and isn't
-// set up, the first screen offers that click too.
+// set up, the first screen offers that click too. Beside the hooks, it
+// offers Claude Code's plugin, which brings the tools and the hooks at
+// once, as its two `/plugin` lines (./claude-plugin).
 
 import { opPath } from "../ops";
 import { directory } from "../hosts";
@@ -41,6 +43,7 @@ import { openPalette } from "./palette";
 import { openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { AgentCanCard } from "./agent-can";
+import { ClaudePlugin } from "./claude-plugin";
 import type { ControlState, HostInfo } from "../../shared/proto";
 import { placeOf, refreshControlState } from "./control-state";
 import { desktopApp } from "../../shared/desktop";
@@ -878,6 +881,7 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
                 <p class="start-dim">Or only the MCP server, or only the hooks:</p>
                 <CopyText text="claude mcp add arugula -- arugula mcp" data-mcp-command />
                 <CopyText text="arugula hooks install" data-hooks-command />
+                <ClaudePlugin />
               </>
             ) : (
               <>
@@ -894,6 +898,8 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
                   )}
                 </ul>
                 <UseClaude setup={setup} refresh={refresh} />
+                {/* Where the hooks are offered, the plugin too (Discovery 10). */}
+                {cl?.installed !== false && (!cl?.tools || cl.hooks === false) && <ClaudePlugin />}
               </>
             )}
             <p class="start-dim">

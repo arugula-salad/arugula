@@ -20,6 +20,8 @@ import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
 import { openSharing } from "./sharing";
+import { openAgentGrants } from "./agent-grants";
+import { directory } from "../hosts";
 import { openRules } from "./rules";
 import { openAppearance } from "../../shared/ui/appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../../shared/desktop";
@@ -394,6 +396,9 @@ export function machineSettingsItems(client: Client): MenuItem[] {
     { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
     // Native #205: a sharing setting, which was the `guest-ssh` flag.
     { label: "Guest SSH access…", run: () => openSharing(client) },
+    // Discovery 10: what its agents may do on control (`arugula grants`),
+    // once it's joined (or the page is control's).
+    ...(directory.control || directory.joined ? [{ label: "Agents' grants…", run: openAgentGrants }] : []),
     { label: "Developer settings…", run: () => openDeveloper(client) },
   ];
 }

@@ -915,6 +915,56 @@ html[data-corners="square"] .platform-section {
   font-family: var(--f-mono);
 }
 
+/* Its previews, secrets and the project's keys (Discovery 10): a row
+   each, its buttons at the end, and a form to add one under them. */
+.hosted-rows {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0;
+}
+
+.hosted-rows > li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.hosted-row-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.hosted-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.hosted-add input {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
+  background: var(--letterbox);
+  color: var(--fg);
+  font: inherit;
+}
+
+.hosted-edit textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 4px;
+}
+
 .hosted-transcripts {
   list-style: none;
   padding: 0;

@@ -135,7 +135,7 @@ export const runs = {
   setSchedule: (project: string, spec: string, id: string, enabled: boolean) =>
     call<Schedule>("PATCH", `/api/projects/${enc(project)}/run-specs/${enc(spec)}/schedules/${enc(id)}`, { enabled }),
   deleteSchedule: (project: string, spec: string, id: string) => call<unknown>("DELETE", `/api/projects/${enc(project)}/run-specs/${enc(spec)}/schedules/${enc(id)}`),
-  addRule: (project: string, spec: string, b: { event: Rule["event"]; repo?: string; branch?: string }) =>
+  addRule: (project: string, spec: string, b: { event: Rule["event"]; repo?: string; branch?: string; outsiders?: boolean; max_per_hour?: number }) =>
     call<Rule>("POST", `/api/projects/${enc(project)}/run-specs/${enc(spec)}/rules`, b),
   setRule: (project: string, spec: string, id: string, enabled: boolean) =>
     call<Rule>("PATCH", `/api/projects/${enc(project)}/run-specs/${enc(spec)}/rules/${enc(id)}`, { enabled }),
