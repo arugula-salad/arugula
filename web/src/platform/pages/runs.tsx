@@ -579,7 +579,9 @@ function NewSpec({ p, workspaces, done }: { p: PlatformProject; workspaces: Host
   );
 }
 
-/** Add a schedule (cron, in a time zone) or an event rule to a spec. */
+/** Add a schedule (cron, in a time zone) or an event rule to a spec: a
+ * rule's repo, branch, cap an hour and (an owner's call) outsiders, as
+ * `arugula runs rule add` takes them. */
 function AddTrigger({ p, spec, act }: { p: PlatformProject; spec: RunSpec; act: (what: string, f: () => Promise<unknown>) => Promise<void> }) {
   const [open, setOpen] = useState<null | "schedule" | "rule">(null);
   const [cron, setCron] = useState("0 3 * * *");
@@ -587,6 +589,11 @@ function AddTrigger({ p, spec, act }: { p: PlatformProject; spec: RunSpec; act: 
   const [event, setEvent] = useState<"pr_opened" | "check_failed" | "push">("push");
   const [repo, setRepo] = useState("");
   const [branch, setBranch] = useState("");
+  const [cap, setCap] = useState("");
+  const [outsiders, setOutsiders] = useState(false);
+  // Outsiders let anyone who can open a PR start it: the platform takes
+  // that from a project's owners only.
+  const owner = !p.team || p.team.role === "owner";
   if (!open) {
     return (
       <p class="run-add-trigger">
@@ -604,7 +611,14 @@ function AddTrigger({ p, spec, act }: { p: PlatformProject; spec: RunSpec; act: 
     const f =
       open === "schedule"
         ? () => runs.addSchedule(p.id, spec.id, { cron: cron.trim(), timezone: tz.trim() || undefined })
-        : () => runs.addRule(p.id, spec.id, { event, ...(repo.trim() ? { repo: repo.trim() } : {}), ...(branch.trim() ? { branch: branch.trim() } : {}) });
+        : () =>
+            runs.addRule(p.id, spec.id, {
+              event,
+              ...(repo.trim() ? { repo: repo.trim() } : {}),
+              ...(branch.trim() ? { branch: branch.trim() } : {}),
+              ...(cap.trim() ? { max_per_hour: Number(cap) } : {}),
+              ...(outsiders ? { outsiders } : {}),
+            });
     void act("add it", f).then(() => setOpen(null));
   };
   return (
@@ -616,13 +630,29 @@ function AddTrigger({ p, spec, act }: { p: PlatformProject; spec: RunSpec; act: 
         </>
       ) : (
         <>
-          <select aria-label="Event" value={event} onChange={(e) => setEvent(e.currentTarget.value as typeof event)}>
+          <select aria-label="Event" value={event} data-run-rule-event onChange={(e) => setEvent(e.currentTarget.value as typeof event)}>
             <option value="push">A push</option>
             <option value="pr_opened">A PR opened</option>
             <option value="check_failed">A check failed</option>
           </select>
           <input placeholder="owner/repo (any)" aria-label="Repo" value={repo} onInput={(e) => setRepo(e.currentTarget.value)} />
           <input placeholder="branch (any)" aria-label="Branch" value={branch} onInput={(e) => setBranch(e.currentTarget.value)} />
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            placeholder="20 an hour"
+            aria-label="At most, an hour"
+            title="The most runs it starts in an hour"
+            value={cap}
+            data-run-rule-cap
+            onInput={(e) => setCap(e.currentTarget.value)}
+          />
+          {owner && (
+            <label class="control-check" title="Forks and people who aren't the repo's owners, members or collaborators">
+              <input type="checkbox" checked={outsiders} data-run-rule-outsiders onChange={(e) => setOutsiders(e.currentTarget.checked)} /> Outsiders too
+            </label>
+          )}
         </>
       )}
       <button class="primary" type="submit">

@@ -166,12 +166,15 @@ test("in the app, the rail's Chat goes to the platform page in this window", asy
   await expect(shell).toHaveURL(new RegExp(`^${app}/`), { timeout: 15_000 });
   expect(alice.context().pages().length).toBe(pages);
   // With AppKit's tab strip showing (a second window), its bar starts below it.
-  await expect(shell.locator(".platform-bar")).toBeVisible();
+  // The rooms view's bar: while chat loads, the page shows a bar of its own,
+  // which the rooms view's replaces (#297).
+  const bar = shell.locator("[data-chat-control] .platform-bar");
+  await expect(bar).toBeVisible({ timeout: 15_000 });
   await shell.evaluate(() => {
     document.documentElement.dataset.nativeTabs = "";
     document.documentElement.style.setProperty("--native-tabs", "64px");
   });
-  expect((await shell.locator(".platform-bar").boundingBox())!.y).toBe(64);
+  expect((await bar.boundingBox())!.y).toBe(64);
   await shell.close();
 });
 
@@ -746,7 +749,11 @@ test("typing shows to the other reader and clears; @channel is offered; a keywor
   const room = await alice.evaluate((tm) => window.__arugula.chat.newChannel(tm, "alerts").then((r) => r.id), team);
   await withBob(room);
   await platform(aliceChat, `/chat/${room}-alerts`);
+  // Typing is told only to a page that has told control it shows the room,
+  // and never again (#285): Bob's page must have, before Alice types.
+  const shown = bob.waitForResponse((r) => r.url().endsWith("/api/chat/live/open") && r.ok() && r.request().postDataJSON()?.room === room);
   await platform(bob, `/chat/${room}-alerts`);
+  await shown;
   const a = aliceChat.locator("[data-chat-control]");
   const b = bob.locator("[data-chat-control]");
   const abox = a.getByRole("textbox", { name: "Message #alerts" });

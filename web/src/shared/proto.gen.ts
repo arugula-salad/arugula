@@ -225,7 +225,12 @@ number: number,
 /**
  * A run's: how it started (`manual run`).
  */
-title: string, };
+title: string, 
+/**
+ * Who an issue or PR is assigned to: a mirrored item's logins, a native
+ * issue's names. A run has none.
+ */
+assignees?: Array<string>, };
 
 /**
  * What a row's `fi_`, `iss_` or `run_` pointer is now, from data control
@@ -2874,6 +2879,11 @@ project?: Project | null,
  */
 branch?: string | null, 
 /**
+ * The commit its repository's HEAD is at, short: a commit or a
+ * checkout in it moves it (the web client's hint for Changes).
+ */
+head?: string | null, 
+/**
  * Output rate (M23).
  */
 activity?: Activity | null, 
@@ -3644,6 +3654,15 @@ moves: Array<SessionPlace>, };
 export type SessionFinish = { ok: boolean, command: string, output_tail: string, };
 
 /**
+ * The issue a session works on.
+ */
+export type SessionIssue = { id: string, number: number, title: string, labels: Array<string>, 
+/**
+ * `open` or `closed`.
+ */
+state: string, };
+
+/**
  * One entry of a session's history, in words.
  */
 export type SessionLine = { seq: number, 
@@ -3701,7 +3720,9 @@ export type SessionPlace = { workspace: string, name: string,
  */
 awake: boolean, 
 /**
- * How many of its project's sessions it holds or has queued.
+ * How many of its project's sessions are going there: queued, or a
+ * turn under way. Not done or parked ones, which only wait, nor one
+ * left from before its box was rebuilt.
  */
 busy: number, };
 
@@ -3782,6 +3803,57 @@ via: string | null,
  * The machine that sent it.
  */
 machine: string | null, };
+
+/**
+ * A session as a wave lists it.
+ */
+export type SessionRow = { session: string, project: string, 
+/**
+ * Its thread: the room and the message it hangs off.
+ */
+room: string, parent: number, 
+/**
+ * As [`SessionCard::state`].
+ */
+state: string, 
+/**
+ * Its turn has finished: it isn't queued or working, and no prompt
+ * waits for its next turn (or it ended, or it waits on a person).
+ */
+settled: boolean, 
+/**
+ * `thread`, `try` or `review`, as [`SessionCard::role`].
+ */
+role: string, issue: SessionIssue | null, asker: string, asker_name: string, 
+/**
+ * As [`SessionCard::started_by`]: "<asker>'s agent on <machine>".
+ */
+started_by: string | null, 
+/**
+ * The machine whose agents started it, by id.
+ */
+agent: string | null, 
+/**
+ * Its box: the workspace and its name.
+ */
+workspace: string, workspace_name: string, repo: string | null, branch: string, 
+/**
+ * HEAD after its latest turn, and when a turn last pushed the branch.
+ */
+head: string | null, pushed_at: number | null, 
+/**
+ * What waits on the reader, in a few words ("its question", "a
+ * permission", "CI failed again", "its PR to send"), if anything.
+ */
+waiting: string | null, 
+/**
+ * What it asks, while it waits on a person.
+ */
+question: string | null, pr: string | null, merged_at: number | null, 
+/**
+ * Why it failed or stopped.
+ */
+reason: string | null, created_at: number, updated_at: number, };
 
 /**
  * [`PROJECT_SESSION_SETTINGS`]: "agents use model …" (Arugula #215), one
@@ -3871,6 +3943,60 @@ now: number,
  * Its history, oldest first.
  */
 events: Array<SessionLine>, };
+
+/**
+ * [`PROJECT_SESSIONS`]' answer: the wave, newest first, and what narrows
+ * it.
+ */
+export type SessionWave = { project: string, sessions: Array<SessionRow>, 
+/**
+ * The project's issue labels, to narrow by.
+ */
+labels: Array<string>, 
+/**
+ * Who asked for the sessions listed, `[account, name]`, by name.
+ */
+askers: Array<[string, string]>, 
+/**
+ * The tracker it's narrowed to, when it is.
+ */
+tracker: SessionIssue | null, 
+/**
+ * More matched than it lists.
+ */
+more: boolean, };
+
+/**
+ * [`PROJECT_SESSIONS`]' query: each that's set narrows the wave.
+ */
+export type SessionWaveQuery = { 
+/**
+ * Sessions on an issue with this label.
+ */
+label?: string, 
+/**
+ * Sessions on a tracker's issues, by its number: the tracker, the
+ * issues its body names (`#N`), and those whose body names it.
+ */
+tracker?: number, 
+/**
+ * Sessions this account asked for (by hand or through its agents);
+ * `me`, the reader (a machine's agents': its owner).
+ */
+asker?: string, 
+/**
+ * Sessions this machine's agents started (aru-121); `me`, for a
+ * machine's agents, their own machine.
+ */
+agent?: string, 
+/**
+ * Only ones going (not failed, stopped or merged).
+ */
+going?: boolean, 
+/**
+ * At most this many (default 50, at most [`WAVE_MAX`]).
+ */
+limit?: number, };
 
 /**
  * A read-only share of one pane. `token`, `path` and `url` are only in the

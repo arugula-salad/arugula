@@ -6,7 +6,7 @@
 
 import { deflateSync } from "node:zlib";
 import { expect, type Page } from "@playwright/test";
-import type { PaneId } from "../src/shared/proto";
+import type { PaneId, SessionId } from "../src/shared/proto";
 import { example } from "./doc-examples";
 
 declare global {
@@ -42,6 +42,19 @@ export const fill = (post: Post, doc: number, section: string, markdown: string)
 export async function bring(page: Page, doc: number) {
   await page.waitForFunction((d) => !!window.__arugula.client.info(d), doc);
   await page.evaluate((d) => window.__arugula.client.setActive(d), doc);
+}
+
+/** The session `doc` is in, to share it. The same race as `bring`: the
+ * daemon answers the POST that made the Doc before the page's client hears of
+ * its tab, so wait for the client to know which session holds it (#286). */
+export async function sessionOf(page: Page, doc: number): Promise<SessionId> {
+  const known = await page.waitForFunction((d) => {
+    const c = window.__arugula.client;
+    const tab = c.tabOfPane(d);
+    const session = tab && c.sessionOfTab(tab.id);
+    return session === undefined ? null : { session };
+  }, doc);
+  return ((await known.jsonValue()) as { session: SessionId }).session;
 }
 
 /** The outline appears with every intent; each fill shows its text with no

@@ -2,14 +2,16 @@
 // account", hints.spec.ts has the rest): a second person in the session.
 // The owner's page says once, as a toast, that clicking their avatar
 // follows them and Share › Pair mode types together; Follow follows them.
+// Then batch 2's: someone a session with an agent in it is shared with is
+// told once they can be notified about its agents, and is.
 // Hints keep quiet under a test runner unless a spec asks: this one does.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts } from "./helpers";
+import { closeContexts, SLEEP } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 
 test.afterAll(closeContexts);
@@ -48,8 +50,12 @@ test.afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-async function openAs(page: Page) {
-  await page.addInitScript(() => Object.assign(window, { __arugulaHints: true }));
+/** `seen`: hints this browser has seen already. */
+async function openAs(page: Page, seen: string[] = []) {
+  await page.addInitScript((ids) => {
+    Object.assign(window, { __arugulaHints: true });
+    if (!localStorage.getItem("arugula.seen")) localStorage.setItem("arugula.seen", JSON.stringify(Object.fromEntries(ids.map((id) => [`seen:${id}`, 1]))));
+  }, seen);
   await page.goto("/");
   await expect.poll(() => page.evaluate(() => window.__arugula?.client.connected)).toBe(true);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.state !== null)).toBe(true);
@@ -78,4 +84,36 @@ test("a second person in the session: follow them, once", async ({ browser }) =>
   await friend.reload();
   await owner.waitForTimeout(2000);
   await expect(owner.locator("[data-hint]")).toHaveCount(0);
+});
+
+test("a shared session with an agent in it: Notify me about its agents", async ({ browser }) => {
+  const GUEST = "guest@example.com";
+  // An agent: `sleep` under Claude Code's name, in a session of its own.
+  const bin = mkdtempSync(join(tmpdir(), "arugula-e2e-hints-agent-"));
+  symlinkSync(SLEEP, join(bin, "claude"));
+  try {
+    const post = (path: string, body: unknown) =>
+      fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const owner = await (await browser.newContext()).newPage();
+    await openAs(owner, ["second-person", "command-mark"]);
+    const { session, pane } = await owner.evaluate(() => {
+      const c = window.__arugula.client;
+      return { session: c.session!, pane: c.active()! };
+    });
+    await post(`/api/panes/${pane}/send`, { text: `${join(bin, "claude")} 120`, enter: true });
+    await expect.poll(() => owner.evaluate((p) => window.__arugula.client.info(p)?.kind, pane)).toBe("agent");
+    await post("/api/acl", { session, principal: `tailnet:${GUEST}`, role: "editor" });
+
+    const guest = await (await browser.newContext({ extraHTTPHeaders: { "tailscale-user-login": GUEST } })).newPage();
+    // Following the owner is the other hint, said already.
+    await openAs(guest, ["second-person", "command-mark"]);
+    await expect.poll(() => guest.evaluate(() => window.__arugula.client.session)).toBe(session);
+    const toast = guest.locator('.hint-toast[data-hint="agents-notify"]');
+    await expect(toast).toContainText("Get told when its agents need someone");
+    await toast.locator("[data-hint-act]").click();
+    await expect.poll(() => guest.evaluate(() => window.__arugula.client.notifyPref?.sessions)).toEqual([session]);
+    await expect(guest.locator("[data-hint]")).toHaveCount(0);
+  } finally {
+    rmSync(bin, { recursive: true, force: true });
+  }
 });

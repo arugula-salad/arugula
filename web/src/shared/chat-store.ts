@@ -198,8 +198,13 @@ export class ChatStore {
     clearTimeout(this.probe);
     let failed = false;
     try {
-      await this.loadRooms();
-      void this.loadSidebar();
+      // The rooms and the person's sidebar together, drawn once (#296):
+      // drawn before it, the rooms showed in their kinds' groups and the
+      // starred ones jumped up when it came. While chat is off, the probe
+      // asks only for the rooms, and the sidebar follows once it's on.
+      const sidebar = this.on === false ? undefined : this.fetchSidebar();
+      await this.loadRooms(sidebar);
+      if (!sidebar) void this.loadSidebar();
       if (!this.es) this.listen();
     } catch (e) {
       if (e instanceof ChatError && (e.reason === "chat_off" || e.status === 401 || e.status === 404)) this.turnOff(e.status === 401);
@@ -232,8 +237,12 @@ export class ChatStore {
     if (was !== false || wasOut !== signedOut) this.emit();
   }
 
-  async loadRooms() {
+  /** The room list; with `sidebar` (a read of it already asked for), its
+   * groups too, in the same draw. */
+  async loadRooms(sidebar?: Promise<ChatSidebar | null>) {
     const r = await call<ChatRooms>("GET", "/api/chat");
+    const s = sidebar ? await sidebar : null;
+    if (s && !this.sidebarPending) this.sidebar = s;
     this.on = true;
     this.signedOut = false;
     presence.start();
@@ -245,15 +254,17 @@ export class ChatStore {
   /** Edits sent and not yet answered: what is read meanwhile is older. */
   private sidebarPending = 0;
 
+  /** The person's sidebar, or null if control didn't give it: the rooms
+   * still list, in their kinds' groups. */
+  private fetchSidebar(): Promise<ChatSidebar | null> {
+    return call<ChatSidebar>("GET", "/api/chat/sidebar").catch(() => null);
+  }
+
   async loadSidebar() {
-    try {
-      const s = await call<ChatSidebar>("GET", "/api/chat/sidebar");
-      if (this.sidebarPending) return;
-      this.sidebar = s;
-      this.emit();
-    } catch {
-      // As it was: the rooms still list, in their kinds' groups.
-    }
+    const s = await this.fetchSidebar();
+    if (!s || this.sidebarPending) return;
+    this.sidebar = s;
+    this.emit();
   }
 
   /** Change the sidebar: shown at once, kept on the server (the last write
@@ -385,18 +396,23 @@ export class ChatStore {
         this.typers.set(`${ev.room} ${ev.account}`, { ...ev, until: Date.now() + TYPING_MS });
         this.emit();
         return;
-      case "resync":
+      case "resync": {
         void this.loadSaved();
         this.typers.clear();
         this.threads.clear();
         this.objectChanged();
+        // The rooms shown read again: a view loads its room only when it
+        // opens it, so one cleared here would say "Loading…" for good.
+        const shown = new Set([...this.loaded.keys()].filter((r) => [...this.open.values()].includes(r)));
         this.loaded.clear();
         this.detail.clear();
         this.pinned.clear();
         this.roomsSoon();
         void this.loadSidebar();
+        for (const r of shown) void this.load(r).then(() => this.emit());
         this.emit();
         return;
+      }
     }
   }
 
@@ -424,15 +440,36 @@ export class ChatStore {
   }
 
   private told: string | undefined = undefined;
+  /** Whether a POST of what's open is out, and what waits for it: null
+   * for nothing, else whether that was forced. One at a time (#285): two
+   * at once (the hello's, with no room yet, and the room's a moment later)
+   * can reach control in either order, and the older one landing last left
+   * the stream with no room open there. Then the room's typing never came,
+   * and its pushes did, for a room on screen. */
+  private telling = false;
+  private tellAgain: boolean | null = null;
   private tellOpen(force = false) {
     if (!this.stream) return;
+    if (this.telling) {
+      this.tellAgain = this.tellAgain === true || force;
+      return;
+    }
     const rooms = document.visibilityState === "visible" ? [...new Set(this.open.values())] : [];
     // The thread is the first room's (the one a page shows first).
     const thread = rooms.length ? this.openThread : null;
     const key = `${rooms.join(" ")}|${thread ?? ""}`;
     if (!force && key === this.told) return;
     this.told = key;
-    void call("POST", "/api/chat/live/open", { stream: this.stream, room: rooms[0] ?? null, more: rooms.slice(1), ...(thread !== null ? { thread } : {}) }).catch(() => {});
+    this.telling = true;
+    void call("POST", "/api/chat/live/open", { stream: this.stream, room: rooms[0] ?? null, more: rooms.slice(1), ...(thread !== null ? { thread } : {}) })
+      .catch(() => {})
+      .finally(() => {
+        this.telling = false;
+        const again = this.tellAgain;
+        this.tellAgain = null;
+        // What changed meanwhile, from the page as it is now.
+        if (again !== null) this.tellOpen(again);
+      });
   }
 
   // ---- typing (#111)
@@ -702,6 +739,14 @@ export class ChatStore {
   /** The rooms whose first read is out. */
   private loading(): string[] {
     return [...this.fetching.keys()].filter((k) => k.startsWith("load:")).map((k) => k.slice("load:".length));
+  }
+
+  /** What's new in a room something here just changed (an Agent on this
+   * that posted in it): read now, not only when the stream says. */
+  readNew(id: string): Promise<void> {
+    if (this.loaded.has(id)) return this.newer(id);
+    if (this.fetching.has(`load:${id}`)) this.again.add(id);
+    return Promise.resolve();
   }
 
   /** The page before the oldest loaded. */

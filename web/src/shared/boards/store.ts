@@ -5,7 +5,7 @@
 // and the shell's board block read through it. A write that names a stale
 // `rev` is refused with 409 (`stale_rev`): the view reads the board again.
 
-import type { BoardList, BoardMoveEntry, BoardPutEntry, BoardView } from "../proto";
+import type { BoardList, BoardMoveEntry, BoardPutEntry, BoardView, BoardWorkItems } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -67,6 +67,10 @@ export const boards = {
     return call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, full);
   },
   remove: (id: string, entry: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/entries/${enc(entry)}`),
+  /** A project's work items matching `q`, newest first: what a row may point at. */
+  work(project: string, q: string, limit: number): Promise<BoardWorkItems> {
+    return call<BoardWorkItems>("GET", `/api/projects/${enc(project)}/work?q=${enc(q)}&limit=${limit}`);
+  },
   /** The board's thread (made the first time someone opens it): the room
    * the platform pushes a change on, so a view hears of it live. */
   thread: (id: string) => chat.openObject(id),

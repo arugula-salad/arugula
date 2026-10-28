@@ -141,4 +141,34 @@ impl Hub {
             self.publish(db, ChatLive::Session { room: s.room.clone(), ses: parent.clone() }, None);
         }
     }
+
+    /// Hear sessions change on this machine's streams, from now: what a
+    /// wait on them wakes on (Fleet 5, `crate::sessions::wave`).
+    pub(crate) fn session_moves(&self) -> SessionMoves {
+        SessionMoves(self.tx.subscribe())
+    }
+}
+
+/// [`Hub::session_moves`].
+pub(crate) struct SessionMoves(tokio::sync::broadcast::Receiver<std::sync::Arc<super::Out>>);
+
+impl SessionMoves {
+    /// Once one of `ids` changed, or this missed some events (so it may
+    /// have).
+    pub(crate) async fn changed(&mut self, ids: &[String]) {
+        use tokio::sync::broadcast::error::RecvError;
+        loop {
+            match self.0.recv().await {
+                Ok(o) => {
+                    if let ChatLive::Session { ses, .. } = &o.ev
+                        && ids.contains(ses)
+                    {
+                        return;
+                    }
+                }
+                Err(RecvError::Lagged(_)) => return,
+                Err(RecvError::Closed) => std::future::pending().await,
+            }
+        }
+    }
 }

@@ -211,11 +211,14 @@ test.describe("phone", () => {
     await page.keyboard.press("Enter");
     await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.panes.length)).toBe(2);
     const b = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "browser")!.id);
-    await page.evaluate((b) => window.__arugula.client.setActive(b), b);
+    // The port it opened is what the phone shows, not the terminal with
+    // the tab's split drawn around it (#299).
+    await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(b);
     const view = page.frameLocator(`[data-pane="${b}"] iframe`);
     await expect(view.locator("#h")).toHaveText("hot");
-    // The frame fills the phone's width.
-    expect((await paneEl(page, b).locator("iframe").boundingBox())!.width).toBeGreaterThan(380);
+    // The frame fills the phone's width, once the daemon has the phone's
+    // view of the tab: until then it's the split's half (#299).
+    await expect.poll(async () => (await paneEl(page, b).locator("iframe").boundingBox())?.width ?? 0).toBeGreaterThan(380);
 
     await view.locator("#b").tap();
     await view.locator("#b").tap();

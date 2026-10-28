@@ -208,7 +208,7 @@ fn major(v: &str) -> Option<u32> {
 pub fn status(a: &'static Adapter, home: &Path, env: &[(String, String)]) -> Status {
     let mut env = env.to_vec();
     let before = path_of(&env);
-    super::with_node_on_path(&mut env, home);
+    with_node_on_path(&mut env, home);
     let path = path_of(&env);
     let node_bin = (path != before).then(|| PathBuf::from(path.split(':').next().unwrap_or_default()));
     let npm = a.npm(&shown_dir(home));
@@ -238,7 +238,7 @@ pub fn all(home: &Path, env: &[(String, String)]) -> Vec<Value> {
 /// would get put first.
 pub fn node_path(home: &Path, env: &[(String, String)]) -> String {
     let mut env = env.to_vec();
-    super::with_node_on_path(&mut env, home);
+    with_node_on_path(&mut env, home);
     path_of(&env)
 }
 
@@ -277,6 +277,46 @@ pub fn install_command(s: &Status, home: &Path) -> String {
         None => npm,
     };
     format!("{npm} && echo && echo 'Installed {}. Start the agent again.'", s.adapter.package)
+}
+
+/// npm adapters are Node scripts: make sure a Node is on PATH even when the
+/// daemon runs as a service with a bare one. mise's shims won't do: outside
+/// a directory that pins Node they refuse to pick a version. So: a real
+/// `node` already on PATH, else one mise installed (22, the version the
+/// adapters were tested with, else the newest), put first.
+pub fn with_node_on_path(env: &mut Vec<(String, String)>, home: &Path) {
+    let path = env
+        .iter()
+        .rev()
+        .find(|(k, _)| k == "PATH")
+        .map(|(_, v)| v.clone())
+        .or_else(|| std::env::var("PATH").ok())
+        .unwrap_or_default();
+    let shims = home.join(".local/share/mise/shims");
+    let real =
+        path.split(':').filter(|d| !d.is_empty() && Path::new(d) != shims).any(|d| Path::new(d).join("node").is_file());
+    if real {
+        return;
+    }
+    let Some(bin) = mise_node(&home.join(".local/share/mise/installs/node")) else { return };
+    env.retain(|(k, _)| k != "PATH");
+    env.push(("PATH".into(), format!("{}:{path}", bin.display())));
+}
+
+/// The `bin` of a Node that mise installed: 22's if there, else the newest.
+pub fn mise_node(installs: &Path) -> Option<std::path::PathBuf> {
+    let mut versions: Vec<(Vec<u32>, std::path::PathBuf)> = std::fs::read_dir(installs)
+        .ok()?
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let v: Vec<u32> = name.split('.').map(|p| p.parse().ok()).collect::<Option<_>>()?;
+            let bin = e.path().join("bin");
+            (v.len() == 3 && bin.join("node").is_file()).then_some((v, bin))
+        })
+        .collect();
+    versions.sort();
+    versions.iter().rev().find(|(v, _)| v[0] == 22).or_else(|| versions.last()).map(|(_, b)| b.clone())
 }
 
 #[cfg(test)]

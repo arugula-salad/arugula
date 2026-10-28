@@ -17,15 +17,14 @@
 //! to an operation that sends ([`op`]'s test says so), and the platform
 //! refuses a machine's send anyway.
 
-use arugula_control_wire::forge_ops::{Call as OpCall, DraftQuery, DraftRef, InboxQuery, ItemQuery, ItemRef, Op};
+use arugula_control_wire::forge_ops::{DraftQuery, DraftRef, InboxQuery, ItemQuery, ItemRef, Op};
 use arugula_control_wire::projects::NewDraft;
-use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::tools::{Call, Kind, Out, done};
+use crate::mcp::tools::{Call, Kind, Out, done};
 use crate::{control::CloudRefused, mux::Api};
 
 #[derive(Deserialize, JsonSchema)]
@@ -405,49 +404,36 @@ fn summary(o: &Op, r: &Value) -> String {
     }
 }
 
-impl Call<'_> {
-    /// One operation on the platform: its result.
-    pub(crate) async fn forge_op(&self, op: Op) -> Result<Value, String> {
-        if op.sends() {
-            return Err("only a person sends: draft it for them".into());
-        }
-        let body = serde_json::to_value(OpCall::new(op)).map_err(|e| e.to_string())?;
-        let path = arugula_control_wire::forge_ops::FORGE_OPS;
-        let v = self.app().control.cloud(Method::POST, path, Some(&body)).await.map_err(said)?;
-        Ok(v["result"].clone())
+/// `forge_read` and `forge_draft`. They read and draft as this
+/// machine's owner, private repos too: an agent a guest stands behind
+/// may not.
+pub(crate) async fn forge_ops(c: &Call<'_>, tool: &str, kind: &str, a: Value) -> Out {
+    if let Some(me) = c.me()
+        && c.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
+    {
+        return Err(format!("{tool} reads and drafts as this machine's owner: only their own agents may"));
     }
-
-    /// `forge_read` and `forge_draft`. They read and draft as this
-    /// machine's owner, private repos too: an agent a guest stands behind
-    /// may not.
-    pub(crate) async fn forge_ops(&self, tool: &str, kind: &str, a: Value) -> Out {
-        if let Some(me) = self.me()
-            && self.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
-        {
-            return Err(format!("{tool} reads and drafts as this machine's owner: only their own agents may"));
+    // M200: native issues are read here too, and never drafted on.
+    let native = a["item"].as_str().filter(|i| crate::mcp::issues::Native::parse(i).is_some()).map(str::to_owned);
+    match (tool, kind, native) {
+        ("forge_read", "native_issues", _) => return super::issues::list_native(c, a).await,
+        ("forge_read", "issue", Some(_)) => {
+            let a: IssueItemArgs = args(a)?;
+            let (summary, v) = c.read_native(&a.item, a.project.as_deref()).await?;
+            return done(summary, v);
         }
-        // M200: native issues are read here too, and never drafted on.
-        let native = a["item"].as_str().filter(|i| super::issues::Native::parse(i).is_some()).map(str::to_owned);
-        match (tool, kind, native) {
-            ("forge_read", "native_issues", _) => return self.list_native(a).await,
-            ("forge_read", "issue", Some(_)) => {
-                let a: IssueItemArgs = args(a)?;
-                let (summary, v) = self.read_native(&a.item, a.project.as_deref()).await?;
-                return done(summary, v);
-            }
-            ("forge_draft", _, Some(item)) => return Err(super::issues::not_drafted(&item)),
-            _ => {}
-        }
-        let o = op(tool, kind, a, &self.by())?;
-        let r = self.forge_op(o.clone()).await?;
-        let mut out = match r {
-            Value::Object(_) => r,
-            other => json!({ "result": other }),
-        };
-        let s = summary(&o, &out);
-        out["op"] = json!(o.name());
-        done(s, out)
+        ("forge_draft", _, Some(item)) => return Err(crate::mcp::issues::not_drafted(&item)),
+        _ => {}
     }
+    let o = op(tool, kind, a, &c.by())?;
+    let r = c.forge_op(o.clone(), said).await?;
+    let mut out = match r {
+        Value::Object(_) => r,
+        other => json!({ "result": other }),
+    };
+    let s = summary(&o, &out);
+    out["op"] = json!(o.name());
+    done(s, out)
 }
 
 #[cfg(test)]

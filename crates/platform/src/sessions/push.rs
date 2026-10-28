@@ -24,6 +24,11 @@
 //! (`session:push`, for the asker), never kept, and the box revokes it once
 //! it pushed. The App's key never leaves the platform.
 //!
+//! A clone (`clone` in the ask, Fleet 6): a session whose repo is linked
+//! but no box's setup cloned clones it at its start, shallow, with a token
+//! minted the same way, after the same checks, with `contents: read`
+//! alone (`session:clone`), and revoked once it's cloned.
+//!
 //! What this doesn't stop: an agent that gets from its session user to the
 //! daemon's user could use a token in the seconds it lives, on any ref.
 //! Only control holding the token (a git proxy that reads the ref list)
@@ -53,7 +58,7 @@ pub async fn token(app: &Platform, m: &HostedMachine, a: &PushAsk) -> anyhow::Re
     if matches!(s.state, State::Failed | State::Stopped) {
         return Ok(refused(m, a, &format!("the session is {}", s.state.as_str())));
     }
-    if s.role == crate::db::sessions::Role::Review {
+    if s.role == crate::db::sessions::Role::Review && !a.clone {
         return Ok(refused(m, a, "a review pushes nothing"));
     }
     if a.branch != s.branch {
@@ -66,10 +71,16 @@ pub async fn token(app: &Platform, m: &HostedMachine, a: &PushAsk) -> anyhow::Re
     };
     let Some(gh) = app.github.as_ref() else { return Ok(refused(m, a, "this control has no GitHub App")) };
     let who = if s.asker.is_empty() { "platform" } else { s.asker.as_str() };
-    match gh.session_push_token(&Caller::of(app, who), link.installation_id, Repo::Id(link.repo_id)).await {
+    let (caller, repo_of) = (Caller::of(app, who), Repo::Id(link.repo_id));
+    let minted = match a.clone {
+        true => gh.session_clone_token(&caller, link.installation_id, repo_of).await,
+        false => gh.session_push_token(&caller, link.installation_id, repo_of).await,
+    };
+    match minted {
         Ok((token, expires_at)) => {
             // Which session, branch and repo; never the token.
-            info!(session = s.id, machine = m.machine, branch = s.branch, repo, "a session's push token minted");
+            let clone = a.clone;
+            info!(session = s.id, machine = m.machine, branch = s.branch, repo, clone, "a session's push token minted");
             Ok(PushGiven::Given { token, expires_at, revoke: gh.revoke_url() })
         }
         Err(e) => {

@@ -30,6 +30,8 @@ async function loadPrefs() {
 }
 
 export const pushNow = () => push;
+/** What control pushes the account about, once asked (null off control). */
+export const pushKinds = () => prefs;
 export function subscribePush(fn: () => void) {
   listeners.add(fn);
   return () => void listeners.delete(fn);

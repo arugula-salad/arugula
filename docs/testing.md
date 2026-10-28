@@ -77,7 +77,9 @@ once (#287); a new push to a branch cancels that branch's run:
     (`E2E_SET=stack`). The specs that time things (`E2E_SET=perf`: the
     frame rates, `editors.spec.ts`) run nightly instead
     (`.github/workflows/perf-nightly.yml`, since 2026-10-28). The frame
-    rates are asserted; the editors' times to a file are reported against
+    rates are logged, and what the code does in a frame is asserted: a
+    Canvas 2D scene's work against the frame its rate allows, the city's
+    draw calls and triangles (#278); the editors' times to a file are reported against
     their 3 s budget (`web/e2e/timing.ts`) in the job's summary, over
     budget marked, and don't fail it (shared pods put them over with
     nothing broken: 10 red main runs in a week);
@@ -396,8 +398,8 @@ Recorded from real systems and checked in, so tests see real shapes:
 | `crates/vt/fixtures/screens/` | Claude Code and Codex screens, the title on the first line | by hand, from a real terminal or a recording |
 | `crates/vt/fixtures/agents/` | Claude Code and Codex sessions with their timing, for the replay agent | `crates/vt/fixtures/agents/record.py NAME` |
 | `crates/daemon/tests/fixtures/github`, `gitlab`, `forgejo` | API responses for real PRs and issues (from S23); `crates/forge-github`'s tests read the GitHub ones too | by hand, as in `archive/spikes:spikes/s23-forge/` |
-| `crates/daemon/tests/fixtures/conversations/` | Claude Code transcripts, one per shape (S20) | by hand, as in `archive/spikes:spikes/s20-conversations/` |
-| `crates/daemon/tests/fixtures/conversations/desktop/` | the Claude desktop app's Code tab session records (#81, #83), made up from the fields S20 saw | by hand |
+| `crates/arugulad-agent/tests/fixtures/conversations/` | Claude Code transcripts, one per shape (S20) | by hand, as in `archive/spikes:spikes/s20-conversations/` |
+| `crates/arugulad-agent/tests/fixtures/conversations/desktop/` | the Claude desktop app's Code tab session records (#81, #83), made up from the fields S20 saw | by hand |
 | `crates/daemon/tests/fixtures/s13-*`, `s18-*` | Claude Code hook payloads | by hand |
 | `crates/daemon/tests/fixtures/chant/` | chant output | by hand |
 | `crates/daemon/tests/fixtures/chant/why/` | `graph --intent app/server.mjs --json` and `status local --json` (chant 0.108.1) over a workspace with a committed agent run, an uncommitted line, a decision and a held lease (#619) | `make.sh DIR CHANT OUT` beside them, with the chant from `web/e2e/fixtures/chant-why` |

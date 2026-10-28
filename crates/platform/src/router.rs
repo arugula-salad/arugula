@@ -282,6 +282,11 @@ fn routes() -> Routes {
         // A person's agent starts and replies to sessions, by grant (aru-121).
         .route(arugula_control_wire::sessions::AGENT_SESSIONS, post(crate::chat::agent_sessions::start))
         .route(arugula_control_wire::sessions::AGENT_SESSION_REPLY, post(crate::chat::agent_sessions::reply))
+        // A wave of sessions, a session's whole answer, and a wait (Fleet 5).
+        .route(arugula_control_wire::sessions::PROJECT_SESSIONS, get(crate::sessions::wave::list))
+        .route(arugula_control_wire::sessions::AGENT_PROJECT_SESSIONS, get(crate::sessions::wave::agent_list))
+        .route(arugula_control_wire::sessions::AGENT_SESSIONS_WAIT, post(crate::sessions::wave::agent_wait))
+        .route(arugula_control_wire::sessions::AGENT_SESSION, get(crate::sessions::wave::agent_read))
         .route(
             arugula_control_wire::sessions::ASK,
             get(crate::chat::sessions::ask_show).post(crate::chat::sessions::ask_answer),

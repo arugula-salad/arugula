@@ -12,16 +12,17 @@
 // (409): the view reads the board again and says so, and the change is theirs
 // to make again.
 
-import { useEffect, useRef, useState } from "preact/hooks";
-import type { BoardRow, BoardView, BoardZone } from "../proto";
+import { useEffect, useId, useRef, useState } from "preact/hooks";
+import type { BoardPointer, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
 import { useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
+import { issues } from "../issues/store";
 import { BoardError, STALE_REV, boards } from "./store";
 import "./boards.css";
-import { BLOCK_LABEL, GLYPH, LIVE_LABEL, STATUSES, STATUS_LABEL, blockClass, blockFacts, liveClass, parsePointer, pointerHref, pointerLabel, pointerText, progress, proven, stepBefore } from "./text";
+import { BLOCK_LABEL, GLYPH, LIVE_LABEL, PICK_DELAY_MS, PICK_LIMIT, STATUSES, STATUS_LABEL, assigneesLine, blockClass, blockFacts, debounced, isCard, liveClass, pointerHref, pointerLabel, pointerText, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -98,6 +99,21 @@ export function BoardPanel({
     if (title?.trim()) await act(() => boards.put(id, { entry: "zone", title: title.trim(), kind: kind ?? null }));
   };
 
+  /** A native issue in the board's project, and a row pointing at it in the zone. */
+  const newIssue = async (zone: string) => {
+    const title = await askText("New issue", "", "its title");
+    if (!title?.trim()) return;
+    let made;
+    try {
+      made = await issues.create(view.board.project, { title: title.trim(), body: "", labels: [], assignees: [] });
+    } catch (e) {
+      toast(`Couldn't make the issue: ${(e as Error).message}`);
+      return;
+    }
+    const ok = await act(() => boards.put(id, { entry: "row", zone, pointer: { kind: "issue", id: made.id } }));
+    if (!ok) toast(`Made #${made.number} but couldn't add it to the board`);
+  };
+
   const zoneIds = view.zones.map((z) => z.id);
   return (
     <div class="board" data-board={id}>
@@ -112,7 +128,7 @@ export function BoardPanel({
       )}
       {view.zones.length === 0 && <p class="dim">No zones yet.</p>}
       {view.zones.map((z, i) => (
-        <Zone key={z.id} z={z} view={view} index={i} zoneIds={zoneIds} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} />
+        <Zone key={z.id} z={z} view={view} index={i} zoneIds={zoneIds} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} newIssue={newIssue} />
       ))}
       <p class="board-foot">
         <button type="button" data-board-add-zone onClick={() => void addZone()}>
@@ -140,6 +156,7 @@ function Zone({
   act,
   id,
   platform,
+  newIssue,
 }: {
   z: BoardZone;
   view: BoardView;
@@ -150,6 +167,7 @@ function Zone({
   act: Act;
   id: string;
   platform: (path: string) => string | undefined;
+  newIssue: (zone: string) => Promise<void>;
 }) {
   const [gone, setGone] = useState(false);
   const p = progress(z);
@@ -169,6 +187,7 @@ function Zone({
       },
       { label: "Move up", disabled: !up || proofs, run: () => void act(() => boards.move(id, z.id, { before: up!.before })) },
       { label: "Move down", disabled: !down || proofs || zoneIds[index + 1] === view.zones.find((x) => x.kind === "proofs")?.id, run: () => void act(() => boards.move(id, z.id, { before: down!.before })) },
+      { label: "New issue…", disabled: proofs, run: () => void newIssue(z.id) },
       "separator",
       { label: "Delete the zone and its rows", danger: true, run: () => setGone(true) },
     ]);
@@ -194,6 +213,7 @@ function Zone({
       </ul>
       {editing === `new:${z.id}` ? (
         <RowForm
+          project={view.board.project}
           row={null}
           save={(f) => act(() => boards.put(id, { entry: "row", zone: z.id, note: f.note, pointer: f.pointer ?? null }))}
           done={() => setEditing(null)}
@@ -243,6 +263,13 @@ function Row({
 }) {
   const label = pointerLabel(r.pointer, r.live);
   const href = pointerHref(r, platform);
+  const card = isCard(r.live);
+  const who = card ? assigneesLine(r.live!.assignees) : "";
+  const proofTag = zone.kind === "proofs" && (
+    <span class={`ws-tag board-proof ${proven(r) ? "proven" : "unproven"}`} data-board-proof={proven(r) ? "proven" : "not-proven"}>
+      {proven(r) ? "proven" : "not proven yet"}
+    </span>
+  );
   const statusMenu = (e: MouseEvent) =>
     menuAt(
       e,
@@ -268,25 +295,33 @@ function Row({
       </button>
       {editing ? (
         <RowForm
+          project={view.board.project}
           row={r}
           save={(f) => act(() => boards.put(id, { id: r.id, rev: r.rev, note: f.note, ...(f.pointer ? { pointer: f.pointer } : {}) }))}
           done={() => setEditing(null)}
         />
       ) : (
         <div class="board-main">
-          <div class="board-line">
+          {card && (
+            <div class="board-line board-card-title" data-board-title>
+              <span class="board-title">{r.live!.title}</span>
+              {proofTag}
+            </div>
+          )}
+          <div class={card ? "board-line board-sub" : "board-line"}>
             {label && (href ? <a class="board-ptr" href={href} target={r.pointer.kind === "forge_item" || r.pointer.kind === "link" ? "_blank" : undefined} rel="noopener noreferrer" data-board-ptr>{label}</a> : <span class="board-ptr" data-board-ptr>{label}</span>)}
             {r.live && (
               <span class={`ws-tag board-live ${liveClass(r.live.state)}`} data-board-live={r.live.state}>
                 {LIVE_LABEL[r.live.state]}
               </span>
             )}
-            {r.live && <span class="board-item dim">{r.live.title}</span>}
-            {zone.kind === "proofs" && (
-              <span class={`ws-tag board-proof ${proven(r) ? "proven" : "unproven"}`} data-board-proof={proven(r) ? "proven" : "not-proven"}>
-                {proven(r) ? "proven" : "not proven yet"}
+            {card && who && (
+              <span class="board-who dim" data-board-who>
+                {who}
               </span>
             )}
+            {r.live && !card && <span class="board-item dim">{r.live.title}</span>}
+            {!card && proofTag}
           </div>
           {r.block && (
             <div class="board-line board-block" data-board-block={r.block.state}>
@@ -311,31 +346,101 @@ function Row({
 }
 
 /** A row's note and pointer, new or edited. The pointer is sent only when
- * it was changed (an agent block's isn't typed, and stays). */
-function RowForm({ row, save, done }: { row: BoardRow | null; save: (f: { note: string; pointer?: ReturnType<typeof parsePointer> }) => Promise<boolean>; done: () => void }) {
+ * it was changed (an agent block's isn't typed, and stays). "Points at" is a
+ * search over the project's work items; a result picked is the pointer, and
+ * text typed and not picked is an id or link as before. */
+function RowForm({ project, row, save, done }: { project: string; row: BoardRow | null; save: (f: { note: string; pointer?: BoardPointer }) => Promise<boolean>; done: () => void }) {
   const start = row ? pointerText(row.pointer) : "";
   const [note, setNote] = useState(row?.note ?? "");
   const [ptr, setPtr] = useState(start);
+  const [picked, setPicked] = useState<BoardPointer | null>(null);
   const [bad, setBad] = useState(false);
+  const [found, setFound] = useState<BoardWorkItem[]>([]);
+  const [active, setActive] = useState(-1);
+  const asked = useRef(0);
+  const search = useRef(
+    debounced((q: string) => {
+      const n = ++asked.current;
+      boards.work(project, q, PICK_LIMIT).then(
+        (w) => n === asked.current && (setFound(w.items), setActive(-1)),
+        () => n === asked.current && setFound([]),
+      );
+    }, PICK_DELAY_MS),
+  ).current;
+  useEffect(() => () => search.cancel(), []);
+  const listId = useId();
+  const optionId = (i: number) => `${listId}-${i}`;
+
+  const type = (text: string) => {
+    setPtr(text);
+    setPicked(null);
+    setBad(false);
+    search.cancel();
+    // A search that was out is stale now.
+    asked.current++;
+    if (text.trim() && text.trim() !== start) search(text.trim());
+    else setFound([]);
+  };
+  const pick = (w: BoardWorkItem) => {
+    search.cancel();
+    asked.current++;
+    setPicked(w.pointer);
+    setPtr(workLabel(w));
+    setFound([]);
+    setActive(-1);
+  };
+  const keys = (e: KeyboardEvent) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!found.length) return;
+      e.preventDefault();
+      setActive(stepActive(active, found.length, e.key === "ArrowDown"));
+    } else if (e.key === "Enter" && active >= 0 && found[active]) {
+      e.preventDefault();
+      pick(found[active]);
+    } else if (e.key === "Escape" && found.length) {
+      e.preventDefault();
+      e.stopPropagation();
+      setFound([]);
+      setActive(-1);
+    }
+  };
   const submit = async (e: Event) => {
     e.preventDefault();
-    const pointer = parsePointer(ptr);
-    if (!pointer) return setBad(true);
-    const ok = await save({ note: note.trim(), ...(ptr.trim() !== start ? { pointer } : {}) });
+    const sent = pointerToSend(ptr, start, picked);
+    if (!sent) return setBad(true);
+    const ok = await save({ note: note.trim(), ...sent });
     if (ok) done();
   };
   return (
     <form class="board-form" data-board-form onSubmit={(e) => void submit(e)}>
       <input type="text" value={note} maxLength={280} placeholder="note" aria-label="Note" data-board-note-input autoFocus onInput={(e) => setNote(e.currentTarget.value)} />
-      <input
-        type="text"
-        value={ptr}
-        placeholder="points at: iss_…, fi_…, run_…, hw_… or https://…"
-        aria-label="Points at"
-        aria-invalid={bad}
-        data-board-ptr-input
-        onInput={(e) => (setPtr(e.currentTarget.value), setBad(false))}
-      />
+      <div class="board-pick">
+        <input
+          type="text"
+          role="combobox"
+          aria-expanded={found.length > 0}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={active >= 0 ? optionId(active) : undefined}
+          autocomplete="off"
+          value={ptr}
+          placeholder="points at: search, or iss_…, fi_…, run_…, hw_… or https://…"
+          aria-label="Points at"
+          aria-invalid={bad}
+          data-board-ptr-input
+          onInput={(e) => type(e.currentTarget.value)}
+          onKeyDown={keys}
+        />
+        <ul class="board-pick-list" role="listbox" id={listId} aria-label="Work items" hidden={!found.length} data-board-pick-list>
+          {found.map((w, i) => (
+            <li key={w.pointer.kind + ("id" in w.pointer ? w.pointer.id : "")} id={optionId(i)} role="option" aria-selected={i === active} class={i === active ? "active" : undefined} data-board-pick={i} onMouseDown={(e) => (e.preventDefault(), pick(w))}>
+              <span class="board-ptr">{workLabel(w)}</span>
+              <span class="board-pick-title">{w.title}</span>
+              <span class="board-pick-state dim">{w.state}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
       {bad && <span class="board-bad">Expected an id that starts iss_, fi_, run_ or hw_, or an https:// link.</span>}
       <span class="board-form-buttons">
         <button type="submit" class="primary" data-board-save>

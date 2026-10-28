@@ -89,3 +89,49 @@ async fn a_row_reports_what_it_points_at_now() {
         "{rows:?}"
     );
 }
+
+/// A row on an issue or a PR carries who it is assigned to: a mirrored
+/// item's logins, a native issue's as its issue list names them. A stale mirror row (`null`, or
+/// not a list) reads as no one; a note has no `live` at all.
+#[tokio::test]
+async fn a_row_on_an_issue_or_pr_names_its_assignees() {
+    let hub = Arc::new(TestHub::default());
+    let (_gh, app, base) = serve(&hub).await;
+    let (team, _) = world(&hub, &_gh, &app).await;
+    hub.flag("team:t1", true);
+    hub.flag_named("team:t1", FLAG, true);
+
+    let (_, b) =
+        call(&base, "bob", "POST", &format!("/api/projects/{team}/boards"), Some(json!({ "title": "Launch" }))).await;
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let (_, v) = put(&base, &id, json!({ "entry": "zone", "title": "Now" })).await;
+    let zone = v["zones"][0]["id"].as_str().unwrap().to_owned();
+    let (s, issue) = call(
+        &base,
+        "bob",
+        "POST",
+        &format!("/api/projects/{team}/issues"),
+        Some(json!({ "title": "Fix login", "assignees": ["bob", "carol"] })),
+    )
+    .await;
+    assert_eq!(s, 200, "{issue}");
+    let issue = issue["id"].as_str().unwrap().to_owned();
+    for ptr in [
+        json!({ "kind": "forge_item", "id": "fi_a3" }),
+        json!({ "kind": "forge_item", "id": "fi_a1" }),
+        json!({ "kind": "issue", "id": issue }),
+    ] {
+        let (s, v) = put(&base, &id, json!({ "entry": "row", "zone": zone, "note": "n", "pointer": ptr })).await;
+        assert_eq!(s, 200, "{v}");
+    }
+    app.db
+        .c()
+        .execute("UPDATE forge_items SET assignees = '[\"octo\",\"cat\"]' WHERE id = 'fi_a3'", params![])
+        .unwrap();
+    app.db.c().execute("UPDATE forge_items SET assignees = 'null' WHERE id = 'fi_a1'", params![]).unwrap();
+
+    let rows = live(&base, "bob", &id).await;
+    assert_eq!(rows[0]["assignees"], json!(["octo", "cat"]), "{rows:?}");
+    assert!(rows[1]["assignees"].is_null(), "a stale row reads as no one: {rows:?}");
+    assert_eq!(rows[2]["assignees"], json!(["bob", "carol"]), "{rows:?}");
+}

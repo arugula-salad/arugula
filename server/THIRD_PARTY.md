@@ -5037,13 +5037,13 @@ limitations under the License.
 ## Apache License 2.0
 
 Used by:
-- [arugula-control 0.64.1](https://github.com/arugula-salad/arugula)
-- [arugula-control-common 0.64.1](https://github.com/arugula-salad/arugula)
+- [arugula-control 0.65.0](https://github.com/arugula-salad/arugula)
+- [arugula-control-common 0.65.0](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-e2e 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-forge-github 0.0.0](https://github.com/arugula-salad/arugula)
-- [arugula-platform 0.64.1](https://github.com/arugula-salad/arugula)
+- [arugula-platform 0.65.0](https://github.com/arugula-salad/arugula)
 - [arugula-proto 0.0.0](https://github.com/arugula-salad/arugula)
 - [anyhow 1.0.104](https://github.com/dtolnay/anyhow)
 - [async-trait 0.1.92](https://github.com/dtolnay/async-trait)

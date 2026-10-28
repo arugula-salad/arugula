@@ -87,6 +87,22 @@ you). Control is on 127.0.0.1, where WebAuthn refuses passkeys:
 `DEV_CONTROL_HOST=localhost` puts it on `http://localhost:7690`, with
 passkeys, in a state directory of its own
 (`~/.local/state/arugula-dev-control-localhost`).
+`DEV_CONTROL_HOST=<tailnet address>` (100.x.y.z, or a name it resolves)
+is for a Chrome on another machine, say for a PR's screenshots from
+your laptop of what runs on geek. Control and the fake GitHub (which
+the browser signs in at) listen on that address alone, never every
+interface: the fake signs anyone in as you. The platform page and the
+block sites move to `app.<address>.sslip.io` and
+`blocks.<address>.sslip.io`, since the other machine's Chrome sends
+`*.localhost` to its own loopback. sslip.io is public DNS answering
+each such name with the address in it, so the machine needs DNS that
+reaches it. Plain HTTP to an address isn't a secure context: no
+WebCrypto, so no device keys, and no service workers, so no block
+sites. dev-control prints the Chrome command line that makes those
+origins secure ones, in a profile of its own. The block sites are a
+host pattern there, `*.blocks.<address>.sslip.io`: Chrome takes `*.`
+in a bare host, not in an origin. As on 127.0.0.1, an address has no
+passkeys.
 `DEV_CONTROL_CHAT=1` turns on control's chat (M123): team *Acme*, with
 `$DEV_CONTROL_LOGIN` its owner and everyone in `DEV_CONTROL_LOGINS` a
 member (each with a headless device of their own that approves their
@@ -117,6 +133,78 @@ from a throwaway daemon with a scripted demo session, into a checkout of
 `SITE_DIR`; `SHOTS_PORT` and `SHOTS_DEV_PORT` move the daemon's ports); the
 README's `dive.gif` is the site's own tour, made by
 `web/screenshots/dive.mjs`.
+
+### A rollup's check
+
+`just rollup-check` runs what check.yml runs, on the checkout, and ends
+with one verdict. Merge main in first, so it's main's verdict too. If
+HEAD is behind origin/main, it says so at the start and in the verdict.
+It runs:
+
+- the lint job's steps (`.github/actions/lint`'s, with gitleaks);
+- the rest of `just check`'s (the web import rule and paths, control's
+  tables, the binaries check, the workspace and mux guards);
+- clippy on both workspaces, macOS's (`just check-macos`) and `core`'s
+  (`just check-core`);
+- every Rust test under CI's nextest profile, with `--no-fail-fast`,
+  plus the doctests and control-smoke;
+- the e2e specs CI's shards run (`E2E_SET=rest`).
+
+Every step runs, whatever failed before it, and writes a log of its
+own under `target/rollup-check/<time>/` (`ROLLUP_LOGS` moves them).
+The end lists each step's result and the tests that failed.
+
+The tests that need Docker are reported apart: the test stack's (the
+`testnet` group in `.config/nextest.toml`, on the box's static binaries,
+which it builds as CI's static job does unless `ARUGULA_SSH_BINARIES`
+names some) and the platform on Postgres. With no Docker they're
+skipped, and the verdict says so.
+
+`ROLLUP_JOBS` (4) and `ROLLUP_THREADS` (6) set `CARGO_BUILD_JOBS` and
+`NEXTEST_TEST_THREADS`. Those are CI's test job's values; geek hung
+twice at full width. `ROLLUP_SKIP="macos core"` leaves the steps named
+out. It exits 1 when a step failed. It doesn't run what needs more than
+one machine: the test stack's claims and the stack specs, desktop-xvfb,
+the notices, the desktop app's clippy, macOS's tests and WebKit's
+specs, and Windows'.
+
+### Merging through the queue
+
+Main moves while a wave's rollup is tested, and each time the lead
+re-merged main and ran the ~35 min suite again. GitHub's merge queue
+does that instead. A queued pull request is tested as a merge group:
+main, the pull requests queued ahead of it, and it. It merges only if
+the group passes.
+
+check.yml runs on `merge_group`. A group runs every job, since
+`scripts/changed` skips nothing for any event but a push. Its `queue`
+job is the group's verdict: every job passed or was skipped. On a pull
+request, binaries.yml's job of the same name stands in for it, once
+`binaries` and `quick` have passed. binaries.yml has no `merge_group`
+trigger, because its `queue`, skipped on a group, would count as
+passed. Only someone who may merge can queue a pull request, so a
+group's code reaches the home cloud's runners no sooner than a merge
+would bring it.
+
+The queue is off until Jake turns it on. In the repository's
+**Settings → Rules → Rulesets**, in the ruleset on the default branch
+(or a new one targeting it):
+
+1. **Require merge queue**: the merge method main uses now; *Build
+   concurrency* 1 or 2 (each group takes a pod per job); *Minimum group
+   size* 1, *Maximum* 5, *Wait time* 0; *Only merge non-failing pull
+   requests*; *Status check timeout* 90 minutes (a run is ~35 min, plus
+   pods' queues).
+2. **Require status checks to pass**: add `queue`, from GitHub
+   Actions. It stands for `binaries` and `quick` too: if they're
+   required on their own now, take them out, or a group waits for checks
+   no workflow reports on it.
+
+Then a pull request's *Merge when ready* queues it. A rollup's queue
+entry is the lead's `just rollup-check`, on main as it will be.
+Main's push runs check.yml once more after the merge, and chant's
+`ci/green` tags still come from that run (chant.workspace.json). The
+Windows workflows don't run on groups.
 
 `just testnet up ssh` starts a local stack in Docker (`testnet/`, #200): a
 bastion and a box with no Arugula that only ssh reaches. `just testnet

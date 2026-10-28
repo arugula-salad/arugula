@@ -14,9 +14,3 @@
 # entry has no issue or is past its `until`: fix the test and delete the
 # entry, or delete the test. quarantine-nightly.yml runs these alone, every
 # night, without gating anything.
-
-[[rust]]
-test = "arugula-platform triggers::tests::session_feedback::round_three_is_refused"
-issue = "https://app.arugula.io/p/prj_3e5d802cb4b08d43074df6c32f5344c1/issues/iss_44f336182dcf75495287bcf9fdcdb9ea"
-until = "2026-11-10"
-why = "Fails twice on macOS on unrelated commits (4f66cdc95, 2f33811ea)."

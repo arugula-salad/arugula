@@ -718,10 +718,19 @@ pub async fn flush(app: &Platform, s: &Session, now: u64) -> Result<Option<u64>>
 /// Whether session `s` needs a person: CI failed again after its last
 /// round ([`MAX_CI_ROUNDS`]), and nobody has prompted it in its thread
 /// since.
+///
+/// The last round is the last one settled, not the last one made: batches
+/// made in the same millisecond list in either order (Arugula #277). A
+/// refusal settled with a sent round in the same flush is the later of
+/// the two, as one is only refused once every round was sent.
 pub fn needs_person(app: &Platform, s: &Session) -> Result<bool> {
     let fb = app.db.session_feedback(&s.id)?;
     let settled = |f: &&Feedback| f.kind == FeedbackKind::Ci && f.state != FeedbackState::Gathering && !f.not_required;
-    let Some(last) = fb.iter().rev().find(settled) else {
+    let Some(last) = fb
+        .iter()
+        .filter(settled)
+        .max_by_key(|f| (f.done_at.unwrap_or(f.created_at), f.state == FeedbackState::Refused))
+    else {
         return Ok(false);
     };
     if last.state != FeedbackState::Refused {

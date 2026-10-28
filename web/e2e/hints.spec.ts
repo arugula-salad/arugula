@@ -14,7 +14,9 @@
 // are in hints-people.spec.ts and hints-team.spec.ts.
 //
 // Hints keep quiet under a test runner unless a spec asks (hints/index.ts):
-// this one does, `__arugulaHints`.
+// this one does, `__arugulaHints`. Batch 2's chips are in
+// hints-panes.spec.ts, its toasts in hints-people.spec.ts and
+// hints-team.spec.ts.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -37,7 +39,14 @@ let claude = "";
 let daemon: ChildProcess | undefined;
 test.use({ baseURL: async ({}, use) => use(APP) });
 test.describe.configure({ mode: "serial" });
-test.beforeEach(({ page }) => page.addInitScript(() => Object.assign(window, { __arugulaHints: true })));
+// Any command gets a mark, whose hint (hints-panes.spec.ts) would be on
+// screen before these: it's seen already, unless a test says otherwise.
+test.beforeEach(({ page }) =>
+  page.addInitScript(() => {
+    Object.assign(window, { __arugulaHints: true });
+    if (!localStorage.getItem("arugula.seen")) localStorage.setItem("arugula.seen", JSON.stringify({ "seen:command-mark": 1 }));
+  }),
+);
 
 /** The daemon: on a port of its choosing, then (after a restart) the same. */
 async function start() {

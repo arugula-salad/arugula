@@ -105,6 +105,7 @@ const READ_RULES: &[&str] = &[
     "mcp__arugula__search_threads",
     "mcp__arugula__read_run",
     "mcp__arugula__read_deploy",
+    "mcp__arugula__read_session",
 ];
 
 /// What `install` adds beside [`READ_RULES`], without `--allow-acting`
@@ -888,6 +889,7 @@ mod tests {
             "mcp__arugula__search_threads",
             "mcp__arugula__read_run",
             "mcp__arugula__read_deploy",
+            "mcp__arugula__read_session",
         ];
         assert_eq!(READ_RULES, read);
         let acting_cli = [

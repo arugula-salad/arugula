@@ -2,7 +2,7 @@
 // progress, a pointer's label and the id a person typed as a pointer.
 // Plain functions, for the view and its tests (scripts/boards.test.mjs).
 
-import type { BoardBlockState, BoardBlockWord, BoardLive, BoardLiveState, BoardPointer, BoardRow, BoardStatus, BoardZone } from "../proto";
+import type { BoardBlockState, BoardBlockWord, BoardLive, BoardLiveState, BoardPointer, BoardRow, BoardStatus, BoardWorkItem, BoardZone } from "../proto";
 
 /** A row's status as its glyph: ○ open (or none), ◐ working, ? needs
  * input, ● done, ✕ failed. */
@@ -123,6 +123,19 @@ export function pointerLabel(p: BoardPointer, live?: BoardLive | null): string {
   }
 }
 
+/** Whether a row reads as a card: it points at an issue or a PR the
+ * platform read (a run's `live` stays a link and a tag). */
+export function isCard(live?: BoardLive | null): live is BoardLive {
+  return !!live && live.kind !== "run";
+}
+
+/** Who a card is assigned to, comma-separated: three names, then `+N`. */
+export function assigneesLine(who?: string[] | null): string {
+  const list = (who ?? []).filter(Boolean);
+  if (list.length <= 3) return list.join(", ");
+  return `${list.slice(0, 2).join(", ")} +${list.length - 2}`;
+}
+
 /** The pointer as the id a person edits: none for a block's, which isn't typed. */
 export function pointerText(p: BoardPointer): string {
   return p.kind === "none" || p.kind === "block" ? "" : p.kind === "link" ? p.url : p.id;
@@ -146,6 +159,49 @@ export function parsePointer(text: string): BoardPointer | null {
     default:
       return { kind: "workspace", id: t };
   }
+}
+
+/** How many results the "points at" picker lists. */
+export const PICK_LIMIT = 8;
+
+/** How long the picker waits after a keystroke before it searches. */
+export const PICK_DELAY_MS = 250;
+
+/** A result's source label: `OWNER/NAME#N` for a mirrored item, `#N` for a
+ * native issue, the run's own title for a run. */
+export function workLabel(w: Pick<BoardWorkItem, "source" | "repo" | "number" | "title">): string {
+  if (w.source === "run" || w.number == null) return w.title;
+  return w.repo ? `${w.repo}#${w.number}` : `#${w.number}`;
+}
+
+/** Call `fn` once, `ms` after the last call. `cancel` drops a pending one. */
+export function debounced<A extends unknown[]>(fn: (...a: A) => void, ms: number): ((...a: A) => void) & { cancel: () => void } {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const run = (...a: A) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...a), ms);
+  };
+  run.cancel = () => clearTimeout(t);
+  return run;
+}
+
+/** The active result after an arrow key: down and up wrap round, and -1 is
+ * none (the field itself). */
+export function stepActive(active: number, count: number, down: boolean): number {
+  if (count <= 0) return -1;
+  if (down) return active + 1 >= count ? 0 : active + 1;
+  return active <= 0 ? count - 1 : active - 1;
+}
+
+/** What a row's form sends as the pointer: a picked result's, else the typed
+ * text's when it differs from `start` (the row's own), else none, so a note
+ * edit leaves a link or an agent block's pointer alone. Null when the typed
+ * text isn't a pointer. */
+export function pointerToSend(text: string, start: string, picked: BoardPointer | null): { pointer?: BoardPointer } | null {
+  if (picked) return { pointer: picked };
+  const pointer = parsePointer(text);
+  if (!pointer) return null;
+  return text.trim() !== start ? { pointer } : {};
 }
 
 /** Where a row's link goes: an item on its forge, a native issue or a run on

@@ -94,7 +94,6 @@ pub struct Tool {
 
 impl Entry {
     /// Not on the branch a resume follows (#79).
-    #[cfg(test)]
     pub fn forgotten(&self) -> bool {
         match self {
             Entry::User { forgotten, .. }

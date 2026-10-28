@@ -8,6 +8,10 @@ repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 arugulad-base = { workspace = true }
+# The agent and chat blocks and the conversations, in every build.
+arugulad-agent = { workspace = true }
+# MCP's tools for what lives in control, in every build.
+arugulad-control-tools = { workspace = true }
 # Docs, in every build.
 arugulad-docs = { workspace = true }
 # The deploy drivers (`_planter` and the rest), in every build.
@@ -68,5 +72,5 @@ rmcp = { version = "=3.5.0", default-features = false, features = ["transport-st
 default = ["labs", "forge", "editor"]
 forge = ["dep:arugulad-forge"]
 editor = ["dep:arugulad-editor"]
-labs = ["forge", "arugulad-base/labs", "dep:arugulad-labs"]
+labs = ["forge", "arugulad-base/labs", "arugulad-agent/labs", "dep:arugulad-labs"]
 debug-embed = ["arugulad-base/debug-embed"]
