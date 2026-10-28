@@ -144,7 +144,7 @@ pub fn nudge() {
 }
 
 /// Whether a run, or a session's turn (M255), is going on this machine
-/// ([`crate::hosted::activity`]).
+/// (the hosted box's `activity`).
 pub fn running() -> bool {
     RUNNING.load(Ordering::SeqCst) > 0 || sessions::busy()
 }

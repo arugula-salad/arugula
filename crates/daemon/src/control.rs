@@ -164,7 +164,7 @@ pub struct Saved {
     /// A hosted machine (M178, M180): enrolled into one project under its
     /// delegation, not one of an account's devices. `cert` is made from
     /// its hosted certificate, and who gets in is the project's people
-    /// (`crate::hosted::enroll::saved_from`).
+    /// (`crate::hosted::trust::saved_from`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hosted: Option<HostedPin>,
 }
@@ -190,7 +190,7 @@ pub struct HostedPin {
     /// windows approved, by account (`arugula_e2e::deploy::check_apply`):
     /// the first set control sent, and since then only what every later
     /// refresh also sent; a refresh never adds to it
-    /// (`crate::hosted::enroll::saved_from`). `None` until control sends
+    /// (`crate::hosted::trust::saved_from`). `None` until control sends
     /// one (a box enrolled before takes its first at its next refresh), and
     /// then no app window counts here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1514,7 +1514,7 @@ impl Control {
         self.control_here(&e.saved.url).await;
         let got: arugula_control_wire::hosted::Enrollment =
             self.get(e, arugula_control_wire::hosted::HOSTED_TRUST).await?;
-        let saved = crate::hosted::enroll::saved_from(got, &e.keys, Some(&e.saved))?;
+        let saved = crate::hosted::trust::saved_from(got, &e.keys, Some(&e.saved))?;
         let changed = serde_json::to_value(&saved).ok() != serde_json::to_value(&e.saved).ok();
         let wrote = changed && self.save_refreshed(&saved)?;
         let next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());

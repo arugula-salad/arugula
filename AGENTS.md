@@ -161,8 +161,10 @@ nothing marked `mux:` names the edge or the block kinds.
   `labs/sandbox.rs` in Labs), synced history (`sync.rs`, `seal.rs`),
   tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
 - **Lifecycle:** the command line (`args.rs`), startup (`lib.rs`), a
-  hosted workspace's box (`hosted/`: `--hosted`, its own keys per box,
-  enrolling, redialling on resume, busy and idle for control), `install`
+  hosted workspace's box (`hosted_box/`: `--hosted`, its own keys per box,
+  enrolling, redialling on resume, busy and idle for control; it registers
+  `hosted/`'s `Hosted`, and `hosted/` keeps its runs, archive and
+  enrollment check), `install`
   (`install.rs`), Getting started (`setup.rs`), updates (`update.rs`,
   `selfupdate.rs`), `_host` (`mux:host.rs`), malloc settings (`mux:heap.rs`), paths
   through links (`mux:paths.rs`), opt-in telemetry (`telemetry.rs`, the
