@@ -3,7 +3,9 @@
 
 [test-groups]
 # The tests on the Docker test stack (testnet/): each brings the stack up
-# if it isn't and recreates its box, so one at a time.
+# if it isn't and recreates its box, so one at a time. The justfile's
+# `testnet_tests` is the same filter (`just rollup-check` reports them
+# apart): keep the two in step.
 testnet = { max-threads = 1 }
 
 [[profile.default.overrides]]

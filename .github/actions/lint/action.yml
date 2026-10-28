@@ -2,7 +2,8 @@
 # quick on pull requests, so they first fail on the pull request instead
 # of on main after the merge (they broke main 4 times in 3 days, 2026-10-24
 # to 27). On GitHub's runners, with just on PATH; gitleaks is the callers'
-# (they scan different ranges).
+# (they scan different ranges). `just rollup-check` runs these steps too:
+# a step added here goes into its list.
 name: lint
 description: shellcheck, rustfmt and the generated files' and release scripts' checks
 runs:
@@ -19,9 +20,9 @@ runs:
       # rust-toolchain.toml's toolchain, rustfmt only.
       shell: bash
       run: rustup component add rustfmt && just fmt-check
-    - name: install.sh and the release's glibc check
+    - name: The shell scripts (install.sh, the release's, the CI's and the test stack's)
       shell: bash
-      run: shellcheck -s sh scripts/install.sh scripts/glibc-floor && shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
+      run: just shellcheck
     - name: Release scripts and ratchets
       shell: bash
       run: just test-scripts
@@ -34,6 +35,3 @@ runs:
     - name: The release notes' headline sections (docs/releases/, What's new)
       shell: bash
       run: just whats-new
-    - name: The CI's and the test stack's scripts
-      shell: bash
-      run: shellcheck -x scripts/ci-* scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/hosts/*.sh testnet/editors/*.sh testnet/macos/*.sh && shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh

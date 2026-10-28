@@ -455,6 +455,20 @@ fmt-check:
     scripts/server-cargo fmt --all --check
     cd crates/desktop && cargo fmt --check
 
+# CI runs it on main (check.yml's lint) and on pull requests (binaries.yml),
+# at shellcheck 0.11.0 (.github/actions/lint), geek's version: another
+# reports other things.
+# shellcheck over install.sh and the release's, the CI's and the test stack's scripts.
+shellcheck:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    v=$(shellcheck --version | sed -n 's/^version: //p')
+    [ "$v" = 0.11.0 ] || echo "shellcheck $v here, 0.11.0 in CI: it may report other things" >&2
+    shellcheck -s sh scripts/install.sh scripts/glibc-floor
+    shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
+    shellcheck -x scripts/ci-* scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/hosts/*.sh testnet/editors/*.sh testnet/macos/*.sh
+    shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
+
 # Release without waiting for a version bump to pass CI (#524): commit the
 # bump on top of the newest commit on main with a ci/green tag, tag it, and
 # push the tag with main, the bump merged in (docs/development.md).
@@ -884,6 +898,125 @@ check: test mux-guard workspace-guard
     {{server_cargo}} fmt --all --check
     {{cargo}} clippy --workspace --all-targets -- -D warnings
     {{server_cargo}} clippy --workspace --all-targets -- -D warnings
+
+# The tests on the Docker test stack, which need Docker and the box's static
+# binaries (`just static`, or ARUGULA_SSH_BINARIES): .config/nextest.toml's
+# `testnet` group, whose filter this is. Keep the two in step.
+testnet_tests := "package(arugulad) & binary(integration) & (test(/^ssh::/) | test(/^reboot::/) | test(/^guest_ssh::.*jump_host/))"
+
+# A rollup's verdict as CI's check would give it, on this checkout (merge
+# main in first; docs/development.md, "A rollup's check"): the lint job's
+# steps, the rest of `just check`'s, clippy (both workspaces, macOS's, and
+# without Labs as `core` runs it), every Rust test under CI's nextest profile
+# with no fail-fast, and the e2e specs CI's shards run. Each step runs,
+# whatever failed before it, into a log of its own; the end lists each
+# step's result and the tests that failed. The tests that need Docker (the
+# test stack's, and the platform's on Postgres) are reported apart, and
+# skipped, saying so, where there's no Docker. Exits 1 when a step failed.
+#
+# ROLLUP_JOBS (4) and ROLLUP_THREADS (6) are CARGO_BUILD_JOBS and
+# NEXTEST_TEST_THREADS, CI's test job's: geek hung twice at full width.
+# ROLLUP_SKIP="macos core e2e" skips the steps named; ROLLUP_LOGS is where
+# the logs go (target/rollup-check/<time>).
+#
+# What CI's check runs, here: a rollup's verdict.
+rollup-check:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    export CARGO_BUILD_JOBS=${ROLLUP_JOBS:-4} NEXTEST_TEST_THREADS=${ROLLUP_THREADS:-6} NEXTEST_PROFILE=ci
+    logs=${ROLLUP_LOGS:-{{target_dir}}/rollup-check/$(date +%Y%m%d-%H%M%S)}
+    mkdir -p "$logs"
+    skip=" ${ROLLUP_SKIP:-} "
+    results=()
+    # step GROUP NAME COMMAND...: COMMAND into $logs/NAME.log (and here),
+    # its result kept for the end.
+    step() {
+      local group=$1 name=$2 start=$SECONDS st
+      shift 2
+      if [[ $skip == *" $name "* ]]; then results+=("$group|$name|skipped|ROLLUP_SKIP"); return; fi
+      echo "==> rollup-check: $name" >&2
+      "$@" 2>&1 | tee "$logs/$name.log"
+      if [ "${PIPESTATUS[0]}" = 0 ]; then st=passed; else st=FAILED; fi
+      results+=("$group|$name|$st|$((SECONDS - start))s")
+    }
+    gone() { results+=("$1|$2|skipped|$3"); }
+    lock={{suite_lock}}
+    cargo="{{cargo}}"
+    server="{{server_cargo}}"
+    # Where main is: the queue tests a rollup on top of it.
+    behind=""
+    if timeout 60 git fetch -q origin main 2>/dev/null; then
+      n=$(git rev-list --count HEAD..FETCH_HEAD)
+      [ "$n" = 0 ] || behind="HEAD is $n commit$([ "$n" = 1 ] || echo s) behind origin/main: merge it in for main's verdict"
+    else
+      behind="couldn't fetch origin/main: not checked that HEAD has it"
+    fi
+    [ -z "$behind" ] || echo "rollup-check: $behind" >&2
+    [ -d web/node_modules ] || (cd web && pnpm install --frozen-lockfile)
+
+    # check.yml's lint (.github/actions/lint) and gitleaks.
+    step lint fmt just fmt-check
+    step lint shellcheck just shellcheck
+    step lint test-scripts just test-scripts
+    step lint proto-ts just proto-ts check
+    step lint decisions just decisions check
+    step lint whats-new just whats-new
+    step lint gitleaks scripts/ci-gitleaks
+    # The rest of `just check`'s.
+    step checks web just web
+    step checks web-imports just web-imports
+    step checks web-paths bash -c 'cd web && pnpm run paths'
+    step checks control-tables just control-tables check
+    step checks check-binaries scripts/check-binaries
+    step checks workspace-guard just workspace-guard
+    step checks mux-guard just mux-guard
+    # check.yml's clippy and core.
+    step clippy clippy $cargo clippy --workspace --all-targets -- -D warnings
+    step clippy clippy-server $server clippy --workspace --all-targets -- -D warnings
+    step clippy macos just check-macos
+    step clippy core $lock just check-core
+    # check.yml's test and test-2, whole: `just test-run`'s, one step each.
+    step tests test-build just test-build
+    step tests rust $lock $cargo nextest run --workspace --no-fail-fast -E 'not ({{testnet_tests}})'
+    step tests rust-server $lock $server nextest run --workspace --no-fail-fast
+    step tests doctests $lock $cargo test --workspace --doc --no-fail-fast
+    step tests doctests-server $lock $server test --workspace --doc --no-fail-fast
+    step tests control-smoke just e2e-interop control-smoke
+    # What only runs with Docker: the test stack's tests (on the box's
+    # static binaries, built as check.yml's static job does) and the
+    # platform on Postgres (test-postgres).
+    if docker info >/dev/null 2>&1; then
+      if [ -z "${ARUGULA_SSH_BINARIES:-}" ]; then
+        a=$(docker info --format '{{{{.Architecture}}'); case "$a" in arm64) a=aarch64 ;; amd64) a=x86_64 ;; esac
+        step docker static env CARGO_PROFILE_RELEASE_OPT_LEVEL=1 just static "$a"
+      fi
+      step docker testnet $lock $cargo nextest run --workspace --no-fail-fast -E '{{testnet_tests}}'
+      just testnet down >/dev/null 2>&1 || true
+      step docker postgres $lock just test-platform-postgres
+    else
+      gone docker testnet "no Docker here: the test stack's tests didn't run"
+      gone docker postgres "no Docker here: the platform on Postgres didn't run"
+    fi
+    # check.yml's e2e shards, in one run.
+    step e2e e2e bash -c 'just e2e-build && cd web && E2E_SET=rest E2E_PORT="${E2E_PORT:-$(../scripts/free-port)}" '"$lock"' pnpm exec playwright test'
+
+    echo
+    echo "rollup-check: the logs are in $logs"
+    failed=0
+    for r in "${results[@]}"; do
+      IFS='|' read -r group name st note <<<"$r"
+      printf '  %-7s %-16s %-8s %s\n' "$group" "$name" "$st" "$note"
+      [ "$st" = FAILED ] || continue
+      failed=1
+      # nextest's final lines name the failed tests; Playwright lists them after "N failed".
+      grep -E '^ +(FAIL|TIMEOUT|SIGSEGV|SIGABRT|SIGKILL|LEAK-FAIL) +\[' "$logs/$name.log" | sed 's/^ */      /' | sort -u | head -40
+      sed -n '/^ *[0-9]* failed$/,/^ *[0-9]* \(flaky\|skipped\|passed\|did not run\)/p' "$logs/$name.log" | sed 's/^ */      /' | head -40
+    done
+    echo "  Not run here (CI runs them): the test stack's claims and stack specs, desktop-xvfb,"
+    echo "  notices-check and desktop-check, macOS's test and WebKit specs, Windows' workflows."
+    [ -z "$behind" ] || echo "  $behind"
+    if [ "$failed" = 0 ]; then echo "rollup-check: passed"; else echo "rollup-check: FAILED"; fi
+    exit "$failed"
 
 # The daemon's crates (#232): the binary, arugulad, the library it's built
 # on and the feature crates on that, whose tests are the unit tests.
