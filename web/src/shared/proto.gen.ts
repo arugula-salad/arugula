@@ -2683,6 +2683,37 @@ export type NotifySet = { channels?: NotifyLevel, dms?: NotifyLevel, threads?: N
 snooze_until?: number, tz?: string, quiet?: Array<QuietHours>, all_notices?: boolean, };
 
 /**
+ * `POST /api/panes/N/nvim` (#1731): Open in editor, with the Editor
+ * preference nvim. A file at its line in the nvim already running in pane
+ * N, else in another pane of its tab, else in a new pane beside N running
+ * `nvim +LINE FILE` in the file's directory, on N's machine. No file: the
+ * nvim already there, else a new one in N's directory.
+ */
+export type NvimOpenRequest = { 
+/**
+ * The file: whole, or relative to the pane's directory.
+ */
+file?: string | null, 
+/**
+ * Its line, from 1.
+ */
+line?: number | null, };
+
+/**
+ * Where Open in editor put the file, for the page to show that pane.
+ */
+export type NvimOpened = { 
+/**
+ * The pane whose nvim has it.
+ */
+pane: number, how: NvimWhere, };
+
+/**
+ * Which nvim [`NvimOpened`] went to.
+ */
+export type NvimWhere = "pane" | "tab" | "new";
+
+/**
  * `POST /api/conversations/open` (M33): a Claude Code conversation as an
  * agent block.
  */
@@ -4346,6 +4377,7 @@ export const OPS = {
   "pane.inbox": { method: "POST", path: "/api/panes/{id}/inbox" },
   "pane.keys": { method: "POST", path: "/api/panes/{id}/keys" },
   "pane.mouse": { method: "POST", path: "/api/panes/{id}/mouse" },
+  "pane.nvim_open": { method: "POST", path: "/api/panes/{id}/nvim" },
   "pane.permit": { method: "POST", path: "/api/panes/{id}/permit" },
   "pane.ports": { method: "GET", path: "/api/panes/{id}/ports" },
   "pane.process": { method: "GET", path: "/api/panes/{id}/process" },

@@ -4606,6 +4606,12 @@ button.att {
   opacity: 1;
 }
 
+/* #1731: Open in editor, under an open file's row. */
+.diff-file-acts {
+  padding: 0 8px 4px;
+  font-size: 12px;
+}
+
 .diff-file.open > .diff-file-head {
   position: sticky;
   top: 0;

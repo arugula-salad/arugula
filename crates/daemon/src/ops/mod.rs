@@ -17,6 +17,7 @@ mod hosts;
 mod input;
 mod inspect;
 mod notify;
+mod nvim;
 mod panes;
 pub mod prompt;
 mod rules;

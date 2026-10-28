@@ -153,6 +153,8 @@ impl Request for crate::api::IdeDiffsRequest {}
 
 impl Request for crate::api::IdeMentionRequest {}
 
+impl Request for crate::api::NvimOpenRequest {}
+
 impl Request for crate::api::ConversationsQuery {}
 
 impl Request for crate::api::OpenConversationRequest {}
@@ -286,6 +288,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::PaneDetection);
         $m!($crate::op::ops::PaneDiffOf);
         $m!($crate::op::ops::PaneDrivers);
+        $m!($crate::op::ops::PaneNvimOpen);
         $m!($crate::op::ops::IdeGet);
         $m!($crate::op::ops::IdeSet);
         $m!($crate::op::ops::IdeMention);
@@ -365,11 +368,11 @@ pub mod ops {
             DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest,
             IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
             InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest,
-            OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest,
-            Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse,
-            SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest,
-            StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest,
-            WaitResult, WithdrawRequest,
+            NvimOpenRequest, NvimOpened, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
+            PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
+            PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
+            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins,
+            TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -919,6 +922,22 @@ pub mod ops {
         type Path = ();
         type Req = IdeDiffsRequest;
         type Res = IdeDiffs;
+    }
+
+    /// `POST /api/panes/N/nvim` (#1731): Open in editor when the Editor
+    /// preference is nvim: the file at its line in the nvim already running
+    /// in the pane, else in its tab, else in a new pane beside it running
+    /// nvim. The owner's, as editor blocks are.
+    pub struct PaneNvimOpen;
+
+    impl Op for PaneNvimOpen {
+        const NAME: &'static str = "pane.nvim_open";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/nvim";
+        const ACCESS: Access = Access::Owner;
+        type Path = PaneId;
+        type Req = NvimOpenRequest;
+        type Res = NvimOpened;
     }
 
     /// `POST /api/ide/mention` (M28): put `@file#Lstart-end` in Claude
@@ -1792,6 +1811,7 @@ mod tests {
             ("detection", ops::PaneDetection::path(&7)),
             ("diff", ops::PaneDiffOf::path(&7)),
             ("drivers", ops::PaneDrivers::path(&7)),
+            ("nvim", ops::PaneNvimOpen::path(&7)),
         ] {
             assert_eq!(got, format!("/api/panes/7/{path}"));
         }

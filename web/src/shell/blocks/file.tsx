@@ -12,6 +12,7 @@ import type { PaneId } from "../../shared/proto";
 import type { CodeView } from "../swarm/code";
 import { registerBlock, type BlockView } from "./view";
 import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
+import { editFile } from "./diff";
 
 export interface FileState {
   path: string;
@@ -82,6 +83,11 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
           </span>
         )}
         {s?.truncated && <span class="dim" title={`${KB(s.size)}: only the start is shown`}>first {KB(s.text.length)}</span>}
+        {s && !s.error && !client.state?.roles && (
+          <button class="link" data-open-editor title={`Open ${path} in your editor (Settings › Editor)`} onClick={() => editFile(client, id, path, s.line)}>
+            Open in editor
+          </button>
+        )}
         {!s?.error && (
           <span class={`review-live ${s?.watching ? "on" : ""}`} title={s?.watching ? "Updates as the file changes" : "Not watching: nobody's looking"}>
             {s?.watching ? "live" : "paused"}

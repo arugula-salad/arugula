@@ -20,9 +20,9 @@ use arugula_proto::{
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, FlagSet, FlagsList, ListPanes, MachineReset,
         MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf,
-        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt,
-        PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, SharingGet,
-        SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
+        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PaneNvimOpen, PanePermit, PanePorts, PaneProcess,
+        PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList,
+        SharingGet, SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
     },
 };
 use axum::{
@@ -77,6 +77,7 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/export.cast", get(export))
         .op::<PaneDrivers>()
         .op::<PaneDiffOf>()
+        .op::<PaneNvimOpen>()
         .op::<RulesList>()
         .op::<RulesForgetAll>()
         .op::<RuleForget>()
