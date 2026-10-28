@@ -1,0 +1,22 @@
+# Docker Hub's images that CI pulls, mirrored to GHCR by
+# .github/workflows/mirror-images.yml: each line's image (as `docker pull`
+# names it on Docker Hub) is copied, every platform, to
+# ghcr.io/arugula-salad/ci/<the same name>, e.g. debian:bookworm-slim to
+# ghcr.io/arugula-salad/ci/debian:bookworm-slim. The test stack, the
+# recipes and the Containerfiles name them as
+# ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/<name> (docs/testing.md,
+# "CI's images").
+
+# The test stack (testnet/): its boxes' base, the control profile's
+# control, platform, Postgres and fakes; team-swarm-phones' netem box.
+debian:bookworm-slim
+postgres:17-alpine
+node:22-slim
+# `just test-platform-postgres` (check.yml's test-postgres).
+postgres:17
+# The desktop app's build image (packaging/desktop/Containerfile):
+# desktop-xvfb, app-release's linux jobs.
+ubuntu:22.04
+# forges-nightly.yml's GitLab (testnet/forges).
+gitlab/gitlab-ce:18.4.1-ce.0
+gitlab/gitlab-runner:v18.4.0
