@@ -88,6 +88,8 @@ pub mod viewer;
 #[cfg(test)]
 mod viewer_tests;
 mod webhook;
+#[cfg(test)]
+mod work_tests;
 
 pub use app::{
     Caller, DeployScope, GithubApp, GithubUser, Install, Purpose, ReadToken, Repo, RepoRole, WriteToken, Writes,
