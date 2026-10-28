@@ -75,7 +75,7 @@ const HEADS: Record<Column, Head> = {
   boards: {
     head: "Boards",
     name: "boards",
-    gives: "read its boards (read), or read them and set their notes and statuses and move rows (read and write). Boards are in Labs: this does nothing until boards are on for your account.",
+    gives: "read its boards (read), or read them and set their notes and statuses and move rows (read and write). Boards are in Labs: this does nothing until boards are on for your account",
   },
 };
 
