@@ -27,7 +27,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{
+use crate::mcp::{
     results::{ThreadScope, ThreadsReach},
     tools::{Call, Kind, NoArgs, Out, done},
 };
@@ -237,270 +237,262 @@ fn query(pairs: &[(&str, String)]) -> String {
     q.finish()
 }
 
-impl Call<'_> {
-    /// They read and post as this machine's owner: only the owner's own
-    /// agents may.
-    async fn owners_agent(&self, tool: &str) -> Result<(), String> {
-        if let Some(me) = self.me()
-            && self.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
-        {
-            return Err(format!("{tool} reads and posts as this machine's owner: only their own agents may"));
-        }
-        Ok(())
+/// They read and post as this machine's owner: only the owner's own
+/// agents may.
+async fn owners_agent(c: &Call<'_>, tool: &str) -> Result<(), String> {
+    if let Some(me) = c.me()
+        && c.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
+    {
+        return Err(format!("{tool} reads and posts as this machine's owner: only their own agents may"));
     }
+    Ok(())
+}
 
-    async fn threads_call(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
-        self.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
+async fn threads_call(c: &Call<'_>, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
+    c.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
+}
+
+/// How this machine's agents are named in a message's mentions.
+fn mention(c: &Call<'_>) -> String {
+    let id = c.app().control.enrolled().map(|e| e.keys.id()).unwrap_or_default();
+    format!("{}{id}", arugula_control_wire::chat::AGENT_MENTION)
+}
+
+/// `list` kind `threads`.
+pub(crate) async fn list_threads(c: &Call<'_>) -> Out {
+    owners_agent(c, "list kind threads").await?;
+    let v = threads_call(c, Method::GET, AGENT_ROOMS, None).await?;
+    let rooms = v["rooms"].as_array().cloned().unwrap_or_default();
+    let reached = v["reach"].as_array().is_some_and(|r| !r.is_empty());
+    let summary = match rooms.len() {
+        // A grant reaches a project with no rooms yet: an issue's thread
+        // is made on its first message.
+        0 if reached => "No conversations yet where this machine's grants reach (an issue's thread starts with its first comment).".to_owned(),
+        0 => "No conversations: this machine's owner hasn't given its agents a thread grant (`arugula grants add <machine> threads.read --project <id>` or `--dms`, or Settings, Agents in conversations, on the platform page).".to_owned(),
+        n => format!(
+            "{n}: {}",
+            rooms
+                .iter()
+                .map(|r| {
+                    let mut s = format!("{} {} ({})", r["id"].as_str().unwrap_or("?"), room_name(r), r["powers"]
+                        .as_array()
+                        .map(|p| p.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "))
+                        .unwrap_or_default());
+                    if let Some(m) = r["last_mention"].as_i64() {
+                        s += &format!(", mentioned you at seq {m} of {}", r["last"]);
+                    }
+                    s
+                })
+                .collect::<Vec<_>>()
+                .join("; ")
+        ),
+    };
+    done(summary, json!({ "threads": rooms, "reach": v["reach"] }))
+}
+
+/// `read_thread`.
+pub(crate) async fn read_thread(c: &Call<'_>, a: ReadThreadArgs) -> Out {
+    owners_agent(c, READ_TOOL).await?;
+    let mut q = vec![];
+    if let Some(s) = a.after_seq {
+        q.push(("after", s.to_string()));
+    } else if let Some(s) = a.before_seq {
+        q.push(("before", s.to_string()));
     }
-
-    /// How this machine's agents are named in a message's mentions.
-    fn mention(&self) -> String {
-        let id = self.app().control.enrolled().map(|e| e.keys.id()).unwrap_or_default();
-        format!("{}{id}", arugula_control_wire::chat::AGENT_MENTION)
+    if let Some(l) = a.limit {
+        q.push(("limit", l.to_string()));
     }
-
-    /// `list` kind `threads`.
-    pub(crate) async fn list_threads(&self) -> Out {
-        self.owners_agent("list kind threads").await?;
-        let v = self.threads_call(Method::GET, AGENT_ROOMS, None).await?;
-        let rooms = v["rooms"].as_array().cloned().unwrap_or_default();
-        let reached = v["reach"].as_array().is_some_and(|r| !r.is_empty());
-        let summary = match rooms.len() {
-            // A grant reaches a project with no rooms yet: an issue's thread
-            // is made on its first message.
-            0 if reached => "No conversations yet where this machine's grants reach (an issue's thread starts with its first comment).".to_owned(),
-            0 => "No conversations: this machine's owner hasn't given its agents a thread grant (`arugula grants add <machine> threads.read --project <id>` or `--dms`, or Settings, Agents in conversations, on the platform page).".to_owned(),
-            n => format!(
-                "{n}: {}",
-                rooms
-                    .iter()
-                    .map(|r| {
-                        let mut s = format!("{} {} ({})", r["id"].as_str().unwrap_or("?"), room_name(r), r["powers"]
-                            .as_array()
-                            .map(|p| p.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "))
-                            .unwrap_or_default());
-                        if let Some(m) = r["last_mention"].as_i64() {
-                            s += &format!(", mentioned you at seq {m} of {}", r["last"]);
-                        }
-                        s
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            ),
-        };
-        done(summary, json!({ "threads": rooms, "reach": v["reach"] }))
+    if a.mentions_only {
+        q.push(("mentions", "true".to_owned()));
     }
-
-    /// `read_thread`.
-    pub(crate) async fn read_thread(&self, a: ReadThreadArgs) -> Out {
-        self.owners_agent(READ_TOOL).await?;
-        let mut q = vec![];
-        if let Some(s) = a.after_seq {
-            q.push(("after", s.to_string()));
-        } else if let Some(s) = a.before_seq {
-            q.push(("before", s.to_string()));
-        }
-        if let Some(l) = a.limit {
-            q.push(("limit", l.to_string()));
-        }
-        if a.mentions_only {
-            q.push(("mentions", "true".to_owned()));
-        }
-        if let Some(t) = a.thread {
-            q.push(("thread", t.to_string()));
-        }
-        let path = format!("{}?{}", agent_messages(a.room.trim()), query(&q));
-        let v = self.threads_call(Method::GET, &path, None).await?;
-        let me = self.mention();
-        let messages: Vec<Value> = v["messages"].as_array().into_iter().flatten().map(|m| message(m, &me)).collect();
-        let room = &v["room"];
-        let next =
-            messages.last().map_or_else(|| a.after_seq.map_or(room["last"].clone(), Value::from), |m| m["seq"].clone());
-        let lines: Vec<String> = messages
-            .iter()
-            .map(|m| {
-                if let Ok(s) = serde_json::from_value::<ChatSystem>(m["system"].clone()) {
-                    return format!(
-                        "[{}] * {} {}",
-                        m["seq"],
-                        m["by"].as_str().unwrap_or("?"),
-                        system_text(&s, m["text"].as_str().unwrap_or(""))
-                    );
-                }
-                let reacted = reactions_of(m);
-                let attached = files_of(m);
-                format!(
-                    "[{}] {}: {}{}{}{}",
+    if let Some(t) = a.thread {
+        q.push(("thread", t.to_string()));
+    }
+    let path = format!("{}?{}", agent_messages(a.room.trim()), query(&q));
+    let v = threads_call(c, Method::GET, &path, None).await?;
+    let me = mention(c);
+    let messages: Vec<Value> = v["messages"].as_array().into_iter().flatten().map(|m| message(m, &me)).collect();
+    let room = &v["room"];
+    let next =
+        messages.last().map_or_else(|| a.after_seq.map_or(room["last"].clone(), Value::from), |m| m["seq"].clone());
+    let lines: Vec<String> = messages
+        .iter()
+        .map(|m| {
+            if let Ok(s) = serde_json::from_value::<ChatSystem>(m["system"].clone()) {
+                return format!(
+                    "[{}] * {} {}",
                     m["seq"],
                     m["by"].as_str().unwrap_or("?"),
-                    m["text"].as_str().unwrap_or(""),
-                    if attached.is_empty() { String::new() } else { format!("  [files: {attached}]") },
-                    if reacted.is_empty() { String::new() } else { format!("  [reactions: {reacted}]") },
-                    thread_note(m)
-                ) + if m["pinned"] == true { "  [pinned]" } else { "" }
-            })
-            .collect();
-        let pins: Vec<ChatPin> = serde_json::from_value(v["pins"].clone()).unwrap_or_default();
-        let mut about = String::new();
-        if let Some(t) = room["topic"].as_str().filter(|t| !t.is_empty()) {
-            about += &format!("\nTopic: {t}");
-        }
-        if let Some(d) = room["description"].as_str().filter(|d| !d.is_empty()) {
-            about += &format!("\nDescription: {d}");
-        }
-        if !pins.is_empty() {
-            about += &format!("\nPinned:\n{}", pins_line(&pins));
-        }
-        let parent = (!v["parent"].is_null()).then(|| message(&v["parent"], &me));
-        let summary = format!(
-            "{} ({}), {} message(s){}{}{about}{}",
-            room_name(room),
-            room["id"].as_str().unwrap_or("?"),
-            messages.len(),
-            if a.mentions_only { " that mention you" } else { "" },
-            match (&parent, a.thread) {
-                (Some(p), Some(t)) => format!(
-                    " in the thread of {t} ({}: {})",
-                    p["by"].as_str().unwrap_or("?"),
-                    p["text"].as_str().unwrap_or("")
-                ),
-                _ => String::new(),
-            },
-            if lines.is_empty() { String::new() } else { format!(":\n{}", lines.join("\n")) },
-        );
-        done(
-            summary,
-            json!({
-                "room": room, "messages": messages, "more": v["more"], "next_after_seq": next,
-                "topic": room["topic"], "description": room["description"], "pins": v["pins"], "parent": parent,
-            }),
-        )
-    }
-
-    /// `post_thread`.
-    pub(crate) async fn post_thread(&self, a: PostThreadArgs) -> Out {
-        self.owners_agent(POST_TOOL).await?;
-        if let Some(seq) = a.react_to_seq {
-            let emoji =
-                a.emoji.as_deref().map(str::trim).filter(|e| !e.is_empty()).ok_or("react_to_seq needs an emoji")?;
-            let room = a.room.trim();
-            let v = if a.remove {
-                let path = format!("{}?{}", agent_reactions(room, seq), query(&[("emoji", emoji.to_owned())]));
-                self.threads_call(Method::DELETE, &path, None).await?
-            } else {
-                self.threads_call(Method::POST, &agent_reactions(room, seq), Some(json!({ "emoji": emoji }))).await?
-            };
-            let what = if a.remove { "Took back" } else { "Reacted with" };
-            return done(format!("{what} {emoji} on seq {seq} in {room}, as your person's agent on this machine"), v);
-        }
-        let room = a.room.trim();
-        if let Some(seq) = a.pin_seq {
-            let method = if a.remove { Method::DELETE } else { Method::PUT };
-            let v = self.threads_call(method, &agent_pin(room, seq), None).await?;
-            let what = if a.remove { "Unpinned" } else { "Pinned" };
-            return done(format!("{what} seq {seq} in {room}, as your person's agent on this machine"), v);
-        }
-        if a.files.len() > MAX_FILES {
-            return Err(format!("a message carries at most {MAX_FILES} files"));
-        }
-        let mut ids = vec![];
-        for path in &a.files {
-            ids.push(self.upload_file(room, path).await?);
-        }
-        // Files only when there are some: the same body as before #107 otherwise.
-        let mut body = if ids.is_empty() { json!({ "text": a.text }) } else { json!({ "text": a.text, "files": ids }) };
-        if let Some(p) = a.parent {
-            body["parent"] = json!(p);
-            body["also"] = json!(a.also);
-        }
-        let v = self.threads_call(Method::POST, &agent_messages(room), Some(body)).await?;
-        let mut summary = format!(
-            "Posted as seq {}{} in {room}, labelled as your person's agent on this machine",
-            v["seq"],
-            a.parent.map_or(String::new(), |p| format!(" in the thread of {p}")),
-        );
-        if !ids.is_empty() {
-            summary += &format!(", with {} file(s)", ids.len());
-        }
-        if let Some(u) = v["unreached"].as_array().filter(|u| !u.is_empty()) {
-            let words: Vec<&str> = u.iter().filter_map(Value::as_str).collect();
-            summary += &format!(" (@{} reached nobody there)", words.join(", @"));
-        }
-        done(summary, v)
-    }
-
-    /// One file from this machine, read as `read_file` reads (a path the
-    /// agent may read, relative to its pane's directory), up to control's
-    /// limit, and uploaded to the room: its id there.
-    async fn upload_file(&self, room: &str, path: &str) -> Result<String, String> {
-        let pane = self.own_pane();
-        let mut full = path.to_owned();
-        if let Some(p) = pane {
-            let info = self.readable(p).await?;
-            if !full.starts_with('/')
-                && !full.starts_with('~')
-                && let Some(cwd) = info.info.cwd.as_deref()
-            {
-                full = format!("{}/{full}", cwd.trim_end_matches('/'));
+                    system_text(&s, m["text"].as_str().unwrap_or(""))
+                );
             }
-        }
-        let mut bytes: Vec<u8> = vec![];
-        loop {
-            let (chunk, size) =
-                crate::fs::read_on(self.app(), pane, &full, bytes.len() as u64, arugula_proto::fs::READ_MAX).await?;
-            if size > MAX_FILE_BYTES as u64 {
-                return Err(format!("{path} is {size} bytes: a file in chat is at most {MAX_FILE_BYTES}"));
-            }
-            bytes.extend_from_slice(&chunk);
-            if chunk.is_empty() || bytes.len() as u64 >= size {
-                break;
-            }
-        }
-        let name = path.rsplit('/').next().unwrap_or(path);
-        let up = format!("{}?{}", agent_files(room), query(&[("name", name.to_owned())]));
-        let v = self
-            .app()
-            .control
-            .cloud_bytes(Method::POST, &up, bytes)
-            .await
-            .map_err(|e| format!("{path}: {}", said(e)))?;
-        v["id"].as_str().map(str::to_owned).ok_or_else(|| format!("{path}: control didn't give the file an id"))
+            let reacted = reactions_of(m);
+            let attached = files_of(m);
+            format!(
+                "[{}] {}: {}{}{}{}",
+                m["seq"],
+                m["by"].as_str().unwrap_or("?"),
+                m["text"].as_str().unwrap_or(""),
+                if attached.is_empty() { String::new() } else { format!("  [files: {attached}]") },
+                if reacted.is_empty() { String::new() } else { format!("  [reactions: {reacted}]") },
+                thread_note(m)
+            ) + if m["pinned"] == true { "  [pinned]" } else { "" }
+        })
+        .collect();
+    let pins: Vec<ChatPin> = serde_json::from_value(v["pins"].clone()).unwrap_or_default();
+    let mut about = String::new();
+    if let Some(t) = room["topic"].as_str().filter(|t| !t.is_empty()) {
+        about += &format!("\nTopic: {t}");
     }
-
-    /// `search_threads`.
-    pub(crate) async fn search_threads(&self, a: SearchThreadsArgs) -> Out {
-        self.owners_agent(SEARCH_TOOL).await?;
-        let mut q = vec![("q", a.q)];
-        if let Some(t) = a.team {
-            q.push(("team", t));
-        }
-        let v = self.threads_call(Method::GET, &format!("{AGENT_SEARCH}?{}", query(&q)), None).await?;
-        let me = self.mention();
-        let found: Vec<Value> = v["found"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(|h| json!({ "room": h["room"], "message": message(&h["message"], &me) }))
-            .collect();
-        let summary = match found.len() {
-            0 => "Nothing found.".to_owned(),
-            n => format!(
-                "{n}: {}",
-                found
-                    .iter()
-                    .map(|h| format!(
-                        "{} [{}] {}: {}",
-                        h["room"].as_str().unwrap_or("?"),
-                        h["message"]["seq"],
-                        h["message"]["by"].as_str().unwrap_or("?"),
-                        h["message"]["text"].as_str().unwrap_or("")
-                    ))
-                    .collect::<Vec<_>>()
-                    .join("\n")
+    if let Some(d) = room["description"].as_str().filter(|d| !d.is_empty()) {
+        about += &format!("\nDescription: {d}");
+    }
+    if !pins.is_empty() {
+        about += &format!("\nPinned:\n{}", pins_line(&pins));
+    }
+    let parent = (!v["parent"].is_null()).then(|| message(&v["parent"], &me));
+    let summary = format!(
+        "{} ({}), {} message(s){}{}{about}{}",
+        room_name(room),
+        room["id"].as_str().unwrap_or("?"),
+        messages.len(),
+        if a.mentions_only { " that mention you" } else { "" },
+        match (&parent, a.thread) {
+            (Some(p), Some(t)) => format!(
+                " in the thread of {t} ({}: {})",
+                p["by"].as_str().unwrap_or("?"),
+                p["text"].as_str().unwrap_or("")
             ),
+            _ => String::new(),
+        },
+        if lines.is_empty() { String::new() } else { format!(":\n{}", lines.join("\n")) },
+    );
+    done(
+        summary,
+        json!({
+            "room": room, "messages": messages, "more": v["more"], "next_after_seq": next,
+            "topic": room["topic"], "description": room["description"], "pins": v["pins"], "parent": parent,
+        }),
+    )
+}
+
+/// `post_thread`.
+pub(crate) async fn post_thread(c: &Call<'_>, a: PostThreadArgs) -> Out {
+    owners_agent(c, POST_TOOL).await?;
+    if let Some(seq) = a.react_to_seq {
+        let emoji = a.emoji.as_deref().map(str::trim).filter(|e| !e.is_empty()).ok_or("react_to_seq needs an emoji")?;
+        let room = a.room.trim();
+        let v = if a.remove {
+            let path = format!("{}?{}", agent_reactions(room, seq), query(&[("emoji", emoji.to_owned())]));
+            threads_call(c, Method::DELETE, &path, None).await?
+        } else {
+            threads_call(c, Method::POST, &agent_reactions(room, seq), Some(json!({ "emoji": emoji }))).await?
         };
-        done(summary, json!({ "found": found }))
+        let what = if a.remove { "Took back" } else { "Reacted with" };
+        return done(format!("{what} {emoji} on seq {seq} in {room}, as your person's agent on this machine"), v);
     }
+    let room = a.room.trim();
+    if let Some(seq) = a.pin_seq {
+        let method = if a.remove { Method::DELETE } else { Method::PUT };
+        let v = threads_call(c, method, &agent_pin(room, seq), None).await?;
+        let what = if a.remove { "Unpinned" } else { "Pinned" };
+        return done(format!("{what} seq {seq} in {room}, as your person's agent on this machine"), v);
+    }
+    if a.files.len() > MAX_FILES {
+        return Err(format!("a message carries at most {MAX_FILES} files"));
+    }
+    let mut ids = vec![];
+    for path in &a.files {
+        ids.push(upload_file(c, room, path).await?);
+    }
+    // Files only when there are some: the same body as before #107 otherwise.
+    let mut body = if ids.is_empty() { json!({ "text": a.text }) } else { json!({ "text": a.text, "files": ids }) };
+    if let Some(p) = a.parent {
+        body["parent"] = json!(p);
+        body["also"] = json!(a.also);
+    }
+    let v = threads_call(c, Method::POST, &agent_messages(room), Some(body)).await?;
+    let mut summary = format!(
+        "Posted as seq {}{} in {room}, labelled as your person's agent on this machine",
+        v["seq"],
+        a.parent.map_or(String::new(), |p| format!(" in the thread of {p}")),
+    );
+    if !ids.is_empty() {
+        summary += &format!(", with {} file(s)", ids.len());
+    }
+    if let Some(u) = v["unreached"].as_array().filter(|u| !u.is_empty()) {
+        let words: Vec<&str> = u.iter().filter_map(Value::as_str).collect();
+        summary += &format!(" (@{} reached nobody there)", words.join(", @"));
+    }
+    done(summary, v)
+}
+
+/// One file from this machine, read as `read_file` reads (a path the
+/// agent may read, relative to its pane's directory), up to control's
+/// limit, and uploaded to the room: its id there.
+async fn upload_file(c: &Call<'_>, room: &str, path: &str) -> Result<String, String> {
+    let pane = c.own_pane();
+    let mut full = path.to_owned();
+    if let Some(p) = pane {
+        let info = c.readable(p).await?;
+        if !full.starts_with('/')
+            && !full.starts_with('~')
+            && let Some(cwd) = info.info.cwd.as_deref()
+        {
+            full = format!("{}/{full}", cwd.trim_end_matches('/'));
+        }
+    }
+    let mut bytes: Vec<u8> = vec![];
+    loop {
+        let (chunk, size) =
+            crate::fs::read_on(c.app(), pane, &full, bytes.len() as u64, arugula_proto::fs::READ_MAX).await?;
+        if size > MAX_FILE_BYTES as u64 {
+            return Err(format!("{path} is {size} bytes: a file in chat is at most {MAX_FILE_BYTES}"));
+        }
+        bytes.extend_from_slice(&chunk);
+        if chunk.is_empty() || bytes.len() as u64 >= size {
+            break;
+        }
+    }
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let up = format!("{}?{}", agent_files(room), query(&[("name", name.to_owned())]));
+    let v = c.app().control.cloud_bytes(Method::POST, &up, bytes).await.map_err(|e| format!("{path}: {}", said(e)))?;
+    v["id"].as_str().map(str::to_owned).ok_or_else(|| format!("{path}: control didn't give the file an id"))
+}
+
+/// `search_threads`.
+pub(crate) async fn search_threads(c: &Call<'_>, a: SearchThreadsArgs) -> Out {
+    owners_agent(c, SEARCH_TOOL).await?;
+    let mut q = vec![("q", a.q)];
+    if let Some(t) = a.team {
+        q.push(("team", t));
+    }
+    let v = threads_call(c, Method::GET, &format!("{AGENT_SEARCH}?{}", query(&q)), None).await?;
+    let me = mention(c);
+    let found: Vec<Value> = v["found"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|h| json!({ "room": h["room"], "message": message(&h["message"], &me) }))
+        .collect();
+    let summary = match found.len() {
+        0 => "Nothing found.".to_owned(),
+        n => format!(
+            "{n}: {}",
+            found
+                .iter()
+                .map(|h| format!(
+                    "{} [{}] {}: {}",
+                    h["room"].as_str().unwrap_or("?"),
+                    h["message"]["seq"],
+                    h["message"]["by"].as_str().unwrap_or("?"),
+                    h["message"]["text"].as_str().unwrap_or("")
+                ))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ),
+    };
+    done(summary, json!({ "found": found }))
 }
 
 /// Whether thread tools are live here, for `capabilities`: joined, and

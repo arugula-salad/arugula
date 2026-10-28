@@ -3,13 +3,71 @@
 //! the list an agent sees keeps its order (and `mcp-tool-list.json`, which
 //! pins it, its lines) whichever crate a tool lives in. A call to one runs
 //! its [`Run`]. Registered before `main`, by the binary.
+//!
+//! Control's tools (`arugulad-control-tools`) also say what the base asks
+//! of them: whether they reach control from here, and `wait` on a run
+//! ([`ControlTools`]).
 
-use std::sync::Mutex;
+use std::{
+    sync::{Mutex, OnceLock},
+    time::Duration,
+};
 
 use futures_util::future::BoxFuture;
 use serde_json::Value;
 
-use super::tools::{Args, Call, Def, Kind, Out};
+use super::{
+    results::{CloudReach, RunsReach, ThreadsReach},
+    tools::{Args, Call, Def, Kind, Out},
+};
+use crate::server::App;
+
+/// What the base asks of control's tools: `capabilities` and the card
+/// *What your agent can do here* say whether each reaches control from
+/// here, and `wait` with `run` follows a run.
+pub trait ControlTools: Send + Sync + 'static {
+    /// Whether agents here drive the owner's Cloud workspaces (#1094).
+    fn cloud_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, CloudReach>;
+    /// Whether thread tools are live here (M198).
+    fn threads_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, ThreadsReach>;
+    /// Whether run tools are live here (M216).
+    fn runs_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, RunsReach>;
+    /// `wait` with `run`: until it ends, or `limit`.
+    fn wait_run<'a>(&'a self, call: &'a Call<'a>, run: &'a str, limit: Duration) -> BoxFuture<'a, Out>;
+}
+
+static CONTROL_TOOLS: OnceLock<Box<dyn ControlTools>> = OnceLock::new();
+
+/// Puts control's tools in this daemon (once, before `main`).
+pub fn control_tools(c: Box<dyn ControlTools>) {
+    if CONTROL_TOOLS.set(c).is_err() {
+        tracing::warn!("control's tools were registered twice");
+    }
+}
+
+/// What this build has none of says so.
+const NO_CONTROL_TOOLS: &str = "This build of Arugula has no control tools";
+
+/// What [`ControlTools`] says of Cloud workspaces, conversations and
+/// runs from here; none reached without them.
+pub(crate) async fn reach(app: &App) -> (CloudReach, ThreadsReach, RunsReach) {
+    match CONTROL_TOOLS.get() {
+        Some(c) => tokio::join!(c.cloud_reach(app), c.threads_reach(app), c.runs_reach(app)),
+        None => (
+            CloudReach { reachable: false, note: NO_CONTROL_TOOLS.into() },
+            ThreadsReach { live: false, scopes: vec![], note: NO_CONTROL_TOOLS.into() },
+            RunsReach { live: false, projects: vec![], note: NO_CONTROL_TOOLS.into() },
+        ),
+    }
+}
+
+/// `wait` with `run` ([`ControlTools::wait_run`]).
+pub(crate) async fn wait_run(call: &Call<'_>, run: &str, limit: Duration) -> Out {
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.wait_run(call, run, limit).await,
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't wait on a run")),
+    }
+}
 
 /// A call to a registered tool or kind: the call, the kind (a grouped
 /// tool's, which `route` took out of the arguments), and the arguments.

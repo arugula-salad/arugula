@@ -119,7 +119,9 @@ Paths are under `crates/daemon/src/`, except those marked `mux:`, which are in
 nothing marked `mux:` names the edge or the block kinds.
 
 - **Edge:** the embedded web client and `/ws` (`server.rs`), the HTTP API
-  (`api.rs`), MCP (`mcp/`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport
+  (`api.rs`), MCP (`mcp/`; its tools for what lives in control, such as
+  Cloud workspaces, conversations, native issues, runs and deploys, are
+  `control_tools/`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport
   (`dial.rs`), end-to-end channels from client devices (`e2e.rs`), enrolment in
   control (`control.rs`), Windows' named pipe (`pipe.rs`).
 - **Who may:** who may talk to the daemon (`access.rs`, `localauth.rs`),

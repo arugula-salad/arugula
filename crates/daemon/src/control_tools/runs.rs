@@ -37,7 +37,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{
+use crate::mcp::{
     results::{RunsProject, RunsReach},
     tools::{Call, Out, PAGE, PAGE_MAX, done},
 };
@@ -191,131 +191,127 @@ fn ended(r: &Value) -> bool {
     r["state"].as_str().and_then(arugula_e2e::run::State::parse).is_some_and(|s| s.terminal())
 }
 
-impl Call<'_> {
-    /// They act as this machine's owner: only the owner's own agents may.
-    async fn owners_runs(&self, what: &str) -> Result<(), String> {
-        if let Some(me) = self.me()
-            && self.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
-        {
-            return Err(format!("{what} acts as this machine's owner: only their own agents may"));
+/// They act as this machine's owner: only the owner's own agents may.
+async fn owners_runs(c: &Call<'_>, what: &str) -> Result<(), String> {
+    if let Some(me) = c.me()
+        && c.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
+    {
+        return Err(format!("{what} acts as this machine's owner: only their own agents may"));
+    }
+    Ok(())
+}
+
+async fn runs_call(c: &Call<'_>, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
+    c.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
+}
+
+/// `start_run`.
+pub(crate) async fn start_run(c: &Call<'_>, a: StartRunArgs) -> Out {
+    owners_runs(c, START_TOOL).await?;
+    let project = project_of(&a.project)?;
+    let given =
+        usize::from(a.spec.is_some()) + usize::from(!a.command.is_empty()) + usize::from(a.instruction.is_some());
+    if given != 1 {
+        return Err("say what to run: a spec, a command, or an instruction (one of them)".into());
+    }
+    let body = AgentRunStart {
+        spec: a.spec,
+        workspace: a.on_box,
+        argv: a.command,
+        instruction: a.instruction,
+        agent: a.recipe,
+        directory: a.directory,
+    };
+    let body = serde_json::to_value(body).map_err(|e| e.to_string())?;
+    let r = runs_call(c, Method::POST, &agent_project_runs(&project), Some(body)).await?;
+    let waits = if r["grant"].is_null() {
+        " The project has no standing grant, so it waits for an owner to approve it."
+    } else {
+        ""
+    };
+    let s = format!(
+        "Started {}, now, as your person's agent on this machine.{waits} wait with run {} follows it; read_run reads its log.",
+        line(&r),
+        r["id"].as_str().unwrap_or("?")
+    );
+    done(s, json!({ "run": r }))
+}
+
+/// `read_run`.
+pub(crate) async fn read_run(c: &Call<'_>, a: ReadRunArgs) -> Out {
+    owners_runs(c, READ_TOOL).await?;
+    let Some(run) = a.run.as_deref() else {
+        let project = project_of(a.project.as_deref().ok_or("read_run needs a run, or a project to list")?)?;
+        let mut path = agent_project_runs(&project);
+        if let Some(s) = a.state.as_deref().filter(|s| !s.trim().is_empty()) {
+            path +=
+                &format!("?state={}", url::form_urlencoded::byte_serialize(s.trim().as_bytes()).collect::<String>());
         }
-        Ok(())
-    }
-
-    async fn runs_call(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
-        self.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
-    }
-
-    /// `start_run`.
-    pub(crate) async fn start_run(&self, a: StartRunArgs) -> Out {
-        self.owners_runs(START_TOOL).await?;
-        let project = project_of(&a.project)?;
-        let given =
-            usize::from(a.spec.is_some()) + usize::from(!a.command.is_empty()) + usize::from(a.instruction.is_some());
-        if given != 1 {
-            return Err("say what to run: a spec, a command, or an instruction (one of them)".into());
-        }
-        let body = AgentRunStart {
-            spec: a.spec,
-            workspace: a.on_box,
-            argv: a.command,
-            instruction: a.instruction,
-            agent: a.recipe,
-            directory: a.directory,
+        let v = runs_call(c, Method::GET, &path, None).await?;
+        let runs = v["runs"].as_array().cloned().unwrap_or_default();
+        let s = match runs.len() {
+            0 => format!("No runs in project {project} match."),
+            n => format!(
+                "{n} in project {project}, newest first:\n{}",
+                runs.iter().map(line).collect::<Vec<_>>().join("\n")
+            ),
         };
-        let body = serde_json::to_value(body).map_err(|e| e.to_string())?;
-        let r = self.runs_call(Method::POST, &agent_project_runs(&project), Some(body)).await?;
-        let waits = if r["grant"].is_null() {
-            " The project has no standing grant, so it waits for an owner to approve it."
-        } else {
-            ""
-        };
-        let s = format!(
-            "Started {}, now, as your person's agent on this machine.{waits} wait with run {} follows it; read_run reads its log.",
-            line(&r),
-            r["id"].as_str().unwrap_or("?")
-        );
-        done(s, json!({ "run": r }))
+        return done(s, v);
+    };
+    let run = run_id(run)?;
+    if a.project.is_some() || a.state.is_some() {
+        return Err("project and state list runs: leave them out with run".into());
     }
+    let r = runs_call(c, Method::GET, &agent_run(run), None).await?;
+    let max = a.max_chars.unwrap_or(PAGE).clamp(1, PAGE_MAX);
+    let log = run_log(c, run, a.offset.unwrap_or(0), max).await?;
+    done(format!("{}\nTimeline:\n{}\n{}", line(&r), timeline(&r), log_text(&log)), json!({ "run": r, "log": log }))
+}
 
-    /// `read_run`.
-    pub(crate) async fn read_run(&self, a: ReadRunArgs) -> Out {
-        self.owners_runs(READ_TOOL).await?;
-        let Some(run) = a.run.as_deref() else {
-            let project = project_of(a.project.as_deref().ok_or("read_run needs a run, or a project to list")?)?;
-            let mut path = agent_project_runs(&project);
-            if let Some(s) = a.state.as_deref().filter(|s| !s.trim().is_empty()) {
-                path += &format!(
-                    "?state={}",
-                    url::form_urlencoded::byte_serialize(s.trim().as_bytes()).collect::<String>()
-                );
-            }
-            let v = self.runs_call(Method::GET, &path, None).await?;
-            let runs = v["runs"].as_array().cloned().unwrap_or_default();
-            let s = match runs.len() {
-                0 => format!("No runs in project {project} match."),
-                n => format!(
-                    "{n} in project {project}, newest first:\n{}",
-                    runs.iter().map(line).collect::<Vec<_>>().join("\n")
-                ),
+async fn run_log(c: &Call<'_>, run: &str, offset: u64, max: usize) -> Result<Value, String> {
+    runs_call(c, Method::GET, &format!("{}?offset={offset}&max={max}", agent_run_log(run)), None).await
+}
+
+/// `wait` with `run`: until it ends, or `limit`.
+pub(crate) async fn wait_run(c: &Call<'_>, run: &str, limit: Duration) -> Out {
+    owners_runs(c, "wait with run").await?;
+    let run = run_id(run)?;
+    let started = Instant::now();
+    let poll = async {
+        let mut since = None::<u64>;
+        loop {
+            let path = match since {
+                None => agent_run(run),
+                Some(s) => format!("{}?since={s}&wait={RUN_WAIT_MAX}", agent_run(run)),
             };
-            return done(s, v);
-        };
-        let run = run_id(run)?;
-        if a.project.is_some() || a.state.is_some() {
-            return Err("project and state list runs: leave them out with run".into());
-        }
-        let r = self.runs_call(Method::GET, &agent_run(run), None).await?;
-        let max = a.max_chars.unwrap_or(PAGE).clamp(1, PAGE_MAX);
-        let log = self.run_log(run, a.offset.unwrap_or(0), max).await?;
-        done(format!("{}\nTimeline:\n{}\n{}", line(&r), timeline(&r), log_text(&log)), json!({ "run": r, "log": log }))
-    }
-
-    async fn run_log(&self, run: &str, offset: u64, max: usize) -> Result<Value, String> {
-        self.runs_call(Method::GET, &format!("{}?offset={offset}&max={max}", agent_run_log(run)), None).await
-    }
-
-    /// `wait` with `run`: until it ends, or `limit`.
-    pub(crate) async fn wait_run(&self, run: &str, limit: Duration) -> Out {
-        self.owners_runs("wait with run").await?;
-        let run = run_id(run)?;
-        let started = Instant::now();
-        let poll = async {
-            let mut since = None::<u64>;
-            loop {
-                let path = match since {
-                    None => agent_run(run),
-                    Some(s) => format!("{}?since={s}&wait={RUN_WAIT_MAX}", agent_run(run)),
-                };
-                let r = match self.app().control.cloud(Method::GET, &path, None).await {
-                    Ok(r) => r,
-                    // Too many waits open: back off, then ask again.
-                    Err(CloudRefused::Said { status: 429, .. }) => {
-                        tokio::time::sleep(BACK_OFF).await;
-                        continue;
-                    }
-                    Err(e) => return Err(said(e)),
-                };
-                if ended(&r) {
-                    return Ok::<_, String>(r);
+            let r = match c.app().control.cloud(Method::GET, &path, None).await {
+                Ok(r) => r,
+                // Too many waits open: back off, then ask again.
+                Err(CloudRefused::Said { status: 429, .. }) => {
+                    tokio::time::sleep(BACK_OFF).await;
+                    continue;
                 }
-                since = r["last_seq"].as_u64();
+                Err(e) => return Err(said(e)),
+            };
+            if ended(&r) {
+                return Ok::<_, String>(r);
             }
-        };
-        let Some(r) = self.waiting(&format!("waiting for {run}"), limit, poll).await else {
-            let secs = started.elapsed().as_secs();
-            let r = self.runs_call(Method::GET, &agent_run(run), None).await?;
-            return done(
-                format!("{} hasn't ended after {secs}s: call wait with run again", line(&r)),
-                json!({ "state": "still running", "run": r }),
-            );
-        };
-        let r = r?;
-        // The end of its log, as kept.
-        let path = format!("{}?tail=true&max={PAGE}", agent_run_log(run));
-        let log = self.runs_call(Method::GET, &path, None).await.unwrap_or_else(|e| json!({ "note": e }));
-        done(format!("{} ended.\n{}", line(&r), log_text(&log)), json!({ "state": r["state"], "run": r, "log": log }))
-    }
+            since = r["last_seq"].as_u64();
+        }
+    };
+    let Some(r) = c.waiting(&format!("waiting for {run}"), limit, poll).await else {
+        let secs = started.elapsed().as_secs();
+        let r = runs_call(c, Method::GET, &agent_run(run), None).await?;
+        return done(
+            format!("{} hasn't ended after {secs}s: call wait with run again", line(&r)),
+            json!({ "state": "still running", "run": r }),
+        );
+    };
+    let r = r?;
+    // The end of its log, as kept.
+    let path = format!("{}?tail=true&max={PAGE}", agent_run_log(run));
+    let log = runs_call(c, Method::GET, &path, None).await.unwrap_or_else(|e| json!({ "note": e }));
+    done(format!("{} ended.\n{}", line(&r), log_text(&log)), json!({ "state": r["state"], "run": r, "log": log }))
 }
 
 /// Whether run tools are live here, for `capabilities`: joined, and a

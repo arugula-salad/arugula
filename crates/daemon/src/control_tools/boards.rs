@@ -37,7 +37,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::tools::{Call, Kind, Out, done};
+use crate::mcp::tools::{Call, Kind, Out, done};
 use crate::{control::CloudRefused, mux::Api};
 
 pub(crate) const READ_TOOL: &str = "board_read";
@@ -234,122 +234,120 @@ fn line(v: &BoardView) -> String {
     format!("{} ({}): {} zone(s), {} row(s), {done} done", v.board.title, v.board.id, v.zones.len(), rows.len())
 }
 
-impl Call<'_> {
-    /// They act as this machine's owner: only the owner's own agents may.
-    async fn owners_boards(&self, what: &str) -> Result<(), String> {
-        crate::lab_flags::flag(self.app().control.state_dir(), arugula_proto::flags::BOARDS)?;
-        if let Some(me) = self.me()
-            && self.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
-        {
-            return Err(format!("{what} acts as this machine's owner: only their own agents may"));
-        }
-        Ok(())
+/// They act as this machine's owner: only the owner's own agents may.
+async fn owners_boards(c: &Call<'_>, what: &str) -> Result<(), String> {
+    crate::lab_flags::flag(c.app().control.state_dir(), arugula_proto::flags::BOARDS)?;
+    if let Some(me) = c.me()
+        && c.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
+    {
+        return Err(format!("{what} acts as this machine's owner: only their own agents may"));
     }
+    Ok(())
+}
 
-    async fn boards_call(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
-        self.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
-    }
+async fn boards_call(c: &Call<'_>, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
+    c.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
+}
 
-    /// The board the platform answers a write with, as the tool's result.
-    fn board_done(&self, what: &str, v: Value) -> Out {
+/// The board the platform answers a write with, as the tool's result.
+fn board_done(what: &str, v: Value) -> Out {
+    let view: BoardView =
+        serde_json::from_value(v).map_err(|e| format!("Arugula control sent a board I can't read: {e}"))?;
+    let s = format!("{what}, now, as your person's agent on this machine. {}", line(&view));
+    let t = text(&view);
+    let mut out = serde_json::to_value(&view).map_err(|e| e.to_string())?;
+    out["text"] = Value::String(t);
+    done(s, out)
+}
+
+/// `board_read`.
+pub(crate) async fn board_read(c: &Call<'_>, a: ReadBoardArgs) -> Out {
+    owners_boards(c, READ_TOOL).await?;
+    if let Some(id) = a.board.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
+        let v = boards_call(c, Method::GET, &agent_board(id), None).await?;
         let view: BoardView =
             serde_json::from_value(v).map_err(|e| format!("Arugula control sent a board I can't read: {e}"))?;
-        let s = format!("{what}, now, as your person's agent on this machine. {}", line(&view));
+        let s = format!("{}; board_write changes it at once", line(&view));
         let t = text(&view);
         let mut out = serde_json::to_value(&view).map_err(|e| e.to_string())?;
         out["text"] = Value::String(t);
-        done(s, out)
+        return done(s, out);
     }
+    let project = c.current_project(a.project.as_deref()).await?;
+    let v = boards_call(c, Method::GET, &agent_project_boards(&project), None).await?;
+    let list: BoardList =
+        serde_json::from_value(v).map_err(|e| format!("Arugula control sent boards I can't read: {e}"))?;
+    let s = match list.boards.len() {
+        0 => format!("Project {} has no boards. A person makes one on the platform page.", list.project),
+        n => format!(
+            "{n} board(s) in project {}: {}. board_read with board reads one.",
+            list.project,
+            list.boards.iter().map(|b| format!("{} ({})", b.title, b.id)).collect::<Vec<_>>().join("; ")
+        ),
+    };
+    done(s, list)
+}
 
-    /// `board_read`.
-    pub(crate) async fn board_read(&self, a: ReadBoardArgs) -> Out {
-        self.owners_boards(READ_TOOL).await?;
-        if let Some(id) = a.board.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
-            let v = self.boards_call(Method::GET, &agent_board(id), None).await?;
-            let view: BoardView =
-                serde_json::from_value(v).map_err(|e| format!("Arugula control sent a board I can't read: {e}"))?;
-            let s = format!("{}; board_write changes it at once", line(&view));
-            let t = text(&view);
-            let mut out = serde_json::to_value(&view).map_err(|e| e.to_string())?;
-            out["text"] = Value::String(t);
-            return done(s, out);
+/// `board_write`.
+pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
+    owners_boards(c, WRITE_TOOL).await?;
+    match kind {
+        "add_row" => {
+            let a: AddRowArgs = args(a)?;
+            let put = PutEntry {
+                entry: Some(wire::EntryKind::Row),
+                zone: Some(a.zone),
+                note: a.note,
+                status: a.status.map(Status::from),
+                pointer: a.pointer.map(Pointer::from),
+                ..Default::default()
+            };
+            let v = put_entry(c, &a.board, &put).await?;
+            board_done("Added a row", v)
         }
-        let project = self.current_project(a.project.as_deref()).await?;
-        let v = self.boards_call(Method::GET, &agent_project_boards(&project), None).await?;
-        let list: BoardList =
-            serde_json::from_value(v).map_err(|e| format!("Arugula control sent boards I can't read: {e}"))?;
-        let s = match list.boards.len() {
-            0 => format!("Project {} has no boards. A person makes one on the platform page.", list.project),
-            n => format!(
-                "{n} board(s) in project {}: {}. board_read with board reads one.",
-                list.project,
-                list.boards.iter().map(|b| format!("{} ({})", b.title, b.id)).collect::<Vec<_>>().join("; ")
-            ),
-        };
-        done(s, list)
+        "set" => {
+            let a: SetRowArgs = args(a)?;
+            if a.note.is_none() && a.status.is_none() {
+                return Err("set needs note (with rev) or status".into());
+            }
+            if a.note.is_some() && a.rev.is_none() {
+                return Err("a note needs the row's rev, as board_read shows it".into());
+            }
+            let put = PutEntry {
+                id: Some(a.row),
+                // A status alone needs no rev, and leaves it be.
+                rev: a.note.as_ref().and(a.rev),
+                note: a.note,
+                status: a.status.map(Status::from),
+                ..Default::default()
+            };
+            let v = put_entry(c, &a.board, &put).await?;
+            board_done("Changed a row", v)
+        }
+        "move" => {
+            let a: MoveRowArgs = args(a)?;
+            let m = MoveEntry { rev: a.rev, zone: a.zone, before: a.before };
+            let body = serde_json::to_value(m).map_err(|e| e.to_string())?;
+            let v = boards_call(c, Method::POST, &agent_board_entry_move(&a.board, &a.row), Some(body)).await?;
+            board_done("Moved a row", v)
+        }
+        "remove_row" => {
+            let a: RemoveRowArgs = args(a)?;
+            let v = boards_call(c, Method::DELETE, &agent_board_entry(&a.board, &a.row), None).await?;
+            board_done("Removed a row", v)
+        }
+        _ => Err(format!("{WRITE_TOOL} kind {kind} isn't wired up")),
     }
+}
 
-    /// `board_write`.
-    pub(crate) async fn board_write(&self, kind: &str, a: Value) -> Out {
-        self.owners_boards(WRITE_TOOL).await?;
-        match kind {
-            "add_row" => {
-                let a: AddRowArgs = args(a)?;
-                let put = PutEntry {
-                    entry: Some(wire::EntryKind::Row),
-                    zone: Some(a.zone),
-                    note: a.note,
-                    status: a.status.map(Status::from),
-                    pointer: a.pointer.map(Pointer::from),
-                    ..Default::default()
-                };
-                let v = self.put(&a.board, &put).await?;
-                self.board_done("Added a row", v)
-            }
-            "set" => {
-                let a: SetRowArgs = args(a)?;
-                if a.note.is_none() && a.status.is_none() {
-                    return Err("set needs note (with rev) or status".into());
-                }
-                if a.note.is_some() && a.rev.is_none() {
-                    return Err("a note needs the row's rev, as board_read shows it".into());
-                }
-                let put = PutEntry {
-                    id: Some(a.row),
-                    // A status alone needs no rev, and leaves it be.
-                    rev: a.note.as_ref().and(a.rev),
-                    note: a.note,
-                    status: a.status.map(Status::from),
-                    ..Default::default()
-                };
-                let v = self.put(&a.board, &put).await?;
-                self.board_done("Changed a row", v)
-            }
-            "move" => {
-                let a: MoveRowArgs = args(a)?;
-                let m = MoveEntry { rev: a.rev, zone: a.zone, before: a.before };
-                let body = serde_json::to_value(m).map_err(|e| e.to_string())?;
-                let v = self.boards_call(Method::POST, &agent_board_entry_move(&a.board, &a.row), Some(body)).await?;
-                self.board_done("Moved a row", v)
-            }
-            "remove_row" => {
-                let a: RemoveRowArgs = args(a)?;
-                let v = self.boards_call(Method::DELETE, &agent_board_entry(&a.board, &a.row), None).await?;
-                self.board_done("Removed a row", v)
-            }
-            _ => Err(format!("{WRITE_TOOL} kind {kind} isn't wired up")),
-        }
+async fn put_entry(c: &Call<'_>, board: &str, put: &PutEntry) -> Result<Value, String> {
+    let body = serde_json::to_value(put).map_err(|e| e.to_string())?;
+    // Only what is given.
+    let mut body = body;
+    if let Some(o) = body.as_object_mut() {
+        o.retain(|_, v| !v.is_null());
     }
-
-    async fn put(&self, board: &str, put: &PutEntry) -> Result<Value, String> {
-        let body = serde_json::to_value(put).map_err(|e| e.to_string())?;
-        // Only what is given.
-        let mut body = body;
-        if let Some(o) = body.as_object_mut() {
-            o.retain(|_, v| !v.is_null());
-        }
-        self.boards_call(Method::PUT, &agent_board_entries(board), Some(body)).await
-    }
+    boards_call(c, Method::PUT, &agent_board_entries(board), Some(body)).await
 }
 
 #[cfg(test)]
