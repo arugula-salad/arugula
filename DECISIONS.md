@@ -156,6 +156,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-114](docs/decisions/aru-114-experimental-is-archived.md): experimental is archived
 - [aru-118](docs/decisions/aru-118-a-project-has-docs-of-its-own-on-the-platform.md): A project has Docs of its own, on the platform
 - [aru-119](docs/decisions/aru-119-an-account-can-reset-its-devices-from-a-fresh-github-sign-in.md): An account can reset its devices from a fresh GitHub sign-in, after a wait
+- [aru-120](docs/decisions/aru-120-a-shared-doc-s-page-loads-its-fonts-from-its-own-origin.md): A shared Doc's page loads its fonts from its own origin
 
 ## Build and release
 
