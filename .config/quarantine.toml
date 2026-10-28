@@ -17,25 +17,31 @@
 
 [[rust]]
 test = "arugulad::integration reboot::a_restarted_box_brings_its_daemon_back_with_no_login_and_every_pane_by_policy"
-issue = ""
+issue = "https://app.arugula.io/p/prj_3e5d802cb4b08d43074df6c32f5344c1/issues/iss_76160e8717b37d005be5925c1aea72dc"
 until = "2026-11-10"
 why = "Fails or times out twice on unrelated commits (e2cae11d3, b78354362, 6709112c8)."
 
 [[rust]]
 test = "arugulad::integration ssh::ssh_installs_runs_forwards_the_agent_pushes_and_saved_hosts_work"
-issue = ""
+issue = "https://app.arugula.io/p/prj_3e5d802cb4b08d43074df6c32f5344c1/issues/iss_76160e8717b37d005be5925c1aea72dc"
 until = "2026-11-10"
 why = "Fails twice on unrelated commits (2ac1e89ba, c2b452072)."
 
 [[rust]]
+test = "arugulad::integration guest_ssh::a_guest_reaches_a_daemon_behind_nat_through_controls_jump_host"
+issue = "https://app.arugula.io/p/prj_3e5d802cb4b08d43074df6c32f5344c1/issues/iss_76160e8717b37d005be5925c1aea72dc"
+until = "2026-11-10"
+why = "Times out on both tries on unrelated commits (dd13a77c2, 3e3090d93, 055421cc8): the test stack coming up."
+
+[[rust]]
 test = "arugula-platform triggers::tests::session_feedback::round_three_is_refused"
-issue = ""
+issue = "https://app.arugula.io/p/prj_3e5d802cb4b08d43074df6c32f5344c1/issues/iss_44f336182dcf75495287bcf9fdcdb9ea"
 until = "2026-11-10"
 why = "Fails twice on macOS on unrelated commits (4f66cdc95, 2f33811ea)."
 
 [[e2e]]
 spec = "web/e2e/chat-control.spec.ts"
 title = "polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a scrolled-up room offers the newest, compact rows are one line"
-issue = ""
+issue = "https://app.arugula.io/p/prj_3e5d802cb4b08d43074df6c32f5344c1/issues/iss_512407408f74541c952f8b2dc3bf6d18"
 until = "2026-11-10"
 why = "Fails twice on unrelated commits (716de40ef, e44124672), flaky on two more (4b6a5a37f, f285f0e98)."
