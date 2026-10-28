@@ -16,9 +16,10 @@ arugula-core = { workspace = true }
 arugula-e2e = { workspace = true }
 arugula-mux = { workspace = true, features = ["labs"] }
 arugula-proto = { workspace = true, features = ["schema"] }
-# Labs needs the forge (Forgejo and GitLab are forges) and the base's
-# `labs` feature (this build has Labs).
-arugulad-base = { workspace = true, features = ["labs", "forge"] }
+# The base's `labs` feature: this build has Labs.
+arugulad-base = { workspace = true, features = ["labs"] }
+# Forgejo and GitLab are forges.
+arugulad-forge = { workspace = true }
 axum = { workspace = true, features = ["ws"] }
 base64 = { workspace = true }
 futures-util = { workspace = true }

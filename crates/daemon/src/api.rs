@@ -1753,7 +1753,7 @@ mod guest_process_tests {
 }
 
 /// Home and the environment an agent block gets.
-pub(crate) async fn agent_env(app: &App) -> Res<(std::path::PathBuf, Vec<(String, String)>)> {
+pub async fn agent_env(app: &App) -> Res<(std::path::PathBuf, Vec<(String, String)>)> {
     let (home, env) = app
         .mux
         .api(Api::AgentEnv)

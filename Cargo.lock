@@ -313,7 +313,10 @@ dependencies = [
  "arugulad-docs",
  "arugulad-drivers",
  "arugulad-editor",
+ "arugulad-forge",
+ "arugulad-invite",
  "arugulad-labs",
+ "arugulad-review",
  "axum",
  "base64 0.23.1",
  "futures-util",
@@ -343,7 +346,6 @@ dependencies = [
  "arugula-control-wire",
  "arugula-core",
  "arugula-e2e",
- "arugula-forge-github",
  "arugula-mux",
  "arugula-proto",
  "arugula-testkit",
@@ -452,6 +454,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "arugulad-forge"
+version = "0.0.0"
+dependencies = [
+ "arugula-control-wire",
+ "arugula-core",
+ "arugula-e2e",
+ "arugula-forge-github",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "futures-util",
+ "hex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "arugulad-invite"
+version = "0.0.0"
+dependencies = [
+ "arugula-core",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "axum",
+ "futures-util",
+ "hex",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "arugulad-labs"
 version = "0.0.0"
 dependencies = [
@@ -462,6 +504,7 @@ dependencies = [
  "arugula-mux",
  "arugula-proto",
  "arugulad-base",
+ "arugulad-forge",
  "axum",
  "base64 0.23.1",
  "futures-util",
@@ -481,6 +524,19 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "arugulad-review"
+version = "0.0.0"
+dependencies = [
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

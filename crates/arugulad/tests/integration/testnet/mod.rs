@@ -71,8 +71,42 @@ pub fn reachable(host: &str) -> bool {
             .is_ok_and(|s| s.success())
 }
 
-/// The stack's `profile`, up, with `host` answering: brought up with
-/// `testnet/up.sh` if it isn't. Docker tests don't skip: no Docker is a
+/// The services of `profile` with a readiness check (compose.yaml's
+/// `x-ready`): the profile is up when each of them passes it.
+fn services(profile: &str) -> &'static [&'static str] {
+    match profile {
+        "ssh" => &["bastion", "box-bare", "box-systemd", "git"],
+        "control" => &["bastion", "box-bare", "box-systemd", "git", "control", "fakes", "postgres"],
+        p => panic!("no testnet profile {p}"),
+    }
+}
+
+/// Whether the stack's `profile` is up and ready: each of its services
+/// healthy, not just running, and for `control`, up.sh's `control.env`
+/// written. A box answering ssh isn't enough: the `ssh` profile's boxes
+/// answer with no control beside them, and box-systemd answered before
+/// its boot was done.
+pub fn ready(profile: &str) -> bool {
+    if !ssh_config().exists() || (profile == "control" && !state().join("control.env").exists()) {
+        return false;
+    }
+    let names: Vec<String> = services(profile).iter().map(|s| container(s)).collect();
+    let Ok(out) = Command::new("docker")
+        .args(["inspect", "-f", "{{if .State.Health}}{{.State.Health.Status}}{{end}}"])
+        .args(&names)
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return false;
+    };
+    out.status.success()
+        && String::from_utf8_lossy(&out.stdout).lines().filter(|l| *l == "healthy").count() == names.len()
+}
+
+/// The stack's `profile`, up and ready, with `host` answering: brought up
+/// with `testnet/up.sh` if it isn't. `just test-run` brings it up before
+/// the suite starts (testnet/suite-up.sh), so no test's deadline runs
+/// through a cold image build. Docker tests don't skip: no Docker is a
 /// failure. Only ARUGULA_SKIP_DOCKER=1 skips, which returns false and
 /// says loudly that nothing ran.
 pub fn require(profile: &str, host: &str, test: &str) -> bool {
@@ -89,7 +123,7 @@ pub fn require(profile: &str, host: &str, test: &str) -> bool {
         docker.is_ok_and(|s| s.success()),
         "{test} needs Docker, which isn't available (ARUGULA_SKIP_DOCKER=1 skips it)"
     );
-    if !reachable(host) {
+    if !ready(profile) {
         let mut up = Command::new(root().join("testnet/up.sh"));
         up.arg(profile).env("COMPOSE_PROJECT_NAME", name()).stdout(Stdio::null());
         // control mounts the box's binaries: the same ones the tests install
@@ -103,8 +137,8 @@ pub fn require(profile: &str, host: &str, test: &str) -> bool {
         }
         let st = up.status().unwrap();
         assert!(st.success(), "testnet/up.sh {profile} failed");
-        assert!(reachable(host), "{host} doesn't answer after testnet/up.sh {profile}");
     }
+    assert!(reachable(host), "{host} doesn't answer, with the stack's {profile} profile ready");
     true
 }
 
@@ -192,16 +226,25 @@ fn version_mark(bytes: &[u8]) -> Option<&str> {
     std::str::from_utf8(&bytes[at..at + len]).ok()
 }
 
-/// Recreate services, so a run starts from boxes with nothing on them.
+/// Recreate services, so a run starts from boxes with nothing on them, and
+/// wait for them to be ready: healthy (compose.yaml's `x-ready`: sshd
+/// answers, and box-systemd has booted), not just started. One that isn't
+/// ready in two minutes fails here, with what compose said.
 pub fn recreate(services: &[&str]) {
-    let st = compose()
-        .args(["--profile", "ssh", "up", "-d", "--force-recreate", "--wait"])
+    let out = compose()
+        .args(["--profile", "ssh", "up", "-d", "--force-recreate", "--wait", "--wait-timeout", "120"])
         .args(services)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+        .stdin(Stdio::null())
+        .output()
         .unwrap();
-    assert!(st.success(), "recreating {services:?}");
+    if !out.status.success() {
+        let ps = compose().args(["--profile", "ssh", "ps", "-a"]).output().map(|o| o.stdout).unwrap_or_default();
+        panic!(
+            "recreating {services:?}: {}\n{}",
+            String::from_utf8_lossy(&out.stderr).trim(),
+            String::from_utf8_lossy(&ps).trim()
+        );
+    }
 }
 
 pub fn cli_bin() -> PathBuf {

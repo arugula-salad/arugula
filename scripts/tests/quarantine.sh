@@ -120,6 +120,10 @@ entry e2e "no such title" 12 2026-11-01 >.config/quarantine.toml
 check "a spec title that isn't" "no test titled that"
 entry e2e "a flaky spec" 12 2026-11-01 | sed 's#web/e2e/a.spec.ts#web/e2e/b.spec.ts#' >.config/quarantine.toml
 check "a spec that isn't" "no spec web/e2e/b.spec.ts"
+printf 'test.describe.configure({ mode: "serial" });\ntest("a serial step", async () => {});\n' >web/e2e/s.spec.ts
+entry e2e "a serial step" 12 2026-11-01 | sed 's#web/e2e/a.spec.ts#web/e2e/s.spec.ts#' >.config/quarantine.toml
+check "a test in a serial spec" "runs serially"
+rm web/e2e/s.spec.ts
 
 # The manifest's format.
 printf '[[rust]]\ntest = d::integration flaky_one\n' >.config/quarantine.toml

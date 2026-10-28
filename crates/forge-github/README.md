@@ -11,7 +11,7 @@ Start at `src/lib.rs`. Then:
   and the writes (comment, review, merge, rerun, a new issue).
 - `src/token.rs`: `TokenSource`, where `Github` gets a token for a
   repository and a `Purpose` (read or write). The daemon's is the person's
-  `gh` login (`crates/daemon/src/forge/github.rs`). The platform's will be an
+  `gh` login (`crates/arugulad-forge/src/github.rs`). The platform's will be an
   installation token scoped to one repository, or a one-use user token.
 - `src/parse.rs`: GitHub's JSON onto the model, and GitHub's links.
 - `src/model.rs`: the normalized model (pull requests, issues, checks,

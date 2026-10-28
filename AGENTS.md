@@ -54,6 +54,17 @@ Each has a `README.md` with where to start reading.
   binary runs as programs of their own (`_planter`, `_apps-platform`,
   `_arugula-release`), through the base's subcommand registry
   (`subcommands.rs`).
+- `crates/arugulad-forge`: `arugulad-forge`, the GitHub forge (PR and
+  issue blocks, native issues, the platform's mirror, live updates). The
+  daemon reaches it only through `forges.rs` (the `Forges` trait); the
+  binary registers it with its `forge` feature. Labs' Forgejo and GitLab
+  register into its `OtherForges`.
+- `crates/arugulad-invite`: `arugulad-invite`, inviting a person into a
+  session: its operations, the invite card and MCP's `invite_person` and
+  `read_invite`. The base keeps `invite.rs` (the agent header, the
+  owner-only words, the `Hook` a card runs through).
+- `crates/arugulad-review`: `arugulad-review`, the diff and file blocks;
+  what they share (`Runner`, `Live`) stays in the base's `review/`.
 - `crates/arugulad-labs`: `arugulad-labs`, Labs (studio apps, chant
   workspaces, VMs and resident daemons, guest ssh, agent recipes and
   delegating, the Forgejo and GitLab forges). The daemon reaches it only
@@ -137,11 +148,11 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Blocks:** what every block provides and the registry of kinds (`mux:block.rs`), agents (`agent/`),
   browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`,
   and `block_channel.rs` for control's block origins),
-  editors (`editor/`, in `arugulad-editor`), review (`review/`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`),
+  editors (`editor/`, in `arugulad-editor`), review (`review/`, its blocks in `arugulad-review`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`, in `arugulad-forge`),
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
   conversations (`conversations/`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
-  (`invite/`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
+  (`invite/`, in `arugulad-invite`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
   configured agent harnesses
   (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
@@ -222,17 +233,17 @@ daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
 (`forgejo.rs`, `gitlab.rs`, `tea.rs`, `forge_live.rs`,
 and `forges.rs`, the connecting a block asks of Labs through the
-forge's trait `forge::others::OtherForges`; GitHub's PR and issue blocks are core, and `lab_flags::forge_allowed`
+forge's trait `OtherForges` (`arugulad-forge`'s `others.rs`); GitHub's PR and issue blocks are core, and `lab_flags::forge_allowed`
 refuses the others unless Labs is on, in a block's creation, `open_config`
 and each read, so a saved one comes back unavailable; with Labs off a bare
 `OWNER/REPO#N` is GitHub's) are there (#452 to #457). The `Provider` trait stays
 in core (`provider/`); a build without Labs never has a provider, and a saved
 VM pane comes back exited, with the reason. `just check-core`
 runs clippy and the tests of `arugulad` and `arugula` with the feature off.
-The GitHub forge (`forge/`, surface `forges.rs`) and the editor server with
-Claude Code's IDE (crate `arugulad-editor`, surface `editors.rs`) are features
-of their own, `forge` and `editor`, on by default the way `labs` is. Both
-are registered by the binary (#232): the surface asks the registered
+The GitHub forge (crate `arugulad-forge`, surface `forges.rs`) and the
+editor server with Claude Code's IDE (crate `arugulad-editor`, surface
+`editors.rs`) are features of their own, `forge` and `editor`, on by default
+the way `labs` is. Both are crates the binary registers (#232): the surface asks the registered
 `Forges` or `Editors`, and with none it does what a build without them did
 (nothing, or "isn't in this build"), so no call site needs a `cfg`.
 `labs` turns `forge` on (Forgejo and GitLab are forges); `just check-features`

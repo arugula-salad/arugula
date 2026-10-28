@@ -29,11 +29,9 @@ pub mod doc_shares;
 pub mod e2e;
 pub mod editors;
 pub mod features;
-#[cfg(feature = "forge")]
-pub mod forge;
 pub mod forges;
 pub mod fs;
-mod git_remote;
+pub mod git_remote;
 // The gates a forge block and Labs' blocks raise.
 pub mod gate;
 mod hand;
@@ -50,7 +48,7 @@ pub mod http1;
 pub mod install;
 mod run_logs;
 pub mod work;
-mod worktree;
+pub mod worktree;
 use arugula_mux::inventory;
 pub mod invite;
 use arugula_mux::keys;
@@ -768,15 +766,12 @@ fn kinds(
     kinds.add(BlockType::Chat, agent::ChatKind { rules });
     editors::kinds(&mut kinds);
     kinds.add(BlockType::Remote, remote::RemoteKind);
-    kinds.add(BlockType::Diff, Make(review::diff::Diff::create));
-    kinds.add(BlockType::File, Make(review::file::FileView::create));
     forges::kinds(&mut kinds);
-    kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     kinds.add(BlockType::Board, board_block::BoardKind);
     lab_hooks::labs().kinds(&mut kinds, invite);
     // The feature crates' (#232): Docs.
-    features::kinds(&mut kinds);
+    features::kinds(&mut kinds, invite);
     kinds
 }
 

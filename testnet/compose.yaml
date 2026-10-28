@@ -21,11 +21,31 @@ networks:
       config:
         - subnet: ${ARUGULA_TESTNET_INNER_NET:-10.229.80}.0/24
 
+# Ready, not just started: a service with a healthcheck is up when its
+# check passes, so `up --wait` (up.sh, the tests' recreate) returns when a
+# box answers ssh, not when its container is running. Without one, --wait
+# took "running" for ready: box-systemd's systemd was still booting (no
+# sshd yet) and the fakes' node hadn't bound its ports when the first
+# login or sign-in came. Probed every second until the first pass (up to
+# start_period), then every minute.
+x-ready: &ready
+  start_period: 5m
+  start_interval: 1s
+  interval: 1m
+  timeout: 10s
+  retries: 3
+
+# sshd answers with its banner: it's listening, with its host key.
+x-sshd-ready: &sshd-ready
+  <<: *ready
+  test: [CMD, bash, -c, 'exec 3<>/dev/tcp/127.0.0.1/22 && read -r -t 5 l <&3 && [[ $$l == SSH-* ]]']
+
 x-sshd: &sshd
   build: ./sshd
   image: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-sshd
   volumes:
     - ${ARUGULA_TESTNET_STATE:-./.state}:/keys:ro
+  healthcheck: *sshd-ready
 
 services:
   bastion:
@@ -59,6 +79,17 @@ services:
     tmpfs: [/run, /run/lock, /tmp]
     volumes:
       - ${ARUGULA_TESTNET_STATE:-./.state}:/keys:ro
+    # Booted (every start job done: logind, which linger needs, and ssh),
+    # and sshd answering.
+    healthcheck:
+      <<: *ready
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          case $$(systemctl is-system-running) in running|degraded) ;; *) exit 1 ;; esac &&
+          exec 3<>/dev/tcp/127.0.0.1/22 && read -r -t 5 l <&3 && [[ $$l == SSH-* ]]
     networks: [inner]
 
   # A hosted workspace's box (M212's `runs` claim): M177's users, on the
@@ -87,6 +118,8 @@ services:
     hostname: git
     volumes:
       - ${ARUGULA_TESTNET_STATE:-./.state}:/keys:ro
+    # sshd starts last, after nginx (entrypoint.sh).
+    healthcheck: *sshd-ready
     networks: [inner]
 
   # Profile `control`: this tree's arugula-control (the static build,
@@ -177,6 +210,18 @@ services:
       - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
       - ${ARUGULA_TESTNET_STATE:-./.state}/issuer:/issuer:ro
     tmpfs: [/var/lib/arugula-control]
+    # Its site answers (control.json) and the guest jump host listens.
+    healthcheck:
+      <<: *ready
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080 &&
+          printf 'GET /control.json HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n' >&3 &&
+          read -r -t 5 _ code _ <&3 && [ "$$code" = 200 ] &&
+          exec 4<>/dev/tcp/127.0.0.1/2222
     ports:
       - "127.0.0.1:${ARUGULA_TESTNET_CONTROL_PORT:-22980}:8080"
       - "127.0.0.1:${ARUGULA_TESTNET_GUEST_SSH_PORT:-22982}:2222"
@@ -297,6 +342,18 @@ services:
       - ../web/fixtures:/fixtures:ro
       # Infisical's captured answers, for the fake Infisical on 9007 (M235).
       - ../crates/platform/fixtures/infisical:/infisical:ro
+    # Every fake listens: control signs in with the first right away.
+    healthcheck:
+      <<: *ready
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          const net = require("net");
+          Promise.all([9001, 9002, 9003, 9004].map((p) => new Promise((ok, no) =>
+            net.connect(p, "127.0.0.1", ok).on("error", no))))
+            .then(() => process.exit(0), () => process.exit(1))
     ports:
       - "127.0.0.1:${ARUGULA_TESTNET_FAKES_PORT:-22981}:9001"
     networks: [outer]

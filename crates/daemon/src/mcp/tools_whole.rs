@@ -267,3 +267,37 @@ fn kinds_of(labs: bool, tool: &str) -> Vec<&'static str> {
         })
         .unwrap_or_default()
 }
+
+/// Every tool that lists an outputSchema (the feature crates' too) has
+/// an object with a summary, in standard formats.
+pub fn an_output_schema_is_an_object_with_a_summary() {
+    let mut with = 0;
+    for tool in list(Scope::Full, fl(true)) {
+        let grouped = all_defs().into_iter().any(|d| d.name == tool.name && matches!(d.args, Args::Kinds { .. }));
+        let Some(schema) = &tool.output_schema else {
+            continue;
+        };
+        with += 1;
+        assert!(!grouped, "{} answers by kind and lists an outputSchema", tool.name);
+        let schema = Value::Object((**schema).clone());
+        assert_eq!(schema["type"], "object", "{}", tool.name);
+        assert_eq!(schema["properties"]["summary"], json!({ "type": "string" }), "{}", tool.name);
+        assert!(schema["required"].as_array().unwrap().contains(&json!("summary")), "{}", tool.name);
+        let mut found = vec![];
+        fn formats(v: &Value, found: &mut Vec<String>) {
+            match v {
+                Value::Object(o) => {
+                    if let Some(f) = o.get("format").and_then(Value::as_str) {
+                        found.push(f.to_owned());
+                    }
+                    o.values().for_each(|x| formats(x, found));
+                }
+                Value::Array(a) => a.iter().for_each(|x| formats(x, found)),
+                _ => {}
+            }
+        }
+        formats(&schema, &mut found);
+        assert!(found.iter().all(|f| STANDARD_FORMATS.contains(&f.as_str())), "{}: {found:?}", tool.name);
+    }
+    assert!(with >= 8, "only {with} tools list an outputSchema");
+}

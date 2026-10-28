@@ -101,7 +101,7 @@ runners (`ubuntu-latest`): **binaries** (`scripts/check-binaries`) and
 **quick**, the checks that take seconds and would otherwise first fail on
 main after the merge, by the recipes main runs: rustfmt (`just fmt-check`,
 also the desktop app's), gitleaks over the pull request's own commits
-(`scripts/ci-gitleaks BASE..HEAD`; lint scans the whole history) and
+(`scripts/ci-gitleaks BASE..HEAD`; lint scans main's whole history, not other branches) and
 `just notices-check` (cargo-about reads `cargo metadata` and the crates'
 sources, no build; pnpm reads web's `node_modules`). Main still runs them
 all (lint and clippy), for anything pushed without a pull request.
@@ -199,8 +199,9 @@ and run `just quarantine` again.
 
 `scripts/quarantine.mjs check`, in `just test-scripts` and so in lint, fails
 when an entry has no issue, is past its `until` or more than 14 days out,
-names a test that isn't there, or the nextest configs don't match the
-manifest. So an expired quarantine turns lint red: fix the test and delete
+names a test that isn't there, names one in a serial spec (its later
+tests depend on it: fix it, or make its timing report-only through
+`web/e2e/timing.ts`), or the nextest configs don't match the manifest. So an expired quarantine turns lint red: fix the test and delete
 the entry, or delete the test. A new `until` needs a reason in the issue.
 `scripts/tests/quarantine.sh` tests the script.
 
@@ -1032,7 +1033,7 @@ stack recreate the boxes they use, so give each worktree its own stack
 | Test | Also needs | Run |
 |---|---|---|
 | the testnet's claims | `ssh`: nothing more. `control`: node, and the static binaries (`just static aarch64` on Apple silicon, `just static` on x86_64) | `just testnet up ssh` (or `control`), `just testnet test ssh`, `just testnet break ssh`, `just testnet down`. On `control`'s stack the ssh claims run too: CI runs `up control`, then `test` for `ssh` and `control`, and `break` for both when the claims or the stack change (`scripts/testnet-changed`) and every night (`testnet-break.yml`) |
-| `crates/arugulad/tests/integration/ssh.rs`, `reboot.rs` (in `just test`) | the box's static binaries (or `ARUGULA_SSH_BINARIES`); `reboot.rs` also node and Playwright's Chromium in `web/` (`cd web && pnpm install`) | `cargo test -p arugulad --test integration ssh::` (or `reboot::`); they bring the `ssh` profile up themselves |
+| `crates/arugulad/tests/integration/ssh.rs`, `reboot.rs` (in `just test`) | the box's static binaries (or `ARUGULA_SSH_BINARIES`); `reboot.rs` also node and Playwright's Chromium in `web/` (`cd web && pnpm install`) | `cargo test -p arugulad --test integration ssh::` (or `reboot::`); they bring the `ssh` profile up themselves when it isn't ready (healthy), and `just test-run` brings it up before the suite (`testnet/suite-up.sh`) |
 | `testnet/measure-tailnet.sh` (S28) | the static binaries | `just testnet measure tailnet`; it brings the `tailnet` profile up itself |
 | `team-swarm-phones.spec.ts`, "a machine on another network, behind netem" (in `just e2e`) | `just static <arch>`; it builds a small Debian image with `tc` and `socat`, names its container and network after `COMPOSE_PROJECT_NAME`, and removes them after | `just e2e` |
 | `just desktop-xvfb` | podman or Docker | `just desktop-xvfb` |

@@ -48,3 +48,9 @@ fn doc_is_listed_with_no_flag() {
     register();
     tools::doc_is_listed_with_no_flag();
 }
+
+#[test]
+fn an_output_schema_is_an_object_with_a_summary() {
+    register();
+    tools::an_output_schema_is_an_object_with_a_summary();
+}

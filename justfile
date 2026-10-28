@@ -520,6 +520,9 @@ test-run part="" which="":
       *) echo "test-run: WHICH is server or rest" >&2; exit 2 ;;
     esac
     # ${part[@]+…}: macOS bash 3.2 calls an empty array unbound.
+    # The test stack up and ready first, when this run has its tests: its
+    # image build is no test's, against that test's deadline.
+    if [ "{{which}}" != server ]; then testnet/suite-up.sh ${part[@]+"${part[@]}"}; fi
     if [ "{{which}}" != server ]; then {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
     if [ "{{which}}" != rest ]; then {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
     [ "{{which}}" != server ] || exit 0
@@ -888,7 +891,7 @@ check: test mux-guard workspace-guard
 # The daemon's crates (#232): the binary, arugulad, the library it's built
 # on and the feature crates on that, whose tests are the unit tests.
 # `--features arugulad/…` reaches them all.
-daemon_crates := "-p arugulad -p arugulad-base -p arugulad-docs -p arugulad-drivers -p arugulad-editor"
+daemon_crates := "-p arugulad -p arugulad-base -p arugulad-docs -p arugulad-drivers -p arugulad-editor -p arugulad-forge -p arugulad-invite -p arugulad-review"
 
 # The daemon and the CLI without Labs (#452): clippy and the tests with the
 # `labs` feature off, which CI runs as the `core` job. Run it after touching

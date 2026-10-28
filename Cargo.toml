@@ -41,7 +41,10 @@ arugulad-base = { path = "crates/daemon", default-features = false }
 arugulad-docs = { path = "crates/arugulad-docs" }
 arugulad-drivers = { path = "crates/arugulad-drivers" }
 arugulad-editor = { path = "crates/arugulad-editor" }
+arugulad-forge = { path = "crates/arugulad-forge" }
+arugulad-invite = { path = "crates/arugulad-invite" }
 arugulad-labs = { path = "crates/arugulad-labs" }
+arugulad-review = { path = "crates/arugulad-review" }
 aes-gcm = "0.11.1"
 anyhow = "1.0.104"
 axum = "0.8.9"

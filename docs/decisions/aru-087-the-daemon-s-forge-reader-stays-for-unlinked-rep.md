@@ -47,7 +47,7 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-21"
 reviews: []
 constrains:
-  - "path:crates/daemon/src/forge"
+  - "path:crates/arugulad-forge/src"
   - "path:crates/forge-github"
   - "path:web/src/shell/blocks"
 ---
@@ -79,5 +79,5 @@ agents draft while people send" describes.
   `forge.watch` with an empty `forge.watching`, so no old daemon errors
   ("Platform paths stay on control.arugula.io forever, behind the hub's
   gateway").
-Where: `crates/daemon/src/forge/`, `crates/forge-github/` (M160), `web/src/shell/blocks/` (`web/src/blocks/` before M147).
+Where: `crates/arugulad-forge/src/`, `crates/forge-github/` (M160), `web/src/shell/blocks/` (`web/src/blocks/` before M147).
 From: #1204 (platform roadmap, step 4), M159 (#1205), M160 (#1206), M170 (#1216), M172 (#1218), M174 (#1220).

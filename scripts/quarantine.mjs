@@ -27,7 +27,8 @@
 //   node scripts/quarantine.mjs check     the manifest is well formed, no
 //                                         entry is past its `until` or more
 //                                         than 14 days out or without an
-//                                         issue, every test exists, and the
+//                                         issue or in a serial spec, every
+//                                         test exists, and the
 //                                         nextest configs match it (in
 //                                         `just test-scripts`, so lint);
 //   node scripts/quarantine.mjs write     set the nextest configs'
@@ -50,6 +51,7 @@ const KEYS = { rust: ["test", "issue", "until", "why"], e2e: ["spec", "title", "
 const CONFIGS = { root: ".config/nextest.toml", server: "server/.config/nextest.toml" };
 // Playwright's testDir (web/playwright.config.ts).
 const SPECS = "web/e2e/";
+const SERIAL = /\.configure\(\s*\{[^}]*\bmode:\s*["']serial["']/;
 
 function repoRoot() {
   return process.env.ARUGULA_QUARANTINE_ROOT || join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -235,6 +237,10 @@ export function check(root = repoRoot(), today = process.env.ARUGULA_QUARANTINE_
       const spec = join(root, e.spec);
       if (!e.spec.startsWith(SPECS) || !existsSync(spec) || !statSync(spec).isFile()) problems.push(`${at}: no spec ${e.spec} (a path from the checkout's root, in ${SPECS})`);
       else if (!readFileSync(spec, "utf8").includes(e.title)) problems.push(`${at}: no test titled that in ${e.spec}`);
+      // A serial spec's tests share what the earlier ones set up: leaving one
+      // out breaks the ones after it (workspace.spec.ts, #1650 → #1651).
+      else if (SERIAL.test(readFileSync(spec, "utf8")))
+        problems.push(`${at}: ${e.spec} runs serially (describe.configure mode "serial"): leaving one test out breaks the ones after it; fix it, or make its timing report-only (web/e2e/timing.ts)`);
     }
   }
   if (!errors.length)
