@@ -1,0 +1,1172 @@
+{
+  "about": "Whole runs, replayed event by event: who may move a run, when, and with what. Each event, in order, is taken or refused; a refused one changes nothing. The first must be control's, from null to pending (not_made otherwise, and for anything before it). A daemon's report must have a from and verify (run/event) with the key the directory (keys) holds for the daemon it names (signature). Then: from must be the run's state now (moved); the move one S37 allows (disallowed); one its reporter may make (reporter): control denied, canceled, expired or failed, an approval approved, a daemon anything but a control_only state; a daemon's report must be about this run from this run's daemon (other_daemon), and its seq the run's next, every event before it counted, control's too (seq); pending straight to running needs the run's standing grant (no_grant). These are the platform's checks (crates/platform/src/db/runs.rs, move_run_in) over arugula_e2e::run, in its order; the detail's own rules there (an exit code, a reason) aren't here.",
+  "cases": [
+    {
+      "about": "approved, run and succeeded",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "3aac54205970ec47d2b44792c974d7dfea76b343a12321580e0d60e5b917e941fab1e7e80ed3daf670a32a9d74a44bb236b8b5f377dc12b688516efbf6a3620a"
+          },
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10004,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{\"exit\":0}",
+              "from": "running",
+              "run": "run_1",
+              "seq": 4,
+              "to": "succeeded"
+            },
+            "sig": "31d156823ae5d27090bb86b34747f7cdfb64b198f5758a3516472af4092b786271ee26d0ddf90637653e6a1d78bef8fb67f5b9960625896b3dc247e43ea71c0d"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "succeeded",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"took": "running"},
+          {"took": "succeeded"}
+        ]
+      }
+    },
+    {
+      "about": "failed with an exit code",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "3aac54205970ec47d2b44792c974d7dfea76b343a12321580e0d60e5b917e941fab1e7e80ed3daf670a32a9d74a44bb236b8b5f377dc12b688516efbf6a3620a"
+          },
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10004,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{\"exit\":2}",
+              "from": "running",
+              "run": "run_1",
+              "seq": 4,
+              "to": "failed"
+            },
+            "sig": "88ee1716febc29a9a07248d2563250cd95baa65dceca2e1f31f18fc4c0cb7b20157c96c611bed010bb1cd332a90adcb0498a0ec9805c477d4132ca183642ba0f"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "failed",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"took": "running"},
+          {"took": "failed"}
+        ]
+      }
+    },
+    {
+      "about": "a standing grant: straight from pending to running",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10002,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "pending",
+              "run": "run_1",
+              "seq": 2,
+              "to": "running"
+            },
+            "sig": "122c579039d930acd21c9e912dca2c3807460919d1049de25c85cfe6a0b5e1030a094452a7b1f99ecbc0b8bda692ef4599701e6745f3290e2d5aaa769246c60b"
+          },
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{\"exit\":0}",
+              "from": "running",
+              "run": "run_1",
+              "seq": 3,
+              "to": "succeeded"
+            },
+            "sig": "78e6f46a7b632c2fcacd35d3e7018478e7b492c0a2adf40f4b72a2f3533a5464caeaa1eb1d1c9a47e91393d14dc9b3a5f1132dc82871165ba5c6442877856909"
+          }
+        ],
+        "grant": true,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "succeeded",
+        "steps": [
+          {"took": "pending"},
+          {"took": "running"},
+          {"took": "succeeded"}
+        ]
+      }
+    },
+    {
+      "about": "straight to running without a grant",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10002,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "pending",
+              "run": "run_1",
+              "seq": 2,
+              "to": "running"
+            },
+            "sig": "122c579039d930acd21c9e912dca2c3807460919d1049de25c85cfe6a0b5e1030a094452a7b1f99ecbc0b8bda692ef4599701e6745f3290e2d5aaa769246c60b"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "pending",
+        "steps": [
+          {"took": "pending"},
+          {"refused": "no_grant"}
+        ]
+      }
+    },
+    {
+      "about": "the running report sent again",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "3aac54205970ec47d2b44792c974d7dfea76b343a12321580e0d60e5b917e941fab1e7e80ed3daf670a32a9d74a44bb236b8b5f377dc12b688516efbf6a3620a"
+          },
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "3aac54205970ec47d2b44792c974d7dfea76b343a12321580e0d60e5b917e941fab1e7e80ed3daf670a32a9d74a44bb236b8b5f377dc12b688516efbf6a3620a"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "running",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"took": "running"},
+          {"refused": "moved"}
+        ]
+      }
+    },
+    {
+      "about": "a report signed for a later place in the run",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10005,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 5,
+              "to": "running"
+            },
+            "sig": "1eb102174a31139cb78a046d7fbe91b8b8f5850a013a7ecdbb1b838e5fb67c4e69b47b8cb654e3cc606c9619a49829e56511b27fc2d41b68512a9ece2a0fcc0a"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "approved",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"refused": "seq"}
+        ]
+      }
+    },
+    {
+      "about": "a report signed for an earlier place: before the approval was counted",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10002,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 2,
+              "to": "running"
+            },
+            "sig": "cddf71afe0af17ca6c5a57c5f2e6fba95e72f83750b099faa22f4d88cf48991d2805d1339e568ba44c5c49a2246cc2afaea40d0ea4a4d77c1dbbab1d0a2c2006"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "approved",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"refused": "seq"}
+        ]
+      }
+    },
+    {
+      "about": "another run's report, replayed onto this one",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_2",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "7dce9990af17bd5179edcb95385fda4063b41024a1272484fdcc2d00f9c1997e6371c5f51010db68f3606bf93b3eb3cc88e18de474773c432ddb5a7e7e4a9b0b"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "approved",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"refused": "other_daemon"}
+        ]
+      }
+    },
+    {
+      "about": "another daemon in the directory reports it",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "c242667535a3d34f",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "a1096c69af1b45635febeb9e4df326c8084a8f5557b3cb25838ab4401d340753faea172207714717e70241986a4f1a587fd2febf91c6f3681b175c0d06810805"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "approved",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"refused": "other_daemon"}
+        ]
+      }
+    },
+    {
+      "about": "a daemon the directory doesn't know reports it",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "e0a128f98e5582a3",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "428120471384d904b52923dc5798292c097490b3bdfb7001ebe872454388547cfc70dea5ad841d1d0f87c94b5b6d8ba1c4b51de2c92b97a981e8bfdddc9a0608"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "approved",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"refused": "signature"}
+        ]
+      }
+    },
+    {
+      "about": "the report's detail changed after it was signed",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{\"exit\":0}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "3aac54205970ec47d2b44792c974d7dfea76b343a12321580e0d60e5b917e941fab1e7e80ed3daf670a32a9d74a44bb236b8b5f377dc12b688516efbf6a3620a"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "approved",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"refused": "signature"}
+        ]
+      }
+    },
+    {
+      "about": "a daemon's signed first event: a run's first is control's",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10000,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": null,
+              "run": "run_1",
+              "seq": 1,
+              "to": "pending"
+            },
+            "sig": "d309d0fe54631b9d9dc35ca4c4bdd8b4daca0b837a220086334a0579396ed37eea87ba207419975f562eb8f0f971fd11d1a57085de86d07f195faaf276f5cf07"
+          },
+          {"by": "control", "from": null, "to": "pending"}
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "pending",
+        "steps": [
+          {"refused": "signature"},
+          {"took": "pending"}
+        ]
+      }
+    },
+    {
+      "about": "a move before the run was made",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "approval", "from": "pending"},
+          {"by": "control", "from": null, "to": "pending"}
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "pending",
+        "steps": [
+          {"refused": "not_made"},
+          {"took": "pending"}
+        ]
+      }
+    },
+    {
+      "about": "a second first event",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "control", "from": null, "to": "pending"}
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "pending",
+        "steps": [
+          {"took": "pending"},
+          {"refused": "moved"}
+        ]
+      }
+    },
+    {
+      "about": "the daemon reports it denied",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10002,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "pending",
+              "run": "run_1",
+              "seq": 2,
+              "to": "denied"
+            },
+            "sig": "0d6efba9b3c5f40b6d8de5b657cee03885dd07acc36a205c4c4950caf8264a09ee57e3ba838732a9412829bbfdd95ba2b6d507d9da9141ccd396b41e82f3ab05"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "pending",
+        "steps": [
+          {"took": "pending"},
+          {"refused": "reporter"}
+        ]
+      }
+    },
+    {
+      "about": "the daemon reports it approved",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10002,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "pending",
+              "run": "run_1",
+              "seq": 2,
+              "to": "approved"
+            },
+            "sig": "ad7b253de52c88433c9674574020f15f38be8f68aa2b258587e3d187e473f882b4a891a5798f23fed42eda5369eb80958deb085c6a84160c0c1ebdaa1169b50f"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "pending",
+        "steps": [
+          {"took": "pending"},
+          {"refused": "reporter"}
+        ]
+      }
+    },
+    {
+      "about": "the daemon reports it canceled",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "canceled"
+            },
+            "sig": "01199f78a62dfcda9d6d2b8808391c3bc1b33c305f2adc04da11f18372c20d570a722a7a2694b6df3f210c1e508b6c0b6eaf3eb2ad96b1ddf1a7f698671bd903"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "approved",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"refused": "reporter"}
+        ]
+      }
+    },
+    {
+      "about": "control says it's running",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {"by": "control", "from": "approved", "to": "running"}
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "approved",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"refused": "reporter"}
+        ]
+      }
+    },
+    {
+      "about": "control says it succeeded",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "3aac54205970ec47d2b44792c974d7dfea76b343a12321580e0d60e5b917e941fab1e7e80ed3daf670a32a9d74a44bb236b8b5f377dc12b688516efbf6a3620a"
+          },
+          {"by": "control", "from": "running", "to": "succeeded"}
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "running",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"took": "running"},
+          {"refused": "reporter"}
+        ]
+      }
+    },
+    {
+      "about": "control approves it without an approval",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "control", "from": "pending", "to": "approved"}
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "pending",
+        "steps": [
+          {"took": "pending"},
+          {"refused": "reporter"}
+        ]
+      }
+    },
+    {
+      "about": "control fails a running run (its dispatch was lost)",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "3aac54205970ec47d2b44792c974d7dfea76b343a12321580e0d60e5b917e941fab1e7e80ed3daf670a32a9d74a44bb236b8b5f377dc12b688516efbf6a3620a"
+          },
+          {"by": "control", "from": "running", "to": "failed"}
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "failed",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"took": "running"},
+          {"took": "failed"}
+        ]
+      }
+    },
+    {
+      "about": "denied",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "control", "from": "pending", "to": "denied"}
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "denied",
+        "steps": [
+          {"took": "pending"},
+          {"took": "denied"}
+        ]
+      }
+    },
+    {
+      "about": "canceled before it started, then the daemon reports it running",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {"by": "control", "from": "approved", "to": "canceled"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "3aac54205970ec47d2b44792c974d7dfea76b343a12321580e0d60e5b917e941fab1e7e80ed3daf670a32a9d74a44bb236b8b5f377dc12b688516efbf6a3620a"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "canceled",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"took": "canceled"},
+          {"refused": "moved"}
+        ]
+      }
+    },
+    {
+      "about": "canceled, then the daemon reports from canceled",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {"by": "control", "from": "approved", "to": "canceled"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10004,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "canceled",
+              "run": "run_1",
+              "seq": 4,
+              "to": "running"
+            },
+            "sig": "d99026fc6b53aa4b95983b4b81532a6acfc0f2359158c2a7196cbaffbf6b71ebc903479d0a62a71ff874a838467534299239e545d26e4dfac48a2b1b3d759d05"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "canceled",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"took": "canceled"},
+          {"refused": "disallowed"}
+        ]
+      }
+    },
+    {
+      "about": "expired by control's clock, then approved",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "control", "from": "pending", "to": "expired"},
+          {"by": "approval", "from": "expired"}
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "expired",
+        "steps": [
+          {"took": "pending"},
+          {"took": "expired"},
+          {"refused": "disallowed"}
+        ]
+      }
+    },
+    {
+      "about": "expired by the daemon's clock",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "expired"
+            },
+            "sig": "c42dd9565d577822ec5a52dac4148c389144486c55231ac3bba7f6390334dd3c6770130fa4c3693c7e6c4b32be5097b3a7724b078be43d3ca23bc40361236901"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "expired",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"took": "expired"}
+        ]
+      }
+    },
+    {
+      "about": "the daemon's check at the start failed",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{\"why\":\"approval_expired\"}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "failed"
+            },
+            "sig": "baa93370bd42e7e7ef1d08520e60f261eaadb4d7240b431b7de16facd7257e7c3147e76f96fd7761a48e119dd028d04bcea4f1ac0b2e97f2a75b7cb98ccf9b04"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "failed",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"took": "failed"}
+        ]
+      }
+    },
+    {
+      "about": "succeeded, then canceled",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "3aac54205970ec47d2b44792c974d7dfea76b343a12321580e0d60e5b917e941fab1e7e80ed3daf670a32a9d74a44bb236b8b5f377dc12b688516efbf6a3620a"
+          },
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10004,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{\"exit\":0}",
+              "from": "running",
+              "run": "run_1",
+              "seq": 4,
+              "to": "succeeded"
+            },
+            "sig": "31d156823ae5d27090bb86b34747f7cdfb64b198f5758a3516472af4092b786271ee26d0ddf90637653e6a1d78bef8fb67f5b9960625896b3dc247e43ea71c0d"
+          },
+          {"by": "control", "from": "succeeded", "to": "canceled"}
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "succeeded",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"took": "running"},
+          {"took": "succeeded"},
+          {"refused": "disallowed"}
+        ]
+      }
+    },
+    {
+      "about": "approved twice",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {"by": "approval", "from": "pending"}
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "approved",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"refused": "moved"}
+        ]
+      }
+    },
+    {
+      "about": "succeeded straight from approved",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{\"exit\":0}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "succeeded"
+            },
+            "sig": "337a6b0a4a7597b973acfe47d7d196c05ab20bc2646225d7f97f2d2ae4e5043f731639755575ac255291b8e63a009dd9a9e36f5e6b9440371d824b9cc657540b"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "approved",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"refused": "disallowed"}
+        ]
+      }
+    },
+    {
+      "about": "a refused report doesn't take a place: the next one is still 3",
+      "input": {
+        "daemon": "37f29b7074cf8b52",
+        "events": [
+          {"by": "control", "from": null, "to": "pending"},
+          {"by": "approval", "from": "pending"},
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "canceled"
+            },
+            "sig": "01199f78a62dfcda9d6d2b8808391c3bc1b33c305f2adc04da11f18372c20d570a722a7a2694b6df3f210c1e508b6c0b6eaf3eb2ad96b1ddf1a7f698671bd903"
+          },
+          {
+            "by": "daemon",
+            "event": {
+              "at": 10003,
+              "daemon": "37f29b7074cf8b52",
+              "detail": "{}",
+              "from": "approved",
+              "run": "run_1",
+              "seq": 3,
+              "to": "running"
+            },
+            "sig": "3aac54205970ec47d2b44792c974d7dfea76b343a12321580e0d60e5b917e941fab1e7e80ed3daf670a32a9d74a44bb236b8b5f377dc12b688516efbf6a3620a"
+          }
+        ],
+        "grant": false,
+        "keys": {
+          "37f29b7074cf8b52": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "c242667535a3d34f": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        },
+        "run": "run_1"
+      },
+      "output": {
+        "state": "running",
+        "steps": [
+          {"took": "pending"},
+          {"took": "approved"},
+          {"refused": "reporter"},
+          {"took": "running"}
+        ]
+      }
+    }
+  ],
+  "checks": [
+    "arugula_e2e::run::State::may_become",
+    "arugula_e2e::run::State::control_only",
+    "arugula_e2e::run::Event::verify"
+  ],
+  "input": "run: its id; daemon: its daemon's id (as its op names it); grant: whether a standing grant covers it; keys: the hub's directory, { daemon id: Ed25519 key, hex }; events: each { by: control, from, to }, { by: approval, from } or { by: daemon, event: { run, seq, from, to, at, detail, daemon }, sig }",
+  "keys": {
+    "another-daemon": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "daemon": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "not-in-the-directory": {
+      "device": "e0a128f98e5582a3",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    }
+  },
+  "objects": {},
+  "output": "steps: each event's { took: the state after } or { refused: why }; state: the run's state at the end"
+}

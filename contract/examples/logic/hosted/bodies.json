@@ -1,0 +1,124 @@
+{
+  "about": "The exact bytes of a hosted machine's papers. A delegation: an owner's device says control may enroll hosted machines into a project with its hosted key, until revoked; its sig is that device's over the body, and its id the first 16 bytes of SHA-256 over the body, hex. A revoke names the delegation by that id. A machine's certificate is signed with the key the delegation names. A machine signs an enroll proof with its own key: the SHA-256 (hex) of the ticket or sandbox id it enrolls with, so the proof can't move to another enrollment and the credential isn't in it.",
+  "cases": [
+    {
+      "about": "an account's project's delegation",
+      "input": {"delegation": "delegation", "of": "delegation"},
+      "output": {
+        "body": "arugula project delegation v1\nproject prj_1\nowner account:alice\nkey 5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9\nat 2000\nby 37f29b7074cf8b52\n",
+        "id": "bf1386ae275f33c87c0d6cc4f2ec58ed"
+      }
+    },
+    {
+      "about": "a team's project's",
+      "input": {"delegation": "team-delegation", "of": "delegation"},
+      "output": {
+        "body": "arugula project delegation v1\nproject prj_2\nowner team:t1\nkey 5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9\nat 2000\nby 37f29b7074cf8b52\n",
+        "id": "00b8e09b7c8913fa08b7feb426235a04"
+      }
+    },
+    {
+      "about": "its revoke",
+      "input": {"of": "revoke", "revoke": "revoke"},
+      "output": {
+        "body": "arugula project delegation revoke v1\nproject prj_1\ndelegation bf1386ae275f33c87c0d6cc4f2ec58ed\nat 4000\nby 37f29b7074cf8b52\n"
+      }
+    },
+    {
+      "about": "a machine's certificate",
+      "input": {"cert": "machine", "of": "machine"},
+      "output": {
+        "body": "arugula hosted machine v1\nproject prj_1\nowner account:alice\nworkspace hw_1\ndelegation bf1386ae275f33c87c0d6cc4f2ec58ed\ndevice c242667535a3d34f\nname box\nnoise 0202020202020202020202020202020202020202020202020202020202020202\nsign 8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394\ncreated 3000\n"
+      }
+    },
+    {
+      "about": "a machine's enroll proof",
+      "input": {
+        "credential": "50ccaaa5ee4c9ec721a611c11668e8200463b88987e116c73087349e69ee766a",
+        "ms": 3000,
+        "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+        "of": "enroll_proof",
+        "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+      },
+      "output": {
+        "body": "arugula hosted enroll v1\nenrollment 50ccaaa5ee4c9ec721a611c11668e8200463b88987e116c73087349e69ee766a\nnoise 0202020202020202020202020202020202020202020202020202020202020202\nsign 8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394\nat 3000\n"
+      }
+    }
+  ],
+  "checks": [
+    "arugula_e2e::hosted::Delegation::body",
+    "arugula_e2e::hosted::Delegation::id",
+    "arugula_e2e::hosted::DelegationRevoke::body",
+    "arugula_e2e::hosted::HostedCert::body",
+    "arugula_e2e::hosted::enroll_proof_body"
+  ],
+  "input": "of: delegation (delegation: a label), revoke (revoke), machine (cert), or enroll_proof (credential, noise, sign, ms)",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "box": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "control-hosted-key": {
+      "seed": "3232323232323232323232323232323232323232323232323232323232323232",
+      "sign": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "delegation": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "6770488ba0972996faa18539230b56d999cae9d7acc098591287c94b5ca95fcf64e48ca6c5ac0fc1b27fe9af5492a94a0e484bd0a5efa30be1004681b2fedd05"
+    },
+    "machine": {
+      "created": 3000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c242667535a3d34f",
+      "name": "box",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "e9a60e8d1aa900a2ba14347c0570ddf14c67a403ee08c7f419e8939d57202e36da9d6288d632e457ae995336d424126675e95fcdf933b4e318bcc26388080709",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "workspace": "hw_1"
+    },
+    "revoke": {
+      "at": 4000,
+      "by": "37f29b7074cf8b52",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "9c2ce1194c7e46a3518f0d643d0138a541e1e77d629387c4f966b0e052f70eaf54b1a569c27a621fe903a6697fbbcef4676ab9e5c11362a02575b98d3d4bcb02"
+    },
+    "team-delegation": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "team:t1",
+      "project": "prj_2",
+      "sig": "e39ab5a0897c9cf629266283bc7a72ffdca779c8dd10baa6ce9ad4bbdb8cae7dcfd100f384bbf761d85c3ffd3a97e6804c44ff1dfb3d08c2a26f1e820f6f6501"
+    }
+  },
+  "output": "body: the signed text; id: a delegation's"
+}

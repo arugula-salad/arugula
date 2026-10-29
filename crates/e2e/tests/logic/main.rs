@@ -22,13 +22,15 @@ mod harness;
 mod cert;
 mod deploy;
 mod drivers;
+mod hosted;
+mod run;
 mod team;
 
 use harness::Spec;
 use serde_json::{Value, json};
 
 /// Every file, by module.
-const MODULES: &[&[Spec]] = &[cert::FILES, team::FILES, deploy::FILES, drivers::FILES];
+const MODULES: &[&[Spec]] = &[cert::FILES, team::FILES, deploy::FILES, drivers::FILES, run::FILES, hosted::FILES];
 
 fn specs() -> impl Iterator<Item = &'static Spec> {
     MODULES.iter().flat_map(|m| m.iter())

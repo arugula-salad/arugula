@@ -1,0 +1,119 @@
+{
+  "about": "A run's states (S37 q4, M210): pending, then approved (its authority signed) or straight to running under a standing grant, then succeeded or failed; denied, canceled and expired are dead ends that never ran. Nothing leaves a terminal state and nothing goes back to pending: a run asked again is a new run. Only the run's daemon reports running and succeeded (it knows the process started, or ended well); only control records pending, approved, denied and canceled, as the signed objects behind them arrive; expired and failed may come from either.",
+  "cases": [
+    {
+      "about": "a pending run",
+      "input": {"state": "pending"},
+      "output": {
+        "control_only": true,
+        "daemon_only": false,
+        "may_become": ["approved", "denied", "canceled", "expired", "running", "failed"],
+        "state": "pending",
+        "terminal": false
+      }
+    },
+    {
+      "about": "a approved run",
+      "input": {"state": "approved"},
+      "output": {
+        "control_only": true,
+        "daemon_only": false,
+        "may_become": ["canceled", "expired", "running", "failed"],
+        "state": "approved",
+        "terminal": false
+      }
+    },
+    {
+      "about": "a denied run",
+      "input": {"state": "denied"},
+      "output": {
+        "control_only": true,
+        "daemon_only": false,
+        "may_become": [],
+        "state": "denied",
+        "terminal": true
+      }
+    },
+    {
+      "about": "a canceled run",
+      "input": {"state": "canceled"},
+      "output": {
+        "control_only": true,
+        "daemon_only": false,
+        "may_become": [],
+        "state": "canceled",
+        "terminal": true
+      }
+    },
+    {
+      "about": "a expired run",
+      "input": {"state": "expired"},
+      "output": {
+        "control_only": false,
+        "daemon_only": false,
+        "may_become": [],
+        "state": "expired",
+        "terminal": true
+      }
+    },
+    {
+      "about": "a running run",
+      "input": {"state": "running"},
+      "output": {
+        "control_only": false,
+        "daemon_only": true,
+        "may_become": ["succeeded", "failed"],
+        "state": "running",
+        "terminal": false
+      }
+    },
+    {
+      "about": "a succeeded run",
+      "input": {"state": "succeeded"},
+      "output": {
+        "control_only": false,
+        "daemon_only": true,
+        "may_become": [],
+        "state": "succeeded",
+        "terminal": true
+      }
+    },
+    {
+      "about": "a failed run",
+      "input": {"state": "failed"},
+      "output": {
+        "control_only": false,
+        "daemon_only": false,
+        "may_become": [],
+        "state": "failed",
+        "terminal": true
+      }
+    },
+    {
+      "about": "\"done\", no state",
+      "input": {"state": "done"},
+      "output": {"state": null}
+    },
+    {
+      "about": "\"Pending\", no state",
+      "input": {"state": "Pending"},
+      "output": {"state": null}
+    },
+    {
+      "about": "\"\", no state",
+      "input": {"state": ""},
+      "output": {"state": null}
+    }
+  ],
+  "checks": [
+    "arugula_e2e::run::State::parse",
+    "arugula_e2e::run::State::may_become",
+    "arugula_e2e::run::State::terminal",
+    "arugula_e2e::run::State::daemon_only",
+    "arugula_e2e::run::State::control_only"
+  ],
+  "input": "state: a state's name",
+  "keys": {},
+  "objects": {},
+  "output": "state: the name, or null for no such state; terminal, daemon_only, control_only; may_become: the states it may move to, in the order pending, approved, denied, canceled, expired, running, succeeded, failed"
+}

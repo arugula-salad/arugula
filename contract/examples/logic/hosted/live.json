@@ -1,0 +1,168 @@
+{
+  "about": "What control checks before it signs a machine under a delegation: it's signed for the project's owners (as accept's unsigned check) and nothing that checks out revokes it, whenever the revoke was made. Clients check again, with what they hold (hosted/accept).",
+  "cases": [
+    {
+      "about": "alice's delegation",
+      "input": {
+        "delegation": "d",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": ["alice"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"live": true}
+    },
+    {
+      "about": "revoked, however far in the future the revoke says",
+      "input": {
+        "delegation": "d",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": ["alice"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke"]
+      },
+      "output": {"live": false}
+    },
+    {
+      "about": "a revoke bob signed: ignored",
+      "input": {
+        "delegation": "d",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": ["alice"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-by-bob"]
+      },
+      "output": {"live": true}
+    },
+    {
+      "about": "a revoke naming another project: ignored",
+      "input": {
+        "delegation": "d",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": ["alice"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-other-project"]
+      },
+      "output": {"live": true}
+    },
+    {
+      "about": "a delegation bob signed for alice's project",
+      "input": {
+        "delegation": "d-by-bob",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": ["alice"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"live": false}
+    }
+  ],
+  "checks": [
+    "arugula_e2e::hosted::live",
+    "arugula_e2e::hosted::Delegation::signed_for",
+    "arugula_e2e::hosted::DelegationRevoke::revokes"
+  ],
+  "input": "delegation: a label; revokes: labels; owners: who may sign for the project, as the checking side pinned them: { team: { roster: a label, certs: { account: { certs, revocations } } } } for a team's project, or { account: { account, root, certs: [labels], revocations: [labels] } } for one account's",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "bob": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "control-hosted-key": {
+      "seed": "3232323232323232323232323232323232323232323232323232323232323232",
+      "sign": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "bob": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "bob's laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "07e9418076d6edaf8c72fa5be449eeea02b612b5cd17ec9c6654519b853288b6d7a08c29100e96a0b5af3b13fb593ddb25335e0418d10dc2692d44cd3ed48103",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "d": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "6770488ba0972996faa18539230b56d999cae9d7acc098591287c94b5ca95fcf64e48ca6c5ac0fc1b27fe9af5492a94a0e484bd0a5efa30be1004681b2fedd05"
+    },
+    "d-by-bob": {
+      "at": 2000,
+      "by": "c242667535a3d34f",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "333c1df1a3ac6ea6ccd36f1ec3be8d6219e6336505b5f726777a1866beee605759091ce8d2aaf12fd41edb979f6926f0357de0db89c4ee0ba82f7fe66b39b709"
+    },
+    "revoke": {
+      "at": 9000000,
+      "by": "37f29b7074cf8b52",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "8f86ee7deaf6913dbdd307d428f7b23e9df19da64106b730e8f9f79b18440b3d098eceb88caf373e3d8b10fcd68a092f88ebc70aa9d94c8c01de37b4223b2e0b"
+    },
+    "revoke-by-bob": {
+      "at": 2500,
+      "by": "c242667535a3d34f",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "d000e6a4c26285583eac086aab4147568923827a59e03a7e73ee021c43dcd9fc369b9ae8c808e7b71bdaf26b1e4fc52e5363109ec96dde98a8088d895e829d0d"
+    },
+    "revoke-other-project": {
+      "at": 2500,
+      "by": "37f29b7074cf8b52",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_9",
+      "sig": "2ece20733ec28b79f946027150cb3c8f99f56cb5925115847e09ac3b92129d209d37203b90c99f48ffd0c4a0d3961122d5dce8450dc7eb20049c836d74b12605"
+    }
+  },
+  "output": "live"
+}
