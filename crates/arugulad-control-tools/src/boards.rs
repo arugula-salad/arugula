@@ -10,11 +10,13 @@
 //!   (which reads too), over one project each, given by its owner
 //!   (`arugula grants add <machine> boards.write --project <name>`), and
 //!   never more than their role. What an agent writes lands at once, and a
-//!   row it adds says which machine's agent added it.
-//! - **What `boards.write` may do:** add rows to the zones there are, set
-//!   any row's note and status, and move rows; remove a row its own machine
-//!   added. Never make a board, or make, rename, move or delete a zone, or
-//!   remove a row another hand added: the platform refuses those.
+//!   board or a row it makes says which machine's agent made it.
+//! - **What `boards.write` may do:** make a board (with a goal and zones),
+//!   set its title and goal, close it with a done note and open it again;
+//!   make, rename, move and delete zones; add rows, set any row's note and
+//!   status, and move rows; remove or repoint a row its own machine added.
+//!   Never delete a zone that holds a row another hand added, or remove or
+//!   repoint such a row: the platform refuses those (aru-123).
 //! - **Revs.** A row's `rev` counts changes to its note and pointer. A
 //!   write of a note names the `rev` that `board_read` showed; if the row
 //!   moved on, the platform answers 409 and this says to read again. A
@@ -28,8 +30,9 @@
 //! the owner.
 
 use arugula_control_wire::boards::{
-    self as wire, BoardList, BoardView, MoveEntry, Pointer, PutEntry, Status, agent_board, agent_board_entries,
-    agent_board_entry, agent_board_entry_move, agent_project_boards,
+    self as wire, BoardList, BoardView, CloseBoard, EditBoard, MoveEntry, NewBoard, Pointer, PutEntry, Status,
+    ZoneKind, agent_board, agent_board_close, agent_board_entries, agent_board_entry, agent_board_entry_move,
+    agent_board_reopen, agent_project_boards,
 };
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
@@ -43,9 +46,9 @@ use crate::{control::CloudRefused, mux::Api};
 pub(crate) const READ_TOOL: &str = "board_read";
 pub(crate) const WRITE_TOOL: &str = "board_write";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a project's live status board in Arugula control (with this machine's boards.read grant over its project): a board is zones (a title and a progress bar of how many rows are done) of rows (a pointer to an issue, PR, run, workspace or agent block, or to nothing; a one-line note; a status). Returns the zones and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project): a board is zones (a title and a progress bar of how many rows are done) of rows (a pointer to an issue, PR, run, workspace or agent block, or to nothing; a one-line note; a status). Returns the zones and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's live status board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. You may add rows to the zones there are, set any row's note and status (a PROOFS row's too), move rows, and remove a row you added; you may not make boards or zones, rename, move or delete a zone, repoint a row, or remove a row someone else added. A note names the rev board_read showed for its row; if it has changed since, this says so: board_read again and retry. A status or a move needs no rev. Every kind returns the board as it is now.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. You may make a board (an epic, with a goal and its zones), set its title and goal, close it with a note saying what a person can now do, and open it again; make, rename, move and delete zones (PROOFS too); add rows, set any row's note and status (a PROOFS row's too), move rows, and remove or repoint a row you added. You may not delete a zone that holds a row someone else added, or remove or repoint such a row. A note, a pointer or a zone's title names the rev board_read showed for it; if it has changed since, this says so: board_read again and retry. A status or a move needs no rev. Every kind returns the board as it is now.";
 
 /// Where a row stands.
 #[derive(Deserialize, JsonSchema, Clone, Copy)]
@@ -120,6 +123,88 @@ pub struct ReadBoardArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct CreateBoardArgs {
+    /// The project's id (prj_…) or personal. Default: the current project.
+    #[serde(default)]
+    pub project: Option<String>,
+    /// One line, at most 120 characters.
+    pub title: String,
+    /// What the board is for, in a paragraph (at most 2000 characters): a
+    /// board with a goal is an epic.
+    #[serde(default)]
+    pub goal: Option<String>,
+    /// Zones to make, in order, by title.
+    #[serde(default)]
+    pub zones: Vec<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct EditBoardArgs {
+    /// The board (brd_…).
+    pub board: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    /// An empty goal clears it.
+    #[serde(default)]
+    pub goal: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct CloseBoardArgs {
+    /// The board (brd_…).
+    pub board: String,
+    /// What a person can now do, not empty.
+    pub done_note: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct BoardArgs {
+    /// The board (brd_…).
+    pub board: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct AddZoneArgs {
+    /// The board (brd_…).
+    pub board: String,
+    /// One line, at most 120 characters.
+    pub title: String,
+    /// Make it the PROOFS zone: the board's last, and it has one.
+    #[serde(default)]
+    pub proofs: bool,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct EditZoneArgs {
+    /// The board (brd_…).
+    pub board: String,
+    /// The zone (zon_…, from board_read).
+    pub zone: String,
+    /// The zone's rev from board_read.
+    pub rev: u64,
+    pub title: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct MoveZoneArgs {
+    /// The board (brd_…).
+    pub board: String,
+    /// The zone (zon_…).
+    pub zone: String,
+    /// Put it just before this zone (default: last, before PROOFS).
+    #[serde(default)]
+    pub before: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct DeleteZoneArgs {
+    /// The board (brd_…).
+    pub board: String,
+    /// The zone (zon_…): empty, or holding only rows you added.
+    pub zone: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct AddRowArgs {
     /// The board (brd_…).
     pub board: String,
@@ -144,7 +229,11 @@ pub struct SetRowArgs {
     /// The new note, one line, at most 280 characters. Needs rev.
     #[serde(default)]
     pub note: Option<String>,
-    /// The row's rev from board_read: needed with note, not for status.
+    /// What the row points at now, for a row you added. Needs rev.
+    #[serde(default)]
+    pub pointer: Option<PointerArg>,
+    /// The row's rev from board_read: needed with note or pointer, not for
+    /// status.
     #[serde(default)]
     pub rev: Option<u64>,
     /// open, working, needs_input, done, failed, or none to clear it.
@@ -186,7 +275,7 @@ pub(crate) const WRITE: &[Kind] = &[
     },
     Kind {
         name: "set",
-        description: "Set a row's note (with its rev) and/or status.",
+        description: "Set a row's note or pointer (with its rev) and/or status.",
         schema: schema_for_type::<SetRowArgs>,
         flag: Some(arugula_proto::flags::BOARDS),
     },
@@ -200,6 +289,54 @@ pub(crate) const WRITE: &[Kind] = &[
         name: "remove_row",
         description: "Remove a row you added.",
         schema: schema_for_type::<RemoveRowArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "create_board",
+        description: "Make a board in a project, with a goal (an epic) and its zones in order; returns it.",
+        schema: schema_for_type::<CreateBoardArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "edit_board",
+        description: "Set a board's title and/or goal.",
+        schema: schema_for_type::<EditBoardArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "close_board",
+        description: "Close a board with a note saying what a person can now do.",
+        schema: schema_for_type::<CloseBoardArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "reopen_board",
+        description: "Open a closed board again, keeping its note.",
+        schema: schema_for_type::<BoardArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "add_zone",
+        description: "Add a zone to a board, before PROOFS (or make the PROOFS zone, last).",
+        schema: schema_for_type::<AddZoneArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "edit_zone",
+        description: "Rename a zone (with its rev).",
+        schema: schema_for_type::<EditZoneArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "move_zone",
+        description: "Move a zone among a board's zones; PROOFS stays last.",
+        schema: schema_for_type::<MoveZoneArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "delete_zone",
+        description: "Delete a zone that is empty or holds only rows you added, with its rows.",
+        schema: schema_for_type::<DeleteZoneArgs>,
         flag: Some(arugula_proto::flags::BOARDS),
     },
 ];
@@ -232,6 +369,15 @@ fn line(v: &BoardView) -> String {
     let rows: Vec<_> = v.zones.iter().flat_map(|z| &z.rows).collect();
     let done = rows.iter().filter(|r| r.status == Status::Done).count();
     format!("{} ({}): {} zone(s), {} row(s), {done} done", v.board.title, v.board.id, v.zones.len(), rows.len())
+}
+
+/// A board's body for a PATCH: only what is given.
+fn given(v: impl serde::Serialize) -> Result<Value, String> {
+    let mut body = serde_json::to_value(v).map_err(|e| e.to_string())?;
+    if let Some(o) = body.as_object_mut() {
+        o.retain(|_, v| !v.is_null());
+    }
+    Ok(body)
 }
 
 /// They act as this machine's owner: only the owner's own agents may.
@@ -278,7 +424,7 @@ pub(crate) async fn board_read(c: &Call<'_>, a: ReadBoardArgs) -> Out {
     let list: BoardList =
         serde_json::from_value(v).map_err(|e| format!("Arugula control sent boards I can't read: {e}"))?;
     let s = match list.boards.len() {
-        0 => format!("Project {} has no boards. A person makes one on the platform page.", list.project),
+        0 => format!("Project {} has no boards. board_write create_board makes one.", list.project),
         n => format!(
             "{n} board(s) in project {}: {}. board_read with board reads one.",
             list.project,
@@ -292,6 +438,75 @@ pub(crate) async fn board_read(c: &Call<'_>, a: ReadBoardArgs) -> Out {
 pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
     owners_boards(c, WRITE_TOOL).await?;
     match kind {
+        "create_board" => {
+            let a: CreateBoardArgs = args(a)?;
+            let project = c.current_project(a.project.as_deref()).await?;
+            let new = NewBoard { title: a.title, goal: a.goal };
+            let v = boards_call(c, Method::POST, &agent_project_boards(&project), Some(given(new)?)).await?;
+            let mut view: Value = v;
+            let board = serde_json::from_value::<BoardView>(view.clone()).map(|b| b.board.id).unwrap_or_default();
+            for title in a.zones {
+                let put =
+                    PutEntry { entry: Some(wire::EntryKind::Zone), title: Some(title.clone()), ..Default::default() };
+                view = put_entry(c, &board, &put)
+                    .await
+                    .map_err(|e| format!("made board {board}, but not its zone {title:?}: {e}"))?;
+            }
+            board_done("Made a board", view)
+        }
+        "edit_board" => {
+            let a: EditBoardArgs = args(a)?;
+            if a.title.is_none() && a.goal.is_none() {
+                return Err("edit_board needs a title or a goal".into());
+            }
+            let v = boards_call(
+                c,
+                Method::PATCH,
+                &agent_board(&a.board),
+                Some(given(EditBoard { title: a.title, goal: a.goal })?),
+            )
+            .await?;
+            board_done("Changed a board", v)
+        }
+        "close_board" => {
+            let a: CloseBoardArgs = args(a)?;
+            let body = given(CloseBoard { done_note: a.done_note })?;
+            let v = boards_call(c, Method::POST, &agent_board_close(&a.board), Some(body)).await?;
+            board_done("Closed a board", v)
+        }
+        "reopen_board" => {
+            let a: BoardArgs = args(a)?;
+            let v = boards_call(c, Method::POST, &agent_board_reopen(&a.board), None).await?;
+            board_done("Opened a board again", v)
+        }
+        "add_zone" => {
+            let a: AddZoneArgs = args(a)?;
+            let put = PutEntry {
+                entry: Some(wire::EntryKind::Zone),
+                title: Some(a.title),
+                kind: a.proofs.then_some(ZoneKind::Proofs),
+                ..Default::default()
+            };
+            let v = put_entry(c, &a.board, &put).await?;
+            board_done("Added a zone", v)
+        }
+        "edit_zone" => {
+            let a: EditZoneArgs = args(a)?;
+            let put = PutEntry { id: Some(a.zone), rev: Some(a.rev), title: Some(a.title), ..Default::default() };
+            let v = put_entry(c, &a.board, &put).await?;
+            board_done("Renamed a zone", v)
+        }
+        "move_zone" => {
+            let a: MoveZoneArgs = args(a)?;
+            let m = MoveEntry { rev: None, zone: None, before: a.before };
+            let v = boards_call(c, Method::POST, &agent_board_entry_move(&a.board, &a.zone), Some(given(m)?)).await?;
+            board_done("Moved a zone", v)
+        }
+        "delete_zone" => {
+            let a: DeleteZoneArgs = args(a)?;
+            let v = boards_call(c, Method::DELETE, &agent_board_entry(&a.board, &a.zone), None).await?;
+            board_done("Deleted a zone", v)
+        }
         "add_row" => {
             let a: AddRowArgs = args(a)?;
             let put = PutEntry {
@@ -307,17 +522,19 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
         }
         "set" => {
             let a: SetRowArgs = args(a)?;
-            if a.note.is_none() && a.status.is_none() {
-                return Err("set needs note (with rev) or status".into());
+            if a.note.is_none() && a.pointer.is_none() && a.status.is_none() {
+                return Err("set needs note or pointer (with rev) or status".into());
             }
-            if a.note.is_some() && a.rev.is_none() {
-                return Err("a note needs the row's rev, as board_read shows it".into());
+            let text = a.note.is_some() || a.pointer.is_some();
+            if text && a.rev.is_none() {
+                return Err("a note or pointer needs the row's rev, as board_read shows it".into());
             }
             let put = PutEntry {
                 id: Some(a.row),
                 // A status alone needs no rev, and leaves it be.
-                rev: a.note.as_ref().and(a.rev),
+                rev: a.rev.filter(|_| text),
                 note: a.note,
+                pointer: a.pointer.map(Pointer::from),
                 status: a.status.map(Status::from),
                 ..Default::default()
             };
@@ -341,13 +558,7 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
 }
 
 async fn put_entry(c: &Call<'_>, board: &str, put: &PutEntry) -> Result<Value, String> {
-    let body = serde_json::to_value(put).map_err(|e| e.to_string())?;
-    // Only what is given.
-    let mut body = body;
-    if let Some(o) = body.as_object_mut() {
-        o.retain(|_, v| !v.is_null());
-    }
-    boards_call(c, Method::PUT, &agent_board_entries(board), Some(body)).await
+    boards_call(c, Method::PUT, &agent_board_entries(board), Some(given(put)?)).await
 }
 
 #[cfg(test)]
@@ -366,8 +577,28 @@ mod tests {
             reason: Some("stale_rev".into()),
         });
         assert!(stale.contains("board_read again") && stale.contains("rev 3"), "{stale}");
-        let no = said(CloudRefused::Said { status: 403, said: "an agent doesn't make zones".into(), reason: None });
-        assert!(no.contains("an agent doesn't make zones") && !no.contains("board_read again"), "{no}");
+        let no = said(CloudRefused::Said {
+            status: 403,
+            said: "an agent repoints only the rows its own machine added: this one is someone else's".into(),
+            reason: None,
+        });
+        assert!(
+            no.contains("repoints only the rows its own machine added") && !no.contains("board_read again"),
+            "{no}"
+        );
+    }
+
+    /// A board's args take only a title, and leave out what isn't given.
+    #[test]
+    fn a_board_is_made_from_a_title_alone() {
+        let a: CreateBoardArgs = serde_json::from_value(json!({ "title": "Epic" })).unwrap();
+        assert!(a.zones.is_empty() && a.goal.is_none() && a.project.is_none());
+        assert_eq!(given(NewBoard { title: a.title, goal: a.goal }).unwrap(), json!({ "title": "Epic" }));
+        let m = MoveEntry { rev: None, zone: None, before: Some("zon_2".into()) };
+        assert_eq!(given(m).unwrap(), json!({ "before": "zon_2" }));
+        assert!(
+            serde_json::from_value::<EditZoneArgs>(json!({ "board": "brd_1", "zone": "zon_1", "title": "x" })).is_err()
+        );
     }
 
     #[test]

@@ -7664,7 +7664,7 @@
         "readOnlyHint": true,
         "title": "Read a status board"
       },
-      "description": "Read a project's live status board in Arugula control (with this machine's boards.read grant over its project): a board is zones (a title and a progress bar of how many rows are done) of rows (a pointer to an issue, PR, run, workspace or agent block, or to nothing; a one-line note; a status). Returns the zones and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
+      "description": "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project): a board is zones (a title and a progress bar of how many rows are done) of rows (a pointer to an issue, PR, run, workspace or agent block, or to nothing; a one-line note; a status). Returns the zones and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "`board_read`.",
@@ -7700,7 +7700,7 @@
         "readOnlyHint": false,
         "title": "Write to a status board"
       },
-      "description": "Write to a project's live status board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. You may add rows to the zones there are, set any row's note and status (a PROOFS row's too), move rows, and remove a row you added; you may not make boards or zones, rename, move or delete a zone, repoint a row, or remove a row someone else added. A note names the rev board_read showed for its row; if it has changed since, this says so: board_read again and retry. A status or a move needs no rev. Every kind returns the board as it is now.\n- add_row {board, zone, note?, pointer?, status?}: Add a row last in a zone: a note, a status and what it points at.\n- set {board, row, note?, rev?, status?}: Set a row's note (with its rev) and/or status.\n- move {board, row, before?, rev?, zone?}: Move a row within its zone or to another.\n- remove_row {board, row}: Remove a row you added.",
+      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. You may make a board (an epic, with a goal and its zones), set its title and goal, close it with a note saying what a person can now do, and open it again; make, rename, move and delete zones (PROOFS too); add rows, set any row's note and status (a PROOFS row's too), move rows, and remove or repoint a row you added. You may not delete a zone that holds a row someone else added, or remove or repoint such a row. A note, a pointer or a zone's title names the rev board_read showed for it; if it has changed since, this says so: board_read again and retry. A status or a move needs no rev. Every kind returns the board as it is now.\n- add_row {board, zone, note?, pointer?, status?}: Add a row last in a zone: a note, a status and what it points at.\n- set {board, row, note?, pointer?, rev?, status?}: Set a row's note or pointer (with its rev) and/or status.\n- move {board, row, before?, rev?, zone?}: Move a row within its zone or to another.\n- remove_row {board, row}: Remove a row you added.\n- create_board {title, goal?, project?, zones?}: Make a board in a project, with a goal (an epic) and its zones in order; returns it.\n- edit_board {board, goal?, title?}: Set a board's title and/or goal.\n- close_board {board, done_note}: Close a board with a note saying what a person can now do.\n- reopen_board {board}: Open a closed board again, keeping its note.\n- add_zone {board, title, proofs?}: Add a zone to a board, before PROOFS (or make the PROOFS zone, last).\n- edit_zone {board, rev, title, zone}: Rename a zone (with its rev).\n- move_zone {board, zone, before?}: Move a zone among a board's zones; PROOFS stays last.\n- delete_zone {board, zone}: Delete a zone that is empty or holds only rows you added, with its rows.",
       "inputSchema": {
         "$defs": {
           "PointerArg": {
@@ -7844,15 +7844,27 @@
         "properties": {
           "before": {
             "default": null,
-            "description": "move: Put it just before this row of the zone (default: last).",
+            "description": "move: Put it just before this row of the zone (default: last). move_zone: Put it just before this zone (default: last, before PROOFS).",
             "type": [
               "string",
               "null"
             ]
           },
           "board": {
-            "description": "The board (brd_…).",
+            "description": "add_row, set, move, remove_row, edit_board, close_board, reopen_board, add_zone, edit_zone, move_zone, delete_zone: The board (brd_…).",
             "type": "string"
+          },
+          "done_note": {
+            "description": "close_board: What a person can now do, not empty.",
+            "type": "string"
+          },
+          "goal": {
+            "default": null,
+            "description": "create_board: What the board is for, in a paragraph (at most 2000 characters): a\nboard with a goal is an epic. edit_board: An empty goal clears it.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "kind": {
             "description": "Which one (see the tool's description).",
@@ -7860,7 +7872,15 @@
               "add_row",
               "set",
               "move",
-              "remove_row"
+              "remove_row",
+              "create_board",
+              "edit_board",
+              "close_board",
+              "reopen_board",
+              "add_zone",
+              "edit_zone",
+              "move_zone",
+              "delete_zone"
             ],
             "type": "string"
           },
@@ -7880,11 +7900,25 @@
               {
                 "type": "null"
               }
+            ],
+            "description": "set: What the row points at now, for a row you added. Needs rev."
+          },
+          "project": {
+            "default": null,
+            "description": "create_board: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
             ]
+          },
+          "proofs": {
+            "default": false,
+            "description": "add_zone: Make it the PROOFS zone: the board's last, and it has one.",
+            "type": "boolean"
           },
           "rev": {
             "default": null,
-            "description": "set: The row's rev from board_read: needed with note, not for status. move: The rev it must still have (optional).",
+            "description": "set: The row's rev from board_read: needed with note or pointer, not for\nstatus. move: The rev it must still have (optional). edit_zone: The zone's rev from board_read.",
             "format": "uint64",
             "minimum": 0,
             "type": [
@@ -7907,13 +7941,29 @@
             ],
             "description": "add_row: open, working, needs_input, done, failed or none. Default none. set: open, working, needs_input, done, failed, or none to clear it."
           },
-          "zone": {
+          "title": {
             "default": null,
-            "description": "add_row: The zone to add it to, last (zon_…, from board_read). move: The zone to move it to (default: its own).",
+            "description": "create_board, add_zone: One line, at most 120 characters.",
             "type": [
               "string",
               "null"
             ]
+          },
+          "zone": {
+            "default": null,
+            "description": "add_row: The zone to add it to, last (zon_…, from board_read). move: The zone to move it to (default: its own). edit_zone: The zone (zon_…, from board_read). move_zone: The zone (zon_…). delete_zone: The zone (zon_…): empty, or holding only rows you added.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "zones": {
+            "default": [],
+            "description": "create_board: Zones to make, in order, by title.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -15916,7 +15966,7 @@
         "readOnlyHint": true,
         "title": "Read a status board"
       },
-      "description": "Read a project's live status board in Arugula control (with this machine's boards.read grant over its project): a board is zones (a title and a progress bar of how many rows are done) of rows (a pointer to an issue, PR, run, workspace or agent block, or to nothing; a one-line note; a status). Returns the zones and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
+      "description": "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project): a board is zones (a title and a progress bar of how many rows are done) of rows (a pointer to an issue, PR, run, workspace or agent block, or to nothing; a one-line note; a status). Returns the zones and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "`board_read`.",
@@ -15952,7 +16002,7 @@
         "readOnlyHint": false,
         "title": "Write to a status board"
       },
-      "description": "Write to a project's live status board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. You may add rows to the zones there are, set any row's note and status (a PROOFS row's too), move rows, and remove a row you added; you may not make boards or zones, rename, move or delete a zone, repoint a row, or remove a row someone else added. A note names the rev board_read showed for its row; if it has changed since, this says so: board_read again and retry. A status or a move needs no rev. Every kind returns the board as it is now.\n- add_row {board, zone, note?, pointer?, status?}: Add a row last in a zone: a note, a status and what it points at.\n- set {board, row, note?, rev?, status?}: Set a row's note (with its rev) and/or status.\n- move {board, row, before?, rev?, zone?}: Move a row within its zone or to another.\n- remove_row {board, row}: Remove a row you added.",
+      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. You may make a board (an epic, with a goal and its zones), set its title and goal, close it with a note saying what a person can now do, and open it again; make, rename, move and delete zones (PROOFS too); add rows, set any row's note and status (a PROOFS row's too), move rows, and remove or repoint a row you added. You may not delete a zone that holds a row someone else added, or remove or repoint such a row. A note, a pointer or a zone's title names the rev board_read showed for it; if it has changed since, this says so: board_read again and retry. A status or a move needs no rev. Every kind returns the board as it is now.\n- add_row {board, zone, note?, pointer?, status?}: Add a row last in a zone: a note, a status and what it points at.\n- set {board, row, note?, pointer?, rev?, status?}: Set a row's note or pointer (with its rev) and/or status.\n- move {board, row, before?, rev?, zone?}: Move a row within its zone or to another.\n- remove_row {board, row}: Remove a row you added.\n- create_board {title, goal?, project?, zones?}: Make a board in a project, with a goal (an epic) and its zones in order; returns it.\n- edit_board {board, goal?, title?}: Set a board's title and/or goal.\n- close_board {board, done_note}: Close a board with a note saying what a person can now do.\n- reopen_board {board}: Open a closed board again, keeping its note.\n- add_zone {board, title, proofs?}: Add a zone to a board, before PROOFS (or make the PROOFS zone, last).\n- edit_zone {board, rev, title, zone}: Rename a zone (with its rev).\n- move_zone {board, zone, before?}: Move a zone among a board's zones; PROOFS stays last.\n- delete_zone {board, zone}: Delete a zone that is empty or holds only rows you added, with its rows.",
       "inputSchema": {
         "$defs": {
           "PointerArg": {
@@ -16096,15 +16146,27 @@
         "properties": {
           "before": {
             "default": null,
-            "description": "move: Put it just before this row of the zone (default: last).",
+            "description": "move: Put it just before this row of the zone (default: last). move_zone: Put it just before this zone (default: last, before PROOFS).",
             "type": [
               "string",
               "null"
             ]
           },
           "board": {
-            "description": "The board (brd_…).",
+            "description": "add_row, set, move, remove_row, edit_board, close_board, reopen_board, add_zone, edit_zone, move_zone, delete_zone: The board (brd_…).",
             "type": "string"
+          },
+          "done_note": {
+            "description": "close_board: What a person can now do, not empty.",
+            "type": "string"
+          },
+          "goal": {
+            "default": null,
+            "description": "create_board: What the board is for, in a paragraph (at most 2000 characters): a\nboard with a goal is an epic. edit_board: An empty goal clears it.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "kind": {
             "description": "Which one (see the tool's description).",
@@ -16112,7 +16174,15 @@
               "add_row",
               "set",
               "move",
-              "remove_row"
+              "remove_row",
+              "create_board",
+              "edit_board",
+              "close_board",
+              "reopen_board",
+              "add_zone",
+              "edit_zone",
+              "move_zone",
+              "delete_zone"
             ],
             "type": "string"
           },
@@ -16132,11 +16202,25 @@
               {
                 "type": "null"
               }
+            ],
+            "description": "set: What the row points at now, for a row you added. Needs rev."
+          },
+          "project": {
+            "default": null,
+            "description": "create_board: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
             ]
+          },
+          "proofs": {
+            "default": false,
+            "description": "add_zone: Make it the PROOFS zone: the board's last, and it has one.",
+            "type": "boolean"
           },
           "rev": {
             "default": null,
-            "description": "set: The row's rev from board_read: needed with note, not for status. move: The rev it must still have (optional).",
+            "description": "set: The row's rev from board_read: needed with note or pointer, not for\nstatus. move: The rev it must still have (optional). edit_zone: The zone's rev from board_read.",
             "format": "uint64",
             "minimum": 0,
             "type": [
@@ -16159,13 +16243,29 @@
             ],
             "description": "add_row: open, working, needs_input, done, failed or none. Default none. set: open, working, needs_input, done, failed, or none to clear it."
           },
-          "zone": {
+          "title": {
             "default": null,
-            "description": "add_row: The zone to add it to, last (zon_…, from board_read). move: The zone to move it to (default: its own).",
+            "description": "create_board, add_zone: One line, at most 120 characters.",
             "type": [
               "string",
               "null"
             ]
+          },
+          "zone": {
+            "default": null,
+            "description": "add_row: The zone to add it to, last (zon_…, from board_read). move: The zone to move it to (default: its own). edit_zone: The zone (zon_…, from board_read). move_zone: The zone (zon_…). delete_zone: The zone (zon_…): empty, or holding only rows you added.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "zones": {
+            "default": [],
+            "description": "create_board: Zones to make, in order, by title.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -19763,7 +19863,7 @@
         "readOnlyHint": true,
         "title": "Read a status board"
       },
-      "description": "Read a project's live status board in Arugula control (with this machine's boards.read grant over its project): a board is zones (a title and a progress bar of how many rows are done) of rows (a pointer to an issue, PR, run, workspace or agent block, or to nothing; a one-line note; a status). Returns the zones and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
+      "description": "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project): a board is zones (a title and a progress bar of how many rows are done) of rows (a pointer to an issue, PR, run, workspace or agent block, or to nothing; a one-line note; a status). Returns the zones and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "`board_read`.",

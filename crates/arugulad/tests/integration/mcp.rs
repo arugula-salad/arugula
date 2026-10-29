@@ -2754,7 +2754,7 @@ async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
 /// A fake control's platform for the status board's tools: project `prj_1`
 /// with one board (`brd_1`: zone `zon_1` "Now" with a row `row_1` at rev 2),
 /// answering a write to the row's note at another rev with 409, and a
-/// write to a zone with 403 as the platform does. Every call as it came:
+/// repoint of a row it didn't add with 403 as the platform does. Every call as it came:
 /// method and path, its body.
 #[cfg(feature = "labs")]
 #[derive(Clone, Default)]
@@ -2800,9 +2800,21 @@ async fn fake_boards(f: FakeBoards) -> String {
                   "updated_at": 1 }] }))
             .into_response(),
             ("GET", "/api/daemon/boards/brd_1") => Json(view()).into_response(),
+            ("POST", "/api/daemon/projects/prj_1/boards" | "/api/daemon/boards/brd_1/close") => {
+                let mut v = view();
+                if b["title"].is_string() {
+                    v["board"]["title"] = b["title"].clone();
+                }
+                v["board"]["created_by_agent"] = json!({ "machine": "m1", "machine_name": "geek" });
+                Json(v).into_response()
+            }
             ("PUT", "/api/daemon/boards/brd_1/entries") => {
-                if b["entry"] == "zone" || b["id"] == "zon_1" {
-                    return said(StatusCode::FORBIDDEN, "an agent doesn't make zones", "forbidden");
+                if b["id"] == "row_1" && b["pointer"].is_object() {
+                    return said(
+                        StatusCode::FORBIDDEN,
+                        "an agent repoints only the rows its own machine added: this one is someone else's",
+                        "forbidden",
+                    );
                 }
                 if b["id"].is_string() && b["note"].is_string() && b["rev"] != 2 {
                     return said(StatusCode::CONFLICT, "this entry is at rev 2 now: read the board again", "stale_rev");
@@ -2839,8 +2851,9 @@ async fn fake_boards(f: FakeBoards) -> String {
 /// The board tools (boards, step 3) are listed and work only with the
 /// `boards` flag on; board_read lists a project's boards and reads one as
 /// zones, rows and 72-column text; board_write adds a row, sets a status
-/// with no rev, says to read again on a 409, needs a rev for a note, and
-/// passes the platform's refusal of a zone through.
+/// with no rev, says to read again on a 409, needs a rev for a note, makes
+/// a board with its zones and closes it, and passes the platform's refusal
+/// of a repoint through.
 #[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
@@ -2870,7 +2883,23 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     }
     let tools = s.list_all_tools().await.unwrap();
     assert!(names(tools.clone()).iter().any(|n| n == "board_read"));
-    assert_eq!(kinds(&tools, "board_write"), ["add_row", "set", "move", "remove_row"]);
+    assert_eq!(
+        kinds(&tools, "board_write"),
+        [
+            "add_row",
+            "set",
+            "move",
+            "remove_row",
+            "create_board",
+            "edit_board",
+            "close_board",
+            "reopen_board",
+            "add_zone",
+            "edit_zone",
+            "move_zone",
+            "delete_zone"
+        ]
+    );
     // show's board kind pins one beside the caller, by its id.
     assert!(kinds(&tools, "show").contains(&"board".to_owned()));
     let shown = call(&s, "show", json!({ "kind": "board", "board": "brd_1" })).await;
@@ -2916,9 +2945,26 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     let norev =
         refused(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "note": "x" })).await;
     assert!(norev.contains("rev"), "{norev}");
-    let zone =
-        refused(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "zon_1", "status": "done" })).await;
-    assert!(zone.contains("an agent doesn't make zones"), "the platform's refusal, as it said it: {zone}");
+    let repoint = refused(
+        &s,
+        "board_write",
+        json!({ "kind": "set", "board": "brd_1", "row": "row_1", "rev": 2, "pointer": { "kind": "run", "id": "run_ab12" } }),
+    )
+    .await;
+    assert!(repoint.contains("repoints only the rows its own machine added"), "the platform's refusal: {repoint}");
+
+    let made = call(
+        &s,
+        "board_write",
+        json!({ "kind": "create_board", "project": "prj_1", "title": "Epic", "goal": "Ship it", "zones": ["Now", "Later"] }),
+    )
+    .await;
+    assert!(made["summary"].as_str().unwrap().contains("Made a board"), "{made}");
+    let closed =
+        call(&s, "board_write", json!({ "kind": "close_board", "board": "brd_1", "done_note": "Log in." })).await;
+    assert!(closed["summary"].as_str().unwrap().contains("Closed a board"), "{closed}");
+    let empty = refused(&s, "board_write", json!({ "kind": "edit_board", "board": "brd_1" })).await;
+    assert!(empty.contains("title or a goal"), "{empty}");
     let no = refused(&s, "board_write", json!({ "kind": "remove_row", "board": "brd_1", "row": "row_1" })).await;
     assert!(no.contains("its own machine added"), "{no}");
 
@@ -2927,6 +2973,16 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     assert_eq!(status.1, json!({ "id": "row_1", "status": "done" }), "a status names no rev: {status:?}");
     let add = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["entry"] == "row").unwrap();
     assert_eq!(add.1, json!({ "entry": "row", "zone": "zon_1", "note": "agent row", "status": "working" }), "{add:?}");
+    let make = calls.iter().find(|(a, _)| a.starts_with("POST /api/daemon/projects/prj_1/boards")).unwrap();
+    assert_eq!(make.1, json!({ "title": "Epic", "goal": "Ship it" }), "{make:?}");
+    let zones: Vec<_> = calls.iter().filter(|(a, b)| a.starts_with("PUT ") && b["entry"] == "zone").collect();
+    assert_eq!(
+        zones.iter().map(|z| z.1["title"].as_str().unwrap()).collect::<Vec<_>>(),
+        ["Now", "Later"],
+        "its zones in order: {zones:?}"
+    );
+    let close = calls.iter().find(|(a, _)| a.starts_with("POST /api/daemon/boards/brd_1/close")).unwrap();
+    assert_eq!(close.1, json!({ "done_note": "Log in." }), "{close:?}");
     let linked = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["zone"] == "zon_2").unwrap();
     assert_eq!(linked.1["pointer"], link, "a link pointer goes to the platform as it is: {linked:?}");
     s.cancel().await.unwrap();

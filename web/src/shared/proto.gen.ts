@@ -2608,7 +2608,11 @@ closed_by?: string,
  */
 closed_by_agent?: ChatAgent, };
 
-export type NewBoard = { title: string, };
+export type NewBoard = { title: string, 
+/**
+ * What the board is for; left out: none.
+ */
+goal?: string, };
 
 /**
  * A new issue, before and after it reached the forge.
@@ -3212,9 +3216,14 @@ name: string, };
 
 export type ProjectBoard = { id: string, project: string, title: string, 
 /**
- * The account that made it; empty once that account is deleted.
+ * The account that made it; empty once that account is deleted. When an
+ * agent made it, the account it acted for.
  */
-created_by: string, created_at: number, updated_at: number, 
+created_by: string, 
+/**
+ * The machine whose agent made it, if one did.
+ */
+created_by_agent?: ChatAgent, created_at: number, updated_at: number, 
 /**
  * What the board is for, in a paragraph; empty means none.
  */
@@ -3229,9 +3238,14 @@ done_note: string,
  */
 closed_at?: number, 
 /**
- * The account that closed it; empty once that account is deleted.
+ * The account that closed it; empty once that account is deleted. When
+ * an agent closed it, the account it acted for.
  */
 closed_by: string, 
+/**
+ * The machine whose agent closed it, if one did.
+ */
+closed_by_agent?: ChatAgent, 
 /**
  * How many of its issues are closed.
  */

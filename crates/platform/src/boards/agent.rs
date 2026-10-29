@@ -12,8 +12,10 @@
 //! the one that signed the request, and it needs `boards.write` over at
 //! least one project of its owner's.
 //!
-//! There is no route to make a board, and a zone can't be made, changed,
-//! moved or deleted from here (see [`super`]).
+//! An agent makes and runs boards too (aru-123): it makes one, sets its title
+//! and goal, closes and reopens it, and works its zones and rows, and the
+//! board says it was an agent's. What it may not do is destroy or rewrite
+//! another hand's work (see [`super`]).
 
 use std::sync::Arc;
 
@@ -52,14 +54,54 @@ pub async fn list(State(app): State<Arc<Platform>>, d: Machine, Path(project): P
     Ok(Json(super::list(&app, actor(&d), &project).await?))
 }
 
+/// `POST /api/daemon/projects/{project}/boards`: make a board.
+pub async fn create(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(project): Path<String>,
+    Json(new): Json<wire::NewBoard>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::create(&app, actor(&d), &project, &new).await?))
+}
+
 /// `GET /api/daemon/boards/{id}`.
 pub async fn get(State(app): State<Arc<Platform>>, d: Machine, Path(id): Path<String>) -> J<wire::BoardView> {
     app.limits.check_daemon(AGENT_BOARD_READS, &d.daemon)?;
     Ok(Json(super::get(&app, actor(&d), &id).await?))
 }
 
-/// `PUT /api/daemon/boards/{id}/entries`: add a row, or set a row's note
-/// or status; 409 `stale_rev` when the row moved on.
+/// `PATCH /api/daemon/boards/{id}`: set the title or the goal.
+pub async fn edit(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(id): Path<String>,
+    Json(e): Json<wire::EditBoard>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::edit(&app, actor(&d), &id, &e).await?))
+}
+
+/// `POST /api/daemon/boards/{id}/close`: close it with a done note.
+pub async fn close(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(id): Path<String>,
+    Json(c): Json<wire::CloseBoard>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::close(&app, actor(&d), &id, &c).await?))
+}
+
+/// `POST /api/daemon/boards/{id}/reopen`: open it again.
+pub async fn reopen(State(app): State<Arc<Platform>>, d: Machine, Path(id): Path<String>) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::reopen(&app, actor(&d), &id).await?))
+}
+
+/// `PUT /api/daemon/boards/{id}/entries`: make or change a zone, add a row,
+/// or set a row's note, status or (its own machine's) pointer; 409
+/// `stale_rev` when the entry moved on.
 pub async fn put(
     State(app): State<Arc<Platform>>,
     d: Machine,
@@ -70,7 +112,7 @@ pub async fn put(
     Ok(Json(super::put(&app, actor(&d), &id, &p).await?))
 }
 
-/// `POST /api/daemon/boards/{id}/entries/{entry}/move`: move a row.
+/// `POST /api/daemon/boards/{id}/entries/{entry}/move`: move a row or a zone.
 pub async fn move_entry(
     State(app): State<Arc<Platform>>,
     d: Machine,
@@ -82,7 +124,7 @@ pub async fn move_entry(
 }
 
 /// `DELETE /api/daemon/boards/{id}/entries/{entry}`: a row this machine's
-/// agents added.
+/// agents added, or a zone with no row of another hand's in it.
 pub async fn delete(
     State(app): State<Arc<Platform>>,
     d: Machine,

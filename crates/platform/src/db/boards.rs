@@ -20,11 +20,15 @@
 //!   (machine, pane), set by the machine and read through a row's pointer.
 
 use anyhow::{Context as _, Result, bail};
-use arugula_control_wire::boards::{BlockState, BlockWord, Board, Diffstat, EntryKind, Pointer, Status, ZoneKind};
+use arugula_control_wire::{
+    boards::{BlockState, BlockWord, Board, Diffstat, EntryKind, Pointer, Status, ZoneKind},
+    chat::ChatAgent,
+};
 
 use super::{
     Db,
     chat::{in_json, json_list},
+    issues::Actor,
     sql::{Optional as _, Row, Sql, params},
 };
 use crate::Deleted;
@@ -52,6 +56,8 @@ pub enum Refused {
     Stale { rev: u64 },
     /// The change isn't allowed; why.
     Bad(String),
+    /// The change is something its author may not do; why.
+    Forbidden(String),
 }
 
 fn bad<T>(why: impl Into<String>) -> Result<std::result::Result<T, Refused>> {
@@ -113,8 +119,8 @@ pub struct Move<'a> {
     pub rev: Option<u64>,
 }
 
-const BOARD_COLS: &str =
-    "id, project_id, title, created_by, created_at, updated_at, goal, done_note, closed_at, closed_by";
+const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, closed_at, \
+                          closed_by, created_by_agent, closed_by_agent";
 const ENTRY_COLS: &str = "id, kind, zone_id, rev, title, zone_kind, note, status, target_kind, target, pane, \
                           created_at, updated_at, agent";
 
@@ -130,8 +136,16 @@ fn board_row(r: &Row) -> Result<Board> {
         done_note: r.get(7)?,
         closed_at: r.get(8)?,
         closed_by: r.get(9)?,
+        // The names are filled in by the reader (`crate::boards`).
+        created_by_agent: machine_of(r.get(10)?),
+        closed_by_agent: machine_of(r.get(11)?),
         progress: Default::default(),
     })
+}
+
+/// A machine stored on a board, not yet named.
+fn machine_of(m: Option<String>) -> Option<ChatAgent> {
+    m.map(|machine| ChatAgent { machine, machine_name: String::new() })
 }
 
 fn status_str(s: Status) -> Option<&'static str> {
@@ -302,9 +316,18 @@ pub struct IssueState {
 }
 
 impl Db {
-    /// Make a board in `project` as `by`. `None`: the project already has
-    /// `max` boards. The project is the caller's to have checked.
-    pub fn create_board(&self, project: &str, title: &str, by: &str, at: u64, max: u64) -> Result<Option<Board>> {
+    /// Make a board in `project` as `by` (a person, or their agent on a
+    /// machine), with `goal` if any. `None`: the project
+    /// already has `max` boards. The project is the caller's to have checked.
+    pub fn create_board(
+        &self,
+        project: &str,
+        title: &str,
+        goal: &str,
+        by: Actor<'_>,
+        at: u64,
+        max: u64,
+    ) -> Result<Option<Board>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         // Counted in the same transaction as the insert, with the project's
@@ -324,10 +347,10 @@ impl Db {
         }
         let board = tx.query_row(
             &format!(
-                "INSERT INTO boards (id, project_id, title, created_by, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?5) RETURNING {BOARD_COLS}"
+                "INSERT INTO boards (id, project_id, title, goal, created_by, created_by_agent, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7) RETURNING {BOARD_COLS}"
             ),
-            params![new_board_id(), project, title, by, at],
+            params![new_board_id(), project, title, goal, by.account, by.agent, at],
             board_row,
         )?;
         tx.commit()?;
@@ -399,10 +422,11 @@ impl Db {
         Ok(true)
     }
 
-    /// Close a board with `note` by `by`. A board closed already takes the
-    /// new note and keeps its first `closed_at` and `closed_by`. `false`: no
+    /// Close a board with `note` as `by` (a person, or their agent on a
+    /// machine). A board closed already takes the new note and keeps
+    /// its first `closed_at`, `closed_by` and `closed_by_agent`. `false`: no
     /// such board.
-    pub fn close_board(&self, id: &str, note: &str, by: &str, at: u64) -> Result<bool> {
+    pub fn close_board(&self, id: &str, note: &str, by: Actor<'_>, at: u64) -> Result<bool> {
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, id)? {
@@ -411,9 +435,10 @@ impl Db {
         tx.execute(
             "UPDATE boards SET done_note = ?2,
                  closed_by = CASE WHEN closed_at IS NULL THEN ?3 ELSE closed_by END,
-                 closed_at = COALESCE(closed_at, ?4)
+                 closed_by_agent = CASE WHEN closed_at IS NULL THEN ?4 ELSE closed_by_agent END,
+                 closed_at = COALESCE(closed_at, ?5)
              WHERE id = ?1",
-            params![id, note, by, at],
+            params![id, note, by.account, by.agent, at],
         )?;
         touch(&tx, id, at)?;
         tx.commit()?;
@@ -427,7 +452,10 @@ impl Db {
         if !lock(&tx, id)? {
             return Ok(false);
         }
-        tx.execute("UPDATE boards SET closed_at = NULL, closed_by = '' WHERE id = ?1", params![id])?;
+        tx.execute(
+            "UPDATE boards SET closed_at = NULL, closed_by = '', closed_by_agent = NULL WHERE id = ?1",
+            params![id],
+        )?;
         touch(&tx, id, at)?;
         tx.commit()?;
         Ok(true)
@@ -666,8 +694,16 @@ impl Db {
         Ok(Ok(()))
     }
 
-    /// Delete a row, or a zone and its rows.
-    pub fn delete_entry(&self, board: &str, id: &str, at: u64) -> Result<std::result::Result<(), Refused>> {
+    /// Delete a row, or a zone and its rows. With `agent` (a machine whose
+    /// agent deletes), a zone that holds a row some other hand added is
+    /// refused, read in the same transaction as the delete.
+    pub fn delete_entry(
+        &self,
+        board: &str,
+        id: &str,
+        agent: Option<&str>,
+        at: u64,
+    ) -> Result<std::result::Result<(), Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, board)? {
@@ -676,6 +712,21 @@ impl Db {
         let Some(e) = entry(&tx, board, id)? else { return Ok(Err(Refused::Missing("no such entry"))) };
         match e.kind {
             EntryKind::Zone => {
+                if let Some(machine) = agent {
+                    let others: u64 = tx.query_row(
+                        "SELECT count(*) FROM board_entries
+                         WHERE board_id = ?1 AND zone_id = ?2 AND (agent IS NULL OR agent != ?3)",
+                        params![board, id, machine],
+                        |r| r.get(0),
+                    )?;
+                    if others > 0 {
+                        return Ok(Err(Refused::Forbidden(
+                            "an agent removes a zone only when every row in it was added by its own machine: this one \
+                             holds someone else's"
+                                .to_owned(),
+                        )));
+                    }
+                }
                 tx.execute("DELETE FROM board_entries WHERE board_id = ?1 AND zone_id = ?2", params![board, id])?;
                 tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
                 renumber(&tx, &siblings(&tx, board, None)?)?;

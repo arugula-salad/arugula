@@ -14,12 +14,18 @@
 //! their owner: the owner's role in the project is the ceiling, and the
 //! machine needs a grant the owner gave over the project too, asked again
 //! on every call: `boards.read` to read, `boards.write` to change (which
-//! reads too). With `boards.write` an agent may add rows to a zone that is
-//! there, set any row's note and status (a PROOFS row's too), and move
-//! rows. It may never make or delete a board or a zone, rename or move a
-//! zone, repoint a row, or delete a row some other hand added: the rows its
-//! own machine added, it may. These rules are here, in the functions both
-//! kinds of caller use, and not in the routes that call them.
+//! reads too). With `boards.write` an agent may do what a person with the
+//! same role does, labelled as the agent (`created_by_agent`,
+//! `closed_by_agent`, a row's `agent`): make a board, with a goal, and set
+//! its title and goal; close it with a done note and open it again; make,
+//! rename, move and delete zones (the PROOFS zone too); add rows, set any
+//! row's note and status and move rows. It may never destroy or rewrite
+//! another hand's work: it doesn't delete a zone that holds a row another
+//! hand added, delete such a row, or repoint one. The rows its own machine
+//! added, it may delete and repoint. These rules are here, in the functions
+//! both kinds of caller use, and not in the routes that call them. The
+//! person's role is still the ceiling on each: a viewer's machine makes
+//! nothing.
 //!
 //! **Gating:** the `boards` Labs flag ([`FLAG`], resolved as chat's is).
 //! With it off for the account, every route here answers 404, as if boards
@@ -168,6 +174,7 @@ fn refused(r: Refused) -> ApiError {
             refusal(StatusCode::CONFLICT, STALE_REV, &format!("this entry is at rev {rev} now: read the board again"))
         }
         Refused::Bad(why) => err(StatusCode::BAD_REQUEST, &why),
+        Refused::Forbidden(why) => err(StatusCode::FORBIDDEN, &why),
     }
 }
 
@@ -262,6 +269,26 @@ fn link_ok(url: &str) -> Result<(), ApiError> {
     }
     if authority.is_empty() || authority.starts_with(':') {
         return refuse("with a host");
+    }
+    Ok(())
+}
+
+/// Name the machine on each board that an agent made or closed.
+async fn name_boards(app: &Platform, boards: &mut [wire::Board]) -> Result<(), ApiError> {
+    let mut machines: Vec<String> = boards
+        .iter()
+        .flat_map(|b| [&b.created_by_agent, &b.closed_by_agent])
+        .flatten()
+        .map(|a| a.machine.clone())
+        .collect();
+    machines.sort();
+    machines.dedup();
+    if machines.is_empty() {
+        return Ok(());
+    }
+    let names = agent_names(app, &machines).await?;
+    for a in boards.iter_mut().flat_map(|b| [&mut b.created_by_agent, &mut b.closed_by_agent]).flatten() {
+        a.machine_name = names.get(&a.machine).map(|d| d.name.clone()).unwrap_or_default();
     }
     Ok(())
 }
@@ -515,6 +542,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         agent_names(app, &machines).await?.into_iter().map(|(id, d)| (id, d.name)).collect()
     };
     let mut v = view(stored, &names);
+    name_boards(app, std::slice::from_mut(&mut v.board)).await?;
     let project = v.board.project.clone();
     progress(app, account, &project, std::slice::from_mut(&mut v.board)).await?;
     resolve(app, account, &mut v).await?;
@@ -545,34 +573,17 @@ pub fn mirror_changed(app: &Platform, repo: u64, numbers: &[u64], shas: &[String
     }
 }
 
-/// What an agent is refused of a zone.
-fn no_zones() -> ApiError {
-    err(
-        StatusCode::FORBIDDEN,
-        "an agent doesn't make, change, move or delete zones: it works in the rows of the ones there are",
-    )
-}
-
-fn is_zone(app: &Platform, board: &str, entry: &str) -> Result<bool, ApiError> {
-    Ok(app.db.board_entry(board, entry)?.is_some_and(|e| e.kind == wire::EntryKind::Zone))
-}
-
-/// What an agent's write to a board may be: a new row in a zone there is,
-/// or a row's note or status. Not a zone, a zone's title, a row's pointer.
-fn agent_put_allowed(app: &Platform, board: &str, p: &wire::PutEntry) -> Result<(), ApiError> {
-    match (&p.id, p.entry) {
-        (None, Some(wire::EntryKind::Row)) => {}
-        (None, _) => return Err(no_zones()),
-        (Some(id), _) => {
-            if is_zone(app, board, id)? {
-                return Err(no_zones());
-            }
-        }
-    }
-    if p.id.is_some() && p.pointer.is_some() {
+/// What an agent's write to a board may be: anything a person's may, but
+/// to repoint a row only one its own machine added.
+fn agent_put_allowed(app: &Platform, board: &str, machine: &str, p: &wire::PutEntry) -> Result<(), ApiError> {
+    if let (Some(id), Some(_)) = (&p.id, &p.pointer)
+        && let Some(e) = app.db.board_entry(board, id)?
+        && e.kind == wire::EntryKind::Row
+        && e.agent.as_deref() != Some(machine)
+    {
         return Err(err(
             StatusCode::FORBIDDEN,
-            "an agent sets a row's note and status, and doesn't repoint it: add a row for something else",
+            "an agent repoints only the rows its own machine added: this one is someone else's",
         ));
     }
     Ok(())
@@ -584,25 +595,26 @@ fn agent_put_allowed(app: &Platform, board: &str, p: &wire::PutEntry) -> Result<
 pub async fn list(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire::BoardList, ApiError> {
     let id = place(app, by, project, false).await?;
     let mut boards = app.db.boards(&id)?;
+    name_boards(app, &mut boards).await?;
     progress(app, by.account, &id, &mut boards).await?;
     Ok(wire::BoardList { boards, project: id })
 }
 
-/// Make a board in `project`.
+/// Make a board in `project`, with its goal if one is given.
 pub async fn create(
     app: &Platform,
-    account: &str,
+    by: Actor<'_>,
     project: &str,
     new: &wire::NewBoard,
 ) -> Result<wire::BoardView, ApiError> {
-    // People only: an agent never makes a board.
-    let id = place(app, Actor::person(account), project, true).await?;
+    let id = place(app, by, project, true).await?;
     let title = title_ok(&new.title)?;
+    let goal = new.goal.as_deref().map(|g| text_ok(g, "a goal")).transpose()?.unwrap_or("");
     let board = app
         .db
-        .create_board(&id, title, account, now_ms(), wire::BOARDS_MAX)?
+        .create_board(&id, title, goal, by, now_ms(), wire::BOARDS_MAX)?
         .ok_or_else(|| bad(&format!("a project has at most {} boards", wire::BOARDS_MAX)))?;
-    read(app, account, &board.id).await
+    read(app, by.account, &board.id).await
 }
 
 /// A board with its zones and rows in order, as `account` may read it.
@@ -611,9 +623,9 @@ pub async fn get(app: &Platform, by: Actor<'_>, id: &str) -> Result<wire::BoardV
     read(app, by.account, id).await
 }
 
-/// Set a board's title or goal. People only.
-pub async fn edit(app: &Platform, account: &str, id: &str, e: &wire::EditBoard) -> Result<wire::BoardView, ApiError> {
-    let board = board_place(app, Actor::person(account), id, true).await?;
+/// Set a board's title or goal.
+pub async fn edit(app: &Platform, by: Actor<'_>, id: &str, e: &wire::EditBoard) -> Result<wire::BoardView, ApiError> {
+    let board = board_place(app, by, id, true).await?;
     let title = e.title.as_deref().map(title_ok).transpose()?;
     let goal = e.goal.as_deref().map(|g| text_ok(g, "a goal")).transpose()?;
     if title.is_none() && goal.is_none() {
@@ -623,39 +635,39 @@ pub async fn edit(app: &Platform, account: &str, id: &str, e: &wire::EditBoard) 
         return Err(no_board());
     }
     changed(app, &board.project, id);
-    read(app, account, id).await
+    read(app, by.account, id).await
 }
 
-/// Close a board with its done note. People only. The issues and rows are
-/// left as they are.
-pub async fn close(app: &Platform, account: &str, id: &str, c: &wire::CloseBoard) -> Result<wire::BoardView, ApiError> {
-    let board = board_place(app, Actor::person(account), id, true).await?;
+/// Close a board with its done note. The issues and rows are left as they
+/// are.
+pub async fn close(app: &Platform, by: Actor<'_>, id: &str, c: &wire::CloseBoard) -> Result<wire::BoardView, ApiError> {
+    let board = board_place(app, by, id, true).await?;
     let note = text_ok(&c.done_note, "a done note")?;
     if note.is_empty() {
         return Err(bad("say what was done: a board closes with a note"));
     }
-    if !app.db.close_board(id, note, account, now_ms())? {
+    if !app.db.close_board(id, note, by, now_ms())? {
         return Err(no_board());
     }
     changed(app, &board.project, id);
-    read(app, account, id).await
+    read(app, by.account, id).await
 }
 
-/// Open a closed board again, keeping its done note. People only.
-pub async fn reopen(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView, ApiError> {
-    let board = board_place(app, Actor::person(account), id, true).await?;
+/// Open a closed board again, keeping its done note.
+pub async fn reopen(app: &Platform, by: Actor<'_>, id: &str) -> Result<wire::BoardView, ApiError> {
+    let board = board_place(app, by, id, true).await?;
     if !app.db.reopen_board(id, now_ms())? {
         return Err(no_board());
     }
     changed(app, &board.project, id);
-    read(app, account, id).await
+    read(app, by.account, id).await
 }
 
 /// Make or change a zone or a row (see [`wire::PutEntry`]).
 pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) -> Result<wire::BoardView, ApiError> {
     let board = board_place(app, by, id, true).await?;
-    if by.agent.is_some() {
-        agent_put_allowed(app, id, p)?;
+    if let Some(machine) = by.agent {
+        agent_put_allowed(app, id, machine, p)?;
     }
     if let Some(i) = &p.id
         && id_ok(i, "row").is_err()
@@ -697,9 +709,6 @@ pub async fn move_entry(
     m: &wire::MoveEntry,
 ) -> Result<wire::BoardView, ApiError> {
     let board = board_place(app, by, id, true).await?;
-    if by.agent.is_some() && is_zone(app, id, entry)? {
-        return Err(no_zones());
-    }
     app.db
         .move_entry(
             id,
@@ -717,17 +726,16 @@ pub async fn move_entry(
 pub async fn delete(app: &Platform, by: Actor<'_>, id: &str, entry: &str) -> Result<wire::BoardView, ApiError> {
     let board = board_place(app, by, id, true).await?;
     if let (Some(machine), Some(e)) = (by.agent, app.db.board_entry(id, entry)?) {
-        if e.kind == wire::EntryKind::Zone {
-            return Err(no_zones());
-        }
-        if e.agent.as_deref() != Some(machine) {
+        // A zone's rows go with it: the database refuses it while another
+        // hand's row is in it, in the same transaction as the delete.
+        if e.kind == wire::EntryKind::Row && e.agent.as_deref() != Some(machine) {
             return Err(err(
                 StatusCode::FORBIDDEN,
                 "an agent removes only the rows its own machine added: this one is someone else's",
             ));
         }
     }
-    app.db.delete_entry(id, entry, now_ms())?.map_err(refused)?;
+    app.db.delete_entry(id, entry, by.agent, now_ms())?.map_err(refused)?;
     changed(app, &board.project, id);
     read(app, by.account, id).await
 }
@@ -751,7 +759,7 @@ pub async fn create_route(
     Path(project): Path<String>,
     Json(new): Json<wire::NewBoard>,
 ) -> J<wire::BoardView> {
-    Ok(Json(create(&app, &s.account, &project, &new).await?))
+    Ok(Json(create(&app, Actor::person(&s.account), &project, &new).await?))
 }
 
 /// `GET /api/boards/{id}`: the board with its zones and rows in order.
@@ -766,7 +774,7 @@ pub async fn edit_route(
     Path(id): Path<String>,
     Json(e): Json<wire::EditBoard>,
 ) -> J<wire::BoardView> {
-    Ok(Json(edit(&app, &s.account, &id, &e).await?))
+    Ok(Json(edit(&app, Actor::person(&s.account), &id, &e).await?))
 }
 
 /// `POST /api/boards/{id}/close`: close it with a done note (owners and
@@ -777,13 +785,13 @@ pub async fn close_route(
     Path(id): Path<String>,
     Json(c): Json<wire::CloseBoard>,
 ) -> J<wire::BoardView> {
-    Ok(Json(close(&app, &s.account, &id, &c).await?))
+    Ok(Json(close(&app, Actor::person(&s.account), &id, &c).await?))
 }
 
 /// `POST /api/boards/{id}/reopen`: open it again, keeping the note (owners
 /// and editors).
 pub async fn reopen_route(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<String>) -> J<wire::BoardView> {
-    Ok(Json(reopen(&app, &s.account, &id).await?))
+    Ok(Json(reopen(&app, Actor::person(&s.account), &id).await?))
 }
 
 /// `PUT /api/boards/{id}/entries`: make or change a zone or a row (owners

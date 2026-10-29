@@ -23,11 +23,11 @@ use crate::chat::ChatAgent;
 /// answered [`BoardView`].
 pub const PROJECT_BOARDS: &str = "/api/projects/{project}/boards";
 /// `GET`: a board with its zones and rows in order, [`BoardView`]. `PATCH`
-/// [`EditBoard`]: set its title or goal (people only, owners and editors),
-/// answered [`BoardView`].
+/// [`EditBoard`]: set its title or goal (owners and editors), answered
+/// [`BoardView`].
 pub const BOARD: &str = "/api/boards/{id}";
-/// `POST` [`CloseBoard`]: close the board with a done note (people only,
-/// owners and editors); answered [`BoardView`]. Its issues and rows stay as
+/// `POST` [`CloseBoard`]: close the board with a done note (owners and
+/// editors); answered [`BoardView`]. Its issues and rows stay as
 /// they are, and its rows stay editable.
 pub const BOARD_CLOSE: &str = "/api/boards/{id}/close";
 /// `POST`, no body: open a closed board again, keeping its done note;
@@ -48,15 +48,23 @@ pub const PROJECT_WORK: &str = "/api/projects/{project}/work";
 /// signed by the machine, never past the owner's role. See
 /// `arugula_platform::boards::agent` for what they may not do.
 ///
-/// `GET`: a project's boards ([`BoardList`]); `{project}` is an id or `personal`.
+/// `GET`: a project's boards ([`BoardList`]); `{project}` is an id or
+/// `personal`. `POST` [`NewBoard`]: make one, answered [`BoardView`].
 pub const AGENT_PROJECT_BOARDS: &str = "/api/daemon/projects/{project}/boards";
-/// `GET`: a board ([`BoardView`]).
+/// `GET`: a board ([`BoardView`]). `PATCH` [`EditBoard`]: set its title or
+/// goal.
 pub const AGENT_BOARD: &str = "/api/daemon/boards/{id}";
-/// `PUT` [`PutEntry`]: add a row, or change a row's note or status.
+/// `POST` [`CloseBoard`]: close the board with a done note.
+pub const AGENT_BOARD_CLOSE: &str = "/api/daemon/boards/{id}/close";
+/// `POST`, no body: open a closed board again.
+pub const AGENT_BOARD_REOPEN: &str = "/api/daemon/boards/{id}/reopen";
+/// `PUT` [`PutEntry`]: make or change a zone, add a row, or change a row's
+/// note, status or pointer (a row the agent's machine added, for a pointer).
 pub const AGENT_BOARD_ENTRIES: &str = "/api/daemon/boards/{id}/entries";
-/// `DELETE`: a row the agent's machine added.
+/// `DELETE`: a row the agent's machine added, or a zone with none of
+/// another hand's rows in it.
 pub const AGENT_BOARD_ENTRY: &str = "/api/daemon/boards/{id}/entries/{entry}";
-/// `POST` [`MoveEntry`]: move a row.
+/// `POST` [`MoveEntry`]: move a row or a zone.
 pub const AGENT_BOARD_ENTRY_MOVE: &str = "/api/daemon/boards/{id}/entries/{entry}/move";
 
 /// [`AGENT_PROJECT_BOARDS`] for `project`.
@@ -67,6 +75,16 @@ pub fn agent_project_boards(project: &str) -> String {
 /// [`AGENT_BOARD`] for `id`.
 pub fn agent_board(id: &str) -> String {
     format!("/api/daemon/boards/{id}")
+}
+
+/// [`AGENT_BOARD_CLOSE`] for `id`.
+pub fn agent_board_close(id: &str) -> String {
+    format!("/api/daemon/boards/{id}/close")
+}
+
+/// [`AGENT_BOARD_REOPEN`] for `id`.
+pub fn agent_board_reopen(id: &str) -> String {
+    format!("/api/daemon/boards/{id}/reopen")
 }
 
 /// `PUT` [`PutBlockState`]: a machine tells control the state of one of its
@@ -175,8 +193,13 @@ pub struct Board {
     pub id: String,
     pub project: String,
     pub title: String,
-    /// The account that made it; empty once that account is deleted.
+    /// The account that made it; empty once that account is deleted. When an
+    /// agent made it, the account it acted for.
     pub created_by: String,
+    /// The machine whose agent made it, if one did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub created_by_agent: Option<ChatAgent>,
     pub created_at: u64,
     pub updated_at: u64,
     /// What the board is for, in a paragraph; empty means none.
@@ -190,9 +213,14 @@ pub struct Board {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub closed_at: Option<u64>,
-    /// The account that closed it; empty once that account is deleted.
+    /// The account that closed it; empty once that account is deleted. When
+    /// an agent closed it, the account it acted for.
     #[serde(default)]
     pub closed_by: String,
+    /// The machine whose agent closed it, if one did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub closed_by_agent: Option<ChatAgent>,
     /// How many of its issues are closed.
     #[serde(default)]
     pub progress: BoardProgress,
@@ -242,6 +270,10 @@ pub struct BoardList {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NewBoard {
     pub title: String,
+    /// What the board is for; left out: none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub goal: Option<String>,
 }
 
 /// What a row's `fi_`, `iss_` or `run_` pointer is now, from data control
