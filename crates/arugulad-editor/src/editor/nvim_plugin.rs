@@ -789,6 +789,7 @@ mod tests {
 
     /// `:checkhealth arugula` names the problem when there's no socket, or
     /// a socket with no daemon behind it.
+    #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread")]
     async fn checkhealth_names_a_missing_socket_or_daemon() {
         if !nvim_here() {

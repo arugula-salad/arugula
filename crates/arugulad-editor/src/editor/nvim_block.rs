@@ -124,10 +124,12 @@ pub fn runtime_at(home: &Path) -> io::Result<PathBuf> {
         let tmp = home.join(format!(".arugula.nvim-{}", std::process::id()));
         let _ = std::fs::remove_file(&tmp);
         #[cfg(unix)]
-        std::os::unix::fs::symlink(&target, &tmp)?;
+        {
+            std::os::unix::fs::symlink(&target, &tmp)?;
+            std::fs::rename(&tmp, &link)?;
+        }
         #[cfg(not(unix))]
         return Err(io::Error::other("nvim blocks need macOS or Linux"));
-        std::fs::rename(&tmp, &link)?;
     }
     // Other versions: the link no longer names them.
     if let Ok(dir) = std::fs::read_dir(&versions) {
@@ -449,6 +451,7 @@ mod tests {
         PaneSummary { session: 1, session_name: "s".into(), tab: 1, tab_name: None, info }
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_block_runs_nvim_with_the_plugin_at_the_file_and_line() {
         let boot = Path::new("/st/editor/nvim/block.lua");
@@ -488,6 +491,7 @@ mod tests {
         assert_eq!((r.join, r.cwd.as_deref()), (false, None));
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_restart_follows_the_file_and_line_and_keeps_its_bootstrap() {
         let was = restart("/p", Some(Path::new("/st/block.lua")), None, None);
@@ -598,6 +602,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_plugin_is_written_once_per_version_behind_a_stable_link() {
         let home = std::env::temp_dir().join(format!("ilg-nvb-{}", std::process::id()));
