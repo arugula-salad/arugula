@@ -3,7 +3,9 @@
 // a snooze for everything. One menu, the app's own (`openMenu`), so it
 // reads the same on the page and on a phone.
 
+import type { ComponentChild } from "preact";
 import type { ChatRoom } from "../proto.gen";
+import { BellIcon, BellOffIcon } from "../ui/bell";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { LEVELS, levelLabel, loadNotify, notifyPrefs, parseSnooze, setNotify, snoozePresets, untilText } from "./notify";
 
@@ -48,10 +50,12 @@ export function openBell(
   if (!p) void loadNotify();
 }
 
-/** The bell's glyph and what it says: a moon while paused, a slashed bell
- * for "nothing", a dotted one for mentions only. */
-export function bellFor(room: ChatRoom): { glyph: string; title: string } {
+/** The bell's glyph and what it says: a moon while paused, the header's
+ * outline bell (#1800), struck through for "nothing". `quiet`: it won't
+ * notify you now. */
+export function bellFor(room: ChatRoom): { glyph: ComponentChild; title: string; quiet: boolean } {
   const how = levelLabel(room.level);
-  if (paused()) return { glyph: "🌙", title: `Notifications are paused. This room: ${how}` };
-  return { glyph: room.level === "nothing" ? "🔕" : "🔔", title: `Notifications: ${how}` };
+  if (paused()) return { glyph: "🌙", title: `Notifications are paused. This room: ${how}`, quiet: true };
+  const off = room.level === "nothing";
+  return { glyph: off ? <BellOffIcon size={16} /> : <BellIcon size={16} />, title: `Notifications: ${how}`, quiet: off };
 }
