@@ -1495,6 +1495,46 @@ a.btn.primary {
   padding: 3px 10px;
 }
 
+.wave:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.tile .tag.call {
+  color: var(--ok);
+}
+
+.tile.speaking {
+  border-color: var(--ok);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+.callbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 14px;
+}
+
+.callbar.on {
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--ok) 50%, var(--line));
+  border-radius: 12px;
+}
+
+.callbar .what {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn.danger {
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--line));
+  color: var(--danger);
+}
+
 .toast {
   position: fixed;
   right: 16px;

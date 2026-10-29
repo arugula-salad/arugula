@@ -2,12 +2,13 @@
 // socket with a room token (or a publishable key and a guest's name), the
 // room's channel, binary frames both ways
 // (the relay puts the sender's sub in front of each: `len:u8 sub frame`),
-// Phoenix.Presence for who's there, and waves. The channel is joined while
-// this page listens or publishes, and left when it does neither.
+// Phoenix.Presence for who's there, waves and calls. The channel is
+// joined while this page listens or publishes, and left when it does
+// neither.
 
 import { Presence, Socket, type Channel } from "phoenix";
 import type { Look } from "@arugula/presence-core/avatar/rig";
-import type { Member, Mode, State, Transport, TransportEvents, Message } from "./transport.ts";
+import type { CallJoin, Member, Mode, State, Transport, TransportEvents, Message } from "./transport.ts";
 
 /** Into the room with a room token: your server decided who's in it. */
 export interface TokenAuth {
@@ -58,6 +59,7 @@ interface Meta {
   mode?: Mode;
   away?: boolean;
   watching?: boolean;
+  call?: string | null;
 }
 
 /** A member from their connections' metas: on camera if any page is, away
@@ -72,6 +74,7 @@ export function memberOf(sub: string, metas: Meta[]): Member {
     mode,
     away: metas.length > 0 && metas.every((m) => m.away),
     watching: metas.some((m) => m.watching),
+    call: metas.find((m) => m.call)?.call ?? null,
   };
 }
 
@@ -110,10 +113,15 @@ export function phoenixTransport(o: PhoenixTransportOptions): Transport {
     ch.on("answer", ({ from, yes }: { from: string; yes: boolean }) => on?.answer?.(from, yes));
     ch.on("said", (m: Message) => on?.said?.(m));
     ch.on("history", ({ messages }: { messages: Message[] }) => on?.history?.(messages));
+    ch.on("call", ({ from, id }: { from: string; id: string }) => on?.call?.(from, id));
+    ch.on("call_cancel", ({ id }: { id: string }) => on?.callCancel?.(id));
+    ch.on("call_answer", (a: { id: string; from: string; yes: boolean; reason?: string }) => on?.callAnswer?.(a.id, a.from, a.yes, a.reason));
+    ch.on("call_join", (j: CallJoin) => on?.callJoin?.(j));
     const presence = new Presence(ch);
     presence.onSync(() => on?.members?.(presence.list((sub, { metas }: { metas: Meta[] }) => memberOf(sub, metas))));
     ch.join()
-      .receive("ok", () => {
+      .receive("ok", (reply: { calls?: boolean }) => {
+        on?.calls?.(!!reply?.calls);
         on?.live("on");
         ch.push("state", { ...state, watching: listening });
       })
@@ -180,6 +188,18 @@ export function phoenixTransport(o: PhoenixTransportOptions): Transport {
     },
     history(before) {
       return ask<{ messages: Message[] }>("history", { before }).then((r) => r.messages);
+    },
+    call(to) {
+      return ask<{ id: string }>("call", { to });
+    },
+    callAnswer(id, yes) {
+      return ask<unknown>("call_answer", { id, yes }).then(() => undefined);
+    },
+    callLeave(id) {
+      channel?.push("call_leave", { id });
+    },
+    callToken(id) {
+      return ask<CallJoin>("call_token", { id });
     },
   };
 

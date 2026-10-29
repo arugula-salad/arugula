@@ -1,7 +1,8 @@
 // Drawing a room's people into an element (connect()'s mount and avatar,
 // and the elements): a tile each, their outline while their camera sends
 // one, their character (live, or idling in their look) otherwise, their
-// initial when they have neither. Plain DOM and canvases, no framework.
+// initial when they have neither; who's in a call, and a button to call
+// someone where the relay has calls. Plain DOM and canvases, no framework.
 
 import type { Member } from "@arugula/presence";
 import { characterOf } from "@arugula/presence-core/avatar/characters/index";
@@ -18,6 +19,9 @@ export interface PeopleOptions {
   size?: "bust" | "head";
   /** You first (default), or not shown. */
   self?: "first" | "hide";
+  /** A Call button on everyone else's tile, where the relay has calls
+   * (default true). */
+  calls?: boolean;
 }
 
 export interface AvatarOptions {
@@ -96,6 +100,7 @@ interface Tile {
   face: Face;
   name: HTMLElement;
   tag: HTMLElement;
+  callButton: HTMLButtonElement;
   /** Where reactions float, and which (by time) are already floating. */
   reacts: HTMLElement;
   shown: Set<number>;
@@ -129,7 +134,7 @@ export function mountPeople(room: Room, el: Element | ShadowRoot, o: PeopleOptio
     const c = room.client;
     let people = c.members;
     if (room.me && !people.some((m) => m.sub === room.me) && c.live === "on") {
-      people = [{ sub: room.me, name: "You", look: c.look, mode: "none", away: false, watching: true }, ...people];
+      people = [{ sub: room.me, name: "You", look: c.look, mode: "none", away: false, watching: true, call: null }, ...people];
     }
     people = [...people].sort((a, b) => (a.sub === room.me ? -1 : b.sub === room.me ? 1 : 0));
     if (o.self === "hide") people = people.filter((m) => m.sub !== room.me);
@@ -158,9 +163,15 @@ export function mountPeople(room: Room, el: Element | ShadowRoot, o: PeopleOptio
         name.className = "name";
         const tag = document.createElement("span");
         tag.className = "tag";
-        cap.append(name, tag);
+        const callButton = document.createElement("button");
+        callButton.type = "button";
+        callButton.className = "call";
+        const sub = m.sub;
+        // A refusal ("too fast", "not in the room") shows on hover.
+        callButton.addEventListener("click", () => void room.call(sub).then(() => (callButton.title = ""), (e: Error) => (callButton.title = e.message)));
+        cap.append(name, tag, callButton);
         fig.append(view, cap);
-        t = { fig, face: new Face(view, size), name, tag, reacts, shown: new Set() };
+        t = { fig, face: new Face(view, size), name, tag, callButton, reacts, shown: new Set() };
         tiles.set(m.sub, t);
       }
       if (grid.children[i] !== t.fig) grid.insertBefore(t.fig, grid.children[i] ?? null);
@@ -170,7 +181,18 @@ export function mountPeople(room: Room, el: Element | ShadowRoot, o: PeopleOptio
       const live = !!seen || (me && !!(c.mine?.rig || c.mine?.frame));
       t.fig.classList.toggle("live", live);
       t.fig.classList.toggle("away", m.away && !live);
-      t.tag.textContent = live ? "live" : m.away ? "away" : "";
+      // In a call: theirs (presence says), and in yours, muted or speaking
+      // (LiveKit says).
+      const inCall = !!m.call;
+      const person = room.client.inCall?.people.find((p) => p.sub === m.sub);
+      t.fig.classList.toggle("in-call", inCall);
+      t.fig.classList.toggle("speaking", !!person?.speaking);
+      t.tag.textContent = person?.muted ? "muted" : inCall ? "in a call" : live ? "live" : m.away ? "away" : "";
+      const ringing = !!room.client.inCall?.ringing.includes(m.sub);
+      t.callButton.hidden = me || !c.callsOn || o.calls === false || c.inMyCall(m.sub);
+      t.callButton.disabled = ringing;
+      t.callButton.textContent = ringing ? "Calling…" : c.inCall && c.inCall.state !== "ringing" ? "Add to call" : "Call";
+      t.callButton.setAttribute("aria-label", `Call ${m.name}`);
       t.face.update(room, m);
       float(room, m.sub, t.reacts, t.shown);
     });
@@ -191,7 +213,7 @@ export function mountAvatar(room: Room, el: Element | ShadowRoot, sub: string, o
   el.append(view);
   const face = new Face(view, o.size === "bust" ? "bust" : "head");
   const render = () => {
-    const m = room.client.members.find((x) => x.sub === sub) ?? { sub, name: sub, look: null, mode: "none" as const, away: false, watching: false };
+    const m = room.client.members.find((x) => x.sub === sub) ?? { sub, name: sub, look: null, mode: "none" as const, away: false, watching: false, call: null };
     face.update(room, m);
   };
   const unsub = room.client.subscribe(render);

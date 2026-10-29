@@ -1,6 +1,6 @@
 defmodule PresenceRelay.ClusterTest do
   # Two nodes, one room (#318's P2): members connected to different nodes
-  # see each other's frames, waves, reactions, presence and `off`, and the
+  # see each other's frames, waves, calls, reactions, presence and `off`, and the
   # caps hold across the cluster.
   use PresenceRelay.RelayCase, async: false
 
@@ -43,6 +43,19 @@ defmodule PresenceRelay.ClusterTest do
     assert_receive {:pushed, :a, "presence_diff",
                     %{joins: %{"bob" => %{metas: [%{mode: "avatar"}]}}}},
                    @slow
+  end
+
+  test "a call crosses the nodes: ring, yes, a token each, and who's in it", %{peer: peer} do
+    r = room()
+    {:ok, a, _} = client(:a, r, "alice")
+    {:ok, b, _} = client_on(peer, :b, r, "bob")
+    send_as(a, "call", %{"to" => "bob"})
+    assert_receive {:replied, :a, :ok, %{id: id}}, 1_000
+    assert_receive {:pushed, :b, "call", %{from: "alice", id: ^id}}, 1_000
+    send_as(b, "call_answer", %{"id" => id, "yes" => true})
+    assert_receive {:pushed, :a, "call_join", %{id: ^id}}, 1_000
+    assert_receive {:pushed, :b, "call_join", %{id: ^id}}, 1_000
+    assert PresenceRelay.Calls.size("acme", r, id) == 2
   end
 
   test "a joiner gets the newest frames cached on the other node", %{peer: peer} do

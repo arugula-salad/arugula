@@ -1,12 +1,12 @@
 // The custom elements (../../sdk/API.md): <arugula-room> joins a room (a
 // token from your endpoint, or the relay's demo tokens to prototype) and
 // re-dispatches its events; <arugula-camera>, <arugula-people>,
-// <arugula-avatar> and <arugula-chat> inside it draw from it, each in a shadow root styled
-// from --arugula-* custom properties.
+// <arugula-avatar>, <arugula-chat> and <arugula-call> inside it draw from
+// it, each in a shadow root styled from --arugula-* custom properties.
 
 import { connect, httpOrigin, RELAY, type Room } from "./room.ts";
 import { mountPeople, mountAvatar } from "./view.ts";
-import { mountCamera } from "./controls.ts";
+import { mountCall, mountCamera } from "./controls.ts";
 import { mountChat } from "./chat.ts";
 import { CSS } from "./styles.ts";
 
@@ -56,6 +56,8 @@ export class ArugulaRoom extends HTMLElement {
         r.on("answer", (from, yes) => fire("answer", { from, yes }));
         r.on("react", (from, emoji) => fire("react", { from, emoji }));
         r.on("message", (message) => fire("message", { message }));
+        r.on("ring", (from, id) => fire("ring", { from, id }));
+        r.on("call", (call) => fire("call", { call }));
         r.on("live", (state) => fire("live", { state }));
         fire("members", { members: r.members });
         for (const ok of this.waiting.splice(0)) ok(r);
@@ -107,6 +109,7 @@ export class ArugulaPeople extends InRoom {
     return mountPeople(room, this.root, {
       size: this.getAttribute("size") === "head" ? "head" : "bust",
       self: this.getAttribute("self") === "hide" ? "hide" : "first",
+      calls: this.getAttribute("calls") !== "off",
     });
   }
 }
@@ -133,6 +136,13 @@ export class ArugulaChat extends InRoom {
   }
 }
 
+/** A call's bar: a ring to answer, who you're calling, mute and leave. */
+export class ArugulaCall extends InRoom {
+  protected draw(room: Room) {
+    return mountCall(room, this.root);
+  }
+}
+
 /** Define the elements (once; safe to call again). */
 export function defineElements() {
   if (typeof customElements === "undefined") return;
@@ -142,6 +152,7 @@ export function defineElements() {
     ["arugula-camera", ArugulaCamera],
     ["arugula-avatar", ArugulaAvatar],
     ["arugula-chat", ArugulaChat],
+    ["arugula-call", ArugulaCall],
   ];
   for (const [name, el] of all) if (!customElements.get(name)) customElements.define(name, el);
 }
