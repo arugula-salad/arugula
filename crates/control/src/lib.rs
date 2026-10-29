@@ -815,11 +815,14 @@ async fn control_json(
 /// web page a browser block opened), so frames may come from any https site,
 /// and from control's own block origins (M50) on whatever scheme control's
 /// page is on (http only for a local control). With People blocks on,
-/// scripts also come from the arugula.stream relay, and may compile
-/// WebAssembly (`'wasm-unsafe-eval'`, not JS `eval`): its trackers do.
+/// scripts also come from the arugula.stream relay, may compile
+/// WebAssembly (`'wasm-unsafe-eval'`, not JS `eval`): its trackers do, and
+/// may be `blob:` URLs the page made: its Krisp noise filter makes its
+/// audio worklet and worker so (an audio worklet is a script; a worker
+/// falls back to `script-src`).
 async fn headers(axum::extract::State(app): axum::extract::State<Arc<App>>, mut res: Response) -> Response {
     let scripts = match &app.cfg.presence_origin {
-        Some(o) => format!(" script-src 'self' {o} 'wasm-unsafe-eval';"),
+        Some(o) => format!(" script-src 'self' {o} blob: 'wasm-unsafe-eval';"),
         None => String::new(),
     };
     let csp = |frames: &str| {
