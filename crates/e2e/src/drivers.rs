@@ -36,6 +36,7 @@ pub type Settings = BTreeMap<String, String>;
 /// chant→Fly: [`IMAGE`], and chant's release record, [`CHANT_COMPONENT`],
 /// [`CHANT_ENV`] and [`CHANT_DIGEST`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RollBack {
     /// `dep_` and 32 hex characters.
     pub deploy: String,
@@ -362,6 +363,7 @@ fn chant_fly_does(source_ref: &str, source_where: &str, s: &Settings, roll_back:
 /// [`settings`] fills in, the only values it takes (when it's a choice),
 /// and what it is, in words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SettingField {
     pub name: &'static str,
     pub required: bool,

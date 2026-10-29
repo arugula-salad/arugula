@@ -207,6 +207,9 @@ nothing marked `mux:` names the edge or the block kinds.
   everything else asks that thread (`crates/mux/src/pane.rs`, `crates/vt`).
 - The web client's wire types are generated: after changing a type it uses,
   run `just proto-ts`. CI fails if `web/src/shared/proto.gen.ts` is stale.
+- The contract's JSON Schema is generated too: after changing a type in
+  `crates/control-wire`, run `just contract-schema`. CI fails if
+  `contract/schema/` is stale (`contract/README.md`).
 - Every request passes the access checks before it reaches the mux
   (`access.rs`, `authz.rs`, `arugula_core::access`).
 - The daemon serves the web client itself, embedded in the binary

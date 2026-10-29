@@ -229,6 +229,7 @@ pub fn said_of(via: &str) -> Option<&str> {
 
 /// A session as its card shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionCard {
     pub session: String,
@@ -333,6 +334,7 @@ pub struct SessionCard {
 
 /// One of a project's workspaces, as Move to… lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionPlace {
     pub workspace: String,
@@ -347,6 +349,7 @@ pub struct SessionPlace {
 
 /// [`SESSION_MOVE`]'s body: the workspace it goes to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionMove {
     pub workspace: String,
@@ -356,6 +359,7 @@ pub struct SessionMove {
 /// works in, when the project's workspaces have several and the ask named
 /// none.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatAsk {
     pub room: String,
@@ -381,6 +385,7 @@ pub struct ChatAsk {
 
 /// [`ASK`]'s `POST` body: the choice pressed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatAskAnswer {
     pub choice: String,
@@ -388,6 +393,7 @@ pub struct ChatAskAnswer {
 
 /// One of a Try 3's sessions, as its parent's compare view shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionTry {
     pub session: String,
@@ -410,6 +416,7 @@ pub struct SessionTry {
 /// or `codex` each (`["claude", "codex"]` when it's left out; a box
 /// without Codex runs Claude Code in its place).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionTryAsk {
     #[serde(default)]
@@ -419,6 +426,7 @@ pub struct SessionTryAsk {
 
 /// [`SESSION_PICK`]'s body: the session kept, one of the Try 3's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionPick {
     pub session: String,
@@ -426,6 +434,7 @@ pub struct SessionPick {
 
 /// What a session's turn left, as its box reported it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionTurn {
     pub at: u64,
@@ -444,6 +453,7 @@ pub struct SessionTurn {
 /// A turn's finish step (M261): the command, whether it passed, and when
 /// it failed, the last of its output. A failed one isn't pushed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionFinish {
     pub ok: bool,
@@ -453,6 +463,7 @@ pub struct SessionFinish {
 
 /// What a session waits on a person for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionOpen {
     /// The request's id, as its box named it.
@@ -469,6 +480,7 @@ pub struct SessionOpen {
 
 /// An answer to what's open, on its way to the box.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionAnswered {
     pub by: String,
@@ -480,6 +492,7 @@ pub struct SessionAnswered {
 
 /// One of a workspace's dev servers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionPort {
     pub port: u16,
@@ -490,6 +503,7 @@ pub struct SessionPort {
 
 /// One entry of a session's history, in words.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionLine {
     pub seq: u64,
@@ -506,6 +520,7 @@ pub struct SessionLine {
 
 /// [`SESSION`]'s answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionView {
     pub card: SessionCard,
@@ -523,6 +538,7 @@ pub struct SessionView {
 
 /// [`SESSION_ACTIONS`]'s body: what to ask of the session's box.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionAct {
     /// `answer`, `approve`, `deny` or `cancel`.
@@ -547,6 +563,7 @@ pub struct SessionAct {
 
 /// A session's pull request, as its asker drafts it ([`SESSION_PR`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionPr {
     pub session: String,
@@ -576,6 +593,7 @@ pub struct SessionPr {
 
 /// [`SESSION_PR`]'s `PUT` body: what its asker wrote.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionPrEdit {
     pub title: String,
@@ -593,6 +611,7 @@ pub struct SessionPrEdit {
 /// `back`, a path on the platform page) or `machine` (one of the asker's
 /// own).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionPrSend {
     #[serde(default)]
@@ -609,6 +628,7 @@ pub struct SessionPrSend {
 /// [`SESSION_PR_SEND`]'s answer: the PR draft now, and GitHub's
 /// authorization page to go to when the send goes through the browser.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionPrSent {
     pub pr: SessionPr,
@@ -623,6 +643,7 @@ pub struct SessionPrSent {
 /// of [`crate::work::MODELS`], or `None` for the strongest. An ask's own
 /// word ("use sonnet") wins for its session.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionSettings {
     #[serde(default)]
@@ -637,6 +658,7 @@ pub struct SessionSettings {
 /// asker, or opened from its branch by hand) and how many merged, and the
 /// median time from the `@` to the PR.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionStats {
     pub days: u32,
@@ -651,6 +673,7 @@ pub struct SessionStats {
 /// and the session it started, if it did (else the thread says why, or
 /// asks which box or repo).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueAgent {
     pub room: String,
@@ -663,6 +686,7 @@ pub struct IssueAgent {
 /// channel (`room`), in the thread of one of its messages (`thread`, its
 /// seq) or as a message of its own.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentSessionStart {
     #[serde(default)]
     pub issue: Option<String>,
@@ -685,6 +709,7 @@ pub struct AgentSessionStart {
 /// session it started; with none, the platform's lines since in its thread
 /// (why not, or which repo it asks the owner).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentSessionStarted {
     pub room: String,
     pub seq: i64,
@@ -696,6 +721,7 @@ pub struct AgentSessionStarted {
 
 /// [`AGENT_SESSION_REPLY`]'s body.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentSessionReply {
     pub text: String,
 }
@@ -705,6 +731,7 @@ pub struct AgentSessionReply {
 /// `prompt`; `permission` when it waits on a person's approval first),
 /// `refused` (`why`) or `chat` (its owner only views the project).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentSessionReplied {
     pub session: String,
     pub room: String,
@@ -720,6 +747,7 @@ pub struct AgentSessionReplied {
 
 /// [`PROJECT_SESSIONS`]' query: each that's set narrows the wave.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionWaveQuery {
     /// Sessions on an issue with this label.
@@ -752,6 +780,7 @@ pub struct SessionWaveQuery {
 
 /// The issue a session works on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionIssue {
     pub id: String,
@@ -764,6 +793,7 @@ pub struct SessionIssue {
 
 /// A session as a wave lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionRow {
     pub session: String,
@@ -809,6 +839,7 @@ pub struct SessionRow {
 /// [`PROJECT_SESSIONS`]' answer: the wave, newest first, and what narrows
 /// it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SessionWave {
     pub project: String,
@@ -826,6 +857,7 @@ pub struct SessionWave {
 /// [`AGENT_SESSION`]'s answer: its row, its last answer whole (the
 /// thread's copy keeps only its end), and what its latest turn left.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentSessionRead {
     pub session: SessionRow,
     pub answer: Option<SessionAnswer>,
@@ -837,6 +869,7 @@ pub struct AgentSessionRead {
 
 /// A turn's answer: the agent's last message, as its box sent it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionAnswer {
     pub at: u64,
     pub text: String,
@@ -846,6 +879,7 @@ pub struct SessionAnswer {
 
 /// [`AGENT_SESSIONS_WAIT`]'s body.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentSessionWait {
     pub sessions: Vec<String>,
     /// Seconds, at most [`SESSION_WAIT_MAX`]; 0 answers at once.
@@ -856,6 +890,7 @@ pub struct AgentSessionWait {
 /// [`AGENT_SESSIONS_WAIT`]'s answer: each session asked of, in order, and
 /// those of them whose turn has finished.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentSessionsWaited {
     pub sessions: Vec<SessionRow>,
     pub settled: Vec<String>,

@@ -32,6 +32,7 @@ pub fn agent_deploy_request(id: &str) -> String {
 
 /// What a deploy deploys: a commit (by its full id) of a repository.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DeploySource {
     /// `commit` or `artifact`.
     pub kind: String,
@@ -45,6 +46,7 @@ pub struct DeploySource {
 /// A plan, as the platform's plan routes take it (the person's and the
 /// agent's). The platform makes the plan's digest itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DeployPlan {
     /// The environment's id (`env_…`), or its name in the project.
     pub environment: String,

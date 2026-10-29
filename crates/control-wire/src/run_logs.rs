@@ -49,6 +49,7 @@ pub const ARTIFACTS_ENV: &str = "ARUGULA_ARTIFACTS";
 
 /// Something of one run's for the bucket.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Upload {
     /// Chunk `n` (from 0) of the run's log: `size` bytes from `offset` in
@@ -80,6 +81,7 @@ impl Upload {
 
 /// What [`WORK_UPLOAD`] answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UploadGiven {
     /// `PUT` the bytes here before `expires_at` (ms), with exactly
@@ -102,6 +104,7 @@ pub enum UploadGiven {
 
 /// What [`WORK_UPLOADED`] answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Uploaded {
     /// Recorded (or recorded before, the same).
@@ -125,6 +128,7 @@ pub fn good_sha256(s: &str) -> bool {
 
 /// One artifact, as a member reads it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ArtifactLink {
     pub name: String,
     pub size: u64,
@@ -138,6 +142,7 @@ pub struct ArtifactLink {
 /// holds of a run's artifacts. Its log is read with
 /// `crate::runs::RUN_LOG` (M216).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RunArtifacts {
     pub run: String,
     /// Whether this platform keeps runs' logs and artifacts at all.

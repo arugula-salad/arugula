@@ -110,6 +110,7 @@ fn signs_for_projects(kind: Kind) -> bool {
 /// An owner's device saying control may enroll hosted machines into
 /// `project` with `key`, until it's revoked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Delegation {
     pub project: String,
     /// `team:<id>` or `account:<id>`: the project's owner, as the signing
@@ -157,6 +158,7 @@ impl Delegation {
 
 /// A delegation taken back: control may enroll nothing more under it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DelegationRevoke {
     pub project: String,
     /// The delegation's [`Delegation::id`].
@@ -227,6 +229,7 @@ impl HostedKey {
 /// belongs to, and the delegation it was enrolled under, signed with the
 /// key that delegation names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct HostedCert {
     pub project: String,
     pub owner: String,

@@ -1,0 +1,364 @@
+{
+  "$defs": {
+    "Cert": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "approver": {
+          "description": "The device that signed this; the device itself for the root.",
+          "type": "string"
+        },
+        "created": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "device": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/Kind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "noise": {
+          "description": "X25519 public key, hex (zeros for a recovery code).",
+          "type": "string"
+        },
+        "sig": {
+          "default": "",
+          "description": "Ed25519 signature by the approver over [`Cert::body`], hex; empty\nuntil approved.",
+          "type": "string"
+        },
+        "sign": {
+          "description": "Ed25519 public key, hex.",
+          "type": "string"
+        },
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "account",
+        "device",
+        "kind",
+        "name",
+        "noise",
+        "sign",
+        "created",
+        "approver"
+      ],
+      "type": "object"
+    },
+    "CliJoinRequest": {
+      "description": "What the CLI sends to `/api/join`: a [`JoinRequest`] with only `cert` and\n`proof`, as the CLI always has (control reads it as a `JoinRequest`, the\nrest defaulted).",
+      "properties": {
+        "cert": {
+          "$ref": "#/$defs/Cert"
+        },
+        "features": {
+          "description": "`join-secret` when its link carries a secret (#760); left out\notherwise, as before.",
+          "type": "string"
+        },
+        "proof": {
+          "$ref": "#/$defs/JoinProof"
+        }
+      },
+      "required": [
+        "cert",
+        "proof"
+      ],
+      "type": "object"
+    },
+    "JoinPoll": {
+      "description": "`GET /api/join/{code}?poll=`: where a join stands. Waiting is just\n`approved: false`, turned down adds `rejected`, and approved is the rest;\neach is serialized as control always has (see [`JoinPoll::serialize`]).",
+      "properties": {
+        "approved": {
+          "type": "boolean"
+        },
+        "cert": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cert"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Cert"
+          },
+          "type": "array"
+        },
+        "mac": {
+          "default": null,
+          "description": "The approving device's MAC under the join secret (#760,\n`arugula_e2e::cert::join_mac`), hex; only when it sent one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rejected": {
+          "default": null,
+          "description": "Turned down, on this device (#100).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revocations": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Revocation"
+          },
+          "type": "array"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JoinTeam"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "trust": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Trust"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "approved"
+      ],
+      "type": "object"
+    },
+    "JoinProof": {
+      "properties": {
+        "ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ms",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "JoinRequest": {
+      "description": "`POST /api/join`. The CLI joins the same way, with only `cert` and\n`proof`.",
+      "properties": {
+        "cert": {
+          "$ref": "#/$defs/Cert"
+        },
+        "features": {
+          "default": "",
+          "description": "What the daemon understands, comma-separated (older ones send none).",
+          "type": "string"
+        },
+        "proof": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JoinProof"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Its signature with the key it asks with (0.17 and newer)."
+        },
+        "team": {
+          "default": null,
+          "description": "A machine that belongs to a team (M19), not a person.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "urls": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cert"
+      ],
+      "type": "object"
+    },
+    "JoinStarted": {
+      "description": "Control's answer to a join: the code to show, and a token to poll with.",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "expires_in_secs": {
+          "default": 600,
+          "description": "The CLI took ten minutes when control left it out.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "poll": {
+          "type": "string"
+        },
+        "team_name": {
+          "default": null,
+          "description": "The team `--team` named, by name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "poll"
+      ],
+      "type": "object"
+    },
+    "JoinTeam": {
+      "description": "The team an approved machine joins.",
+      "properties": {
+        "founder": {
+          "type": "string"
+        },
+        "founder_root": {
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "sig": {
+          "default": null,
+          "description": "The approving device's signature over the team pin's join body\n(`TeamPin::join_body`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team",
+        "founder",
+        "founder_root"
+      ],
+      "type": "object"
+    },
+    "Kind": {
+      "oneOf": [
+        {
+          "enum": [
+            "browser",
+            "cli",
+            "daemon"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "recovery",
+          "description": "A recovery code: approves a new device when every other is lost.",
+          "type": "string"
+        },
+        {
+          "const": "app",
+          "description": "The desktop app's window. Its keys reach it through whatever\nlistens on the computer's loopback port, so, like a CLI's, they may\nbe a program's on that computer, not the person's. It connects and\napproves machines, CLIs and other apps, but never a browser (see\n[`Kind::certifies`]). Older readers don't know this word: control\nleaves `app` certificates out of what it answers a client that\ndoesn't say it knows them (`app-devices`, see control's `compat.rs`).",
+          "type": "string"
+        }
+      ]
+    },
+    "PollQuery": {
+      "description": "The token the daemon polls with: `GET /api/join/{code}?poll=`.",
+      "properties": {
+        "poll": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "poll"
+      ],
+      "type": "object"
+    },
+    "Revocation": {
+      "description": "A device taken off the account, signed by one of its devices.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        },
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "account",
+        "device",
+        "at",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "Trust": {
+      "description": "What a daemon pinned when it joined: the account and its root device.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "root"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::join"
+}

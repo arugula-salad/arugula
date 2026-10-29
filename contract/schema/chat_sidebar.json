@@ -1,0 +1,84 @@
+{
+  "$defs": {
+    "ChatSection": {
+      "description": "A section the account made.",
+      "properties": {
+        "id": {
+          "description": "Made by the page that creates it (`s_` and hex), stable under rename.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rooms": {
+          "default": [],
+          "description": "Room ids, in the order the person dragged them.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ChatSidebar": {
+      "description": "`GET /api/chat/sidebar`, and the body of `PUT` (which replaces it).",
+      "properties": {
+        "collapsed": {
+          "default": [],
+          "description": "Groups shown shut, by key: `starred`, a section's id, or a built-in\ngroup's (`<team>/channels`, `<team>/dms`, `machine/<id>`, `archives`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sections": {
+          "default": [],
+          "description": "The account's own sections, top to bottom, below Starred.",
+          "items": {
+            "$ref": "#/$defs/ChatSection"
+          },
+          "type": "array"
+        },
+        "sorts": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ChatSort"
+          },
+          "default": {},
+          "description": "Groups not sorted by name, by the same keys.",
+          "type": "object"
+        },
+        "starred": {
+          "default": [],
+          "description": "Starred rooms, in the order they were starred.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ChatSort": {
+      "description": "How a group's rooms are ordered.",
+      "oneOf": [
+        {
+          "const": "name",
+          "description": "By name.",
+          "type": "string"
+        },
+        {
+          "const": "recent",
+          "description": "Newest message first.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::chat_sidebar"
+}

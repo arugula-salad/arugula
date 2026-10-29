@@ -44,11 +44,13 @@ pub const HOSTED_PREVIEWS: &str = "/api/hosted/previews";
 
 /// What [`HOSTED_PREVIEWS`] answers.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PublicPorts {
     pub ports: Vec<PublicPort>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PublicPort {
     pub port: u16,
     /// The preview's id, the label of its host.
@@ -72,6 +74,7 @@ pub const SANDBOX_MS: u64 = 2 * 60 * 1000;
 /// What the platform asks of the hub as it creates a box: a one-time
 /// enrollment into `project` for workspace `workspace`.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct EnrollAsk {
     pub project: String,
     /// `team:<id>` or `account:<id>`: who the project belongs to, as the
@@ -105,6 +108,7 @@ pub const SNAPSHOT: &str = "snapshot";
 
 /// What the hub answers an [`EnrollAsk`].
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EnrollGiven {
     /// Recorded: until `expires` (ms), once. `ticket` is the one to put in
@@ -124,6 +128,7 @@ pub enum EnrollGiven {
 /// A workspace whose box enrolled, and the hosted machine it is
 /// (`HubPort::hosted_enrolled`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Enrolled {
     pub workspace: String,
     /// The machine's device id; empty when `taken` removed it.
@@ -136,6 +141,7 @@ pub struct Enrolled {
 
 /// `POST /api/hosted/enroll`, once per box.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct EnrollRequest {
     /// The ticket from `ARUGULA_HOSTED_TICKET`; or
     #[serde(default)]
@@ -158,6 +164,7 @@ pub struct EnrollRequest {
 /// delegation it's under, and who's in its project, to check people's
 /// devices against as a team machine does.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Enrollment {
     /// Control's URL, to dial.
     pub url: String,
@@ -198,11 +205,13 @@ pub struct Enrollment {
 /// (`POST /api/hosted/delegations`), or a revocation of one
 /// (`POST /api/hosted/delegations/revoke`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DelegationPost {
     pub delegation: Delegation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RevokePost {
     pub revoke: DelegationRevoke,
 }
@@ -211,6 +220,7 @@ pub struct RevokePost {
 /// box (`PlatformPort::hosted_wake`, M182): someone opened its machine and
 /// its daemon isn't connected.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WakeAnswer {
     /// Its box runs (it was resumed, or it was running): its daemon dials
@@ -223,6 +233,7 @@ pub enum WakeAnswer {
 /// Why a box didn't wake. The page offers rebuild for each but
 /// `starting`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WakeCode {
     /// The box is gone at the provider, or the workspace was deleted.
@@ -256,6 +267,7 @@ impl WakeCode {
 /// spec (M183): its repos with what to clone each with, its packages, its
 /// setup script, and the env its spec takes from its secrets.
 #[derive(Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SetupPlan {
     /// The hosted workspace (`hw_…`).
     pub workspace: String,
@@ -279,6 +291,7 @@ pub struct SetupPlan {
 
 /// A repo to clone, and how.
 #[derive(Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SetupRepo {
     /// An HTTPS clone URL, with no credentials in it.
     pub url: String,
@@ -295,6 +308,7 @@ pub struct SetupRepo {
 
 /// Where a hosted machine's setup is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SetupStatus {
     SettingUp,
@@ -323,6 +337,7 @@ impl SetupStatus {
 
 /// `POST /api/hosted/setup`: how the setup goes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SetupReport {
     pub status: SetupStatus,
     /// The step it's on, or the one that failed: `clone app`, `packages`,

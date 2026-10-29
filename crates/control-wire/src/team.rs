@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 /// `GET /api/daemon/trust`: the account's certificates, to evaluate against
 /// the root the daemon pinned.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TrustAnswer {
     /// Not read by daemons: they have the root they pinned.
     #[serde(default)]
@@ -56,6 +57,7 @@ pub const DEV_SETTINGS: &str = "dev-settings";
 /// neither names follows the machine's own default. The daemon's own
 /// `flags.json` wins over both, and account over team.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Flags {
     #[serde(default)]
     pub account: BTreeMap<String, bool>,
@@ -66,6 +68,7 @@ pub struct Flags {
 /// `GET /api/daemon/team`: a team machine's team, rosters after the version
 /// it has, every member's certificates, and whether it's locked.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TeamAnswer {
     #[serde(default)]
     pub team: Option<TeamPin>,
@@ -80,6 +83,7 @@ pub struct TeamAnswer {
 /// A daemon only asks once it has pinned one, and reads this as it always
 /// has, as an answer [`TeamAnswer`] can't parse.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TeamNone {
     pub team: Option<TeamPin>,
 }
@@ -87,6 +91,7 @@ pub struct TeamNone {
 /// `GET /api/daemon/teams`: one of these per team, by id, for each team a
 /// session was shared with whose owner is in it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SharedTeamAnswer {
     #[serde(default)]
     pub team: Option<TeamPin>,
@@ -102,6 +107,7 @@ pub struct SharedTeamAnswer {
 /// One account's certificates, from `GET /api/daemon/peers` (by account),
 /// or as saved in `control.json`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PeerCerts {
     #[serde(default)]
     pub name: String,
@@ -114,6 +120,7 @@ pub struct PeerCerts {
 /// `POST /api/daemon/access`: which accounts a daemon lets in. The daemon
 /// decides for itself; control routes only those it would anyway.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AccessList {
     pub accounts: Vec<String>,
     /// Until when (ms) read-only links may reach it through the relay.
@@ -129,6 +136,7 @@ pub struct AccessList {
 /// What a daemon says it understands, comma-separated (older ones send
 /// none): `GET /api/daemon/trust?features=`.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Features {
     #[serde(default)]
     pub features: String,
@@ -142,6 +150,7 @@ impl Features {
 
 /// `GET /api/daemon/team?since=&features=`.
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TeamQuery {
     /// The roster version the daemon has.
     #[serde(default)]
@@ -158,6 +167,7 @@ impl TeamQuery {
 
 /// `GET /api/daemon/teams?ids=&features=`.
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TeamsQuery {
     /// Team ids, comma-separated.
     pub ids: String,
@@ -173,6 +183,7 @@ impl TeamsQuery {
 
 /// `GET /api/daemon/peers?accounts=`.
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PeersQuery {
     /// Account ids, comma-separated.
     pub accounts: String,

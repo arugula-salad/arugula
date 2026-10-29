@@ -1,0 +1,602 @@
+{
+  "$defs": {
+    "AgentRuntime": {
+      "anyOf": [
+        {
+          "enum": [
+            "claude",
+            "codex",
+            "gemini",
+            "cloud",
+            "other"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "Arch": {
+      "anyOf": [
+        {
+          "enum": [
+            "x86_64",
+            "aarch64",
+            "other"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "BlockKind": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "enum": [
+                "terminal",
+                "agent",
+                "browser",
+                "editor",
+                "review",
+                "files",
+                "pr",
+                "issue",
+                "vm",
+                "workspace",
+                "studio",
+                "conversation",
+                "other"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "chat",
+              "description": "A chat block: a conversation with a model, no tools.",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "Channel": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "enum": [
+                "homebrew",
+                "other"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "script",
+              "description": "install.sh or install.ps1.",
+              "type": "string"
+            },
+            {
+              "const": "desktop",
+              "description": "The desktop app installed it.",
+              "type": "string"
+            },
+            {
+              "const": "source",
+              "description": "Built from source (`cargo install`, a checkout).",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "ControlKind": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "enum": [
+                "none",
+                "other"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "hosted",
+              "description": "control.arugula.io.",
+              "type": "string"
+            },
+            {
+              "const": "self-hosted",
+              "description": "Someone else's control.",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "Counts": {
+      "description": "A day's counts. Keys are closed sets; a count is how many times.",
+      "properties": {
+        "agents_started": {
+          "additionalProperties": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": {},
+          "properties": {
+            "claude": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cloud": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "codex": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "gemini": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "other": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "blocks_opened": {
+          "additionalProperties": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "clients": {
+          "additionalProperties": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": {},
+          "description": "Clients that attached, by where.",
+          "type": "object"
+        },
+        "flags_on": {
+          "default": [],
+          "description": "Labs flags on at the end of the day.",
+          "items": {
+            "$ref": "#/$defs/LabsFlag"
+          },
+          "type": "array"
+        },
+        "panes_opened": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "panes_peak": {
+          "description": "The most panes open at once.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "views": {
+          "additionalProperties": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": {},
+          "description": "Views and features people opened in the web client and the app\n(M103).",
+          "type": "object"
+        },
+        "web_errors": {
+          "default": 0,
+          "description": "Errors the web client caught (M102), by where in our bundle.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "panes_opened",
+        "panes_peak"
+      ],
+      "type": "object"
+    },
+    "Crash": {
+      "description": "A panic in one of our programs (M102). Only where: never its message,\nwhich can hold a path or someone's text.",
+      "properties": {
+        "at": {
+          "description": "When, in ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "frames": {
+          "default": [],
+          "description": "Our own functions on the stack, innermost first, at most\n[`MAX_FRAMES`]: `arugula_mux::pane::Pane::resize`. Nothing outside\nour crates is kept.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "location": {
+          "description": "`crates/…/file.rs:line`, in our own source. A panic elsewhere (a\ndependency) is the first of our frames that called it.",
+          "type": "string"
+        },
+        "process": {
+          "$ref": "#/$defs/Process"
+        },
+        "version": {
+          "description": "The version that crashed (it may have been updated since).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "process",
+        "version",
+        "location",
+        "at"
+      ],
+      "type": "object"
+    },
+    "Event": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "description": "The owner said yes (the first report after it).",
+              "properties": {
+                "event": {
+                  "const": "opted-in",
+                  "type": "string"
+                },
+                "via": {
+                  "$ref": "#/$defs/Surface",
+                  "description": "Where they were asked."
+                }
+              },
+              "required": [
+                "event",
+                "via"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "The daemon started.",
+              "properties": {
+                "event": {
+                  "const": "started",
+                  "type": "string"
+                },
+                "service": {
+                  "description": "It runs as a service (systemd, launchd, a Windows service).",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "event",
+                "service"
+              ],
+              "type": "object"
+            },
+            {
+              "$ref": "#/$defs/Counts",
+              "description": "The daemon's day: counts since the last one (at most one a day).",
+              "properties": {
+                "event": {
+                  "const": "daily",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "event"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Unknown to this side.",
+              "properties": {
+                "event": {
+                  "const": "other",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "event"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "Something that happened on the install."
+    },
+    "LabsFlag": {
+      "anyOf": [
+        {
+          "enum": [
+            "chat",
+            "vms",
+            "studio",
+            "workspaces",
+            "guest-ssh",
+            "swarm-themes",
+            "forges",
+            "agents",
+            "other"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "Os": {
+      "anyOf": [
+        {
+          "enum": [
+            "linux",
+            "macos",
+            "windows",
+            "other"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "PageConsent": {
+      "description": "Whether the account lets control's page send usage counts.",
+      "properties": {
+        "ask": {
+          "description": "Whether the page should ask: this control forwards reports. One\nwithout analytics would send them nowhere, so it doesn't ask.",
+          "type": "boolean"
+        },
+        "at": {
+          "description": "When it was answered, in ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "on": {
+          "description": "`None`: not asked yet, which counts as no.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ask"
+      ],
+      "type": "object"
+    },
+    "PageReport": {
+      "description": "What control's page counted since its last report: views opened, and\nhow many errors our code hit (a count, never what they said).",
+      "properties": {
+        "views": {
+          "additionalProperties": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "web_errors": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "Process": {
+      "anyOf": [
+        {
+          "enum": [
+            "daemon",
+            "cli",
+            "desktop",
+            "other"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "Report": {
+      "description": "What an install sends: who it is, and what happened since its last.",
+      "properties": {
+        "arch": {
+          "$ref": "#/$defs/Arch"
+        },
+        "channel": {
+          "$ref": "#/$defs/Channel",
+          "default": "other",
+          "description": "How it was installed."
+        },
+        "control": {
+          "$ref": "#/$defs/ControlKind",
+          "default": "none",
+          "description": "Which control it's joined to, if any."
+        },
+        "crashes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Crash"
+          },
+          "type": "array"
+        },
+        "events": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "type": "array"
+        },
+        "install": {
+          "description": "Random, 16 hex digits, made when its owner said yes and dropped\nwhen they say no (a new one if they say yes again).",
+          "type": "string"
+        },
+        "os": {
+          "$ref": "#/$defs/Os"
+        },
+        "version": {
+          "description": "Its `arugulad` version.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "install",
+        "version",
+        "os",
+        "arch"
+      ],
+      "type": "object"
+    },
+    "SetPageConsent": {
+      "properties": {
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "on"
+      ],
+      "type": "object"
+    },
+    "Surface": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "enum": [
+                "web",
+                "desktop",
+                "cli",
+                "phone",
+                "mcp",
+                "other"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "tui",
+              "description": "`arugula tui`, removed 2026-10-18: an older daemon still reports it.",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "Where a person answered, or used something."
+    },
+    "View": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "enum": [
+                "swarm",
+                "chat",
+                "conversations",
+                "agents",
+                "palette",
+                "settings",
+                "getting-started",
+                "share",
+                "hint-acted",
+                "hint-dismissed",
+                "pane-tip-acted",
+                "pane-tip-closed",
+                "pane-tip-opted-out",
+                "nvim-help-acted",
+                "nvim-help-closed",
+                "nvim-help-opted-out",
+                "nvim-connect-acted",
+                "nvim-connect-dismissed",
+                "nvim-open-here-shown",
+                "nvim-open-here-acted",
+                "nvim-open-here-dismissed",
+                "nvim-diff-shown",
+                "nvim-diff-acted",
+                "nvim-diff-dismissed",
+                "nvim-key-tip-shown",
+                "nvim-key-tip-acted",
+                "nvim-key-tip-dismissed",
+                "other"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "hint-shown",
+              "description": "A hint shown, acted on or dismissed (DECISIONS.md \"Hints come from\nfacts, once per account\"): every hint's together.",
+              "type": "string"
+            },
+            {
+              "const": "pane-tip-shown",
+              "description": "A pane modal (a big tip) shown, acted on, closed (× or Escape), or\nclosed with \"Don't show tips like this again\" ticked: every pane\nmodal's together. One counted on its own adds its own four, named\nfor its hint id (`Hint.views` in web/src/shell/hints).",
+              "type": "string"
+            },
+            {
+              "const": "nvim-help-shown",
+              "description": "nvim's help card (#1735), counted on its own as well.",
+              "type": "string"
+            },
+            {
+              "const": "nvim-connect-shown",
+              "description": "nvim's chips (#1735), each counted on its own as well as among\nevery hint's: shown, acted on, dismissed.",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::telemetry"
+}

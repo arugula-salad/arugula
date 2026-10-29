@@ -73,6 +73,12 @@ web-imports:
 proto-ts mode="write":
     {{ if mode == "write" { "ARUGULA_WRITE_TS=1" } else { "" } }} cargo test -q -p arugula-proto --features ts ts::
 
+# Write the contract's JSON Schema (contract/schema/, #219) from
+# crates/control-wire: every type daemons, control's hub and its platform
+# send each other. Without `write`, check it's current, as CI does.
+contract-schema mode="write":
+    {{ if mode == "write" { "ARUGULA_WRITE_SCHEMA=1" } else { "" } }} cargo test -q -p arugula-control-wire --features schema schema::
+
 # Write DECISIONS.md, the index of the decision records in docs/decisions/.
 # Without `write`, check it's current.
 decisions mode="write":
@@ -901,6 +907,7 @@ check: test mux-guard workspace-guard
     just web-imports
     cd web && pnpm run paths
     just proto-ts check
+    just contract-schema check
     just decisions check
     just whats-new
     just control-tables check
@@ -970,6 +977,7 @@ rollup-check:
     step lint shellcheck just shellcheck
     step lint test-scripts just test-scripts
     step lint proto-ts just proto-ts check
+    step lint contract-schema just contract-schema check
     step lint decisions just decisions check
     step lint whats-new just whats-new
     step lint gitleaks scripts/ci-gitleaks

@@ -42,6 +42,7 @@ pub const AGENTS_DRAFT: &str = "agents_draft";
 
 /// An operation and the version its caller speaks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Call {
     #[serde(flatten)]
     pub op: Op,
@@ -58,6 +59,7 @@ impl Call {
 
 /// Every operation, by its name on the wire.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "op")]
 pub enum Op {
     /// A PR: [`ItemView`].
@@ -163,6 +165,7 @@ impl Op {
 
 /// A PR or an issue on a linked repo: `OWNER/NAME` and its number.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ItemRef {
     pub repo: String,
     pub number: u64,
@@ -207,6 +210,7 @@ impl std::fmt::Display for ItemRef {
 /// neither `project` nor `repo` says), or one linked repo's. The rest
 /// narrows it as `GET /api/projects/{project}/items`'s query does.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ItemQuery {
     #[serde(default)]
     pub project: Option<String>,
@@ -235,6 +239,7 @@ pub struct ItemQuery {
 /// `draft.list`: a project's drafts, a repo's (and an item's, with
 /// `number`), or with neither the reader's own across their projects.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DraftQuery {
     #[serde(default)]
     pub project: Option<String>,
@@ -256,6 +261,7 @@ pub struct DraftQuery {
 /// `inbox.list`: the reader's inbox, without what they called done unless
 /// `done`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct InboxQuery {
     #[serde(default)]
     pub done: bool,
@@ -266,6 +272,7 @@ pub struct InboxQuery {
 /// `inbox.mark`: an item's entries (one reason's, or all), seen or done,
 /// or not ([`InboxMark`](crate::projects::InboxMark)'s rules).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct InboxMarkOn {
     pub repo: String,
     pub number: u64,
@@ -279,12 +286,14 @@ pub struct InboxMarkOn {
 
 /// A draft, by its id (`dft_…`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DraftRef {
     pub draft: String,
 }
 
 /// `pr.comment` and `issue.comment`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CommentOn {
     pub repo: String,
     pub number: u64,
@@ -293,6 +302,7 @@ pub struct CommentOn {
 
 /// `pr.review`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ReviewOf {
     pub repo: String,
     pub number: u64,
@@ -304,6 +314,7 @@ pub struct ReviewOf {
 
 /// `issue.create`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NewIssue {
     pub repo: String,
     pub title: String,
@@ -313,6 +324,7 @@ pub struct NewIssue {
 
 /// What every operation answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Answer<T> {
     pub op: String,
     pub v: u32,
@@ -322,6 +334,7 @@ pub struct Answer<T> {
 /// `pr.get` and `issue.get`: the item, what happened to it, and its
 /// waiting drafts. Metadata, as the mirror keeps it: bodies are M166's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ItemView {
     pub item: ForgeItem,
     pub events: Vec<ForgeEvent>,
@@ -331,6 +344,7 @@ pub struct ItemView {
 /// What a send answers (M168): the comment, review or issue on GitHub,
 /// and the draft it sent, if it was one.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Sent {
     #[serde(default)]
     pub url: Option<String>,

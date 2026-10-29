@@ -1,0 +1,2569 @@
+{
+  "$defs": {
+    "Approval": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "by": {
+          "description": "The signing device's id.",
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        },
+        "deploy": {
+          "type": "string"
+        },
+        "expires": {
+          "description": "Ms since the epoch.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "op": {
+          "description": "The operation's hash, hex.",
+          "type": "string"
+        },
+        "sig": {
+          "description": "Ed25519 signature by `by` over [`Approval::body`], hex.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deploy",
+        "op",
+        "account",
+        "decision",
+        "expires",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "ArtifactGiven": {
+      "description": "[`WORK_ARTIFACT`]'s answer.",
+      "oneOf": [
+        {
+          "description": "Its bytes (standard base64) and its digest (`sha256:<hex>`).",
+          "properties": {
+            "bytes": {
+              "type": "string"
+            },
+            "digest": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "given",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "digest",
+            "bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Not given, and asking again won't change that.",
+          "properties": {
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "why"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ChatAgent": {
+      "description": "The agent that wrote a message (M197): the machine whose grant it acted\nthrough, and its name now. The message's author is the machine's owner.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "machine_name"
+      ],
+      "type": "object"
+    },
+    "ChatFile": {
+      "description": "One attached file, as the reader sees it. `url` is control's, for the\nroom's readers only (a session cookie, or an agent's token): the same\npath with `?download=1` downloads it.",
+      "properties": {
+        "height": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ChatFileKind"
+        },
+        "mime": {
+          "description": "What the bytes were sniffed as, never what the upload said.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        },
+        "width": {
+          "description": "An image's size in pixels, when its header gave it.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "mime",
+        "kind",
+        "size",
+        "url"
+      ],
+      "type": "object"
+    },
+    "ChatFileKind": {
+      "description": "How a file is shown: `Image`, `Video` and `Audio` inline (only types\nthat are safe to render: never SVG or HTML), anything else as a card\nthat downloads.",
+      "enum": [
+        "image",
+        "video",
+        "audio",
+        "file"
+      ],
+      "type": "string"
+    },
+    "ChatMessage": {
+      "description": "A message as the reader sees it.",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Written by an agent on the author's machine (M197): shown as\n\"<name>'s agent on <machine_name>\"."
+        },
+        "also": {
+          "default": false,
+          "description": "A reply that was also sent to the channel.",
+          "type": "boolean"
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "author": {
+          "description": "The author's account, and their name now. Both are empty for a\ndeleted account.",
+          "type": "string"
+        },
+        "deleted": {
+          "description": "When it was deleted: its text, quote and pane are gone.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "edited": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "files": {
+          "default": [],
+          "description": "Files and images attached (#107), in the order they were chosen.\nEmpty for a deleted message: its files went with it.",
+          "items": {
+            "$ref": "#/$defs/ChatFile"
+          },
+          "type": "array"
+        },
+        "imported": {
+          "description": "Brought in from a machine's own threads (M124): the name it had\nthere. Someone with no account here (a tailnet login, an agent) is\nshown under the machine's owner, by this name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mentions": {
+          "description": "The accounts it mentions, and the agents (`machine:<id>`, M198).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "pane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatPane"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent": {
+          "description": "A reply (#106): the number of its thread's first message. The\nroom's list has it only with `also`; the thread has it always.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pinned": {
+          "default": false,
+          "description": "Pinned (#119).",
+          "type": "boolean"
+        },
+        "quote": {
+          "description": "Lines the poster chose from a pane, copied in (decision 1).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reactions": {
+          "default": [],
+          "description": "Who reacted with which emoji (#104), the first reaction first.\nEmpty for a deleted message and for archives brought in.",
+          "items": {
+            "$ref": "#/$defs/ChatReaction"
+          },
+          "type": "array"
+        },
+        "seq": {
+          "description": "Its number in the room. Messages brought in from a machine (M124)\nkeep their old numbers, unless the room already had messages of its\nown: then they're numbered 0 and below, before control's.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "system": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatSystem"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Not something said but something that happened (#119): `author` set\nthe topic or pinned a message. Drawn dim and centered; never\ncounted unread, pushed, edited or reacted to."
+        },
+        "text": {
+          "type": "string"
+        },
+        "thread": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatThread"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The thread of replies this message starts, once it has any."
+        },
+        "via": {
+          "description": "Posted for the author by a product (M237): a hud box's name, for a\nreview written there. Shown as \"<name> via <via>\". [`SYSTEM_VIA`]\nwith no author: a line the platform wrote (#122), shown apart, as\nplain text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "seq",
+        "at",
+        "author",
+        "name",
+        "text",
+        "mentions"
+      ],
+      "type": "object"
+    },
+    "ChatPane": {
+      "description": "A pane a message names, as the reader sees it: whether its chip opens\nfor them (they may reach the machine), and the machine's name.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        },
+        "opens": {
+          "type": "boolean"
+        },
+        "pane": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "machine_name",
+        "pane",
+        "opens"
+      ],
+      "type": "object"
+    },
+    "ChatPerson": {
+      "description": "Someone, as the reader sees them.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "dnd": {
+          "default": false,
+          "description": "They've paused their notifications (do not disturb, #115): a moon\non their avatar. Only that it's on, never until when or why.",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ChatReaction": {
+      "description": "One emoji on a message, as the reader sees it.",
+      "properties": {
+        "count": {
+          "description": "All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "emoji": {
+          "type": "string"
+        },
+        "mine": {
+          "description": "The reader has: a person's own reaction, or for an agent reading,\nits own (never the owner's, nor the agent's for the owner).",
+          "type": "boolean"
+        },
+        "who": {
+          "items": {
+            "$ref": "#/$defs/ChatReactor"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "emoji",
+        "count",
+        "mine",
+        "who"
+      ],
+      "type": "object"
+    },
+    "ChatReactor": {
+      "description": "Someone who reacted: an account, and the machine's agent if it was\nthe agent reacting for them.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ChatSystem": {
+      "description": "What a system line tells of (#119).",
+      "properties": {
+        "kind": {
+          "description": "`topic` (its `text` is the new topic, empty when cleared),\n`description` (likewise), `pin` or `unpin`.",
+          "type": "string"
+        },
+        "target": {
+          "description": "The pinned message's number, for `pin` and `unpin`.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ChatThread": {
+      "description": "The replies to a message, as one reader sees them (#106).",
+      "properties": {
+        "following": {
+          "description": "The reader follows the thread. Always false to an agent.",
+          "type": "boolean"
+        },
+        "last": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mentions": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "read": {
+          "description": "The reader's mark in the thread (a room number), and the replies\nafter it that aren't theirs (only while they follow), and how many\nof those mention them.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "repliers": {
+          "description": "Who replied, the newest first, at most [`THREAD_REPLIERS`].",
+          "items": {
+            "$ref": "#/$defs/ChatPerson"
+          },
+          "type": "array"
+        },
+        "replies": {
+          "description": "Replies not deleted, and when the newest was written (ms).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unread": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "replies",
+        "last",
+        "repliers",
+        "following",
+        "read",
+        "unread",
+        "mentions"
+      ],
+      "type": "object"
+    },
+    "Decision": {
+      "description": "Approve it once, or deny it.",
+      "enum": [
+        "once",
+        "deny"
+      ],
+      "type": "string"
+    },
+    "DeployWork": {
+      "description": "What a deploy's run applies (M219), for its machine to check: the\ndeploy's operation (`arugula deploy op v1`) and the approval an owner's\ndevice signed over it, with the passkey assertion the hub checked.",
+      "properties": {
+        "approval": {
+          "$ref": "#/$defs/Approval"
+        },
+        "approval_id": {
+          "description": "The approval's id (`apv_`), for the driver to note where it records\nit (chant's approve note).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deploy": {
+          "description": "`dep_` and 32 hex characters.",
+          "type": "string"
+        },
+        "driver": {
+          "description": "The environment's driver.",
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/Operation"
+        },
+        "passkey": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PasskeyAssertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "roll_back": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RollBack"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For a roll back (M220): the earlier deploy it goes back to, and what\nthat ran. The plan names it too."
+        },
+        "secrets": {
+          "default": [],
+          "description": "The names of the secrets its driver gets: their values come only\nfrom [`WORK_SECRETS`], while the run runs.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "settings": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The environment's driver settings (M220): the plan names them, so\nthe machine checks them against the approved plan\n(`arugula_e2e::drivers::planned`).",
+          "type": "object"
+        }
+      },
+      "required": [
+        "deploy",
+        "operation",
+        "approval",
+        "driver"
+      ],
+      "type": "object"
+    },
+    "Doc": {
+      "description": "A Doc, without its sections: a list's row, and a view's head.",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The agent session that made it as itself (aru-115): its `machine`\nthe session's id (`ses_…`), its name `Agent session <id>`."
+        },
+        "author": {
+          "description": "The account that made it, or \"\" once it's deleted, or for one an\nagent session made.",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "`pdc_` and 32 hex characters.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "rev": {
+          "description": "Counts its changes.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sections": {
+          "description": "How many sections it has, and how many are written.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "written": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "title",
+        "author",
+        "sections",
+        "written",
+        "rev",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "DocList": {
+      "description": "`GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.",
+      "properties": {
+        "docs": {
+          "items": {
+            "$ref": "#/$defs/Doc"
+          },
+          "type": "array"
+        },
+        "project": {
+          "type": "string"
+        },
+        "writer": {
+          "description": "Whether the reader may make one.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project",
+        "docs",
+        "writer"
+      ],
+      "type": "object"
+    },
+    "DocView": {
+      "description": "`GET` [`PROJECT_DOC`]: a Doc with its sections, in order.",
+      "properties": {
+        "doc": {
+          "$ref": "#/$defs/Doc"
+        },
+        "sections": {
+          "items": {
+            "$ref": "#/$defs/Section"
+          },
+          "type": "array"
+        },
+        "writer": {
+          "description": "Whether the reader may write it.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "doc",
+        "sections",
+        "writer"
+      ],
+      "type": "object"
+    },
+    "DocWrite": {
+      "description": "`PUT` [`PROJECT_DOC`]: what changes. `title` renames it. With `section`,\nthat section's body becomes `markdown` (and its heading `heading`, when\ngiven); with no `section` but a `heading`, a section is added at the\nend, written when `markdown` is given and pending otherwise.",
+      "properties": {
+        "heading": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "intent": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "markdown": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "section": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "FinishResult": {
+      "description": "What a turn's finish step did (M261), on the turn's report.",
+      "properties": {
+        "command": {
+          "description": "The command, as the spec has it.",
+          "type": "string"
+        },
+        "ok": {
+          "description": "It exited 0 within its time.",
+          "type": "boolean"
+        },
+        "output_tail": {
+          "description": "The last of what it printed (stdout and stderr, at most 4 KiB):\nonly when it failed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "command"
+      ],
+      "type": "object"
+    },
+    "FinishStep": {
+      "description": "A workspace's finish step (M261): a command (`just check`) the box runs\nas the session's user, in its checkout, after each turn and before the\npush. When it fails the agent gets one more turn to fix it, with its\noutput; when that fails too, the branch isn't pushed.",
+      "properties": {
+        "command": {
+          "description": "A shell command, run with `sh -c`.",
+          "type": "string"
+        },
+        "timeout_s": {
+          "default": 0,
+          "description": "How long it may run, in seconds ([`FINISH_TIMEOUT_S`] when 0).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    },
+    "GrantRevoke": {
+      "description": "The project's grants taken back, by any owner's device: every grant for\nthe project under `delegation` made at or before `at`. It names no\ngrant, so whoever relays it can't point it at another one; a grant made\nafter it is a new one.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "type": "string"
+        },
+        "delegation": {
+          "description": "The delegation whose grants it takes back.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "running": {
+          "$ref": "#/$defs/Running"
+        },
+        "sig": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "delegation",
+        "running",
+        "at",
+        "by"
+      ],
+      "type": "object"
+    },
+    "Issue": {
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The agent that opened it for its owner; or the agent session that\nopened it as itself (aru-115), its `machine` the session's id\n(`ses_…`) and its name `Agent session <id>`."
+        },
+        "assignees": {
+          "description": "Accounts.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "author": {
+          "description": "The account that opened it (an agent's owner's), or \"\" once it's\ndeleted, or for one an agent session opened.",
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "close_reason": {
+          "description": "A closed one's: `completed`, `not_planned` or `duplicate`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "closed_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "closed_by": {
+          "description": "Who closed a closed one (an agent's owner's account), as its latest\n`closed` event says: a list's row names them (UI audit #163).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "closed_by_agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The agent that closed it for its owner."
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "github": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IssueGithub"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "description": "`iss_` and 32 hex characters.",
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "number": {
+          "description": "Its number in the project.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "project": {
+          "type": "string"
+        },
+        "state": {
+          "description": "`open` or `closed`.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "number",
+        "title",
+        "body",
+        "state",
+        "author",
+        "labels",
+        "assignees",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "IssueEvent": {
+      "description": "An event on an issue's timeline.",
+      "properties": {
+        "actor": {
+          "description": "The account that did it (an agent's owner's), or \"\" once it's\ndeleted.",
+          "type": "string"
+        },
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "detail": {
+          "description": "`edited`: `title` (the old one) and/or `body: true`; `closed`:\n`reason`; `labelled`/`unlabelled`: `label`;\n`assigned`/`unassigned`: `assignee`; `exported`: `repo`, `number`."
+        },
+        "id": {
+          "description": "Orders an issue's events.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "description": "`opened`, `edited`, `closed`, `reopened`, `labelled`, `unlabelled`,\n`assigned`, `unassigned` or `exported`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "actor",
+        "at",
+        "detail"
+      ],
+      "type": "object"
+    },
+    "IssueGithub": {
+      "description": "Where an issue was exported to on GitHub (M205).",
+      "properties": {
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "description": "`owner/name`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number"
+      ],
+      "type": "object"
+    },
+    "IssueList": {
+      "properties": {
+        "issues": {
+          "description": "Newest (highest number) first.",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "more": {
+          "description": "There are more past the last one (`before` its number).",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "The project's id (`personal` resolved).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "issues",
+        "more"
+      ],
+      "type": "object"
+    },
+    "IssueQuery": {
+      "description": "`GET /api/projects/{project}/issues`'s query. Each that's given narrows\nthe list.",
+      "properties": {
+        "assignee": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "before": {
+          "default": null,
+          "description": "Issues numbered below this: the next page.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "labels": {
+          "default": null,
+          "description": "Labels, comma-separated: issues with every one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "default": null,
+          "description": "At most this many (default 50, at most 200).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "q": {
+          "default": null,
+          "description": "Search words, in the title or the body: each one (`dep*`: a word\nstarting with `dep`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "default": null,
+          "description": "`open` (when not given), `closed` or `all`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "NewDoc": {
+      "description": "`POST` [`PROJECT_DOCS`]: make a Doc.",
+      "properties": {
+        "sections": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/NewSection"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "NewSection": {
+      "description": "A new Doc's section: a heading, and its Markdown now or an intent for\nlater.",
+      "properties": {
+        "heading": {
+          "type": "string"
+        },
+        "intent": {
+          "default": "",
+          "type": "string"
+        },
+        "markdown": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "heading"
+      ],
+      "type": "object"
+    },
+    "Operation": {
+      "description": "What a deploy applies, as approved.",
+      "properties": {
+        "environment": {
+          "type": "string"
+        },
+        "environment_name": {
+          "description": "The environment's name (`production`): a-z, 0-9 and `-`.",
+          "type": "string"
+        },
+        "plan": {
+          "description": "The plan's SHA-256, hex.",
+          "type": "string"
+        },
+        "planned": {
+          "description": "The hash of the deploy's `planned` event, hex.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "source_kind": {
+          "description": "`commit` or `artifact`.",
+          "type": "string"
+        },
+        "source_ref": {
+          "description": "The commit's sha or the artifact's digest.",
+          "type": "string"
+        },
+        "source_where": {
+          "description": "Where it is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "environment",
+        "environment_name",
+        "plan",
+        "source_kind",
+        "source_ref",
+        "source_where",
+        "planned"
+      ],
+      "type": "object"
+    },
+    "PasskeyAssertion": {
+      "description": "A passkey's assertion as the hub checked it (M218): each base64url.",
+      "properties": {
+        "authenticator_data": {
+          "type": "string"
+        },
+        "client_data_json": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "client_data_json",
+        "authenticator_data",
+        "signature"
+      ],
+      "type": "object"
+    },
+    "ProjectGrant": {
+      "description": "An owner's device saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
+      "properties": {
+        "by": {
+          "description": "The signing device.",
+          "type": "string"
+        },
+        "caps": {
+          "description": "Sorted, each once.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "delegation": {
+          "description": "The project's delegation's [`Delegation::id`].",
+          "type": "string"
+        },
+        "expires": {
+          "default": null,
+          "description": "When it stops counting (ms); `None`: never.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "made": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "owner": {
+          "description": "`team:<id>` or `account:<id>`, as the signing device saw it.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sig": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "owner",
+        "delegation",
+        "caps",
+        "made",
+        "by"
+      ],
+      "type": "object"
+    },
+    "PushAsk": {
+      "description": "[`WORK_SESSION_PUSH`]'s body: which session, and the ref it pushes,\nwhich must be the session's own branch exactly.",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "clone": {
+          "description": "A token to clone the session's repo instead, with `contents: read`\nalone: a repo linked to the project that no box's setup cloned is\ncloned at the session's start, shallow (Fleet 6). The same checks\nas a push's. An older platform ignores it and mints a push's.",
+          "type": "boolean"
+        },
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "branch"
+      ],
+      "type": "object"
+    },
+    "PushGiven": {
+      "description": "[`WORK_SESSION_PUSH`]'s answer.",
+      "oneOf": [
+        {
+          "description": "An installation token for the session's repo alone, with\n`contents: write` and `workflows: write` (aru-115, amended), or\n`contents: read` for a clone, minted for this push or clone: the box hands it to git in one process's environment, never\nto a file, then revokes it at `revoke` (`DELETE`, the token as its\nbearer). `expires_at` is GitHub's.",
+          "properties": {
+            "expires_at": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "given",
+              "type": "string"
+            },
+            "revoke": {
+              "type": "string"
+            },
+            "token": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "token",
+            "expires_at",
+            "revoke"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Not given, and asking again won't change that.",
+          "properties": {
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "why"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Report": {
+      "description": "One state change, signed by the machine that made it.",
+      "properties": {
+        "at": {
+          "description": "When (ms, the machine's clock).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "detail": {
+          "description": "A JSON object's text, exactly as signed: an exit code (`exit`), a\npane (`pane`, `epoch`), or why it failed (`reason`).",
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "run": {
+          "type": "string"
+        },
+        "seq": {
+          "description": "The event's number in the run.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sig": {
+          "description": "The machine's signature over `arugula run event v1`, hex.",
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "seq",
+        "from",
+        "to",
+        "at",
+        "detail",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "Reported": {
+      "description": "What became of a [`Report`].",
+      "oneOf": [
+        {
+          "description": "Kept: the run moved.",
+          "properties": {
+            "kind": {
+              "const": "taken",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Kept before: the same event, signed the same (a retry whose answer\nwas lost).",
+          "properties": {
+            "kind": {
+              "const": "already",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Not kept, and sending it again won't change that. `now` is the run's\nstate when it moved on without this machine (canceled, say), and\n`next` the event number it's at when this one's isn't it.",
+          "properties": {
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "next": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "now": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "why": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "why"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RollBack": {
+      "description": "What a roll back goes back to: an earlier deploy of the same\nenvironment that succeeded, and what its log kept of what it ran (for\nchant→Fly: [`IMAGE`], and chant's release record, [`CHANT_COMPONENT`],\n[`CHANT_ENV`] and [`CHANT_DIGEST`]).",
+      "properties": {
+        "deploy": {
+          "description": "`dep_` and 32 hex characters.",
+          "type": "string"
+        },
+        "to": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "deploy",
+        "to"
+      ],
+      "type": "object"
+    },
+    "Running": {
+      "description": "What happens to runs already going when a grant is revoked.",
+      "oneOf": [
+        {
+          "const": "finish",
+          "description": "They finish.",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "description": "They're stopped too.",
+          "type": "string"
+        }
+      ]
+    },
+    "Secret": {
+      "description": "One secret, by its name as an environment variable. Its value is never\nprinted (`Debug` leaves it out).",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "revoke": {
+          "description": "A short-lived token's revoke URL (`DELETE`, the token as its bearer):\nthe box revokes it when its driver ends (M219).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "type": "object"
+    },
+    "SecretsAsk": {
+      "description": "[`WORK_SECRETS`]'s body: which run.",
+      "properties": {
+        "run": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run"
+      ],
+      "type": "object"
+    },
+    "SecretsGiven": {
+      "description": "[`WORK_SECRETS`]'s answer.",
+      "oneOf": [
+        {
+          "description": "The environment's secrets and the driver's short-lived tokens, by\nname. Given once per run.",
+          "properties": {
+            "kind": {
+              "const": "given",
+              "type": "string"
+            },
+            "secrets": {
+              "items": {
+                "$ref": "#/$defs/Secret"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "secrets"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Not given, and asking again won't change that.",
+          "properties": {
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "why"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Section": {
+      "description": "One section: pending (`body` null) until it's written.",
+      "properties": {
+        "body": {
+          "description": "Its Markdown (the machine Doc's: `chart` and `svg` fences draw).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "heading": {
+          "type": "string"
+        },
+        "id": {
+          "description": "The Doc's own: `s1`, `s2`, … in the order they were added.",
+          "type": "string"
+        },
+        "intent": {
+          "description": "One line on what it will hold, shown while it's pending.",
+          "type": "string"
+        },
+        "rev": {
+          "description": "Counts the writes to its body.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "heading",
+        "intent",
+        "rev"
+      ],
+      "type": "object"
+    },
+    "SessionAction": {
+      "description": "Something a person asked of a session that only its box can do: answer\nits open question, approve or deny its open permission, or cancel the\nturn under way (the session goes on). Stopping the session isn't one:\ncontrol moves it to `stopped`, and it leaves the work list.",
+      "properties": {
+        "answer": {
+          "description": "`answer`'s: the card's answer, `{\"question_0\": \"Blue\"}`."
+        },
+        "at": {
+          "description": "When it was asked (ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "The account that asked.",
+          "type": "string"
+        },
+        "by_name": {
+          "description": "Its login (or the name the platform has for it), for the\ntranscript's \"Answered by\" note: empty from a platform that doesn't\nsend it.",
+          "type": "string"
+        },
+        "id": {
+          "description": "`sac_` and 32 hex characters: the box does each once.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`answer`, `approve`, `deny` or `cancel`.",
+          "type": "string"
+        },
+        "option": {
+          "description": "`approve`'s: the permission's option id (`allow-once` when `None`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "`deny`'s: why.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request": {
+          "description": "The open request it answers ([`SessionDetail::request`]); `None`:\nwhichever is open.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "by",
+        "kind",
+        "at"
+      ],
+      "type": "object"
+    },
+    "SessionDetail": {
+      "description": "A [`SessionReport`]'s detail: each kind fills its own fields (the\nmodule's docs say which), and leaves the rest out.",
+      "properties": {
+        "actions": {
+          "description": "The actions ([`SessionAction`]) this report carries out: `answer`,\n`approve` and `deny` on the `needs_input` to `working` report;\n`cancel` on the turn's `working` to `done`, or a heartbeat when no\nturn was under way.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ask": {
+          "description": "To `needs_input`: `permission` or `question`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "block": {
+          "description": "The agent block the session runs in, on taking it, and on a parked\none's next turn, which runs in a block opened again (Arugula #215).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "description": "A turn's: the session's branch.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "by": {
+          "description": "An `in_block` turn's: who typed its prompt, when the block says.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commits": {
+          "description": "A turn's: `\"SHA subject\"` for each commit it made, newest first, as\nthe daemon's turn work has them (`arugula_proto::api::Work`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "diffstat": {
+          "description": "A turn's: `git diff --stat` from its start to HEAD, shortened as the\ndaemon's turn work shortens it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "description": "What went wrong (an `error`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finish": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FinishResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A turn's: what its finish step did (M261), when the workspace has\none. A failed one isn't pushed."
+        },
+        "harness": {
+          "description": "Taking a session (M264): the agent the box runs it on, which is\n`claude` when the one asked for isn't on the box.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head": {
+          "description": "A turn's: HEAD after it, abbreviated.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "in_block": {
+          "description": "A turn's start that came from the session's agent block itself, not\nfrom the thread's prompts: someone typed in the block (its Open\nbutton), or the agent woke itself. It names no prompts.",
+          "type": "boolean"
+        },
+        "model": {
+          "description": "The model its agent runs on (Arugula #215), as the agent names it\n(`Opus 5.5`), once the box knows it and whenever it changes; each\nturn's report says it again. At most [`MODEL_MAX`] bytes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "options": {
+          "description": "To `needs_input` for a permission: its option ids; for a question,\nits first question's choices, by their labels (Arugula #214).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "prompts": {
+          "description": "The queued prompts a turn starts with (`spr_…`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pushed": {
+          "description": "A turn's: whether it pushed the branch (HEAD is on the remote).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "question": {
+          "description": "What `needs_input` asks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why it failed or stopped.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reply": {
+          "description": "A turn's: the agent's last message, at most [`REPLY_MAX`] bytes\n(less when the rest of the detail needs the room). The platform\nposts it in the session's thread: a review's as the review (M264),\nany other's as the turn's answer. A box from before every turn sent\nit sends it for reviews only.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request": {
+          "description": "To `needs_input`: the open request's id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool": {
+          "description": "The tool running now (a heartbeat).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "typed": {
+          "description": "An `in_block` turn's: the start of the prompt typed there, at most\n[`TYPED_MAX`] characters; none when the agent woke itself. The\nplatform says it in the session's thread, as its own line (Arugula\n#215), and it's never a prompt.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uncommitted": {
+          "description": "A turn's: how many paths it left uncommitted.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SessionIssuesAsk": {
+      "description": "[`WORK_SESSION_ISSUES`]'s body: which session asks, and what. The\nproject is never named: it is the session's, and the platform finds it.",
+      "oneOf": [
+        {
+          "description": "A page of the project's issues, newest first.",
+          "properties": {
+            "op": {
+              "const": "list",
+              "type": "string"
+            },
+            "query": {
+              "$ref": "#/$defs/IssueQuery"
+            }
+          },
+          "required": [
+            "op",
+            "query"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One issue by its number in the project: it, its timeline and its\nnewest comments.",
+          "properties": {
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "op": {
+              "const": "show",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A comment on one, as the session's asker, labelled as posted by the\nsession.",
+          "properties": {
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "op": {
+              "const": "comment",
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "number",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A new issue, with the asker's rights, opened as the session's own;\nits labels from those the project's issues already have.",
+          "properties": {
+            "body": {
+              "default": "",
+              "type": "string"
+            },
+            "labels": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "op": {
+              "const": "create",
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "title"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A new Doc in the project, with the asker's rights, as the session's\nown.",
+          "properties": {
+            "doc": {
+              "$ref": "#/$defs/NewDoc"
+            },
+            "op": {
+              "const": "doc_create",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "doc"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A write to one of the project's Docs that this session made.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "op": {
+              "const": "doc_write",
+              "type": "string"
+            },
+            "write": {
+              "$ref": "#/$defs/DocWrite"
+            }
+          },
+          "required": [
+            "op",
+            "id",
+            "write"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One of the project's Docs, or with no `id` the list of them.",
+          "properties": {
+            "id": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "doc_read",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "SessionIssuesGiven": {
+      "description": "[`WORK_SESSION_ISSUES`]'s answer.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "list",
+              "type": "string"
+            },
+            "list": {
+              "$ref": "#/$defs/IssueList"
+            }
+          },
+          "required": [
+            "kind",
+            "list"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "comments": {
+              "description": "Oldest first: the newest of its thread.",
+              "items": {
+                "$ref": "#/$defs/ChatMessage"
+              },
+              "type": "array"
+            },
+            "events": {
+              "items": {
+                "$ref": "#/$defs/IssueEvent"
+              },
+              "type": "array"
+            },
+            "issue": {
+              "$ref": "#/$defs/Issue"
+            },
+            "kind": {
+              "const": "shown",
+              "type": "string"
+            },
+            "more_comments": {
+              "description": "There are older comments than these.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "issue",
+            "events",
+            "comments",
+            "more_comments"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Posted, as this message of the issue's thread.",
+          "properties": {
+            "kind": {
+              "const": "commented",
+              "type": "string"
+            },
+            "seq": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "seq"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Opened: the issue, and its page's link.",
+          "properties": {
+            "issue": {
+              "$ref": "#/$defs/Issue"
+            },
+            "kind": {
+              "const": "created",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "issue",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A Doc, as made, written or read, and its page's link.",
+          "properties": {
+            "kind": {
+              "const": "doc",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "view": {
+              "$ref": "#/$defs/DocView"
+            }
+          },
+          "required": [
+            "kind",
+            "view",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The project's Docs.",
+          "properties": {
+            "kind": {
+              "const": "docs",
+              "type": "string"
+            },
+            "list": {
+              "$ref": "#/$defs/DocList"
+            }
+          },
+          "required": [
+            "kind",
+            "list"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Not done, and why (the agent reads it).",
+          "properties": {
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "why"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SessionIssuesOp": {
+      "description": "What a session's agent does in its project: read, comment on and open\nits native issues, and make, write and read its Docs (aru-118), nothing\nelse. The route kept its first name, `session/issues`, for the boxes\nalready calling it.",
+      "oneOf": [
+        {
+          "description": "A page of the project's issues, newest first.",
+          "properties": {
+            "op": {
+              "const": "list",
+              "type": "string"
+            },
+            "query": {
+              "$ref": "#/$defs/IssueQuery"
+            }
+          },
+          "required": [
+            "op",
+            "query"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One issue by its number in the project: it, its timeline and its\nnewest comments.",
+          "properties": {
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "op": {
+              "const": "show",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A comment on one, as the session's asker, labelled as posted by the\nsession.",
+          "properties": {
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "op": {
+              "const": "comment",
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "number",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A new issue, with the asker's rights, opened as the session's own;\nits labels from those the project's issues already have.",
+          "properties": {
+            "body": {
+              "default": "",
+              "type": "string"
+            },
+            "labels": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "op": {
+              "const": "create",
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "title"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A new Doc in the project, with the asker's rights, as the session's\nown.",
+          "properties": {
+            "doc": {
+              "$ref": "#/$defs/NewDoc"
+            },
+            "op": {
+              "const": "doc_create",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "doc"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A write to one of the project's Docs that this session made.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "op": {
+              "const": "doc_write",
+              "type": "string"
+            },
+            "write": {
+              "$ref": "#/$defs/DocWrite"
+            }
+          },
+          "required": [
+            "op",
+            "id",
+            "write"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One of the project's Docs, or with no `id` the list of them.",
+          "properties": {
+            "id": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "doc_read",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SessionPrompt": {
+      "description": "A prompt queued in a session's thread.",
+      "properties": {
+        "association": {
+          "default": null,
+          "description": "GitHub's `author_association` for GitHub's text (`OWNER`,\n`CONTRIBUTOR`, `NONE` …).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "description": "When it was queued (ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "author": {
+          "description": "An account, or `github:<login>`.",
+          "type": "string"
+        },
+        "author_name": {
+          "description": "The author's login (or the name the platform has for them), for the\ntranscript's \"from\" note: empty from a platform that doesn't send\nit, and for GitHub's text, whose login is in `author`.",
+          "type": "string"
+        },
+        "id": {
+          "description": "`spr_` and 32 hex characters.",
+          "type": "string"
+        },
+        "source": {
+          "description": "`member` (a project member's, in the thread) or `github` (text from\nGitHub: a PR's review, a check's log).",
+          "type": "string"
+        },
+        "text": {
+          "description": "As written.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "author",
+        "source",
+        "text",
+        "at"
+      ],
+      "type": "object"
+    },
+    "SessionReport": {
+      "description": "What a machine says of one of its sessions, signed: its fields are\n`arugula_e2e::session::Event`'s.",
+      "properties": {
+        "at": {
+          "description": "When (ms, the machine's clock).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "detail": {
+          "description": "A JSON object's text ([`SessionDetail`]), exactly as signed.",
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "kind": {
+          "description": "`state`, `heartbeat`, `error` or `turn`.",
+          "type": "string"
+        },
+        "n": {
+          "description": "The machine's report number in the session, from 1.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session": {
+          "type": "string"
+        },
+        "sig": {
+          "description": "The machine's signature over `arugula session event v1`, hex.",
+          "type": "string"
+        },
+        "to": {
+          "description": "`from` itself for every kind but `state`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "n",
+        "kind",
+        "from",
+        "to",
+        "at",
+        "detail",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "SessionWork": {
+      "description": "An agent session on this machine's workspace that hasn't ended.",
+      "properties": {
+        "actions": {
+          "description": "What people asked of the session that the box hasn't done yet,\noldest first: listed on every pull until a report names them done\n([`SessionDetail::actions`]).",
+          "items": {
+            "$ref": "#/$defs/SessionAction"
+          },
+          "type": "array"
+        },
+        "asker": {
+          "description": "The account it runs as: whose mention started it.",
+          "type": "string"
+        },
+        "branch": {
+          "description": "The one ref it may push: `arugula/<8 hex of the id>-<slug>`.",
+          "type": "string"
+        },
+        "finish": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FinishStep"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The workspace's finish step (M261), if its spec has one: what the\nbox runs after each turn, before it pushes."
+        },
+        "harness": {
+          "description": "The agent it runs ([`HARNESSES`]): `claude` unless it says (M264,\na Try 3's sibling or a review). A box without the one asked for\nruns `claude`, and its first report says which it ran\n([`SessionDetail::harness`]).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "The model its agent uses (Arugula #215), one of [`MODELS`]: the\none its ask named (\"use sonnet\"), else its project's setting. `None`:\nthe strongest, which the box picks ([`DEFAULT_MODEL`] for Claude\nCode, Codex's own choice for Codex). The box reports the one it runs\non ([`SessionDetail::model`]).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "n": {
+          "description": "The machine's latest report's number: its next report is `n + 1`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "park": {
+          "description": "Parked (Arugula #215): `done`, with no prompt listed, for at least\n[`SESSION_PARK_MS`]. The box closes its agent block, keeping its\nuser, checkout and conversation; once it lists prompts again the\nbox opens a block on them, loading the conversation. The platform\nlists a parked one's prompts only when the box has a running slot\nfor it ([`MAX_SESSIONS_PER_BOX`]).",
+          "type": "boolean"
+        },
+        "project": {
+          "type": "string"
+        },
+        "prompts": {
+          "default": [],
+          "description": "Its queued prompts, oldest first: what the next turn starts with.",
+          "items": {
+            "$ref": "#/$defs/SessionPrompt"
+          },
+          "type": "array"
+        },
+        "repo": {
+          "default": null,
+          "description": "The linked repo it works in (`owner/name`), if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "review": {
+          "description": "A review (M264, `@codex review`): read-only. The box runs no finish\nstep and pushes nothing, and its turn's report carries the agent's\nreply ([`SessionDetail::reply`]), which the platform posts in the\nthread.",
+          "type": "boolean"
+        },
+        "session": {
+          "description": "`ses_` and 32 hex characters.",
+          "type": "string"
+        },
+        "state": {
+          "description": "Its state as the machine sees it: `queued`, `working`,\n`needs_input` or `done` (an `unresponsive` one is listed in the\nstate it was in).",
+          "type": "string"
+        },
+        "workspace": {
+          "description": "The hosted workspace (`hw_…`) the machine is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "project",
+        "workspace",
+        "asker",
+        "branch",
+        "state",
+        "n"
+      ],
+      "type": "object"
+    },
+    "Work": {
+      "description": "[`WORK`]'s answer.",
+      "properties": {
+        "items": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WorkItem"
+          },
+          "type": "array"
+        },
+        "revokes": {
+          "default": [],
+          "description": "Every revoke of the project's grants the platform holds, on every\npull, ready runs or not: a machine checks them against the grants\nits runs going were started under, and stops those a `running stop`\ncovers.",
+          "items": {
+            "$ref": "#/$defs/GrantRevoke"
+          },
+          "type": "array"
+        },
+        "sessions": {
+          "description": "The sessions on this machine's workspace that haven't ended, for a\nmachine that takes them ([`TAKES_SESSION`]).",
+          "items": {
+            "$ref": "#/$defs/SessionWork"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "WorkItem": {
+      "description": "A run that's ready for this machine and hasn't started.",
+      "properties": {
+        "deploy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeployWork"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A deploy's run (M219): the deploy it applies, with its owner's\napproval, which the machine checks itself before it starts."
+        },
+        "grant": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectGrant"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The project's standing grant the run starts under (M211), when it's\n`pending` under one, and the project's revokes the platform holds.\nThe machine checks them against its own enrollment before anything\nstarts, and keeps the revokes."
+        },
+        "last_seq": {
+          "description": "The run's latest event: the machine's first report is the next.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "op": {
+          "description": "The S37 operation's bytes (`arugula op v1`), exactly as stored.",
+          "type": "string"
+        },
+        "op_hash": {
+          "description": "Their SHA-256, hex: the machine checks the bytes against it.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "revokes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/GrantRevoke"
+          },
+          "type": "array"
+        },
+        "run": {
+          "description": "`run_` and 32 hex characters.",
+          "type": "string"
+        },
+        "state": {
+          "description": "`pending` (under the project's standing grant) or `approved`.",
+          "type": "string"
+        },
+        "workspace": {
+          "description": "The hosted workspace (`hw_…`) the machine is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "project",
+        "workspace",
+        "op",
+        "op_hash",
+        "state",
+        "last_seq"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::work"
+}

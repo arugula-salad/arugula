@@ -1,0 +1,254 @@
+{
+  "$defs": {
+    "ArtifactLink": {
+      "description": "One artifact, as a member reads it.",
+      "properties": {
+        "digest": {
+          "description": "`sha256:` and hex.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "A signed `GET` of it, until the answer's `expires_at`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "size",
+        "digest",
+        "url"
+      ],
+      "type": "object"
+    },
+    "RunArtifacts": {
+      "description": "`GET /api/projects/{project}/runs/{run}/artifacts`: what the bucket\nholds of a run's artifacts. Its log is read with\n`crate::runs::RUN_LOG` (M216).",
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/ArtifactLink"
+          },
+          "type": "array"
+        },
+        "expires_at": {
+          "description": "When the URLs stop working (ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "on": {
+          "description": "Whether this platform keeps runs' logs and artifacts at all.",
+          "type": "boolean"
+        },
+        "run": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "on",
+        "artifacts",
+        "expires_at"
+      ],
+      "type": "object"
+    },
+    "Upload": {
+      "description": "Something of one run's for the bucket.",
+      "oneOf": [
+        {
+          "description": "Chunk `n` (from 0) of the run's log: `size` bytes from `offset` in\nthe pane's output.",
+          "properties": {
+            "kind": {
+              "const": "log",
+              "type": "string"
+            },
+            "n": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "offset": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "run": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "size": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "run",
+            "n",
+            "offset",
+            "size",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file the run left, by its name in the artifacts directory.",
+          "properties": {
+            "kind": {
+              "const": "artifact",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "run": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "size": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "run",
+            "name",
+            "size",
+            "sha256"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "UploadGiven": {
+      "description": "What [`WORK_UPLOAD`] answers.",
+      "oneOf": [
+        {
+          "description": "`PUT` the bytes here before `expires_at` (ms), with exactly\n`Content-Length: size`: the URL signs it.",
+          "properties": {
+            "expires_at": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "put",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "url",
+            "expires_at"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "It's recorded already, with the same digest (an answer that was\nlost): go on to the next.",
+          "properties": {
+            "kind": {
+              "const": "kept",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "This platform has no run-log bucket: the run's log stays in its\npane only. Asking again won't change that while it runs.",
+          "properties": {
+            "kind": {
+              "const": "off",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Not this one, and asking again won't change that. `next` is the\nlog chunk the platform is at, when it's another.",
+          "properties": {
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "next": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "why": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "why"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Uploaded": {
+      "description": "What [`WORK_UPLOADED`] answers.",
+      "oneOf": [
+        {
+          "description": "Recorded (or recorded before, the same).",
+          "properties": {
+            "kind": {
+              "const": "kept",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Not recorded: the bucket hasn't the bytes, or they aren't the run's.",
+          "properties": {
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "why"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::run_logs"
+}

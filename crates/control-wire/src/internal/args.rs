@@ -17,32 +17,38 @@ use crate::{
 };
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ResolveArgs {
     pub principal: Principal,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct IdsArgs {
     pub ids: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AccountArgs {
     pub account: String,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WordArgs {
     pub word: String,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ReachArgs {
     pub account: String,
     pub machines: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PushArgs {
     pub account: String,
     pub message: Value,
@@ -51,11 +57,13 @@ pub struct PushArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OwnersArgs {
     pub owners: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct MetersArgs {
     pub accounts: Vec<String>,
     pub since: u64,
@@ -63,42 +71,50 @@ pub struct MetersArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChangesArgs {
     pub after: u64,
     pub limit: u32,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DriveArgs {
     pub daemon: String,
     pub account: String,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TeamArgs {
     pub team: String,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BlockersArgs {
     pub account: String,
     pub start: bool,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DeletedArgs {
     pub deleted: Deleted,
 }
 
 #[derive(Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NoArgs {}
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PokesArgs {
     pub pokes: Vec<Poke>,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct StandingArgs {
     pub account: String,
     pub github: Option<GithubUser>,
@@ -107,6 +123,7 @@ pub struct StandingArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TokenArgs {
     pub account: String,
     pub github: Option<GithubUser>,
@@ -114,11 +131,13 @@ pub struct TokenArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GithubIdArgs {
     pub id: u64,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SendAuthArgs {
     pub account: String,
     pub draft: String,
@@ -126,17 +145,20 @@ pub struct SendAuthArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkspacesArgs {
     pub workspaces: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DelegationArgs {
     pub project: String,
     pub owner: String,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SignedArgs {
     pub owner: String,
     pub device: String,
@@ -145,6 +167,7 @@ pub struct SignedArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OpArgs {
     pub daemon: String,
     pub op: DaemonOp,
@@ -152,6 +175,7 @@ pub struct OpArgs {
 
 /// The user token crosses inside the signed call's body, never logged.
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SendArgs {
     pub account: String,
     pub draft: String,
@@ -161,6 +185,7 @@ pub struct SendArgs {
 
 /// `PlatformPort::hosted_wake`'s (M182).
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WakeArgs {
     pub project: String,
     pub workspace: String,
@@ -169,6 +194,7 @@ pub struct WakeArgs {
 /// A hosted box's turn (M185): its workspace and machine, as the hub's
 /// hosted certificate names them, and the agent or the turn.
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TurnArgs {
     pub workspace: String,
     pub machine: String,
@@ -182,42 +208,49 @@ pub struct TurnArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkArgs {
     pub machine: HostedMachine,
     pub takes: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ReportArgs {
     pub machine: HostedMachine,
     pub report: Report,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionReportArgs {
     pub machine: HostedMachine,
     pub report: SessionReport,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionPushArgs {
     pub machine: HostedMachine,
     pub ask: PushAsk,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionIssuesArgs {
     pub machine: HostedMachine,
     pub ask: SessionIssuesAsk,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SecretsArgs {
     pub machine: HostedMachine,
     pub ask: SecretsAsk,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct HostedArgs {
     pub project: String,
     pub workspace: String,
@@ -228,12 +261,14 @@ pub struct HostedArgs {
 
 /// A bound hud box's project (M237's `box_members`).
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ProjectArgs {
     pub project: String,
 }
 
 /// A machine and the account it acts for (M184's `machine_drives`).
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DrivesArgs {
     pub daemon: String,
     pub account: String,
@@ -242,6 +277,7 @@ pub struct DrivesArgs {
 /// A hosted machine's transcript (M184): its workspace and machine, as the
 /// hub's hosted certificate names them.
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TranscriptArgs {
     pub workspace: String,
     pub machine: String,
@@ -250,6 +286,7 @@ pub struct TranscriptArgs {
 
 /// Public previews (M187): a preview's id, or a workspace's.
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PreviewArgs {
     #[serde(default)]
     pub id: String,
@@ -258,6 +295,7 @@ pub struct PreviewArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PasskeyArgs {
     pub account: String,
     pub challenge: String,
@@ -265,24 +303,28 @@ pub struct PasskeyArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ProductUserArgs {
     pub client: String,
     pub user: String,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UnlinkArgs {
     pub account: String,
     pub client: String,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AccessArgs {
     pub token: String,
     pub client: String,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UploadArgs {
     pub machine: HostedMachine,
     pub upload: Upload,

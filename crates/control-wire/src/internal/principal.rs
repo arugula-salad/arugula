@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// Who is asking.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Principal {
     /// A signed-in person, by their session cookie.
@@ -42,6 +43,7 @@ impl Principal {
 /// principal (so `PrincipalKey::verify` reads it too), else
 /// `{"kind": "refused", ...}` or `{"kind": "nobody"}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum Vouch {
     /// Who's asking.
@@ -52,6 +54,7 @@ pub enum Vouch {
 
 /// A call the hub forwards without a principal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum NotVouched {
     /// The request's credentials were refused: the status and the error
@@ -64,6 +67,7 @@ pub enum NotVouched {
 
 /// What a request proved who it was with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Credential {
     /// A session cookie.

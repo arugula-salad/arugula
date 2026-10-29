@@ -104,6 +104,7 @@ pub const LINK_MAX: usize = 2048;
 /// What a row points at. `None` is free text. The ids are the platform's:
 /// `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardPointer"))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Pointer {
@@ -135,6 +136,7 @@ pub enum Pointer {
 
 /// Where a row stands. `None` says nothing.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardStatus"))]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
@@ -149,6 +151,7 @@ pub enum Status {
 
 /// Zone or row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardEntryKind"))]
 #[serde(rename_all = "snake_case")]
 pub enum EntryKind {
@@ -158,6 +161,7 @@ pub enum EntryKind {
 
 /// A zone's kind: `proofs` is the board's last zone. Absent: a plain one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardZoneKind"))]
 #[serde(rename_all = "snake_case")]
 pub enum ZoneKind {
@@ -165,6 +169,7 @@ pub enum ZoneKind {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectBoard"))]
 pub struct Board {
     pub id: String,
@@ -198,6 +203,7 @@ pub struct Board {
 /// closed at their source. A row the reader can't read counts toward
 /// neither; a row's own status counts for nothing.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardProgress"))]
 pub struct BoardProgress {
     pub done: u32,
@@ -206,6 +212,7 @@ pub struct BoardProgress {
 
 /// `PATCH`: what to change; a field left out stays. An empty goal clears it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct EditBoard {
     #[serde(default)]
@@ -216,12 +223,14 @@ pub struct EditBoard {
 
 /// `POST` to close a board: what was done, not empty.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CloseBoard {
     pub done_note: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BoardList {
     pub project: String,
@@ -229,6 +238,7 @@ pub struct BoardList {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NewBoard {
     pub title: String,
@@ -238,6 +248,7 @@ pub struct NewBoard {
 /// already has (the forge mirror, the issues and runs tables): a separate fact, never written
 /// over the row's stored `status`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardLiveState"))]
 #[serde(rename_all = "snake_case")]
 pub enum LiveState {
@@ -262,6 +273,7 @@ pub enum LiveState {
 /// The item a row points at, as it is now: what the page draws beside the
 /// row's own status, and the label of its link.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardLive"))]
 pub struct Live {
     pub state: LiveState,
@@ -283,6 +295,7 @@ pub struct Live {
 
 /// What an agent block is doing (aru-116's second ruling).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardBlockWord"))]
 #[serde(rename_all = "snake_case")]
 pub enum BlockWord {
@@ -306,6 +319,7 @@ impl BlockWord {
 
 /// A `git diff --stat` summary line as numbers: nothing of the files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardDiffstat"))]
 #[serde(deny_unknown_fields)]
 pub struct Diffstat {
@@ -328,6 +342,7 @@ impl Diffstat {
 /// No message text, no file names, no prompts: the type has no field that
 /// could carry them, and a body with another field is refused.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardBlockState"))]
 #[serde(deny_unknown_fields)]
 pub struct BlockState {
@@ -372,6 +387,7 @@ impl BlockState {
 /// [`AGENT_BLOCK_STATE`]'s body: the pane (of the machine that signs it) and
 /// its state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardPutBlockState"))]
 #[serde(deny_unknown_fields)]
 pub struct PutBlockState {
@@ -380,6 +396,7 @@ pub struct PutBlockState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardRow"))]
 pub struct Row {
     pub id: String,
@@ -404,6 +421,7 @@ pub struct Row {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardZone"))]
 pub struct Zone {
     pub id: String,
@@ -416,6 +434,7 @@ pub struct Zone {
 
 /// A board with its zones and rows, in order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BoardView {
     pub board: Board,
@@ -429,6 +448,7 @@ pub struct BoardView {
 /// `title`, `pointer` or `note` names `rev`; a change to `status` alone
 /// doesn't.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardPutEntry"))]
 pub struct PutEntry {
     #[serde(default)]
@@ -459,6 +479,7 @@ pub struct PutEntry {
 /// sibling), or last when there is none. A row may go to another `zone`
 /// (its own, if absent); a zone moves among zones, never past `proofs`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardMoveEntry"))]
 pub struct MoveEntry {
     #[serde(default)]
@@ -626,6 +647,7 @@ pub fn render(view: &BoardView) -> String {
 
 /// [`PROJECT_WORK`]'s query.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkQuery"))]
 pub struct WorkQuery {
     /// Search words: an issue's title or body, a mirrored item's title or
@@ -646,6 +668,7 @@ pub struct WorkQuery {
 
 /// One thing a row may point at.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkItem"))]
 pub struct WorkItem {
     /// What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`.
@@ -671,6 +694,7 @@ pub struct WorkItem {
 
 /// [`PROJECT_WORK`]'s answer: the newest first, across sources.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkItems"))]
 pub struct WorkItems {
     pub project: String,

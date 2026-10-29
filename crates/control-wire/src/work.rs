@@ -192,6 +192,7 @@ impl WorkQuery {
 
 /// [`WORK`]'s answer.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Work {
     #[serde(default)]
     pub items: Vec<WorkItem>,
@@ -209,6 +210,7 @@ pub struct Work {
 
 /// A run that's ready for this machine and hasn't started.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkItem {
     /// `run_` and 32 hex characters.
     pub run: String,
@@ -241,6 +243,7 @@ pub struct WorkItem {
 /// deploy's operation (`arugula deploy op v1`) and the approval an owner's
 /// device signed over it, with the passkey assertion the hub checked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DeployWork {
     /// `dep_` and 32 hex characters.
     pub deploy: String,
@@ -271,6 +274,7 @@ pub struct DeployWork {
 
 /// A passkey's assertion as the hub checked it (M218): each base64url.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PasskeyAssertion {
     pub id: String,
     pub client_data_json: String,
@@ -280,12 +284,14 @@ pub struct PasskeyAssertion {
 
 /// [`WORK_SECRETS`]'s body: which run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SecretsAsk {
     pub run: String,
 }
 
 /// [`WORK_SECRETS`]'s answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SecretsGiven {
     /// The environment's secrets and the driver's short-lived tokens, by
@@ -297,6 +303,7 @@ pub enum SecretsGiven {
 
 /// [`WORK_ARTIFACT`]'s answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ArtifactGiven {
     /// Its bytes (standard base64) and its digest (`sha256:<hex>`).
@@ -308,6 +315,7 @@ pub enum ArtifactGiven {
 /// One secret, by its name as an environment variable. Its value is never
 /// printed (`Debug` leaves it out).
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Secret {
     pub name: String,
     pub value: String,
@@ -325,6 +333,7 @@ impl std::fmt::Debug for Secret {
 
 /// An agent session on this machine's workspace that hasn't ended.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionWork {
     /// `ses_` and 32 hex characters.
     pub session: String,
@@ -416,6 +425,7 @@ pub const SESSION_DETAIL_MAX: usize = 16 * 1024;
 /// push. When it fails the agent gets one more turn to fix it, with its
 /// output; when that fails too, the branch isn't pushed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct FinishStep {
     /// A shell command, run with `sh -c`.
     pub command: String,
@@ -429,6 +439,7 @@ pub const FINISH_TIMEOUT_S: u64 = 15 * 60;
 
 /// What a turn's finish step did (M261), on the turn's report.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct FinishResult {
     /// It exited 0 within its time.
     pub ok: bool,
@@ -445,6 +456,7 @@ pub struct FinishResult {
 /// turn under way (the session goes on). Stopping the session isn't one:
 /// control moves it to `stopped`, and it leaves the work list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionAction {
     /// `sac_` and 32 hex characters: the box does each once.
     pub id: String,
@@ -483,6 +495,7 @@ impl SessionAction {
 
 /// A prompt queued in a session's thread.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionPrompt {
     /// `spr_` and 32 hex characters.
     pub id: String,
@@ -540,6 +553,7 @@ impl SessionPrompt {
 /// What a machine says of one of its sessions, signed: its fields are
 /// `arugula_e2e::session::Event`'s.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionReport {
     pub session: String,
     /// The machine's report number in the session, from 1.
@@ -560,6 +574,7 @@ pub struct SessionReport {
 /// A [`SessionReport`]'s detail: each kind fills its own fields (the
 /// module's docs say which), and leaves the rest out.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionDetail {
     /// The queued prompts a turn starts with (`spr_…`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -658,6 +673,7 @@ pub const MODEL_MAX: usize = 120;
 /// [`WORK_SESSION_PUSH`]'s body: which session, and the ref it pushes,
 /// which must be the session's own branch exactly.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PushAsk {
     pub session: String,
     pub branch: String,
@@ -671,6 +687,7 @@ pub struct PushAsk {
 
 /// [`WORK_SESSION_PUSH`]'s answer.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PushGiven {
     /// An installation token for the session's repo alone, with
@@ -697,6 +714,7 @@ impl std::fmt::Debug for PushGiven {
 /// [`WORK_SESSION_ISSUES`]'s body: which session asks, and what. The
 /// project is never named: it is the session's, and the platform finds it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionIssuesAsk {
     pub session: String,
     #[serde(flatten)]
@@ -708,6 +726,7 @@ pub struct SessionIssuesAsk {
 /// else. The route kept its first name, `session/issues`, for the boxes
 /// already calling it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum SessionIssuesOp {
     /// A page of the project's issues, newest first.
@@ -741,6 +760,7 @@ pub enum SessionIssuesOp {
 
 /// [`WORK_SESSION_ISSUES`]'s answer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
 pub enum SessionIssuesGiven {
@@ -781,6 +801,7 @@ pub enum SessionIssuesGiven {
 
 /// One state change, signed by the machine that made it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Report {
     pub run: String,
     /// The event's number in the run.
@@ -798,6 +819,7 @@ pub struct Report {
 
 /// What became of a [`Report`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Reported {
     /// Kept: the run moved.

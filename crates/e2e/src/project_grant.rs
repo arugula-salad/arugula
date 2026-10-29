@@ -92,6 +92,7 @@ pub fn new_id() -> String {
 /// An owner's device saying the platform may start and instruct runs on
 /// `project`'s hosted workspaces, under `delegation`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ProjectGrant {
     pub id: String,
     pub project: String,
@@ -201,6 +202,7 @@ impl ProjectGrant {
 
 /// What happens to runs already going when a grant is revoked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Running {
     /// They finish.
@@ -223,6 +225,7 @@ impl Running {
 /// grant, so whoever relays it can't point it at another one; a grant made
 /// after it is a new one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GrantRevoke {
     pub project: String,
     /// The delegation whose grants it takes back.

@@ -1,0 +1,664 @@
+{
+  "$defs": {
+    "AgentRunStart": {
+      "description": "[`AGENT_PROJECT_RUNS`]' `POST`: a run spec by its id or name, or a\ncommand (`argv`) or an instruction to an agent on one of the project's\nhosted workspaces (its id or name; the only one when left out), as a\nperson's start by hand takes it (M214).",
+      "properties": {
+        "agent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "directory": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "instruction": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "spec": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "GrantRevoke": {
+      "description": "The project's grants taken back, by any owner's device: every grant for\nthe project under `delegation` made at or before `at`. It names no\ngrant, so whoever relays it can't point it at another one; a grant made\nafter it is a new one.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "type": "string"
+        },
+        "delegation": {
+          "description": "The delegation whose grants it takes back.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "running": {
+          "$ref": "#/$defs/Running"
+        },
+        "sig": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "delegation",
+        "running",
+        "at",
+        "by"
+      ],
+      "type": "object"
+    },
+    "ProjectGrant": {
+      "description": "An owner's device saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
+      "properties": {
+        "by": {
+          "description": "The signing device.",
+          "type": "string"
+        },
+        "caps": {
+          "description": "Sorted, each once.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "delegation": {
+          "description": "The project's delegation's [`Delegation::id`].",
+          "type": "string"
+        },
+        "expires": {
+          "default": null,
+          "description": "When it stops counting (ms); `None`: never.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "made": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "owner": {
+          "description": "`team:<id>` or `account:<id>`, as the signing device saw it.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sig": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "owner",
+        "delegation",
+        "caps",
+        "made",
+        "by"
+      ],
+      "type": "object"
+    },
+    "RunArtifactView": {
+      "description": "Something a run left behind (M213).",
+      "properties": {
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "size",
+        "digest",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "RunDeployView": {
+      "description": "The deploy a deploy's run applies (M219, UI audit #145): which, to\nwhich environment, of what.",
+      "properties": {
+        "environment": {
+          "description": "Its environment's name.",
+          "type": "string"
+        },
+        "id": {
+          "description": "`dep_…`.",
+          "type": "string"
+        },
+        "reference": {
+          "description": "The commit's sha or the artifact's digest.",
+          "type": "string"
+        },
+        "source_kind": {
+          "description": "`commit` or `artifact`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "environment",
+        "source_kind",
+        "reference"
+      ],
+      "type": "object"
+    },
+    "RunEventView": {
+      "description": "One change of a run's state.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "daemon": {
+          "default": null,
+          "description": "The machine that reported it, signed; none when control did.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "detail": {
+          "default": null,
+          "description": "What its reporter said (an exit code, a reason, the pane)."
+        },
+        "from": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "to",
+        "at"
+      ],
+      "type": "object"
+    },
+    "RunList": {
+      "description": "[`PROJECT_RUNS`]' answer.",
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/RunView"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "project",
+        "runs"
+      ],
+      "type": "object"
+    },
+    "RunListQuery": {
+      "description": "[`PROJECT_RUNS`]' query.",
+      "properties": {
+        "limit": {
+          "description": "At most this many (default 20, at most 100).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "spec": {
+          "description": "Only runs of this run spec, by its id (M215).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "Only runs in this state (`pending`, `running`, `succeeded`, ...).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trigger": {
+          "description": "Only runs started this way: `manual`, `schedule` or `event` (M215),\nor `deploy`: a deploy's run, which is `manual` underneath (UI audit\n#164); `manual` then leaves deploys' runs out.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "RunLogPage": {
+      "description": "A page of a run's durable log (M213: hosted workspaces only, kept 30\ndays).",
+      "properties": {
+        "end": {
+          "description": "The run has ended and this page reaches the end of its log.",
+          "type": "boolean"
+        },
+        "kept": {
+          "description": "Whether the platform keeps a log for it. Until it does, the run's\npane is where its output is.",
+          "type": "boolean"
+        },
+        "next_offset": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "note": {
+          "default": null,
+          "description": "Why there's no log, or what to do for the rest.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "offset": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "run": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "kept",
+        "text",
+        "offset",
+        "next_offset",
+        "end"
+      ],
+      "type": "object"
+    },
+    "RunLogQuery": {
+      "description": "[`RUN_LOG`]'s query.",
+      "properties": {
+        "max": {
+          "description": "At most this many bytes, at most [`RUN_LOG_PAGE_MAX`].",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offset": {
+          "description": "A byte offset in the log (a page's `next_offset`); 0 without.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tail": {
+          "description": "The page that ends at the log's end as it is now, instead of\n`offset`.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "RunQuery": {
+      "description": "[`RUN`]'s query: a read that waits.",
+      "properties": {
+        "since": {
+          "description": "The last event seen (`last_seq`): with `wait`, answer once the run\nhas a later one, or has ended.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "wait": {
+          "description": "Seconds to wait for that, at most [`RUN_WAIT_MAX`].",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "RunReach": {
+      "description": "[`AGENT_RUN_REACH`]'s answer.",
+      "properties": {
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/RunReachProject"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "projects"
+      ],
+      "type": "object"
+    },
+    "RunReachProject": {
+      "description": "A project a machine's run grants reach, as its owner reads it now.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "powers": {
+          "description": "`runs.read`, `runs.start`, `runs.command`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "powers"
+      ],
+      "type": "object"
+    },
+    "RunRevoke": {
+      "description": "A revoke of the project's grants, for every hosted machine of its\nproject.",
+      "properties": {
+        "revoke": {
+          "$ref": "#/$defs/GrantRevoke"
+        }
+      },
+      "required": [
+        "revoke"
+      ],
+      "type": "object"
+    },
+    "RunStart": {
+      "description": "Start on this hosted machine under the project's standing grant.",
+      "properties": {
+        "cap": {
+          "description": "What it's asked to do under the grant: `runs.start` or\n`runs.instruct`.",
+          "type": "string"
+        },
+        "grant": {
+          "$ref": "#/$defs/ProjectGrant"
+        },
+        "project": {
+          "type": "string"
+        },
+        "revokes": {
+          "default": [],
+          "description": "The project's revokes the platform holds.",
+          "items": {
+            "$ref": "#/$defs/GrantRevoke"
+          },
+          "type": "array"
+        },
+        "run": {
+          "default": null,
+          "description": "The run (`run_…`, M210), once there is one (M212).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "description": "The hosted workspace (`hw_…`) the machine is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "workspace",
+        "cap",
+        "grant"
+      ],
+      "type": "object"
+    },
+    "RunView": {
+      "description": "A run, as the CLI and a machine's agents read it.",
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/RunArtifactView"
+          },
+          "type": "array"
+        },
+        "chant_ledger": {
+          "description": "A release's entry in chant's ledger (M220, aru-098): a link to its\nline on GitHub, which the platform checked is one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "daemon": {
+          "description": "The machine it runs on.",
+          "type": "string"
+        },
+        "deploy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunDeployView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The deploy a deploy's run applies (M219), as pages name it."
+        },
+        "ended_at": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "events": {
+          "description": "Its timeline, oldest first (left out of a list).",
+          "items": {
+            "$ref": "#/$defs/RunEventView"
+          },
+          "type": "array"
+        },
+        "exit_code": {
+          "default": null,
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "grant": {
+          "default": null,
+          "description": "The standing grant it runs under; without one it waits for an\napproval.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "last_seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "op": {
+          "default": "",
+          "description": "The S37 operation it runs (`arugula op v1`), and its SHA-256.",
+          "type": "string"
+        },
+        "op_hash": {
+          "type": "string"
+        },
+        "pane": {
+          "default": null,
+          "description": "The pane it runs in on its machine (its `running` event says): its\nlive view, which the project's people watch end to end.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "type": "string"
+        },
+        "source": {
+          "default": null,
+          "description": "Which spec, schedule or event: what an event's payload said is\nuntrusted text, for showing."
+        },
+        "started_at": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "started_by": {
+          "default": "",
+          "description": "The account that started it (an agent's owner's), or the schedule's\nor rule's id.",
+          "type": "string"
+        },
+        "started_by_agent": {
+          "default": null,
+          "description": "The machine whose agent started it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "S37's: `pending`, `approved`, `running`, `succeeded`, `failed`,\n`denied`, `canceled` or `expired`.",
+          "type": "string"
+        },
+        "trigger": {
+          "description": "`manual`, `schedule` or `event`.",
+          "type": "string"
+        },
+        "workspace": {
+          "default": null,
+          "description": "The hosted workspace (`hw_…`) it runs on.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace_name": {
+          "description": "Its hosted workspace's name, deleted or not (UI audit #145): pages\nshow it, with the `hw_…` id beside it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "trigger",
+        "op_hash",
+        "daemon",
+        "state",
+        "last_seq",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "Running": {
+      "description": "What happens to runs already going when a grant is revoked.",
+      "oneOf": [
+        {
+          "const": "finish",
+          "description": "They finish.",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "description": "They're stopped too.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::runs"
+}

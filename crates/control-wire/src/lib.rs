@@ -19,6 +19,42 @@
 
 use serde::{Deserialize, Serialize};
 
+/// A `t` tag's schema: always the one string (`forge`'s tags, `activity`'s).
+#[cfg(feature = "schema")]
+macro_rules! const_schema {
+    ($name:ident = $s:literal) => {
+        impl schemars::JsonSchema for $name {
+            fn inline_schema() -> bool {
+                true
+            }
+
+            fn schema_name() -> std::borrow::Cow<'static, str> {
+                stringify!($name).into()
+            }
+
+            fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+                schemars::json_schema!({ "type": "string", "const": $s })
+            }
+        }
+    };
+}
+#[cfg(feature = "schema")]
+pub(crate) use const_schema;
+
+/// The schema of an enum with a `#[serde(other)]` variant: a reader takes
+/// any string (as that variant), so beside the known ones any string goes.
+/// Its JSON Schema `transform`, on each such enum.
+#[cfg(feature = "schema")]
+pub(crate) fn open_enum(schema: &mut schemars::Schema) {
+    let Some(o) = schema.as_object_mut() else { return };
+    let description = o.remove("description");
+    let known = serde_json::Value::Object(std::mem::take(o));
+    o.insert("anyOf".into(), serde_json::json!([known, { "type": "string" }]));
+    if let Some(d) = description {
+        o.insert("description".into(), d);
+    }
+}
+
 pub mod activity;
 pub mod agent_mcp;
 pub mod boards;
@@ -37,6 +73,8 @@ pub mod projects;
 pub mod push;
 pub mod run_logs;
 pub mod runs;
+#[cfg(all(test, feature = "schema"))]
+mod schema;
 pub mod sessions;
 pub mod team;
 pub mod telemetry;
@@ -86,6 +124,7 @@ pub const APP_DEVICES: &str = "app-devices";
 /// `GET /control.json`. Read leniently: a daemon needs only `daemon_auth`
 /// and `guest_ssh` of it, and an older control is without some of the rest.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ControlInfo {
     #[serde(default)]
     pub control: bool,
@@ -156,6 +195,7 @@ pub struct ControlInfo {
 /// how to sign. Read apart from [`ControlInfo`] so that a field it can't
 /// take never quietly drops the daemon back to v1 signatures.
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ControlAuth {
     #[serde(default)]
     pub daemon_auth: u64,
@@ -166,6 +206,7 @@ pub struct ControlAuth {
 /// can't make it think control is older than it is. `None`: control doesn't
 /// say (it is older than the CLI).
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ControlCliJoin {
     #[serde(default)]
     pub cli_join: Option<u64>,
@@ -179,6 +220,7 @@ fn is_zero(n: &u64) -> bool {
 /// `/control.json`, read apart from [`ControlInfo`] like the others. A
 /// machine or the CLI puts a secret in its link only when it does.
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ControlJoinSecret {
     #[serde(default)]
     pub join_secret: u64,
@@ -187,6 +229,7 @@ pub struct ControlJoinSecret {
 /// Just where control is from `/control.json` (#507), read apart from
 /// [`ControlInfo`] like the others.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ControlWhere {
     #[serde(default)]
     pub url: String,
@@ -202,6 +245,7 @@ pub struct ControlWhere {
 /// Just what shared Docs need from `/control.json` (#1064), read apart from
 /// [`ControlInfo`] like the others.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ControlDocs {
     #[serde(default)]
     pub doc_links: Option<u8>,
@@ -212,6 +256,7 @@ pub struct ControlDocs {
 /// Just the jump host from `/control.json`, read apart from
 /// [`ControlInfo`] so an unrelated malformed field doesn't lose it.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ControlJump {
     #[serde(default)]
     pub guest_ssh: Option<GuestJump>,
@@ -219,6 +264,7 @@ pub struct ControlJump {
 
 /// Control's ssh jump host, for daemons making invites.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GuestJump {
     pub host: String,
     pub port: u16,
@@ -229,10 +275,12 @@ pub struct GuestJump {
 
 /// An answer with nothing in it: `{}`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Ack {}
 
 /// Control's 410 Gone (#330): this key was removed from its account.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RemovedAnswer {
     /// Control's words.
     #[serde(default)]
@@ -244,6 +292,7 @@ pub struct RemovedAnswer {
 /// When a key was removed and, to the key's own holder only, by which
 /// device.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RemovedAt {
     /// When it was removed (ms since the epoch).
     pub at: u64,
@@ -254,6 +303,7 @@ pub struct RemovedAt {
 
 /// `GET /api/relay/dial?urls=`: the daemon's direct URLs, for the directory.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DialQuery {
     /// JSON list of the daemon's direct URLs.
     #[serde(default)]

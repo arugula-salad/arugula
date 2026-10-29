@@ -1,0 +1,701 @@
+{
+  "$defs": {
+    "AgentIssueHomeQuery": {
+      "description": "[`AGENT_ISSUE_HOME`]'s query.",
+      "properties": {
+        "project": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ChatAgent": {
+      "description": "The agent that wrote a message (M197): the machine whose grant it acted\nthrough, and its name now. The message's author is the machine's owner.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "machine_name"
+      ],
+      "type": "object"
+    },
+    "ExportedIssue": {
+      "properties": {
+        "comments": {
+          "description": "Oldest first; deleted ones left out.",
+          "items": {
+            "$ref": "#/$defs/IssueComment"
+          },
+          "type": "array"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/IssueEvent"
+          },
+          "type": "array"
+        },
+        "issue": {
+          "$ref": "#/$defs/Issue"
+        }
+      },
+      "required": [
+        "issue",
+        "events",
+        "comments"
+      ],
+      "type": "object"
+    },
+    "ExportedPerson": {
+      "description": "Someone an export names, with what they're called now.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "name"
+      ],
+      "type": "object"
+    },
+    "Issue": {
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The agent that opened it for its owner; or the agent session that\nopened it as itself (aru-115), its `machine` the session's id\n(`ses_…`) and its name `Agent session <id>`."
+        },
+        "assignees": {
+          "description": "Accounts.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "author": {
+          "description": "The account that opened it (an agent's owner's), or \"\" once it's\ndeleted, or for one an agent session opened.",
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "close_reason": {
+          "description": "A closed one's: `completed`, `not_planned` or `duplicate`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "closed_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "closed_by": {
+          "description": "Who closed a closed one (an agent's owner's account), as its latest\n`closed` event says: a list's row names them (UI audit #163).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "closed_by_agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The agent that closed it for its owner."
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "github": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IssueGithub"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "description": "`iss_` and 32 hex characters.",
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "number": {
+          "description": "Its number in the project.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "project": {
+          "type": "string"
+        },
+        "state": {
+          "description": "`open` or `closed`.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "number",
+        "title",
+        "body",
+        "state",
+        "author",
+        "labels",
+        "assignees",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "IssueComment": {
+      "description": "A comment on an issue: a message in its thread.",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "author": {
+          "description": "The account that wrote it, or \"\" once it's deleted.",
+          "type": "string"
+        },
+        "edited": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "quote": {
+          "description": "Lines it quoted from a pane.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seq": {
+          "description": "Its number in the thread.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "author",
+        "at",
+        "text"
+      ],
+      "type": "object"
+    },
+    "IssueEvent": {
+      "description": "An event on an issue's timeline.",
+      "properties": {
+        "actor": {
+          "description": "The account that did it (an agent's owner's), or \"\" once it's\ndeleted.",
+          "type": "string"
+        },
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "detail": {
+          "description": "`edited`: `title` (the old one) and/or `body: true`; `closed`:\n`reason`; `labelled`/`unlabelled`: `label`;\n`assigned`/`unassigned`: `assignee`; `exported`: `repo`, `number`."
+        },
+        "id": {
+          "description": "Orders an issue's events.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "description": "`opened`, `edited`, `closed`, `reopened`, `labelled`, `unlabelled`,\n`assigned`, `unassigned` or `exported`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "actor",
+        "at",
+        "detail"
+      ],
+      "type": "object"
+    },
+    "IssueEvents": {
+      "properties": {
+        "events": {
+          "description": "Oldest first.",
+          "items": {
+            "$ref": "#/$defs/IssueEvent"
+          },
+          "type": "array"
+        },
+        "issue": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "issue",
+        "events"
+      ],
+      "type": "object"
+    },
+    "IssueExport": {
+      "description": "Every issue in a project, by number, with its timeline and comments.",
+      "properties": {
+        "exported_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/ExportedIssue"
+          },
+          "type": "array"
+        },
+        "people": {
+          "description": "Everyone it names (authors, actors, assignees, commenters).",
+          "items": {
+            "$ref": "#/$defs/ExportedPerson"
+          },
+          "type": "array"
+        },
+        "project": {
+          "type": "string"
+        },
+        "project_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "project_name",
+        "exported_at",
+        "issues",
+        "people"
+      ],
+      "type": "object"
+    },
+    "IssueExportQuery": {
+      "description": "`GET /api/projects/{project}/issues/export?format=`: `json` (when not\ngiven) or `md`.",
+      "properties": {
+        "format": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "IssueGithub": {
+      "description": "Where an issue was exported to on GitHub (M205).",
+      "properties": {
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "description": "`owner/name`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number"
+      ],
+      "type": "object"
+    },
+    "IssueHome": {
+      "description": "Where a project's \"new issue\" goes.",
+      "properties": {
+        "both": {
+          "description": "It has issues in both places: native ones and a linked repo. The\npage says so.",
+          "type": "boolean"
+        },
+        "chosen": {
+          "description": "Someone chose it; otherwise it's the default: `github` while the\nproject has a linked repo, `native` when it has none.",
+          "type": "boolean"
+        },
+        "home": {
+          "description": "`native` (the platform's own issues) or `github` (its linked repo).",
+          "type": "string"
+        },
+        "labels": {
+          "default": [],
+          "description": "Every label on its native issues, open or closed, sorted: what the\nlabel menus offer (UI audit #163).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "native_issues": {
+          "description": "How many native issues it has.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "project": {
+          "type": "string"
+        },
+        "repos": {
+          "description": "The project's linked repos (`owner/name`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "project",
+        "home",
+        "chosen",
+        "repos",
+        "native_issues",
+        "both"
+      ],
+      "type": "object"
+    },
+    "IssueHomeChange": {
+      "description": "`PUT /api/projects/{project}/issue-home`: `native`, `github` (only with\na linked repo), or `None` for the default again.",
+      "properties": {
+        "home": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "IssueList": {
+      "properties": {
+        "issues": {
+          "description": "Newest (highest number) first.",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "more": {
+          "description": "There are more past the last one (`before` its number).",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "The project's id (`personal` resolved).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "issues",
+        "more"
+      ],
+      "type": "object"
+    },
+    "IssueListEdit": {
+      "description": "A change to an issue's labels or assignees: the whole list, or some\nadded or taken off.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "set": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "set"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "add": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "add"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "remove": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "remove"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "IssuePatch": {
+      "description": "`PATCH /api/issues/{id}`: what's given changes.",
+      "properties": {
+        "assignees": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IssueListEdit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "body": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "labels": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IssueListEdit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "default": null,
+          "description": "Why it's closed (with `state: closed`): `completed` (when not\ngiven), `not_planned` or `duplicate`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "default": null,
+          "description": "`open` or `closed`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "IssuePatched": {
+      "description": "What a patch made of the issue, and the events it wrote (none when\nnothing changed).",
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/IssueEvent"
+          },
+          "type": "array"
+        },
+        "issue": {
+          "$ref": "#/$defs/Issue"
+        }
+      },
+      "required": [
+        "issue",
+        "events"
+      ],
+      "type": "object"
+    },
+    "IssueQuery": {
+      "description": "`GET /api/projects/{project}/issues`'s query. Each that's given narrows\nthe list.",
+      "properties": {
+        "assignee": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "before": {
+          "default": null,
+          "description": "Issues numbered below this: the next page.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "labels": {
+          "default": null,
+          "description": "Labels, comma-separated: issues with every one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "default": null,
+          "description": "At most this many (default 50, at most 200).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "q": {
+          "default": null,
+          "description": "Search words, in the title or the body: each one (`dep*`: a word\nstarting with `dep`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "default": null,
+          "description": "`open` (when not given), `closed` or `all`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "NewIssue": {
+      "properties": {
+        "assignees": {
+          "default": [],
+          "description": "Accounts, each a member of the project.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "body": {
+          "default": "",
+          "type": "string"
+        },
+        "labels": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::issues"
+}

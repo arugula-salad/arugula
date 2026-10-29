@@ -68,6 +68,7 @@ pub fn agent_issue_events(id: &str) -> String {
 
 /// [`AGENT_ISSUE_HOME`]'s query.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentIssueHomeQuery {
     #[serde(default)]
     pub project: Option<String>,
@@ -87,6 +88,7 @@ pub const ASSIGNEES_MAX: usize = 10;
 
 /// Where an issue was exported to on GitHub (M205).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueGithub {
     /// `owner/name`.
@@ -95,6 +97,7 @@ pub struct IssueGithub {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 // The daemon's forge `Issue` (a GitHub issue block's) is another type, so
 // the web client's copy is `NativeIssue`.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "NativeIssue"))]
@@ -138,6 +141,7 @@ pub struct Issue {
 /// `GET /api/projects/{project}/issues`'s query. Each that's given narrows
 /// the list.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueQuery {
     /// `open` (when not given), `closed` or `all`.
@@ -163,6 +167,7 @@ pub struct IssueQuery {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueList {
     /// The project's id (`personal` resolved).
@@ -174,6 +179,7 @@ pub struct IssueList {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "NewNativeIssue"))]
 pub struct NewIssue {
     pub title: String,
@@ -189,6 +195,7 @@ pub struct NewIssue {
 /// A change to an issue's labels or assignees: the whole list, or some
 /// added or taken off.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum IssueListEdit {
@@ -199,6 +206,7 @@ pub enum IssueListEdit {
 
 /// `PATCH /api/issues/{id}`: what's given changes.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssuePatch {
     #[serde(default)]
@@ -220,6 +228,7 @@ pub struct IssuePatch {
 
 /// An event on an issue's timeline.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueEvent {
     /// Orders an issue's events.
@@ -242,6 +251,7 @@ pub struct IssueEvent {
 /// What a patch made of the issue, and the events it wrote (none when
 /// nothing changed).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssuePatched {
     pub issue: Issue,
@@ -249,6 +259,7 @@ pub struct IssuePatched {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueEvents {
     pub issue: String,
@@ -258,6 +269,7 @@ pub struct IssueEvents {
 
 /// Where a project's "new issue" goes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueHome {
     pub project: String,
@@ -282,6 +294,7 @@ pub struct IssueHome {
 /// `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
 /// a linked repo), or `None` for the default again.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueHomeChange {
     pub home: Option<String>,
@@ -290,6 +303,7 @@ pub struct IssueHomeChange {
 /// `GET /api/projects/{project}/issues/export?format=`: `json` (when not
 /// given) or `md`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueExportQuery {
     #[serde(default)]
@@ -298,6 +312,7 @@ pub struct IssueExportQuery {
 
 /// A comment on an issue: a message in its thread.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueComment {
     /// Its number in the thread.
@@ -313,6 +328,7 @@ pub struct IssueComment {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ExportedIssue {
     pub issue: Issue,
@@ -323,6 +339,7 @@ pub struct ExportedIssue {
 
 /// Someone an export names, with what they're called now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ExportedPerson {
     pub account: String,
@@ -331,6 +348,7 @@ pub struct ExportedPerson {
 
 /// Every issue in a project, by number, with its timeline and comments.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueExport {
     pub project: String,

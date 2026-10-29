@@ -43,6 +43,7 @@ pub const DOCS_MAX: u64 = 1_000;
 
 /// A Doc, without its sections: a list's row, and a view's head.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDoc"))]
 pub struct Doc {
     /// `pdc_` and 32 hex characters.
@@ -66,6 +67,7 @@ pub struct Doc {
 
 /// One section: pending (`body` null) until it's written.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocSection"))]
 pub struct Section {
     /// The Doc's own: `s1`, `s2`, … in the order they were added.
@@ -81,6 +83,7 @@ pub struct Section {
 
 /// `GET` [`PROJECT_DOC`]: a Doc with its sections, in order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocView"))]
 pub struct DocView {
     pub doc: Doc,
@@ -91,6 +94,7 @@ pub struct DocView {
 
 /// `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocList"))]
 pub struct DocList {
     pub project: String,
@@ -102,6 +106,7 @@ pub struct DocList {
 /// A new Doc's section: a heading, and its Markdown now or an intent for
 /// later.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "NewProjectDocSection"))]
 pub struct NewSection {
     pub heading: String,
@@ -113,6 +118,7 @@ pub struct NewSection {
 
 /// `POST` [`PROJECT_DOCS`]: make a Doc.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "NewProjectDoc"))]
 pub struct NewDoc {
     pub title: String,
@@ -125,6 +131,7 @@ pub struct NewDoc {
 /// given); with no `section` but a `heading`, a section is added at the
 /// end, written when `markdown` is given and pending otherwise.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocWrite"))]
 pub struct DocWrite {
     #[serde(default)]

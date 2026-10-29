@@ -18,11 +18,18 @@ p256 = { workspace = true, features = ["ecdh"] }
 base64 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+# JSON Schema for the types control-wire's messages carry (`schema`, #219).
+schemars = { version = "1.0", optional = true }
 sha2 = { workspace = true }
 # Its RustCrypto resolver only: its `std` feature turns on `ring/std`, which
 # builds ring (a second crypto backend beside aws-lc-rs) for nothing (#466).
 snow = { version = "0.10.0", default-features = false, features = ["default-resolver-crypto"] }
 tokio = { workspace = true, features = ["sync", "io-util", "rt", "macros"] }
+
+[features]
+# control-wire's `schema`: certificates, rosters and grants as they appear in
+# the contract's JSON Schema (contract/schema/).
+schema = ["dep:schemars"]
 
 [lints]
 workspace = true

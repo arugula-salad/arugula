@@ -1,0 +1,330 @@
+{
+  "$defs": {
+    "Ack": {
+      "description": "An answer with nothing in it: `{}`.",
+      "type": "object"
+    },
+    "ControlAuth": {
+      "description": "Just the signature version from `/control.json`, for a daemon deciding\nhow to sign. Read apart from [`ControlInfo`] so that a field it can't\ntake never quietly drops the daemon back to v1 signatures.",
+      "properties": {
+        "daemon_auth": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "ControlCliJoin": {
+      "description": "Just whether control takes the CLI as a device, from `/control.json`\n(M49), read apart from [`ControlInfo`] so a field the CLI never needs\ncan't make it think control is older than it is. `None`: control doesn't\nsay (it is older than the CLI).",
+      "properties": {
+        "cli_join": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ControlDocs": {
+      "description": "Just what shared Docs need from `/control.json` (#1064), read apart from\n[`ControlInfo`] like the others.",
+      "properties": {
+        "doc_links": {
+          "default": null,
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "doc_viewer": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ControlInfo": {
+      "description": "`GET /control.json`. Read leniently: a daemon needs only `daemon_auth`\nand `guest_ssh` of it, and an older control is without some of the rest.",
+      "properties": {
+        "block_domain": {
+          "description": "Blocks get origins of their own under this domain (M50):\n`https://b-<site key>.<block_domain>`. `None`: control doesn't serve\nblocks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cli_join": {
+          "default": 0,
+          "description": "The CLI joins with a code and signs its requests (M49).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "control": {
+          "default": false,
+          "type": "boolean"
+        },
+        "daemon_auth": {
+          "default": 0,
+          "description": "How daemons sign their requests here: 2 takes body hashes and nonces.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "device_secret": {
+          "description": "Control passes an approving device's MAC under a waiting device's\ncode to it (#761), so a waiting browser shows a code to scan or type\nrather than a fingerprint to compare.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "doc_links": {
+          "description": "Control keeps encrypted Doc snapshots and serves them to anyone with\nthe link (#1064): the version of that API. `None`: it doesn't.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "doc_viewer": {
+          "description": "Where those are opened, without a trailing slash: a link is\n`<doc_viewer>/<id>#k=<key>`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "github": {
+          "default": false,
+          "type": "boolean"
+        },
+        "github_app": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "guest_ssh": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GuestJump"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The ssh jump host for guests of daemons behind NAT (M65)."
+        },
+        "hosted_key": {
+          "description": "Control's hosted key (M178, Ed25519 hex): what a project delegation\nnames, and what signs the hosted machines enrolled under it. `None`:\ncontrol enrolls none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "join_secret": {
+          "description": "Control passes a join secret's MAC from the approving device to the\nmachine (#760), so a machine's link may carry a secret.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "passkeys": {
+          "default": false,
+          "description": "Passkeys need a domain name: WebAuthn refuses IP addresses.",
+          "type": "boolean"
+        },
+        "platform": {
+          "default": null,
+          "description": "The platform page's origin (M151, `https://app.arugula.io`), where\nprojects, chat and Cloud workspaces are. `None`: control doesn't\nserve it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "primary": {
+          "description": "Where control is now (#507), when it answers at more than one URL:\na daemon on another of them may move here.",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "description": "The URL this answer was asked at.",
+          "type": "string"
+        },
+        "urls": {
+          "description": "Every URL control answers at, `primary` first (#507).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vapid": {
+          "default": "",
+          "description": "The Web Push application server key.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ControlJoinSecret": {
+      "description": "Just whether control passes a join secret's MAC on (#760), from\n`/control.json`, read apart from [`ControlInfo`] like the others. A\nmachine or the CLI puts a secret in its link only when it does.",
+      "properties": {
+        "join_secret": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "ControlJump": {
+      "description": "Just the jump host from `/control.json`, read apart from\n[`ControlInfo`] so an unrelated malformed field doesn't lose it.",
+      "properties": {
+        "guest_ssh": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GuestJump"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "ControlWhere": {
+      "description": "Just where control is from `/control.json` (#507), read apart from\n[`ControlInfo`] like the others.",
+      "properties": {
+        "block_domain": {
+          "default": null,
+          "description": "Control serves block origins (M50): blocks show in its page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "primary": {
+          "default": "",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "type": "string"
+        },
+        "urls": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "DialQuery": {
+      "description": "`GET /api/relay/dial?urls=`: the daemon's direct URLs, for the directory.",
+      "properties": {
+        "urls": {
+          "default": null,
+          "description": "JSON list of the daemon's direct URLs.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "GuestJump": {
+      "description": "Control's ssh jump host, for daemons making invites.",
+      "properties": {
+        "fingerprint": {
+          "default": "",
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "known_hosts": {
+          "type": "string"
+        },
+        "port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "known_hosts"
+      ],
+      "type": "object"
+    },
+    "RemovedAnswer": {
+      "description": "Control's 410 Gone (#330): this key was removed from its account.",
+      "properties": {
+        "error": {
+          "default": null,
+          "description": "Control's words.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "removed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RemovedAt"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "RemovedAt": {
+      "description": "When a key was removed and, to the key's own holder only, by which\ndevice.",
+      "properties": {
+        "at": {
+          "description": "When it was removed (ms since the epoch).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "The removing device's name; left out when control isn't telling.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "at"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire"
+}

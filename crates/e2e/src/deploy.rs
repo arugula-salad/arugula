@@ -68,6 +68,7 @@ pub const SLACK_MS: u64 = 10 * 60 * 1000;
 
 /// What a deploy applies, as approved.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Operation {
     pub project: String,
     pub environment: String,
@@ -236,6 +237,7 @@ pub fn secret_name_ok(name: &str) -> bool {
 
 /// Approve it once, or deny it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Decision {
     Once,
@@ -252,6 +254,7 @@ impl Decision {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Approval {
     pub deploy: String,
     /// The operation's hash, hex.

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub const PROJECTS: &str = "/api/projects";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "PlatformProjects"))]
 pub struct Projects {
     pub me: Me,
@@ -27,6 +28,7 @@ pub struct Projects {
 
 /// The signed-in person, as the hub knows them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "PlatformMe"))]
 pub struct Me {
     /// Control's id for the account.
@@ -38,6 +40,7 @@ pub struct Me {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 // The daemon's `Project` (a pane's) is another type, so the web client's
 // copy is `PlatformProject`.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "PlatformProject"))]
@@ -50,6 +53,7 @@ pub struct Project {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ProjectTeam {
     pub id: String,
@@ -60,6 +64,7 @@ pub struct ProjectTeam {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ProjectMember {
     pub account: String,
@@ -75,6 +80,7 @@ pub struct ProjectMember {
 pub const PROJECT_REPOS: &str = "/api/projects/{project}/repos";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LinkedRepos {
     /// The project's id (`personal` asked is answered with the real one).
@@ -84,6 +90,7 @@ pub struct LinkedRepos {
 
 /// A repo linked to a project, or unlinked and waiting for the purge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LinkedRepo {
     /// GitHub's id for it.
@@ -109,6 +116,7 @@ pub struct LinkedRepo {
 /// (search finds their text); off deletes them at once. Turning it on
 /// takes what linking takes: a member who maintains the repo on GitHub.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RepoSettings {
     pub mirror_content: bool,
@@ -120,6 +128,7 @@ pub struct RepoSettings {
 /// `reason: "install_app"` and `install_url`, GitHub's page to install it,
 /// which brings them back to the project's settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LinkRepo {
     pub repo: String,
@@ -148,6 +157,7 @@ pub const FORGE_ITEM_EVENTS: &str = "/api/forge/items/{id}/events";
 pub const FORGE_ITEM_CONTENT: &str = "/api/forge/items/{id}/content";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeItems {
     /// The project's id (`personal` asked is answered with the real one).
@@ -159,6 +169,7 @@ pub struct ForgeItems {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct WithheldRepo {
     /// `OWNER/NAME`.
@@ -172,6 +183,7 @@ pub struct WithheldRepo {
 
 /// A PR or an issue, as metadata: never its body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeItem {
     /// The platform's id: `fi_` and 32 hex characters.
@@ -201,6 +213,7 @@ pub struct ForgeItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeChecks {
     pub item: String,
@@ -210,6 +223,7 @@ pub struct ForgeChecks {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeCheck {
     /// `check_run` or `status`.
@@ -222,6 +236,7 @@ pub struct ForgeCheck {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeEvents {
     pub item: String,
@@ -229,6 +244,7 @@ pub struct ForgeEvents {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeEvent {
     pub id: String,
@@ -241,6 +257,7 @@ pub struct ForgeEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeContent {
     pub item: String,
@@ -254,6 +271,7 @@ pub struct ForgeContent {
 
 /// A body, a comment, a review's text or a review comment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeText {
     /// `body`, `comment`, `review` or `review_comment`.
@@ -283,6 +301,7 @@ pub struct ForgeText {
 pub const FORGE_REPO: &str = "/api/forge/repos/{owner}/{name}";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeRepo {
     /// `OWNER/NAME`, as asked.
@@ -333,6 +352,7 @@ pub const MAX_DRAFT_BODY: usize = 65_536;
 /// agent's on it, for its owner: the platform records the machine, and
 /// `agent` names the agent).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NewDraft {
     /// `OWNER/NAME`: a repo linked to a project the author is in.
@@ -361,6 +381,7 @@ pub struct NewDraft {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DraftCreated {
     pub draft: ForgeDraft,
@@ -370,6 +391,7 @@ pub struct DraftCreated {
 
 /// What `POST /api/forge/drafts/{id}/discard` answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DraftDiscarded {
     pub id: String,
@@ -378,12 +400,14 @@ pub struct DraftDiscarded {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeDrafts {
     pub drafts: Vec<ForgeDraft>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeDraft {
     /// The platform's id: `dft_` and 32 hex characters.
@@ -467,12 +491,14 @@ pub const INBOX_REASONS: [&str; 9] = [
 ];
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Inbox {
     pub entries: Vec<InboxEntry>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct InboxEntry {
     /// The item: `fi_` and 32 hex characters, a native issue's `iss_` id
@@ -513,6 +539,7 @@ pub struct InboxEntry {
 /// Mark an item's entries: `true` sets seen or done (now, if it wasn't),
 /// `false` clears it, and one not given stays as it is.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct InboxMark {
     /// Only this reason's entry; all of the item's when `None`.
@@ -525,6 +552,7 @@ pub struct InboxMark {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct InboxMarked {
     pub item: String,
@@ -535,11 +563,13 @@ pub struct InboxMarked {
 /// What an opted-in machine's forge blocks want of its owner (the shadow
 /// period, M171): items and reasons, never a title.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct InboxShadow {
     pub blocks: Vec<ShadowBlock>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ShadowBlock {
     /// `OWNER/NAME` on github.com.
     pub repo: String,
@@ -554,6 +584,7 @@ pub struct ShadowBlock {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ShadowCompared {
     /// Blocks on items the platform has, and how many agreed.
     pub compared: u32,
@@ -586,6 +617,7 @@ pub const FORGE_DRAFT_MACHINE: &str = "/api/forge/drafts/{id}/machine";
 pub const NO_WAY: &str = "Open this on a device to send, or wake a machine.";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SendDraft {
     /// `browser` or `machine` (the default).
@@ -597,6 +629,7 @@ pub struct SendDraft {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DraftSent {
     pub draft: ForgeDraft,
@@ -613,6 +646,7 @@ pub struct DraftSent {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct MachineSending {
     /// `start`, `sent` or `failed`.
     pub step: String,

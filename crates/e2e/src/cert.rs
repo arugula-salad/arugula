@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use crate::keys::{DeviceKeys, device_id, hex32};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Browser,
@@ -93,6 +94,7 @@ impl Kind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Cert {
     pub v: u32,
     pub account: String,
@@ -232,6 +234,7 @@ fn verify(key: &anyhow::Result<VerifyingKey>, msg: &[u8], sig_hex: &str) -> bool
 
 /// A device taken off the account, signed by one of its devices.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Revocation {
     pub v: u32,
     pub account: String,
@@ -269,6 +272,7 @@ impl Revocation {
 
 /// What a daemon pinned when it joined: the account and its root device.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Trust {
     pub account: String,
     pub root: String,

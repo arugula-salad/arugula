@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 /// Start on this hosted machine under the project's standing grant.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RunStart {
     pub project: String,
     /// The hosted workspace (`hw_…`) the machine is.
@@ -36,6 +37,7 @@ pub struct RunStart {
 /// A revoke of the project's grants, for every hosted machine of its
 /// project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RunRevoke {
     pub revoke: GrantRevoke,
 }
@@ -92,6 +94,7 @@ pub fn agent_run_log(run: &str) -> String {
 
 /// [`PROJECT_RUNS`]' query.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RunListQuery {
     /// Only runs in this state (`pending`, `running`, `succeeded`, ...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -111,6 +114,7 @@ pub struct RunListQuery {
 
 /// [`RUN`]'s query: a read that waits.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RunQuery {
     /// The last event seen (`last_seq`): with `wait`, answer once the run
     /// has a later one, or has ended.
@@ -123,6 +127,7 @@ pub struct RunQuery {
 
 /// [`RUN_LOG`]'s query.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RunLogQuery {
     /// A byte offset in the log (a page's `next_offset`); 0 without.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -141,6 +146,7 @@ pub struct RunLogQuery {
 /// hosted workspaces (its id or name; the only one when left out), as a
 /// person's start by hand takes it (M214).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentRunStart {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spec: Option<String>,
@@ -158,6 +164,7 @@ pub struct AgentRunStart {
 
 /// A run, as the CLI and a machine's agents read it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunView {
     pub id: String,
@@ -227,6 +234,7 @@ pub struct RunView {
 /// The deploy a deploy's run applies (M219, UI audit #145): which, to
 /// which environment, of what.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunDeployView {
     /// `dep_…`.
@@ -254,6 +262,7 @@ impl RunDeployView {
 
 /// One change of a run's state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunEventView {
     pub seq: u64,
@@ -272,6 +281,7 @@ pub struct RunEventView {
 
 /// Something a run left behind (M213).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunArtifactView {
     pub name: String,
@@ -282,6 +292,7 @@ pub struct RunArtifactView {
 
 /// [`PROJECT_RUNS`]' answer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunList {
     pub project: String,
@@ -291,6 +302,7 @@ pub struct RunList {
 /// A page of a run's durable log (M213: hosted workspaces only, kept 30
 /// days).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunLogPage {
     pub run: String,
@@ -309,12 +321,14 @@ pub struct RunLogPage {
 
 /// [`AGENT_RUN_REACH`]'s answer.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RunReach {
     pub projects: Vec<RunReachProject>,
 }
 
 /// A project a machine's run grants reach, as its owner reads it now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RunReachProject {
     pub id: String,
     pub name: String,

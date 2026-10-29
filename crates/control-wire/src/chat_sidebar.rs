@@ -19,6 +19,7 @@ pub const MAX_SECTION_NAME: usize = 40;
 
 /// How a group's rooms are ordered.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ChatSort {
@@ -31,6 +32,7 @@ pub enum ChatSort {
 
 /// A section the account made.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatSection {
     /// Made by the page that creates it (`s_` and hex), stable under rename.
@@ -43,6 +45,7 @@ pub struct ChatSection {
 
 /// `GET /api/chat/sidebar`, and the body of `PUT` (which replaces it).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatSidebar {
     /// Starred rooms, in the order they were starred.

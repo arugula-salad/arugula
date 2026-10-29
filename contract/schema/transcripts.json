@@ -1,0 +1,94 @@
+{
+  "$defs": {
+    "ArchiveBlocks": {
+      "description": "`hosted.archive_blocks` (Arugula #214): [`ArchiveOpen`] for these agent\nblocks only. The platform asks before Move to… takes a session off a\nbox that stays up: its conversation goes with it, and the box's other\nblocks are archived when they close, as they end (one transcript per\nblock is kept). A daemon from before it answers that it doesn't know\nthe op.",
+      "properties": {
+        "blocks": {
+          "items": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "blocks"
+      ],
+      "type": "object"
+    },
+    "ArchiveOpen": {
+      "description": "`hosted.archive` (Arugula #209), control to a hosted machine through\nits relay: send every open agent block's transcript now, as closing it\nwould, and answer once each send is done. The platform asks just before\nit rebuilds the box, so a session that moves to the new box starts\nfrom its conversation, not without it.",
+      "type": "object"
+    },
+    "TranscriptArchived": {
+      "description": "The platform kept it: its id (`htx_…`).",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "TranscriptPost": {
+      "description": "What a hosted machine sends as an agent block closes.",
+      "properties": {
+        "agent": {
+          "default": "",
+          "description": "`claude`, `codex` or `acp`.",
+          "type": "string"
+        },
+        "block": {
+          "description": "The block's id on the machine.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "closed_at": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cut": {
+          "default": false,
+          "description": "The middle of the text was dropped to fit [`MAX_TEXT`].",
+          "type": "boolean"
+        },
+        "cwd": {
+          "default": null,
+          "description": "Where it worked, on the box.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "default": 0,
+          "description": "When the block was made and closed (the machine's clock, ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "description": "What the block was called.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "block",
+        "text"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::transcripts"
+}

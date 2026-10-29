@@ -28,8 +28,12 @@ impl<'de> Deserialize<'de> for ActivityTag {
     }
 }
 
+#[cfg(feature = "schema")]
+crate::const_schema!(ActivityTag = "activity");
+
 /// `{"t": "activity", "busy": true, "since_ms": ...}`, daemon to control.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Activity {
     pub t: ActivityTag,
     pub busy: bool,
@@ -46,6 +50,7 @@ impl Activity {
 
 /// A machine's latest [`Activity`], as the hub keeps it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct MachineActivity {
     /// The machine (its device id).
     pub machine: String,

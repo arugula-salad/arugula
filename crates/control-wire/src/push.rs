@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 /// device signed it and never reads one, so it answers with
 /// `PushSubs<serde_json::Value>`: the stored bodies, verbatim.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PushSubs<S = PushSub> {
     pub subs: Vec<S>,
 }
@@ -17,6 +18,7 @@ pub struct PushSubs<S = PushSub> {
 /// `POST /api/daemon/push`: one notification, encrypted for one subscription.
 /// A daemon sends only `endpoint` and `body`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PushRequest {
     /// The subscription's push-service URL.
     pub endpoint: String,
@@ -34,6 +36,7 @@ pub struct PushRequest {
 
 /// Control's answer to a push: what the push service said.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PushAnswer {
     pub status: u16,
 }

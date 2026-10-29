@@ -188,6 +188,7 @@ name = "arugula-control-wire"
 version = "0.0.0"
 dependencies = [
  "arugula-e2e",
+ "schemars",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -217,6 +218,7 @@ dependencies = [
  "hex",
  "hkdf",
  "p256",
+ "schemars",
  "serde",
  "serde_json",
  "sha2 0.11.0",
