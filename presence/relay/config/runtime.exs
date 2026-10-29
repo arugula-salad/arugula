@@ -55,7 +55,47 @@ if config_env() != :test do
         raise "LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET go together: set all three, or none"
     end
 
+  # Billing (#318's P11) on Stripe: STRIPE_SECRET_KEY (a test key,
+  # sk_test_…; a live one refuses to boot unless STRIPE_LIVE=1, which Jake
+  # sets when he goes live), STRIPE_WEBHOOK_SECRET (whsec_…, from the
+  # webhook endpoint or `stripe listen`) and the three Team prices'
+  # ids, which scripts/stripe_setup.exs makes and prints. No key: billing
+  # off. STRIPE_API_BASE points it elsewhere (stripe-mock);
+  # STRIPE_API_VERSION pins another API version.
+  stripe =
+    case System.get_env("STRIPE_SECRET_KEY") do
+      key when key in [nil, ""] ->
+        nil
+
+      key ->
+        %{
+          secret_key: key,
+          webhook_secret: System.get_env("STRIPE_WEBHOOK_SECRET"),
+          prices: %{
+            base: System.get_env("STRIPE_PRICE_TEAM_BASE"),
+            mau: System.get_env("STRIPE_PRICE_TEAM_MAU"),
+            minutes: System.get_env("STRIPE_PRICE_TEAM_MINUTES")
+          },
+          api_base: System.get_env("STRIPE_API_BASE") || "https://api.stripe.com",
+          # Stripe as merchant of record (Managed Payments): on unless 0.
+          managed_payments: System.get_env("STRIPE_MANAGED_PAYMENTS") not in ~w(0 false),
+          live: System.get_env("STRIPE_LIVE") in ~w(1 true)
+        }
+        |> then(fn c ->
+          case System.get_env("STRIPE_API_VERSION") do
+            v when v in [nil, ""] -> c
+            v -> Map.put(c, :api_version, v)
+          end
+        end)
+    end
+
+  # How often each node tells Stripe's meters (default 15 minutes);
+  # shorter for the test-mode check.
+  if ms = System.get_env("BILLING_REPORT_MS"),
+    do: config(:presence_relay, billing_report_ms: String.to_integer(ms))
+
   config :presence_relay,
+    stripe: stripe,
     livekit: livekit,
     apps: apps,
     demo: System.get_env("DEMO") in ~w(1 true),

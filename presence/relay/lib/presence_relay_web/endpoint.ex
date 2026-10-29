@@ -29,6 +29,9 @@ defmodule PresenceRelayWeb.Endpoint do
   # Each request's time and status, for the logs (Phoenix.Logger) and
   # /metrics (PresenceRelay.Metrics).
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
+  # Stripe's webhooks (POST /stripe/webhook): signed over the raw body, so
+  # before the parsers.
+  plug PresenceRelayWeb.StripeWebhook
   # JSON for the API; a form's encoding for the sign-in page's button
   # (its CSRF token comes in the body).
   plug Plug.Parsers, parsers: [:urlencoded, :json], pass: ["*/*"], json_decoder: Jason

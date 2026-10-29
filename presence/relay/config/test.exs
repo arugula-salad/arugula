@@ -20,7 +20,11 @@ config :presence_relay,
   livekit: %{url: "wss://livekit.test", key: "test-key", secret: "test-livekit-secret"},
   ring_ms: 300,
   # Usage is written when a test says (PresenceRelay.Usage.flush/0).
-  usage_flush_ms: :manual
+  usage_flush_ms: :manual,
+  # Billing off unless a test turns it on (against a fake Stripe), and
+  # meter events sent when a test says (PresenceRelay.Billing.Reporter.run/1).
+  stripe: nil,
+  billing_report_ms: :manual
 
 # Abuse limits out of the way (the limits' own tests set theirs), and no
 # watchdog.

@@ -57,7 +57,7 @@ function DayBars({ days, pick, unit, colour, title }: { days: Usage["days"]; pic
   );
 }
 
-function Meter({ used, cap }: { used: number; cap: number | null }) {
+function Meter({ used, cap, own }: { used: number; cap: number | null; own: number | null }) {
   if (cap === null)
     return (
       <div class="tile">
@@ -66,6 +66,7 @@ function Meter({ used, cap }: { used: number; cap: number | null }) {
         <span class="hint">No cap set.</span>
       </div>
     );
+  const planCap = own === null || cap < own;
   const share = cap > 0 ? used / cap : 1;
   const state = share >= 1 ? "at" : share >= 0.8 ? "near" : "ok";
   return (
@@ -77,7 +78,8 @@ function Meter({ used, cap }: { used: number; cap: number | null }) {
       <span class="track" role="meter" aria-valuemin={0} aria-valuemax={cap} aria-valuenow={used} aria-label="Active users against your cap">
         <span class="fill" style={{ width: `${Math.min(share, 1) * 100}%` }} />
       </span>
-      {state !== "ok" && <span class="state">{state === "at" ? "⚠ At your cap" : "Near your cap"}</span>}
+      {state !== "ok" && <span class="state">{state === "at" ? (planCap ? "⚠ At your plan's cap" : "⚠ At your cap") : planCap ? "Near your plan's cap" : "Near your cap"}</span>}
+      {planCap && <span class="hint">Your plan's cap. Upgrade under Plan and billing for more.</span>}
     </div>
   );
 }
@@ -151,7 +153,7 @@ export function UsageSection({ app }: { app: App }) {
       ) : (
         <>
           <div class="tiles">
-            <Meter used={usage.this_month.active_users} cap={usage.cap.active_users} />
+            <Meter used={usage.this_month.active_users} cap={usage.cap.limit === undefined ? usage.cap.active_users : usage.cap.limit} own={usage.cap.active_users} />
             <div class="tile">
               <span class="label">Call minutes this month</span>
               <b class="big">{fmt(usage.this_month.call_minutes)}</b>
@@ -198,7 +200,7 @@ export function UsageSection({ app }: { app: App }) {
               </tbody>
             </table>
           </details>
-          <Cap app={app} cap={usage.cap.active_users} onSaved={(c) => setUsage({ ...usage, cap: { active_users: c } })} />
+          <Cap app={app} cap={usage.cap.active_users} onSaved={(c) => api.usage(app.id).then((u) => setUsage(u ?? { ...usage, cap: { active_users: c } }))} />
         </>
       )}
     </Section>

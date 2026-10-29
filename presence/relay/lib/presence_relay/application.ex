@@ -8,6 +8,22 @@ defmodule PresenceRelay.Application do
     PresenceRelay.Apps.load()
     PresenceRelay.Limits.configure!()
 
+    # A live Stripe key without STRIPE_LIVE=1 (or half a config) stops the
+    # boot here (PresenceRelay.Billing).
+    stripe = Application.get_env(:presence_relay, :stripe)
+    PresenceRelay.Billing.check_config!(stripe)
+
+    cond do
+      stripe == nil ->
+        Logger.info("no Stripe config: billing is off (caps are the owners' own)")
+
+      PresenceRelay.Billing.test_mode?() ->
+        Logger.info("billing on, in Stripe test mode")
+
+      true ->
+        Logger.warning("billing on, with a LIVE Stripe key (STRIPE_LIVE=1)")
+    end
+
     if PresenceRelay.Mailer.ready?() == false,
       do: Logger.warning("no mail sender (RESEND_API_KEY unset): email sign-in is off")
 
@@ -40,6 +56,8 @@ defmodule PresenceRelay.Application do
           PresenceRelay.Rooms,
           # Usage (monthly active users, call minutes) and caps, batched.
           PresenceRelay.Usage,
+          # Team apps' usage to Stripe's meters, every 15 minutes (billing on).
+          PresenceRelay.Billing.Reporter,
           PresenceRelay.Chat.Memory,
           PresenceRelayWeb.Endpoint,
           # Mails when deep health fails (PresenceRelay.Health).

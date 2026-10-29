@@ -314,16 +314,37 @@ counted keeps getting in. Each node checks against cached counts, so a
 cluster may let in a few over the cap: at most the new people the other
 nodes let in during the last few seconds.
 
+**Caps by plan** (#318's P11, where the relay bills on Stripe): an app
+on Starter is capped at Starter's monthly active users (or the owner's
+cap, if lower); an app on Team has no cap but the owner's. A Team app
+whose payments stop keeps Team's caps for 7 days, then Starter's until
+it's paid. The system's own apps (meet.arugula.stream) are never capped
+by plan; a relay without billing caps only by the owner's cap.
+
 Hosted, the owner reads and sets them (session JSON, like the issuer):
 
 - `GET /api/v1/apps/<id>/usage?months=N` (default 3, 1–24):
   `{months: [{month: "2026-10", active_users, call_minutes}],
   days: [{day: "2026-10-29", active_users, call_minutes}],
-  cap: {active_users: n | null}, this_month: {active_users, call_minutes}}`.
+  cap: {active_users: n | null, limit: n | null}, this_month: {active_users, call_minutes}}`.
+  `cap.active_users` is the owner's cap; `cap.limit` is the one enforced
+  (the lower of it and the plan's).
   `months` is the last N months and `days` the last 31 days, both oldest
   first and ending with today's; up to a few seconds behind.
 - `PUT /api/v1/apps/<id>/cap` with `{active_users: n | null}` (a whole
   number, or null for no cap) → `{cap: {active_users}}`.
+- `GET /api/v1/apps/<id>/billing`: `{enabled, test_mode, managed_payments,
+  plan: "starter" | "team", subscription: {status, cancel_at_period_end,
+  current_period_end, grace_until} | null, cap: {active_users},
+  plans, estimate: {month, base, active_users, included_active_users,
+  extra_active_users, extra_active_users_cost, call_minutes,
+  call_minutes_cost, total}, can_upgrade, can_manage}`; money as dollar
+  strings (`"29.00"`). The estimate is this month so far, from the counts
+  above and the plan's prices, before tax.
+- `POST /api/v1/apps/<id>/billing/checkout` → `{url}`: a Stripe Checkout
+  page subscribing the app to Team. `POST …/billing/portal` → `{url}`:
+  Stripe's Customer Portal for its subscription. 409 where billing isn't
+  set up (or there's nothing to manage yet).
 
 ## Abuse limits
 
