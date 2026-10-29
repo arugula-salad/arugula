@@ -118,7 +118,7 @@ test("the relay's frames say who sent them; a member is on camera if any page is
     { name: "Jake", mode: "none", away: true, watching: false },
     { name: "Jake", mode: "avatar", look: { character: 2, colour: 0 }, away: false, watching: true },
   ]);
-  assert.deepEqual(m, { sub: "jake", name: "Jake", look: { character: 2, colour: 0 }, mode: "avatar", away: false, watching: true });
+  assert.deepEqual(m, { sub: "jake", name: "Jake", look: { character: 2, colour: 0 }, mode: "avatar", away: false, watching: true, call: null });
 });
 
 test("the socket's params: a room token, or a publishable key with the room and a guest's name", () => {
@@ -172,4 +172,75 @@ test("messages: history and said merge by id in order, say adds yours, loadEarli
   assert.deepEqual(c.messages.slice(0, 3).map((m) => m.text), ["old0", "old1", "old2"]);
   assert.equal(c.hasEarlier, false, "a short page means that's all");
   stop();
+});
+
+test("calls: a ring, its answer, the LiveKit room joined, muting, and leaving", async () => {
+  const t = fake();
+  const sent = [];
+  t.transport.call = async (to) => (sent.push(["call", to]), { id: "c1" });
+  t.transport.callAnswer = async (id, yes) => void sent.push(["answer", id, yes]);
+  t.transport.callLeave = (id) => sent.push(["leave", id]);
+  const lk = { joins: [], muted: [], left: 0 };
+  const joinCall = async (j, on) => {
+    lk.joins.push(j);
+    lk.on = on;
+    return { setMuted: async (m) => void lk.muted.push(m), startAudio: async () => {}, leave: async () => void lk.left++ };
+  };
+  const c = new PresenceClient({ transport: t.transport, storage: "t6.", joinCall });
+  const stop = c.watch();
+  assert.equal(c.callsOn, false, "off until the relay says");
+  t.on.calls(true);
+  assert.equal(c.callsOn, true);
+
+  // Ringing someone: your avatar waves, the call is ringing them.
+  assert.equal(await c.call("bob"), "c1");
+  assert.equal(c.waving("me", true), true);
+  assert.deepEqual([c.inCall.state, c.inCall.ringing], ["ringing", ["bob"]]);
+  t.on.callAnswer("c1", "bob", true);
+  assert.deepEqual(c.inCall.ringing, []);
+  assert.deepEqual(c.answers.map((a) => [a.from, a.yes]), [["bob", true]]);
+  t.on.callJoin({ id: "c1", url: "ws://lk", room: "acme:r:c1", token: "tok" });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(lk.joins[0].token, "tok");
+  lk.on.state("on");
+  lk.on.people([{ sub: "me", name: "Me", muted: false, speaking: false, audio: true }, { sub: "bob", name: "Bob", muted: false, speaking: true, audio: true }]);
+  assert.equal(c.inCall.state, "on");
+  assert.deepEqual(c.inCall.people.map((p) => p.sub), ["me", "bob"]);
+  t.on.members([{ sub: "bob", name: "Bob", look: null, mode: "none", away: false, watching: true, call: "c1" }]);
+  assert.equal(c.inMyCall("bob"), true);
+  await c.setMuted(true);
+  assert.deepEqual([c.inCall.muted, lk.muted], [true, [true]]);
+  // Bob leaves LiveKit: alone, this page leaves too.
+  lk.on.people([{ sub: "me", name: "Me", muted: true, speaking: false, audio: true }]);
+  assert.equal(c.inCall, null);
+  assert.deepEqual(sent.at(-1), ["leave", "c1"]);
+  assert.equal(lk.left, 1);
+  stop();
+});
+
+test("calls: being rung waves their avatar; a ring that's over goes; a no ends a ringing call", async () => {
+  const t = fake();
+  t.transport.call = async () => ({ id: "c2" });
+  t.transport.callAnswer = async () => {};
+  t.transport.callLeave = () => {};
+  const c = new PresenceClient({ transport: t.transport, storage: "t7.", joinCall: async () => ({}) });
+  const stop = c.watch();
+  t.on.call("sam", "c9");
+  assert.deepEqual(c.rings.map((r) => [r.from, r.id]), [["sam", "c9"]]);
+  assert.equal(c.waving("sam"), true);
+  t.on.callCancel("c9");
+  assert.deepEqual(c.rings, []);
+  t.on.call("sam", "c10");
+  await c.answerCall("c10", false);
+  assert.deepEqual(c.rings, []);
+  await c.call("sam");
+  t.on.callAnswer("c2", "sam", false, "no answer");
+  assert.equal(c.inCall, null);
+  assert.deepEqual(c.answers.at(-1).yes, false);
+  stop();
+});
+
+test("a member's call comes from their metas", () => {
+  assert.equal(memberOf("a", [{ name: "A", call: null }, { name: "A", call: "c1" }]).call, "c1");
+  assert.equal(memberOf("a", [{ name: "A" }]).call, null);
 });

@@ -13,6 +13,28 @@ export interface Member {
   mode: "outline" | "avatar" | "none";
   away: boolean;
   watching: boolean;
+  /** The call they're in, if any. */
+  call: string | null;
+}
+
+/** Someone in your call, you included. */
+export interface CallPerson {
+  sub: string;
+  name: string;
+  muted: boolean;
+  speaking: boolean;
+  audio: boolean;
+}
+
+/** Your call, or the one you're ringing someone into. */
+export interface Call {
+  id: string;
+  state: "ringing" | "joining" | "on" | "reconnecting";
+  ringing: string[];
+  people: CallPerson[];
+  muted: boolean;
+  blocked: boolean;
+  error: string;
 }
 
 export interface PresenceRoomProps {
@@ -29,11 +51,14 @@ export interface PresenceRoomProps {
 
 export function PresenceRoom(props: PresenceRoomProps): JSX.Element;
 
-export function People(props: { size?: "bust" | "head"; self?: "first" | "hide"; className?: string }): JSX.Element;
+export function People(props: { size?: "bust" | "head"; self?: "first" | "hide"; calls?: boolean; className?: string }): JSX.Element;
 
 export function Avatar(props: { user: string; size?: "head" | "bust"; className?: string; style?: CSSProperties }): JSX.Element;
 
 export function CameraControls(props: { controls?: "full" | "button"; className?: string }): JSX.Element;
+
+/** The call bar: a ring to answer, who you're calling, mute and leave. */
+export function CallControls(props: { className?: string }): JSX.Element;
 
 export interface Message {
   id: number;
@@ -63,6 +88,17 @@ export function usePresence(): {
   /** The page of messages before the first one here. */
   loadEarlier(): Promise<void> | void;
   answer(sub: string, yes: boolean): void;
+  /** Whether this relay has calls (hide call buttons where not). */
+  calls: boolean;
+  /** Who's ringing you, until answered or over. */
+  rings: { from: string; id: string; at: number }[];
+  /** Your call, or null. */
+  inCall: Call | null;
+  /** Ask someone to talk: a voice call once they say yes. Resolves with the call's id. */
+  call(sub: string): Promise<string>;
+  answerCall(id: string, yes: boolean): Promise<void> | void;
+  leaveCall(): void;
+  setMuted(muted: boolean): Promise<void> | void;
   setLook(look: Look): void;
   camera: { on: boolean; start(o?: { mode?: "avatar" | "outline" }): Promise<void> | void; stop(): void };
 };

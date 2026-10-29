@@ -17,7 +17,8 @@ import { startCamera, type Camera, type FrameStats } from "@arugula/presence-cor
 import { decodeFrame, type Frame } from "@arugula/presence-core/outline/frame";
 import { RIG, WAVE_MS, unpackRig, type Look, type Rig } from "@arugula/presence-core/avatar/rig";
 import type { AvatarCamera } from "@arugula/presence-core/avatar/cam";
-import type { Member, Message, Mode, Transport, TransportEvents } from "./transport.ts";
+import type { CallJoin, Member, Message, Mode, Transport, TransportEvents } from "./transport.ts";
+import { joinLiveKit, type CallPerson, type JoinCall, type LiveCall } from "./call.ts";
 
 /** The most messages a page keeps (older ones are a loadEarlier() away). */
 export const MESSAGES_KEPT = 500;
@@ -37,6 +38,26 @@ export const REACT_MS = 2400;
 
 /** The reactions a page offers (any single emoji goes on the wire). */
 export const REACTIONS = ["👍", "👏", "😂", "🎉", "❤️", "👋", "☕"] as const;
+
+/** A call you're in, or ringing someone into (PROTOCOL.md "Calls"). */
+export interface Call {
+  id: string;
+  /** Ringing someone (nobody's said yes yet), joining LiveKit, in it, or
+   * LiveKit reconnecting by itself. */
+  state: "ringing" | "joining" | "on" | "reconnecting";
+  /** Who you're ringing now (into this call). */
+  ringing: string[];
+  /** Who's in it, you included, as LiveKit says (once joined). */
+  people: CallPerson[];
+  muted: boolean;
+  /** The browser blocked the call's audio until a click (`startAudio`). */
+  blocked: boolean;
+  error: string;
+}
+
+/** In a call that's on, alone this long (everyone else left, or nobody
+ * came), and it ends. */
+const ALONE_MS = 30_000;
 
 /** A frame older than this is someone whose camera went away. */
 const STALE = 12_000;
@@ -83,6 +104,8 @@ export interface PresenceClientOptions {
   /** Where this browser keeps your mode and look (localStorage keys
    * `<storage>mode`, `<storage>look`). */
   storage?: string;
+  /** Tests: how a call's LiveKit room is joined. */
+  joinCall?: JoinCall;
 }
 
 export class PresenceClient {
@@ -130,14 +153,26 @@ export class PresenceClient {
   /** Reactions in the last REACT_MS, yours included, oldest first: an
    * emoji floating over someone's tile. */
   reactions: { from: string; emoji: string; at: number }[] = [];
-  /** Answers to your waves, newest last, until dismissed. */
+  /** Answers to your waves and calls, newest last, until dismissed. */
   answers: { from: string; yes: boolean; at: number }[] = [];
+  /** Whether the relay has calls (PROTOCOL.md "Calls"): hide call
+   * buttons where it hasn't. */
+  callsOn = false;
+  /** Who's ringing you, newest last, until answered or over. */
+  rings: { from: string; id: string; at: number }[] = [];
+  /** The call you're in or ringing someone into. */
+  inCall: Call | null = null;
+  private live_: LiveCall | null = null;
+  private joinCall: JoinCall;
+  private alone: number | undefined;
+  private rejoined = false;
 
   constructor(o: PresenceClientOptions) {
     this.transport = o.transport;
     this.storage = o.storage ?? "arugula.presence.";
     this.mode = kept(`${this.storage}mode`, "outline");
     this.look = kept(`${this.storage}look`, { character: 2, colour: 0 });
+    this.joinCall = o.joinCall ?? joinLiveKit;
   }
 
   subscribe(fn: () => void): () => void {
@@ -233,6 +268,7 @@ export class PresenceClient {
     return (
       this.waves.some((w) => w.from === sub && fresh(w.at)) ||
       this.answers.some((a) => a.from === sub && a.yes && fresh(a.at)) ||
+      this.rings.some((r) => r.from === sub && fresh(r.at)) ||
       this.reactions.some((r) => r.from === sub && r.emoji === "👋" && fresh(r.at))
     );
   }
@@ -242,6 +278,128 @@ export class PresenceClient {
     this.waves = this.waves.filter((k) => k.from !== from);
     this.transport.answer?.(from, yes);
     this.emit();
+  }
+
+  /** Ring `to` to talk (into your call, if you're in one): your avatar
+   * waves, theirs rings. Resolves with the call's id; rejects with the
+   * relay's reason ("calls aren't set up here", "not in the room"…). */
+  async call(to: string): Promise<string> {
+    if (!this.transport.call) throw new Error("calls aren't set up here");
+    this.wavedAt = Date.now();
+    this.emit();
+    const { id } = await this.transport.call(to);
+    const c = this.inCall;
+    this.inCall = c && c.id === id ? { ...c, ringing: [...c.ringing.filter((s) => s !== to), to] } : { id, state: "ringing", ringing: [to], people: [], muted: false, blocked: false, error: "" };
+    this.emit();
+    return id;
+  }
+
+  /** Answer a ring: yes joins the call (leaving any other). */
+  async answerCall(id: string, yes: boolean): Promise<void> {
+    this.rings = this.rings.filter((r) => r.id !== id);
+    if (yes) this.wavedAt = Date.now();
+    this.emit();
+    await this.transport.callAnswer?.(id, yes);
+  }
+
+  /** Leave the call (or stop ringing). */
+  leaveCall() {
+    const c = this.inCall;
+    if (!c) return;
+    this.transport.callLeave?.(c.id);
+    this.endCall();
+  }
+
+  async setMuted(muted: boolean) {
+    if (!this.inCall) return;
+    this.inCall = { ...this.inCall, muted };
+    this.emit();
+    await this.live_?.setMuted(muted);
+  }
+
+  /** From a click: play a call the browser wouldn't play by itself. */
+  async startAudio() {
+    await this.live_?.startAudio();
+    if (this.inCall) this.inCall = { ...this.inCall, blocked: false };
+    this.emit();
+  }
+
+  /** Whether `sub` is in a call (presence says), and in yours. */
+  inACall(sub: string): boolean {
+    return !!this.members.find((m) => m.sub === sub)?.call;
+  }
+
+  inMyCall(sub: string): boolean {
+    const c = this.inCall;
+    return !!c && c.state !== "ringing" && this.members.find((m) => m.sub === sub)?.call === c.id;
+  }
+
+  private endCall() {
+    const live = this.live_;
+    this.live_ = null;
+    this.inCall = null;
+    clearTimeout(this.alone);
+    void live?.leave();
+    this.emit();
+  }
+
+  private patchCall(id: string, change: Partial<Call>) {
+    if (this.inCall?.id !== id) return;
+    this.inCall = { ...this.inCall, ...change };
+    this.emit();
+  }
+
+  /** Into call `j.id`'s LiveKit room (out of any other first). */
+  private async joined(j: CallJoin) {
+    if (this.inCall?.id !== j.id) {
+      void this.live_?.leave();
+      this.live_ = null;
+    }
+    const was = this.inCall?.id === j.id ? this.inCall : null;
+    this.inCall = { id: j.id, state: "joining", ringing: was?.ringing ?? [], people: [], muted: was?.muted ?? false, blocked: false, error: "" };
+    this.emit();
+    // Nobody else turns up: it ends.
+    const lonely = (people: CallPerson[]) => {
+      clearTimeout(this.alone);
+      if (people.length <= 1) this.alone = setTimeout(() => this.inCall?.id === j.id && this.leaveCall(), ALONE_MS) as unknown as number;
+    };
+    let had = 0;
+    try {
+      const live = await this.joinCall(j, {
+        people: (people) => {
+          // Everyone else left: so does this page.
+          if (had > 1 && people.length <= 1) return this.inCall?.id === j.id && this.leaveCall();
+          had = Math.max(had, people.length);
+          lonely(people);
+          this.patchCall(j.id, { people });
+        },
+        state: (state, byUs) => {
+          if (state !== "ended") return this.patchCall(j.id, { state });
+          if (byUs || this.inCall?.id !== j.id) return;
+          void this.rejoin(j.id);
+        },
+        blocked: (blocked) => this.patchCall(j.id, { blocked }),
+      });
+      if (this.inCall?.id !== j.id) return void live.leave();
+      this.live_ = live;
+      this.rejoined = false;
+      if (this.inCall.muted) await live.setMuted(true);
+      lonely(this.inCall.people);
+    } catch (e) {
+      this.patchCall(j.id, { error: `The call didn't connect: ${(e as Error).message}` });
+    }
+  }
+
+  /** LiveKit dropped this page: once, back in with a fresh token. */
+  private async rejoin(id: string) {
+    this.live_ = null;
+    if (this.rejoined || !this.transport.callToken) return this.leaveCall();
+    this.rejoined = true;
+    try {
+      await this.joined(await this.transport.callToken(id));
+    } catch {
+      this.leaveCall();
+    }
   }
 
   /** Forget an answer to your wave (it's been seen). */
@@ -437,6 +595,31 @@ export class PresenceClient {
       this.answers = [...this.answers.filter((a) => a.from !== from), { from, yes, at: Date.now() }];
       this.emit();
     },
+    calls: (on) => {
+      this.callsOn = on;
+      this.emit();
+    },
+    call: (from, id) => {
+      this.rings = [...this.rings.filter((r) => r.id !== id && r.from !== from), { from, id, at: Date.now() }];
+      this.emit();
+    },
+    callCancel: (id) => {
+      this.rings = this.rings.filter((r) => r.id !== id);
+      this.emit();
+    },
+    callAnswer: (id, from, yes) => {
+      // A call's answer reads like a wave's (waved back, not now).
+      this.answers = [...this.answers.filter((a) => a.from !== from), { from, yes, at: Date.now() }];
+      const c = this.inCall;
+      if (c?.id === id) {
+        const ringing = c.ringing.filter((s) => s !== from);
+        // Nobody said yes to a call that hadn't started: it's over.
+        if (!yes && c.state === "ringing" && !ringing.length) this.inCall = null;
+        else this.inCall = { ...c, ringing };
+      }
+      this.emit();
+    },
+    callJoin: (j) => void this.joined(j),
   };
 
   private open() {
@@ -447,6 +630,7 @@ export class PresenceClient {
   }
 
   private close() {
+    this.leaveCall();
     this.transport.unlisten();
     clearInterval(this.sweep);
     this.seen.clear();

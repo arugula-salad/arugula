@@ -20,6 +20,7 @@ export const browser = {
   <arugula-camera></arugula-camera>
   <arugula-people></arugula-people>
   <arugula-chat></arugula-chat>
+  <arugula-call></arugula-call>
 </arugula-room>`,
   JavaScript: `import { connect } from "${SDK}";
 
@@ -175,8 +176,8 @@ export const roomRule = `// Members of org "acme" into acme:… rooms only:
 
 export const jsApi = `const room = await connect({ room, token, relay? });
 
-room.members                  // [{ sub, name, look, mode, away, watching }]
-room.on("members", (members) => {})   // also "wave", "answer", "react", "message", "live"
+room.members                  // [{ sub, name, look, mode, away, watching, call }]
+room.on("members", (members) => {})   // also "wave", "answer", "react", "message", "ring", "call", "live"
 await room.camera.start({ mode: "avatar" | "outline" })
 room.camera.stop()
 room.setLook({ character, colour })
@@ -186,6 +187,12 @@ await room.say("hi")                 // kept; everyone gets it as "message"
 room.messages                        // [{ id, sub, name, text, at }], oldest first
 await room.loadEarlier()             // the 50 before the first one here
 room.chat(el)                        // the messages and an input, drawn into el
+room.calls                           // whether this relay has calls
+await room.call(sub)                 // ask to talk: a voice call once they say yes
+room.on("ring", (from, id) => room.answerCall(id, true))
+room.inCall                          // { id, state, people: [{ sub, muted, speaking }], muted }
+room.setMuted(true)  ·  room.leaveCall()
+room.callBar(el)                     // a ring to answer, mute and leave, drawn into el
 room.mount(el, { size: "bust" })      // everyone, drawn into el
 room.avatar(el, sub, { size: "head" })  // one person
 room.leave()`;
@@ -198,4 +205,4 @@ export const theming = `arugula-room {
   --arugula-radius: 12px;
 }`;
 
-export const reactHook = `const { members, messages, say, wave, react, camera } = usePresence();`;
+export const reactHook = `const { members, messages, say, wave, react, camera, calls, call, inCall, leaveCall } = usePresence();`;

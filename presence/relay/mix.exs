@@ -30,7 +30,9 @@ defmodule PresenceRelay.MixProject do
       {:postgrex, "~> 0.19"},
       {:swoosh, "~> 1.17"},
       {:finch, "~> 0.19"},
-      {:dns_cluster, "~> 0.2"}
+      {:dns_cluster, "~> 0.2"},
+      # Calls' start and end (PresenceRelay.Calls): already Phoenix's.
+      {:telemetry, "~> 1.0"}
     ]
   end
 
