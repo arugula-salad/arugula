@@ -1,0 +1,282 @@
+/* A room: the bar, the controls, the tiles, the chat beside them, a
+   wave's toast. arugula.stream's try-it room and meet's rooms share it. */
+
+/* The room's chat, beside the tiles */
+
+.room-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+}
+
+.chat {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  height: min(70vh, 640px);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--k-server) 30%, var(--line));
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.chat-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-msg {
+  display: grid;
+  gap: 2px;
+}
+
+.chat-msg .who {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chat-msg.mine .who {
+  color: var(--accent);
+}
+
+.chat-msg time {
+  font: 10px var(--f-mono);
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.chat-msg .text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #c4cad6;
+  font-size: 14px;
+}
+
+.chat .earlier {
+  align-self: center;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+.chat-say {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.chat-say textarea {
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--void);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  resize: none;
+  max-height: 120px;
+}
+
+.chat-say textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+@media (max-width: 860px) {
+  .room-body {
+    grid-template-columns: 1fr;
+  }
+
+  .chat {
+    position: static;
+    height: 420px;
+  }
+}
+
+/* The room */
+
+.room {
+  padding: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-bottom: 16px;
+}
+
+.bar .name {
+  font: 800 28px/1 var(--f-display);
+  margin-right: auto;
+}
+
+.bar .name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.bar .name small {
+  font: 400 13px var(--f-mono);
+  color: var(--dim);
+  margin-left: 10px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.seg {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.swatch.on {
+  border-color: var(--fg);
+}
+
+.stats {
+  font: 12px var(--f-mono);
+  color: var(--dim);
+}
+
+.error {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.tile {
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.tile.live {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.tile .view {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: var(--bg);
+  color: var(--accent);
+}
+
+.tile canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.tile .still {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  font: 800 40px var(--f-display);
+}
+
+.tile figcaption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.tile figcaption .who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile .tag {
+  font: 10px var(--f-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.wave {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+.toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  max-width: 340px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.toast .row {
+  display: flex;
+  gap: 8px;
+}
+
+.join {
+  max-width: 420px;
+  margin: 18vh auto 0;
+  padding: 0 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.join h2 {
+  font: 800 34px/1 var(--f-display);
+  margin: 0;
+}
+
+.empty {
+  color: var(--dim);
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+@media (max-width: 520px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

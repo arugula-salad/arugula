@@ -7,3 +7,4 @@ demo/public/depth
 sdk/elixir/_build
 sdk/elixir/deps
 react/pack/dist
+meet/e2e/out

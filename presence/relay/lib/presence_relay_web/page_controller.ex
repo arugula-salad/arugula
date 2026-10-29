@@ -25,6 +25,9 @@ defmodule PresenceRelayWeb.PageController do
   def index(conn, %{"path" => [top | _]}) when top in ~w(api sdk mediapipe depth npm py go gems),
     do: send_resp(conn, 404, "")
 
+  # Likewise meet's built files: a missing one isn't meet's HTML.
+  def index(conn, %{"path" => ["meet", "assets" | _]}), do: send_resp(conn, 404, "")
+
   # `go get arugula.stream/presence`: the module is served by the module
   # proxy protocol from /go (presence/sdk/host.sh), so the import path
   # names it with the "mod" kind.
@@ -39,10 +42,16 @@ defmodule PresenceRelayWeb.PageController do
   end
 
   def index(conn, _) do
-    # The demo's build (git ignores it); tests point at a fixture instead.
+    # The demo's build, or meet's (git ignores both); tests point at
+    # fixtures instead.
     path =
-      Application.get_env(:presence_relay, :index_html) ||
-        Application.app_dir(:presence_relay, "priv/static/index.html")
+      if meet?(conn),
+        do:
+          Application.get_env(:presence_relay, :meet_index_html) ||
+            Application.app_dir(:presence_relay, "priv/static/meet/index.html"),
+        else:
+          Application.get_env(:presence_relay, :index_html) ||
+            Application.app_dir(:presence_relay, "priv/static/index.html")
 
     if File.exists?(path) do
       conn |> put_resp_content_type("text/html") |> send_file(200, path)
@@ -50,4 +59,14 @@ defmodule PresenceRelayWeb.PageController do
       send_resp(conn, 404, "")
     end
   end
+
+  @doc """
+  Whether a page is meet.arugula.stream's (#318 P6): on a host starting
+  `meet.`, or under `/meet` on any host (staging, before meet's DNS). Its
+  build (priv/static/meet) works under either: its files are always under
+  /meet, and it reads its base from the page's path.
+  """
+  def meet?(%Plug.Conn{host: "meet." <> _}), do: true
+  def meet?(%Plug.Conn{path_info: ["meet" | _]}), do: true
+  def meet?(_), do: false
 end

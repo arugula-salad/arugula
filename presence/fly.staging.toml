@@ -18,6 +18,9 @@ primary_region = "iad"
   PHX_HOST = "arugula-stream-staging.fly.dev"
   PORT = "4000"
   DEMO = "1"
+  # meet (#318 P6) is at /meet here until meet.arugula.stream's DNS: its
+  # guests' publishable key works from this origin.
+  MEET_ORIGINS = "https://arugula-stream-staging.fly.dev"
   # Fly's private network (and the Managed Postgres host on it) is IPv6.
   ECTO_IPV6 = "true"
 

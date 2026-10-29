@@ -49,6 +49,9 @@ defmodule PresenceRelayWeb.Router do
     post "/auth/logout", AuthController, :logout
     get "/auth/providers", AuthController, :providers
     get "/me", MeController, :show
+    get "/meet/session", MeetController, :session
+    post "/meet/rooms", MeetController, :create
+    get "/meet/rooms/:slug", MeetController, :show
   end
 
   scope "/api/v1", PresenceRelayWeb do
@@ -62,8 +65,11 @@ defmodule PresenceRelayWeb.Router do
     delete "/apps/:id/origins", AppsController, :remove_origin
     post "/apps/:id/keys", AppsController, :make_key
     delete "/apps/:id/keys/:key", AppsController, :revoke_key
+    get "/meet/rooms", MeetController, :rooms
+    post "/meet/rooms/:slug/token", MeetController, :token
   end
 
-  # Anything else is the demo site's (a single-page app): its index.
+  # Anything else is a single-page app's: meet's on a meet. host or under
+  # /meet, else the demo site's (PageController.index).
   get "/*path", PresenceRelayWeb.PageController, :index
 end
