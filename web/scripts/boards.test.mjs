@@ -1,4 +1,4 @@
-// A board's words and paths (live status board, step 2): a row's glyph, a
+// A board's words and paths (boards, step 2): a row's glyph, a
 // zone's progress, a pointer's label and the id a person types for one, and
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";

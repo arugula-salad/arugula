@@ -1,4 +1,4 @@
-/* A project's board (live status board, step 2): the platform page's board
+/* A project's board (boards, step 2): the platform page's board
    and the shell's board block draw this (shared/boards/view.tsx). Tags are
    the forge blocks' (../style.css). It fits a phone: a row is a glyph, its
    words and one menu button, and its notes wrap. */

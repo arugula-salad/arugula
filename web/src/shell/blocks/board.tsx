@@ -1,4 +1,4 @@
-// A project's board as a block (live status board, step 2): a pin onto one
+// A project's board as a block (boards, step 2): a pin onto one
 // of the platform's boards (crates/daemon/src/board_block.rs, config
 // `{board}`), drawn with the platform page's board view
 // (../../shared/boards/view). The daemon keeps nothing of it but which

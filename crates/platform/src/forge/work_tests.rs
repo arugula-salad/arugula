@@ -1,4 +1,4 @@
-//! A project's work (live status board, the picker and the inbox), in
+//! A project's work (boards, the picker and the inbox), in
 //! M165's world (`viewer_tests::world`): issues, PRs and runs in one list,
 //! newest first; a repo the reader can't read left out; and untriaged
 //! counting only this project's boards.

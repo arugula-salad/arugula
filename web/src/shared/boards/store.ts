@@ -1,4 +1,4 @@
-// A project's boards (live status board, step 2), as the platform's board
+// A project's boards (boards, step 2), as the platform's board
 // routes give them to the reader (crates/platform/src/boards.rs): the list,
 // one board with its zones and rows (and each `fi_` and `iss_` row's state
 // now as `live`), and the writes. Shared: the platform page's board page

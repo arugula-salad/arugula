@@ -33,8 +33,8 @@ const POWERS: Record<string, string> = {
   "runs.read": "Read runs",
   "runs.start": "Start run specs",
   "runs.command": "Start commands and instructions as runs",
-  "boards.read": "Read status boards",
-  "boards.write": "Change status boards",
+  "boards.read": "Read boards",
+  "boards.write": "Make and change boards",
   "sessions.start": "Start agent sessions as you",
   "sessions.reply": "Answer and prompt agent sessions",
 };

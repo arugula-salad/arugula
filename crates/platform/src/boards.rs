@@ -1,4 +1,4 @@
-//! Boards over the platform's routes (live status board, step 1): a
+//! Boards over the platform's routes (boards, step 1): a
 //! project's boards ([`db::boards`]), each an ordered list of zones that
 //! hold an ordered list of rows. A board is a project-scoped platform
 //! object (`brd_`), not a daemon block: it is here, with every machine

@@ -1,4 +1,4 @@
-//! Boards (live status board, step 1): a project's board is an ordered
+//! Boards (boards, step 1): a project's board is an ordered
 //! list of zones, each an ordered list of rows. A row points at something
 //! (a forge item, an issue, a run, a Cloud workspace or an agent block) or
 //! at nothing, and carries a one-line note and a status. A zone of kind

@@ -211,7 +211,7 @@ fn generate() -> String {
         c.visit::<IssueExportQuery>();
         c.visit::<IssueExport>();
     }
-    // A project's boards (live status board).
+    // A project's boards (boards).
     {
         use arugula_control_wire::boards::*;
         c.visit::<BoardList>();

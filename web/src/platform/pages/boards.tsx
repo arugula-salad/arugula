@@ -1,4 +1,4 @@
-// `/p/:project/boards` and `/p/:project/boards/:board` (live status board,
+// `/p/:project/boards` and `/p/:project/boards/:board` (boards,
 // step 2): a project's boards, and one. A board is the platform's object
 // (crates/platform/src/boards.rs): zones of rows, each pointing at an issue,
 // a PR, a run, a workspace or an agent block, with a note and a status.

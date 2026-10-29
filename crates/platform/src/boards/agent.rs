@@ -1,4 +1,4 @@
-//! Boards for a machine's agents (live status board, step 3): the routes
+//! Boards for a machine's agents (boards, step 3): the routes
 //! MCP's board tools call, signed by the machine. Each is one of
 //! [`super`]'s functions with the agent as the [`Actor`], so who may do
 //! what is checked in one place ([`super::place`] and the rules beside it):

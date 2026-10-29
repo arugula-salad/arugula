@@ -92,7 +92,7 @@ pub const ADDITIONAL_FORGES: &str = "additional-forges";
 /// Agent recipes offered from this machine, the team's agent catalog and
 /// A2A tasks. Was `agents`.
 pub const AGENT_DELEGATION: &str = "agent-delegation";
-/// Boards: a project's live status board, which is control's.
+/// Boards: a project's boards and epics, which are control's.
 pub const BOARDS: &str = "boards";
 
 /// What every agent is told about Docs (#1486), in one wording: the MCP
@@ -163,7 +163,7 @@ pub const FLAGS: &[Flag] = &[
         "Local agent delegation",
         "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.",
     ),
-    row(BOARDS, "Boards", "A project's live status board, which needs control."),
+    row(BOARDS, "Boards", "A project's boards and epics, which need control."),
 ];
 
 /// Flags that were, and why they aren't: a feature that left Labs. A file

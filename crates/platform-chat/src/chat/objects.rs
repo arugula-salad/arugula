@@ -21,7 +21,7 @@
 //! - `ses_`: an agent session (M254), in its project. Its own thread is
 //!   the one it was asked in; this is the thread on the session as an
 //!   object, for a link to it to name and preview.
-//! - `brd_`: a board (live status board), in its project.
+//! - `brd_`: a board (boards), in its project.
 //! - `pdc_`: a project Doc (aru-118), in its project: its thread is what a
 //!   write pushes an object change on.
 //! - Anything else: no such object.

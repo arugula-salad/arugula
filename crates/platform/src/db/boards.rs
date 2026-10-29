@@ -1,4 +1,4 @@
-//! Boards (live status board, step 1): a project's boards, each an ordered
+//! Boards (boards, step 1): a project's boards, each an ordered
 //! list of zones that each hold an ordered list of rows. Who may do what is
 //! decided by the routes (`crate::boards`); this is storage. The tables,
 //! with notes on their columns, are made by `0058_boards`.

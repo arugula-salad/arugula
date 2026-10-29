@@ -131,7 +131,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
           { label: "Pin a chat room…", run: () => void pinChatRoom(client, { from: id }) } as MenuItem,
         ]
       : []),
-    // A project's board beside it (live status board), with the boards flag.
+    // A project's board beside it, with the boards flag.
     ...(!client.state?.roles && client.flag("boards") ? [{ label: "Pin a board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
     // M33: Claude Code conversations from terminals and the desktop app.
     ...(owner ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),

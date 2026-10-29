@@ -1,4 +1,4 @@
-//! A board as a block (live status board, step 2): a pin of one project
+//! A board as a block (boards, step 2): a pin of one project
 //! board beside the panes. The block holds only which board it is: the
 //! board is Arugula control's, which the page reads as the person looking
 //! (`web/src/shell/blocks/board.tsx`, drawing the same view as the

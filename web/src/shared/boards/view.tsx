@@ -1,4 +1,4 @@
-// One board (live status board, step 2), wherever it's drawn: the platform
+// One board (boards, step 2), wherever it's drawn: the platform
 // page's `/p/:project/boards/:board`, and a board block in a daemon
 // workspace (a pin onto it, `shell/blocks/board.tsx`). Zones in order, each
 // with a progress bar and its rows: a glyph for the row's own status, a
@@ -21,6 +21,7 @@ import { useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
 import { whoLabel } from "../issues/text";
+import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import "./boards.css";
@@ -436,6 +437,11 @@ function Row({
             {card && who && (
               <span class="board-who dim" data-board-who>
                 {who}
+              </span>
+            )}
+            {r.agent && (
+              <span class="board-agent dim" data-row-agent>
+                {agentShort(r.agent)}
               </span>
             )}
             {r.live && !card && <span class="board-item dim">{r.live.title}</span>}

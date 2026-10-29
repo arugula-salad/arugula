@@ -2575,7 +2575,7 @@ auth = "daemon"
 clients = ["daemon"]
 note = "An opted-in machine's forge blocks' attention, items and reasons without titles (M171's shadow period): compared with the owner's inbox and logged, nothing returned but counts. Rate-limited per account."
 
-# ---- platform: boards (live status board, step 1)
+# ---- platform: boards (boards, step 1)
 # A project's boards, for its members: a team's owners and editors change
 # them, its viewers read them; anyone else gets 404. Behind the `boards`
 # Labs flag (the account's, else a team's): without it every route here

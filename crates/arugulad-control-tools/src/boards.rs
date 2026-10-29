@@ -1,4 +1,4 @@
-//! A project's live status board from agents (boards, step 3): the board in
+//! A project's boards from agents (boards, step 3): the board in
 //! Arugula control (`brd_…`, an ordered list of zones of rows), read with
 //! `board_read` and changed with `board_write`, behind the `boards` Labs
 //! flag (listed only when it is on, and refused when it is off).

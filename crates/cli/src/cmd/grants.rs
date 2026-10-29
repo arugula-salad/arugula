@@ -70,7 +70,7 @@ pub enum GrantsCmd {
     /// project (`--project`) or your DMs (`--dms`), deploys.plan over a
     /// project (plan deploys and ask for approval, never approve),
     /// runs.read, runs.start (its run specs) or runs.command (its own
-    /// commands) over a project, boards.read (a project's status boards) or
+    /// commands) over a project, boards.read (a project's boards) or
     /// boards.write (add rows, set notes and statuses, move rows; never
     /// make or delete a zone) over a project, sessions.start (start agent
     /// sessions as you: you're the asker, and you pay) or sessions.reply
