@@ -2587,7 +2587,7 @@ path = "/api/projects/{project}/boards"  # wire::boards::PROJECT_BOARDS
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "A project's boards, oldest first."
+note = "A project's boards: open ones first, then closed ones, each oldest first. Each has its goal, done note and progress (its issue rows, each issue once, done when closed at its source)."
 
 [[route]]
 method = "POST"
@@ -2604,6 +2604,30 @@ process = "platform"
 auth = "session"
 clients = ["page", "cli"]
 note = "A board with its zones and rows in order: any member."
+
+[[route]]
+method = "PATCH"
+path = "/api/boards/{id}"  # wire::boards::BOARD
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Sets the board's title or goal (an empty goal clears it): owners and editors, people only."
+
+[[route]]
+method = "POST"
+path = "/api/boards/{id}/close"  # wire::boards::BOARD_CLOSE
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Closes the board with a done note, not empty: owners and editors, people only. Closing a closed board replaces the note and keeps the first closed_at. Its issues and rows are left alone."
+
+[[route]]
+method = "POST"
+path = "/api/boards/{id}/reopen"  # wire::boards::BOARD_REOPEN
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Opens a closed board again and keeps its done note: owners and editors, people only."
 
 [[route]]
 method = "PUT"

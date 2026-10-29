@@ -22,8 +22,17 @@ use crate::chat::ChatAgent;
 /// `GET`: a project's boards, [`BoardList`]; `POST` [`NewBoard`]: make one,
 /// answered [`BoardView`].
 pub const PROJECT_BOARDS: &str = "/api/projects/{project}/boards";
-/// `GET`: a board with its zones and rows in order, [`BoardView`].
+/// `GET`: a board with its zones and rows in order, [`BoardView`]. `PATCH`
+/// [`EditBoard`]: set its title or goal (people only, owners and editors),
+/// answered [`BoardView`].
 pub const BOARD: &str = "/api/boards/{id}";
+/// `POST` [`CloseBoard`]: close the board with a done note (people only,
+/// owners and editors); answered [`BoardView`]. Its issues and rows stay as
+/// they are, and its rows stay editable.
+pub const BOARD_CLOSE: &str = "/api/boards/{id}/close";
+/// `POST`, no body: open a closed board again, keeping its done note;
+/// answered [`BoardView`].
+pub const BOARD_REOPEN: &str = "/api/boards/{id}/reopen";
 /// `PUT` [`PutEntry`]: make or change a zone or a row, answered with the
 /// board, [`BoardView`].
 pub const BOARD_ENTRIES: &str = "/api/boards/{id}/entries";
@@ -82,6 +91,8 @@ pub fn agent_board_entry_move(id: &str, entry: &str) -> String {
 
 /// The longest title, in characters, and the longest note: one line each.
 pub const TITLE_MAX: usize = 120;
+/// A board's goal or done note, in characters.
+pub const GOAL_MAX: usize = 2000;
 pub const NOTE_MAX: usize = 280;
 /// The most boards in a project, zones in a board and rows in a zone.
 pub const BOARDS_MAX: u64 = 100;
@@ -153,7 +164,7 @@ pub enum ZoneKind {
     Proofs,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectBoard"))]
 pub struct Board {
     pub id: String,
@@ -163,6 +174,51 @@ pub struct Board {
     pub created_by: String,
     pub created_at: u64,
     pub updated_at: u64,
+    /// What the board is for, in a paragraph; empty means none.
+    #[serde(default)]
+    pub goal: String,
+    /// What was done, written when the board was closed; kept when it is
+    /// opened again. Empty before it was ever closed.
+    #[serde(default)]
+    pub done_note: String,
+    /// When it was closed; absent while it is open.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub closed_at: Option<u64>,
+    /// The account that closed it; empty once that account is deleted.
+    #[serde(default)]
+    pub closed_by: String,
+    /// How many of its issues are closed.
+    #[serde(default)]
+    pub progress: BoardProgress,
+}
+
+/// A board's issues, counted: the rows on a native issue or a mirrored
+/// GitHub issue (not a PR, a run or a link), each issue once, and the ones
+/// closed at their source. A row the reader can't read counts toward
+/// neither; a row's own status counts for nothing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardProgress"))]
+pub struct BoardProgress {
+    pub done: u32,
+    pub total: u32,
+}
+
+/// `PATCH`: what to change; a field left out stays. An empty goal clears it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct EditBoard {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub goal: Option<String>,
+}
+
+/// `POST` to close a board: what was done, not empty.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CloseBoard {
+    pub done_note: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -640,6 +696,7 @@ mod tests {
             created_by: "a".into(),
             created_at: 0,
             updated_at: 0,
+            ..Default::default()
         };
         let mut proven_run = row(Pointer::Run { id: "run_aa22".into() }, Status::Done, "Release build");
         proven_run.live = Some(Live {
@@ -704,6 +761,7 @@ PROOFS                                                    ███████�
             created_by: "a".into(),
             created_at: 0,
             updated_at: 0,
+            ..Default::default()
         };
         let on = |note: &str, who: &[&str]| {
             let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Status::Open, note);
@@ -744,6 +802,7 @@ Build                                                     ░░░░░░░�
             created_by: "a".into(),
             created_at: 0,
             updated_at: 0,
+            ..Default::default()
         };
         let mut r = row(Pointer::Block { machine: "m1".into(), pane: "7".into() }, Status::Working, "Tokenizer");
         r.block = Some(BlockState {
@@ -764,5 +823,16 @@ Build                                                     ░░░░░░░�
 
         let extra = serde_json::json!({ "pane": "7", "block": { "state": "idle", "message": "hello" } });
         assert!(serde_json::from_value::<PutBlockState>(extra).is_err(), "no field for what an agent said");
+    }
+
+    /// A board from a control before epics has no goal, note or progress,
+    /// and reads as open.
+    #[test]
+    fn a_board_from_before_epics_reads_as_open() {
+        let old = serde_json::json!({
+            "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a", "created_at": 1, "updated_at": 2
+        });
+        let b: Board = serde_json::from_value(old).unwrap();
+        assert_eq!((b.goal.as_str(), b.closed_at, b.progress), ("", None, BoardProgress { done: 0, total: 0 }));
     }
 }

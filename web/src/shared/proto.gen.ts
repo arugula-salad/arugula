@@ -253,6 +253,14 @@ export type BoardMoveEntry = { rev: number | null, zone: string | null, before: 
 export type BoardPointer = { "kind": "none" } | { "kind": "forge_item", id: string, } | { "kind": "issue", id: string, } | { "kind": "run", id: string, } | { "kind": "workspace", id: string, } | { "kind": "block", machine: string, pane: string, } | { "kind": "link", url: string, };
 
 /**
+ * A board's issues, counted: the rows on a native issue or a mirrored
+ * GitHub issue (not a PR, a run or a link), each issue once, and the ones
+ * closed at their source. A row the reader can't read counts toward
+ * neither; a row's own status counts for nothing.
+ */
+export type BoardProgress = { done: number, total: number, };
+
+/**
  * [`BOARD_ENTRIES`]' body. Without `id` it makes an entry: `entry` says
  * which. A zone is added before the `proofs` zone (a `proofs` one goes
  * last, and a board has one); a row is added last in `zone`. With `id` it
@@ -3072,7 +3080,28 @@ export type ProjectBoard = { id: string, project: string, title: string,
 /**
  * The account that made it; empty once that account is deleted.
  */
-created_by: string, created_at: number, updated_at: number, };
+created_by: string, created_at: number, updated_at: number, 
+/**
+ * What the board is for, in a paragraph; empty means none.
+ */
+goal: string, 
+/**
+ * What was done, written when the board was closed; kept when it is
+ * opened again. Empty before it was ever closed.
+ */
+done_note: string, 
+/**
+ * When it was closed; absent while it is open.
+ */
+closed_at?: number, 
+/**
+ * The account that closed it; empty once that account is deleted.
+ */
+closed_by: string, 
+/**
+ * How many of its issues are closed.
+ */
+progress: BoardProgress, };
 
 /**
  * A Doc, without its sections: a list's row, and a view's head.
