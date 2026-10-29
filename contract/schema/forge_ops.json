@@ -1,0 +1,1117 @@
+{
+  "$defs": {
+    "Call": {
+      "description": "An operation and the version its caller speaks.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ItemRef",
+          "description": "A PR: [`ItemView`].",
+          "properties": {
+            "op": {
+              "const": "pr.get",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ItemRef",
+          "description": "An issue: [`ItemView`].",
+          "properties": {
+            "op": {
+              "const": "issue.get",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ItemQuery",
+          "description": "A project's PRs and issues, or one repo's:\n[`ForgeItems`](crate::projects::ForgeItems).",
+          "properties": {
+            "op": {
+              "const": "item.list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ItemRef",
+          "description": "A PR's head commit's checks: [`ForgeChecks`](crate::projects::ForgeChecks).",
+          "properties": {
+            "op": {
+              "const": "checks.get",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/InboxQuery",
+          "description": "The reader's inbox (M171): [`Inbox`](crate::projects::Inbox).",
+          "properties": {
+            "op": {
+              "const": "inbox.list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/NewDraft",
+          "description": "A comment, a review or a new issue, waiting for a person:\n[`DraftCreated`](crate::projects::DraftCreated).",
+          "properties": {
+            "op": {
+              "const": "draft.create",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DraftQuery",
+          "description": "Drafts: [`ForgeDrafts`](crate::projects::ForgeDrafts).",
+          "properties": {
+            "op": {
+              "const": "draft.list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DraftRef",
+          "description": "One draft: [`ForgeDraft`].",
+          "properties": {
+            "op": {
+              "const": "draft.get",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DraftRef",
+          "description": "[`DraftDiscarded`](crate::projects::DraftDiscarded).",
+          "properties": {
+            "op": {
+              "const": "draft.discard",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/InboxMarkOn",
+          "description": "Mark an item's inbox entries seen or done, a person's:\n[`InboxMarked`](crate::projects::InboxMarked).",
+          "properties": {
+            "op": {
+              "const": "inbox.mark",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DraftRef",
+          "description": "Send a waiting draft, as the person: [`Sent`].",
+          "properties": {
+            "op": {
+              "const": "draft.send",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/CommentOn",
+          "description": "Comment on a PR, as the person: [`Sent`].",
+          "properties": {
+            "op": {
+              "const": "pr.comment",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ReviewOf",
+          "description": "Review a PR, as the person: [`Sent`].",
+          "properties": {
+            "op": {
+              "const": "pr.review",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/NewIssue",
+          "description": "Open an issue, as the person: [`Sent`].",
+          "properties": {
+            "op": {
+              "const": "issue.create",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/CommentOn",
+          "description": "Comment on an issue, as the person: [`Sent`].",
+          "properties": {
+            "op": {
+              "const": "issue.comment",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v"
+      ],
+      "type": "object"
+    },
+    "CommentOn": {
+      "description": "`pr.comment` and `issue.comment`.",
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "body"
+      ],
+      "type": "object"
+    },
+    "DraftQuery": {
+      "description": "`draft.list`: a project's drafts, a repo's (and an item's, with\n`number`), or with neither the reader's own across their projects.",
+      "properties": {
+        "limit": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mine": {
+          "default": false,
+          "description": "Only the reader's own.",
+          "type": "boolean"
+        },
+        "number": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "default": null,
+          "description": "`OWNER/NAME`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "default": null,
+          "description": "`waiting` (the default), `sent`, `discarded`, `failed` or `all`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "DraftRef": {
+      "description": "A draft, by its id (`dft_…`).",
+      "properties": {
+        "draft": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "draft"
+      ],
+      "type": "object"
+    },
+    "ForgeDraft": {
+      "properties": {
+        "agent": {
+          "default": null,
+          "description": "The agent that wrote it, and the machine it was on (an id, and its\nname when the machine is still there).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author": {
+          "description": "The person it's for: an account id.",
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "The platform's id: `dft_` and 32 hex characters.",
+          "type": "string"
+        },
+        "item": {
+          "default": null,
+          "description": "The mirrored item it's on, and its title, when the mirror has it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "item_title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`comment`, `review` or `issue`.",
+          "type": "string"
+        },
+        "machine": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "type": "string"
+        },
+        "repo": {
+          "description": "`OWNER/NAME`.",
+          "type": "string"
+        },
+        "repo_id": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sent_at": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sent_url": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "`waiting`, `sending` (a send holds it, M168), `sent`, `discarded`\nor `failed`.",
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "repo",
+        "repo_id",
+        "kind",
+        "body",
+        "state",
+        "author",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "ForgeEvent": {
+      "properties": {
+        "actor": {
+          "description": "Who did it: a GitHub login.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "review_state": {
+          "description": "A review's state (`approved`, `changes_requested`, `commented`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "at"
+      ],
+      "type": "object"
+    },
+    "ForgeItem": {
+      "description": "A PR or an issue, as metadata: never its body.",
+      "properties": {
+        "assignees": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "author": {
+          "description": "The author's GitHub login.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "description": "GitHub's times, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "head_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head_sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "The platform's id: `fi_` and 32 hex characters.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`pr` or `issue`.",
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "merge_state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "description": "`OWNER/NAME`.",
+          "type": "string"
+        },
+        "reviewers": {
+          "description": "Requested reviewers' logins.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "state": {
+          "description": "`open`, `closed` or `merged`.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "repo",
+        "number",
+        "kind",
+        "state",
+        "title",
+        "labels",
+        "assignees",
+        "reviewers",
+        "draft",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "InboxMarkOn": {
+      "description": "`inbox.mark`: an item's entries (one reason's, or all), seen or done,\nor not ([`InboxMark`](crate::projects::InboxMark)'s rules).",
+      "properties": {
+        "done": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "type": "string"
+        },
+        "seen": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "repo",
+        "number"
+      ],
+      "type": "object"
+    },
+    "InboxQuery": {
+      "description": "`inbox.list`: the reader's inbox, without what they called done unless\n`done`.",
+      "properties": {
+        "done": {
+          "default": false,
+          "type": "boolean"
+        },
+        "limit": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ItemQuery": {
+      "description": "`item.list`: a project's items (the reader's personal project when\nneither `project` nor `repo` says), or one linked repo's. The rest\nnarrows it as `GET /api/projects/{project}/items`'s query does.",
+      "properties": {
+        "author": {
+          "default": null,
+          "description": "A GitHub login.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "default": null,
+          "description": "`pr` or `issue`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "q": {
+          "default": null,
+          "description": "Text in the title.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "default": null,
+          "description": "`OWNER/NAME`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "review_requested": {
+          "default": null,
+          "description": "A GitHub login among the requested reviewers.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "default": null,
+          "description": "`open`, `closed` or `merged`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ItemRef": {
+      "description": "A PR or an issue on a linked repo: `OWNER/NAME` and its number.",
+      "properties": {
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number"
+      ],
+      "type": "object"
+    },
+    "ItemView": {
+      "description": "`pr.get` and `issue.get`: the item, what happened to it, and its\nwaiting drafts. Metadata, as the mirror keeps it: bodies are M166's.",
+      "properties": {
+        "drafts": {
+          "items": {
+            "$ref": "#/$defs/ForgeDraft"
+          },
+          "type": "array"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/ForgeEvent"
+          },
+          "type": "array"
+        },
+        "item": {
+          "$ref": "#/$defs/ForgeItem"
+        }
+      },
+      "required": [
+        "item",
+        "events",
+        "drafts"
+      ],
+      "type": "object"
+    },
+    "NewDraft": {
+      "description": "A draft to make. From a person (their own), or from a machine (an\nagent's on it, for its owner: the platform records the machine, and\n`agent` names the agent).",
+      "properties": {
+        "agent": {
+          "default": null,
+          "description": "The agent that wrote it (`mcp:claude-code`), from a machine.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body": {
+          "default": "",
+          "type": "string"
+        },
+        "event": {
+          "default": null,
+          "description": "A review's: `COMMENT`, `APPROVE` or `REQUEST_CHANGES`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "import_key": {
+          "default": null,
+          "description": "A machine's own id for a draft it kept and now uploads: the same\nkey makes no second draft, and is answered with the first. Only a\nmachine gives one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`comment`, `review` or `issue`.",
+          "type": "string"
+        },
+        "number": {
+          "default": null,
+          "description": "The PR or issue; `None` for a new issue.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "`OWNER/NAME`: a repo linked to a project the author is in.",
+          "type": "string"
+        },
+        "title": {
+          "default": null,
+          "description": "A new issue's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "repo",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "NewIssue": {
+      "description": "`issue.create`.",
+      "properties": {
+        "body": {
+          "default": "",
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "title"
+      ],
+      "type": "object"
+    },
+    "Op": {
+      "description": "Every operation, by its name on the wire.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ItemRef",
+          "description": "A PR: [`ItemView`].",
+          "properties": {
+            "op": {
+              "const": "pr.get",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ItemRef",
+          "description": "An issue: [`ItemView`].",
+          "properties": {
+            "op": {
+              "const": "issue.get",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ItemQuery",
+          "description": "A project's PRs and issues, or one repo's:\n[`ForgeItems`](crate::projects::ForgeItems).",
+          "properties": {
+            "op": {
+              "const": "item.list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ItemRef",
+          "description": "A PR's head commit's checks: [`ForgeChecks`](crate::projects::ForgeChecks).",
+          "properties": {
+            "op": {
+              "const": "checks.get",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/InboxQuery",
+          "description": "The reader's inbox (M171): [`Inbox`](crate::projects::Inbox).",
+          "properties": {
+            "op": {
+              "const": "inbox.list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/NewDraft",
+          "description": "A comment, a review or a new issue, waiting for a person:\n[`DraftCreated`](crate::projects::DraftCreated).",
+          "properties": {
+            "op": {
+              "const": "draft.create",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DraftQuery",
+          "description": "Drafts: [`ForgeDrafts`](crate::projects::ForgeDrafts).",
+          "properties": {
+            "op": {
+              "const": "draft.list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DraftRef",
+          "description": "One draft: [`ForgeDraft`].",
+          "properties": {
+            "op": {
+              "const": "draft.get",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DraftRef",
+          "description": "[`DraftDiscarded`](crate::projects::DraftDiscarded).",
+          "properties": {
+            "op": {
+              "const": "draft.discard",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/InboxMarkOn",
+          "description": "Mark an item's inbox entries seen or done, a person's:\n[`InboxMarked`](crate::projects::InboxMarked).",
+          "properties": {
+            "op": {
+              "const": "inbox.mark",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DraftRef",
+          "description": "Send a waiting draft, as the person: [`Sent`].",
+          "properties": {
+            "op": {
+              "const": "draft.send",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/CommentOn",
+          "description": "Comment on a PR, as the person: [`Sent`].",
+          "properties": {
+            "op": {
+              "const": "pr.comment",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ReviewOf",
+          "description": "Review a PR, as the person: [`Sent`].",
+          "properties": {
+            "op": {
+              "const": "pr.review",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/NewIssue",
+          "description": "Open an issue, as the person: [`Sent`].",
+          "properties": {
+            "op": {
+              "const": "issue.create",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/CommentOn",
+          "description": "Comment on an issue, as the person: [`Sent`].",
+          "properties": {
+            "op": {
+              "const": "issue.comment",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ReviewOf": {
+      "description": "`pr.review`.",
+      "properties": {
+        "body": {
+          "default": "",
+          "type": "string"
+        },
+        "event": {
+          "description": "`COMMENT`, `APPROVE` or `REQUEST_CHANGES`.",
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "event"
+      ],
+      "type": "object"
+    },
+    "Sent": {
+      "description": "What a send answers (M168): the comment, review or issue on GitHub,\nand the draft it sent, if it was one.",
+      "properties": {
+        "draft": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::forge_ops"
+}

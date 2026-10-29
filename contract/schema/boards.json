@@ -1,0 +1,883 @@
+{
+  "$defs": {
+    "BlockState": {
+      "additionalProperties": false,
+      "description": "What a daemon says of one of its own agent blocks, and all it says\n(aru-116's second ruling): the state word, the branch, the short HEAD,\nwhether it is pushed, how many files are uncommitted and the diffstat.\nNo message text, no file names, no prompts: the type has no field that\ncould carry them, and a body with another field is refused.",
+      "properties": {
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "diffstat": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Diffstat"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "head": {
+          "description": "HEAD, abbreviated.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pushed": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/BlockWord"
+        },
+        "uncommitted": {
+          "description": "How many files are uncommitted.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "BlockWord": {
+      "description": "What an agent block is doing (aru-116's second ruling).",
+      "enum": [
+        "working",
+        "needs_input",
+        "idle",
+        "closed"
+      ],
+      "type": "string"
+    },
+    "Board": {
+      "properties": {
+        "closed_at": {
+          "default": null,
+          "description": "When it was closed; absent while it is open.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "closed_by": {
+          "default": "",
+          "description": "The account that closed it; empty once that account is deleted.",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "created_by": {
+          "description": "The account that made it; empty once that account is deleted.",
+          "type": "string"
+        },
+        "done_note": {
+          "default": "",
+          "description": "What was done, written when the board was closed; kept when it is\nopened again. Empty before it was ever closed.",
+          "type": "string"
+        },
+        "goal": {
+          "default": "",
+          "description": "What the board is for, in a paragraph; empty means none.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "progress": {
+          "$ref": "#/$defs/BoardProgress",
+          "default": {
+            "done": 0,
+            "total": 0
+          },
+          "description": "How many of its issues are closed."
+        },
+        "project": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "title",
+        "created_by",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "BoardList": {
+      "properties": {
+        "boards": {
+          "items": {
+            "$ref": "#/$defs/Board"
+          },
+          "type": "array"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "boards"
+      ],
+      "type": "object"
+    },
+    "BoardProgress": {
+      "description": "A board's issues, counted: the rows on a native issue or a mirrored\nGitHub issue (not a PR, a run or a link), each issue once, and the ones\nclosed at their source. A row the reader can't read counts toward\nneither; a row's own status counts for nothing.",
+      "properties": {
+        "done": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "done",
+        "total"
+      ],
+      "type": "object"
+    },
+    "BoardView": {
+      "description": "A board with its zones and rows, in order.",
+      "properties": {
+        "board": {
+          "$ref": "#/$defs/Board"
+        },
+        "zones": {
+          "items": {
+            "$ref": "#/$defs/Zone"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "board",
+        "zones"
+      ],
+      "type": "object"
+    },
+    "ChatAgent": {
+      "description": "The agent that wrote a message (M197): the machine whose grant it acted\nthrough, and its name now. The message's author is the machine's owner.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "machine_name"
+      ],
+      "type": "object"
+    },
+    "CloseBoard": {
+      "description": "`POST` to close a board: what was done, not empty.",
+      "properties": {
+        "done_note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "done_note"
+      ],
+      "type": "object"
+    },
+    "Diffstat": {
+      "additionalProperties": false,
+      "description": "A `git diff --stat` summary line as numbers: nothing of the files.",
+      "properties": {
+        "added": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "files": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "removed": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "files",
+        "added",
+        "removed"
+      ],
+      "type": "object"
+    },
+    "EditBoard": {
+      "description": "`PATCH`: what to change; a field left out stays. An empty goal clears it.",
+      "properties": {
+        "goal": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "EntryKind": {
+      "description": "Zone or row.",
+      "enum": [
+        "zone",
+        "row"
+      ],
+      "type": "string"
+    },
+    "Live": {
+      "description": "The item a row points at, as it is now: what the page draws beside the\nrow's own status, and the label of its link.",
+      "properties": {
+        "assignees": {
+          "description": "Who an issue or PR is assigned to: a mirrored item's logins, a native\nissue's names. A run has none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "description": "`pr` or `issue` (a mirrored one), `native` for a native issue, or\n`run`.",
+          "type": "string"
+        },
+        "number": {
+          "description": "A run has none: 0.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "description": "`OWNER/NAME` of a mirrored item; absent for a native issue.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/LiveState"
+        },
+        "title": {
+          "description": "A run's: how it started (`manual run`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "kind",
+        "number",
+        "title"
+      ],
+      "type": "object"
+    },
+    "LiveState": {
+      "description": "What a row's `fi_`, `iss_` or `run_` pointer is now, from data control\nalready has (the forge mirror, the issues and runs tables): a separate fact, never written\nover the row's stored `status`.",
+      "oneOf": [
+        {
+          "enum": [
+            "merged",
+            "succeeded"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "open",
+          "description": "A PR or an issue, open.",
+          "type": "string"
+        },
+        {
+          "const": "checks_running",
+          "description": "A PR, open, with checks still running.",
+          "type": "string"
+        },
+        {
+          "const": "checks_failed",
+          "description": "A PR, open, with red checks.",
+          "type": "string"
+        },
+        {
+          "const": "closed",
+          "description": "A PR closed unmerged, or an issue closed.",
+          "type": "string"
+        },
+        {
+          "const": "running",
+          "description": "A run, running.",
+          "type": "string"
+        },
+        {
+          "const": "run_failed",
+          "description": "A run that failed.",
+          "type": "string"
+        },
+        {
+          "const": "other",
+          "description": "A run that is pending, approved, denied, canceled or expired.",
+          "type": "string"
+        }
+      ]
+    },
+    "MoveEntry": {
+      "description": "[`BOARD_ENTRY_MOVE`]'s body: put the entry just before `before` (a\nsibling), or last when there is none. A row may go to another `zone`\n(its own, if absent); a zone moves among zones, never past `proofs`.",
+      "properties": {
+        "before": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rev": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "zone": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "NewBoard": {
+      "properties": {
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "Pointer": {
+      "description": "What a row points at. `None` is free text. The ids are the platform's:\n`fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "none",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "forge_item",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "issue",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "run",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "workspace",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An agent block on a machine.",
+          "properties": {
+            "kind": {
+              "const": "block",
+              "type": "string"
+            },
+            "machine": {
+              "type": "string"
+            },
+            "pane": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "machine",
+            "pane"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An `https://` URL, as evidence (a CI page, a report). The platform\ntakes only `https`, no userinfo, at most [`LINK_MAX`] bytes.",
+          "properties": {
+            "kind": {
+              "const": "link",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PutBlockState": {
+      "additionalProperties": false,
+      "description": "[`AGENT_BLOCK_STATE`]'s body: the pane (of the machine that signs it) and\nits state.",
+      "properties": {
+        "block": {
+          "$ref": "#/$defs/BlockState"
+        },
+        "pane": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pane",
+        "block"
+      ],
+      "type": "object"
+    },
+    "PutEntry": {
+      "description": "[`BOARD_ENTRIES`]' body. Without `id` it makes an entry: `entry` says\nwhich. A zone is added before the `proofs` zone (a `proofs` one goes\nlast, and a board has one); a row is added last in `zone`. With `id` it\nchanges that entry: what is absent is left as it is. A change to\n`title`, `pointer` or `note` names `rev`; a change to `status` alone\ndoesn't.",
+      "properties": {
+        "entry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntryKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ZoneKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A new zone's kind."
+        },
+        "note": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pointer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pointer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A row's pointer; `{\"kind\": \"none\"}` clears it."
+        },
+        "rev": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Status"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A row's status; `\"none\"` clears it."
+        },
+        "title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "zone": {
+          "default": null,
+          "description": "A new row's zone.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Row": {
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The machine whose agent added the row, if one did (it may remove\nit; nobody else's agent may)."
+        },
+        "block": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlockState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A `Block` pointer's block as its machine last reported it, when that\nmachine holds `boards.write` over the board's project."
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "live": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Live"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the\nitem ([`BoardView`] is read with it; a write's answer has it too)."
+        },
+        "note": {
+          "type": "string"
+        },
+        "pointer": {
+          "$ref": "#/$defs/Pointer"
+        },
+        "rev": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/Status"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "rev",
+        "pointer",
+        "note",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "Status": {
+      "description": "Where a row stands. `None` says nothing.",
+      "enum": [
+        "none",
+        "open",
+        "working",
+        "needs_input",
+        "done",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "WorkItem": {
+      "description": "One thing a row may point at.",
+      "properties": {
+        "assignees": {
+          "description": "GitHub logins for a mirrored item; account ids for a native issue.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "description": "`issue`, `pr` or `run`.",
+          "type": "string"
+        },
+        "number": {
+          "description": "A run has none.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pointer": {
+          "$ref": "#/$defs/Pointer",
+          "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
+        },
+        "repo": {
+          "description": "`OWNER/NAME` of a mirrored item.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "`native`, `github` or `run`.",
+          "type": "string"
+        },
+        "state": {
+          "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
+          "type": "string"
+        },
+        "title": {
+          "description": "A run's: how it started (`manual run`).",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pointer",
+        "source",
+        "kind",
+        "title",
+        "state",
+        "assignees",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "WorkItems": {
+      "description": "[`PROJECT_WORK`]'s answer: the newest first, across sources.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/WorkItem"
+          },
+          "type": "array"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "items"
+      ],
+      "type": "object"
+    },
+    "WorkQuery": {
+      "description": "[`PROJECT_WORK`]'s query.",
+      "properties": {
+        "kind": {
+          "default": null,
+          "description": "`issue`, `pr` or `run`; absent means all.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "default": null,
+          "description": "At most this many (default 30, at most 100).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "q": {
+          "default": null,
+          "description": "Search words: an issue's title or body, a mirrored item's title or\nmirrored content, a run's trigger (`manual`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "untriaged": {
+          "default": false,
+          "description": "Only open issues (native and GitHub) that no row of any of the\nproject's boards points at.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "Zone": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ZoneKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rev": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/Row"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "rev",
+        "title",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "ZoneKind": {
+      "description": "A zone's kind: `proofs` is the board's last zone. Absent: a plain one.",
+      "enum": [
+        "proofs"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::boards"
+}

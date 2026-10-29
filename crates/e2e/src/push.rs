@@ -24,6 +24,7 @@ use sha2::Sha256;
 use crate::{Cert, DeviceKeys, cert::verify_hex};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PushSub {
     pub v: u32,
     pub account: String,

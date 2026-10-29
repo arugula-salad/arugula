@@ -13,6 +13,7 @@ use super::Principal;
 /// login what control last saw them called. The hub knows it (they signed
 /// in with GitHub) and says it with each call.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GithubUser {
     pub id: u64,
     pub login: String,
@@ -21,6 +22,7 @@ pub struct GithubUser {
 /// A product's user's link (M232, `HubPort::linked_account`). A link is
 /// never authorization.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct LinkedAccount {
     /// The platform account (the hub's).
     pub account: String,
@@ -32,6 +34,7 @@ pub struct LinkedAccount {
 /// `HubPort::product_links`). A link is never authorization: nothing on
 /// the platform grants anything because of one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ProductLink {
     /// The product: its issuer client id.
     pub client: String,
@@ -54,6 +57,7 @@ pub struct ProductLink {
 /// A passkey's assertion, as the page got it from `navigator.credentials.get`
 /// (`HubPort::verify_passkey`): each base64url, no padding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PasskeyAssertion {
     /// The credential's id (`rawId`).
     pub id: String,
@@ -66,6 +70,7 @@ pub struct PasskeyAssertion {
 
 /// What the hub found of a passkey's assertion: good, or why not.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PasskeyVerdict {
     pub ok: bool,
     #[serde(default)]
@@ -74,6 +79,7 @@ pub struct PasskeyVerdict {
 
 /// An account's devices (`HubPort::device_trust`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DeviceTrust {
     /// The root device's id.
     pub root: String,
@@ -95,11 +101,13 @@ pub struct DeviceTrust {
 /// How a push goes (`HubPort::push_with`). The default is what
 /// `HubPort::push` does.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PushOptions {
     /// How long a push service keeps it for a device that's away (its
     /// `TTL`, at most a day): `None` is the hub's own, an hour. Cloud's
     /// approvals keep five minutes.
     #[serde(default, with = "secs")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<u64>"))]
     pub ttl: Option<std::time::Duration>,
     /// Every push subscription the account has, as control's own notices
     /// go, rather than only those signed by one of its approved devices
@@ -129,6 +137,7 @@ mod secs {
 
 /// An account, with its names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Account {
     pub id: String,
     /// Its sign-in login (GitHub's), or "".
@@ -139,6 +148,7 @@ pub struct Account {
 
 /// A principal the hub still knows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Resolved {
     pub principal: Principal,
     pub account: Account,
@@ -148,6 +158,7 @@ pub struct Resolved {
 
 /// A team, as its latest signed roster says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Team {
     pub id: String,
     pub name: String,
@@ -171,6 +182,7 @@ impl Team {
 
 /// A member of a team.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Member {
     pub account: String,
     pub role: TeamRole,
@@ -180,6 +192,7 @@ pub struct Member {
 
 /// A joined machine.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Daemon {
     pub id: String,
     /// The account it's joined to: its owner.
@@ -194,6 +207,7 @@ pub type Flags = BTreeMap<String, bool>;
 
 /// What a push did.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Pushed {
     /// Subscriptions a push service took it for.
     pub sent: u32,
@@ -206,6 +220,7 @@ pub struct Pushed {
 
 /// What an account used, for billing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Meter {
     pub account: String,
     pub relay_bytes: u64,
@@ -214,6 +229,7 @@ pub struct Meter {
 
 /// A page of the hub's change feed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChangePage {
     pub changes: Vec<Change>,
     /// The newest change the hub has written, whether or not it's in this
@@ -227,6 +243,7 @@ pub struct ChangePage {
 /// One thing that changed in the hub. Written in the same transaction as
 /// the change itself, so a reader never sees a change the hub didn't make.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Change {
     /// Increasing, never reused.
     pub seq: u64,
@@ -241,6 +258,8 @@ pub struct Change {
 /// knows them (it deploys first); one it doesn't know reads as `Unknown`,
 /// which a reader treats as "drop every cache".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 pub enum ChangeKind {
     /// An account's name (subject: the account), its display name or the
     /// login it signs in with, or a new account (whose name and login are

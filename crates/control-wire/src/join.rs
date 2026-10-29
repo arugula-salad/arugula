@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 /// `POST /api/join`. The CLI joins the same way, with only `cert` and
 /// `proof`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct JoinRequest {
     pub cert: Cert,
     #[serde(default)]
@@ -26,6 +27,7 @@ pub struct JoinRequest {
 /// `proof`, as the CLI always has (control reads it as a `JoinRequest`, the
 /// rest defaulted).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CliJoinRequest {
     pub cert: Cert,
     pub proof: JoinProof,
@@ -36,6 +38,7 @@ pub struct CliJoinRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct JoinProof {
     pub ms: u64,
     pub sig: String,
@@ -43,6 +46,7 @@ pub struct JoinProof {
 
 /// Control's answer to a join: the code to show, and a token to poll with.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct JoinStarted {
     pub code: String,
     pub poll: String,
@@ -62,6 +66,7 @@ fn ten_minutes() -> u64 {
 /// `approved: false`, turned down adds `rejected`, and approved is the rest;
 /// each is serialized as control always has (see [`JoinPoll::serialize`]).
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct JoinPoll {
     pub approved: bool,
     /// Turned down, on this device (#100).
@@ -83,6 +88,7 @@ pub struct JoinPoll {
 
 /// The token the daemon polls with: `GET /api/join/{code}?poll=`.
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PollQuery {
     pub poll: String,
 }
@@ -144,6 +150,7 @@ impl Serialize for JoinPoll {
 
 /// The team an approved machine joins.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct JoinTeam {
     pub team: String,
     pub founder: String,

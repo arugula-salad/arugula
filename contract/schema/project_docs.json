@@ -1,0 +1,258 @@
+{
+  "$defs": {
+    "ChatAgent": {
+      "description": "The agent that wrote a message (M197): the machine whose grant it acted\nthrough, and its name now. The message's author is the machine's owner.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "machine_name"
+      ],
+      "type": "object"
+    },
+    "Doc": {
+      "description": "A Doc, without its sections: a list's row, and a view's head.",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The agent session that made it as itself (aru-115): its `machine`\nthe session's id (`ses_…`), its name `Agent session <id>`."
+        },
+        "author": {
+          "description": "The account that made it, or \"\" once it's deleted, or for one an\nagent session made.",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "`pdc_` and 32 hex characters.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "rev": {
+          "description": "Counts its changes.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sections": {
+          "description": "How many sections it has, and how many are written.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "written": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "title",
+        "author",
+        "sections",
+        "written",
+        "rev",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "DocList": {
+      "description": "`GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.",
+      "properties": {
+        "docs": {
+          "items": {
+            "$ref": "#/$defs/Doc"
+          },
+          "type": "array"
+        },
+        "project": {
+          "type": "string"
+        },
+        "writer": {
+          "description": "Whether the reader may make one.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project",
+        "docs",
+        "writer"
+      ],
+      "type": "object"
+    },
+    "DocView": {
+      "description": "`GET` [`PROJECT_DOC`]: a Doc with its sections, in order.",
+      "properties": {
+        "doc": {
+          "$ref": "#/$defs/Doc"
+        },
+        "sections": {
+          "items": {
+            "$ref": "#/$defs/Section"
+          },
+          "type": "array"
+        },
+        "writer": {
+          "description": "Whether the reader may write it.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "doc",
+        "sections",
+        "writer"
+      ],
+      "type": "object"
+    },
+    "DocWrite": {
+      "description": "`PUT` [`PROJECT_DOC`]: what changes. `title` renames it. With `section`,\nthat section's body becomes `markdown` (and its heading `heading`, when\ngiven); with no `section` but a `heading`, a section is added at the\nend, written when `markdown` is given and pending otherwise.",
+      "properties": {
+        "heading": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "intent": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "markdown": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "section": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "NewDoc": {
+      "description": "`POST` [`PROJECT_DOCS`]: make a Doc.",
+      "properties": {
+        "sections": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/NewSection"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "NewSection": {
+      "description": "A new Doc's section: a heading, and its Markdown now or an intent for\nlater.",
+      "properties": {
+        "heading": {
+          "type": "string"
+        },
+        "intent": {
+          "default": "",
+          "type": "string"
+        },
+        "markdown": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "heading"
+      ],
+      "type": "object"
+    },
+    "Section": {
+      "description": "One section: pending (`body` null) until it's written.",
+      "properties": {
+        "body": {
+          "description": "Its Markdown (the machine Doc's: `chart` and `svg` fences draw).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "heading": {
+          "type": "string"
+        },
+        "id": {
+          "description": "The Doc's own: `s1`, `s2`, … in the order they were added.",
+          "type": "string"
+        },
+        "intent": {
+          "description": "One line on what it will hold, shown while it's pending.",
+          "type": "string"
+        },
+        "rev": {
+          "description": "Counts the writes to its body.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "heading",
+        "intent",
+        "rev"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::project_docs"
+}

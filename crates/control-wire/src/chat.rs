@@ -30,6 +30,7 @@ pub const PUSH_CHARS: usize = 200;
 
 /// What a room is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ChatKind {
@@ -52,6 +53,7 @@ pub enum ChatKind {
 
 /// What a daemon's thread is about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ChatTargetKind {
@@ -74,6 +76,7 @@ impl ChatTargetKind {
 
 /// Someone, as the reader sees them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatPerson {
     pub account: String,
@@ -86,6 +89,7 @@ pub struct ChatPerson {
 
 /// A room as one person sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatRoom {
     pub id: String,
@@ -150,6 +154,7 @@ pub struct ChatRoom {
 
 /// `GET /api/chat`: every room the reader sees.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatRooms {
     pub rooms: Vec<ChatRoom>,
@@ -164,6 +169,7 @@ pub struct ChatRooms {
 
 /// `GET /api/chat/rooms/{id}`: a room and who sees it (whom `@` reaches).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatRoomDetail {
     pub room: ChatRoom,
@@ -181,6 +187,7 @@ pub struct ChatRoomDetail {
 
 /// A machine whose agents reach a room through its owner's grant (M197).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatRoomAgent {
     /// The owner's account, and their name now.
@@ -196,6 +203,7 @@ pub struct ChatRoomAgent {
 /// The agent that wrote a message (M197): the machine whose grant it acted
 /// through, and its name now. The message's author is the machine's owner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatAgent {
     pub machine: String,
@@ -204,6 +212,7 @@ pub struct ChatAgent {
 
 /// A pane a message names, as the poster sends it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatPaneRef {
     pub machine: String,
@@ -213,6 +222,7 @@ pub struct ChatPaneRef {
 /// A pane a message names, as the reader sees it: whether its chip opens
 /// for them (they may reach the machine), and the machine's name.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatPane {
     pub machine: String,
@@ -223,6 +233,7 @@ pub struct ChatPane {
 
 /// A message as the reader sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatMessage {
     /// Its number in the room. Messages brought in from a machine (M124)
@@ -293,6 +304,7 @@ pub struct ChatMessage {
 /// room's readers only (a session cookie, or an agent's token): the same
 /// path with `?download=1` downloads it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatFile {
     pub id: String,
@@ -315,6 +327,7 @@ pub struct ChatFile {
 /// that are safe to render: never SVG or HTML), anything else as a card
 /// that downloads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ChatFileKind {
@@ -338,6 +351,7 @@ pub const MAX_SCOPE_FILE_BYTES: u64 = 256 << 20;
 /// posted with its `id` in [`ChatPost::files`] (an hour, else it's swept).
 /// Agents use `/api/daemon/chat/rooms/{id}/files` the same way.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatUploadQuery {
     pub name: String,
@@ -345,6 +359,7 @@ pub struct ChatUploadQuery {
 
 /// What a system line tells of (#119).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatSystem {
     /// `topic` (its `text` is the new topic, empty when cleared),
@@ -362,6 +377,7 @@ pub const MAX_DESCRIPTION: usize = 1000;
 /// the team says so, its owners) write about it. What's left out stays;
 /// an empty one clears it. Each change posts a system line. Answers the room.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatTopicSet {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -374,6 +390,7 @@ pub struct ChatTopicSet {
 
 /// One pinned message, in `GET /api/chat/rooms/{id}/pins` (#119).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatPin {
     pub message: ChatMessage,
@@ -386,6 +403,7 @@ pub struct ChatPin {
 /// `GET /api/chat/rooms/{id}/pins`: the room's pins, the newest first,
 /// as the reader sees the messages.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatPins {
     pub pins: Vec<ChatPin>,
@@ -393,6 +411,7 @@ pub struct ChatPins {
 
 /// The replies to a message, as one reader sees them (#106).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatThread {
     /// Replies not deleted, and when the newest was written (ms).
@@ -415,6 +434,7 @@ pub const THREAD_REPLIERS: usize = 5;
 
 /// One emoji on a message, as the reader sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatReaction {
     pub emoji: String,
@@ -429,6 +449,7 @@ pub struct ChatReaction {
 /// Someone who reacted: an account, and the machine's agent if it was
 /// the agent reacting for them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatReactor {
     pub account: String,
@@ -504,6 +525,7 @@ pub const MAX_REACTIONS: usize = 20;
 /// post and `?emoji=` of a delete. Both answer the message ([`ChatMessage`]),
 /// and doing either twice is not an error.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatReact {
     pub emoji: String,
@@ -516,6 +538,7 @@ pub type ChatReactQuery = ChatReact;
 /// `?before=N` (the page before N), or neither (the newest page);
 /// `limit` is at most 200.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatMessagesQuery {
     #[serde(default)]
     pub after: Option<i64>,
@@ -530,6 +553,7 @@ pub struct ChatMessagesQuery {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatMessages {
     pub room: ChatRoom,
@@ -545,6 +569,7 @@ pub struct ChatMessages {
 
 /// `POST /api/chat/teams/{team}/channels`: owners and editors make them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatNewChannel {
     pub name: String,
@@ -562,6 +587,7 @@ pub struct ChatNewChannel {
 /// with `and`) with up to seven more, made the first time: the same people
 /// again reopen it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatNewDm {
     pub with: String,
@@ -574,6 +600,7 @@ pub const DM_PEOPLE: usize = 8;
 
 /// A public channel in the browser (#118).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatChannel {
     pub id: String,
@@ -589,6 +616,7 @@ pub struct ChatChannel {
 /// `GET /api/chat/teams/{team}/channels?q=`: the team's public channels
 /// (a private one only shows to its members, in their rooms), by name.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatChannels {
     pub channels: Vec<ChatChannel>,
@@ -597,6 +625,7 @@ pub struct ChatChannels {
 /// `POST /api/chat/rooms/{id}/members`: a channel's creator or its team's
 /// owners add people of the team.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatAddMembers {
     pub accounts: Vec<String>,
@@ -606,6 +635,7 @@ pub struct ChatAddMembers {
 /// object (M196, `machine` empty), made the first time by someone who may
 /// read it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatOpenTarget {
     #[serde(default)]
@@ -617,6 +647,7 @@ pub struct ChatOpenTarget {
 /// `PATCH /api/chat/rooms/{id}`: a channel renamed or archived, by its
 /// team's owners; a DM renamed (`name`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatRoomChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -629,6 +660,7 @@ pub struct ChatRoomChange {
 
 /// `POST /api/chat/rooms/{id}/messages`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatPost {
     pub text: String,
@@ -666,6 +698,7 @@ pub struct ChatPost {
 
 /// Why control pushed someone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ChatPushWhy {
@@ -680,6 +713,7 @@ pub enum ChatPushWhy {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatPushed {
     pub account: String,
@@ -687,6 +721,7 @@ pub struct ChatPushed {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatPosted {
     pub seq: i64,
@@ -701,6 +736,7 @@ pub struct ChatPosted {
 
 /// `PATCH /api/chat/rooms/{id}/messages/{seq}`: the author's new text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatEdit {
     pub text: String,
@@ -709,6 +745,7 @@ pub struct ChatEdit {
 /// `POST /api/chat/rooms/{id}/read`: read up to here (it only moves
 /// forward).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatRead {
     pub seq: i64,
@@ -718,6 +755,7 @@ pub struct ChatRead {
 /// mark goes to just before it, backwards if need be (#116). The answer is
 /// the room, as the reader now sees it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatUnread {
     pub seq: i64,
@@ -728,6 +766,7 @@ pub struct ChatUnread {
 /// (ms since the epoch, in the future, at most [`SAVED_REMIND_MAX_MS`] away)
 /// is when to push the reader once.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatSave {
     #[serde(default)]
@@ -736,6 +775,7 @@ pub struct ChatSave {
 
 /// `PATCH .../saved`: mark a saved message done, or not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatSavedDone {
     pub done: bool,
@@ -748,6 +788,7 @@ pub const SAVED_MAX: usize = 500;
 
 /// One saved message, with its room (the reader still sees it).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatSavedItem {
     pub room: String,
@@ -764,6 +805,7 @@ pub struct ChatSavedItem {
 /// `GET /api/chat/saved`: the reader's saved messages in rooms they still
 /// see, the ones to do newest saved first, then the done ones.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatSaved {
     pub items: Vec<ChatSavedItem>,
@@ -773,6 +815,7 @@ pub struct ChatSaved {
 /// here (a room number; it only moves forward). Answers the thread's first
 /// message, with its [`ChatThread`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatThreadRead {
     pub seq: i64,
@@ -781,6 +824,7 @@ pub struct ChatThreadRead {
 /// `POST /api/chat/rooms/{id}/threads/{seq}/follow`: follow the thread, or
 /// stop. Answers its first message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatFollow {
     pub following: bool,
@@ -788,6 +832,7 @@ pub struct ChatFollow {
 
 /// One thread the reader follows, in [`ChatThreads`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatThreadItem {
     pub room: String,
@@ -801,6 +846,7 @@ pub struct ChatThreadItem {
 /// see, the most recently active first (at most [`THREADS_LISTED`]), and
 /// all their unread: the badge on the Threads view.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatThreads {
     pub threads: Vec<ChatThreadItem>,
@@ -813,6 +859,7 @@ pub const THREADS_LISTED: usize = 100;
 
 /// `POST /api/chat/rooms/{id}/mute`: no pushes from this room.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatMute {
     pub muted: bool,
@@ -822,6 +869,7 @@ pub struct ChatMute {
 /// mention does (#114), lowercased, at most [`KEYWORDS_MAX`], each at most
 /// [`KEYWORD_CHARS`] long.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatKeywords {
     pub words: Vec<String>,
@@ -834,6 +882,7 @@ pub const KEYWORD_CHARS: usize = 60;
 /// decide about its chat (#114). Anyone in the team reads it, for the
 /// composer; only an owner sets it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatTeamSettings {
     /// `@channel` and `@here` are for owners only.
@@ -846,6 +895,7 @@ pub struct ChatTeamSettings {
 /// How much of a room reaches the reader's pushes, and how its unread shows
 /// (#113).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum NotifyLevel {
@@ -861,6 +911,7 @@ pub enum NotifyLevel {
 /// `POST /api/chat/rooms/{id}/level`: the reader's level for the room; none
 /// is "use my default".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatLevel {
     pub level: Option<NotifyLevel>,
@@ -871,6 +922,7 @@ pub struct ChatLevel {
 /// starts runs past midnight, into the next day (its weekday is the day it
 /// starts on).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct QuietHours {
     /// ISO weekdays: 1 Monday … 7 Sunday.
@@ -881,6 +933,7 @@ pub struct QuietHours {
 
 /// `GET /api/notify/prefs`: the account's notification settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NotifyPrefs {
     /// Levels for rooms with none of their own (#113).
@@ -901,6 +954,7 @@ pub struct NotifyPrefs {
 
 /// `POST /api/notify/prefs`: what's given changes, the rest stays.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NotifySet {
     #[serde(default)]
@@ -931,6 +985,7 @@ pub struct NotifySet {
 /// prefix) and filters (`in:#channel`, `from:@login`, `has:quote`), over
 /// the rooms the reader sees, or one team's; newest first, at most 50.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatSearchQuery {
     #[serde(default)]
     pub q: String,
@@ -939,6 +994,7 @@ pub struct ChatSearchQuery {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatHit {
     pub room: String,
@@ -946,6 +1002,7 @@ pub struct ChatHit {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatFound {
     pub found: Vec<ChatHit>,
@@ -956,6 +1013,7 @@ pub struct ChatFound {
 /// open. A page with several chat blocks (#123) has several: `room` is the
 /// first and `more` the rest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatOpen {
     pub stream: String,
@@ -975,6 +1033,7 @@ pub struct ChatOpen {
 /// (open but idle, or set by hand) or `offline` (no page, or they chose to
 /// appear so).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum PresenceState {
@@ -987,6 +1046,7 @@ pub enum PresenceState {
 /// say), `away` (shown away while a page is open) or `offline` (shown
 /// offline always).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum PresenceMode {
@@ -1003,6 +1063,7 @@ pub enum PresenceMode {
 /// sets their choice (absent: leave it). `machines`: whose online state
 /// the page wants too (the machines its messages' agents are on).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatBeat {
     #[serde(default)]
@@ -1017,6 +1078,7 @@ pub struct ChatBeat {
 
 /// One teammate's presence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatPresent {
     pub account: String,
@@ -1028,6 +1090,7 @@ pub struct ChatPresent {
 /// machines they may see that are connected. Machines' agents show as
 /// their machine, not as a person.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatPresence {
     /// The reader's own choice.
@@ -1043,6 +1106,7 @@ pub struct ChatPresence {
 /// behind, or missed more events than control keeps) gets `resync`: reload
 /// the rooms.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ChatLive {
@@ -1139,6 +1203,7 @@ pub const TYPING_PING_MS: u64 = 3_000;
 /// once per composing burst. `show` false: only that, not typing (a reply
 /// thread's composer, whose typing nobody is shown).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatTyping {
     #[serde(default)]
@@ -1161,12 +1226,14 @@ fn shown() -> bool {
 /// names, the whole list, which replaces the last one control had. Those it
 /// doesn't name keep theirs (a pane that closed keeps its readers).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReaders {
     #[serde(default)]
     pub targets: Vec<ChatReaderList>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReaderList {
     pub kind: ChatTargetKind,
     pub target: String,
@@ -1179,6 +1246,7 @@ pub struct ChatReaderList {
 /// they watch the session (a viewer), so they read the thread and don't
 /// post in it (Jake, 2026-10-19). An archive's members never post.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReader {
     pub account: String,
     #[serde(default)]
@@ -1189,6 +1257,7 @@ pub struct ChatReader {
 
 /// How many lists control kept.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReadersStored {
     pub stored: usize,
 }
@@ -1245,6 +1314,7 @@ pub const AGENT_MENTION: &str = "machine:";
 
 /// [`AGENT_ROOMS`]' answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentRooms {
     pub rooms: Vec<AgentRoom>,
     /// What the machine's live agent grants reach, among what its owner
@@ -1254,6 +1324,7 @@ pub struct AgentRooms {
 
 /// A room as a machine's agents see it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentRoom {
     pub id: String,
     pub kind: ChatKind,
@@ -1290,6 +1361,7 @@ pub struct AgentRoom {
 
 /// A scope a machine's agent grants reach.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentReach {
     /// `project` (its issues and object threads; a team's default
     /// project, its channels too) or `account` (the owner's DMs).
@@ -1304,6 +1376,7 @@ pub struct AgentReach {
 /// A page of [`agent_messages`]: as [`ChatMessagesQuery`], and `mentions`
 /// for only those that mention this machine's agents.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentMessagesQuery {
     #[serde(default)]
     pub after: Option<i64>,
@@ -1320,6 +1393,7 @@ pub struct AgentMessagesQuery {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentMessages {
     pub room: AgentRoom,
     pub messages: Vec<ChatMessage>,

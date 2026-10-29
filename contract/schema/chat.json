@@ -1,0 +1,2424 @@
+{
+  "$defs": {
+    "AgentMessages": {
+      "properties": {
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/ChatMessage"
+          },
+          "type": "array"
+        },
+        "more": {
+          "type": "boolean"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatMessage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With `thread`: the message that starts it."
+        },
+        "pins": {
+          "default": [],
+          "description": "The room's pinned messages, the newest pin first (#119).",
+          "items": {
+            "$ref": "#/$defs/ChatPin"
+          },
+          "type": "array"
+        },
+        "room": {
+          "$ref": "#/$defs/AgentRoom"
+        }
+      },
+      "required": [
+        "room",
+        "messages",
+        "more"
+      ],
+      "type": "object"
+    },
+    "AgentMessagesQuery": {
+      "description": "A page of [`agent_messages`]: as [`ChatMessagesQuery`], and `mentions`\nfor only those that mention this machine's agents.",
+      "properties": {
+        "after": {
+          "default": null,
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "before": {
+          "default": null,
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "limit": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mentions": {
+          "default": false,
+          "type": "boolean"
+        },
+        "thread": {
+          "default": null,
+          "description": "The replies in the thread of this message instead of the room's\nlist (#106).",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "AgentReach": {
+      "description": "A scope a machine's agent grants reach.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "description": "`project` (its issues and object threads; a team's default\nproject, its channels too) or `account` (the owner's DMs).",
+          "type": "string"
+        },
+        "name": {
+          "description": "The project's name, or `your DMs`.",
+          "type": "string"
+        },
+        "powers": {
+          "description": "`threads.read`, `threads.post`, `issues.write`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "name",
+        "powers"
+      ],
+      "type": "object"
+    },
+    "AgentRoom": {
+      "description": "A room as a machine's agents see it.",
+      "properties": {
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ChatKind"
+        },
+        "last": {
+          "description": "The newest message's number, and the newest that mentions this\nmachine's agents.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "last_mention": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "A channel's name (without `#`), or an object thread's (`issue #12`).",
+          "type": "string"
+        },
+        "others": {
+          "default": [],
+          "description": "A DM's other people (#117): a group DM has several.",
+          "items": {
+            "$ref": "#/$defs/ChatPerson"
+          },
+          "type": "array"
+        },
+        "powers": {
+          "description": "`threads.read`, `threads.post`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "private": {
+          "default": false,
+          "description": "An invite-only channel (#118): only the owner's membership reaches\nit, so an agent sees it only when its owner is in.",
+          "type": "boolean"
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target": {
+          "description": "An object thread's global id, and its project.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "team": {
+          "description": "A channel's or DM's team.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "topic": {
+          "default": "",
+          "description": "A channel's topic and description (#119).",
+          "type": "string"
+        },
+        "with": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatPerson"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A DM's other person (the first, in a group DM)."
+        },
+        "writable": {
+          "description": "Whether its agents may post here now.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "last",
+        "powers",
+        "writable"
+      ],
+      "type": "object"
+    },
+    "AgentRooms": {
+      "description": "[`AGENT_ROOMS`]' answer.",
+      "properties": {
+        "reach": {
+          "description": "What the machine's live agent grants reach, among what its owner\nreads now.",
+          "items": {
+            "$ref": "#/$defs/AgentReach"
+          },
+          "type": "array"
+        },
+        "rooms": {
+          "items": {
+            "$ref": "#/$defs/AgentRoom"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "rooms",
+        "reach"
+      ],
+      "type": "object"
+    },
+    "ChatAddMembers": {
+      "description": "`POST /api/chat/rooms/{id}/members`: a channel's creator or its team's\nowners add people of the team.",
+      "properties": {
+        "accounts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "accounts"
+      ],
+      "type": "object"
+    },
+    "ChatAgent": {
+      "description": "The agent that wrote a message (M197): the machine whose grant it acted\nthrough, and its name now. The message's author is the machine's owner.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "machine_name"
+      ],
+      "type": "object"
+    },
+    "ChatBeat": {
+      "description": "`POST /api/chat/presence`: a page's heartbeat, every 15 s while it's\nopen, and the answer is what it shows. `idle`: the page hasn't been\nused for 10 minutes. `gone`: it's closing (sent as a beacon), so the\nperson shows offline now rather than when the beat goes stale. `mode`\nsets their choice (absent: leave it). `machines`: whose online state\nthe page wants too (the machines its messages' agents are on).",
+      "properties": {
+        "gone": {
+          "default": false,
+          "type": "boolean"
+        },
+        "idle": {
+          "default": false,
+          "type": "boolean"
+        },
+        "machines": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PresenceMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "ChatChannel": {
+      "description": "A public channel in the browser (#118).",
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "joined": {
+          "description": "The reader is one.",
+          "type": "boolean"
+        },
+        "members": {
+          "description": "How many of the team are in it.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "topic",
+        "members",
+        "joined",
+        "archived"
+      ],
+      "type": "object"
+    },
+    "ChatChannels": {
+      "description": "`GET /api/chat/teams/{team}/channels?q=`: the team's public channels\n(a private one only shows to its members, in their rooms), by name.",
+      "properties": {
+        "channels": {
+          "items": {
+            "$ref": "#/$defs/ChatChannel"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "channels"
+      ],
+      "type": "object"
+    },
+    "ChatEdit": {
+      "description": "`PATCH /api/chat/rooms/{id}/messages/{seq}`: the author's new text.",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "ChatFile": {
+      "description": "One attached file, as the reader sees it. `url` is control's, for the\nroom's readers only (a session cookie, or an agent's token): the same\npath with `?download=1` downloads it.",
+      "properties": {
+        "height": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ChatFileKind"
+        },
+        "mime": {
+          "description": "What the bytes were sniffed as, never what the upload said.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        },
+        "width": {
+          "description": "An image's size in pixels, when its header gave it.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "mime",
+        "kind",
+        "size",
+        "url"
+      ],
+      "type": "object"
+    },
+    "ChatFileKind": {
+      "description": "How a file is shown: `Image`, `Video` and `Audio` inline (only types\nthat are safe to render: never SVG or HTML), anything else as a card\nthat downloads.",
+      "enum": [
+        "image",
+        "video",
+        "audio",
+        "file"
+      ],
+      "type": "string"
+    },
+    "ChatFollow": {
+      "description": "`POST /api/chat/rooms/{id}/threads/{seq}/follow`: follow the thread, or\nstop. Answers its first message.",
+      "properties": {
+        "following": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "following"
+      ],
+      "type": "object"
+    },
+    "ChatFound": {
+      "properties": {
+        "found": {
+          "items": {
+            "$ref": "#/$defs/ChatHit"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "found"
+      ],
+      "type": "object"
+    },
+    "ChatHit": {
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/ChatMessage"
+        },
+        "room": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "room",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ChatKeywords": {
+      "description": "`GET`/`PUT /api/chat/keywords`: the words that notify this account as a\nmention does (#114), lowercased, at most [`KEYWORDS_MAX`], each at most\n[`KEYWORD_CHARS`] long.",
+      "properties": {
+        "words": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "words"
+      ],
+      "type": "object"
+    },
+    "ChatKind": {
+      "description": "What a room is.",
+      "oneOf": [
+        {
+          "const": "channel",
+          "description": "A team's, by name; its people are the team's roster.",
+          "type": "string"
+        },
+        {
+          "const": "dm",
+          "description": "Two teammates.",
+          "type": "string"
+        },
+        {
+          "const": "pane",
+          "description": "The thread about a pane, on its machine.",
+          "type": "string"
+        },
+        {
+          "const": "session",
+          "description": "The thread about a session, on its machine.",
+          "type": "string"
+        },
+        {
+          "const": "archive",
+          "description": "An old conversation brought in from a machine, read-only (M124;\nnone come in since native #203, and those that did stay).",
+          "type": "string"
+        },
+        {
+          "const": "object",
+          "description": "The thread on an object (M196), by its global id: a native issue\n(`iss_`), a mirrored GitHub PR or issue (`fi_`) or a hosted\nworkspace (`hw_`). Its people are its project's members.",
+          "type": "string"
+        }
+      ]
+    },
+    "ChatLevel": {
+      "description": "`POST /api/chat/rooms/{id}/level`: the reader's level for the room; none\nis \"use my default\".",
+      "properties": {
+        "level": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NotifyLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ChatLive": {
+      "description": "What `GET /api/chat/live` sends, one JSON object per event (no event\nnames). Every event but `hello` has an id, so `EventSource` resumes\nwith `Last-Event-ID` after a drop, on whichever of the platform's\nmachines it reaches; a stream that can't be resumed (it fell too far\nbehind, or missed more events than control keeps) gets `resync`: reload\nthe rooms.",
+      "oneOf": [
+        {
+          "description": "First, once per connection: this stream's id, for [`ChatOpen`].",
+          "properties": {
+            "stream": {
+              "type": "string"
+            },
+            "type": {
+              "const": "hello",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "stream"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A new message: fetch it (`after`).",
+          "properties": {
+            "room": {
+              "type": "string"
+            },
+            "seq": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "const": "message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room",
+            "seq"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A message was pinned or unpinned, or a pinned one deleted (#119):\nread the room's pins and the room again. (A topic changing is\n[`ChatLive::Room`].)",
+          "properties": {
+            "room": {
+              "type": "string"
+            },
+            "type": {
+              "const": "pinned",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A message was edited or deleted: fetch it again.",
+          "properties": {
+            "room": {
+              "type": "string"
+            },
+            "seq": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "const": "changed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room",
+            "seq"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Reactions to a message were added or taken back (#104): fetch it\nagain. No room list changes with it.",
+          "properties": {
+            "room": {
+              "type": "string"
+            },
+            "seq": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "const": "reacted",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room",
+            "seq"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A reply in a thread was written, edited, deleted or reacted to\n(#106): read the thread again (the replies after the newest it has,\nand the message at `parent`, whose summary moved). A reply also sent\nto the channel is announced as a [`Message`](Self::Message) too.",
+          "properties": {
+            "parent": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "room": {
+              "type": "string"
+            },
+            "seq": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "const": "reply",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room",
+            "parent",
+            "seq"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The reader's own mark in a thread moved (another of their pages), or\nthey followed or unfollowed it.",
+          "properties": {
+            "parent": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "room": {
+              "type": "string"
+            },
+            "seq": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "const": "threadread",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room",
+            "parent",
+            "seq"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A room appeared, changed or went: reload the rooms.",
+          "properties": {
+            "room": {
+              "type": "string"
+            },
+            "type": {
+              "const": "room",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The reader's own read mark moved (another of their pages).",
+          "properties": {
+            "room": {
+              "type": "string"
+            },
+            "seq": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "const": "read",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room",
+            "seq"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "What a room of kind `object` is on changed (M203: a native issue's\ntitle, body, state, labels or assignees): read it again. Sent to\nthose who see the room; an object nobody has a thread on has none.",
+          "properties": {
+            "room": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            },
+            "type": {
+              "const": "object",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An agent session whose card is in `room` changed (M257: a state,\na question, an answer on its way, a turn's result): read it again\n(`arugula_control_wire::sessions::SESSION`). Sent to those who see\nthe room.",
+          "properties": {
+            "room": {
+              "type": "string"
+            },
+            "ses": {
+              "type": "string"
+            },
+            "type": {
+              "const": "session",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room",
+            "ses"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Someone is typing in a room (#111): shown for [`TYPING_MS`] and\nnever stored or replayed. Sent to the room's other readers.",
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "room": {
+              "type": "string"
+            },
+            "type": {
+              "const": "typing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room",
+            "account",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The reader's sidebar changed (another of their pages; #120): fetch\nit again. Only they hear it.",
+          "properties": {
+            "type": {
+              "const": "sidebar",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The reader's saved messages changed (#116: another of their pages\nsaved, finished or removed one, or a reminder came due): read them\nagain. Sent to that account only.",
+          "properties": {
+            "type": {
+              "const": "saved",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "resync",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ChatMessage": {
+      "description": "A message as the reader sees it.",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Written by an agent on the author's machine (M197): shown as\n\"<name>'s agent on <machine_name>\"."
+        },
+        "also": {
+          "default": false,
+          "description": "A reply that was also sent to the channel.",
+          "type": "boolean"
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "author": {
+          "description": "The author's account, and their name now. Both are empty for a\ndeleted account.",
+          "type": "string"
+        },
+        "deleted": {
+          "description": "When it was deleted: its text, quote and pane are gone.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "edited": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "files": {
+          "default": [],
+          "description": "Files and images attached (#107), in the order they were chosen.\nEmpty for a deleted message: its files went with it.",
+          "items": {
+            "$ref": "#/$defs/ChatFile"
+          },
+          "type": "array"
+        },
+        "imported": {
+          "description": "Brought in from a machine's own threads (M124): the name it had\nthere. Someone with no account here (a tailnet login, an agent) is\nshown under the machine's owner, by this name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mentions": {
+          "description": "The accounts it mentions, and the agents (`machine:<id>`, M198).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "pane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatPane"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent": {
+          "description": "A reply (#106): the number of its thread's first message. The\nroom's list has it only with `also`; the thread has it always.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pinned": {
+          "default": false,
+          "description": "Pinned (#119).",
+          "type": "boolean"
+        },
+        "quote": {
+          "description": "Lines the poster chose from a pane, copied in (decision 1).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reactions": {
+          "default": [],
+          "description": "Who reacted with which emoji (#104), the first reaction first.\nEmpty for a deleted message and for archives brought in.",
+          "items": {
+            "$ref": "#/$defs/ChatReaction"
+          },
+          "type": "array"
+        },
+        "seq": {
+          "description": "Its number in the room. Messages brought in from a machine (M124)\nkeep their old numbers, unless the room already had messages of its\nown: then they're numbered 0 and below, before control's.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "system": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatSystem"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Not something said but something that happened (#119): `author` set\nthe topic or pinned a message. Drawn dim and centered; never\ncounted unread, pushed, edited or reacted to."
+        },
+        "text": {
+          "type": "string"
+        },
+        "thread": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatThread"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The thread of replies this message starts, once it has any."
+        },
+        "via": {
+          "description": "Posted for the author by a product (M237): a hud box's name, for a\nreview written there. Shown as \"<name> via <via>\". [`SYSTEM_VIA`]\nwith no author: a line the platform wrote (#122), shown apart, as\nplain text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "seq",
+        "at",
+        "author",
+        "name",
+        "text",
+        "mentions"
+      ],
+      "type": "object"
+    },
+    "ChatMessages": {
+      "properties": {
+        "messages": {
+          "description": "Oldest first. With `thread`, its replies.",
+          "items": {
+            "$ref": "#/$defs/ChatMessage"
+          },
+          "type": "array"
+        },
+        "more": {
+          "description": "There are more in the direction asked.",
+          "type": "boolean"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatMessage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "With `thread`: the message that starts it, deleted or not."
+        },
+        "room": {
+          "$ref": "#/$defs/ChatRoom"
+        }
+      },
+      "required": [
+        "room",
+        "messages",
+        "more"
+      ],
+      "type": "object"
+    },
+    "ChatMessagesQuery": {
+      "description": "`GET /api/chat/rooms/{id}/messages?after=N` (oldest first after N),\n`?before=N` (the page before N), or neither (the newest page);\n`limit` is at most 200.",
+      "properties": {
+        "after": {
+          "default": null,
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "before": {
+          "default": null,
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "limit": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "thread": {
+          "default": null,
+          "description": "Read the replies in the thread of this message instead of the\nroom's list (#106).",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ChatMute": {
+      "description": "`POST /api/chat/rooms/{id}/mute`: no pushes from this room.",
+      "properties": {
+        "muted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "muted"
+      ],
+      "type": "object"
+    },
+    "ChatNewChannel": {
+      "description": "`POST /api/chat/teams/{team}/channels`: owners and editors make them.",
+      "properties": {
+        "auto_join": {
+          "default": false,
+          "description": "Everyone who joins the team later joins it too.",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "private": {
+          "default": false,
+          "description": "Invite-only and out of the browser (#118); else public.",
+          "type": "boolean"
+        },
+        "topic": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "ChatNewDm": {
+      "description": "`POST /api/chat/teams/{team}/dms`: the DM with a teammate, or (#117,\nwith `and`) with up to seven more, made the first time: the same people\nagain reopen it.",
+      "properties": {
+        "and": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "with": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "with"
+      ],
+      "type": "object"
+    },
+    "ChatOpen": {
+      "description": "`POST /api/chat/live/open`: the room a page's stream has open (`None`:\nnone, or the page is hidden). Nobody is pushed for a room they have\nopen. A page with several chat blocks (#123) has several: `room` is the\nfirst and `more` the rest.",
+      "properties": {
+        "more": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "room": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stream": {
+          "type": "string"
+        },
+        "thread": {
+          "description": "The thread open beside the room (#106), by its first message's\nnumber: replies in it aren't pushed for.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "stream"
+      ],
+      "type": "object"
+    },
+    "ChatOpenTarget": {
+      "description": "`POST /api/chat/targets`: the thread about a pane or a session, or an\nobject (M196, `machine` empty), made the first time by someone who may\nread it.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ChatTargetKind"
+        },
+        "machine": {
+          "default": "",
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "type": "object"
+    },
+    "ChatPane": {
+      "description": "A pane a message names, as the reader sees it: whether its chip opens\nfor them (they may reach the machine), and the machine's name.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        },
+        "opens": {
+          "type": "boolean"
+        },
+        "pane": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "machine_name",
+        "pane",
+        "opens"
+      ],
+      "type": "object"
+    },
+    "ChatPaneRef": {
+      "description": "A pane a message names, as the poster sends it.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "pane": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "pane"
+      ],
+      "type": "object"
+    },
+    "ChatPerson": {
+      "description": "Someone, as the reader sees them.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "dnd": {
+          "default": false,
+          "description": "They've paused their notifications (do not disturb, #115): a moon\non their avatar. Only that it's on, never until when or why.",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ChatPin": {
+      "description": "One pinned message, in `GET /api/chat/rooms/{id}/pins` (#119).",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "Who pinned it, and when.",
+          "type": "string"
+        },
+        "by_name": {
+          "type": "string"
+        },
+        "message": {
+          "$ref": "#/$defs/ChatMessage"
+        }
+      },
+      "required": [
+        "message",
+        "by",
+        "by_name",
+        "at"
+      ],
+      "type": "object"
+    },
+    "ChatPins": {
+      "description": "`GET /api/chat/rooms/{id}/pins`: the room's pins, the newest first,\nas the reader sees the messages.",
+      "properties": {
+        "pins": {
+          "items": {
+            "$ref": "#/$defs/ChatPin"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "pins"
+      ],
+      "type": "object"
+    },
+    "ChatPost": {
+      "description": "`POST /api/chat/rooms/{id}/messages`.",
+      "properties": {
+        "also": {
+          "description": "With `parent`: also send it to the channel, as Slack's checkbox\ndoes. The room's list shows it too.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "files": {
+          "description": "Files uploaded for this message (ids from `POST .../files`, #107):\nthe poster's own, for this room, not attached before. A message may\nbe only files.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "notify_anyway": {
+          "description": "\"Notify anyway\" (#115): in a DM, push the other person though they\nhave paused notifications. For this message only; anywhere else it\ndoes nothing.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "pane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatPaneRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A pane the message is about: only one on a machine the poster may\nreach."
+        },
+        "parent": {
+          "description": "A reply in the thread of this message (#106): the number of a\nmessage of the room that is not itself a reply.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "ChatPosted": {
+      "properties": {
+        "mentions": {
+          "description": "The accounts it mentions, and the agents (`machine:<id>`, M198).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pushed": {
+          "description": "Whom control pushed (not those with the room open, muted, or pushed\nfor it in the last minute).",
+          "items": {
+            "$ref": "#/$defs/ChatPushed"
+          },
+          "type": "array"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "unreached": {
+          "description": "`@words` that named nobody who sees the room.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "seq",
+        "mentions",
+        "unreached",
+        "pushed"
+      ],
+      "type": "object"
+    },
+    "ChatPresence": {
+      "description": "Who's around, for one reader: themselves and everyone who shares a team\nwith them (nobody else is named, online or not), and the asked-for\nmachines they may see that are connected. Machines' agents show as\ntheir machine, not as a person.",
+      "properties": {
+        "machines_online": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "$ref": "#/$defs/PresenceMode",
+          "description": "The reader's own choice."
+        },
+        "people": {
+          "items": {
+            "$ref": "#/$defs/ChatPresent"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "people",
+        "machines_online"
+      ],
+      "type": "object"
+    },
+    "ChatPresent": {
+      "description": "One teammate's presence.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/PresenceState"
+        }
+      },
+      "required": [
+        "account",
+        "state"
+      ],
+      "type": "object"
+    },
+    "ChatPushWhy": {
+      "description": "Why control pushed someone.",
+      "oneOf": [
+        {
+          "enum": [
+            "mention",
+            "dm"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "keyword",
+          "description": "One of the account's keyword alerts matched (#114).",
+          "type": "string"
+        },
+        {
+          "const": "message",
+          "description": "A message in a room the person set to every message (#113).",
+          "type": "string"
+        },
+        {
+          "const": "thread",
+          "description": "A reply in a thread the person follows (#106).",
+          "type": "string"
+        }
+      ]
+    },
+    "ChatPushed": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "why": {
+          "$ref": "#/$defs/ChatPushWhy"
+        }
+      },
+      "required": [
+        "account",
+        "why"
+      ],
+      "type": "object"
+    },
+    "ChatReact": {
+      "description": "`POST`/`DELETE /api/chat/rooms/{id}/messages/{seq}/reactions` (and the\nsame under `/api/daemon/chat/` for an agent, see [`agent_reactions`]):\nadd the caller's reaction, or take it back. The emoji is the body of a\npost and `?emoji=` of a delete. Both answer the message ([`ChatMessage`]),\nand doing either twice is not an error.",
+      "properties": {
+        "emoji": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "emoji"
+      ],
+      "type": "object"
+    },
+    "ChatReaction": {
+      "description": "One emoji on a message, as the reader sees it.",
+      "properties": {
+        "count": {
+          "description": "All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "emoji": {
+          "type": "string"
+        },
+        "mine": {
+          "description": "The reader has: a person's own reaction, or for an agent reading,\nits own (never the owner's, nor the agent's for the owner).",
+          "type": "boolean"
+        },
+        "who": {
+          "items": {
+            "$ref": "#/$defs/ChatReactor"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "emoji",
+        "count",
+        "mine",
+        "who"
+      ],
+      "type": "object"
+    },
+    "ChatReactor": {
+      "description": "Someone who reacted: an account, and the machine's agent if it was\nthe agent reacting for them.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ChatRead": {
+      "description": "`POST /api/chat/rooms/{id}/read`: read up to here (it only moves\nforward).",
+      "properties": {
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq"
+      ],
+      "type": "object"
+    },
+    "ChatReader": {
+      "description": "One account that may read a thread, and from when (ms; its \"from now\"\nfloor, if it has one): it doesn't see messages from before. `watching`:\nthey watch the session (a viewer), so they read the thread and don't\npost in it (Jake, 2026-10-19). An archive's members never post.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "from": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "watching": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account"
+      ],
+      "type": "object"
+    },
+    "ChatReaderList": {
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ChatTargetKind"
+        },
+        "readers": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ChatReader"
+          },
+          "type": "array"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "type": "object"
+    },
+    "ChatReaders": {
+      "description": "What a daemon says of a thread's readers: for each pane or session it\nnames, the whole list, which replaces the last one control had. Those it\ndoesn't name keep theirs (a pane that closed keeps its readers).",
+      "properties": {
+        "targets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ChatReaderList"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ChatReadersStored": {
+      "description": "How many lists control kept.",
+      "properties": {
+        "stored": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "stored"
+      ],
+      "type": "object"
+    },
+    "ChatRoom": {
+      "description": "A room as one person sees it.",
+      "properties": {
+        "archived": {
+          "description": "A channel its team's owners archived: read, not written.",
+          "type": "boolean"
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ChatKind"
+        },
+        "last": {
+          "description": "The newest message's number, and the reader's read mark.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "level": {
+          "$ref": "#/$defs/NotifyLevel",
+          "default": "mentions",
+          "description": "What the reader is notified of here: their own choice for the room,\nelse their default for its kind (#113)."
+        },
+        "level_own": {
+          "default": false,
+          "description": "Whether `level` is the reader's own choice for this room (else it's\ntheir default), so the menu can offer \"use my default\".",
+          "type": "boolean"
+        },
+        "machine": {
+          "description": "The machine a pane's or session's room is on, and its name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mentions": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "muted": {
+          "description": "The reader turned its pushes off (`level` is `nothing`).",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "A channel's name (without `#`); a pane's or session's room is\nnamed `pane 2`, `session 1`.",
+          "type": "string"
+        },
+        "others": {
+          "default": [],
+          "description": "A DM's other people now, in account order (#117): one in a 1:1, and\na group DM is named after them unless it was renamed (`name`).",
+          "items": {
+            "$ref": "#/$defs/ChatPerson"
+          },
+          "type": "array"
+        },
+        "pins": {
+          "default": 0,
+          "description": "How many messages are pinned.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "private": {
+          "default": false,
+          "description": "An invite-only channel (#118), hidden from the browser.",
+          "type": "boolean"
+        },
+        "project": {
+          "default": null,
+          "description": "The project an object thread is in (M196).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "read": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "target": {
+          "description": "The pane or session id there, or an object thread's global id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "team": {
+          "description": "The team a channel or DM is in.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "topic": {
+          "default": "",
+          "description": "What people wrote about a channel (#119); empty when nobody has.",
+          "type": "string"
+        },
+        "topic_writable": {
+          "default": false,
+          "description": "Whether the reader may set the topic: a team can leave it to its\nowners.",
+          "type": "boolean"
+        },
+        "unread": {
+          "description": "Messages after the read mark (not the reader's own), and how many\nof those mention the reader.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "with": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatPerson"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A DM's other person (for a group DM, the first of `others`)."
+        },
+        "writable": {
+          "description": "Whether the reader may post here now (a DM whose other person left\nthe team, an archive, an archived channel: no).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "last",
+        "read",
+        "unread",
+        "mentions",
+        "muted",
+        "archived",
+        "writable"
+      ],
+      "type": "object"
+    },
+    "ChatRoomAgent": {
+      "description": "A machine whose agents reach a room through its owner's grant (M197).",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        },
+        "owner": {
+          "description": "The owner's account, and their name now.",
+          "type": "string"
+        },
+        "owner_name": {
+          "type": "string"
+        },
+        "powers": {
+          "description": "What it may do here: `threads.read`, `threads.post`, and on a\nnative issue's thread `issues.write`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "owner",
+        "owner_name",
+        "machine",
+        "machine_name",
+        "powers"
+      ],
+      "type": "object"
+    },
+    "ChatRoomChange": {
+      "description": "`PATCH /api/chat/rooms/{id}`: a channel renamed or archived, by its\nteam's owners; a DM renamed (`name`).",
+      "properties": {
+        "archived": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ChatRoomDetail": {
+      "description": "`GET /api/chat/rooms/{id}`: a room and who sees it (whom `@` reaches).",
+      "properties": {
+        "agents": {
+          "default": [],
+          "description": "The agents a live grant lets read or post here (M197), for everyone\nin the room to see: \"Jake's agents on geek can read and post here\".",
+          "items": {
+            "$ref": "#/$defs/ChatRoomAgent"
+          },
+          "type": "array"
+        },
+        "can_manage": {
+          "default": false,
+          "description": "The reader may add and remove a channel's members: its creator and\nits team's owners.",
+          "type": "boolean"
+        },
+        "people": {
+          "description": "Who sees the room: a channel's or a group DM's members (#118).",
+          "items": {
+            "$ref": "#/$defs/ChatPerson"
+          },
+          "type": "array"
+        },
+        "room": {
+          "$ref": "#/$defs/ChatRoom"
+        }
+      },
+      "required": [
+        "room",
+        "people"
+      ],
+      "type": "object"
+    },
+    "ChatRooms": {
+      "description": "`GET /api/chat`: every room the reader sees.",
+      "properties": {
+        "rooms": {
+          "items": {
+            "$ref": "#/$defs/ChatRoom"
+          },
+          "type": "array"
+        },
+        "threads_mentions": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "threads_unread": {
+          "default": 0,
+          "description": "Unread replies in the threads the reader follows, and how many\nmention them (#106): the Threads view's badge, which the rooms'\nown counts leave out.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rooms"
+      ],
+      "type": "object"
+    },
+    "ChatSave": {
+      "description": "`PUT /api/chat/rooms/{id}/messages/{seq}/saved`: save the message for\nlater (again: it changes the reminder, and un-does \"done\"). `remind_at`\n(ms since the epoch, in the future, at most [`SAVED_REMIND_MAX_MS`] away)\nis when to push the reader once.",
+      "properties": {
+        "remind_at": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ChatSaved": {
+      "description": "`GET /api/chat/saved`: the reader's saved messages in rooms they still\nsee, the ones to do newest saved first, then the done ones.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ChatSavedItem"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "ChatSavedDone": {
+      "description": "`PATCH .../saved`: mark a saved message done, or not.",
+      "properties": {
+        "done": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "done"
+      ],
+      "type": "object"
+    },
+    "ChatSavedItem": {
+      "description": "One saved message, with its room (the reader still sees it).",
+      "properties": {
+        "done": {
+          "description": "When it was marked done.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "message": {
+          "$ref": "#/$defs/ChatMessage"
+        },
+        "remind_at": {
+          "description": "When it will push the reader (or did: `reminded`).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "reminded": {
+          "type": "boolean"
+        },
+        "room": {
+          "type": "string"
+        },
+        "saved_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "room",
+        "seq",
+        "saved_at",
+        "reminded",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ChatSearchQuery": {
+      "description": "`GET /api/chat/search?q=&team=`: words (each a phrase, `mea*` a\nprefix) and filters (`in:#channel`, `from:@login`, `has:quote`), over\nthe rooms the reader sees, or one team's; newest first, at most 50.",
+      "properties": {
+        "q": {
+          "default": "",
+          "type": "string"
+        },
+        "team": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ChatSystem": {
+      "description": "What a system line tells of (#119).",
+      "properties": {
+        "kind": {
+          "description": "`topic` (its `text` is the new topic, empty when cleared),\n`description` (likewise), `pin` or `unpin`.",
+          "type": "string"
+        },
+        "target": {
+          "description": "The pinned message's number, for `pin` and `unpin`.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ChatTargetKind": {
+      "description": "What a daemon's thread is about.",
+      "oneOf": [
+        {
+          "enum": [
+            "pane",
+            "session"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "object",
+          "description": "An object, by its global id, on no machine (M196): only opened by\npeople, never in a daemon's reader list.",
+          "type": "string"
+        }
+      ]
+    },
+    "ChatTeamSettings": {
+      "description": "`GET`/`PUT /api/chat/teams/{team}/settings`: what a team's owners\ndecide about its chat (#114). Anyone in the team reads it, for the\ncomposer; only an owner sets it.",
+      "properties": {
+        "broadcast_owners": {
+          "description": "`@channel` and `@here` are for owners only.",
+          "type": "boolean"
+        },
+        "topic_owners": {
+          "default": false,
+          "description": "Only owners set a channel's topic (#119).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "broadcast_owners"
+      ],
+      "type": "object"
+    },
+    "ChatThread": {
+      "description": "The replies to a message, as one reader sees them (#106).",
+      "properties": {
+        "following": {
+          "description": "The reader follows the thread. Always false to an agent.",
+          "type": "boolean"
+        },
+        "last": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mentions": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "read": {
+          "description": "The reader's mark in the thread (a room number), and the replies\nafter it that aren't theirs (only while they follow), and how many\nof those mention them.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "repliers": {
+          "description": "Who replied, the newest first, at most [`THREAD_REPLIERS`].",
+          "items": {
+            "$ref": "#/$defs/ChatPerson"
+          },
+          "type": "array"
+        },
+        "replies": {
+          "description": "Replies not deleted, and when the newest was written (ms).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unread": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "replies",
+        "last",
+        "repliers",
+        "following",
+        "read",
+        "unread",
+        "mentions"
+      ],
+      "type": "object"
+    },
+    "ChatThreadItem": {
+      "description": "One thread the reader follows, in [`ChatThreads`].",
+      "properties": {
+        "latest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatMessage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The newest reply, for the list's preview."
+        },
+        "parent": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The message that starts it, with its [`ChatThread`]."
+        },
+        "room": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "room",
+        "parent"
+      ],
+      "type": "object"
+    },
+    "ChatThreadRead": {
+      "description": "`POST /api/chat/rooms/{id}/threads/{seq}/read`: read the thread up to\nhere (a room number; it only moves forward). Answers the thread's first\nmessage, with its [`ChatThread`].",
+      "properties": {
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq"
+      ],
+      "type": "object"
+    },
+    "ChatThreads": {
+      "description": "`GET /api/chat/threads`: the threads the reader follows in rooms they\nsee, the most recently active first (at most [`THREADS_LISTED`]), and\nall their unread: the badge on the Threads view.",
+      "properties": {
+        "mentions": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "threads": {
+          "items": {
+            "$ref": "#/$defs/ChatThreadItem"
+          },
+          "type": "array"
+        },
+        "unread": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "threads",
+        "unread",
+        "mentions"
+      ],
+      "type": "object"
+    },
+    "ChatTopicSet": {
+      "description": "`PUT /api/chat/rooms/{id}/topic`: what a channel's members (or, when\nthe team says so, its owners) write about it. What's left out stays;\nan empty one clears it. Each change posts a system line. Answers the room.",
+      "properties": {
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "topic": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ChatTyping": {
+      "description": "`POST /api/chat/rooms/{id}/typing`'s body, which may be left out (#111).\n`warm` (M262): the composer's text asks `@arugula`, so the project's\nagents box is woken now, before the message is sent. A page sends it\nonce per composing burst. `show` false: only that, not typing (a reply\nthread's composer, whose typing nobody is shown).",
+      "properties": {
+        "show": {
+          "default": true,
+          "type": "boolean"
+        },
+        "warm": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ChatUnread": {
+      "description": "`POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read\nmark goes to just before it, backwards if need be (#116). The answer is\nthe room, as the reader now sees it.",
+      "properties": {
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq"
+      ],
+      "type": "object"
+    },
+    "ChatUploadQuery": {
+      "description": "`POST /api/chat/rooms/{id}/files?name=`: the file's bytes are the body.\nAnswers [`ChatFile`]; it belongs to the uploader until a message is\nposted with its `id` in [`ChatPost::files`] (an hour, else it's swept).\nAgents use `/api/daemon/chat/rooms/{id}/files` the same way.",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "NotifyLevel": {
+      "description": "How much of a room reaches the reader's pushes, and how its unread shows\n(#113).",
+      "oneOf": [
+        {
+          "const": "all",
+          "description": "Every message.",
+          "type": "string"
+        },
+        {
+          "const": "mentions",
+          "description": "The reader's mentions and DMs.",
+          "type": "string"
+        },
+        {
+          "const": "nothing",
+          "description": "Nothing: what muting was.",
+          "type": "string"
+        }
+      ]
+    },
+    "NotifyPrefs": {
+      "description": "`GET /api/notify/prefs`: the account's notification settings.",
+      "properties": {
+        "all_notices": {
+          "description": "Do not disturb holds back every push, not only chat's.",
+          "type": "boolean"
+        },
+        "channels": {
+          "$ref": "#/$defs/NotifyLevel",
+          "description": "Levels for rooms with none of their own (#113)."
+        },
+        "dms": {
+          "$ref": "#/$defs/NotifyLevel"
+        },
+        "paused": {
+          "description": "Do not disturb is on now: snoozed, or inside quiet hours.",
+          "type": "boolean"
+        },
+        "quiet": {
+          "items": {
+            "$ref": "#/$defs/QuietHours"
+          },
+          "type": "array"
+        },
+        "snooze_until": {
+          "description": "Snoozed until (ms since the epoch), while that's ahead.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "threads": {
+          "$ref": "#/$defs/NotifyLevel",
+          "description": "Replies in the threads the person follows (#106)."
+        },
+        "tz": {
+          "description": "IANA name; the schedule is read in it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channels",
+        "dms",
+        "threads",
+        "tz",
+        "quiet",
+        "all_notices",
+        "paused"
+      ],
+      "type": "object"
+    },
+    "NotifySet": {
+      "description": "`POST /api/notify/prefs`: what's given changes, the rest stays.",
+      "properties": {
+        "all_notices": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "channels": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NotifyLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dms": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NotifyLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "quiet": {
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/QuietHours"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "snooze_until": {
+          "default": null,
+          "description": "Snooze until this time (ms); 0 ends a snooze.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "threads": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NotifyLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tz": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "PresenceMode": {
+      "description": "What a person chose for their own presence: `auto` (as their pages\nsay), `away` (shown away while a page is open) or `offline` (shown\noffline always).",
+      "enum": [
+        "auto",
+        "away",
+        "offline"
+      ],
+      "type": "string"
+    },
+    "PresenceState": {
+      "description": "How a person's presence shows to the teammates who see it: `active` (a\npage of theirs is open and was used in the last 10 minutes), `away`\n(open but idle, or set by hand) or `offline` (no page, or they chose to\nappear so).",
+      "enum": [
+        "active",
+        "away",
+        "offline"
+      ],
+      "type": "string"
+    },
+    "QuietHours": {
+      "description": "Quiet hours on some weekdays: from `from` to `to`, in minutes after\nmidnight in the account's time zone. A window that ends at or before it\nstarts runs past midnight, into the next day (its weekday is the day it\nstarts on).",
+      "properties": {
+        "days": {
+          "description": "ISO weekdays: 1 Monday … 7 Sunday.",
+          "items": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "from": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "to": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "days",
+        "from",
+        "to"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::chat"
+}

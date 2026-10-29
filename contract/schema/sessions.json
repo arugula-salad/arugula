@@ -1,0 +1,1620 @@
+{
+  "$defs": {
+    "AgentSessionRead": {
+      "description": "[`AGENT_SESSION`]'s answer: its row, its last answer whole (the\nthread's copy keeps only its end), and what its latest turn left.",
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionAnswer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "open": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionOpen"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session": {
+          "$ref": "#/$defs/SessionRow"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionTurn"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turns": {
+          "description": "How many turns it has finished.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session",
+        "turns"
+      ],
+      "type": "object"
+    },
+    "AgentSessionReplied": {
+      "description": "[`AGENT_SESSION_REPLY`]'s answer: the reply's message, and what it did:\n`answered` (the session's open question), `queued` (its next prompt,\n`prompt`; `permission` when it waits on a person's approval first),\n`refused` (`why`) or `chat` (its owner only views the project).",
+      "properties": {
+        "did": {
+          "type": "string"
+        },
+        "permission": {
+          "default": false,
+          "type": "boolean"
+        },
+        "prompt": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "room": {
+          "type": "string"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "session": {
+          "type": "string"
+        },
+        "why": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "session",
+        "room",
+        "seq",
+        "did"
+      ],
+      "type": "object"
+    },
+    "AgentSessionReply": {
+      "description": "[`AGENT_SESSION_REPLY`]'s body.",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "AgentSessionStart": {
+      "description": "[`AGENT_SESSIONS`]'s body: where to ask, and what. On a native issue\n(`issue`: its id, `iss_…`; or `number` in `project`), or in a project's\nchannel (`room`), in the thread of one of its messages (`thread`, its\nseq) or as a message of its own.",
+      "properties": {
+        "issue": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "number": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "default": null,
+          "description": "What `@arugula` is asked: it may name the repo (`owner/name`) and a\nmodel, as a person's ask does. On an issue, by default, to work on\nit.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "room": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thread": {
+          "default": null,
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "AgentSessionStarted": {
+      "description": "[`AGENT_SESSIONS`]'s answer: the ask's message (`room`, `seq`), and the\nsession it started; with none, the platform's lines since in its thread\n(why not, or which repo it asks the owner).",
+      "properties": {
+        "room": {
+          "type": "string"
+        },
+        "said": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thread": {
+          "description": "The thread it's in: its first message's seq (0: an issue's thread).",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "room",
+        "seq",
+        "thread",
+        "said"
+      ],
+      "type": "object"
+    },
+    "AgentSessionWait": {
+      "description": "[`AGENT_SESSIONS_WAIT`]'s body.",
+      "properties": {
+        "sessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "wait": {
+          "default": 0,
+          "description": "Seconds, at most [`SESSION_WAIT_MAX`]; 0 answers at once.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sessions"
+      ],
+      "type": "object"
+    },
+    "AgentSessionsWaited": {
+      "description": "[`AGENT_SESSIONS_WAIT`]'s answer: each session asked of, in order, and\nthose of them whose turn has finished.",
+      "properties": {
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/SessionRow"
+          },
+          "type": "array"
+        },
+        "settled": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sessions",
+        "settled"
+      ],
+      "type": "object"
+    },
+    "ChatAsk": {
+      "description": "An ask's form (Arugula #214, [`ASK`]): which repo a thread's `@arugula`\nworks in, when the project's workspaces have several and the ask named\nnone.",
+      "properties": {
+        "asker": {
+          "description": "Whom it waits on, and their name now.",
+          "type": "string"
+        },
+        "asker_name": {
+          "type": "string"
+        },
+        "choices": {
+          "description": "One button each.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "description": "`repo`.",
+          "type": "string"
+        },
+        "mine": {
+          "description": "The reader is its asker, so the buttons are theirs.",
+          "type": "boolean"
+        },
+        "open": {
+          "description": "It still waits on its asker: nobody answered it, and no later ask in\nits thread took its place.",
+          "type": "boolean"
+        },
+        "parent": {
+          "description": "The thread it's in (`None`: the room's own messages, an issue's).",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "question": {
+          "type": "string"
+        },
+        "room": {
+          "type": "string"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "session": {
+          "description": "The session its answer started, once it's answered.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "room",
+        "seq",
+        "kind",
+        "asker",
+        "asker_name",
+        "question",
+        "choices",
+        "open",
+        "mine"
+      ],
+      "type": "object"
+    },
+    "ChatAskAnswer": {
+      "description": "[`ASK`]'s `POST` body: the choice pressed.",
+      "properties": {
+        "choice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "choice"
+      ],
+      "type": "object"
+    },
+    "IssueAgent": {
+      "description": "[`ISSUE_AGENT`]'s answer: the issue's thread and the message that asked,\nand the session it started, if it did (else the thread says why, or\nasks which box or repo).",
+      "properties": {
+        "room": {
+          "type": "string"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "room",
+        "seq"
+      ],
+      "type": "object"
+    },
+    "SessionAct": {
+      "description": "[`SESSION_ACTIONS`]'s body: what to ask of the session's box.",
+      "properties": {
+        "answer": {
+          "default": null,
+          "description": "`answer`'s: the question card's answer (`question_<n>`)."
+        },
+        "kind": {
+          "description": "`answer`, `approve`, `deny` or `cancel`.",
+          "type": "string"
+        },
+        "option": {
+          "default": null,
+          "description": "`approve`'s: one of the permission's options.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "default": null,
+          "description": "`deny`'s: why.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request": {
+          "default": null,
+          "description": "The open request it answers (the card's `open.request`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "SessionAnswer": {
+      "description": "A turn's answer: the agent's last message, as its box sent it.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cut": {
+          "description": "Its box cut its start ([`crate::work::REPLY_MAX`]): it starts `…`.",
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "text",
+        "cut"
+      ],
+      "type": "object"
+    },
+    "SessionAnswered": {
+      "description": "An answer to what's open, on its way to the box.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "type": "string"
+        },
+        "kind": {
+          "description": "`answer`, `approve` or `deny`.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "by",
+        "name",
+        "kind",
+        "at"
+      ],
+      "type": "object"
+    },
+    "SessionCard": {
+      "description": "A session as its card shows it.",
+      "properties": {
+        "answered": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionAnswered"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The answer to it that its box hasn't taken yet."
+        },
+        "asker": {
+          "description": "Who asked, and their name now (\"\" once they're gone).",
+          "type": "string"
+        },
+        "asker_name": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "type": "string"
+        },
+        "cancelling": {
+          "description": "Someone asked its box to cancel the turn, and it hasn't yet.",
+          "type": "boolean"
+        },
+        "ci_max": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ci_rounds": {
+          "default": 0,
+          "description": "How many CI rounds went back to it (M260), of at most `ci_max`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ended_at": {
+          "description": "When it last stopped running (done, failed, stopped): the clock\nstops there. `None` while a turn is under way or queued.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "harness": {
+          "description": "The agent asked for (`claude`, `codex`), and the one its box ran\nit on, once it took it (`claude` when the other isn't there).",
+          "type": "string"
+        },
+        "heard_at": {
+          "description": "When the platform last heard from its box.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "last_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_tool": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine": {
+          "description": "Its box and agent block there, once the box took it: Open goes there.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "merged_at": {
+          "default": null,
+          "description": "When its PR merged (M265): the thread is done, and the session ends\nonce a turn under way does. Its card says \"merged ✓\".",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "default": null,
+          "description": "The model its agent runs on, as its box last said (`Opus 5.5`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model_asked": {
+          "default": null,
+          "description": "The model it was asked to use (Arugula #215): its ask's word (\"use\nsonnet\"), else its project's setting, else `None` (the strongest).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "moves": {
+          "default": [],
+          "description": "Where Move to… may send it (Arugula #214): its project's other\nworkspaces that have its repo, by name. Empty unless the reader may\nmove it (its asker, an owner or an editor) and it's queued or done.",
+          "items": {
+            "$ref": "#/$defs/SessionPlace"
+          },
+          "type": "array"
+        },
+        "needs_person": {
+          "default": false,
+          "description": "CI failed again after its last round, and nobody in its thread has\nprompted it since: it needs a person.",
+          "type": "boolean"
+        },
+        "open": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionOpen"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What it asks, while it waits on a person."
+        },
+        "parent": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "parent_session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parked": {
+          "default": false,
+          "description": "Done and parked (Arugula #215): idle long enough that its box\nclosed its agent, keeping its checkout and conversation. A reply\nopens it again.",
+          "type": "boolean"
+        },
+        "picked": {
+          "description": "The one of [`SessionCard::tries`] kept, once one is picked; on a\nsibling, its parent's pick.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ports": {
+          "description": "Its workspace's dev servers (Preview), the public ones with their\nURL.",
+          "items": {
+            "$ref": "#/$defs/SessionPort"
+          },
+          "type": "array"
+        },
+        "pr": {
+          "description": "The PR its asker sent (M259): its URL.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "type": "string"
+        },
+        "pushed": {
+          "description": "A turn pushed its branch: its asker may draft its PR.",
+          "type": "boolean"
+        },
+        "ran": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why it failed or stopped, or why it's queued again (its box was\nrebuilt).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "description": "What it is (M264): `thread` (the thread's own, `@arugula`), `try` (a\nTry 3's sibling of `parent_session`) or `review` (`@codex review`\nof `parent_session`).",
+          "type": "string"
+        },
+        "room": {
+          "description": "Its thread: the room and the message it hangs off.",
+          "type": "string"
+        },
+        "session": {
+          "type": "string"
+        },
+        "started_by": {
+          "default": null,
+          "description": "Who started it, when it was its asker's agent and not the asker by\nhand (aru-121, a `sessions.start` grant): \"<asker>'s agent on\n<machine>\", by their names now. The asker is still the asker.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "`queued`, `working`, `needs_input`, `done`, `failed`,\n`unresponsive` or `stopped`.",
+          "type": "string"
+        },
+        "tries": {
+          "description": "A Try 3's sessions, on its parent's card: the parent first, then its\nsiblings, oldest first. Empty for every other session.",
+          "items": {
+            "$ref": "#/$defs/SessionTry"
+          },
+          "type": "array"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionTurn"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What its latest turn left."
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "was": {
+          "description": "An `unresponsive` one's state before its box went quiet.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "description": "The hosted workspace it runs on, and its name (\"\" once it's gone).",
+          "type": "string"
+        },
+        "workspace_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "project",
+        "room",
+        "parent",
+        "state",
+        "asker",
+        "asker_name",
+        "workspace",
+        "workspace_name",
+        "branch",
+        "created_at",
+        "updated_at",
+        "cancelling",
+        "ports",
+        "pushed",
+        "role",
+        "harness",
+        "tries"
+      ],
+      "type": "object"
+    },
+    "SessionFinish": {
+      "description": "A turn's finish step (M261): the command, whether it passed, and when\nit failed, the last of its output. A failed one isn't pushed.",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "output_tail": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "command",
+        "output_tail"
+      ],
+      "type": "object"
+    },
+    "SessionIssue": {
+      "description": "The issue a session works on.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "description": "`open` or `closed`.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "number",
+        "title",
+        "labels",
+        "state"
+      ],
+      "type": "object"
+    },
+    "SessionLine": {
+      "description": "One entry of a session's history, in words.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`state`, `error` or `turn`.",
+          "type": "string"
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "signed": {
+          "description": "Its box reported it, signed (else control recorded it).",
+          "type": "boolean"
+        },
+        "text": {
+          "description": "What it says, in a line.",
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "kind",
+        "to",
+        "at",
+        "signed",
+        "text"
+      ],
+      "type": "object"
+    },
+    "SessionMove": {
+      "description": "[`SESSION_MOVE`]'s body: the workspace it goes to.",
+      "properties": {
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace"
+      ],
+      "type": "object"
+    },
+    "SessionOpen": {
+      "description": "What a session waits on a person for.",
+      "properties": {
+        "ask": {
+          "description": "`permission` or `question` (`None`: the box didn't say).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "options": {
+          "description": "A permission's option ids, or a question's choices, by their labels\n(Arugula #214: a button each; its own words still go too).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "question": {
+          "description": "The words shown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request": {
+          "description": "The request's id, as its box named it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "options",
+        "at"
+      ],
+      "type": "object"
+    },
+    "SessionPick": {
+      "description": "[`SESSION_PICK`]'s body: the session kept, one of the Try 3's.",
+      "properties": {
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "SessionPlace": {
+      "description": "One of a project's workspaces, as Move to… lists it.",
+      "properties": {
+        "awake": {
+          "description": "Its box is up now (ready and online).",
+          "type": "boolean"
+        },
+        "busy": {
+          "description": "How many of its project's sessions are going there: queued, or a\nturn under way. Not done or parked ones, which only wait, nor one\nleft from before its box was rebuilt.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace",
+        "name",
+        "awake",
+        "busy"
+      ],
+      "type": "object"
+    },
+    "SessionPort": {
+      "description": "One of a workspace's dev servers.",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "Its public preview's URL, while it's public.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "port",
+        "label"
+      ],
+      "type": "object"
+    },
+    "SessionPr": {
+      "description": "A session's pull request, as its asker drafts it ([`SESSION_PR`]).",
+      "properties": {
+        "base": {
+          "description": "The branch it goes into: the repo's default, unless its asker says.",
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "draft": {
+          "description": "Opened as a draft PR on GitHub.",
+          "type": "boolean"
+        },
+        "error": {
+          "description": "Why the last send didn't get there.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head": {
+          "description": "The session's branch, which the PR is from.",
+          "type": "string"
+        },
+        "id": {
+          "description": "`pdr_…`, once it's kept.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "`owner/name`.",
+          "type": "string"
+        },
+        "session": {
+          "type": "string"
+        },
+        "state": {
+          "description": "`new` (not kept yet: prefilled), `waiting`, `sending`, `sent` or\n`failed`.",
+          "type": "string"
+        },
+        "template": {
+          "description": "The repo's PR template the body started from, by its path.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "description": "The PR, once sent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "session",
+        "repo",
+        "head",
+        "base",
+        "title",
+        "body",
+        "draft",
+        "state"
+      ],
+      "type": "object"
+    },
+    "SessionPrEdit": {
+      "description": "[`SESSION_PR`]'s `PUT` body: what its asker wrote.",
+      "properties": {
+        "base": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body": {
+          "type": "string"
+        },
+        "draft": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "body"
+      ],
+      "type": "object"
+    },
+    "SessionPrSend": {
+      "description": "[`SESSION_PR_SEND`]'s body: what to send (kept first, when given), and\nhow: `browser` (GitHub's authorization in this browser, coming back to\n`back`, a path on the platform page) or `machine` (one of the asker's\nown).",
+      "properties": {
+        "back": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "edit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionPrEdit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "via": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SessionPrSent": {
+      "description": "[`SESSION_PR_SEND`]'s answer: the PR draft now, and GitHub's\nauthorization page to go to when the send goes through the browser.",
+      "properties": {
+        "authorize": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine": {
+          "description": "The machine that sent it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pr": {
+          "$ref": "#/$defs/SessionPr"
+        },
+        "via": {
+          "description": "`token` or `machine`, once sent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pr"
+      ],
+      "type": "object"
+    },
+    "SessionRow": {
+      "description": "A session as a wave lists it.",
+      "properties": {
+        "agent": {
+          "description": "The machine whose agents started it, by id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "asker": {
+          "type": "string"
+        },
+        "asker_name": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "head": {
+          "description": "HEAD after its latest turn, and when a turn last pushed the branch.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "issue": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionIssue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "merged_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "parent": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "type": "string"
+        },
+        "pushed_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "question": {
+          "description": "What it asks, while it waits on a person.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why it failed or stopped.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "description": "`thread`, `try` or `review`, as [`SessionCard::role`].",
+          "type": "string"
+        },
+        "room": {
+          "description": "Its thread: the room and the message it hangs off.",
+          "type": "string"
+        },
+        "session": {
+          "type": "string"
+        },
+        "settled": {
+          "description": "Its turn has finished: it isn't queued or working, and no prompt\nwaits for its next turn (or it ended, or it waits on a person).",
+          "type": "boolean"
+        },
+        "started_by": {
+          "description": "As [`SessionCard::started_by`]: \"<asker>'s agent on <machine>\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "As [`SessionCard::state`].",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "waiting": {
+          "description": "What waits on the reader, in a few words (\"its question\", \"a\npermission\", \"CI failed again\", \"its PR to send\"), if anything.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "description": "Its box: the workspace and its name.",
+          "type": "string"
+        },
+        "workspace_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "project",
+        "room",
+        "parent",
+        "state",
+        "settled",
+        "role",
+        "asker",
+        "asker_name",
+        "workspace",
+        "workspace_name",
+        "branch",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "SessionSettings": {
+      "description": "[`PROJECT_SESSION_SETTINGS`]: \"agents use model …\" (Arugula #215), one\nof [`crate::work::MODELS`], or `None` for the strongest. An ask's own\nword (\"use sonnet\") wins for its session.",
+      "properties": {
+        "model": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "models": {
+          "default": [],
+          "description": "What it may be, in a `GET`'s answer: [`crate::work::MODELS`].",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "SessionStats": {
+      "description": "[`PROJECT_SESSION_STATS`]'s answer: of the project's sessions asked for\nin the last [`STATS_DAYS`] days, how many led to a PR (sent by its\nasker, or opened from its branch by hand) and how many merged, and the\nmedian time from the `@` to the PR.",
+      "properties": {
+        "days": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "median_to_pr_ms": {
+          "description": "`None` until one led to a PR.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "prs_merged": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prs_opened": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessions": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "days",
+        "sessions",
+        "prs_opened",
+        "prs_merged"
+      ],
+      "type": "object"
+    },
+    "SessionTry": {
+      "description": "One of a Try 3's sessions, as its parent's compare view shows it.",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "no_slot": {
+          "description": "Queued with no slot on its box for it yet (the box runs three\nsessions, done ones not yet parked too, or holds six).",
+          "type": "boolean"
+        },
+        "pushed": {
+          "type": "boolean"
+        },
+        "ran": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why it failed or stopped.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionTurn"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What its latest turn left: its diffstat and how its finish step went."
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session",
+        "state",
+        "branch",
+        "harness",
+        "pushed",
+        "updated_at",
+        "no_slot"
+      ],
+      "type": "object"
+    },
+    "SessionTryAsk": {
+      "description": "[`SESSION_TRY`]'s body: the harnesses of the two siblings, `claude`\nor `codex` each (`[\"claude\", \"codex\"]` when it's left out; a box\nwithout Codex runs Claude Code in its place).",
+      "properties": {
+        "harnesses": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SessionTurn": {
+      "description": "What a session's turn left, as its box reported it.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "commits": {
+          "description": "`\"SHA subject\"`, newest first.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "diffstat": {
+          "description": "`git diff --stat`, shortened.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finish": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionFinish"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the workspace's finish step did after it (M261), when it has\none."
+        },
+        "head": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pushed": {
+          "type": "boolean"
+        },
+        "uncommitted": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "at",
+        "pushed",
+        "commits"
+      ],
+      "type": "object"
+    },
+    "SessionView": {
+      "description": "[`SESSION`]'s answer.",
+      "properties": {
+        "asked": {
+          "description": "The reader asked for it: only they send its PR.",
+          "type": "boolean"
+        },
+        "card": {
+          "$ref": "#/$defs/SessionCard"
+        },
+        "events": {
+          "description": "Its history, oldest first.",
+          "items": {
+            "$ref": "#/$defs/SessionLine"
+          },
+          "type": "array"
+        },
+        "may": {
+          "description": "The reader may stop it and answer it: an owner or editor of its\nproject.",
+          "type": "boolean"
+        },
+        "now": {
+          "description": "The platform's clock when it answered, so the page can tell a box\nthat went quiet whatever its own clock says.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "card",
+        "may",
+        "asked",
+        "now",
+        "events"
+      ],
+      "type": "object"
+    },
+    "SessionWave": {
+      "description": "[`PROJECT_SESSIONS`]' answer: the wave, newest first, and what narrows\nit.",
+      "properties": {
+        "askers": {
+          "description": "Who asked for the sessions listed, `[account, name]`, by name.",
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "labels": {
+          "description": "The project's issue labels, to narrow by.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "more": {
+          "description": "More matched than it lists.",
+          "type": "boolean"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/SessionRow"
+          },
+          "type": "array"
+        },
+        "tracker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionIssue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The tracker it's narrowed to, when it is."
+        }
+      },
+      "required": [
+        "project",
+        "sessions",
+        "labels",
+        "askers",
+        "more"
+      ],
+      "type": "object"
+    },
+    "SessionWaveQuery": {
+      "description": "[`PROJECT_SESSIONS`]' query: each that's set narrows the wave.",
+      "properties": {
+        "agent": {
+          "description": "Sessions this machine's agents started (aru-121); `me`, for a\nmachine's agents, their own machine.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "asker": {
+          "description": "Sessions this account asked for (by hand or through its agents);\n`me`, the reader (a machine's agents': its owner).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "going": {
+          "description": "Only ones going (not failed, stopped or merged).",
+          "type": "boolean"
+        },
+        "label": {
+          "description": "Sessions on an issue with this label.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "description": "At most this many (default 50, at most [`WAVE_MAX`]).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tracker": {
+          "description": "Sessions on a tracker's issues, by its number: the tracker, the\nissues its body names (`#N`), and those whose body names it.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::sessions"
+}

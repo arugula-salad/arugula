@@ -1,0 +1,994 @@
+{
+  "$defs": {
+    "Cert": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "approver": {
+          "description": "The device that signed this; the device itself for the root.",
+          "type": "string"
+        },
+        "created": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "device": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/Kind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "noise": {
+          "description": "X25519 public key, hex (zeros for a recovery code).",
+          "type": "string"
+        },
+        "sig": {
+          "default": "",
+          "description": "Ed25519 signature by the approver over [`Cert::body`], hex; empty\nuntil approved.",
+          "type": "string"
+        },
+        "sign": {
+          "description": "Ed25519 public key, hex.",
+          "type": "string"
+        },
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "account",
+        "device",
+        "kind",
+        "name",
+        "noise",
+        "sign",
+        "created",
+        "approver"
+      ],
+      "type": "object"
+    },
+    "Delegation": {
+      "description": "An owner's device saying control may enroll hosted machines into\n`project` with `key`, until it's revoked.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "The signing device.",
+          "type": "string"
+        },
+        "key": {
+          "description": "Control's hosted key (Ed25519, hex): what signs the machines.",
+          "type": "string"
+        },
+        "owner": {
+          "description": "`team:<id>` or `account:<id>`: the project's owner, as the signing\ndevice saw it.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "owner",
+        "key",
+        "at",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "DelegationPost": {
+      "description": "What a person's page signs and sends: a new delegation\n(`POST /api/hosted/delegations`), or a revocation of one\n(`POST /api/hosted/delegations/revoke`).",
+      "properties": {
+        "delegation": {
+          "$ref": "#/$defs/Delegation"
+        }
+      },
+      "required": [
+        "delegation"
+      ],
+      "type": "object"
+    },
+    "DelegationRevoke": {
+      "description": "A delegation taken back: control may enroll nothing more under it.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "type": "string"
+        },
+        "delegation": {
+          "description": "The delegation's [`Delegation::id`].",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "delegation",
+        "at",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "EnrollAsk": {
+      "description": "What the platform asks of the hub as it creates a box: a one-time\nenrollment into `project` for workspace `workspace`.",
+      "properties": {
+        "name": {
+          "description": "What the machine is called.",
+          "type": "string"
+        },
+        "owner": {
+          "description": "`team:<id>` or `account:<id>`: who the project belongs to, as the\nplatform holds it. The hub enrolls only under a delegation signed\nfor this owner.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "purpose": {
+          "description": "What the box is for: [`DEPLOY`] for one deploy's run (M219), or\n[`SNAPSHOT`] to build a workspace's snapshot (M263), which nobody is\nrouted to; `None` for a people's workspace.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sandbox": {
+          "default": null,
+          "description": "The box's sandbox id, when it enrolls by that (a box started from a\nrunning snapshot can't read the env it was made with). `None`: the\nhub makes a ticket for the box's env (`ARUGULA_HOSTED_TICKET`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "description": "The hosted workspace (`hw_…`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "owner",
+        "workspace",
+        "name"
+      ],
+      "type": "object"
+    },
+    "EnrollGiven": {
+      "description": "What the hub answers an [`EnrollAsk`].",
+      "oneOf": [
+        {
+          "description": "Recorded: until `expires` (ms), once. `ticket` is the one to put in\nthe box's env when it doesn't enroll by sandbox id.",
+          "properties": {
+            "expires": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "ready",
+              "type": "string"
+            },
+            "ticket": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "expires"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "No owner's device has delegated this project (or every delegation\nwas revoked): an owner signs one from a device first.",
+          "properties": {
+            "kind": {
+              "const": "no_delegation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "That sandbox id has an enrollment already: one per box, ever.",
+          "properties": {
+            "kind": {
+              "const": "taken",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "EnrollRequest": {
+      "description": "`POST /api/hosted/enroll`, once per box.",
+      "properties": {
+        "at": {
+          "description": "When it signed `proof` (ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "noise": {
+          "description": "The machine's new public keys, hex.",
+          "type": "string"
+        },
+        "proof": {
+          "description": "Its signature with `sign` over\n`arugula_e2e::hosted::enroll_proof_body` (the SHA-256 of the ticket\nor sandbox id, its keys, `at`).",
+          "type": "string"
+        },
+        "sandbox": {
+          "default": null,
+          "description": "the box's sandbox id (`/run/e2b/.E2B_SANDBOX_ID`). Exactly one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sign": {
+          "type": "string"
+        },
+        "ticket": {
+          "default": null,
+          "description": "The ticket from `ARUGULA_HOSTED_TICKET`; or",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "noise",
+        "sign",
+        "at",
+        "proof"
+      ],
+      "type": "object"
+    },
+    "Enrolled": {
+      "description": "A workspace whose box enrolled, and the hosted machine it is\n(`HubPort::hosted_enrolled`).",
+      "properties": {
+        "machine": {
+          "description": "The machine's device id; empty when `taken` removed it.",
+          "type": "string"
+        },
+        "taken": {
+          "default": false,
+          "description": "Someone tried the box's enrollment again: fail closed, the machine\nthat used it was removed, and the platform deletes the box.",
+          "type": "boolean"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace",
+        "machine"
+      ],
+      "type": "object"
+    },
+    "Enrollment": {
+      "description": "What a hosted machine pins and serves by: its certificate, the\ndelegation it's under, and who's in its project, to check people's\ndevices against as a team machine does.",
+      "properties": {
+        "account_certs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Cert"
+          },
+          "type": "array"
+        },
+        "account_revocations": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Revocation"
+          },
+          "type": "array"
+        },
+        "cert": {
+          "$ref": "#/$defs/HostedCert"
+        },
+        "certs": {
+          "additionalProperties": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "items": {
+                  "$ref": "#/$defs/Cert"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "$ref": "#/$defs/Revocation"
+                },
+                "type": "array"
+              }
+            ],
+            "type": "array"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "delegation": {
+          "$ref": "#/$defs/Delegation"
+        },
+        "legacy_app_children": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": "The owners' browsers and phones that grandfathered app windows\napproved, by account (control's `legacy_app::children`,\n`arugula_e2e::cert::legacy_app_link`), which count on the way back\nto a deploy approver's root (`arugula_e2e::deploy::check_apply`).\n`None` from a control from before: the box keeps what it pinned.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "purpose": {
+          "description": "What the box is for (M219): [`DEPLOY`] or [`SNAPSHOT`], or `None` for\na people's workspace. A box that hears either stays one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revocations": {
+          "default": [],
+          "description": "Revocations of it: the machine stays, but nothing more enrolls.",
+          "items": {
+            "$ref": "#/$defs/DelegationRevoke"
+          },
+          "type": "array"
+        },
+        "roster": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Roster"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TeamPin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A team's project: the team to pin, its roster now, and its\nmembers' certificates."
+        },
+        "trust": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Trust"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "An account's project: its root, certificates and revocations."
+        },
+        "url": {
+          "description": "Control's URL, to dial.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "cert",
+        "delegation"
+      ],
+      "type": "object"
+    },
+    "HostedCert": {
+      "description": "A hosted machine's certificate: its keys, the project and workspace it\nbelongs to, and the delegation it was enrolled under, signed with the\nkey that delegation names.",
+      "properties": {
+        "created": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "delegation": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "noise": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sig": {
+          "default": "",
+          "type": "string"
+        },
+        "sign": {
+          "type": "string"
+        },
+        "workspace": {
+          "description": "The hosted workspace (`hw_…`) the box is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "owner",
+        "workspace",
+        "delegation",
+        "device",
+        "name",
+        "noise",
+        "sign",
+        "created"
+      ],
+      "type": "object"
+    },
+    "Invite": {
+      "description": "An invite an owner's device signed ahead of time: whoever holds the\nprivate half of `key` may add themselves, once, as `role`, until\n`expires`.\n\n```text\nillogical team invite v1\nteam <id>\nrole <editor|viewer>\nexpires <ms>\nkey <ed25519 public key, hex>\nby <device id>\n```",
+      "properties": {
+        "by": {
+          "description": "The owner's signing device.",
+          "type": "string"
+        },
+        "expires": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "key": {
+          "description": "The one-time key; it also names the invite.",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/TeamRole"
+        },
+        "sig": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team",
+        "role",
+        "expires",
+        "key",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "Kind": {
+      "oneOf": [
+        {
+          "enum": [
+            "browser",
+            "cli",
+            "daemon"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "recovery",
+          "description": "A recovery code: approves a new device when every other is lost.",
+          "type": "string"
+        },
+        {
+          "const": "app",
+          "description": "The desktop app's window. Its keys reach it through whatever\nlistens on the computer's loopback port, so, like a CLI's, they may\nbe a program's on that computer, not the person's. It connects and\napproves machines, CLIs and other apps, but never a browser (see\n[`Kind::certifies`]). Older readers don't know this word: control\nleaves `app` certificates out of what it answers a client that\ndoesn't say it knows them (`app-devices`, see control's `compat.rs`).",
+          "type": "string"
+        }
+      ]
+    },
+    "Member": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "name": {
+          "description": "To show (a login); no spaces or control characters.",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/TeamRole"
+        },
+        "root": {
+          "description": "The account's root device, as the owner who added them saw it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "root",
+        "role",
+        "name"
+      ],
+      "type": "object"
+    },
+    "PublicPort": {
+      "properties": {
+        "port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "preview": {
+          "description": "The preview's id, the label of its host.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "port",
+        "preview"
+      ],
+      "type": "object"
+    },
+    "PublicPorts": {
+      "description": "What [`HOSTED_PREVIEWS`] answers.",
+      "properties": {
+        "ports": {
+          "items": {
+            "$ref": "#/$defs/PublicPort"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ports"
+      ],
+      "type": "object"
+    },
+    "Redeem": {
+      "description": "A roster version written by an invitee: the invite, and the one-time\nkey's signature over [`Invite::redeem_body`].",
+      "properties": {
+        "invite": {
+          "$ref": "#/$defs/Invite"
+        },
+        "proof": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "invite",
+        "proof"
+      ],
+      "type": "object"
+    },
+    "Revocation": {
+      "description": "A device taken off the account, signed by one of its devices.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        },
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "account",
+        "device",
+        "at",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "RevokePost": {
+      "properties": {
+        "revoke": {
+          "$ref": "#/$defs/DelegationRevoke"
+        }
+      },
+      "required": [
+        "revoke"
+      ],
+      "type": "object"
+    },
+    "Roster": {
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "The signing device.",
+          "type": "string"
+        },
+        "members": {
+          "items": {
+            "$ref": "#/$defs/Member"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "redeem": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Redeem"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The presigned invite this version redeems (v2), when an invitee\nrather than an owner signs it."
+        },
+        "sig": {
+          "type": "string"
+        },
+        "spent": {
+          "description": "Invites already redeemed (v2), so each works once.",
+          "items": {
+            "$ref": "#/$defs/Spent"
+          },
+          "type": "array"
+        },
+        "team": {
+          "type": "string"
+        },
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "team",
+        "name",
+        "version",
+        "at",
+        "members",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "SetupPlan": {
+      "description": "What a hosted machine sets up on its first boot, from its workspace's\nspec (M183): its repos with what to clone each with, its packages, its\nsetup script, and the env its spec takes from its secrets.",
+      "properties": {
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "The spec's env names that have a value here, and those values.",
+          "type": "object"
+        },
+        "packages": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repos": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SetupRepo"
+          },
+          "type": "array"
+        },
+        "setup": {
+          "default": "",
+          "description": "A shell script, run after both.",
+          "type": "string"
+        },
+        "spec_hash": {
+          "description": "The spec's hash: what the box is now built from.",
+          "type": "string"
+        },
+        "unset": {
+          "default": [],
+          "description": "The spec's env names with no value here: not set, or held by the\nprovider's broker.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workspace": {
+          "description": "The hosted workspace (`hw_…`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace",
+        "spec_hash"
+      ],
+      "type": "object"
+    },
+    "SetupRepo": {
+      "description": "A repo to clone, and how.",
+      "properties": {
+        "password": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "An HTTPS clone URL, with no credentials in it.",
+          "type": "string"
+        },
+        "username": {
+          "default": null,
+          "description": "What to clone with, over HTTP basic auth.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "via": {
+          "description": "`github_app` (a read-only installation token for this repo alone,\nminted for this clone: a GitHub repo linked to the project),\n`secret` (the workspace's `GIT_TOKEN`), or `none`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "via"
+      ],
+      "type": "object"
+    },
+    "SetupReport": {
+      "description": "`POST /api/hosted/setup`: how the setup goes.",
+      "properties": {
+        "pane": {
+          "default": null,
+          "description": "The pane it runs in, on the machine.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "reason": {
+          "default": "",
+          "description": "Why a failed setup stopped, as a fixed code ([`SETUP_REASONS`]):\nnever the pane's text, which stays end to end (\"Two planes, two\ntrust rules\"): a client reads it from the box.",
+          "type": "string"
+        },
+        "spec_hash": {
+          "default": "",
+          "description": "The spec's hash it runs.",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/SetupStatus"
+        },
+        "step": {
+          "default": "",
+          "description": "The step it's on, or the one that failed: `clone app`, `packages`,\n`setup script`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "SetupStatus": {
+      "description": "Where a hosted machine's setup is.",
+      "enum": [
+        "setting_up",
+        "ready",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "Spent": {
+      "description": "An invite that's been used, kept until it would have expired anyway.",
+      "properties": {
+        "expires": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "expires"
+      ],
+      "type": "object"
+    },
+    "TeamPin": {
+      "description": "What a team daemon pins when it joins: the team and its founder.",
+      "properties": {
+        "founder": {
+          "type": "string"
+        },
+        "founder_root": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team",
+        "founder",
+        "founder_root"
+      ],
+      "type": "object"
+    },
+    "TeamRole": {
+      "enum": [
+        "owner",
+        "editor",
+        "viewer"
+      ],
+      "type": "string"
+    },
+    "Trust": {
+      "description": "What a daemon pinned when it joined: the account and its root device.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "root"
+      ],
+      "type": "object"
+    },
+    "WakeAnswer": {
+      "description": "What the platform answers the hub's ask to wake a hosted workspace's\nbox (`PlatformPort::hosted_wake`, M182): someone opened its machine and\nits daemon isn't connected.",
+      "oneOf": [
+        {
+          "description": "Its box runs (it was resumed, or it was running): its daemon dials\nin again in a moment.",
+          "properties": {
+            "kind": {
+              "const": "awake",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "It didn't wake: why, for the person who opened it.",
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/WakeCode"
+            },
+            "kind": {
+              "const": "failed",
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "code",
+            "why"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "WakeCode": {
+      "description": "Why a box didn't wake. The page offers rebuild for each but\n`starting`.",
+      "oneOf": [
+        {
+          "const": "gone",
+          "description": "The box is gone at the provider, or the workspace was deleted.",
+          "type": "string"
+        },
+        {
+          "const": "refused",
+          "description": "The provider said no.",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "description": "The provider didn't answer in time; the platform keeps trying.",
+          "type": "string"
+        },
+        {
+          "const": "starting",
+          "description": "The workspace's box is being made or made again.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "The workspace failed earlier and waits for a rebuild.",
+          "type": "string"
+        },
+        {
+          "const": "silent",
+          "description": "The box woke, but its daemon didn't dial in (the hub's word).",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::hosted"
+}

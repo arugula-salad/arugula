@@ -34,6 +34,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum TeamRole {
     Owner,
@@ -52,6 +53,7 @@ impl TeamRole {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Member {
     pub account: String,
     /// The account's root device, as the owner who added them saw it.
@@ -62,6 +64,7 @@ pub struct Member {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Roster {
     pub v: u32,
     pub team: String,
@@ -94,6 +97,7 @@ pub struct Roster {
 /// by <device id>
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Invite {
     pub team: String,
     pub role: TeamRole,
@@ -165,6 +169,7 @@ impl Invite {
 /// by <device id>
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AskInvite {
     pub team: String,
     pub role: TeamRole,
@@ -238,6 +243,7 @@ impl AskInvite {
 
 /// An invite that's been used, kept until it would have expired anyway.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Spent {
     pub key: String,
     pub expires: u64,
@@ -246,6 +252,7 @@ pub struct Spent {
 /// A roster version written by an invitee: the invite, and the one-time
 /// key's signature over [`Invite::redeem_body`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Redeem {
     pub invite: Invite,
     pub proof: String,
@@ -253,6 +260,7 @@ pub struct Redeem {
 
 /// What a team daemon pins when it joins: the team and its founder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TeamPin {
     pub team: String,
     pub founder: String,
@@ -289,6 +297,7 @@ impl TeamPin {
 /// daemon applies only a move newer than the last it took, so control can
 /// neither make one up nor replay an old one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Move {
     /// The team it's in from now on; none for its own account.
     #[serde(default)]

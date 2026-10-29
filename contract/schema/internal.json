@@ -1,0 +1,3043 @@
+{
+  "$defs": {
+    "AccessArgs": {
+      "properties": {
+        "client": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "client"
+      ],
+      "type": "object"
+    },
+    "Account": {
+      "description": "An account, with its names.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "login": {
+          "description": "Its sign-in login (GitHub's), or \"\".",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name it chose, else its GitHub login, else \"\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "login",
+        "name"
+      ],
+      "type": "object"
+    },
+    "AccountArgs": {
+      "properties": {
+        "account": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account"
+      ],
+      "type": "object"
+    },
+    "ArchiveBlocks": {
+      "description": "`hosted.archive_blocks` (Arugula #214): [`ArchiveOpen`] for these agent\nblocks only. The platform asks before Move to… takes a session off a\nbox that stays up: its conversation goes with it, and the box's other\nblocks are archived when they close, as they end (one transcript per\nblock is kept). A daemon from before it answers that it doesn't know\nthe op.",
+      "properties": {
+        "blocks": {
+          "items": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "blocks"
+      ],
+      "type": "object"
+    },
+    "ArchiveOpen": {
+      "description": "`hosted.archive` (Arugula #209), control to a hosted machine through\nits relay: send every open agent block's transcript now, as closing it\nwould, and answer once each send is done. The platform asks just before\nit rebuilds the box, so a session that moves to the new box starts\nfrom its conversation, not without it.",
+      "type": "object"
+    },
+    "Archived": {
+      "description": "What the platform answers a box's transcript, through the hub.",
+      "oneOf": [
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "kept",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "status": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "status",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "BlockersArgs": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "start": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account",
+        "start"
+      ],
+      "type": "object"
+    },
+    "BoxMember": {
+      "description": "A member of a box's project (M237), as the platform knows them.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "name": {
+          "description": "What the roster calls them (a personal project: the account's name).",
+          "type": "string"
+        },
+        "role": {
+          "description": "`owner` for a personal project's account; else their team role\n(`owner`, `editor`, `viewer`, ...).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "role",
+        "name"
+      ],
+      "type": "object"
+    },
+    "BoxPost": {
+      "description": "A review a box posts into an object's thread (M237).",
+      "properties": {
+        "author": {
+          "description": "Whose review it is: a member who signed in to the box.",
+          "type": "string"
+        },
+        "project": {
+          "description": "The project the box is bound to: the object has to be in it.",
+          "type": "string"
+        },
+        "target": {
+          "description": "The object's global id (`iss_…`, `fi_…`, `hw_…`, `run_…`).",
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "via": {
+          "description": "The box's name, kept beside the author.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "via",
+        "target",
+        "author",
+        "text"
+      ],
+      "type": "object"
+    },
+    "BoxPosted": {
+      "description": "What became of a [`BoxPost`].",
+      "oneOf": [
+        {
+          "description": "In the thread `room` as message `seq`.",
+          "properties": {
+            "kind": {
+              "const": "posted",
+              "type": "string"
+            },
+            "room": {
+              "type": "string"
+            },
+            "seq": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "room",
+            "seq"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Refused, as the author posting themselves would be: the status and\nwhy.",
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "status": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "status",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Cert": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "approver": {
+          "description": "The device that signed this; the device itself for the root.",
+          "type": "string"
+        },
+        "created": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "device": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/Kind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "noise": {
+          "description": "X25519 public key, hex (zeros for a recovery code).",
+          "type": "string"
+        },
+        "sig": {
+          "default": "",
+          "description": "Ed25519 signature by the approver over [`Cert::body`], hex; empty\nuntil approved.",
+          "type": "string"
+        },
+        "sign": {
+          "description": "Ed25519 public key, hex.",
+          "type": "string"
+        },
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "account",
+        "device",
+        "kind",
+        "name",
+        "noise",
+        "sign",
+        "created",
+        "approver"
+      ],
+      "type": "object"
+    },
+    "Change": {
+      "description": "One thing that changed in the hub. Written in the same transaction as\nthe change itself, so a reader never sees a change the hub didn't make.",
+      "properties": {
+        "at": {
+          "description": "When (ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/ChangeKind"
+        },
+        "seq": {
+          "description": "Increasing, never reused.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "subject": {
+          "description": "What changed: see each kind.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "at",
+        "kind",
+        "subject"
+      ],
+      "type": "object"
+    },
+    "ChangeKind": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "enum": [
+                "Unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "account.name",
+              "description": "An account's name (subject: the account), its display name or the\nlogin it signs in with, or a new account (whose name and login are\nnew).",
+              "type": "string"
+            },
+            {
+              "const": "account.deleted",
+              "description": "An account was deleted. The subject is \"\": nothing of a deleted\naccount is kept (#173), and the rows naming it, its devices, its\nmachines and the teams it disbanded go too. Drop every cache.",
+              "type": "string"
+            },
+            {
+              "const": "device.revoked",
+              "description": "A device or machine was revoked (subject: its id).",
+              "type": "string"
+            },
+            {
+              "const": "team.roster",
+              "description": "A team was made, or its roster changed (subject: the team).",
+              "type": "string"
+            },
+            {
+              "const": "team.locked",
+              "description": "A team was locked or unlocked (subject: the team).",
+              "type": "string"
+            },
+            {
+              "const": "daemon.joined",
+              "description": "A machine joined, or its name changed (subject: the machine).",
+              "type": "string"
+            },
+            {
+              "const": "daemon.moved",
+              "description": "A machine moved to a team or out of one (subject: the machine).",
+              "type": "string"
+            },
+            {
+              "const": "daemon.left",
+              "description": "A machine left, or was removed (subject: the machine).",
+              "type": "string"
+            },
+            {
+              "const": "daemon.access",
+              "description": "Whom a machine is shared with changed: whom it lets in, or someone's\nanswer to its offer (subject: the machine).",
+              "type": "string"
+            },
+            {
+              "const": "labs.flag",
+              "description": "A Labs flag was set or unset (subject: its owner, `account:ID` or\n`team:ID`).",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "What kind of thing changed. The hub only adds kinds after the platform\nknows them (it deploys first); one it doesn't know reads as `Unknown`,\nwhich a reader treats as \"drop every cache\"."
+    },
+    "ChangePage": {
+      "description": "A page of the hub's change feed.",
+      "properties": {
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/Change"
+          },
+          "type": "array"
+        },
+        "gap": {
+          "description": "Changes after the one asked from were pruned before anyone read\nthem: drop every cache, and go on from this page.",
+          "type": "boolean"
+        },
+        "last": {
+          "description": "The newest change the hub has written, whether or not it's in this\npage: a reader with no cache starts here.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "changes",
+        "last",
+        "gap"
+      ],
+      "type": "object"
+    },
+    "ChangesArgs": {
+      "properties": {
+        "after": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "after",
+        "limit"
+      ],
+      "type": "object"
+    },
+    "Credential": {
+      "description": "What a request proved who it was with.",
+      "oneOf": [
+        {
+          "const": "session",
+          "description": "A session cookie.",
+          "type": "string"
+        },
+        {
+          "const": "signature",
+          "description": "A device's or daemon's signature (`x-arugula-auth`).",
+          "type": "string"
+        }
+      ]
+    },
+    "Daemon": {
+      "description": "A joined machine.",
+      "properties": {
+        "account": {
+          "description": "The account it's joined to: its owner.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "team": {
+          "description": "The team it's in, if it's a team's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "account",
+        "name"
+      ],
+      "type": "object"
+    },
+    "DaemonOp": {
+      "description": "An op control asks a machine for, by its name (`op`). Only the platform\nasks, through the hub, and only for a person's own action.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ForgeSend",
+          "description": "Send a draft on a linked repo as the machine's owner, with their own\n`gh` login, because the person pressed Send (M168).",
+          "properties": {
+            "op": {
+              "const": "forge.send",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/RunStart",
+          "description": "Start under the project's standing grant, on a hosted machine\n(M211; [`crate::runs`]).",
+          "properties": {
+            "op": {
+              "const": "runs.start",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/RunRevoke",
+          "description": "The project's standing grant was revoked (M211).",
+          "properties": {
+            "op": {
+              "const": "runs.revoke",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ArchiveOpen",
+          "description": "Archive every open agent block's transcript now, as each would be\non closing (M184): the platform is about to rebuild the hosted box,\nwhich takes them with it (Arugula #209).",
+          "properties": {
+            "op": {
+              "const": "hosted.archive",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ArchiveBlocks",
+          "description": "Archive just these agent blocks' transcripts now: one session moves\nto another box (Arugula #214, Move to…), and the box stays.",
+          "properties": {
+            "op": {
+              "const": "hosted.archive_blocks",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DelegationArgs": {
+      "properties": {
+        "owner": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "owner"
+      ],
+      "type": "object"
+    },
+    "Deleted": {
+      "description": "An account the hub deleted.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "disbanded": {
+          "description": "The teams it disbanded.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "machines": {
+          "description": "Its machines, which left with it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "account",
+        "machines",
+        "disbanded"
+      ],
+      "type": "object"
+    },
+    "DeletedArgs": {
+      "properties": {
+        "deleted": {
+          "$ref": "#/$defs/Deleted"
+        }
+      },
+      "required": [
+        "deleted"
+      ],
+      "type": "object"
+    },
+    "DeviceTrust": {
+      "description": "An account's devices (`HubPort::device_trust`).",
+      "properties": {
+        "certs": {
+          "description": "Its approved certificates.",
+          "items": {
+            "$ref": "#/$defs/Cert"
+          },
+          "type": "array"
+        },
+        "legacy_app_children": {
+          "default": [],
+          "description": "Its browsers and phones that a grandfathered app window approved:\nboth rows stored and approved by the hub before the app had a kind\nof its own (by the hub's own record of when), removed since or not,\nas a removed device's past approvals stand on any chain. The window\ncounts as the link just above one of them, nowhere else\n(`arugula_e2e::cert::legacy_app_link`); the device that signs must\nstill be trusted now. Empty from a hub that\ndoesn't send it, which only refuses more.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "revocations": {
+          "items": {
+            "$ref": "#/$defs/Revocation"
+          },
+          "type": "array"
+        },
+        "root": {
+          "description": "The root device's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "root",
+        "certs",
+        "revocations"
+      ],
+      "type": "object"
+    },
+    "DocWrite": {
+      "description": "`PUT` [`PROJECT_DOC`]: what changes. `title` renames it. With `section`,\nthat section's body becomes `markdown` (and its heading `heading`, when\ngiven); with no `section` but a `heading`, a section is added at the\nend, written when `markdown` is given and pending otherwise.",
+      "properties": {
+        "heading": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "intent": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "markdown": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "section": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "DraftSent": {
+      "properties": {
+        "authorize": {
+          "default": null,
+          "description": "`via: \"browser\"`: GitHub's page to open; the draft isn't sent yet.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "draft": {
+          "$ref": "#/$defs/ForgeDraft"
+        },
+        "machine": {
+          "default": null,
+          "description": "The machine's name, when one sent it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "via": {
+          "default": null,
+          "description": "How it went: `token` (as the person, through GitHub's authorization)\nor `machine`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "draft"
+      ],
+      "type": "object"
+    },
+    "DriveArgs": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "daemon": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "daemon",
+        "account"
+      ],
+      "type": "object"
+    },
+    "DrivesArgs": {
+      "description": "A machine and the account it acts for (M184's `machine_drives`).",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "daemon": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "daemon",
+        "account"
+      ],
+      "type": "object"
+    },
+    "ForgeDraft": {
+      "properties": {
+        "agent": {
+          "default": null,
+          "description": "The agent that wrote it, and the machine it was on (an id, and its\nname when the machine is still there).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author": {
+          "description": "The person it's for: an account id.",
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "The platform's id: `dft_` and 32 hex characters.",
+          "type": "string"
+        },
+        "item": {
+          "default": null,
+          "description": "The mirrored item it's on, and its title, when the mirror has it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "item_title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`comment`, `review` or `issue`.",
+          "type": "string"
+        },
+        "machine": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "type": "string"
+        },
+        "repo": {
+          "description": "`OWNER/NAME`.",
+          "type": "string"
+        },
+        "repo_id": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sent_at": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sent_url": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "`waiting`, `sending` (a send holds it, M168), `sent`, `discarded`\nor `failed`.",
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "repo",
+        "repo_id",
+        "kind",
+        "body",
+        "state",
+        "author",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "ForgeSend": {
+      "description": "A draft to send: what it is and where it goes. `account` is its person,\nwho must be the machine's owner.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "base": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body": {
+          "default": "",
+          "type": "string"
+        },
+        "draft": {
+          "description": "The platform's draft id.",
+          "type": "string"
+        },
+        "draft_pr": {
+          "description": "A PR's: opened as a draft on GitHub.",
+          "type": "boolean"
+        },
+        "event": {
+          "default": null,
+          "description": "A review's: `COMMENT`, `APPROVE` or `REQUEST_CHANGES`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head": {
+          "description": "A PR's: the branch it's from, and the one it goes into.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`comment`, `review`, `issue` or `pr` (an agent session's PR, M259:\nits draft's id is `pdr_…`).",
+          "type": "string"
+        },
+        "number": {
+          "default": null,
+          "description": "The PR or issue; `None` for a new issue or PR.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "`OWNER/NAME` on github.com.",
+          "type": "string"
+        },
+        "title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "draft",
+        "account",
+        "repo",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "GithubIdArgs": {
+      "properties": {
+        "id": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "GithubToken": {
+      "description": "A read-only installation token, who it is for, and when it stops\nworking. Never logged. A daemon takes what it finds: no token is an error\nof its own, a missing `login` is empty and a missing `expires_at` is ten\nminutes.",
+      "properties": {
+        "app": {
+          "default": "",
+          "description": "The App's slug.",
+          "type": "string"
+        },
+        "expires_at": {
+          "default": "",
+          "description": "RFC 3339, `2026-10-03T12:34:56Z`.",
+          "type": "string"
+        },
+        "login": {
+          "default": "",
+          "description": "The account's GitHub login.",
+          "type": "string"
+        },
+        "token": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GithubUser": {
+      "description": "A person by their GitHub identity: the numeric id is who they are, the\nlogin what control last saw them called. The hub knows it (they signed\nin with GitHub) and says it with each call.",
+      "properties": {
+        "id": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "login": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "login"
+      ],
+      "type": "object"
+    },
+    "GrantRevoke": {
+      "description": "The project's grants taken back, by any owner's device: every grant for\nthe project under `delegation` made at or before `at`. It names no\ngrant, so whoever relays it can't point it at another one; a grant made\nafter it is a new one.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "type": "string"
+        },
+        "delegation": {
+          "description": "The delegation whose grants it takes back.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "running": {
+          "$ref": "#/$defs/Running"
+        },
+        "sig": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "delegation",
+        "running",
+        "at",
+        "by"
+      ],
+      "type": "object"
+    },
+    "HostedArgs": {
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "report": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SetupReport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "workspace",
+        "machine"
+      ],
+      "type": "object"
+    },
+    "HostedMachine": {
+      "description": "A hosted machine, as the hub checked its signature (its hosted\ncertificate): the project and workspace it was enrolled into, its device\nid, and its signing key, hex, which its reports are checked with.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sign": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "workspace",
+        "machine",
+        "sign"
+      ],
+      "type": "object"
+    },
+    "IdsArgs": {
+      "properties": {
+        "ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "type": "object"
+    },
+    "IssueQuery": {
+      "description": "`GET /api/projects/{project}/issues`'s query. Each that's given narrows\nthe list.",
+      "properties": {
+        "assignee": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "before": {
+          "default": null,
+          "description": "Issues numbered below this: the next page.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "labels": {
+          "default": null,
+          "description": "Labels, comma-separated: issues with every one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "default": null,
+          "description": "At most this many (default 50, at most 200).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "q": {
+          "default": null,
+          "description": "Search words, in the title or the body: each one (`dep*`: a word\nstarting with `dep`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "default": null,
+          "description": "`open` (when not given), `closed` or `all`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Kind": {
+      "oneOf": [
+        {
+          "enum": [
+            "browser",
+            "cli",
+            "daemon"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "recovery",
+          "description": "A recovery code: approves a new device when every other is lost.",
+          "type": "string"
+        },
+        {
+          "const": "app",
+          "description": "The desktop app's window. Its keys reach it through whatever\nlistens on the computer's loopback port, so, like a CLI's, they may\nbe a program's on that computer, not the person's. It connects and\napproves machines, CLIs and other apps, but never a browser (see\n[`Kind::certifies`]). Older readers don't know this word: control\nleaves `app` certificates out of what it answers a client that\ndoesn't say it knows them (`app-devices`, see control's `compat.rs`).",
+          "type": "string"
+        }
+      ]
+    },
+    "LinkedAccount": {
+      "description": "A product's user's link (M232, `HubPort::linked_account`). A link is\nnever authorization.",
+      "properties": {
+        "account": {
+          "description": "The platform account (the hub's).",
+          "type": "string"
+        },
+        "github_id": {
+          "description": "The numeric GitHub id it was linked by.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "account",
+        "github_id"
+      ],
+      "type": "object"
+    },
+    "Member": {
+      "description": "A member of a team.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "name": {
+          "description": "What the roster calls them.",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/TeamRole"
+        }
+      },
+      "required": [
+        "account",
+        "role",
+        "name"
+      ],
+      "type": "object"
+    },
+    "Meter": {
+      "description": "What an account used, for billing.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "relay_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sandbox_minutes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "account",
+        "relay_bytes",
+        "sandbox_minutes"
+      ],
+      "type": "object"
+    },
+    "MetersArgs": {
+      "properties": {
+        "accounts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "since": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "until": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "accounts",
+        "since",
+        "until"
+      ],
+      "type": "object"
+    },
+    "NewDoc": {
+      "description": "`POST` [`PROJECT_DOCS`]: make a Doc.",
+      "properties": {
+        "sections": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/NewSection"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "NewSection": {
+      "description": "A new Doc's section: a heading, and its Markdown now or an intent for\nlater.",
+      "properties": {
+        "heading": {
+          "type": "string"
+        },
+        "intent": {
+          "default": "",
+          "type": "string"
+        },
+        "markdown": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "heading"
+      ],
+      "type": "object"
+    },
+    "NoArgs": {
+      "type": "object"
+    },
+    "NotVouched": {
+      "description": "A call the hub forwards without a principal.",
+      "oneOf": [
+        {
+          "description": "The request's credentials were refused: the status and the error\nthe hub would have answered with, and which credentials they were.\nThe platform's extractors answer with them, as the hub's do.",
+          "properties": {
+            "by": {
+              "$ref": "#/$defs/Credential"
+            },
+            "error": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "status": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "status",
+            "error",
+            "by"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "No session and no signature (a webhook, or a page signed out).",
+          "properties": {
+            "kind": {
+              "const": "nobody",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "OpArgs": {
+      "properties": {
+        "daemon": {
+          "type": "string"
+        },
+        "op": {
+          "$ref": "#/$defs/DaemonOp"
+        }
+      },
+      "required": [
+        "daemon",
+        "op"
+      ],
+      "type": "object"
+    },
+    "Outcome": {
+      "description": "What a send did, as the hub's callback hears it: the draft sent, or why\nnot (the draft says it too).",
+      "properties": {
+        "pr": {
+          "description": "A session's PR (M259) that was opened: its URL.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "refused": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DraftSent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "OwnersArgs": {
+      "properties": {
+        "owners": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "owners"
+      ],
+      "type": "object"
+    },
+    "PasskeyArgs": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "assertion": {
+          "$ref": "#/$defs/PasskeyAssertion"
+        },
+        "challenge": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "challenge",
+        "assertion"
+      ],
+      "type": "object"
+    },
+    "PasskeyAssertion": {
+      "description": "A passkey's assertion, as the page got it from `navigator.credentials.get`\n(`HubPort::verify_passkey`): each base64url, no padding.",
+      "properties": {
+        "authenticatorData": {
+          "type": "string"
+        },
+        "clientDataJSON": {
+          "type": "string"
+        },
+        "id": {
+          "description": "The credential's id (`rawId`).",
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "clientDataJSON",
+        "authenticatorData",
+        "signature"
+      ],
+      "type": "object"
+    },
+    "PasskeyVerdict": {
+      "description": "What the hub found of a passkey's assertion: good, or why not.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "why": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "Poke": {
+      "description": "What control relays of a webhook event: no more than this.",
+      "properties": {
+        "delivery": {
+          "default": "",
+          "type": "string"
+        },
+        "event": {
+          "default": "",
+          "type": "string"
+        },
+        "host": {
+          "default": "github.com",
+          "description": "A daemon takes `github.com` when it is left out.",
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "repo"
+      ],
+      "type": "object"
+    },
+    "PokesArgs": {
+      "properties": {
+        "pokes": {
+          "items": {
+            "$ref": "#/$defs/Poke"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "pokes"
+      ],
+      "type": "object"
+    },
+    "PreviewArgs": {
+      "description": "Public previews (M187): a preview's id, or a workspace's.",
+      "properties": {
+        "id": {
+          "default": "",
+          "type": "string"
+        },
+        "workspace": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Principal": {
+      "description": "Who is asking.",
+      "oneOf": [
+        {
+          "description": "A signed-in person, by their session cookie.",
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "person",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "account"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A CLI device, by its signature: a session for its account (M49).",
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "device": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "cli",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "account",
+            "device"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An enrolled daemon, by its signature: it acts as its account.",
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "daemon": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "daemon",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "account",
+            "daemon"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProductLink": {
+      "description": "A product an account let sign it in, or is linked to (M229,\n`HubPort::product_links`). A link is never authorization: nothing on\nthe platform grants anything because of one.",
+      "properties": {
+        "client": {
+          "description": "The product: its issuer client id.",
+          "type": "string"
+        },
+        "granted": {
+          "description": "When the person let it sign them in (ms), the consent.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "linked": {
+          "description": "When it was linked (ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "How the product names that user, when it said.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "product": {
+          "description": "The product's name, as its client is registered.",
+          "type": "string"
+        },
+        "user": {
+          "description": "The product's own id for its user linked to the account.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "client",
+        "product"
+      ],
+      "type": "object"
+    },
+    "ProductUserArgs": {
+      "properties": {
+        "client": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "client",
+        "user"
+      ],
+      "type": "object"
+    },
+    "ProjectArgs": {
+      "description": "A bound hud box's project (M237's `box_members`).",
+      "properties": {
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "ProjectGrant": {
+      "description": "An owner's device saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
+      "properties": {
+        "by": {
+          "description": "The signing device.",
+          "type": "string"
+        },
+        "caps": {
+          "description": "Sorted, each once.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "delegation": {
+          "description": "The project's delegation's [`Delegation::id`].",
+          "type": "string"
+        },
+        "expires": {
+          "default": null,
+          "description": "When it stops counting (ms); `None`: never.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "made": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "owner": {
+          "description": "`team:<id>` or `account:<id>`, as the signing device saw it.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sig": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "owner",
+        "delegation",
+        "caps",
+        "made",
+        "by"
+      ],
+      "type": "object"
+    },
+    "PublicPreview": {
+      "description": "A port that's public now.",
+      "properties": {
+        "by": {
+          "description": "Who made it public or last renewed it (`None` once that account\nis deleted).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Its host label under the preview domain.",
+          "type": "string"
+        },
+        "machine": {
+          "description": "The hosted machine its workspace's box enrolled as.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "project": {
+          "type": "string"
+        },
+        "state": {
+          "description": "Its workspace's state (`ready`, `paused`, …).",
+          "type": "string"
+        },
+        "until": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "workspace",
+        "project",
+        "port",
+        "state",
+        "until"
+      ],
+      "type": "object"
+    },
+    "PushArgs": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "message": true,
+        "options": {
+          "$ref": "#/$defs/PushOptions",
+          "default": {
+            "any_subscription": false,
+            "ttl": null
+          }
+        }
+      },
+      "required": [
+        "account",
+        "message"
+      ],
+      "type": "object"
+    },
+    "PushAsk": {
+      "description": "[`WORK_SESSION_PUSH`]'s body: which session, and the ref it pushes,\nwhich must be the session's own branch exactly.",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "clone": {
+          "description": "A token to clone the session's repo instead, with `contents: read`\nalone: a repo linked to the project that no box's setup cloned is\ncloned at the session's start, shallow (Fleet 6). The same checks\nas a push's. An older platform ignores it and mints a push's.",
+          "type": "boolean"
+        },
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "branch"
+      ],
+      "type": "object"
+    },
+    "PushOptions": {
+      "description": "How a push goes (`HubPort::push_with`). The default is what\n`HubPort::push` does.",
+      "properties": {
+        "any_subscription": {
+          "default": false,
+          "description": "Every push subscription the account has, as control's own notices\ngo, rather than only those signed by one of its approved devices\nthat isn't revoked. Chat's pushes go this way, as they always have\n(M122).",
+          "type": "boolean"
+        },
+        "ttl": {
+          "default": null,
+          "description": "How long a push service keeps it for a device that's away (its\n`TTL`, at most a day): `None` is the hub's own, an hour. Cloud's\napprovals keep five minutes.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Pushed": {
+      "description": "What a push did.",
+      "properties": {
+        "failed": {
+          "description": "Subscriptions it didn't reach (a push service failed or refused).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "gone": {
+          "description": "Subscriptions whose push service said they're gone: the hub forgot\nthem.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sent": {
+          "description": "Subscriptions a push service took it for.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sent",
+        "gone",
+        "failed"
+      ],
+      "type": "object"
+    },
+    "ReachArgs": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "machines": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "account",
+        "machines"
+      ],
+      "type": "object"
+    },
+    "Report": {
+      "description": "One state change, signed by the machine that made it.",
+      "properties": {
+        "at": {
+          "description": "When (ms, the machine's clock).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "detail": {
+          "description": "A JSON object's text, exactly as signed: an exit code (`exit`), a\npane (`pane`, `epoch`), or why it failed (`reason`).",
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "run": {
+          "type": "string"
+        },
+        "seq": {
+          "description": "The event's number in the run.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sig": {
+          "description": "The machine's signature over `arugula run event v1`, hex.",
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "seq",
+        "from",
+        "to",
+        "at",
+        "detail",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "ReportArgs": {
+      "properties": {
+        "machine": {
+          "$ref": "#/$defs/HostedMachine"
+        },
+        "report": {
+          "$ref": "#/$defs/Report"
+        }
+      },
+      "required": [
+        "machine",
+        "report"
+      ],
+      "type": "object"
+    },
+    "ResolveArgs": {
+      "properties": {
+        "principal": {
+          "$ref": "#/$defs/Principal"
+        }
+      },
+      "required": [
+        "principal"
+      ],
+      "type": "object"
+    },
+    "Resolved": {
+      "description": "A principal the hub still knows.",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/Account"
+        },
+        "daemon": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Daemon"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The machine, for a daemon."
+        },
+        "principal": {
+          "$ref": "#/$defs/Principal"
+        }
+      },
+      "required": [
+        "principal",
+        "account"
+      ],
+      "type": "object"
+    },
+    "Revocation": {
+      "description": "A device taken off the account, signed by one of its devices.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        },
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "account",
+        "device",
+        "at",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "RunRevoke": {
+      "description": "A revoke of the project's grants, for every hosted machine of its\nproject.",
+      "properties": {
+        "revoke": {
+          "$ref": "#/$defs/GrantRevoke"
+        }
+      },
+      "required": [
+        "revoke"
+      ],
+      "type": "object"
+    },
+    "RunStart": {
+      "description": "Start on this hosted machine under the project's standing grant.",
+      "properties": {
+        "cap": {
+          "description": "What it's asked to do under the grant: `runs.start` or\n`runs.instruct`.",
+          "type": "string"
+        },
+        "grant": {
+          "$ref": "#/$defs/ProjectGrant"
+        },
+        "project": {
+          "type": "string"
+        },
+        "revokes": {
+          "default": [],
+          "description": "The project's revokes the platform holds.",
+          "items": {
+            "$ref": "#/$defs/GrantRevoke"
+          },
+          "type": "array"
+        },
+        "run": {
+          "default": null,
+          "description": "The run (`run_…`, M210), once there is one (M212).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "description": "The hosted workspace (`hw_…`) the machine is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "workspace",
+        "cap",
+        "grant"
+      ],
+      "type": "object"
+    },
+    "Running": {
+      "description": "What happens to runs already going when a grant is revoked.",
+      "oneOf": [
+        {
+          "const": "finish",
+          "description": "They finish.",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "description": "They're stopped too.",
+          "type": "string"
+        }
+      ]
+    },
+    "SecretsArgs": {
+      "properties": {
+        "ask": {
+          "$ref": "#/$defs/SecretsAsk"
+        },
+        "machine": {
+          "$ref": "#/$defs/HostedMachine"
+        }
+      },
+      "required": [
+        "machine",
+        "ask"
+      ],
+      "type": "object"
+    },
+    "SecretsAsk": {
+      "description": "[`WORK_SECRETS`]'s body: which run.",
+      "properties": {
+        "run": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run"
+      ],
+      "type": "object"
+    },
+    "SendArgs": {
+      "description": "The user token crosses inside the signed call's body, never logged.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "draft": {
+          "type": "string"
+        },
+        "token": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UserToken"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "account",
+        "draft"
+      ],
+      "type": "object"
+    },
+    "SendAuthArgs": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "back": {
+          "type": "string"
+        },
+        "draft": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "draft",
+        "back"
+      ],
+      "type": "object"
+    },
+    "SessionIssuesArgs": {
+      "properties": {
+        "ask": {
+          "$ref": "#/$defs/SessionIssuesAsk"
+        },
+        "machine": {
+          "$ref": "#/$defs/HostedMachine"
+        }
+      },
+      "required": [
+        "machine",
+        "ask"
+      ],
+      "type": "object"
+    },
+    "SessionIssuesAsk": {
+      "description": "[`WORK_SESSION_ISSUES`]'s body: which session asks, and what. The\nproject is never named: it is the session's, and the platform finds it.",
+      "oneOf": [
+        {
+          "description": "A page of the project's issues, newest first.",
+          "properties": {
+            "op": {
+              "const": "list",
+              "type": "string"
+            },
+            "query": {
+              "$ref": "#/$defs/IssueQuery"
+            }
+          },
+          "required": [
+            "op",
+            "query"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One issue by its number in the project: it, its timeline and its\nnewest comments.",
+          "properties": {
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "op": {
+              "const": "show",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A comment on one, as the session's asker, labelled as posted by the\nsession.",
+          "properties": {
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "op": {
+              "const": "comment",
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "number",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A new issue, with the asker's rights, opened as the session's own;\nits labels from those the project's issues already have.",
+          "properties": {
+            "body": {
+              "default": "",
+              "type": "string"
+            },
+            "labels": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "op": {
+              "const": "create",
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "title"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A new Doc in the project, with the asker's rights, as the session's\nown.",
+          "properties": {
+            "doc": {
+              "$ref": "#/$defs/NewDoc"
+            },
+            "op": {
+              "const": "doc_create",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "doc"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A write to one of the project's Docs that this session made.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "op": {
+              "const": "doc_write",
+              "type": "string"
+            },
+            "write": {
+              "$ref": "#/$defs/DocWrite"
+            }
+          },
+          "required": [
+            "op",
+            "id",
+            "write"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One of the project's Docs, or with no `id` the list of them.",
+          "properties": {
+            "id": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "doc_read",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "SessionPushArgs": {
+      "properties": {
+        "ask": {
+          "$ref": "#/$defs/PushAsk"
+        },
+        "machine": {
+          "$ref": "#/$defs/HostedMachine"
+        }
+      },
+      "required": [
+        "machine",
+        "ask"
+      ],
+      "type": "object"
+    },
+    "SessionReport": {
+      "description": "What a machine says of one of its sessions, signed: its fields are\n`arugula_e2e::session::Event`'s.",
+      "properties": {
+        "at": {
+          "description": "When (ms, the machine's clock).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "detail": {
+          "description": "A JSON object's text ([`SessionDetail`]), exactly as signed.",
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "kind": {
+          "description": "`state`, `heartbeat`, `error` or `turn`.",
+          "type": "string"
+        },
+        "n": {
+          "description": "The machine's report number in the session, from 1.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session": {
+          "type": "string"
+        },
+        "sig": {
+          "description": "The machine's signature over `arugula session event v1`, hex.",
+          "type": "string"
+        },
+        "to": {
+          "description": "`from` itself for every kind but `state`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "n",
+        "kind",
+        "from",
+        "to",
+        "at",
+        "detail",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "SessionReportArgs": {
+      "properties": {
+        "machine": {
+          "$ref": "#/$defs/HostedMachine"
+        },
+        "report": {
+          "$ref": "#/$defs/SessionReport"
+        }
+      },
+      "required": [
+        "machine",
+        "report"
+      ],
+      "type": "object"
+    },
+    "SetupReport": {
+      "description": "`POST /api/hosted/setup`: how the setup goes.",
+      "properties": {
+        "pane": {
+          "default": null,
+          "description": "The pane it runs in, on the machine.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "reason": {
+          "default": "",
+          "description": "Why a failed setup stopped, as a fixed code ([`SETUP_REASONS`]):\nnever the pane's text, which stays end to end (\"Two planes, two\ntrust rules\"): a client reads it from the box.",
+          "type": "string"
+        },
+        "spec_hash": {
+          "default": "",
+          "description": "The spec's hash it runs.",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/SetupStatus"
+        },
+        "step": {
+          "default": "",
+          "description": "The step it's on, or the one that failed: `clone app`, `packages`,\n`setup script`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "SetupStatus": {
+      "description": "Where a hosted machine's setup is.",
+      "enum": [
+        "setting_up",
+        "ready",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "SignedArgs": {
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "owner",
+        "device",
+        "body",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "StandingArgs": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "fresh": {
+          "type": "boolean"
+        },
+        "github": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GithubUser"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repos": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "account",
+        "repos",
+        "fresh"
+      ],
+      "type": "object"
+    },
+    "Team": {
+      "description": "A team, as its latest signed roster says.",
+      "properties": {
+        "founder": {
+          "description": "The account that made it.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "locked": {
+          "description": "While it's locked, members other than owners are as good as out.",
+          "type": "boolean"
+        },
+        "members": {
+          "items": {
+            "$ref": "#/$defs/Member"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "description": "Its latest roster's version.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "founder",
+        "locked",
+        "version",
+        "members"
+      ],
+      "type": "object"
+    },
+    "TeamArgs": {
+      "properties": {
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team"
+      ],
+      "type": "object"
+    },
+    "TeamRole": {
+      "enum": [
+        "owner",
+        "editor",
+        "viewer"
+      ],
+      "type": "string"
+    },
+    "TokenAnswer": {
+      "description": "What the platform answers a hosted box's ask for a token: one, or why\nnot, as the hub's route answers it. No `Debug`: a token is never\nprinted.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "token": {
+              "$ref": "#/$defs/GithubToken"
+            }
+          },
+          "required": [
+            "token"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "refused": {
+              "properties": {
+                "error": {
+                  "type": "string"
+                },
+                "status": {
+                  "format": "uint16",
+                  "maximum": 65535,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "status",
+                "error"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "refused"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TokenArgs": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "github": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GithubUser"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "repo"
+      ],
+      "type": "object"
+    },
+    "TranscriptArgs": {
+      "description": "A hosted machine's transcript (M184): its workspace and machine, as the\nhub's hosted certificate names them.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "transcript": {
+          "$ref": "#/$defs/TranscriptPost"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace",
+        "machine",
+        "transcript"
+      ],
+      "type": "object"
+    },
+    "TranscriptPost": {
+      "description": "What a hosted machine sends as an agent block closes.",
+      "properties": {
+        "agent": {
+          "default": "",
+          "description": "`claude`, `codex` or `acp`.",
+          "type": "string"
+        },
+        "block": {
+          "description": "The block's id on the machine.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "closed_at": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cut": {
+          "default": false,
+          "description": "The middle of the text was dropped to fit [`MAX_TEXT`].",
+          "type": "boolean"
+        },
+        "cwd": {
+          "default": null,
+          "description": "Where it worked, on the box.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "default": 0,
+          "description": "When the block was made and closed (the machine's clock, ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "description": "What the block was called.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "block",
+        "text"
+      ],
+      "type": "object"
+    },
+    "TurnAnswer": {
+      "description": "What a hosted box's turn is told (`hosted::inference::turn` in the\nplatform): its turn id, whose key pays (`project` or `platform`) and\nwhat kind it is (`Auth::as_str`; absent from an older platform, a key),\nor why it can't run, as the hub answers the box: an HTTP status, a\nreason (`no_key`, `cap`) and a sentence for the person. It crosses\n`PlatformPort`.",
+      "oneOf": [
+        {
+          "properties": {
+            "auth": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "given",
+              "type": "string"
+            },
+            "pays": {
+              "type": "string"
+            },
+            "turn": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "turn",
+            "pays"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "status",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TurnArgs": {
+      "description": "A hosted box's turn (M185): its workspace and machine, as the hub's\nhosted certificate names them, and the agent or the turn.",
+      "properties": {
+        "agent": {
+          "default": "",
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "session": {
+          "description": "The thread session a turn is for (M254), if it's one's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "default": "",
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace",
+        "machine"
+      ],
+      "type": "object"
+    },
+    "UnlinkArgs": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "client": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "client"
+      ],
+      "type": "object"
+    },
+    "Upload": {
+      "description": "Something of one run's for the bucket.",
+      "oneOf": [
+        {
+          "description": "Chunk `n` (from 0) of the run's log: `size` bytes from `offset` in\nthe pane's output.",
+          "properties": {
+            "kind": {
+              "const": "log",
+              "type": "string"
+            },
+            "n": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "offset": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "run": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "size": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "run",
+            "n",
+            "offset",
+            "size",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file the run left, by its name in the artifacts directory.",
+          "properties": {
+            "kind": {
+              "const": "artifact",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "run": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "size": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "run",
+            "name",
+            "size",
+            "sha256"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "UploadArgs": {
+      "properties": {
+        "machine": {
+          "$ref": "#/$defs/HostedMachine"
+        },
+        "upload": {
+          "$ref": "#/$defs/Upload"
+        }
+      },
+      "required": [
+        "machine",
+        "upload"
+      ],
+      "type": "object"
+    },
+    "UserToken": {
+      "description": "A person's GitHub user token, for one call. Not `Clone`, never printed,\nand it crosses from the hub only inside a signed internal call.",
+      "type": "string"
+    },
+    "Vouch": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Principal",
+          "description": "Who's asking."
+        },
+        {
+          "$ref": "#/$defs/NotVouched",
+          "description": "No credentials, or credentials the hub refused."
+        }
+      ],
+      "description": "What the hub vouches for when its gateway forwards a call to the\nplatform (M140): every forwarded call carries one, so the platform\nrefuses anything without it. Its JSON is the principal's for a\nprincipal (so `PrincipalKey::verify` reads it too), else\n`{\"kind\": \"refused\", ...}` or `{\"kind\": \"nobody\"}`."
+    },
+    "WakeArgs": {
+      "description": "`PlatformPort::hosted_wake`'s (M182).",
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "workspace"
+      ],
+      "type": "object"
+    },
+    "WordArgs": {
+      "properties": {
+        "word": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "WorkArgs": {
+      "properties": {
+        "machine": {
+          "$ref": "#/$defs/HostedMachine"
+        },
+        "takes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "machine",
+        "takes"
+      ],
+      "type": "object"
+    },
+    "WorkspacesArgs": {
+      "properties": {
+        "workspaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "workspaces"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::internal"
+}

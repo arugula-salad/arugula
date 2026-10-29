@@ -1,0 +1,61 @@
+{
+  "$defs": {
+    "Activity": {
+      "description": "`{\"t\": \"activity\", \"busy\": true, \"since_ms\": ...}`, daemon to control.",
+      "properties": {
+        "busy": {
+          "type": "boolean"
+        },
+        "since_ms": {
+          "default": 0,
+          "description": "When it became busy or idle (the daemon's clock, ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "t": {
+          "const": "activity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t",
+        "busy"
+      ],
+      "type": "object"
+    },
+    "MachineActivity": {
+      "description": "A machine's latest [`Activity`], as the hub keeps it.",
+      "properties": {
+        "busy": {
+          "type": "boolean"
+        },
+        "heard_ms": {
+          "description": "When the hub heard it (the hub's clock, ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "machine": {
+          "description": "The machine (its device id).",
+          "type": "string"
+        },
+        "since_ms": {
+          "description": "When it became busy or idle, as the machine said (ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "machine",
+        "busy",
+        "since_ms",
+        "heard_ms"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::activity"
+}

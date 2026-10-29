@@ -1,0 +1,637 @@
+{
+  "$defs": {
+    "ArchiveBlocks": {
+      "description": "`hosted.archive_blocks` (Arugula #214): [`ArchiveOpen`] for these agent\nblocks only. The platform asks before Move to… takes a session off a\nbox that stays up: its conversation goes with it, and the box's other\nblocks are archived when they close, as they end (one transcript per\nblock is kept). A daemon from before it answers that it doesn't know\nthe op.",
+      "properties": {
+        "blocks": {
+          "items": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "blocks"
+      ],
+      "type": "object"
+    },
+    "ArchiveOpen": {
+      "description": "`hosted.archive` (Arugula #209), control to a hosted machine through\nits relay: send every open agent block's transcript now, as closing it\nwould, and answer once each send is done. The platform asks just before\nit rebuilds the box, so a session that moves to the new box starts\nfrom its conversation, not without it.",
+      "type": "object"
+    },
+    "DaemonOp": {
+      "description": "An op control asks a machine for, by its name (`op`). Only the platform\nasks, through the hub, and only for a person's own action.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ForgeSend",
+          "description": "Send a draft on a linked repo as the machine's owner, with their own\n`gh` login, because the person pressed Send (M168).",
+          "properties": {
+            "op": {
+              "const": "forge.send",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/RunStart",
+          "description": "Start under the project's standing grant, on a hosted machine\n(M211; [`crate::runs`]).",
+          "properties": {
+            "op": {
+              "const": "runs.start",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/RunRevoke",
+          "description": "The project's standing grant was revoked (M211).",
+          "properties": {
+            "op": {
+              "const": "runs.revoke",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ArchiveOpen",
+          "description": "Archive every open agent block's transcript now, as each would be\non closing (M184): the platform is about to rebuild the hosted box,\nwhich takes them with it (Arugula #209).",
+          "properties": {
+            "op": {
+              "const": "hosted.archive",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ArchiveBlocks",
+          "description": "Archive just these agent blocks' transcripts now: one session moves\nto another box (Arugula #214, Move to…), and the box stays.",
+          "properties": {
+            "op": {
+              "const": "hosted.archive_blocks",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ForgePoke": {
+      "description": "`{\"t\": \"forge.poke\", \"poke\": {…}}`, control to daemon.",
+      "properties": {
+        "poke": {
+          "$ref": "#/$defs/Poke"
+        },
+        "t": {
+          "const": "forge.poke",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t",
+        "poke"
+      ],
+      "type": "object"
+    },
+    "ForgeSend": {
+      "description": "A draft to send: what it is and where it goes. `account` is its person,\nwho must be the machine's owner.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "base": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body": {
+          "default": "",
+          "type": "string"
+        },
+        "draft": {
+          "description": "The platform's draft id.",
+          "type": "string"
+        },
+        "draft_pr": {
+          "description": "A PR's: opened as a draft on GitHub.",
+          "type": "boolean"
+        },
+        "event": {
+          "default": null,
+          "description": "A review's: `COMMENT`, `APPROVE` or `REQUEST_CHANGES`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head": {
+          "description": "A PR's: the branch it's from, and the one it goes into.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`comment`, `review`, `issue` or `pr` (an agent session's PR, M259:\nits draft's id is `pdr_…`).",
+          "type": "string"
+        },
+        "number": {
+          "default": null,
+          "description": "The PR or issue; `None` for a new issue or PR.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "`OWNER/NAME` on github.com.",
+          "type": "string"
+        },
+        "title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "draft",
+        "account",
+        "repo",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ForgeWatch": {
+      "description": "`{\"t\": \"forge.watch\", \"repos\": […]}`, daemon to control: the github.com\nrepositories its forge blocks have open.",
+      "properties": {
+        "repos": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "t": {
+          "const": "forge.watch",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t"
+      ],
+      "type": "object"
+    },
+    "ForgeWatching": {
+      "description": "`{\"t\": \"forge.watching\", \"repos\": [{repo, live, why?}]}`, control to\ndaemon: where each watched repository stands.",
+      "properties": {
+        "repos": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Standing"
+          },
+          "type": "array"
+        },
+        "t": {
+          "const": "forge.watching",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t"
+      ],
+      "type": "object"
+    },
+    "GithubToken": {
+      "description": "A read-only installation token, who it is for, and when it stops\nworking. Never logged. A daemon takes what it finds: no token is an error\nof its own, a missing `login` is empty and a missing `expires_at` is ten\nminutes.",
+      "properties": {
+        "app": {
+          "default": "",
+          "description": "The App's slug.",
+          "type": "string"
+        },
+        "expires_at": {
+          "default": "",
+          "description": "RFC 3339, `2026-10-03T12:34:56Z`.",
+          "type": "string"
+        },
+        "login": {
+          "default": "",
+          "description": "The account's GitHub login.",
+          "type": "string"
+        },
+        "token": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GithubTokenRequest": {
+      "description": "`POST /api/daemon/github/token`: the repository (`OWNER/NAME`) to read.",
+      "properties": {
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo"
+      ],
+      "type": "object"
+    },
+    "GrantRevoke": {
+      "description": "The project's grants taken back, by any owner's device: every grant for\nthe project under `delegation` made at or before `at`. It names no\ngrant, so whoever relays it can't point it at another one; a grant made\nafter it is a new one.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "type": "string"
+        },
+        "delegation": {
+          "description": "The delegation whose grants it takes back.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "running": {
+          "$ref": "#/$defs/Running"
+        },
+        "sig": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "delegation",
+        "running",
+        "at",
+        "by"
+      ],
+      "type": "object"
+    },
+    "OpAnswer": {
+      "description": "How a machine (or control, for it) answered an op.",
+      "oneOf": [
+        {
+          "description": "Done: what it made on the forge, when it says.",
+          "properties": {
+            "answer": {
+              "const": "done",
+              "type": "string"
+            },
+            "url": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "answer"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The forge refused it, or the call failed: the person's to see.",
+          "properties": {
+            "answer": {
+              "const": "failed",
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "answer",
+            "error"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "This machine can't (no `gh` login, not its owner's): ask another.",
+          "properties": {
+            "answer": {
+              "const": "cant",
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "answer",
+            "why"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "It doesn't know the op (a daemon from before it).",
+          "properties": {
+            "answer": {
+              "const": "unknown",
+              "type": "string"
+            }
+          },
+          "required": [
+            "answer"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "It isn't on control's relay now, or didn't answer in time.",
+          "properties": {
+            "answer": {
+              "const": "offline",
+              "type": "string"
+            }
+          },
+          "required": [
+            "answer"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "OpAsk": {
+      "description": "`{\"t\": \"op\", \"id\": ..., \"op\": {...}}`, control to daemon: do this and\nanswer with an [`OpDone`] of the same `id`.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "op": {
+          "$ref": "#/$defs/DaemonOp"
+        },
+        "t": {
+          "const": "op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t",
+        "id",
+        "op"
+      ],
+      "type": "object"
+    },
+    "OpDone": {
+      "description": "`{\"t\": \"op.done\", \"id\": ..., \"answer\": {...}}`, daemon to control.",
+      "properties": {
+        "answer": {
+          "$ref": "#/$defs/OpAnswer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "t": {
+          "const": "op.done",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t",
+        "id",
+        "answer"
+      ],
+      "type": "object"
+    },
+    "Ops": {
+      "description": "`{\"t\": \"ops\", \"ops\": [...]}`, daemon to control, on connecting: the\n[`DaemonOp`]s it knows. A daemon that never says knows none, and control\nanswers [`OpAnswer::Unknown`] for it without asking.",
+      "properties": {
+        "ops": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "t": {
+          "const": "ops",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t"
+      ],
+      "type": "object"
+    },
+    "Poke": {
+      "description": "What control relays of a webhook event: no more than this.",
+      "properties": {
+        "delivery": {
+          "default": "",
+          "type": "string"
+        },
+        "event": {
+          "default": "",
+          "type": "string"
+        },
+        "host": {
+          "default": "github.com",
+          "description": "A daemon takes `github.com` when it is left out.",
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "repo"
+      ],
+      "type": "object"
+    },
+    "ProjectGrant": {
+      "description": "An owner's device saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
+      "properties": {
+        "by": {
+          "description": "The signing device.",
+          "type": "string"
+        },
+        "caps": {
+          "description": "Sorted, each once.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "delegation": {
+          "description": "The project's delegation's [`Delegation::id`].",
+          "type": "string"
+        },
+        "expires": {
+          "default": null,
+          "description": "When it stops counting (ms); `None`: never.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "made": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "owner": {
+          "description": "`team:<id>` or `account:<id>`, as the signing device saw it.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sig": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "owner",
+        "delegation",
+        "caps",
+        "made",
+        "by"
+      ],
+      "type": "object"
+    },
+    "RunRevoke": {
+      "description": "A revoke of the project's grants, for every hosted machine of its\nproject.",
+      "properties": {
+        "revoke": {
+          "$ref": "#/$defs/GrantRevoke"
+        }
+      },
+      "required": [
+        "revoke"
+      ],
+      "type": "object"
+    },
+    "RunStart": {
+      "description": "Start on this hosted machine under the project's standing grant.",
+      "properties": {
+        "cap": {
+          "description": "What it's asked to do under the grant: `runs.start` or\n`runs.instruct`.",
+          "type": "string"
+        },
+        "grant": {
+          "$ref": "#/$defs/ProjectGrant"
+        },
+        "project": {
+          "type": "string"
+        },
+        "revokes": {
+          "default": [],
+          "description": "The project's revokes the platform holds.",
+          "items": {
+            "$ref": "#/$defs/GrantRevoke"
+          },
+          "type": "array"
+        },
+        "run": {
+          "default": null,
+          "description": "The run (`run_…`, M210), once there is one (M212).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "description": "The hosted workspace (`hw_…`) the machine is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "workspace",
+        "cap",
+        "grant"
+      ],
+      "type": "object"
+    },
+    "Running": {
+      "description": "What happens to runs already going when a grant is revoked.",
+      "oneOf": [
+        {
+          "const": "finish",
+          "description": "They finish.",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "description": "They're stopped too.",
+          "type": "string"
+        }
+      ]
+    },
+    "Standing": {
+      "description": "Whether a repository's events reach a daemon, and why not.",
+      "properties": {
+        "live": {
+          "default": false,
+          "type": "boolean"
+        },
+        "repo": {
+          "default": "",
+          "description": "Read leniently by a daemon, which skips an entry without one.",
+          "type": "string"
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::forge"
+}

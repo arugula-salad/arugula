@@ -1,0 +1,1225 @@
+{
+  "$defs": {
+    "DraftCreated": {
+      "properties": {
+        "created": {
+          "description": "False when an `import_key` named one made before.",
+          "type": "boolean"
+        },
+        "draft": {
+          "$ref": "#/$defs/ForgeDraft"
+        }
+      },
+      "required": [
+        "draft",
+        "created"
+      ],
+      "type": "object"
+    },
+    "DraftDiscarded": {
+      "description": "What `POST /api/forge/drafts/{id}/discard` answers.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "state": {
+          "description": "`discarded`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "state"
+      ],
+      "type": "object"
+    },
+    "DraftSent": {
+      "properties": {
+        "authorize": {
+          "default": null,
+          "description": "`via: \"browser\"`: GitHub's page to open; the draft isn't sent yet.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "draft": {
+          "$ref": "#/$defs/ForgeDraft"
+        },
+        "machine": {
+          "default": null,
+          "description": "The machine's name, when one sent it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "via": {
+          "default": null,
+          "description": "How it went: `token` (as the person, through GitHub's authorization)\nor `machine`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "draft"
+      ],
+      "type": "object"
+    },
+    "ForgeCheck": {
+      "properties": {
+        "conclusion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`check_run` or `status`.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "status",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "ForgeChecks": {
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/ForgeCheck"
+          },
+          "type": "array"
+        },
+        "head_sha": {
+          "description": "The head commit they're on; `None` for an issue.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "item": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "checks"
+      ],
+      "type": "object"
+    },
+    "ForgeContent": {
+      "properties": {
+        "body": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ForgeText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "comments": {
+          "description": "Comments, reviews' text and review comments, oldest first. A review\ncomment's thread is the ones whose `reply_to` is its `id`.",
+          "items": {
+            "$ref": "#/$defs/ForgeText"
+          },
+          "type": "array"
+        },
+        "from": {
+          "description": "`github` (read now, or a few minutes ago) or `mirror`.",
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "from",
+        "comments"
+      ],
+      "type": "object"
+    },
+    "ForgeDraft": {
+      "properties": {
+        "agent": {
+          "default": null,
+          "description": "The agent that wrote it, and the machine it was on (an id, and its\nname when the machine is still there).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author": {
+          "description": "The person it's for: an account id.",
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "The platform's id: `dft_` and 32 hex characters.",
+          "type": "string"
+        },
+        "item": {
+          "default": null,
+          "description": "The mirrored item it's on, and its title, when the mirror has it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "item_title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`comment`, `review` or `issue`.",
+          "type": "string"
+        },
+        "machine": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "type": "string"
+        },
+        "repo": {
+          "description": "`OWNER/NAME`.",
+          "type": "string"
+        },
+        "repo_id": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sent_at": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sent_url": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "`waiting`, `sending` (a send holds it, M168), `sent`, `discarded`\nor `failed`.",
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "repo",
+        "repo_id",
+        "kind",
+        "body",
+        "state",
+        "author",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "ForgeDrafts": {
+      "properties": {
+        "drafts": {
+          "items": {
+            "$ref": "#/$defs/ForgeDraft"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "drafts"
+      ],
+      "type": "object"
+    },
+    "ForgeEvent": {
+      "properties": {
+        "actor": {
+          "description": "Who did it: a GitHub login.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "review_state": {
+          "description": "A review's state (`approved`, `changes_requested`, `commented`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "at"
+      ],
+      "type": "object"
+    },
+    "ForgeEvents": {
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/ForgeEvent"
+          },
+          "type": "array"
+        },
+        "item": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "events"
+      ],
+      "type": "object"
+    },
+    "ForgeItem": {
+      "description": "A PR or an issue, as metadata: never its body.",
+      "properties": {
+        "assignees": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "author": {
+          "description": "The author's GitHub login.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "description": "GitHub's times, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "head_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head_sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "The platform's id: `fi_` and 32 hex characters.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`pr` or `issue`.",
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "merge_state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "description": "`OWNER/NAME`.",
+          "type": "string"
+        },
+        "reviewers": {
+          "description": "Requested reviewers' logins.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "state": {
+          "description": "`open`, `closed` or `merged`.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "repo",
+        "number",
+        "kind",
+        "state",
+        "title",
+        "labels",
+        "assignees",
+        "reviewers",
+        "draft",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "ForgeItems": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ForgeItem"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "The project's id (`personal` asked is answered with the real one).",
+          "type": "string"
+        },
+        "withheld": {
+          "description": "The project's linked repos whose items the reader may not see, and\nwhy: their names are the project's, which its members see anyway.",
+          "items": {
+            "$ref": "#/$defs/WithheldRepo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "project",
+        "items",
+        "withheld"
+      ],
+      "type": "object"
+    },
+    "ForgeRepo": {
+      "properties": {
+        "linked": {
+          "type": "boolean"
+        },
+        "login": {
+          "default": null,
+          "description": "M172: the reader's GitHub login, when it's linked for them: who\n\"you\" are to a block pinned to one of its items, which reads no\nGitHub of its own.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "default": null,
+          "description": "The project it's linked to, when it's linked for the reader.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "`OWNER/NAME`, as asked.",
+          "type": "string"
+        },
+        "repo_id": {
+          "default": null,
+          "description": "GitHub's id for it, likewise.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "why": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "repo",
+        "linked"
+      ],
+      "type": "object"
+    },
+    "ForgeText": {
+      "description": "A body, a comment, a review's text or a review comment.",
+      "properties": {
+        "author": {
+          "description": "A GitHub login.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body": {
+          "description": "Markdown, as GitHub has it.",
+          "type": "string"
+        },
+        "created_at": {
+          "description": "GitHub's times, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "GitHub's id: the PR's or issue's for a body.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "description": "`body`, `comment`, `review` or `review_comment`.",
+          "type": "string"
+        },
+        "line": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "A review comment's file and line.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reply_to": {
+          "description": "The review comment it answers.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "body",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "Inbox": {
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/InboxEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "type": "object"
+    },
+    "InboxEntry": {
+      "properties": {
+        "author": {
+          "default": null,
+          "description": "A GitHub login; a native issue's author's name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "description": "When it came into the inbox, and when the item last changed.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "done_at": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "item": {
+          "description": "The item: `fi_` and 32 hex characters, a native issue's `iss_` id\n(M202), or a run's `run_` id (M215).",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`pr`, `issue` or `run`.",
+          "type": "string"
+        },
+        "number": {
+          "description": "0 for a run.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "project": {
+          "default": null,
+          "description": "A native issue's or a run's project (M202, M215).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "One of [`INBOX_REASONS`].",
+          "type": "string"
+        },
+        "repo": {
+          "description": "`OWNER/NAME`; a native issue's or a run's project's name.",
+          "type": "string"
+        },
+        "room": {
+          "default": null,
+          "description": "A `thread_mention`'s room: the thread on the item (M202).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seen_at": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "`open`, `closed` or `merged`; a run's state.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "The item on GitHub; a native issue's or a run's path on the\nplatform page (`/issues/<id>`, `/runs/<id>`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "reason",
+        "repo",
+        "number",
+        "kind",
+        "state",
+        "title",
+        "url",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "InboxMark": {
+      "description": "Mark an item's entries: `true` sets seen or done (now, if it wasn't),\n`false` clears it, and one not given stays as it is.",
+      "properties": {
+        "done": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "default": null,
+          "description": "Only this reason's entry; all of the item's when `None`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seen": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "InboxMarked": {
+      "properties": {
+        "item": {
+          "type": "string"
+        },
+        "marked": {
+          "description": "How many entries it changed.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "item",
+        "marked"
+      ],
+      "type": "object"
+    },
+    "InboxShadow": {
+      "description": "What an opted-in machine's forge blocks want of its owner (the shadow\nperiod, M171): items and reasons, never a title.",
+      "properties": {
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/ShadowBlock"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "blocks"
+      ],
+      "type": "object"
+    },
+    "LinkRepo": {
+      "description": "`POST /api/projects/{project}/repos`: link `OWNER/NAME`. A project\nmember who is an admin or maintainer of it on GitHub may. When the\nGitHub App isn't installed where it lives, the answer is a 409 with\n`reason: \"install_app\"` and `install_url`, GitHub's page to install it,\nwhich brings them back to the project's settings.",
+      "properties": {
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo"
+      ],
+      "type": "object"
+    },
+    "LinkedRepo": {
+      "description": "A repo linked to a project, or unlinked and waiting for the purge.",
+      "properties": {
+        "full_name": {
+          "description": "`OWNER/NAME`.",
+          "type": "string"
+        },
+        "linked_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "linked_by": {
+          "description": "Who linked it (an account id), when that account is still there.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mirror_content": {
+          "default": false,
+          "description": "The project mirrors its PRs' and issues' bodies and comments (M166).",
+          "type": "boolean"
+        },
+        "private": {
+          "type": "boolean"
+        },
+        "purge_after": {
+          "description": "When its rows go, unless it's linked again first.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "repo_id": {
+          "description": "GitHub's id for it.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unlinked_at": {
+          "description": "When it was unlinked: nothing is read from GitHub for it since.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "repo_id",
+        "full_name",
+        "private",
+        "linked_at"
+      ],
+      "type": "object"
+    },
+    "LinkedRepos": {
+      "properties": {
+        "project": {
+          "description": "The project's id (`personal` asked is answered with the real one).",
+          "type": "string"
+        },
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/LinkedRepo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "project",
+        "repos"
+      ],
+      "type": "object"
+    },
+    "MachineSending": {
+      "properties": {
+        "error": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "step": {
+          "description": "`start`, `sent` or `failed`.",
+          "type": "string"
+        },
+        "url": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "step"
+      ],
+      "type": "object"
+    },
+    "Me": {
+      "description": "The signed-in person, as the hub knows them.",
+      "properties": {
+        "account": {
+          "description": "Control's id for the account.",
+          "type": "string"
+        },
+        "login": {
+          "description": "Its sign-in login (GitHub's), or \"\".",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name it chose, else its login, else \"\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "login",
+        "name"
+      ],
+      "type": "object"
+    },
+    "NewDraft": {
+      "description": "A draft to make. From a person (their own), or from a machine (an\nagent's on it, for its owner: the platform records the machine, and\n`agent` names the agent).",
+      "properties": {
+        "agent": {
+          "default": null,
+          "description": "The agent that wrote it (`mcp:claude-code`), from a machine.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body": {
+          "default": "",
+          "type": "string"
+        },
+        "event": {
+          "default": null,
+          "description": "A review's: `COMMENT`, `APPROVE` or `REQUEST_CHANGES`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "import_key": {
+          "default": null,
+          "description": "A machine's own id for a draft it kept and now uploads: the same\nkey makes no second draft, and is answered with the first. Only a\nmachine gives one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`comment`, `review` or `issue`.",
+          "type": "string"
+        },
+        "number": {
+          "default": null,
+          "description": "The PR or issue; `None` for a new issue.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "`OWNER/NAME`: a repo linked to a project the author is in.",
+          "type": "string"
+        },
+        "title": {
+          "default": null,
+          "description": "A new issue's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "repo",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "Project": {
+      "properties": {
+        "id": {
+          "description": "`prj_` and 32 hex characters.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectTeam"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The team it's the default project of; `None` for the person's own."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ProjectMember": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "name": {
+          "description": "What the roster calls them.",
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "name",
+        "role"
+      ],
+      "type": "object"
+    },
+    "ProjectTeam": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "members": {
+          "items": {
+            "$ref": "#/$defs/ProjectMember"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "description": "The reader's role in it: `owner`, `editor` or `viewer`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "role",
+        "members"
+      ],
+      "type": "object"
+    },
+    "Projects": {
+      "properties": {
+        "hosted": {
+          "default": false,
+          "description": "Hosted workspaces are open to this person (M179's allowlist): only\nthen does the shell offer to delegate a project to control (M178).\nA platform from before leaves it out.",
+          "type": "boolean"
+        },
+        "me": {
+          "$ref": "#/$defs/Me"
+        },
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/Project"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "me",
+        "projects"
+      ],
+      "type": "object"
+    },
+    "RepoSettings": {
+      "description": "`PATCH /api/projects/{project}/repos/{owner}/{name}` (M166): a linked\nrepo's settings; the answer is its [`LinkedRepo`]. `mirror_content`\non keeps its PRs' and issues' bodies and comments on the platform\n(search finds their text); off deletes them at once. Turning it on\ntakes what linking takes: a member who maintains the repo on GitHub.",
+      "properties": {
+        "mirror_content": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mirror_content"
+      ],
+      "type": "object"
+    },
+    "SendDraft": {
+      "properties": {
+        "back": {
+          "default": null,
+          "description": "For `browser`: the platform page's path to come back to.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "via": {
+          "default": null,
+          "description": "`browser` or `machine` (the default).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ShadowBlock": {
+      "properties": {
+        "drafts": {
+          "default": [],
+          "description": "The platform's waiting drafts the block shows (`dft_` ids): its\n`draft` reason, when one is the owner's.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reasons": {
+          "description": "What the block's attention rules find now, as [`INBOX_REASONS`]\n(`draft` aside), whether or not the person looked.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repo": {
+          "description": "`OWNER/NAME` on github.com.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "ShadowCompared": {
+      "properties": {
+        "agree": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "compared": {
+          "description": "Blocks on items the platform has, and how many agreed.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "disagree": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "explained": {
+          "default": 0,
+          "description": "Differences the platform can't help by design (a mention where\ncontent isn't mirrored): not in `compared`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "compared",
+        "agree",
+        "disagree"
+      ],
+      "type": "object"
+    },
+    "WithheldRepo": {
+      "properties": {
+        "repo": {
+          "description": "`OWNER/NAME`.",
+          "type": "string"
+        },
+        "why": {
+          "description": "`no_github` (the reader didn't sign in to control with GitHub),\n`no_access` (GitHub doesn't give them access), `busy` (too many\nlookups lately: it shows again within the hour) or `no_app` (this\ncontrol has no GitHub App to ask with).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "why"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::projects"
+}

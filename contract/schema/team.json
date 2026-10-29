@@ -1,0 +1,691 @@
+{
+  "$defs": {
+    "AccessList": {
+      "description": "`POST /api/daemon/access`: which accounts a daemon lets in. The daemon\ndecides for itself; control routes only those it would anyway.",
+      "properties": {
+        "accounts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "agents": {
+          "description": "teammate's machine, for the team's agent catalog). Routed for their\ndaemons, never for the people: their browsers don't list it. An\nolder daemon sends none.",
+          "items": {
+            "type": "string"
+          },
+          "title": "399: accounts whose daemons may reach it for its agents only (a",
+          "type": "array"
+        },
+        "links_until": {
+          "description": "Until when (ms) read-only links may reach it through the relay.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "accounts"
+      ],
+      "type": "object"
+    },
+    "Cert": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "approver": {
+          "description": "The device that signed this; the device itself for the root.",
+          "type": "string"
+        },
+        "created": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "device": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/Kind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "noise": {
+          "description": "X25519 public key, hex (zeros for a recovery code).",
+          "type": "string"
+        },
+        "sig": {
+          "default": "",
+          "description": "Ed25519 signature by the approver over [`Cert::body`], hex; empty\nuntil approved.",
+          "type": "string"
+        },
+        "sign": {
+          "description": "Ed25519 public key, hex.",
+          "type": "string"
+        },
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "account",
+        "device",
+        "kind",
+        "name",
+        "noise",
+        "sign",
+        "created",
+        "approver"
+      ],
+      "type": "object"
+    },
+    "Features": {
+      "description": "What a daemon says it understands, comma-separated (older ones send\nnone): `GET /api/daemon/trust?features=`.",
+      "properties": {
+        "features": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Flags": {
+      "description": "Labs flags control sends a machine (#347): its account's, and its\nteam's if it's a team's machine, by flag name. On or off; a flag\nneither names follows the machine's own default. The daemon's own\n`flags.json` wins over both, and account over team.",
+      "properties": {
+        "account": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "team": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "default": {},
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "Invite": {
+      "description": "An invite an owner's device signed ahead of time: whoever holds the\nprivate half of `key` may add themselves, once, as `role`, until\n`expires`.\n\n```text\nillogical team invite v1\nteam <id>\nrole <editor|viewer>\nexpires <ms>\nkey <ed25519 public key, hex>\nby <device id>\n```",
+      "properties": {
+        "by": {
+          "description": "The owner's signing device.",
+          "type": "string"
+        },
+        "expires": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "key": {
+          "description": "The one-time key; it also names the invite.",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/TeamRole"
+        },
+        "sig": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team",
+        "role",
+        "expires",
+        "key",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "Kind": {
+      "oneOf": [
+        {
+          "enum": [
+            "browser",
+            "cli",
+            "daemon"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "recovery",
+          "description": "A recovery code: approves a new device when every other is lost.",
+          "type": "string"
+        },
+        {
+          "const": "app",
+          "description": "The desktop app's window. Its keys reach it through whatever\nlistens on the computer's loopback port, so, like a CLI's, they may\nbe a program's on that computer, not the person's. It connects and\napproves machines, CLIs and other apps, but never a browser (see\n[`Kind::certifies`]). Older readers don't know this word: control\nleaves `app` certificates out of what it answers a client that\ndoesn't say it knows them (`app-devices`, see control's `compat.rs`).",
+          "type": "string"
+        }
+      ]
+    },
+    "Member": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "name": {
+          "description": "To show (a login); no spaces or control characters.",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/TeamRole"
+        },
+        "root": {
+          "description": "The account's root device, as the owner who added them saw it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "root",
+        "role",
+        "name"
+      ],
+      "type": "object"
+    },
+    "Move": {
+      "description": "A joined machine moved into a team, between teams, or back to its\naccount, after it joined: a device of its own account signs it, and the\ndaemon applies only a move newer than the last it took, so control can\nneither make one up nor replay an old one.",
+      "properties": {
+        "at": {
+          "description": "When it was made (ms); a daemon takes only newer ones.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "The signing device.",
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TeamPin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The team it's in from now on; none for its own account."
+        }
+      },
+      "required": [
+        "at",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "PeerCerts": {
+      "description": "One account's certificates, from `GET /api/daemon/peers` (by account),\nor as saved in `control.json`.",
+      "properties": {
+        "certs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Cert"
+          },
+          "type": "array"
+        },
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "revocations": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Revocation"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "PeersQuery": {
+      "description": "`GET /api/daemon/peers?accounts=`.",
+      "properties": {
+        "accounts": {
+          "description": "Account ids, comma-separated.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accounts"
+      ],
+      "type": "object"
+    },
+    "Redeem": {
+      "description": "A roster version written by an invitee: the invite, and the one-time\nkey's signature over [`Invite::redeem_body`].",
+      "properties": {
+        "invite": {
+          "$ref": "#/$defs/Invite"
+        },
+        "proof": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "invite",
+        "proof"
+      ],
+      "type": "object"
+    },
+    "Revocation": {
+      "description": "A device taken off the account, signed by one of its devices.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        },
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "account",
+        "device",
+        "at",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "Roster": {
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "The signing device.",
+          "type": "string"
+        },
+        "members": {
+          "items": {
+            "$ref": "#/$defs/Member"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "redeem": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Redeem"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The presigned invite this version redeems (v2), when an invitee\nrather than an owner signs it."
+        },
+        "sig": {
+          "type": "string"
+        },
+        "spent": {
+          "description": "Invites already redeemed (v2), so each works once.",
+          "items": {
+            "$ref": "#/$defs/Spent"
+          },
+          "type": "array"
+        },
+        "team": {
+          "type": "string"
+        },
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "team",
+        "name",
+        "version",
+        "at",
+        "members",
+        "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "SharedTeamAnswer": {
+      "description": "`GET /api/daemon/teams`: one of these per team, by id, for each team a\nsession was shared with whose owner is in it.",
+      "properties": {
+        "certs": {
+          "additionalProperties": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "items": {
+                  "$ref": "#/$defs/Cert"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "$ref": "#/$defs/Revocation"
+                },
+                "type": "array"
+              }
+            ],
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "names": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "rosters": {
+          "items": {
+            "$ref": "#/$defs/Roster"
+          },
+          "type": "array"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TeamPin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "locked",
+        "rosters",
+        "certs"
+      ],
+      "type": "object"
+    },
+    "Spent": {
+      "description": "An invite that's been used, kept until it would have expired anyway.",
+      "properties": {
+        "expires": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "expires"
+      ],
+      "type": "object"
+    },
+    "TeamAnswer": {
+      "description": "`GET /api/daemon/team`: a team machine's team, rosters after the version\nit has, every member's certificates, and whether it's locked.",
+      "properties": {
+        "certs": {
+          "additionalProperties": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "items": {
+                  "$ref": "#/$defs/Cert"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "$ref": "#/$defs/Revocation"
+                },
+                "type": "array"
+              }
+            ],
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "names": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "rosters": {
+          "items": {
+            "$ref": "#/$defs/Roster"
+          },
+          "type": "array"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TeamPin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "locked",
+        "rosters",
+        "certs"
+      ],
+      "type": "object"
+    },
+    "TeamNone": {
+      "description": "What control answers a machine that isn't in a team: `{\"team\": null}`.\nA daemon only asks once it has pinned one, and reads this as it always\nhas, as an answer [`TeamAnswer`] can't parse.",
+      "properties": {
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TeamPin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "TeamPin": {
+      "description": "What a team daemon pins when it joins: the team and its founder.",
+      "properties": {
+        "founder": {
+          "type": "string"
+        },
+        "founder_root": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team",
+        "founder",
+        "founder_root"
+      ],
+      "type": "object"
+    },
+    "TeamQuery": {
+      "description": "`GET /api/daemon/team?since=&features=`.",
+      "properties": {
+        "features": {
+          "default": "",
+          "type": "string"
+        },
+        "since": {
+          "default": 0,
+          "description": "The roster version the daemon has.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "TeamRole": {
+      "enum": [
+        "owner",
+        "editor",
+        "viewer"
+      ],
+      "type": "string"
+    },
+    "TeamsQuery": {
+      "description": "`GET /api/daemon/teams?ids=&features=`.",
+      "properties": {
+        "features": {
+          "default": "",
+          "type": "string"
+        },
+        "ids": {
+          "description": "Team ids, comma-separated.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "type": "object"
+    },
+    "Trust": {
+      "description": "What a daemon pinned when it joined: the account and its root device.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "root"
+      ],
+      "type": "object"
+    },
+    "TrustAnswer": {
+      "description": "`GET /api/daemon/trust`: the account's certificates, to evaluate against\nthe root the daemon pinned.",
+      "properties": {
+        "certs": {
+          "items": {
+            "$ref": "#/$defs/Cert"
+          },
+          "type": "array"
+        },
+        "flags": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Flags"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The Labs flags its account and team set (#347). Left out by a\ncontrol from before them; a daemon then keeps what it had."
+        },
+        "moved": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Move"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Its last move (#100), for the daemon to check and take."
+        },
+        "revocations": {
+          "items": {
+            "$ref": "#/$defs/Revocation"
+          },
+          "type": "array"
+        },
+        "trust": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Trust"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Not read by daemons: they have the root they pinned."
+        }
+      },
+      "required": [
+        "certs",
+        "revocations"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::team"
+}

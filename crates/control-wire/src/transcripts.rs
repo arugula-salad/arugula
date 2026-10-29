@@ -22,6 +22,7 @@ pub const MAX_TEXT: usize = 768 * 1024;
 
 /// What a hosted machine sends as an agent block closes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TranscriptPost {
     /// The block's id on the machine.
     pub block: u64,
@@ -51,6 +52,7 @@ pub struct TranscriptPost {
 /// it rebuilds the box, so a session that moves to the new box starts
 /// from its conversation, not without it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ArchiveOpen {}
 
 /// `hosted.archive_blocks` (Arugula #214): [`ArchiveOpen`] for these agent
@@ -60,12 +62,14 @@ pub struct ArchiveOpen {}
 /// block is kept). A daemon from before it answers that it doesn't know
 /// the op.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ArchiveBlocks {
     pub blocks: Vec<u64>,
 }
 
 /// The platform kept it: its id (`htx_…`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TranscriptArchived {
     pub id: String,
 }

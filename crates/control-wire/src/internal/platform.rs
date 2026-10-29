@@ -9,6 +9,7 @@ use crate::{forge::GithubToken, projects::DraftSent};
 
 /// An account the hub deleted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Deleted {
     pub account: String,
     /// Its machines, which left with it.
@@ -21,6 +22,7 @@ pub struct Deleted {
 /// not, as the hub's route answers it. No `Debug`: a token is never
 /// printed.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TokenAnswer {
     Token(GithubToken),
@@ -30,6 +32,7 @@ pub enum TokenAnswer {
 /// A person's GitHub user token, for one call. Not `Clone`, never printed,
 /// and it crosses from the hub only inside a signed internal call.
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct UserToken(String);
 
@@ -53,6 +56,7 @@ impl std::fmt::Debug for UserToken {
 /// What a send did, as the hub's callback hears it: the draft sent, or why
 /// not (the draft says it too).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Outcome {
     #[serde(default)]
     pub sent: Option<DraftSent>,
@@ -70,6 +74,7 @@ pub struct Outcome {
 /// reason (`no_key`, `cap`) and a sentence for the person. It crosses
 /// `PlatformPort`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TurnAnswer {
     Given {
@@ -87,6 +92,7 @@ pub enum TurnAnswer {
 
 /// What the platform answers a box's transcript, through the hub.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Archived {
     Kept { id: String },
@@ -95,6 +101,7 @@ pub enum Archived {
 
 /// A port that's public now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PublicPreview {
     /// Its host label under the preview domain.
     pub id: String,
@@ -115,6 +122,7 @@ pub struct PublicPreview {
 /// certificate): the project and workspace it was enrolled into, its device
 /// id, and its signing key, hex, which its reports are checked with.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct HostedMachine {
     pub project: String,
     pub workspace: String,
@@ -124,6 +132,7 @@ pub struct HostedMachine {
 
 /// A member of a box's project (M237), as the platform knows them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BoxMember {
     pub account: String,
     /// `owner` for a personal project's account; else their team role
@@ -135,6 +144,7 @@ pub struct BoxMember {
 
 /// A review a box posts into an object's thread (M237).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BoxPost {
     /// The project the box is bound to: the object has to be in it.
     pub project: String,
@@ -149,6 +159,7 @@ pub struct BoxPost {
 
 /// What became of a [`BoxPost`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BoxPosted {
     /// In the thread `room` as message `seq`.

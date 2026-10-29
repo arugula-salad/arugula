@@ -1,0 +1,50 @@
+{
+  "$defs": {
+    "DeployPlan": {
+      "description": "A plan, as the platform's plan routes take it (the person's and the\nagent's). The platform makes the plan's digest itself.",
+      "properties": {
+        "environment": {
+          "description": "The environment's id (`env_…`), or its name in the project.",
+          "type": "string"
+        },
+        "roll_back": {
+          "default": false,
+          "description": "Back to a source the environment ran before, with what it ran.",
+          "type": "boolean"
+        },
+        "source": {
+          "$ref": "#/$defs/DeploySource"
+        }
+      },
+      "required": [
+        "environment",
+        "source"
+      ],
+      "type": "object"
+    },
+    "DeploySource": {
+      "description": "What a deploy deploys: a commit (by its full id) of a repository.",
+      "properties": {
+        "kind": {
+          "description": "`commit` or `artifact`.",
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "where": {
+          "description": "`OWNER/NAME`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref",
+        "where"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::deploys"
+}

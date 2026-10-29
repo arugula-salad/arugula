@@ -35,6 +35,9 @@ macro_rules! tag {
                 if t == $s { Ok($name) } else { Err(serde::de::Error::custom(format!("not a {}", $s))) }
             }
         }
+
+        #[cfg(feature = "schema")]
+        crate::const_schema!($name = $s);
     };
 }
 
@@ -54,6 +57,7 @@ tag!(
 /// `{"t": "forge.watch", "repos": […]}`, daemon to control: the github.com
 /// repositories its forge blocks have open.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ForgeWatch {
     pub t: WatchTag,
     #[serde(default)]
@@ -68,6 +72,7 @@ impl ForgeWatch {
 
 /// Whether a repository's events reach a daemon, and why not.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Standing {
     /// Read leniently by a daemon, which skips an entry without one.
     #[serde(default)]
@@ -81,6 +86,7 @@ pub struct Standing {
 /// `{"t": "forge.watching", "repos": [{repo, live, why?}]}`, control to
 /// daemon: where each watched repository stands.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ForgeWatching {
     pub t: WatchingTag,
     #[serde(default)]
@@ -99,6 +105,7 @@ fn github_com() -> String {
 
 /// What control relays of a webhook event: no more than this.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Poke {
     pub provider: String,
     /// A daemon takes `github.com` when it is left out.
@@ -115,6 +122,7 @@ pub struct Poke {
 
 /// `{"t": "forge.poke", "poke": {…}}`, control to daemon.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ForgePoke {
     pub t: PokeTag,
     pub poke: Poke,
@@ -128,6 +136,7 @@ impl ForgePoke {
 
 /// `POST /api/daemon/github/token`: the repository (`OWNER/NAME`) to read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GithubTokenRequest {
     pub repo: String,
 }
@@ -137,6 +146,7 @@ pub struct GithubTokenRequest {
 /// of its own, a missing `login` is empty and a missing `expires_at` is ten
 /// minutes.
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GithubToken {
     #[serde(default)]
     pub token: String,
@@ -192,6 +202,7 @@ pub const HOSTED_OPS: &[&str] = &["hosted.archive", "hosted.archive_blocks"];
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
 /// answers [`OpAnswer::Unknown`] for it without asking.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Ops {
     pub t: OpsTag,
     #[serde(default)]
@@ -208,6 +219,7 @@ impl Ops {
 /// `{"t": "op", "id": ..., "op": {...}}`, control to daemon: do this and
 /// answer with an [`OpDone`] of the same `id`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OpAsk {
     pub t: OpTag,
     pub id: String,
@@ -222,6 +234,7 @@ impl OpAsk {
 
 /// `{"t": "op.done", "id": ..., "answer": {...}}`, daemon to control.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OpDone {
     pub t: OpDoneTag,
     pub id: String,
@@ -237,6 +250,7 @@ impl OpDone {
 /// An op control asks a machine for, by its name (`op`). Only the platform
 /// asks, through the hub, and only for a person's own action.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "op")]
 pub enum DaemonOp {
     /// Send a draft on a linked repo as the machine's owner, with their own
@@ -276,6 +290,7 @@ impl DaemonOp {
 /// A draft to send: what it is and where it goes. `account` is its person,
 /// who must be the machine's owner.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ForgeSend {
     /// The platform's draft id.
     pub draft: String,
@@ -307,6 +322,7 @@ pub struct ForgeSend {
 
 /// How a machine (or control, for it) answered an op.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "answer", rename_all = "snake_case")]
 pub enum OpAnswer {
     /// Done: what it made on the forge, when it says.

@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "PushAnswer": {
+      "description": "Control's answer to a push: what the push service said.",
+      "properties": {
+        "status": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "PushRequest": {
+      "description": "`POST /api/daemon/push`: one notification, encrypted for one subscription.\nA daemon sends only `endpoint` and `body`.",
+      "properties": {
+        "body": {
+          "description": "The encrypted notification (aes128gcm), standard base64.",
+          "type": "string"
+        },
+        "endpoint": {
+          "description": "The subscription's push-service URL.",
+          "type": "string"
+        },
+        "ttl": {
+          "description": "Seconds the push service keeps it; control takes an hour when it's\nleft out.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "urgency": {
+          "description": "`very-low`, `low`, `normal` or `high`; control takes `high` when it's\nleft out or isn't one of those.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "endpoint",
+        "body"
+      ],
+      "type": "object"
+    },
+    "PushSub": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "auth": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "p256dh": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        },
+        "v": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "account",
+        "device",
+        "endpoint",
+        "p256dh",
+        "auth",
+        "at",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "PushSubs": {
+      "description": "`GET /api/daemon/push-subs`: the subscriptions of the people the daemon\nserves, for it to check the signatures of. Control keeps each as the\ndevice signed it and never reads one, so it answers with\n`PushSubs<serde_json::Value>`: the stored bodies, verbatim.",
+      "properties": {
+        "subs": {
+          "items": {
+            "$ref": "#/$defs/PushSub"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "subs"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::push"
+}

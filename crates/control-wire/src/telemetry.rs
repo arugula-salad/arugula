@@ -39,6 +39,7 @@ pub const MAX_PAGE_COUNT: u32 = 10_000;
 
 /// Whether the account lets control's page send usage counts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PageConsent {
     /// `None`: not asked yet, which counts as no.
     pub on: Option<bool>,
@@ -50,6 +51,7 @@ pub struct PageConsent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SetPageConsent {
     pub on: bool,
 }
@@ -57,6 +59,7 @@ pub struct SetPageConsent {
 /// What control's page counted since its last report: views opened, and
 /// how many errors our code hit (a count, never what they said).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PageReport {
     #[serde(default)]
     pub views: BTreeMap<View, u32>,
@@ -72,6 +75,7 @@ pub const MAX_FRAMES: usize = 32;
 
 /// What an install sends: who it is, and what happened since its last.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Report {
     /// Random, 16 hex digits, made when its owner said yes and dropped
     /// when they say no (a new one if they say yes again).
@@ -93,6 +97,8 @@ pub struct Report {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(rename_all = "lowercase")]
 pub enum Os {
     Linux,
@@ -103,6 +109,8 @@ pub enum Os {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(rename_all = "lowercase")]
 pub enum Arch {
     X86_64,
@@ -112,6 +120,8 @@ pub enum Arch {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(rename_all = "kebab-case")]
 pub enum Channel {
     /// install.sh or install.ps1.
@@ -127,6 +137,8 @@ pub enum Channel {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(rename_all = "kebab-case")]
 pub enum ControlKind {
     #[default]
@@ -141,6 +153,8 @@ pub enum ControlKind {
 
 /// Something that happened on the install.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(tag = "event", rename_all = "kebab-case")]
 pub enum Event {
     /// The owner said yes (the first report after it).
@@ -162,6 +176,8 @@ pub enum Event {
 
 /// Where a person answered, or used something.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(rename_all = "kebab-case")]
 pub enum Surface {
     Web,
@@ -177,6 +193,7 @@ pub enum Surface {
 
 /// A day's counts. Keys are closed sets; a count is how many times.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Counts {
     pub panes_opened: u32,
     /// The most panes open at once.
@@ -201,6 +218,8 @@ pub struct Counts {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentRuntime {
     Claude,
@@ -212,6 +231,8 @@ pub enum AgentRuntime {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(rename_all = "kebab-case")]
 pub enum BlockKind {
     Terminal,
@@ -233,6 +254,8 @@ pub enum BlockKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(rename_all = "kebab-case")]
 pub enum View {
     Swarm,
@@ -280,6 +303,8 @@ pub enum View {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(rename_all = "kebab-case")]
 pub enum LabsFlag {
     Chat,
@@ -297,6 +322,7 @@ pub enum LabsFlag {
 /// A panic in one of our programs (M102). Only where: never its message,
 /// which can hold a path or someone's text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Crash {
     pub process: Process,
     /// The version that crashed (it may have been updated since).
@@ -314,6 +340,8 @@ pub struct Crash {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(rename_all = "kebab-case")]
 pub enum Process {
     Daemon,

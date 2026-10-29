@@ -29,6 +29,9 @@ runs:
     - name: The web client's wire types are current (web/src/proto.gen.ts)
       shell: bash
       run: just proto-ts check
+    - name: The contract's JSON Schema is current (contract/schema/)
+      shell: bash
+      run: just contract-schema check
     - name: DECISIONS.md lists the decision records (docs/decisions/)
       shell: bash
       run: just decisions check
