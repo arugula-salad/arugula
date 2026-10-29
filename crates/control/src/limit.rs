@@ -68,6 +68,10 @@ pub const FORGE_WATCHES: (&str, usize) = ("forge-watch", 120);
 // platform since M161 (`arugula_platform::forge::FORGE_LOOKUPS`).
 /// Shares offered to other accounts, per daemon (each shows a prompt).
 pub const OFFERS: (&str, usize) = ("offer", 120);
+/// Requests for an integration's folder as a repository (#1748), per
+/// client address: a clone or an update is two, and plugin managers on one
+/// CI runner share an address.
+pub const GIT: (&str, usize) = ("git", 3_000);
 /// Telemetry reports (M100), per client address: many installs can share
 /// one (an office, a NAT).
 pub const TELEMETRY: (&str, usize) = ("telemetry", 600);

@@ -599,6 +599,22 @@ note = "Signed by a joined daemon, unsigned from one that isn't (M100)."
 
 [[route]]
 method = "GET"
+path = "/git/{folder}/info/refs"
+process = "hub"
+auth = "public"
+clients = ["agent"]
+note = "An allowlisted folder as a git repository (#1748, git_serve.rs): smart HTTP, upload-pack only, rate-limited per client address. A plugin manager's git calls it."
+
+[[route]]
+method = "POST"
+path = "/git/{folder}/git-upload-pack"
+process = "hub"
+auth = "public"
+clients = ["agent"]
+note = "The same repository's fetch: wants in, a pack out. 64 KiB of request at most."
+
+[[route]]
+method = "GET"
 path = "/api/me/telemetry"  # wire::telemetry::ME_TELEMETRY
 process = "hub"
 auth = "session"
