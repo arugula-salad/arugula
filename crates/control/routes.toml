@@ -2848,9 +2848,10 @@ clients = ["daemon"]
 # MCP's board tools, signed by the machine, behind the `boards` Labs flag.
 # The owner's role in the project is the ceiling, and the machine needs its
 # grant over it: `boards.read` to read, `boards.write` to change (which
-# reads too), asked on every call. An agent adds rows, sets a row's note and
-# status and moves rows; it never makes a board or makes, changes, moves or
-# deletes a zone, repoints a row, or deletes a row another hand added.
+# reads too), asked on every call. An agent makes boards, sets a board's
+# title and goal, closes and reopens it, works its zones and rows, and the
+# board says an agent did; it never deletes a zone that holds a row another
+# hand added, or deletes or repoints such a row (aru-123).
 
 [[route]]
 method = "GET"
@@ -2861,6 +2862,14 @@ clients = ["daemon"]
 note = "A project's boards (`boards.read`)."
 
 [[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/boards"  # wire::boards::AGENT_PROJECT_BOARDS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Makes a board in the project, with a goal if one is given (`boards.write`); it says an agent made it."
+
+[[route]]
 method = "GET"
 path = "/api/daemon/boards/{id}"  # wire::boards::AGENT_BOARD
 process = "platform"
@@ -2869,12 +2878,36 @@ clients = ["daemon"]
 note = "A board with its zones and rows (`boards.read`)."
 
 [[route]]
+method = "PATCH"
+path = "/api/daemon/boards/{id}"  # wire::boards::AGENT_BOARD
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Sets the board's title or goal (`boards.write`)."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/close"  # wire::boards::AGENT_BOARD_CLOSE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Closes the board with a done note, not empty (`boards.write`); it says an agent closed it."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/reopen"  # wire::boards::AGENT_BOARD_REOPEN
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Opens a closed board again, keeping its done note (`boards.write`)."
+
+[[route]]
 method = "PUT"
 path = "/api/daemon/boards/{id}/entries"  # wire::boards::AGENT_BOARD_ENTRIES
 process = "platform"
 auth = "daemon"
 clients = ["daemon"]
-note = "Add a row to a zone, or set a row's note or status (`boards.write`); 409 `stale_rev` when the row moved on."
+note = "Makes or renames a zone, adds a row to a zone, or sets a row's note or status, or its pointer when its own machine added it (`boards.write`); 409 `stale_rev` when the entry moved on."
 
 [[route]]
 method = "DELETE"
@@ -2882,7 +2915,7 @@ path = "/api/daemon/boards/{id}/entries/{entry}"  # wire::boards::AGENT_BOARD_EN
 process = "platform"
 auth = "daemon"
 clients = ["daemon"]
-note = "A row the same machine's agents added (`boards.write`); anything else is 403."
+note = "A row the same machine's agents added, or a zone holding no other hand's row (`boards.write`); anything else is 403."
 
 [[route]]
 method = "POST"
@@ -2890,7 +2923,7 @@ path = "/api/daemon/boards/{id}/entries/{entry}/move"  # wire::boards::AGENT_BOA
 process = "platform"
 auth = "daemon"
 clients = ["daemon"]
-note = "Move a row, within its zone or to another (`boards.write`)."
+note = "Moves a row, within its zone or to another, or a zone (`boards.write`)."
 
 [[route]]
 method = "PUT"
