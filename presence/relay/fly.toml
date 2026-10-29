@@ -1,0 +1,35 @@
+# arugula.video's relay. Not created or deployed yet (#315): `fly apps
+# create arugula-video`, set SECRET_KEY_BASE and PRESENCE_APPS (and DEMO=1
+# for the public demo) as secrets, then `fly deploy` from presence/relay.
+app = "arugula-video"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PHX_HOST = "arugula.video"
+  PORT = "4000"
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 5000
+    hard_limit = 10000
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -1,0 +1,10 @@
+import Config
+
+config :presence_relay, PresenceRelayWeb.Endpoint,
+  http: [ip: {127, 0, 0, 1}, port: 4000],
+  check_origin: false,
+  debug_errors: true,
+  secret_key_base: "dev-only-presence-relay-secret-key-base-0123456789abcdef0123456789abcdef"
+
+config :phoenix, :stacktrace_depth, 20
+config :phoenix, :plug_init_mode, :runtime
