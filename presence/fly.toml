@@ -1,15 +1,17 @@
-# arugula.video's relay. Not created or deployed yet (#315): `fly apps
-# create arugula-video`, set SECRET_KEY_BASE and PRESENCE_APPS (and DEMO=1
-# for the public demo) as secrets, then `fly deploy` from presence/relay.
-app = "arugula-video"
-primary_region = "ord"
+# arugula.stream: the presence relay serving the demo (#315). `fly deploy`
+# from presence/ (the image builds presence/demo into the relay). Secrets:
+# SECRET_KEY_BASE, DEMO_SECRET, and PRESENCE_APPS once a host app uses it.
+# One machine: rooms live in one node's memory until the relay clusters.
+app = "arugula-stream"
+primary_region = "ewr"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "relay/Dockerfile"
 
 [env]
-  PHX_HOST = "arugula.video"
+  PHX_HOST = "arugula.stream"
   PORT = "4000"
+  DEMO = "1"
 
 [http_service]
   internal_port = 4000

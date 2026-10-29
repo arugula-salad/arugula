@@ -2,7 +2,8 @@ defmodule PresenceRelay.Apps do
   @moduledoc """
   The host apps this relay serves: each one's id and the HS256 secret its
   server signs room tokens with (`PRESENCE_APPS`). A demo relay (`DEMO=1`)
-  also has app `"demo"`, with a secret made at boot, for which
+  also has app `"demo"`, with a secret made at boot (or `DEMO_SECRET`, so a
+  restart doesn't void the tokens out there), for which
   `POST /api/demo/token` hands out tokens to anyone.
   """
 
@@ -15,7 +16,12 @@ defmodule PresenceRelay.Apps do
     apps =
       if demo?(),
         do:
-          Map.put(apps, "demo", Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)),
+          Map.put(
+            apps,
+            "demo",
+            Application.get_env(:presence_relay, :demo_secret) ||
+              Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+          ),
         else: apps
 
     :persistent_term.put(@key, apps)

@@ -14,7 +14,10 @@ if config_env() != :test do
       end
     end)
 
-  config :presence_relay, apps: apps, demo: System.get_env("DEMO") in ~w(1 true)
+  config :presence_relay,
+    apps: apps,
+    demo: System.get_env("DEMO") in ~w(1 true),
+    demo_secret: System.get_env("DEMO_SECRET")
 end
 
 if config_env() == :prod do
