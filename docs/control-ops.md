@@ -3895,7 +3895,7 @@ A project's runs and deploys (platform step 7) are background jobs in
   cancels it if it hadn't started. A run is never left pending or running
   with no job.
 
-The tests in `crates/platform/src/failure_tests.rs` and
+The tests in `crates/platform-deploys/src/failure_tests.rs` and
 `crates/arugulad/tests/integration/hosted_work.rs` make each failure below
 happen, in CI.
 

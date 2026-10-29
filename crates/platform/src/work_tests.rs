@@ -5,6 +5,10 @@
 //! anyone else's report is refused; a paused box is woken; a run nobody
 //! takes fails. On SQLite and, with `ARUGULA_TEST_POSTGRES_URL`, Postgres.
 
+// Also the feature crates' test harness (#314, the `testing` feature): its
+// helpers are `pub`, and only its own tests use the rest.
+#![cfg_attr(not(test), allow(dead_code, unused_imports))]
+
 use std::{
     sync::{
         Arc,
@@ -28,13 +32,13 @@ use crate::{
 };
 
 /// A hosted machine: its keys, and what the hub says of it.
-pub(crate) struct Machine {
-    pub(crate) keys: DeviceKeys,
-    pub(crate) m: HostedMachine,
+pub struct Machine {
+    pub keys: DeviceKeys,
+    pub m: HostedMachine,
 }
 
 impl Machine {
-    pub(crate) fn new(project: &str, workspace: &str) -> Self {
+    pub fn new(project: &str, workspace: &str) -> Self {
         let keys = DeviceKeys::generate();
         let m = HostedMachine {
             project: project.into(),
@@ -46,7 +50,7 @@ impl Machine {
     }
 
     /// Its report of `run` moving `from` `to`, as event `seq`.
-    pub(crate) fn report(&self, run: &str, seq: u64, from: State, to: State, detail: &str) -> Report {
+    pub fn report(&self, run: &str, seq: u64, from: State, to: State, detail: &str) -> Report {
         let ev = arugula_e2e::run::Event { run, seq, from: Some(from), to, at: 50, detail, daemon: &self.m.machine };
         Report {
             run: run.into(),
@@ -60,15 +64,16 @@ impl Machine {
     }
 }
 
-pub(crate) struct World {
-    pub(crate) app: Arc<Platform>,
-    pub(crate) project: String,
-    pub(crate) clock: Arc<AtomicU64>,
-    pub(crate) worker: Worker,
+pub struct World {
+    pub app: Arc<Platform>,
+    pub project: String,
+    pub clock: Arc<AtomicU64>,
+    pub worker: Worker,
 }
 
 impl World {
-    pub(crate) fn new() -> Self {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
         let hub = Arc::new(TestHub::default());
         let p = Platform::new(Default::default(), Db::test(), hub, reqwest::Client::new(), Default::default());
         let app = Arc::new(p);
@@ -83,7 +88,7 @@ impl World {
     }
 
     /// A hosted workspace whose box enrolled as `m`, in `state`.
-    pub(crate) fn workspace(&self, id: &str, m: &Machine, state: &str) {
+    pub fn workspace(&self, id: &str, m: &Machine, state: &str) {
         let made =
             self.app.db.add_hosted_workspace(id, &self.project, id, &Default::default(), "alice", 10, 1).unwrap();
         assert!(matches!(made, crate::db::hosted::Added::Made(_)));
@@ -99,7 +104,7 @@ impl World {
 
     /// A run of `echo hi` on `daemon`, in workspace `ws`, under a grant
     /// (or not).
-    pub(crate) fn run(&self, daemon: &str, ws: &str, grant: Option<&str>) -> String {
+    pub fn run(&self, daemon: &str, ws: &str, grant: Option<&str>) -> String {
         let op =
             format!("arugula op v1\ndaemon {daemon}\nkind run\nsession -\npane - -\ncwd -\nargv ZWNobw==\nargv aGk=\n");
         let new = NewRun {
@@ -116,7 +121,7 @@ impl World {
     }
 
     /// Every step due now.
-    pub(crate) async fn settle(&self) {
+    pub async fn settle(&self) {
         for _ in 0..20 {
             if !self.worker.tick(&self.app.db).await.unwrap() {
                 return;
@@ -125,19 +130,19 @@ impl World {
         panic!("the worker never settled");
     }
 
-    pub(crate) fn at(&self, ms: u64) {
+    pub fn at(&self, ms: u64) {
         self.clock.store(ms, SeqCst);
     }
 
-    pub(crate) async fn ready(&self, m: &Machine) -> Vec<String> {
+    pub async fn ready(&self, m: &Machine) -> Vec<String> {
         work(&self.app, &m.m, &[TAKES_RUN.into()]).await.unwrap().items.into_iter().map(|i| i.run).collect()
     }
 
-    pub(crate) fn state(&self, run: &str) -> State {
+    pub fn state(&self, run: &str) -> State {
         self.app.db.run(run).unwrap().unwrap().state
     }
 
-    pub(crate) fn job(&self, run: &str) -> String {
+    pub fn job(&self, run: &str) -> String {
         self.app.db.platform_job(run).unwrap().unwrap().state
     }
 }

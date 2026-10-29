@@ -39,7 +39,7 @@ use crate::{
         deploys::{Environment, State as DeployState},
         projects::{DEPLOYS_PLAN, SECRETS_WRITE},
     },
-    deploys,
+    features::deploys,
     grants::{AgentScope, agent_may},
     infisical,
 };
@@ -496,7 +496,7 @@ async fn rollback(agent: &Agent, a: &Value) -> Out {
 
 /// The deploy, as the agent may read it, and its app's name.
 async fn read(agent: &Agent, id: &str) -> Result<(Value, String), Failure> {
-    let d = deploys::agent::get(agent.state(), agent.me(), axum::extract::Path(id.trim().to_owned())).await?.0;
+    let d = deploys().agent_get(agent.app.clone(), agent.me(), id.trim().to_owned()).await?;
     let env = d["environment"]["name"].as_str().unwrap_or_default().to_owned();
     Ok((d, env))
 }

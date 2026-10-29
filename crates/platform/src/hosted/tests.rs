@@ -4,6 +4,10 @@
 //! rebuilding and deleting, and who may do what. Runs on SQLite and, with
 //! `ARUGULA_TEST_POSTGRES_URL`, Postgres.
 
+// Also the feature crates' test harness (#314, the `testing` feature): its
+// helpers are `pub`, and only its own tests use the rest.
+#![cfg_attr(not(test), allow(dead_code, unused_imports))]
+
 use std::{
     collections::BTreeMap,
     sync::{
@@ -31,8 +35,8 @@ use crate::{
 /// while it's set (M182). `calls`: each resume, pause and hold, in order
 /// (M181).
 #[derive(Default)]
-pub(crate) struct Fake {
-    pub(crate) boxes: Mutex<BTreeMap<String, Sandbox>>,
+pub struct Fake {
+    pub boxes: Mutex<BTreeMap<String, Sandbox>>,
     creates: Mutex<Vec<Create>>,
     deleted: Mutex<Vec<String>>,
     n: AtomicU32,
@@ -41,7 +45,7 @@ pub(crate) struct Fake {
     pub(super) resumes: AtomicU32,
     pub(super) resume_ms: AtomicU32,
     pub(super) resume_error: Mutex<Option<compute::Error>>,
-    pub(crate) calls: Mutex<Vec<String>>,
+    pub calls: Mutex<Vec<String>>,
     /// Each box's egress rules as last set (M185).
     pub(super) rules: Mutex<BTreeMap<String, compute::Rules>>,
 }
@@ -49,11 +53,11 @@ pub(crate) struct Fake {
 impl Fake {
     /// Each resume, pause and hold since the last asked, as `pause sbx0`
     /// or `hold sbx0 600s`.
-    pub(crate) fn calls(&self) -> Vec<String> {
+    pub fn calls(&self) -> Vec<String> {
         std::mem::take(&mut *self.calls.lock().unwrap())
     }
 
-    pub(crate) fn boxes(&self) -> Vec<Sandbox> {
+    pub fn boxes(&self) -> Vec<Sandbox> {
         self.boxes.lock().unwrap().values().cloned().collect()
     }
 
@@ -174,14 +178,14 @@ impl Substrate for Fake {
 /// alice owns team t1, bob edits it, vic views it; olga is elsewhere.
 /// The platform has the fake provider, template `tpl`, and lets anyone
 /// make workspaces but carol.
-pub(crate) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
+pub async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
     let fake = Arc::new(Fake::default());
     let (hub, app, base, project) = serve_on(enroll, fake.clone(), "tpl").await;
     (hub, fake, app, base, project)
 }
 
 /// [`serve`], its hosted config changed by `set` first.
-pub(crate) async fn serve_with(
+pub async fn serve_with(
     enroll: EnrollBy,
     set: impl FnOnce(&mut Config),
 ) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
@@ -192,7 +196,7 @@ pub(crate) async fn serve_with(
 
 /// [`serve`] on another provider, with template `template` (M263's
 /// snapshots run on the E2B adapter against its fake).
-pub(crate) async fn serve_on(
+pub async fn serve_on(
     enroll: EnrollBy,
     compute: Arc<dyn Substrate>,
     template: &str,
@@ -201,7 +205,7 @@ pub(crate) async fn serve_on(
 }
 
 /// [`serve_on`], its hosted config changed by `set` first.
-pub(crate) async fn serve_on_with(
+pub async fn serve_on_with(
     enroll: EnrollBy,
     compute: Arc<dyn Substrate>,
     template: &str,
@@ -231,7 +235,7 @@ pub(crate) async fn serve_on_with(
 }
 
 /// Every step due at `now`.
-pub(crate) async fn drive(app: &Platform, now: u64) {
+pub async fn drive(app: &Platform, now: u64) {
     for _ in 0..50 {
         if !worker::tick_at(app, now).await.unwrap() {
             return;
@@ -240,13 +244,13 @@ pub(crate) async fn drive(app: &Platform, now: u64) {
     panic!("the worker never settled");
 }
 
-pub(crate) async fn make(base: &str, who: &str, project: &str, name: &str) -> (u16, Value) {
+pub async fn make(base: &str, who: &str, project: &str, name: &str) -> (u16, Value) {
     let spec = json!({ "repos": ["https://github.com/acme/app"], "packages": ["ripgrep"], "setup": "make" });
     call(base, who, "POST", &format!("/api/projects/{project}/workspaces"), Some(json!({ "name": name, "spec": spec })))
         .await
 }
 
-pub(crate) async fn show(base: &str, project: &str, id: &str) -> Value {
+pub async fn show(base: &str, project: &str, id: &str) -> Value {
     let (status, w) = call(base, "alice", "GET", &format!("/api/projects/{project}/workspaces/{id}"), None).await;
     assert_eq!(status, 200, "{w}");
     w
@@ -545,7 +549,7 @@ async fn wake_rebuild_and_delete() {
 }
 
 /// A provider whose boxes all carry `arugula_test=1`, for the live run.
-pub(crate) struct Tagged(pub(crate) compute::E2b);
+pub struct Tagged(pub compute::E2b);
 
 impl Substrate for Tagged {
     fn create<'a>(&'a self, b: &'a Create) -> BoxFuture<'a, compute::Result<Created>> {

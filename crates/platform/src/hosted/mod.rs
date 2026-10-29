@@ -80,8 +80,8 @@ pub mod setup;
 #[cfg(test)]
 mod setup_tests;
 pub mod snapshot;
-#[cfg(test)]
-pub(crate) mod tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;
 pub mod transcripts;
 pub mod usage;
 pub mod wake;

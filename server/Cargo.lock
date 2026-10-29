@@ -308,6 +308,7 @@ dependencies = [
  "arugula-control-wire",
  "arugula-e2e",
  "arugula-platform-base",
+ "arugula-platform-deploys",
  "axum",
  "base64 0.23.1",
  "clap",
@@ -326,6 +327,7 @@ name = "arugula-platform-all"
 version = "0.0.0"
 dependencies = [
  "arugula-platform-agents",
+ "arugula-platform-deploys",
 ]
 
 [[package]]
@@ -361,6 +363,28 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "arugula-platform-deploys"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "arugula-control-common",
+ "arugula-control-wire",
+ "arugula-e2e",
+ "arugula-platform-base",
+ "axum",
+ "base64 0.23.1",
+ "ed25519-dalek",
+ "futures-util",
+ "hex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

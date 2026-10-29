@@ -802,7 +802,7 @@ async fn past_cap_whom(app: &Platform, job: &HostedJob) -> Result<Vec<String>> {
             return Ok(vec![maker.to_owned()]);
         }
     }
-    crate::deploys::owners(app, &p).await
+    crate::project_roles::owners(app, &p).await
 }
 
 /// What a box as the provider reports it says for its usage (M188): when

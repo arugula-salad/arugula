@@ -16,6 +16,7 @@ publish = false
 # hub's process and as its own.
 [dependencies]
 arugula-platform-agents = { workspace = true }
+arugula-platform-deploys = { workspace = true }
 
 [lints]
 workspace = true

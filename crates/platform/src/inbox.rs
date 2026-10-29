@@ -280,7 +280,7 @@ pub fn thread_mentioned(
 /// What a run did, in a line: its spec's name, its deploy
 /// (`Deploy production · 1a2b3c4`, UI audit #145), or its command or
 /// instruction.
-pub(crate) fn run_what(app: &Platform, run: &Run) -> anyhow::Result<String> {
+pub fn run_what(app: &Platform, run: &Run) -> anyhow::Result<String> {
     if let Some(spec) = run.source["spec"].as_str()
         && let Some(s) = app.db.run_spec_by_id(spec)?
     {

@@ -1,0 +1,43 @@
+[package]
+name = "arugula-platform-deploys"
+description = "Arugula control's platform: environments, deploys and their approval, and applying them on their own boxes"
+# The hosted server's own workspace (server/Cargo.toml), not the root's.
+workspace = "../../server"
+# Not the workspace's version: a release bump would rebuild this crate and
+# everything on it. The binaries carry the release.
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+arugula-control-common = { workspace = true }
+arugula-control-wire = { workspace = true }
+arugula-e2e = { workspace = true }
+arugula-platform-base = { workspace = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+# The test harness's signed approvals (`testing`).
+ed25519-dalek = { workspace = true, optional = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+
+[features]
+# deploys_tests' helpers (signed approvals, a CLI's gate), for other
+# feature crates' tests: only ever a dev-dependency's feature.
+testing = ["arugula-platform-base/testing", "dep:ed25519-dalek"]
+
+[dev-dependencies]
+arugula-platform-base = { workspace = true, features = ["testing"] }
+ed25519-dalek = { workspace = true }
+
+[lints]
+workspace = true

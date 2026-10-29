@@ -12,9 +12,19 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use axum::{Router, routing::MethodRouter};
+use arugula_control_common::{ApiError, err};
+use arugula_control_wire::work::{ArtifactGiven, DeployWork, Reported, SecretsAsk, SecretsGiven};
+use axum::{Router, http::StatusCode, routing::MethodRouter};
+use futures_util::future::BoxFuture;
+use serde_json::Value;
 
-use crate::Platform;
+use crate::{
+    Platform,
+    auth::Machine,
+    db::{Db, runs::Run},
+    jobs::Worker,
+    work::HostedMachine,
+};
 
 /// What a feature crate adds.
 pub trait Feature: Send + Sync + 'static {
@@ -25,6 +35,10 @@ pub trait Feature: Send + Sync + 'static {
     /// Its background work, once the platform starts (in the hub's process
     /// or as its own binary).
     fn start(&self, _p: &Arc<Platform>) {}
+    /// Its kinds of job, for the one job worker (`work::start`).
+    fn jobs(&self, _p: &Arc<Platform>, w: Worker) -> Worker {
+        w
+    }
 }
 
 static ALL: Mutex<Vec<&'static dyn Feature>> = Mutex::new(Vec::new());
@@ -44,6 +58,92 @@ pub fn start(p: &Arc<Platform>) {
     for f in all() {
         f.start(p);
     }
+}
+
+/// Every feature's kinds of job ([`Feature::jobs`]), with the worker's own.
+pub fn jobs(p: &Arc<Platform>, w: Worker) -> Worker {
+    all().into_iter().fold(w, |w, f| f.jobs(p, w))
+}
+
+/// Deploys (`arugula-platform-deploys`), as the rest of the platform asks
+/// them: the runs engine for a deploy's run, a deploy box for its secrets
+/// and artifact, agents with no machine for a plan. Without the crate, a
+/// run is no deploy's and every ask is refused.
+pub trait Deploys: Send + Sync + 'static {
+    /// A deploy's run whose deploy's job gave up: its owners hear.
+    fn page_unpaged<'a>(&'a self, _app: &'a Platform, _run: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+    /// What a deploy's run carries to the box that applies it.
+    fn deploy_work(&self, _db: &Db, _run: &str) -> anyhow::Result<Option<DeployWork>> {
+        Ok(None)
+    }
+    /// A deploy's run moved: its deploy moves too, and the box may be told
+    /// otherwise.
+    fn reported<'a>(&'a self, _app: &'a Platform, _run: &'a Run) -> BoxFuture<'a, anyhow::Result<Option<Reported>>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// A deploy box's secrets (`PlatformPort::hosted_secrets`).
+    fn secrets<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _m: &'a HostedMachine,
+        _ask: &'a SecretsAsk,
+    ) -> BoxFuture<'a, anyhow::Result<SecretsGiven>> {
+        Box::pin(async { Ok(SecretsGiven::Refused { why: "no deploys here".into() }) })
+    }
+    /// A deploy box's artifact (`PlatformPort::hosted_artifact`).
+    fn artifact<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _m: &'a HostedMachine,
+        _ask: &'a SecretsAsk,
+    ) -> BoxFuture<'a, anyhow::Result<ArtifactGiven>> {
+        Box::pin(async { Ok(ArtifactGiven::Refused { why: "no deploys here".into() }) })
+    }
+    /// A machine's agent plans a deploy (`POST /api/daemon/projects/{project}/deploys`).
+    fn agent_plan(
+        &self,
+        _app: Arc<Platform>,
+        _me: Machine,
+        _project: String,
+        _plan: Value,
+    ) -> BoxFuture<'static, Result<Value, ApiError>> {
+        Box::pin(async { Err(no_deploys()) })
+    }
+    /// A machine's agent asks for a deploy's approval.
+    fn agent_request(
+        &self,
+        _app: Arc<Platform>,
+        _me: Machine,
+        _id: String,
+    ) -> BoxFuture<'static, Result<Value, ApiError>> {
+        Box::pin(async { Err(no_deploys()) })
+    }
+    /// A deploy, as a machine's agent may read it.
+    fn agent_get(&self, _app: Arc<Platform>, _me: Machine, _id: String) -> BoxFuture<'static, Result<Value, ApiError>> {
+        Box::pin(async { Err(no_deploys()) })
+    }
+}
+
+fn no_deploys() -> ApiError {
+    err(StatusCode::NOT_FOUND, "no deploys here")
+}
+
+struct NoDeploys;
+
+impl Deploys for NoDeploys {}
+
+static DEPLOYS: std::sync::OnceLock<Box<dyn Deploys>> = std::sync::OnceLock::new();
+
+/// Puts deploys in this platform (`arugula-platform-deploys`'s `register`).
+pub fn install_deploys(d: Box<dyn Deploys>) {
+    let _ = DEPLOYS.set(d);
+}
+
+/// Deploys, as registered; refusing everything when they aren't.
+pub fn deploys() -> &'static dyn Deploys {
+    DEPLOYS.get().map_or(&NoDeploys, |d| d.as_ref())
 }
 
 /// A router that notes its paths too: routes.toml's test reads them.

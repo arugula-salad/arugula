@@ -123,6 +123,7 @@ pub async fn serve_with_cli(app: Arc<crate::Platform>) -> String {
     }
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
+    crate::register();
     let router = crate::router(app).layer(axum::middleware::from_fn(gate));
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     base

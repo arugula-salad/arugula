@@ -17,6 +17,9 @@ use axum::routing::{get, post, put};
 
 #[allow(unused_imports)]
 use arugula_platform::*;
+// Deploys' test helpers: a CLI's gate, signed approvals.
+#[cfg(test)]
+use arugula_platform_deploys::deploys_tests;
 
 pub mod agent_mcp;
 #[cfg(test)]
@@ -90,6 +93,8 @@ pub fn register() {
 mod testing {
     pub fn router(app: std::sync::Arc<crate::Platform>) -> axum::Router {
         crate::register();
+        // Its tests plan deploys.
+        arugula_platform_deploys::register();
         arugula_platform::testing::router(app)
     }
 }

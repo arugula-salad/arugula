@@ -27,6 +27,7 @@ members = [
     "../crates/platform",
     "../crates/platform-agents",
     "../crates/platform-all",
+    "../crates/platform-deploys",
 ]
 
 # The root's [workspace.package]: one version for everything a release
@@ -50,6 +51,7 @@ arugula-control-base = { path = "../crates/control" }
 arugula-platform-base = { path = "../crates/platform" }
 # The platform's feature crates (#314), side by side on its base.
 arugula-platform-agents = { path = "../crates/platform-agents" }
+arugula-platform-deploys = { path = "../crates/platform-deploys" }
 # Every feature crate, registered: what both binaries call.
 arugula-platform-all = { path = "../crates/platform-all" }
 aes-gcm = "0.11.1"
