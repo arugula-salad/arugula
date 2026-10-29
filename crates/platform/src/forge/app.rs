@@ -54,7 +54,6 @@ use std::{
 use anyhow::{Context as _, bail};
 use aws_lc_rs::{rand::SystemRandom, rsa::KeyPair, signature::RSA_PKCS1_SHA256};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::{info, warn};
 
@@ -412,14 +411,7 @@ impl RepoRole {
     }
 }
 
-/// A person by their GitHub identity: the numeric id is who they are, the
-/// login what control last saw them called. The hub knows it (they signed
-/// in with GitHub) and says it with each call.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GithubUser {
-    pub id: u64,
-    pub login: String,
-}
+pub use arugula_control_wire::internal::GithubUser;
 
 pub struct GithubApp {
     pub id: String,

@@ -13,6 +13,8 @@ description = "What Arugula control's hub and platform both need: the database o
 [dependencies]
 anyhow = { workspace = true }
 arugula-e2e = { workspace = true }
+# The principal header's JSON (`principal`): the internal port's wire.
+arugula-control-wire = { workspace = true }
 axum = { workspace = true }
 base64 = { workspace = true }
 # The issuer's tokens (`issuer`, M228): EdDSA JWTs and hud's assertions.

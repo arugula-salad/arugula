@@ -48,7 +48,6 @@ use axum::{
     extract::{FromRequestParts, Path, State},
     http::{StatusCode, request::Parts},
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::{info, warn};
 
@@ -77,47 +76,13 @@ pub enum How {
     Machine,
 }
 
-/// A person's GitHub user token, for one call. Not `Clone`, never printed,
-/// and it crosses from the hub only inside a signed internal call.
-#[derive(Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct UserToken(String);
+pub use arugula_control_wire::internal::{Outcome, UserToken};
 
-impl UserToken {
-    pub fn new(secret: String) -> Self {
-        Self(secret)
-    }
-
-    pub(crate) fn secret(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Debug for UserToken {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("UserToken(…)")
-    }
-}
-
-/// What a send did, as the hub's callback hears it: the draft sent, or why
-/// not (the draft says it too).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Outcome {
-    #[serde(default)]
-    pub sent: Option<wire::DraftSent>,
-    #[serde(default)]
-    pub refused: Option<String>,
-    /// A session's PR (M259) that was opened: its URL.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pr: Option<String>,
-}
-
-impl From<Result<wire::DraftSent, ApiError>> for Outcome {
-    fn from(r: Result<wire::DraftSent, ApiError>) -> Self {
-        match r {
-            Ok(s) => Outcome { sent: Some(s), refused: None, pr: None },
-            Err(e) => Outcome { sent: None, refused: Some(e.1), pr: None },
-        }
+/// What a send did, from the send's result.
+pub fn outcome(r: Result<wire::DraftSent, ApiError>) -> Outcome {
+    match r {
+        Ok(s) => Outcome { sent: Some(s), refused: None, pr: None },
+        Err(e) => Outcome { sent: None, refused: Some(e.1), pr: None },
     }
 }
 

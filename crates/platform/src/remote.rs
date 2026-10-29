@@ -2,19 +2,21 @@
 //! (M140): [`HttpHub`] is `HubPort` over HTTP and [`serve_hub`] answers it
 //! (the hub mounts that on its internal listener); [`HttpPlatform`] is
 //! `PlatformPort` over HTTP and [`serve_platform`] answers it (the platform
-//! binary's). Both directions live here, beside the traits, so a method
-//! and its wire are one change. And [`vouched`] is the platform's check of
-//! the principal header the hub's gateway forwards every call with.
+//! binary's). Both directions live here. And [`vouched`] is the platform's
+//! check of the principal header the hub's gateway forwards every call
+//! with.
 //!
 //! Each method is one `POST /internal/<hub|platform>/v1/<method>`, its
-//! arguments a JSON object, its answer the method's JSON (200), or
+//! arguments a JSON object (an `*Args` of `arugula_control_wire::internal`),
+//! its answer the method's JSON (200), or
 //! `{"error": ...}` (500, or 404 for a method this side doesn't have yet:
 //! the side that's called ships a method a release before the caller uses
 //! it). Every call is signed (`arugula_control_common::internal`): the key
 //! never crosses the network.
 //!
-//! The types keep `arugula-control-wire`'s two rules: the bytes don't
-//! change, and nothing is `deny_unknown_fields`.
+//! The arguments and answers are `arugula_control_wire::internal`'s (#219),
+//! so they're in the contract's schema and examples, and keep the crate's
+//! two rules: the bytes don't change, and nothing is `deny_unknown_fields`.
 
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
@@ -34,13 +36,14 @@ use axum::{
     routing::post,
 };
 use futures_util::future::BoxFuture;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use tracing::Instrument as _;
 
 use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke, Standing},
     hosted::{EnrollAsk, EnrollGiven, Enrolled, SetupPlan, SetupReport, WakeAnswer},
+    internal::args::*,
     run_logs::{Upload, UploadGiven, Uploaded},
     work::{
         ArtifactGiven, PushAsk, PushGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionIssuesAsk,
@@ -48,24 +51,19 @@ use arugula_control_wire::{
     },
 };
 
-use crate::{
-    Deleted, PlatformPort,
-    auth::Asked,
-    boxes::{BoxMember, BoxPost, BoxPosted},
-    forge::{
-        GithubUser, TokenAnswer,
-        send::{Outcome, UserToken},
-    },
-    hub::{
-        Account, ChangePage, Daemon, DeviceTrust, Flags, HubPort, HubResult, Meter, PushOptions, Pushed, Resolved, Team,
-    },
-    work::HostedMachine,
+use arugula_control_wire::internal::{
+    Account, BoxMember, BoxPost, BoxPosted, ChangePage, Daemon, Deleted, DeviceTrust, Flags, GithubUser, HostedMachine,
+    Meter, Outcome, PushOptions, Pushed, Resolved, Team, TokenAnswer, UserToken,
 };
 
-/// Where the hub's internal API is mounted.
-pub const HUB_PREFIX: &str = "/internal/hub/v1";
-/// Where the platform's is.
-pub const PLATFORM_PREFIX: &str = "/internal/platform/v1";
+use crate::{
+    PlatformPort,
+    auth::Asked,
+    hub::{HubPort, HubResult},
+};
+
+/// Where the hub's internal API is mounted, and the platform's.
+pub use arugula_control_wire::internal::{HUB_PREFIX, PLATFORM_PREFIX};
 
 /// The largest internal call's arguments: a page of ids, a push message.
 const MAX_CALL: usize = 4 * 1024 * 1024;
@@ -132,216 +130,6 @@ impl Client {
 
 // ---------------------------------------------------------------- arguments
 
-#[derive(Serialize, Deserialize)]
-struct ResolveArgs {
-    principal: Principal,
-}
-
-#[derive(Serialize, Deserialize)]
-struct IdsArgs {
-    ids: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct AccountArgs {
-    account: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct WordArgs {
-    word: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ReachArgs {
-    account: String,
-    machines: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct PushArgs {
-    account: String,
-    message: Value,
-    #[serde(default)]
-    options: PushOptions,
-}
-
-#[derive(Serialize, Deserialize)]
-struct OwnersArgs {
-    owners: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct MetersArgs {
-    accounts: Vec<String>,
-    since: u64,
-    until: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ChangesArgs {
-    after: u64,
-    limit: u32,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DriveArgs {
-    daemon: String,
-    account: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct TeamArgs {
-    team: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct BlockersArgs {
-    account: String,
-    start: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DeletedArgs {
-    deleted: Deleted,
-}
-
-#[derive(Serialize, Deserialize, Default)]
-struct NoArgs {}
-
-#[derive(Serialize, Deserialize)]
-struct PokesArgs {
-    pokes: Vec<Poke>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct StandingArgs {
-    account: String,
-    github: Option<GithubUser>,
-    repos: Vec<String>,
-    fresh: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-struct TokenArgs {
-    account: String,
-    github: Option<GithubUser>,
-    repo: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct GithubIdArgs {
-    id: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SendAuthArgs {
-    account: String,
-    draft: String,
-    back: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct WorkspacesArgs {
-    workspaces: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DelegationArgs {
-    project: String,
-    owner: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SignedArgs {
-    owner: String,
-    device: String,
-    body: String,
-    sig: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct OpArgs {
-    daemon: String,
-    op: DaemonOp,
-}
-
-/// The user token crosses inside the signed call's body, never logged.
-#[derive(Serialize, Deserialize)]
-struct SendArgs {
-    account: String,
-    draft: String,
-    #[serde(default)]
-    token: Option<UserToken>,
-}
-
-/// `PlatformPort::hosted_wake` (M182).
-#[derive(Serialize, Deserialize)]
-struct WakeArgs {
-    project: String,
-    workspace: String,
-}
-
-/// A hosted box's turn (M185): its workspace and machine, as the hub's
-/// hosted certificate names them, and the agent or the turn.
-#[derive(Serialize, Deserialize)]
-struct TurnArgs {
-    workspace: String,
-    machine: String,
-    #[serde(default)]
-    agent: String,
-    #[serde(default)]
-    turn: String,
-    /// The thread session a turn is for (M254), if it's one's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    session: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct WorkArgs {
-    machine: HostedMachine,
-    takes: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ReportArgs {
-    machine: HostedMachine,
-    report: Report,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SessionReportArgs {
-    machine: HostedMachine,
-    report: SessionReport,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SessionPushArgs {
-    machine: HostedMachine,
-    ask: PushAsk,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SessionIssuesArgs {
-    machine: HostedMachine,
-    ask: SessionIssuesAsk,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SecretsArgs {
-    machine: HostedMachine,
-    ask: SecretsAsk,
-}
-
-#[derive(Serialize, Deserialize)]
-struct HostedArgs {
-    project: String,
-    workspace: String,
-    machine: String,
-    #[serde(default)]
-    report: Option<SetupReport>,
-}
-
 fn hosted_args(project: &str, workspace: &str, machine: &str, report: Option<&SetupReport>) -> HostedArgs {
     HostedArgs {
         project: project.to_owned(),
@@ -349,68 +137,6 @@ fn hosted_args(project: &str, workspace: &str, machine: &str, report: Option<&Se
         machine: machine.to_owned(),
         report: report.cloned(),
     }
-}
-
-/// A bound hud box's project (M237's `box_members`).
-#[derive(Serialize, Deserialize)]
-struct ProjectArgs {
-    project: String,
-}
-
-/// A machine and the account it acts for (M184's `machine_drives`).
-#[derive(Serialize, Deserialize)]
-struct DrivesArgs {
-    daemon: String,
-    account: String,
-}
-
-/// A hosted machine's transcript (M184): its workspace and machine, as the
-/// hub's hosted certificate names them.
-#[derive(Serialize, Deserialize)]
-struct TranscriptArgs {
-    workspace: String,
-    machine: String,
-    transcript: arugula_control_wire::transcripts::TranscriptPost,
-}
-
-/// Public previews (M187): a preview's id, or a workspace's.
-#[derive(Serialize, Deserialize)]
-struct PreviewArgs {
-    #[serde(default)]
-    id: String,
-    #[serde(default)]
-    workspace: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct PasskeyArgs {
-    account: String,
-    challenge: String,
-    assertion: crate::hub::PasskeyAssertion,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ProductUserArgs {
-    client: String,
-    user: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct UnlinkArgs {
-    account: String,
-    client: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct AccessArgs {
-    token: String,
-    client: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct UploadArgs {
-    machine: HostedMachine,
-    upload: Upload,
 }
 
 fn ids(v: &[String]) -> IdsArgs {

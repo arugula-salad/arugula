@@ -5,11 +5,10 @@
 //! calls over the private network. The hub's gateway, which forwards the
 //! platform's routes, is M140's too.
 //!
-//! Like `HubPort` it only grows, and its types keep
-//! `arugula-control-wire`'s two rules.
+//! Like `HubPort` it only grows, and its types are
+//! `arugula_control_wire::internal`'s, with that crate's two rules.
 
 use futures_util::future::BoxFuture;
-use serde::{Deserialize, Serialize};
 
 use arugula_control_wire::{
     forge::Standing,
@@ -331,15 +330,7 @@ pub trait PlatformPort: Send + Sync {
     }
 }
 
-/// An account the hub deleted.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Deleted {
-    pub account: String,
-    /// Its machines, which left with it.
-    pub machines: Vec<String>,
-    /// The teams it disbanded.
-    pub disbanded: Vec<String>,
-}
+pub use arugula_control_wire::internal::Deleted;
 
 /// In process. Billing (M139) answers `active_plans`, `roster_changed`
 /// and its part of `account_deleted`; `delete_blockers` has nothing to say
@@ -454,7 +445,7 @@ impl PlatformPort for Platform {
                     Err(e) => forge::send::Outcome { refused: Some(e.1), ..Default::default() },
                 });
             }
-            Ok(forge::send::send(self, account, draft, how).await.into())
+            Ok(forge::send::outcome(forge::send::send(self, account, draft, how).await))
         })
     }
 

@@ -63,16 +63,7 @@ pub const RUNNING_MS: u64 = 30_000;
 /// The most runs one pull answers.
 pub const PULL_LIMIT: u32 = 20;
 
-/// A hosted machine, as the hub checked its signature (its hosted
-/// certificate): the project and workspace it was enrolled into, its device
-/// id, and its signing key, hex, which its reports are checked with.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HostedMachine {
-    pub project: String,
-    pub workspace: String,
-    pub machine: String,
-    pub sign: String,
-}
+pub use arugula_control_wire::internal::HostedMachine;
 
 /// What a dispatch job keeps.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
