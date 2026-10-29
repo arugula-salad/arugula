@@ -110,7 +110,10 @@ test("a pull request opens from the menu; the review asked of you is approved th
   fresh();
   const block = await openPr(page);
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator(".review-path")).toContainText(`${REPO}#84 CI: delete the kept build`);
+  // #317: the title first, then the number and the repo.
+  await expect(el.locator(".review-path")).toContainText(`CI: delete the kept build once it passes 30 GB #84 ${REPO}`);
+  await expect(el.locator(".review-path b")).toHaveText("CI: delete the kept build once it passes 30 GB");
+  await expect.poll(() => page.evaluate((b) => window.__arugula.client.title(b), block)).toMatch(/^#84 CI: delete the kept build/);
   await expect(el.locator("[data-pr-state]")).toHaveText("open");
   await expect(el.locator("[data-check]")).toHaveCount(2);
   // What waits on you comes first, and it's on the rail too.
@@ -198,6 +201,14 @@ test("an agent's comment waits as a draft until a person edits and sends it", as
   // The card: who drafted what, the text in a box to edit.
   const card = page.locator(`.pane-ask .ask[data-ask="${r.draft}"]`);
   await expect(card).toContainText("an agent drafted a comment on jhgaylor/illogical#84");
+  // #317: the card sits above the block's actions at the foot, not over them.
+  const foot = el.locator(".forge-foot");
+  await expect(foot).toBeVisible();
+  await expect.poll(async () => {
+    const [c, f] = await Promise.all([page.locator(".pane-ask").boundingBox(), foot.boundingBox()]);
+    return !!c && !!f && c.y + c.height <= f.y + 0.5;
+  }).toBe(true);
+  await expect(foot.locator("button, a").first()).toBeVisible();
   const box = card.locator('textarea[name="body"]');
   await expect(box).toHaveValue("LGTM, one nit");
   await expect(el.locator("[data-forge-drafts-waiting]")).toContainText("A draft waits");
@@ -223,6 +234,34 @@ test("an agent's comment waits as a draft until a person edits and sends it", as
   await merge.locator("[data-ask-decline]").click();
   await expect(el.locator(`[data-draft="${d.draft}"]`)).toHaveAttribute("data-draft-status", "dropped");
   expect(writes.length).toBe(1);
+});
+
+test("a merged pull request isn't waiting on you: the tag says merged once", async ({ page }) => {
+  fresh();
+  Object.assign(item, { state: "closed", merged: true, merged_at: "2026-10-03T02:00:00Z", merged_by: { login: "jhgaylor" } });
+  item.requested_reviewers = [];
+  item.user.login = "jhgaylor";
+  touch();
+  const block = await openPr(page);
+  const el = page.locator(`[data-forge-block="${block}"]`);
+  await expect(el.locator('[data-pr-state="merged"]')).toBeVisible();
+  await expect(el.locator("[data-forge-wants]")).toHaveCount(0);
+  await expect(el.locator("[data-forge-done]")).toHaveCount(0);
+  await expect(el).not.toContainText("Waiting on you");
+  // Open and green, the news is one quiet line, not a request.
+  fresh();
+  item.requested_reviewers = [];
+  item.user.login = "jhgaylor";
+  item.mergeable = true;
+  reviews = [];
+  touch();
+  const open = await openPr(page);
+  const el2 = page.locator(`[data-forge-block="${open}"]`);
+  await expect(el2.locator("[data-forge-done]")).toHaveCount(1);
+  await expect(el2.locator("[data-forge-wants]")).toHaveCount(0);
+  // Phone width: the long title wraps or ends in an ellipsis, nothing scrolls sideways.
+  await page.setViewportSize({ width: 390, height: 800 });
+  await expect.poll(() => el2.evaluate((e) => [...e.querySelectorAll<HTMLElement>(".review-bar, .review-body")].every((x) => x.scrollWidth <= x.clientWidth))).toBe(true);
 });
 
 test("with labs on, Forgejo's and GitLab's links in terminal output open as blocks", async ({ page }) => {

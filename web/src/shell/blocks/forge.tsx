@@ -20,7 +20,7 @@
 import { render, type ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
-import type { Draft, Event as ForgeEvent, ForgeState, PaneId, Pr } from "../../shared/proto";
+import type { Draft, Event as ForgeEvent, ForgeState, ForgeWant, PaneId, Pr } from "../../shared/proto";
 import { Markdown } from "../../shared/ui/markdown";
 import { askText, type PromptChoice } from "../../shared/ui/menu";
 import { isNativeIssue, NativeIssueBlock, nativeIssueText, nativeIssueTitle, type NativeIssueState } from "./native-issue";
@@ -264,6 +264,27 @@ function LiveTag({ s }: { s: ForgeState }) {
   );
 }
 
+/** What asks something of the person, and the news that something finished: a `done` want is not waiting, and says nothing the state tag doesn't ("merged", "closed"). */
+function splitWants(wants: ForgeWant[], state: string | undefined): { asks: ForgeWant[]; done: ForgeWant[] } {
+  return {
+    asks: wants.filter((w) => w.kind !== "done"),
+    done: wants.filter((w) => w.kind === "done" && w.why !== state),
+  };
+}
+
+/** The quiet line for finished news, where the meta sits. */
+function Done({ done }: { done: ForgeWant[] }) {
+  return (
+    <>
+      {done.map((w) => (
+        <span key={w.why} class="forge-done" data-forge-done>
+          ✓ {w.why}
+        </span>
+      ))}
+    </>
+  );
+}
+
 /** M172: the bar's word that the block is the platform's item. */
 function PinTag({ s }: { s: ForgeState }) {
   if (!s.pin) return null;
@@ -317,14 +338,15 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
   const linked = [...(issue?.linked ?? [])];
   if (l?.pr && !linked.some((x) => x.number === l.pr)) linked.push({ number: l.pr, title: `from ${l.branch}`, state: "open", url: l.pr_url ?? "", head: l.branch });
   const waiting = s.drafts.filter((d) => d.status === "waiting");
+  const { asks, done } = splitWants(s.wants, it?.state);
   return (
     <div class="review ws forge" data-forge-block={id} data-forge-kind="issue">
       <div class="review-bar">
         <span class="review-path" title={it?.url ?? s.repo}>
-          <b>
-            {s.repo}#{s.number}
-          </b>{" "}
-          {it?.title}
+          {it?.title ? <b>{it.title}</b> : null}{" "}
+          <span class="dim forge-ref">
+            #{s.number} {s.repo}
+          </span>
         </span>
         {it && <span class={`ws-tag forge-state ${it.state}`} data-issue-state={it.state}>{it.state}</span>}
         <PinTag s={s} />
@@ -362,8 +384,9 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
                 {x}
               </span>
             ))}
+            <Done done={done} />
           </div>
-          {(s.wants.length > 0 || waiting.length > 0) && (
+          {(asks.length > 0 || waiting.length > 0) && (
             <section class="ws-gates" data-forge-wants>
               <h4>Waiting on you</h4>
               {waiting.length > 0 && (
@@ -371,7 +394,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
                   {waiting.length === 1 ? "A draft waits" : `${waiting.length} drafts wait`} for you to send it: it's on the card
                 </p>
               )}
-              {s.wants.map((w) => (
+              {asks.map((w) => (
                 <div class="ws-gate" key={w.kind} data-want={w.kind}>
                   <div class="ws-gate-what">{w.why}</div>
                 </div>
@@ -717,16 +740,17 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
   const it = pr?.item;
   const state = it ? (it.state === "open" && it.draft ? "draft" : it.state) : null;
   const waiting = s.drafts.filter((d) => d.status === "waiting");
+  const { asks, done } = splitWants(s.wants, it?.state);
   const asked = s.wants.some((w) => w.kind === "review");
   const canComment = mayWrite && it?.state === "open";
   return (
     <div class="review ws forge" data-forge-block={id}>
       <div class="review-bar">
         <span class="review-path" title={it?.url ?? s.repo}>
-          <b>
-            {s.repo}#{s.number}
-          </b>{" "}
-          {it?.title}
+          {it?.title ? <b>{it.title}</b> : null}{" "}
+          <span class="dim forge-ref">
+            #{s.number} {s.repo}
+          </span>
         </span>
         {state && <span class={`ws-tag forge-state ${state}`} data-pr-state={state}>{state}</span>}
         <PinTag s={s} />
@@ -775,10 +799,11 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
                   {l}
                 </span>
               ))}
+              <Done done={done} />
             </div>
             <Chips pr={pr} />
           </div>
-          {(s.wants.length > 0 || waiting.length > 0) && (
+          {(asks.length > 0 || waiting.length > 0) && (
             <section class="ws-gates" data-forge-wants>
               <h4>Waiting on you</h4>
               {waiting.length > 0 && (
@@ -786,7 +811,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
                   {waiting.length === 1 ? "A draft waits" : `${waiting.length} drafts wait`} for you to send it: it's on the card
                 </p>
               )}
-              {s.wants.map((w) => (
+              {asks.map((w) => (
                 <div class="ws-gate" key={w.kind} data-want={w.kind}>
                   <div class="ws-gate-what">{w.why}</div>
                   <div class="ws-actions">
@@ -900,7 +925,7 @@ function plain(s: ForgeState | null): string {
   const it = s.pr?.item ?? s.issue?.item;
   const lines = [`${s.repo}#${s.number} ${it?.title ?? ""}`.trim()];
   if (s.error) lines.push(s.error);
-  for (const w of s.wants) lines.push(`waiting on you: ${w.why}`);
+  for (const w of s.wants) lines.push(w.kind === "done" ? `done: ${w.why}` : `waiting on you: ${w.why}`);
   for (const d of s.drafts) lines.push(`draft ${d.id} ${d.status}: ${draftBody(d) ?? d.method}`);
   for (const c of s.pr?.checks ?? []) lines.push(`${c.state} ${c.name}`);
   for (const r of s.pr?.reviews ?? []) lines.push(`${r.author ?? "?"} ${r.state}`);
@@ -930,7 +955,9 @@ registerBlock("forge", (client, id): BlockView => {
         ? nativeIssueTitle(state)
         : state?.number === 0
           ? `${state.repo} new issue`
-          : `${state?.repo ?? (state?.kind === "issue" ? "issue" : "pull request")}#${state?.number ?? ""}`,
+          : state?.number
+            ? `#${state.number} ${(state.pr?.item ?? state.issue?.item)?.title ?? state.repo}`
+            : `${state?.repo ?? (state?.kind === "issue" ? "issue" : "pull request")}#${state?.number ?? ""}`,
     text: () => (isNativeIssue(state) ? nativeIssueText(state) : plain(state)),
     focus: () => host.querySelector<HTMLElement>("button")?.focus(),
     dispose: () => {
