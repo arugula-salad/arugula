@@ -1,0 +1,1 @@
+{"install":"0123456789abcdef","version":"0.99.0","os":"plan9","arch":"riscv64","channel":"nix","control":"hosted","events":[{"event":"something-newer","x":1},{"event":"daily","panes_opened":3,"panes_peak":2,"agents_started":{"aider":1}}]}
