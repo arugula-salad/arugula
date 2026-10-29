@@ -89,6 +89,9 @@ jobs:
   # saves the build caches. The test image is pulled from GHCR (main pushes
   # it); when that fails, the recipe builds it (~6 min).
   desktop-xvfb:
+    # Not check.yml's name: chant's claims phase counts a job by its name, and
+    # this one shows up skipped on every push to main.
+    name: desktop-xvfb (pull request)
     needs: desktop-changes
     if: needs.desktop-changes.outputs.run == 'true'
     runs-on: ubuntu-latest
