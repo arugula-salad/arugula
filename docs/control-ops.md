@@ -167,9 +167,12 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
   avatars, voice and calls are the relay's.
   - Set `ARUGULA_PRESENCE_APP` (and the relay, if it isn't the default) on
     the hub too: with it, the hub's CSP lets the page load scripts from the
-    relay's origin and compile WebAssembly (`'wasm-unsafe-eval'`) for the
-    camera's trackers. Without an app, the CSP doesn't change and a People
-    block says control has no arugula.stream app.
+    relay's origin, compile WebAssembly (`'wasm-unsafe-eval'`) for the
+    camera's trackers, and run the `blob:` scripts the page makes for the
+    Krisp noise filter's audio worklet and worker in voice and calls
+    (without them Krisp falls back to the browser's own suppression).
+    Without an app, the CSP doesn't change and a People block says control
+    has no arugula.stream app.
   - Make the app with arugula.stream's `create_app` (its MCP or dashboard):
     the secret is shown once. No origins or sign-in provider are needed,
     since control signs the tokens.
