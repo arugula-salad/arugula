@@ -8,10 +8,17 @@
 # ci.green's windows phase (chant.workspace.json, #503) counts a skipped
 # run as passed, and can't count a run that never happened.
 name: windows-desktop
+# Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+# Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
+concurrency:
+  group: chant-build-windows-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read

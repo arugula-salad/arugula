@@ -127,14 +127,24 @@ lint; build, static and clippy; test, test-2, test-postgres and core; the
 e2e shards; testnet, stack and desktop-xvfb (since 2026-10-28: they failed
 unseen while they weren't required); macos (test) and macos (webkit); and
 Windows' workspace, workspace-clippy and desktop. A skipped run counts as
-passed. The nightly workflows aren't required: `scripts/ci-nightly-red`
+passed. Every phase builds the newest commit (`"build": "newest"`, #1675):
+one run at a time on main, and pushes that land while one runs leave only
+the newest waiting; the ones in between get no run and no tag. A required
+job that fails gets one retry, and if main's newest commit is still red
+the tick bisects the unbuilt commits below it (dispatching check.yml at a
+`ci/build/<sha>` tag) to name the one that broke it. Its records are on the
+`chant/lifecycle` branch (`_ci/<sha>.json`). Since an unbuilt commit
+may sit under a docs-only push, the jobs that skip on what changed
+(`scripts/changed`) diff main against the newest green commit, not the
+push's previous one. The nightly workflows aren't required: `scripts/ci-nightly-red`
 opens an issue for each whose newest scheduled run failed (below). `.github/workflows/chant-ci-green.yml` runs
 `chant ci tick` when check, windows or windows-desktop finish on main, and
 every 15 minutes. It's generated: after changing `ci.green` or those
-workflows' job names, run `npx @intentius/chant@0.108.0 ci workflow`. A
+workflows' job names, run `npx @intentius/chant@0.124.52 ci workflow --token-secret CI_GREEN_TOKEN`
+(it also writes check.yml's and windows*.yml's triggers and concurrency). A
 check run is matched by name, so no other workflow that runs on main's
 commits may have a job named like a required one. `npx
-@intentius/chant@0.108.0 ci last-green` (after `git fetch --tags`) prints
+@intentius/chant@0.124.52 ci last-green` (after `git fetch --tags`) prints
 the newest green commit.
 
 `.github/workflows/ci-red.yml` runs `scripts/ci-red` every hour, so a red

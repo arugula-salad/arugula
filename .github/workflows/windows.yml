@@ -4,10 +4,17 @@
 name: windows
 # main runs it on every push (never pull requests); a branch runs by hand:
 # `gh workflow run windows.yml --ref BRANCH`.
+# Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+# Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
+concurrency:
+  group: chant-build-lint-windows-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read

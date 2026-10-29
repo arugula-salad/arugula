@@ -1,7 +1,7 @@
 {
   "name": "arugula",
   "schema": 1,
-  "minReader": "0.108.0",
+  "minReader": "0.124.33",
   "members": [
     {
       "name": "daemon",
@@ -220,13 +220,13 @@
       "branch": "main",
       "window": "24h",
       "phases": {
-        "lint": ["lint", "changes", "suite-changed"],
-        "build": { "runs": ["build", "static", "clippy"], "skipped": "pass" },
-        "test": { "runs": ["test", "test-2", "test-postgres", "core"], "skipped": "pass" },
-        "e2e": { "runs": ["e2e*"], "skipped": "pass" },
-        "claims": { "runs": ["testnet", "stack", "desktop-xvfb"], "skipped": "pass" },
-        "macos": { "runs": ["macos*"], "skipped": "pass" },
-        "windows": { "runs": ["workspace", "workspace-clippy", "desktop"], "skipped": "pass" }
+        "lint": { "runs": ["lint", "changes", "suite-changed"], "build": "newest" },
+        "build": { "runs": ["build", "static", "clippy"], "skipped": "pass", "build": "newest" },
+        "test": { "runs": ["test", "test-2", "test-postgres", "core"], "skipped": "pass", "build": "newest" },
+        "e2e": { "runs": ["e2e*"], "skipped": "pass", "build": "newest" },
+        "claims": { "runs": ["testnet", "stack", "desktop-xvfb"], "skipped": "pass", "build": "newest" },
+        "macos": { "runs": ["macos (*)"], "skipped": "pass", "build": "newest" },
+        "windows": { "runs": ["workspace", "workspace-clippy", "desktop"], "skipped": "pass", "build": "newest" }
       },
       "require": ["lint", "build", "test", "e2e", "claims", "macos", "windows"]
     }
