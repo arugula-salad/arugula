@@ -29,9 +29,14 @@ needs an Erlang with public_key's headers, and the system one may have none.
 | `PORT` | default 4000 |
 | `PHX_HOST` | prod: the public host (default `arugula.video`) |
 | `SECRET_KEY_BASE` | prod: `mix phx.gen.secret` |
+| `DEMO_SECRET` | the demo app's secret, so a restart keeps demo tokens good |
+| `DATABASE_URL` | Postgres (`fly mpg attach` sets it). Without it in prod the relay runs without the Repo (`database: false`) and migrations do nothing. Dev and test default to a local Postgres on `127.0.0.1:55432` (`docker run -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=postgres postgres:17`); `TEST_DATABASE_URL` overrides the test one |
+| `ECTO_IPV6=true` | on Fly: the private network, and the Managed Postgres host on it, is IPv6 only |
 
-`GET /healthz` says `ok`. Anything else not a file in `priv/static` is the
-demo site's index (step 3 builds the site there).
+`GET /healthz` says `ok` (the machine check). `GET /healthz?db=1` also asks
+Postgres: `ok db`, `ok no-db` without one, or 503 `db down`. Anything else
+not a file in `priv/static` is the demo site's index (step 3 builds the
+site there).
 
 ## Minting room tokens (your server)
 
@@ -78,8 +83,40 @@ room.push("frame", frameBytes.buffer); // an ArrayBuffer
 
 ## Deploying
 
-`Dockerfile` builds a release; `fly.toml` is for app `arugula-video`, not
-created yet.
+`relay/Dockerfile` builds the demo, the SDK and the hosted installs, then
+the release; it's built from `presence/`. Two Fly apps, both personal org:
+
+- **staging**, `arugula-stream-staging` (`presence/fly.staging.toml`, iad,
+  one machine): `cd presence && fly deploy -c fly.staging.toml --ha=false`.
+  Postgres: the Managed Postgres cluster `arugula-stream-db`
+  (`nlkxjo5pdkd0y93v`, iad), database and user `presence_staging`,
+  attached as `DATABASE_URL`; the `release_command` migrates before each
+  release. https://arugula-stream-staging.fly.dev
+- **production**, `arugula-stream` (`presence/fly.toml`): arugula.stream.
+
+### Production: attach Postgres and move to iad (when Jake says)
+
+Production has no database yet and runs in ewr; the cluster is in iad
+(Managed Postgres isn't offered in ewr). From `presence/`:
+
+1. A database and user of its own on the cluster:
+   `fly mpg databases create nlkxjo5pdkd0y93v --name presence_prod` and
+   `fly mpg users create nlkxjo5pdkd0y93v --username presence_prod --role schema_admin`.
+2. Attach it: `fly mpg attach nlkxjo5pdkd0y93v -a arugula-stream --database presence_prod --username presence_prod`
+   (stages `DATABASE_URL`; nothing restarts yet).
+3. In `presence/fly.toml`: `primary_region = "iad"`, `ECTO_IPV6 = "true"`
+   under `[env]`, and the staging file's `[deploy]` block
+   (`release_command = "/app/bin/presence_relay eval PresenceRelay.Release.migrate()"`).
+4. Deploy: `fly deploy --ha=false --remote-only`. Fly starts the new
+   machine in iad from `primary_region`; check `fly status -a arugula-stream`
+   shows iad, and if an ewr machine is left, `fly machine destroy <id> -a arugula-stream`.
+   The DNS records (A and AAAA to the app's shared IPs) don't change with
+   the region.
+5. Check: `curl https://arugula.stream/healthz?db=1` says `ok db`, and the
+   site and a demo room still work.
+
+Rollback: `fly secrets unset DATABASE_URL -a arugula-stream` and redeploy:
+the relay runs without the Repo again.
 
 ## The demo (arugula.video)
 
