@@ -1,6 +1,7 @@
 // The rail down the left of the workspace (M108, #1023): Arugula's mark
 // (this machine's sessions), Sessions (the sidebar), Panes, Swarm, Chat (on
-// the platform page, M153), Agents, Docs and Settings. It stays while the swarm
+// the platform page, M153), Boards (with the `boards` flag), Docs, Agents and
+// Settings. It stays while the swarm
 // or agents cover the panes, so the way back is always in one place, and Panes goes back to the
 // session's last tab and pane (the routes never change the selection).
 
@@ -13,9 +14,9 @@ import { openAgentsPage } from "../agents-route";
 import { openDocsPage } from "../docs-route";
 import { settingsItems } from "../commands";
 import { openMenu } from "../../../shared/ui/menu";
-import { chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
+import { chatUnread, closePlace, currentPlace, hasBoards, hasChat, openBoards, openChat, openOverview, useChatTick, type Place } from "../places";
 import { countView } from "../../../shared/telemetry";
-import { AgentsIcon, ChatIcon, DocsIcon, Mark, PanesIcon, SessionsIcon, SettingsIcon, SwarmIcon } from "./icons";
+import { AgentsIcon, BoardsIcon, ChatIcon, DocsIcon, Mark, PanesIcon, SessionsIcon, SettingsIcon, SwarmIcon } from "./icons";
 import { focusSessionSearch, setSidebarOpen, useSidebar } from "./prefs";
 
 /** Re-render on any route change, the swarm's too (it closes without a
@@ -107,15 +108,15 @@ export function Rail({ client }: { client: Client }) {
           {n > 0 && <span class={mention ? "ws-rail-count mention" : "ws-rail-count"}>{mention ? `@${n}` : n}</span>}
         </RailButton>
       )}
-      {agents && (
+      {hasBoards(client) && (
         <RailButton
-          label="Agents"
-          tip="Agents: this machine's recipes and your team's agents"
-          here={at === "agents"}
-          hook="data-open-agents"
-          onClick={() => at !== "agents" && openAgentsPage()}
+          label="Boards"
+          tip="Boards: your projects' boards and epics, on the platform page"
+          here={false}
+          hook="data-open-boards"
+          onClick={() => openBoards()}
         >
-          <AgentsIcon />
+          <BoardsIcon />
         </RailButton>
       )}
       {docs && (
@@ -127,6 +128,17 @@ export function Rail({ client }: { client: Client }) {
           onClick={() => at !== "docs" && openDocsPage()}
         >
           <DocsIcon />
+        </RailButton>
+      )}
+      {agents && (
+        <RailButton
+          label="Agents"
+          tip="Agents: this machine's recipes and your team's agents"
+          here={at === "agents"}
+          hook="data-open-agents"
+          onClick={() => at !== "agents" && openAgentsPage()}
+        >
+          <AgentsIcon />
         </RailButton>
       )}
       <div class="ws-rail-fill" />

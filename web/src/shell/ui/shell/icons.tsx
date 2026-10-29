@@ -55,6 +55,13 @@ export const SwarmIcon = () => (
   </Svg>
 );
 
+export const BoardsIcon = () => (
+  <Svg>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+    <path d="M8 8v3M12 8v6M16 8v4" />
+  </Svg>
+);
+
 export const ChatIcon = () => (
   <Svg>
     <path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-4 3.5v-3.5h0.5a2 2 0 0 1-2-2z" />

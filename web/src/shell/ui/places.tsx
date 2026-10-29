@@ -31,6 +31,14 @@ export function openChat() {
   openPlatform("/chat");
 }
 
+/** Boards, on the platform page. The shell knows no session's linked
+ * project, and the platform has no boards page across projects, so it
+ * opens the projects, each with its Boards. */
+export function openBoards() {
+  closeThread();
+  openPlatform("/");
+}
+
 /** M123: a room in control's chat, at message `msg`, on the platform page. */
 export function openRoom(room: string, msg?: number, thread?: number) {
   closeThread();
@@ -45,6 +53,12 @@ export function openRoom(room: string, msg?: number, thread?: number) {
  * it (./threads). */
 export function hasChat(): boolean {
   return !!platformOrigin() && !!chatStore();
+}
+
+/** Whether to offer Boards: with chat (the machine has joined control), the
+ * `boards` flag on, and the machine's owner (as Docs). */
+export function hasBoards(client: Client): boolean {
+  return hasChat() && client.flag("boards") && !client.state?.roles;
 }
 
 /** Unread messages in the rooms chat lists, and whether one mentions
@@ -157,15 +171,14 @@ export function Places({ client, at }: { client: Client; at: Place }) {
           {n > 0 && <span class={mention ? "chat-count mention" : "chat-count"}>{mention ? `@${n}` : n}</span>}
         </button>
       )}
-      {agents && (
+      {hasBoards(client) && (
         <button
-          class={at === "agents" ? "place here" : "place"}
-          title="Agents: this machine's recipes and your team's agents"
-          data-open-agents
-          aria-pressed={at === "agents"}
-          onClick={() => at !== "agents" && openAgentsPage()}
+          class="place"
+          title="Boards: your projects' boards and epics, on the platform page"
+          data-open-boards
+          onClick={() => openBoards()}
         >
-          Agents
+          Boards
         </button>
       )}
       {docs && (
@@ -177,6 +190,17 @@ export function Places({ client, at }: { client: Client; at: Place }) {
           onClick={() => at !== "docs" && openDocsPage()}
         >
           Docs
+        </button>
+      )}
+      {agents && (
+        <button
+          class={at === "agents" ? "place here" : "place"}
+          title="Agents: this machine's recipes and your team's agents"
+          data-open-agents
+          aria-pressed={at === "agents"}
+          onClick={() => at !== "agents" && openAgentsPage()}
+        >
+          Agents
         </button>
       )}
     </div>

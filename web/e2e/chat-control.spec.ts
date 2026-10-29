@@ -108,6 +108,22 @@ test("a team with chat on, and a machine of Alice's", async ({ browser }) => {
   await expect(bob.locator("[data-open-chat]")).toBeVisible();
   // The shell draws no chat page of its own: `#chat` isn't a place of its.
   await expect(alice.locator("[data-chat-control]")).toHaveCount(0);
+
+  // The rail's places (#338): with Labs on, every flag is on until a list
+  // says otherwise, so Boards sits between Chat and Docs, and Agents after
+  // Docs; turn the `boards` flag off and it goes.
+  const places = () => alice.locator(".ws-rail > .ws-rail-button .ws-rail-label").allTextContents();
+  await expect.poll(places).toEqual(["Panes", "Swarm", "Chat", "Boards", "Docs", "Agents", "Settings"]);
+  expect((await call(alice, "PUT", "/api/flags/boards", { on: false })).status).toBe(200);
+  // The page reads the flags as it loads.
+  await home(alice);
+  await show(alice, "alices");
+  await expect.poll(places).toEqual(["Panes", "Swarm", "Chat", "Docs", "Agents", "Settings"]);
+  await expect(alice.locator(".ws-rail [data-open-boards]")).toHaveCount(0);
+  expect((await call(alice, "PUT", "/api/flags/boards", { on: true })).status).toBe(200);
+  await home(alice);
+  await show(alice, "alices");
+  await expect.poll(places).toEqual(["Panes", "Swarm", "Chat", "Boards", "Docs", "Agents", "Settings"]);
 });
 
 test("the rail's Chat opens the platform page, where Alice makes #general and mentions Bob", async () => {
