@@ -42,10 +42,21 @@ defmodule PresenceRelay.RelayCase do
 
   @doc "`client/4` on `node` (a cluster test's peer): its channel runs there."
   def client_on(node, name, room, sub, opts \\ []) do
+    tok =
+      token(Map.merge(%{"room" => room, "sub" => sub, "name" => to_string(name)}, Map.new(opts)))
+
+    client_with(node, name, room, %{"token" => tok})
+  end
+
+  @doc """
+  A client on `node` whose socket connects with `params` (a token, or a
+  publishable key's) and `connect_info` (a key's `origin`), joined to `room`.
+  """
+  def client_with(node, name, room, params, connect_info \\ %{}) do
     test = self()
 
-    pid =
-      Node.spawn(node, fn ->
+    {pid, ref} =
+      Node.spawn_monitor(node, fn ->
         # On a cluster test's peer there's no ExUnit run: register this
         # process with ExUnit's on-exit handler there, which is all
         # Phoenix.ChannelTest asks of a "test process".
@@ -54,16 +65,12 @@ defmodule PresenceRelay.RelayCase do
           ExUnit.OnExitHandler.register(self())
         end
 
-        tok =
-          token(
-            Map.merge(%{"room" => room, "sub" => sub, "name" => to_string(name)}, Map.new(opts))
-          )
-
         {:ok, socket} =
           Phoenix.ChannelTest.__connect__(
             PresenceRelayWeb.Endpoint,
             PresenceRelayWeb.Socket,
-            %{"token" => tok},
+            params,
+            connect_info: connect_info,
             test_process: if(node == node(test), do: test, else: self())
           )
 
@@ -78,10 +85,18 @@ defmodule PresenceRelay.RelayCase do
       end)
 
     receive do
-      {:joined, ^name, reply} -> {:ok, pid, reply}
-      {:refused, ^name, reply} -> {:error, reply}
+      {:joined, ^name, reply} ->
+        Process.demonitor(ref, [:flush])
+        {:ok, pid, reply}
+
+      {:refused, ^name, reply} ->
+        Process.demonitor(ref, [:flush])
+        {:error, reply}
+
+      {:DOWN, ^ref, _, _, why} ->
+        raise "#{inspect(name)} didn't join: #{inspect(why)}"
     after
-      2000 -> raise "#{name} didn't join"
+      2000 -> raise "#{inspect(name)} didn't join"
     end
   end
 
@@ -115,7 +130,7 @@ defmodule PresenceRelay.RelayCase do
 
   def leave(pid, name) do
     send(pid, :leave)
-    receive do: ({:left, ^name} -> :ok), after: (2000 -> raise "#{name} didn't leave")
+    receive do: ({:left, ^name} -> :ok), after: (2000 -> raise "#{inspect(name)} didn't leave")
   end
 
   def framed(sub, frame), do: {:binary, <<byte_size(sub)::8, sub::binary, frame::binary>>}

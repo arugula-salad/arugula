@@ -18,8 +18,12 @@ defmodule PresenceRelay.Cluster do
     :ok
   end
 
-  @doc "A peer node running the relay; `{peer_pid, node}`."
-  def start_peer! do
+  @doc """
+  A peer node running the relay; `{peer_pid, node}`. `database: true`
+  gives it a Repo on the test database, outside the sandbox (the usage
+  load test commits, and cleans up after itself).
+  """
+  def start_peer!(opts \\ []) do
     ensure_distributed!()
     name = :"relay_peer_#{System.unique_integer([:positive])}"
     args = Enum.flat_map(:code.get_path(), &[~c"-pa", &1])
@@ -34,8 +38,23 @@ defmodule PresenceRelay.Cluster do
       :ok = :erpc.call(node, Application, :put_all_env, [[{app, Application.get_all_env(app)}]])
     end
 
-    # The cluster tests don't touch Postgres: no Repo (and no pool) there.
-    :ok = :erpc.call(node, Application, :put_env, [:presence_relay, :database, false])
+    # A plain pool there (no sandbox), and a small one: the test node's is
+    # already most of what a local Postgres allows.
+    repo =
+      Application.get_env(:presence_relay, PresenceRelay.Repo)
+      |> Keyword.merge(pool: DBConnection.ConnectionPool, pool_size: 4)
+
+    :ok = :erpc.call(node, Application, :put_env, [:presence_relay, PresenceRelay.Repo, repo])
+
+    # The cluster tests don't touch Postgres (no Repo, and no pool, there)
+    # unless they ask.
+    :ok =
+      :erpc.call(node, Application, :put_env, [
+        :presence_relay,
+        :database,
+        Keyword.get(opts, :database, false)
+      ])
+
     {:ok, _} = :erpc.call(node, Application, :ensure_all_started, [:presence_relay])
     {peer, node}
   end

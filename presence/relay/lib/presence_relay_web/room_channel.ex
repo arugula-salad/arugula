@@ -11,7 +11,7 @@ defmodule PresenceRelayWeb.RoomChannel do
   """
   use Phoenix.Channel
 
-  alias PresenceRelay.{Calls, Chat, Presence, Rooms}
+  alias PresenceRelay.{Calls, Chat, Presence, Rooms, Usage}
   alias Phoenix.PubSub
 
   @modes ~w(avatar outline none)
@@ -28,24 +28,29 @@ defmodule PresenceRelayWeb.RoomChannel do
 
   @impl true
   def join("room:" <> room, _payload, %{assigns: %{room: room} = a} = socket) do
-    case Rooms.join(a.app, room, a.sub, self()) do
-      :ok ->
-        for topic <- [
-              Rooms.room_topic(a.app, room),
-              Rooms.member_topic(a.app, room, a.sub),
-              Rooms.presence_topic(a.app, room)
-            ],
-            do: PubSub.subscribe(PresenceRelay.PubSub, topic)
+    # Whom usage counts (PresenceRelay.Usage): refused here once the app's
+    # month is at its cap, unless they count already.
+    meter = Map.get(a, :meter, a.sub)
 
-        send(self(), :after_join)
-        # A connection's calls: the rings it made and is waiting on
-        # (id => callee), the rings it may answer (id => caller), and the
-        # call it's in ({id, joined at}).
-        socket = assign(socket, ringing: %{}, rung: %{}, in_call: nil, called_at: [])
-        {:ok, %{you: a.sub, calls: Calls.on?()}, socket}
+    with :ok <- Usage.admit(a.app, meter),
+         :ok <- Rooms.join(a.app, room, a.sub, self()) do
+      Usage.joined(a.app, meter)
 
-      {:error, reason} ->
-        {:error, %{reason: reason}}
+      for topic <- [
+            Rooms.room_topic(a.app, room),
+            Rooms.member_topic(a.app, room, a.sub),
+            Rooms.presence_topic(a.app, room)
+          ],
+          do: PubSub.subscribe(PresenceRelay.PubSub, topic)
+
+      send(self(), :after_join)
+      # A connection's calls: the rings it made and is waiting on
+      # (id => callee), the rings it may answer (id => caller), and the
+      # call it's in ({id, joined at}).
+      socket = assign(socket, ringing: %{}, rung: %{}, in_call: nil, called_at: [])
+      {:ok, %{you: a.sub, calls: Calls.on?()}, socket}
+    else
+      {:error, reason} -> {:error, %{reason: reason}}
     end
   end
 

@@ -18,7 +18,9 @@ config :presence_relay,
   # Calls on, against no real LiveKit (tests read the tokens); rings that
   # give up quickly.
   livekit: %{url: "wss://livekit.test", key: "test-key", secret: "test-livekit-secret"},
-  ring_ms: 300
+  ring_ms: 300,
+  # Usage is written when a test says (PresenceRelay.Usage.flush/0).
+  usage_flush_ms: :manual
 
 config :presence_relay, PresenceRelay.Repo,
   url:

@@ -102,6 +102,29 @@ checks, then `admitted` (with the member's sub and name) or `refused` and
 why. `--audience`, `--project`, `--name-claim`, `--room-claim`/`--room-match`
 and `--room` set the rest.
 
+## Usage and caps
+
+Each app in the database is metered (#318's P9; PROTOCOL.md, "Usage and
+caps"; `PresenceRelay.Usage`): monthly active users and call minutes,
+rolled up by day.
+
+| table | |
+|---|---|
+| `usage_days` | `(app_id, day)`: `active_users` that day, `call_seconds` (each person's time in each call, rounded up to a second) |
+| `usage_members` | `(app_id, month, member_key)`: each person counted that month, once; `days` has bit d-1 set for each day d they joined on |
+| `apps.mau_cap` | the cap on monthly active users, null for none |
+
+Each node buffers joins and call time and writes them every 5 s, one
+transaction per app and day (`INSERT … ON CONFLICT` on the members, then
+the day's counters go up by the people new that day). So every count is
+exact across nodes and restarts; a node that crashes loses up to 5 s of
+call time (its joins come back on the next join). Caps are checked at
+join against counts each node caches: no query on a join until the app
+nears its cap, and a cluster may overshoot by the new people other nodes
+let in within about one flush. The load test runs two nodes over three
+apps and three days and checks every number:
+`mix test test/presence_relay/usage_load_test.exs`.
+
 ## Deploying
 
 `relay/Dockerfile` builds the demo, the SDK and the hosted installs, then

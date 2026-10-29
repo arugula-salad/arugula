@@ -16,7 +16,7 @@ defmodule PresenceRelayWeb.Auth do
   def require_account(conn, _),
     do: conn |> put_status(401) |> json(%{error: "sign in first"}) |> halt()
 
-  @doc "POST and PATCH must be JSON: a cross-site form can only send form encodings."
+  @doc "POST, PATCH and PUT must be JSON: a cross-site form can only send form encodings."
   def json_writes(%{method: m} = conn, _) when m in ["POST", "PATCH", "PUT"] do
     case get_req_header(conn, "content-type") do
       ["application/json" <> _] -> conn

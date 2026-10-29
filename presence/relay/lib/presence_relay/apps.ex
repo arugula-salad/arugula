@@ -64,6 +64,13 @@ defmodule PresenceRelay.Apps do
 
   def demo?, do: Application.get_env(:presence_relay, :demo, false) == true
 
+  @doc "Whether `app` is a static one (`PRESENCE_APPS`, or the demo's)."
+  def static?(app), do: Map.has_key?(:persistent_term.get(@key, %{}), app)
+
+  @doc "Whether `app` is an id the database could hold: `meet` or `app_` and 16 hex digits."
+  def db_id?(app),
+    do: is_binary(app) and (app == "meet" or Regex.match?(~r/\Aapp_[0-9a-f]{16}\z/, app))
+
   @doc "Whether there's a database (accounts, apps)."
   def database?, do: Application.get_env(:presence_relay, :database, true) == true
 
@@ -72,9 +79,9 @@ defmodule PresenceRelay.Apps do
   # made-up ids can't grow the cache.
   defp db_secret(app) do
     now = System.monotonic_time(:millisecond)
-    db_id? = app == "meet" or Regex.match?(~r/\Aapp_[0-9a-f]{16}\z/, app)
 
-    case db_id? && database?() && :ets.whereis(@cache) != :undefined && :ets.lookup(@cache, app) do
+    case db_id?(app) && database?() && :ets.whereis(@cache) != :undefined &&
+           :ets.lookup(@cache, app) do
       [{^app, secret, at}] when now - at < @cache_ms ->
         secret
 

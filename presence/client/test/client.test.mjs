@@ -6,7 +6,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PresenceClient, memberOf, socketParams, unprefix } from "../src/index.ts";
+import { PresenceClient, guestId, memberOf, socketParams, unprefix } from "../src/index.ts";
 import { neutral, packRig } from "@arugula/presence-core/avatar/rig";
 import { encodeFrame } from "@arugula/presence-core/outline/frame";
 
@@ -131,6 +131,21 @@ test("the socket's params: a room token, or a publishable key with the room and 
     name: "Ada",
     look: "2:3",
   });
+});
+
+test("a guest's gid goes in the socket's params, a member's never; guestId is kept", () => {
+  const url = "wss://arugula.stream/socket";
+  assert.deepEqual(socketParams({ url, room: "lobby", key: "pk_live_abc", guest: "Ada", gid: "abcdefgh1234" }, ""), {
+    key: "pk_live_abc",
+    room: "lobby",
+    name: "Ada",
+    gid: "abcdefgh1234",
+  });
+  assert.equal(socketParams({ url, room: "lobby", key: "pk_live_abc", auth: "t", gid: "abcdefgh1234" }, "t").gid, undefined);
+  // In localStorage where there is one; for the page where there isn't.
+  const id = guestId();
+  assert.match(id, /^[A-Za-z0-9_-]{22}$/);
+  assert.equal(guestId(), id);
 });
 
 test("the socket's params for a member: the key, the room and their provider token (and a fallback name)", () => {

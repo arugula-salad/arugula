@@ -68,6 +68,8 @@ defmodule PresenceRelayWeb.Router do
     get "/apps/:id/issuer", AppsController, :issuer
     put "/apps/:id/issuer", AppsController, :put_issuer
     delete "/apps/:id/issuer", AppsController, :delete_issuer
+    get "/apps/:id/usage", AppsController, :usage
+    put "/apps/:id/cap", AppsController, :put_cap
     get "/meet/rooms", MeetController, :rooms
     post "/meet/rooms/:slug/token", MeetController, :token
   end

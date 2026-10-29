@@ -7,4 +7,4 @@ export { PresenceClient, REACT_MS, REACTIONS, MESSAGES_KEPT, mergeMessages, type
 export type { Transport, TransportEvents, Member, Message, Mode, State, CallJoin } from "./transport.ts";
 export { joinLiveKit, type CallPerson, type JoinCall, type LiveCall, type LiveCallEvents } from "./call.ts";
 export { arugulaTransport, type ArugulaTransportOptions } from "./arugula.ts";
-export { phoenixTransport, socketParams, unprefix, memberOf, type PhoenixTransportOptions, type TokenAuth, type KeyAuth, type MemberAuth } from "./phoenix.ts";
+export { phoenixTransport, socketParams, guestId, unprefix, memberOf, type PhoenixTransportOptions, type TokenAuth, type KeyAuth, type MemberAuth } from "./phoenix.ts";
