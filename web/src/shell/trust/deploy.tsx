@@ -16,7 +16,8 @@
 // passkey (#764), the signing key is derived from it again too.
 
 import { useEffect, useState } from "preact/hooks";
-import { deployStateText, plannerText, shortRef } from "../../shared/deploys";
+import { deployStateText, deployTitle, plannerText, shortRef } from "../../shared/deploys";
+import { DeployAsked } from "../../shared/ui/deploy-asked";
 import { deployTone } from "../../shared/tones";
 import { Modal } from "../../shared/ui/modal";
 import { StateChip } from "../../shared/ui/state-chip";
@@ -53,6 +54,11 @@ interface Deploy {
   planned_by: string;
   planned_by_name: string;
   agent: { machine: string; machine_name: string } | null;
+  /** The platform's reading of the commit (#333): not in the signed
+   * operation, so only ever shown as the platform's. */
+  subject?: string | null;
+  expected_version?: string | null;
+  requested_at?: number | null;
   operation: { body: string; hash: string };
   planned_event: DeployEvent | null;
   stale: { deploy: string; seq: number } | null;
@@ -215,6 +221,17 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
             <p>
               <b>{d.project.name}</b>: {ok.op.source.kind} <code title={ok.op.source.ref}>{shortRef(ok.op.source.ref)}</code> from <code>{ok.op.source.where}</code>, planned
               by {ok.planner}.
+            </p>
+          ) : null}
+          {ok && (d.subject || d.expected_version) ? (
+            // Not signed: beside the checked facts, never in place of them (#333).
+            <p class="dim" data-deploy-reading>
+              The platform reads this as: {deployTitle(d)}
+            </p>
+          ) : null}
+          {ok && d.requested_at ? (
+            <p class="dim deploy-when">
+              <DeployAsked at={d.requested_at} waiting={d.state === "pending"} />
             </p>
           ) : null}
           {ok?.plan.rollBack ? (

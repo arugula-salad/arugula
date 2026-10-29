@@ -291,14 +291,30 @@ async fn post_as(
     Json(json!({ "number": 12, "html_url": format!("https://github.com{path}#posted") })).into_response()
 }
 
-/// A file on a repo's default branch, as GitHub's contents API answers.
-async fn contents(State(h): State<Shared>, Path((o, r, path)): Path<(String, String, String)>) -> Response {
+/// A file on a repo's default branch, as GitHub's contents API answers; at
+/// `?ref=` when `owner/name:path@ref` is kept (#333).
+async fn contents(
+    State(h): State<Shared>,
+    Path((o, r, path)): Path<(String, String, String)>,
+    axum::extract::Query(q): axum::extract::Query<BTreeMap<String, String>>,
+) -> Response {
     use base64::Engine as _;
-    match h.lock().unwrap().files.get(&format!("{o}/{r}:{path}")) {
+    let g = h.lock().unwrap();
+    let at = q.get("ref").and_then(|at| g.files.get(&format!("{o}/{r}:{path}@{at}")));
+    match at.or_else(|| g.files.get(&format!("{o}/{r}:{path}"))) {
         Some(text) => {
             let b64 = base64::engine::general_purpose::STANDARD.encode(text);
             Json(json!({ "type": "file", "path": path, "encoding": "base64", "content": b64 })).into_response()
         }
+        None => (StatusCode::NOT_FOUND, Json(json!({ "message": "Not Found" }))).into_response(),
+    }
+}
+
+/// A commit, as `GET /repos/{o}/{r}/commits/{sha}` answers: its message is
+/// the file kept as `owner/name:commit:<sha>` (#333).
+async fn commit(State(h): State<Shared>, Path((o, r, sha)): Path<(String, String, String)>) -> Response {
+    match h.lock().unwrap().files.get(&format!("{o}/{r}:commit:{sha}")) {
+        Some(m) => Json(json!({ "sha": sha, "commit": { "message": m } })).into_response(),
         None => (StatusCode::NOT_FOUND, Json(json!({ "message": "Not Found" }))).into_response(),
     }
 }
@@ -340,6 +356,7 @@ pub async fn fake_github(h: Shared) -> String {
         .route("/repos/{o}/{r}/issues", post(post_as))
         .route("/repos/{o}/{r}/pulls", post(post_as))
         .route("/repos/{o}/{r}/contents/{*path}", get(contents))
+        .route("/repos/{o}/{r}/commits/{sha}", get(commit))
         .route("/repos/{o}/{r}/installation", get(installation))
         .route("/app/installations/{id}/access_tokens", post(token))
         .route("/repos/{o}/{r}", get(repo))
@@ -784,6 +801,8 @@ async fn a_write_mint_needs_an_installation_that_grants_it() {
         run: Some("run_1".into()),
         planned_by: "alice".into(),
         planned_by_agent: None,
+        subject: None,
+        expected_version: None,
         created_at: 1,
         updated_at: 1,
     };

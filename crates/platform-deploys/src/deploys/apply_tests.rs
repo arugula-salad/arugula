@@ -991,6 +991,71 @@ async fn arugula_release_mints_only_for_a_green_commit_on_main_in_arugulas_proje
     assert_eq!(st, 403, "{v}");
 }
 
+/// What a release is called (#333): planning reads the commit's subject and
+/// works out the version from the commit's and main's, and keeps them beside
+/// the deploy, in none of its signed bytes; the push names them, and who
+/// asked. A commit GitHub doesn't know leaves them null, and the plan goes
+/// through.
+#[tokio::test]
+async fn a_release_is_titled_from_what_planning_read_and_never_signs_it() {
+    let (hub, _app, base, t, gh) = world_with_github().await;
+    crate::drivers::arugula_release::TEST_PROJECTS.lock().unwrap().push(t.clone());
+    let body = json!({ "name": "release", "driver": "arugula-release", "settings": { "lane": "daemon" } });
+    let (st, env) = call(&base, "a", "POST", &format!("/api/projects/{t}/environments"), Some(body)).await;
+    assert_eq!(st, 200, "{env}");
+    let env = env["id"].as_str().unwrap().to_owned();
+    let (known, unknown) = ("c3".repeat(20), "d4".repeat(20));
+    {
+        let mut g = gh.lock().unwrap();
+        let repo = "arugula-salad/arugula";
+        g.files.insert(format!("{repo}:commit:{known}"), "Docs: the Arugula look\n\nMore.".into());
+        let manifest = |v: &str| format!("[workspace.package]\nversion = \"{v}\"\n");
+        g.files.insert(format!("{repo}:Cargo.toml@{known}"), manifest("0.63.8"));
+        g.files.insert(format!("{repo}:Cargo.toml@main"), manifest("0.63.9"));
+    }
+    let plan = |sha: &str| json!({ "environment": env, "source": { "kind": "commit", "ref": sha, "where": "arugula-salad/arugula" } });
+    let path = format!("/api/projects/{t}/deploys");
+
+    let (st, d) = call(&base, "b", "POST", &path, Some(plan(&known))).await;
+    assert_eq!(st, 200, "{d}");
+    assert_eq!(
+        (d["subject"].as_str(), d["expected_version"].as_str()),
+        (Some("Docs: the Arugula look"), Some("0.63.10"))
+    );
+    // The plan stays what the commit and the settings make.
+    let text = d["plan_text"].as_str().unwrap();
+    assert!(!text.contains("Arugula look") && !text.contains("0.63.10"), "{text}");
+    assert_eq!(crate::deploys_tests::digest(text), d["plan"].as_str().unwrap());
+    assert!(d["requested_at"].is_null(), "not asked yet");
+    let id = d["id"].as_str().unwrap();
+
+    let (st, d) = call(&base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
+    assert_eq!(st, 200, "{d}");
+    assert!(d["requested_at"].as_u64().is_some_and(|at| at >= d["created_at"].as_u64().unwrap()), "{d}");
+    let push = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(p) = hub.pushes().into_iter().find(|(_, m, _)| m["deploy"] == json!(id)) {
+                return p;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("a push for the deploy");
+    let short = &known[..8];
+    assert_eq!(
+        push.1["title"],
+        json!(format!("Approve Release 0.63.10 (expected) · {short} · Docs: the Arugula look?"))
+    );
+    let body = push.1["body"].as_str().unwrap();
+    assert!(body.contains(&known[..12]) && body.contains("asked by b"), "{body}");
+
+    // GitHub knows nothing of it: nulls, and the plan goes through.
+    let (st, d) = call(&base, "b", "POST", &path, Some(plan(&unknown))).await;
+    assert_eq!(st, 200, "{d}");
+    assert!(d["subject"].is_null() && d["expected_version"].is_null(), "{d}");
+}
+
 /// [`world_with_github`], and planter's App (M233), the deploy App, against
 /// a fake GitHub of its own that has it installed on arugula-salad's shipped
 /// and planter-apps, writing their contents. The platform's own App's fake

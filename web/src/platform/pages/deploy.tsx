@@ -11,7 +11,8 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
-import { deployEventState, deployStateText, plannerText } from "../../shared/deploys";
+import { deployEventState, deployStateText, deployTitle, plannerText } from "../../shared/deploys";
+import { DeployAsked } from "../../shared/ui/deploy-asked";
 import { CopyButton } from "../../shared/ui/copy";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
@@ -38,7 +39,13 @@ export interface Deploy {
   planned_by: string;
   planned_by_name: string;
   agent: { machine: string; machine_name: string } | null;
+  /** What the platform read of the deploy when it planned it (#333), or
+   * null: the commit's first line, and a release's expected version. */
+  subject?: string | null;
+  expected_version?: string | null;
   created_at: number;
+  /** When approval was last asked for, or null. */
+  requested_at?: number | null;
   operation: { body: string; hash: string };
   stale: { deploy: string; seq: number } | null;
   may_approve: boolean;
@@ -100,15 +107,18 @@ export function DeployCard({ d, link, planOpen, headless }: { d: Deploy; link?: 
           <h2>
             {link ? (
               <a href={path} onClick={(e) => follow(e, path)}>
-                Deploy to {d.environment.name}
+                {deployTitle(d)}
               </a>
             ) : (
-              <>Deploy to {d.environment.name}</>
+              <>{deployTitle(d)}</>
             )}
           </h2>
           <DeployState state={d.state} />
         </header>
       )}
+      <p class="dim deploy-when">
+        <DeployAsked at={d.requested_at} waiting={d.state === "pending"} />
+      </p>
       <dl class="deploy-facts">
         <dt>Project</dt>
         <dd>
@@ -187,7 +197,7 @@ export function DeployPage({ id }: { id: string }) {
   return (
     <section class="platform-section sw-page deploy-page" data-deploy-page={d.id}>
       <PageHeader
-        title={`Deploy to ${d.environment.name}`}
+        title={deployTitle(d)}
         named
         back={{ href: settings, label: "Project settings", onClick: (e) => follow(e, settings) }}
         state={<DeployState state={d.state} />}

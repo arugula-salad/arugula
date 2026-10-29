@@ -42,3 +42,30 @@ export const shortRef = (ref: string) => ref.replace(/^sha256:/, "").slice(0, 12
 export function plannerText(who: string, agent: { machine: string; machine_name?: string } | null): string {
   return agent ? agentLabel(who, agent) : who;
 }
+
+/** What a deploy is called (#333): the commit's subject and, for the
+ * release driver, the version its run is expected to tag, which the
+ * platform read when it planned the deploy. Not in the signed operation:
+ * a page shows it as the platform's reading. The same words as
+ * `titles::title` in crates/platform/src/drivers/titles.rs. */
+export function deployTitle(d: {
+  environment: { name: string; driver: string };
+  source: { ref: string };
+  subject?: string | null;
+  expected_version?: string | null;
+}): string {
+  const short = d.source.ref.slice(0, 8);
+  const subject = d.subject ? ` · ${d.subject}` : "";
+  if (d.expected_version && d.environment.driver === "arugula-release") return `Release ${d.expected_version} (expected) · ${short}${subject}`;
+  return d.subject ? `Deploy ${short} to ${d.environment.name}${subject}` : `Deploy to ${d.environment.name}`;
+}
+
+/** How long a deploy has waited since it was asked for: "3h", "12m",
+ * "2d". */
+export function waitedText(since: number, now = Date.now()): string {
+  const m = Math.max(0, Math.floor((now - since) / 60_000));
+  if (m < 1) return "under a minute";
+  if (m < 60) return `${m}m`;
+  if (m < 24 * 60) return `${Math.floor(m / 60)}h`;
+  return `${Math.floor(m / (24 * 60))}d`;
+}

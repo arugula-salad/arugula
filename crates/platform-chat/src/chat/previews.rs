@@ -400,7 +400,13 @@ async fn object_cards(
                         url: url.clone(),
                         project: env.project.clone(),
                         what: "deploy",
-                        title: format!("deploy to {}", env.name),
+                        // The same words as the push and the pages (#333).
+                        title: crate::drivers::titles::title(
+                            &env,
+                            &d.source,
+                            d.subject.as_deref(),
+                            d.expected_version.as_deref(),
+                        ),
                         state: deploy_state(d.state),
                         who: Some(d.planned_by.clone()).filter(|a| !a.is_empty()),
                         at: d.updated_at,
