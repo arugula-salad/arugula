@@ -110,6 +110,13 @@ pub const DOCS_STEERING: &str = "In Arugula, a report, plan or write-up longer t
 /// voice.
 pub const ISSUES_STEERING: &str = "In Arugula, a new issue (a bug, a follow-up, a ticket for later) goes in Arugula's own issues with issue_write (kind create), not `gh issue create` or a GitHub draft, unless the user asks for GitHub; forge_read (kind native_issues) lists them.";
 
+/// What agents are told about boards, in one wording: the MCP server's
+/// instructions carry it (`arugulad-mcp`'s `instructions()`). Boards are a
+/// Labs flag per account, so it is conditional on purpose and says nothing
+/// useful, and does no harm, where they're off. `arugula hook` doesn't give
+/// it. The plugin's skill says the same in its voice.
+pub const BOARDS_STEERING: &str = "When your work is a row on one of a project's boards (board_read lists them), keep that row current with board_write as you go: its status, and a row for the PR or the proof when there is one. People make boards and set or close an epic; you read those.";
+
 /// One flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Flag {

@@ -3541,6 +3541,8 @@ mod tests {
         assert!(text.contains("not an Artifact") && text.contains("`doc share`"), "{text}");
         // A new issue goes to native issues.
         assert!(text.contains(flags::ISSUES_STEERING), "{text}");
+        // A board row is kept current.
+        assert!(text.contains(flags::BOARDS_STEERING), "{text}");
         // When to show a PR (AR-7).
         assert!(text.contains("show it (kind pr)"), "{text}");
     }

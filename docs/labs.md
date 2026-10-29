@@ -45,7 +45,7 @@ Each feature has a flag, off on a new install:
 | `chant-workspaces` | Chant workspace blocks: a workspace's members, relationships and gates |
 | `additional-forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on), until they fit platform projects and workflows |
 | `agent-delegation` | Agent recipes, offering them from this machine as A2A agents, the team's agent catalog and tasks between machines (#403); set only on the machine |
-| `boards` | A project's live status board, which is control's: zones of rows that point at issues, PRs, runs, workspaces and agent blocks |
+| `boards` | A project's boards, which are control's: where its issues, PRs and runs are managed, and an epic is a board ([Boards](#boards)) |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
 `arugula --help` and `arugulad --help`. Without it they aren't offered, and
@@ -415,6 +415,52 @@ The machine's agents call, with the machine's signature and a grant, under
 and `PUT`/`DELETE /rooms/{id}/messages/{seq}/pin` (`threads.post`), beside the
 rooms, messages and search of [control.md](control.md). They act as the
 machine's owner, labelled with the machine, within the owner's reach.
+
+## Boards
+
+A project's work is managed on boards, and an epic is a board
+([aru-122](decisions/aru-122-boards-manage-a-project-s-issues-wherever-they-live.md)).
+They're control's, so they work with every machine asleep.
+
+**Turning it on.** A team owner turns on `boards` in the team's Labs on
+control's page; the Boards page says so while it's off, and its routes
+answer 404 until then. An agent's machine also needs the Boards grant over
+the project: *Settings → Agents*, Boards set to read, or to read and write,
+or `arugula grants add <machine> boards.read --project <prj_…>` (and
+`boards.write`, which reads too).
+
+**Running work on a board.**
+
+- Make a board on the project's Boards page, and zones on it. *+ Add PROOFS*
+  makes the zone for evidence; a row there counts as proven when it links
+  evidence (an https URL: a CI page, a report), points at a run that
+  succeeded or at a merged PR.
+- *+ Add row* in a zone picks from the project's issues, PRs and runs across
+  its linked repos, or a zone's menu has *New issue…*, which files one and
+  puts it there.
+- An issue or PR row reads as a card with its assignees.
+- **Triage** lists the project's open issues that are on no board. With
+  boards on it takes Issues' place in the bar.
+
+**Epics.** Give a board a goal (*Add a goal*) and its progress reads "3 of 5
+issues done": only issue rows count, an issue is done when it's closed at its
+source, one issue counts once however many rows point at it, and a row the
+reader can't read counts toward neither number. *Close epic…* asks "What can
+a person now do?" and keeps the answer as the done note; *Reopen* keeps the
+note. A closed board's rows stay editable, and the lists fold closed epics
+under *Done (N)*. A team's owners and editors change things; viewers see
+everything.
+
+**Agents.** `board_read` lists a project's boards and reads one (zones, rows,
+ids and revs). `board_write` lands at once, labelled as the person's agent on
+that machine, never as them. It may add rows to the zones there are, set any
+row's note and status (a PROOFS row's too), move rows, and remove a row it
+added. It may not make boards or zones, rename, move or delete a zone,
+repoint a row, or remove a row someone else added; editing an epic's goal or
+closing it is a person's. A note names the `rev` that `board_read` showed,
+and a row that moved on asks to read again. Agents are told to keep their
+own row current (`BOARDS_STEERING`, `crates/proto/src/flags.rs`); the tools
+are in `crates/arugulad-control-tools/src/boards.rs`.
 
 ## Chant workspaces
 
