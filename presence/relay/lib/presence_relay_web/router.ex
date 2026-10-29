@@ -7,9 +7,11 @@ defmodule PresenceRelayWeb.Router do
     plug :accepts, ["json"]
   end
 
-  # Sign-in pages: the browser follows links and redirects here.
+  # Sign-in pages: the browser follows links and redirects here. Their
+  # forms carry a CSRF token.
   pipeline :browser do
     plug :fetch_session
+    plug :protect_from_forgery
     plug :fetch_account
   end
 
@@ -35,7 +37,8 @@ defmodule PresenceRelayWeb.Router do
 
   scope "/auth", PresenceRelayWeb do
     pipe_through :browser
-    get "/email/:token", AuthController, :email_callback
+    get "/email/:token", AuthController, :email_confirm
+    post "/email/:token", AuthController, :email_callback
     get "/google", AuthController, :google
     get "/google/callback", AuthController, :google_callback
   end

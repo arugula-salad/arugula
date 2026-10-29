@@ -28,15 +28,66 @@ defmodule PresenceRelayWeb.AuthController do
     end
   end
 
-  @doc "`GET /auth/email/:token`: the link; signs in and goes back."
-  def email_callback(conn, %{"token" => token}) do
-    case Accounts.use_link(token) do
-      {:ok, account} ->
-        signed_in(conn, account)
+  @doc """
+  `GET /auth/email/:token`: the link. It spends nothing (mail scanners
+  fetch links before people click them): a page with one button, which
+  posts back here.
+  """
+  def email_confirm(conn, %{"token" => token}) do
+    case Accounts.check_link(token) do
+      {:ok, email} ->
+        conn
+        |> put_resp_header("cache-control", "no-store")
+        |> put_resp_header("referrer-policy", "no-referrer")
+        |> html(confirm_page(email, token, get_csrf_token()))
 
       {:error, _} ->
-        conn |> put_status(400) |> text("That sign-in link has expired or was already used.")
+        bad_link(conn)
     end
+  end
+
+  @doc "`POST /auth/email/:token`: the page's button; signs in and goes back."
+  def email_callback(conn, %{"token" => token}) do
+    case Accounts.use_link(token) do
+      {:ok, account} -> signed_in(conn, account)
+      {:error, _} -> bad_link(conn)
+    end
+  end
+
+  defp bad_link(conn),
+    do: conn |> put_status(400) |> text("That sign-in link has expired or was already used.")
+
+  defp confirm_page(email, token, csrf) do
+    e = &(&1 |> Plug.HTML.html_escape() |> IO.iodata_to_binary())
+
+    """
+    <!doctype html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>Sign in · arugula.stream</title>
+    <style>
+    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a0d14;color:#e6e9ef;font:16px/1.5 system-ui,sans-serif;padding:16px;box-sizing:border-box}
+    main{max-width:420px;width:100%;border:1px solid #1d2433;border-radius:12px;padding:28px;text-align:center}
+    h1{font-size:20px;font-weight:600;margin:0 0 20px}
+    b{color:#4fd1c5;font-weight:600;overflow-wrap:anywhere}
+    button{font:inherit;font-weight:600;background:#4fd1c5;color:#0a0d14;border:0;border-radius:8px;padding:10px 22px;cursor:pointer}
+    button:focus-visible{outline:2px solid #e6e9ef;outline-offset:3px}
+    </style>
+    </head>
+    <body>
+    <main>
+    <h1>Sign in to arugula.stream as <b>#{e.(email)}</b></h1>
+    <form method="post" action="/auth/email/#{e.(token)}">
+    <input type="hidden" name="_csrf_token" value="#{e.(csrf)}">
+    <button type="submit">Sign in</button>
+    </form>
+    </main>
+    </body>
+    </html>
+    """
   end
 
   @doc "`GET /auth/google?return_to=`: off to Google."

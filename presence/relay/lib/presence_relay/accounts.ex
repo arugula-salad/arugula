@@ -96,6 +96,28 @@ defmodule PresenceRelay.Accounts do
   def use_link(_), do: {:error, :unknown}
 
   @doc """
+  Whether an emailed link's token would still sign in, spending nothing
+  (mail scanners fetch links before people click them): `{:ok, email}`, or
+  `{:error, :unknown | :used | :expired}`.
+  """
+  def check_link(token) when is_binary(token) do
+    now = DateTime.utc_now()
+
+    case Repo.get_by(LoginToken, token_hash: hash(token)) do
+      nil ->
+        {:error, :unknown}
+
+      %LoginToken{used_at: used} when not is_nil(used) ->
+        {:error, :used}
+
+      %LoginToken{expires_at: exp, email: email} ->
+        if DateTime.compare(exp, now) == :lt, do: {:error, :expired}, else: {:ok, email}
+    end
+  end
+
+  def check_link(_), do: {:error, :unknown}
+
+  @doc """
   The account for a Google profile (`%{"sub", "email", "email_verified",
   "name"}`): its Google identity's, else the account with that verified
   address, else a new one.

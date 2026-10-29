@@ -12,7 +12,8 @@ defmodule PresenceRelay.AccountsHttpTest do
       |> put_req_header("content-type", "application/json")
       |> post(path, Jason.encode!(body))
 
-  defp sign_in(email \\ "ada@example.com") do
+  # A link emailed to `email`: the conn that asked (its session) and the token.
+  defp request_link(email) do
     conn = json_post(build_conn(), "/api/v1/auth/email", %{email: email, return_to: "/hosted"})
     assert json_response(conn, 200) == %{"sent" => true}
 
@@ -25,9 +26,91 @@ defmodule PresenceRelay.AccountsHttpTest do
     end)
 
     assert_received {:token, token}
-    conn = conn |> recycle() |> get("/auth/email/#{token}")
+    {recycle(conn), token}
+  end
+
+  # The link's page: the conn after it and the form's CSRF token.
+  defp open_link(conn, token) do
+    conn = get(conn, "/auth/email/#{token}")
+    body = html_response(conn, 200)
+    assert body =~ ~s(action="/auth/email/#{token}")
+    [_, csrf] = Regex.run(~r{name="_csrf_token" value="([^"]+)"}, body)
+    {recycle(conn), csrf}
+  end
+
+  # The page's button, with CSRF checked (ConnTest skips it by default).
+  defp press(conn, token, csrf) do
+    params = if csrf, do: %{"_csrf_token" => csrf}, else: %{}
+
+    conn
+    |> put_private(:plug_skip_csrf_protection, false)
+    |> post("/auth/email/#{token}", params)
+  end
+
+  defp sign_in(email \\ "ada@example.com") do
+    {conn, token} = request_link(email)
+    {conn, csrf} = open_link(conn, token)
+    conn = press(conn, token, csrf)
     assert redirected_to(conn) == "/hosted"
     recycle(conn)
+  end
+
+  test "opening the link spends nothing (mail scanners open links); its button signs in, once" do
+    {conn, token} = request_link("ada@example.com")
+    {conn, _} = open_link(conn, token)
+    assert get(conn, "/auth/email/#{token}") |> html_response(200) =~ "ada@example.com"
+    {conn, csrf} = open_link(conn, token)
+
+    signed = press(conn, token, csrf)
+    assert redirected_to(signed) == "/hosted"
+
+    assert %{"account" => %{"email" => "ada@example.com"}} =
+             signed |> recycle() |> get("/api/v1/me") |> json_response(200)
+
+    assert conn |> recycle() |> get("/auth/email/#{token}") |> response(400) =~ "already used"
+
+    assert conn
+           |> recycle()
+           |> press(token, csrf)
+           |> response(400)
+  end
+
+  test "the button without its CSRF token is refused, and the link still works" do
+    {conn, token} = request_link("ada@example.com")
+    {conn, csrf} = open_link(conn, token)
+
+    assert_error_sent 403, fn -> press(build_conn(), token, nil) end
+    assert_error_sent 403, fn -> press(conn, token, nil) end
+    assert_error_sent 403, fn -> press(build_conn(), token, csrf) end
+
+    assert conn
+           |> recycle()
+           |> press(token, csrf)
+           |> redirected_to() == "/hosted"
+  end
+
+  test "an expired or made-up link is a 400 either way" do
+    {conn, token} = request_link("ada@example.com")
+    {conn, csrf} = open_link(conn, token)
+
+    PresenceRelay.Repo.update_all(PresenceRelay.Accounts.LoginToken,
+      set: [expires_at: DateTime.add(DateTime.utc_now(), -60) |> DateTime.truncate(:second)]
+    )
+
+    for t <- [token, "made-up"] do
+      assert conn |> recycle() |> get("/auth/email/#{t}") |> response(400) =~ "expired"
+
+      assert conn
+             |> recycle()
+             |> press(t, csrf)
+             |> response(400)
+    end
+  end
+
+  test "the page escapes the address" do
+    {conn, token} = request_link("o'neil+x@example.com")
+    body = conn |> get("/auth/email/#{token}") |> html_response(200)
+    assert body =~ "o&#39;neil+x@example.com"
   end
 
   test "an emailed link signs in; /me says who; logout signs out" do
