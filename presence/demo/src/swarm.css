@@ -40,6 +40,13 @@ body {
   font: 15px/1.5 var(--f-ui);
 }
 
+/* The stage's glow and grid floor reach past the page's edges on
+   purpose: clip them there rather than scroll sideways. (On the page's
+   root, not body: body's overflow goes to the viewport, which scrolls.) */
+#app {
+  overflow-x: clip;
+}
+
 button {
   font: inherit;
   color: inherit;

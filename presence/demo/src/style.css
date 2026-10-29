@@ -1143,3 +1143,62 @@ a.btn.primary {
 .legal a {
   color: var(--accent);
 }
+
+/* /developers: numbered steps, and the three ways in */
+
+.step h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.step-n {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--line));
+  color: var(--accent);
+  font: 700 16px var(--f-mono);
+  flex: none;
+}
+
+.step h3 {
+  font: 800 18px/1.2 var(--f-display);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 28px 0 8px;
+}
+
+.step .tabs + .tabs {
+  margin-top: 14px;
+}
+
+.ways {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 12px 0 8px;
+}
+
+.way {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 18px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.way span {
+  color: #c4cad6;
+  font-size: 14px;
+}
+
+@media (max-width: 760px) {
+  .ways {
+    grid-template-columns: 1fr;
+  }
+}

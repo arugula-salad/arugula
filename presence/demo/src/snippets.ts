@@ -168,6 +168,26 @@ const room = await connect({
 </PresenceRoom>`,
 } as Record<string, string>;
 
+/** Guests: a publishable key and a name, no sign-in (the app allows guests). */
+export const guests = {
+  HTML: `<script type="module" src="${SDK}"></script>
+
+<arugula-room room="lobby" key="pk_live_…" name="Ada">
+  <arugula-camera></arugula-camera>
+  <arugula-people></arugula-people>
+  <arugula-chat></arugula-chat>
+</arugula-room>`,
+  JavaScript: `import { connect } from "${SDK}";
+
+const room = await connect({ room: "lobby", key: "pk_live_…", guest: "Ada" });
+room.mount(document.querySelector("#people"));`,
+  React: `<PresenceRoom room="lobby" publishableKey="pk_live_…" guest="Ada">
+  <CameraControls />
+  <People />
+  <Chat />
+</PresenceRoom>`,
+} as Record<string, string>;
+
 export const roomRule = `// Members of org "acme" into acme:… rooms only:
 { "room_rule": { "claim": "org_id", "match": "prefix" } }
 
