@@ -111,7 +111,7 @@ export function Landing() {
         </section>
       </main>
       <footer class="foot">
-        <a href="/docs">Docs</a> · <a href={`${SOURCE}/PROTOCOL.md`}>Protocol</a> · <a href={SOURCE}>Source</a> · from the makers of Arugula
+        <a href="/docs">Docs</a> · <a href={`${SOURCE}/PROTOCOL.md`}>Protocol</a> · <a href={SOURCE}>Source</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · from the makers of Arugula
       </footer>
     </>
   );

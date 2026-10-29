@@ -226,7 +226,7 @@ export function Hosted() {
         </section>
       </main>
       <footer class="foot">
-        <a href="/">Home</a> · <a href="/docs">Docs</a> · <a href={SOURCE}>Open source</a>
+        <a href="/">Home</a> · <a href="/docs">Docs</a> · <a href={SOURCE}>Open source</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
       </footer>
     </>
   );
