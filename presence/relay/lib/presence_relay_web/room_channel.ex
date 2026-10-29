@@ -10,6 +10,7 @@ defmodule PresenceRelayWeb.RoomChannel do
   "Calls" below.
   """
   use Phoenix.Channel
+  require Logger
 
   alias PresenceRelay.{Calls, Chat, Presence, Rooms, Usage}
   alias Phoenix.PubSub
@@ -31,10 +32,12 @@ defmodule PresenceRelayWeb.RoomChannel do
     # Whom usage counts (PresenceRelay.Usage): refused here once the app's
     # month is at its cap, unless they count already.
     meter = Map.get(a, :meter, a.sub)
+    Logger.metadata(app: a.app)
 
     with :ok <- Usage.admit(a.app, meter),
          :ok <- Rooms.join(a.app, room, a.sub, self()) do
       Usage.joined(a.app, meter)
+      :telemetry.execute([:presence_relay, :join, :ok], %{count: 1}, %{})
 
       for topic <- [
             Rooms.room_topic(a.app, room),
@@ -50,11 +53,16 @@ defmodule PresenceRelayWeb.RoomChannel do
       socket = assign(socket, ringing: %{}, rung: %{}, in_call: nil, called_at: [])
       {:ok, %{you: a.sub, calls: Calls.on?()}, socket}
     else
-      {:error, reason} -> {:error, %{reason: reason}}
+      {:error, reason} ->
+        refused(reason)
+        {:error, %{reason: reason}}
     end
   end
 
-  def join("room:" <> _, _payload, _socket), do: {:error, %{reason: "not this token's room"}}
+  def join("room:" <> _, _payload, _socket) do
+    refused(:wrong_room)
+    {:error, %{reason: "not this token's room"}}
+  end
 
   @impl true
   def handle_info(:after_join, %{assigns: a} = socket) do
@@ -192,6 +200,8 @@ defmodule PresenceRelayWeb.RoomChannel do
   end
 
   def handle_in("wave", %{"to" => to}, %{assigns: a} = socket) when is_binary(to) do
+    message(:wave, :ok)
+
     PubSub.broadcast(
       PresenceRelay.PubSub,
       Rooms.member_topic(a.app, a.room, to),
@@ -203,6 +213,8 @@ defmodule PresenceRelayWeb.RoomChannel do
 
   def handle_in("answer", %{"to" => to, "yes" => yes}, %{assigns: a} = socket)
       when is_binary(to) and is_boolean(yes) do
+    message(:answer, :ok)
+
     PubSub.broadcast(
       PresenceRelay.PubSub,
       Rooms.member_topic(a.app, a.room, to),
@@ -224,9 +236,11 @@ defmodule PresenceRelayWeb.RoomChannel do
         {:relay_react, a.sub, emoji}
       )
 
+      message(:react, :ok)
       {:noreply, assign(socket, :reacted_at, now)}
     else
       # Not an emoji, or too soon: dropped without a word.
+      message(:react, :dropped)
       {:noreply, socket}
     end
   end
@@ -236,6 +250,8 @@ defmodule PresenceRelayWeb.RoomChannel do
     recent = Enum.filter(Map.get(a, :said_at, []), &(now - &1 < @say_window_ms))
 
     if length(recent) >= @say_burst do
+      message(:say, :dropped)
+
       {:reply, {:error, %{reason: "too fast"}}, assign(socket, :said_at, recent)}
     else
       case Chat.say(a.app, a.room, a.sub, a.name, text) do
@@ -249,9 +265,11 @@ defmodule PresenceRelayWeb.RoomChannel do
             {:relay_said, msg}
           )
 
+          message(:say, :ok)
           {:reply, {:ok, msg}, assign(socket, :said_at, [now | recent])}
 
         {:error, why} ->
+          message(:say, :dropped)
           {:reply, {:error, %{reason: reason(why)}}, assign(socket, :said_at, recent)}
       end
     end
@@ -353,6 +371,26 @@ defmodule PresenceRelayWeb.RoomChannel do
   end
 
   def terminate(_reason, _socket), do: :ok
+
+  # For /metrics (PresenceRelay.Metrics): a join refused and why, and each
+  # message (say, react, wave, answer) kept or dropped.
+  defp refused(reason) do
+    reason =
+      case reason do
+        "this app is at its monthly limit" -> :cap
+        "room full" -> :room_full
+        "too many connections" -> :connections
+        "this app has too many connections" -> :app_connections
+        r when is_atom(r) -> r
+        _ -> :other
+      end
+
+    :telemetry.execute([:presence_relay, :join, :refused], %{count: 1}, %{reason: reason})
+  end
+
+  defp message(kind, result),
+    do:
+      :telemetry.execute([:presence_relay, :message], %{count: 1}, %{kind: kind, result: result})
 
   defp change(socket, key, fun), do: assign(socket, key, fun.(socket.assigns[key]))
 

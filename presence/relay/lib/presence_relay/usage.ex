@@ -49,6 +49,11 @@ defmodule PresenceRelay.Usage do
   flushes; a crash loses at most one interval's buffer (a few seconds of
   joins, which the next join puts back, and of call time, which is lost).
 
+  Each whole flush is told as telemetry, `[:presence_relay, :usage,
+  :flush]` with its `duration` and how many app-days it `kept` for the
+  next try: /metrics shows how long since one left nothing behind
+  (`PresenceRelay.Metrics`, #318's P12), and the health check minds it.
+
   ## Caps
 
   An app's cap (nil, none): the owner's `mau_cap`, or its plan's if
@@ -364,7 +369,7 @@ defmodule PresenceRelay.Usage do
     do: {:noreply, %{s | calls: Map.update(s.calls, {app, day}, seconds, &(&1 + seconds))}}
 
   @impl true
-  def handle_call(:flush, _from, s), do: {:reply, :ok, flush(s, fn _ -> true end)}
+  def handle_call(:flush, _from, s), do: {:reply, :ok, flush_all(s)}
 
   def handle_call(:reset, _from, _s) do
     for t <- [@caps, @seen, @extra], do: :ets.delete_all_objects(t)
@@ -396,7 +401,7 @@ defmodule PresenceRelay.Usage do
 
   @impl true
   def handle_info(:flush, s) do
-    s = flush(s, fn _ -> true end)
+    s = flush_all(s)
     schedule()
     {:noreply, s}
   end
@@ -405,7 +410,7 @@ defmodule PresenceRelay.Usage do
 
   @impl true
   def terminate(_reason, s) do
-    flush(s, fn _ -> true end)
+    flush_all(s)
     :ok
   end
 
@@ -417,6 +422,22 @@ defmodule PresenceRelay.Usage do
       # `:manual` (tests): only flush/0.
       _ -> nil
     end
+  end
+
+  # The whole buffer, told as telemetry: how long it took, and how many
+  # app-days are kept for the next try.
+  defp flush_all(s) do
+    t0 = System.monotonic_time()
+    s = flush(s, fn _ -> true end)
+    kept = (Map.keys(s.members) ++ Map.keys(s.calls)) |> Enum.uniq() |> length()
+
+    :telemetry.execute(
+      [:presence_relay, :usage, :flush],
+      %{duration: System.monotonic_time() - t0, kept: kept},
+      %{}
+    )
+
+    s
   end
 
   # Writes the buffer's {app, day}s that `pick?` picks, keeping any that

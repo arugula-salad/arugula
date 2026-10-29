@@ -11,6 +11,7 @@ primary_region = "ewr"
 [env]
   PHX_HOST = "arugula.stream"
   PORT = "4000"
+  METRICS_PORT = "9091"
   DEMO = "1"
 
 [http_service]
@@ -31,6 +32,14 @@ primary_region = "ewr"
     interval = "15s"
     timeout = "5s"
     grace_period = "10s"
+
+# /metrics (#318's P12) on the internal port 9091, which no service
+# exposes: Fly scrapes it into its managed Grafana (fly-metrics.net), with
+# the app, instance and region as labels. presence/ops/README.md has the
+# dashboard and the alerts.
+[metrics]
+  port = 9091
+  path = "/metrics"
 
 [[vm]]
   size = "shared-cpu-1x"

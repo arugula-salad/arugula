@@ -6,6 +6,7 @@ defmodule PresenceRelay.Application do
   @impl true
   def start(_type, _args) do
     PresenceRelay.Apps.load()
+    PresenceRelay.Limits.configure!()
 
     # A live Stripe key without STRIPE_LIVE=1 (or half a config) stops the
     # boot here (PresenceRelay.Billing).
@@ -35,10 +36,14 @@ defmodule PresenceRelay.Application do
         do: [Supervisor.child_spec({Task, &PresenceRelay.Apps.ensure_meet!/0}, id: :seed_meet)],
         else: []
 
+    # Metrics first, so it hears everything from the start (#318's P12).
     children =
-      repo ++
+      [PresenceRelay.Metrics] ++
+        repo ++
         [
           {Finch, name: PresenceRelay.Finch},
+          # Abuse limits' counts (PresenceRelay.Limits).
+          PresenceRelay.Limits,
           # Sign-in providers' keys (JWKS), cached per URL.
           PresenceRelay.Issuers.Keys,
           # Nodes find each other on Fly (DNS_CLUSTER_QUERY); locally, ignored.
@@ -54,10 +59,25 @@ defmodule PresenceRelay.Application do
           # Team apps' usage to Stripe's meters, every 15 minutes (billing on).
           PresenceRelay.Billing.Reporter,
           PresenceRelay.Chat.Memory,
-          PresenceRelayWeb.Endpoint
-        ] ++ seed
+          PresenceRelayWeb.Endpoint,
+          # Mails when deep health fails (PresenceRelay.Health).
+          PresenceRelay.Watchdog
+        ] ++ metrics() ++ seed
 
     Supervisor.start_link(children, strategy: :one_for_one, name: PresenceRelay.Supervisor)
+  end
+
+  # /metrics on its own port, where config says (PresenceRelayWeb.MetricsPlug).
+  defp metrics do
+    case Application.get_env(:presence_relay, :metrics_port) do
+      port when is_integer(port) ->
+        ip = Application.get_env(:presence_relay, :metrics_ip, {127, 0, 0, 1})
+        opts = [plug: PresenceRelayWeb.MetricsPlug, port: port, ip: ip, startup_log: false]
+        [Supervisor.child_spec({Bandit, opts}, id: :metrics)]
+
+      _ ->
+        []
+    end
   end
 
   @impl true

@@ -2,10 +2,13 @@ defmodule PresenceRelayWeb.DemoController do
   @moduledoc """
   `POST /api/demo/token` (PROTOCOL.md, "Room token"): on a demo relay,
   a token for app `demo` to anyone, for any room, by name; `sub` is random.
+  So many an hour per client IP (`PresenceRelay.Limits`' `demo_token`).
   """
   use Phoenix.Controller, formats: [:json]
 
   alias PresenceRelay.Token
+
+  plug PresenceRelayWeb.RateLimit, :demo_token
 
   @life 12 * 3600
 

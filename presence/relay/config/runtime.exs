@@ -102,6 +102,50 @@ if config_env() != :test do
     demo_secret: System.get_env("DEMO_SECRET")
 end
 
+# Abuse limits and caps (#318's P12): RATE_LIMITS="socket_connect=600/60,
+# demo_token=off" changes the named limits (PresenceRelay.Limits);
+# APP_MAX_CONNECTIONS is any app's most connections at once (default
+# 2000), APP_CONNECTIONS="meet:10000,app_x:off" one app's.
+if config_env() != :test do
+  # Applied over config.exs's at boot (PresenceRelay.Limits.configure!/0).
+  if spec = System.get_env("RATE_LIMITS"), do: config(:presence_relay, rate_limits_spec: spec)
+
+  if n = System.get_env("APP_MAX_CONNECTIONS"),
+    do: config(:presence_relay, max_app_connections: String.to_integer(n))
+
+  if spec = System.get_env("APP_CONNECTIONS") do
+    config :presence_relay,
+      app_connections:
+        spec
+        |> String.split(",", trim: true)
+        |> Map.new(fn pair ->
+          case String.split(pair, ":", parts: 2) do
+            [id, "off"] -> {id, nil}
+            [id, n] -> {id, String.to_integer(n)}
+            _ -> raise "APP_CONNECTIONS: #{inspect(pair)} isn't id:n or id:off"
+          end
+        end)
+  end
+
+  # Fly's proxy sets Fly-Client-IP; off Fly, anyone could.
+  config :presence_relay, trust_fly_client_ip: System.get_env("FLY_APP_NAME") not in [nil, ""]
+
+  # /metrics: METRICS_PORT (prod: 9091, which Fly scrapes; elsewhere off
+  # unless set), on every address in prod (Fly's private network; no Fly
+  # service exposes the port; below), loopback otherwise.
+  metrics_port =
+    System.get_env("METRICS_PORT") || if(config_env() == :prod, do: "9091")
+
+  if metrics_port,
+    do: config(:presence_relay, metrics_port: String.to_integer(metrics_port))
+
+  if to = System.get_env("ALERT_EMAIL"), do: config(:presence_relay, alert_to: to)
+
+  # LOG_LEVEL (debug, info, warning, error) quiets or opens up the logs.
+  if level = System.get_env("LOG_LEVEL"),
+    do: config(:logger, level: String.to_existing_atom(level))
+end
+
 if config_env() == :prod do
   # Mail by Resend when RESEND_API_KEY is set; otherwise none (email
   # sign-in says it isn't set up; guests and Google still work).
@@ -136,9 +180,14 @@ if config_env() == :prod do
   host = System.get_env("PHX_HOST") || "arugula.video"
   port = String.to_integer(System.get_env("PORT") || "4000")
 
+  # Every address (Fly), or BIND's (a prod build run locally, say for the
+  # load probe: BIND=127.0.0.1), which /metrics listens on too.
+  {:ok, ip} = :inet.parse_address(String.to_charlist(System.get_env("BIND") || "::"))
+  config :presence_relay, metrics_ip: ip
+
   config :presence_relay, PresenceRelayWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
-    http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}, port: port],
+    http: [ip: ip, port: port],
     # Host apps embed the client on their own origins; the room token is
     # what admits a socket.
     check_origin: false,

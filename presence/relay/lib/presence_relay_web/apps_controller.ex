@@ -8,8 +8,19 @@ defmodule PresenceRelayWeb.AppsController do
   (P10) is its first client.
   """
   use Phoenix.Controller, formats: [:json]
+  require Logger
 
   alias PresenceRelay.{Apps, Issuers, Usage}
+
+  # The app a request is about goes in its log lines (#318's P12).
+  plug :log_app
+
+  defp log_app(%{path_params: %{"id" => id}} = conn, _) do
+    Logger.metadata(app: id)
+    conn
+  end
+
+  defp log_app(conn, _), do: conn
 
   def index(conn, _), do: json(conn, %{apps: Enum.map(Apps.list(conn.assigns.account), &view/1)})
 

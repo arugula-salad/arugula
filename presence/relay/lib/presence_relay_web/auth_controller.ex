@@ -5,26 +5,66 @@ defmodule PresenceRelayWeb.AuthController do
   """
   use Phoenix.Controller, formats: [:json]
 
-  alias PresenceRelay.Accounts
+  alias PresenceRelay.{Accounts, Limits}
   alias PresenceRelay.Accounts.Google
   import PresenceRelayWeb.Auth, only: [base_url: 1, return_to: 1]
+  require Logger
 
-  @doc "`POST /api/v1/auth/email {email, return_to?}`: emails a sign-in link."
+  # Sign-in links are limited per client IP (a 429) and per address
+  # (#318's P12): see email_request/2.
+  plug PresenceRelayWeb.RateLimit, :email_ip when action == :email_request
+
+  @doc """
+  `POST /api/v1/auth/email {email, return_to?}`: emails a sign-in link.
+
+  It answers the same whether or not the address has an account. An
+  address that has had its links this hour (`PresenceRelay.Limits`'
+  `email_address`) gets no more, and the answer still says sent, so the
+  limit tells nobody anything about the address, and nobody can fill a
+  stranger's inbox.
+  """
   def email_request(conn, params) do
     with :ok <- no_db(conn) do
-      case Accounts.send_link(params["email"], base_url(conn)) do
+      case address_limit(params["email"]) do
+        :ok -> send_link(conn, params)
+        :over -> sent(conn, params)
+      end
+    end
+  end
+
+  defp address_limit(email) do
+    if Accounts.valid_email?(email) do
+      key = :crypto.hash(:sha256, String.downcase(email))
+
+      case Limits.hit(:email_address, key) do
         :ok ->
-          conn |> put_session(:return_to, return_to(params["return_to"])) |> json(%{sent: true})
-
-        {:error, :bad_email} ->
-          conn |> put_status(400) |> json(%{error: "that doesn't look like an email address"})
-
-        {:error, :no_mailer} ->
-          conn |> put_status(503) |> json(%{error: "email sign-in isn't set up here"})
+          :ok
 
         {:error, _} ->
-          conn |> put_status(502) |> json(%{error: "the email didn't send; try again"})
+          Logger.info("auth: an address is over its sign-in links for the hour; none sent")
+          :over
       end
+    else
+      :ok
+    end
+  end
+
+  defp sent(conn, params),
+    do: conn |> put_session(:return_to, return_to(params["return_to"])) |> json(%{sent: true})
+
+  defp send_link(conn, params) do
+    case Accounts.send_link(params["email"], base_url(conn)) do
+      :ok ->
+        sent(conn, params)
+
+      {:error, :bad_email} ->
+        conn |> put_status(400) |> json(%{error: "that doesn't look like an email address"})
+
+      {:error, :no_mailer} ->
+        conn |> put_status(503) |> json(%{error: "email sign-in isn't set up here"})
+
+      {:error, _} ->
+        conn |> put_status(502) |> json(%{error: "the email didn't send; try again"})
     end
   end
 

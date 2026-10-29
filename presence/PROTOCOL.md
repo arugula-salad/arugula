@@ -32,6 +32,10 @@ allowed origins, and a provider token the app's issuer doesn't vouch
 for (a bad `auth` is refused, never let in as a guest). Either way the
 room channel is the same.
 
+Those refusals answer the upgrade 403. A client IP that has opened too
+many sockets lately (a hosted relay: 120 a minute) is answered 429 with
+`Retry-After` in seconds ("Abuse limits").
+
 ### Publishable keys
 
 A hosted relay (arugula.stream) keeps apps in its database, each with
@@ -151,7 +155,7 @@ connection is in (the relay sets it; a client can't), for tiles.
 | `state` | `{mode?, look?, away?, watching?}` | updates the member's presence meta |
 | `wave` | `{to: <sub>}` | wave at someone: a hello (where the relay has calls, a page asks to talk with `call` instead) |
 | `answer` | `{to: <sub>, yes: bool}` | answer a wave |
-| `say` | `{text}` | a text message for the room: 1–2000 characters after trimming, no control characters but newlines; at most 5 per 5 s per connection. Replies `ok` with the kept message, or `error` `{reason: "empty" \| "too long" \| "control characters" \| "too fast"}` (and it goes nowhere) |
+| `say` | `{text}` | a text message for the room: 1–2000 characters after trimming, no control characters but newlines; at most 5 per 5 s per connection. Replies `ok` with the kept message, or `error` `{reason: "empty" \| "too long" \| "control characters" \| "too fast" \| "not kept"}` (and it goes nowhere; "not kept": the relay couldn't store it just then, try again) |
 | `history` | `{before: <id>}` | the 50 messages before that one; replies `ok` `{messages: [...]}`, oldest first |
 | `react` | `{emoji}` | an emoji for the room (a 👍, a 🎉): one grapheme, no ASCII, ≤ 32 bytes, at most one per 250 ms per connection, else dropped |
 | `call`, `call_answer`, `call_leave`, `call_token` | | see "Calls" |
@@ -170,10 +174,13 @@ connection is in (the relay sets it; a client can't), for tiles.
 | `call`, `call_cancel`, `call_answer`, `call_join` | | see "Calls" |
 
 Limits: 32 KiB a frame, 70 ms between a member's frames, 64 members a room,
-8 connections a member. Over a limit, the frame is dropped (no error);
-too many members or connections, the join is refused (`{reason}`). A
-hosted app at its cap on monthly active users refuses someone new this
-month with `{reason: "this app is at its monthly limit"}` ("Usage and caps").
+8 connections a member, 2,000 connections at once an app (a hosted
+relay's default; the operator may set an app's own). Over a limit, the
+frame is dropped (no error); too many members or connections, the join
+is refused (`{reason: "room full" | "too many connections" | "this app
+has too many connections"}`). A hosted app at its cap on monthly active
+users refuses someone new this month with `{reason: "this app is at its
+monthly limit"}` ("Usage and caps").
 
 ## Calls
 
@@ -338,6 +345,26 @@ Hosted, the owner reads and sets them (session JSON, like the issuer):
   page subscribing the app to Team. `POST …/billing/portal` → `{url}`:
   Stripe's Customer Portal for its subscription. 409 where billing isn't
   set up (or there's nothing to manage yet).
+
+## Abuse limits
+
+A relay limits what one client may ask of it, by client IP (and email
+sign-in by address too), counted on each of its nodes (with N nodes, a
+client spread across them could get up to N times these). A hosted
+relay's defaults; the operator may change any:
+
+| what | limit |
+|---|---|
+| socket connects | 120 a minute an IP (over: the upgrade is a 429) |
+| `POST /api/v1/auth/email` | 10 an hour an IP; 5 an hour an address |
+| `POST /api/v1/meet/rooms` | 20 an hour an IP |
+| `POST`, `PUT`, `PATCH`, `DELETE` under `/api/v1` | 120 a minute an IP |
+| `POST /api/demo/token` | 120 an hour an IP |
+
+Over an HTTP limit: `429` with `Retry-After` (seconds) and `{error: "too
+many requests; try again in N s"}`. An address over its sign-in links
+gets no more, and the answer is still `{sent: true}`: the answer never
+says anything about an address.
 
 ## Frames
 
