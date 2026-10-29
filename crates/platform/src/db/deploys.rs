@@ -743,6 +743,25 @@ impl Decision {
 /// event, so the device signs the log up to the plan; recording it checks
 /// them against the deploy's row and its log. The whole of it goes in the
 /// event's detail ([`VerifiedApproval::detail`]).
+///
+/// Outside this crate (feature crates, #314) there's no making one: what
+/// names the parts compiles,
+///
+/// ```
+/// fn parts(_: &arugula_e2e::deploy::Approval, _: &arugula_e2e::deploy::Operation, _: arugula_platform::db::deploys::PasskeyProof) {}
+/// ```
+///
+/// and the verifier's constructor doesn't:
+///
+/// ```compile_fail,E0624
+/// fn make(
+///     a: &arugula_e2e::deploy::Approval,
+///     op: &arugula_e2e::deploy::Operation,
+///     p: arugula_platform::db::deploys::PasskeyProof,
+/// ) -> arugula_platform::db::deploys::VerifiedApproval {
+///     arugula_platform::db::deploys::VerifiedApproval::from_checked(a, op, p)
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedApproval {
     deploy: String,
@@ -777,14 +796,14 @@ pub struct PasskeyProof {
 }
 
 impl VerifiedApproval {
-    /// M218's verifier (`arugula_platform_deploys::deploys::verify`) makes
-    /// one this way, and nothing else does: once the approving device is one
-    /// of the account's that counts (a browser's, chained to its root, not
+    /// M218's verifier ([`crate::approvals::verify`]) makes one this way,
+    /// and nothing else does: once the approving device is one of the
+    /// account's that counts (a browser's, chained to its root, not
     /// revoked), its signature checks out over `approval`'s bytes, and `op`
     /// (the deploy's operation as the log has it now) hashes to what it
-    /// signed. `pub` only because the verifier is a crate of its own
-    /// (#314): no other caller may make one.
-    pub fn from_checked(
+    /// signed. `pub(crate)`, so no other crate makes one (the type's doc
+    /// test checks that).
+    pub(crate) fn from_checked(
         approval: &arugula_e2e::deploy::Approval,
         op: &arugula_e2e::deploy::Operation,
         passkey: PasskeyProof,

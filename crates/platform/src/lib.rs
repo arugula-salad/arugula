@@ -40,6 +40,7 @@ mod agent_sessions_tests;
 mod agent_threads_tests;
 #[cfg(any(test, feature = "testing"))]
 pub mod agents_tests;
+pub mod approvals;
 pub mod auth;
 pub mod billing;
 pub mod boards;

@@ -3,7 +3,7 @@
 //!
 //! An approval is S37's work approval over a deploy's operation
 //! ([`arugula_e2e::deploy`]): signed by a project owner's device, which the
-//! routes check ([`crate::deploys::verify`]) before they come here with a
+//! routes check ([`crate::approvals::verify`]) before they come here with a
 //! [`VerifiedApproval`]. Here it's written **in the same transaction** as
 //! the deploy's `approved` (or `denied`) event (M217's
 //! `record_approval_in`: as a person, never an agent; the plan and the

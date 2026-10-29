@@ -98,6 +98,9 @@ Start with `src/lib.rs`, then:
   deploys and their approval, and applying them (M217–M219). The drivers
   and the deploys' tables stay here; the runs engine, a deploy box's asks
   and the agents reach deploys through `features::Deploys`.
+- `src/approvals.rs`: M218's approval verifier, the only maker of a
+  `VerifiedApproval` (its constructor is `pub(crate)`, and a
+  `compile_fail` doctest on the type says so); deploys call it.
 - `src/project_roles.rs`: someone's role in a project, the project as they
   see it and its owners (deploys', agents' and hosted workspaces').
 - `src/contract.rs` (feature `contract`): the tests every `HubPort` passes.
