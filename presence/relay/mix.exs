@@ -28,7 +28,9 @@ defmodule PresenceRelay.MixProject do
       {:jason, "~> 1.4"},
       {:ecto_sql, "~> 3.12"},
       {:postgrex, "~> 0.19"},
-      {:dns_cluster, "~> 0.2"}
+      {:dns_cluster, "~> 0.2"},
+      # Calls' start and end (PresenceRelay.Calls): already Phoenix's.
+      {:telemetry, "~> 1.0"}
     ]
   end
 

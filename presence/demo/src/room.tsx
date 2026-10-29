@@ -1,6 +1,8 @@
 // arugula.stream's rooms: join by link (/r/<room> or ?room=), a demo token
 // from the relay, the Phoenix transport (@arugula/presence), and everyone
-// here as live avatars or outlines (@arugula/presence-core). Wave to talk.
+// here as live avatars or outlines (@arugula/presence-core). Wave to talk:
+// where the relay has calls, a wave they say yes to is a voice call
+// (LiveKit), and presence carries on under it.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { PresenceClient, phoenixTransport, REACTIONS, type Member } from "@arugula/presence";
@@ -79,13 +81,24 @@ function AvatarCanvas({ source, mirror }: { source: () => Source | null; mirror:
   return <canvas ref={ref} />;
 }
 
-function Tile({ client, m, me }: { client: PresenceClient; m: Member; me: boolean }) {
+function Tile({ client, m, me, onError }: { client: PresenceClient; m: Member; me: boolean; onError: (e: string) => void }) {
   const seen = client.of(m.sub);
   const frame = (me ? client.mine?.frame : null) ?? seen?.frame ?? null;
   const look = me ? client.look : (seen?.look ?? client.lookOf(m.sub) ?? m.look);
   const avatar = me ? client.mode === "avatar" : !!look && !frame;
   const live = !!frame || !!seen?.rig || (me && !!client.mine?.rig);
   const waved = client.answers.find((a) => a.from === m.sub);
+  // Calls: who's in one (presence), and in yours, muted or speaking (LiveKit).
+  const person = client.inCall?.people.find((p) => p.sub === m.sub);
+  const ringing = !!client.inCall?.ringing.includes(m.sub);
+  const inMine = client.inMyCall(m.sub);
+  const waveAt = () => {
+    if (!client.callsOn) return client.wave(m.sub);
+    client.call(m.sub).then(
+      () => onError(""),
+      (e: Error) => onError(e.message),
+    );
+  };
   // A fresh wave (theirs at you, yours at someone) waves on their avatar.
   const hand = (rig: Rig | null) => (client.waving(m.sub, me) ? waving(rig, performance.now() / 1000) : rig);
   const source = (): Source | null => {
@@ -95,7 +108,7 @@ function Tile({ client, m, me }: { client: PresenceClient; m: Member; me: boolea
     return l ? { rig: hand(s?.rig ?? null), look: l, away: m.away } : null;
   };
   return (
-    <figure class={live ? "tile live" : "tile"} data-sub={m.sub}>
+    <figure class={["tile", live && "live", m.call && "in-call", person?.speaking && "speaking"].filter(Boolean).join(" ")} data-sub={m.sub}>
       <div class="view">
         <div class="reacts" aria-live="polite">
           {client.reactionsOf(m.sub).map((r) => (
@@ -108,11 +121,11 @@ function Tile({ client, m, me }: { client: PresenceClient; m: Member; me: boolea
       </div>
       <figcaption>
         <span class="who">{me ? `${m.name} (you)` : m.name}</span>
-        {live && <span class="tag">live</span>}
-        {!live && m.away && <span class="tag" style={{ color: "var(--dim)" }}>away</span>}
-        {!me && (
-          <button class="btn wave" onClick={() => client.wave(m.sub)} title={`Wave at ${m.name}`}>
-            {waved ? (waved.yes ? "waved back" : "not now") : "Wave"}
+        {person?.muted ? <span class="tag call">muted</span> : m.call ? <span class="tag call">in a call</span> : live && <span class="tag">live</span>}
+        {!live && !m.call && m.away && <span class="tag" style={{ color: "var(--dim)" }}>away</span>}
+        {!me && !inMine && (
+          <button class="btn wave" onClick={waveAt} disabled={ringing} title={client.callsOn ? `Wave at ${m.name} to talk` : `Wave at ${m.name}`}>
+            {ringing ? "Calling…" : client.callsOn && client.inCall && client.inCall.state !== "ringing" ? "Add to call" : waved && !client.callsOn ? (waved.yes ? "waved back" : "not now") : waved && !waved.yes ? "not now" : "Wave"}
           </button>
         )}
       </figcaption>
@@ -179,6 +192,43 @@ function Controls({ client, me }: { client: PresenceClient; me: string }) {
       )}
       {on && !last && !client.mine?.error && <span class="stats">starting the camera…</span>}
       {client.mine?.error && <span class="error">{client.mine.error}</span>}
+    </div>
+  );
+}
+
+/** Your call: who's in it, mute and leave (or who you're calling). */
+function CallBar({ client, me, names, error }: { client: PresenceClient; me: string; names: Map<string, string>; error: string }) {
+  const c = client.inCall;
+  if (!c) return error ? <div class="callbar"><span class="error">{error}</span></div> : null;
+  const others = c.people.filter((p) => p.sub !== me).map((p) => p.name);
+  const ringing = c.ringing.map((s) => names.get(s) ?? "someone");
+  const what =
+    c.state === "ringing"
+      ? `Calling ${ringing.join(", ")}…`
+      : c.state === "joining"
+        ? "Joining the call…"
+        : c.state === "reconnecting"
+          ? "Reconnecting…"
+          : others.length
+            ? `In a call with ${others.join(", ")}`
+            : "Waiting for the others…";
+  return (
+    <div class="callbar on" role="status">
+      <span class="what">{what}</span>
+      {c.state !== "ringing" && (
+        <button class={c.muted ? "btn on" : "btn"} onClick={() => void client.setMuted(!c.muted)} aria-pressed={c.muted}>
+          {c.muted ? "Unmute" : "Mute"}
+        </button>
+      )}
+      {c.blocked && (
+        <button class="btn primary" onClick={() => void client.startAudio()}>
+          Play the call
+        </button>
+      )}
+      <button class="btn danger" onClick={() => client.leaveCall()}>
+        {c.state === "ringing" ? "Cancel" : "Leave"}
+      </button>
+      {(c.error || error) && <span class="error">{c.error || error}</span>}
     </div>
   );
 }
@@ -281,13 +331,15 @@ export function Room({ room, name }: { room: string; name: string }) {
   }, []);
   const [copied, setCopied] = useState(false);
   const me = state.me();
-  const mine: Member = client.members.find((m) => m.sub === me) ?? { sub: me || "me", name, look: client.look, mode: "none", away: false, watching: true };
+  const mine: Member = client.members.find((m) => m.sub === me) ?? { sub: me || "me", name, look: client.look, mode: "none", away: false, watching: true, call: null };
   const others = client.members.filter((m) => m.sub !== me);
   // Names of everyone seen here, so a wave from someone who's since left
   // still says who.
   const names = useRef(new Map<string, string>()).current;
   for (const m of client.members) names.set(m.sub, m.name);
   const wave = client.waves[client.waves.length - 1];
+  const ring = client.rings[client.rings.length - 1];
+  const [callError, setCallError] = useState("");
   const share = () => {
     void navigator.clipboard?.writeText(location.href).then(() => {
       setCopied(true);
@@ -307,19 +359,36 @@ export function Room({ room, name }: { room: string; name: string }) {
         </button>
       </div>
       <Controls client={client} me={mine.sub} />
+      <CallBar client={client} me={mine.sub} names={names} error={callError} />
       <div class="room-body">
         <div>
           <div class="grid">
-            <Tile client={client} m={mine} me />
+            <Tile client={client} m={mine} me onError={setCallError} />
             {others.map((m) => (
-              <Tile key={m.sub} client={client} m={m} me={false} />
+              <Tile key={m.sub} client={client} m={m} me={false} onError={setCallError} />
             ))}
           </div>
           {!others.length && <p class="empty">Nobody else here yet. Send someone the room link.</p>}
         </div>
         <ChatPanel client={client} me={mine.sub} />
       </div>
-      {wave && (
+      {ring && (
+        <div class="toast" role="alert">
+          <span>
+            <b>{names.get(ring.from) ?? "Someone"}</b> waved at you: they'd like to talk.
+          </span>
+          <div class="row">
+            <button class="btn primary" onClick={() => void client.answerCall(ring.id, true)}>
+              Talk
+            </button>
+            <button class="btn" onClick={() => void client.answerCall(ring.id, false)}>
+              Not now
+            </button>
+          </div>
+          <span class="stats">A voice call: your microphone, no camera picture.</span>
+        </div>
+      )}
+      {!ring && wave && (
         <div class="toast" role="alert">
           <span>
             <b>{names.get(wave.from) ?? "Someone"}</b> waved at you.
@@ -332,7 +401,7 @@ export function Room({ room, name }: { room: string; name: string }) {
               Not now
             </button>
           </div>
-          <span class="stats">Calls come next: for now, say hi in the chat.</span>
+          <span class="stats">Calls aren't set up on this relay: say hi in the chat.</span>
         </div>
       )}
     </main>

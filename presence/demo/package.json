@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "assets": "sh ../core/scripts/assets.sh public"
+    "assets": "sh ../core/scripts/assets.sh public",
+    "e2e:call": "node e2e/call.mjs"
   },
   "dependencies": {
     "@arugula/presence": "link:../client",
@@ -16,6 +17,7 @@
     "preact": "10.27.2"
   },
   "devDependencies": {
+    "playwright": "1.63.0",
     "typescript": "^7.0.2",
     "vite": "8.3.4"
   }

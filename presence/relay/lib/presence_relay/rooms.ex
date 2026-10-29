@@ -135,6 +135,9 @@ defmodule PresenceRelay.Rooms do
     {members, length(:pg.get_members(@scope, {app, room, sub}))}
   end
 
+  @doc "Whether `sub` has a connection in the room, anywhere in the cluster."
+  def here?(app, room, sub), do: :pg.get_members(@scope, {app, room, sub}) != []
+
   defp prefixed(sub, frame), do: <<byte_size(sub)::8, sub::binary, frame::binary>>
 
   defp stale_ms, do: Application.get_env(:presence_relay, :stale_ms, 10_000)

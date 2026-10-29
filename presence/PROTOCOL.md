@@ -42,7 +42,8 @@ by its name, and `sub` is random.
 ## The room channel
 
 Topic `room:<room>` (the app comes from the token; a token for another
-room is refused). Join payload: `{}`. The reply is `{you: <sub>}`.
+room is refused). Join payload: `{}`. The reply is `{you: <sub>, calls:
+bool}` (`calls`: whether this relay has calls; below).
 
 ### Presence
 
@@ -51,12 +52,14 @@ Phoenix sends them, keyed by `sub`, one meta per connection:
 
 ```json
 { "name": "Jake", "look": {"character": 2, "colour": 0},
-  "mode": "avatar" | "outline" | "none", "away": false, "watching": true }
+  "mode": "avatar" | "outline" | "none", "away": false, "watching": true,
+  "call": null | "<call id>" }
 ```
 
 `mode` is what the member's camera sends (`none`: camera off). `watching`
 is whether any of their pages is showing others (so a sender with nobody
-watching can drop to a frame every few seconds).
+watching can drop to a frame every few seconds). `call` is the call this
+connection is in (the relay sets it; a client can't), for tiles.
 
 ### Client → relay
 
@@ -64,11 +67,12 @@ watching can drop to a frame every few seconds).
 |---|---|---|
 | `frame` | binary, ≤ 32 KiB | the member's newest frame (below). Frames closer than 70 ms to the member's last are dropped. |
 | `state` | `{mode?, look?, away?, watching?}` | updates the member's presence meta |
-| `wave` | `{to: <sub>}` | wave at someone: a hello that asks to talk (calls come later) |
+| `wave` | `{to: <sub>}` | wave at someone: a hello (where the relay has calls, a page asks to talk with `call` instead) |
 | `answer` | `{to: <sub>, yes: bool}` | answer a wave |
 | `say` | `{text}` | a text message for the room: 1–2000 characters after trimming, no control characters but newlines; at most 5 per 5 s per connection. Replies `ok` with the kept message, or `error` `{reason: "empty" \| "too long" \| "control characters" \| "too fast"}` (and it goes nowhere) |
 | `history` | `{before: <id>}` | the 50 messages before that one; replies `ok` `{messages: [...]}`, oldest first |
 | `react` | `{emoji}` | an emoji for the room (a 👍, a 🎉): one grapheme, no ASCII, ≤ 32 bytes, at most one per 250 ms per connection, else dropped |
+| `call`, `call_answer`, `call_leave`, `call_token` | | see "Calls" |
 
 ### Relay → client
 
@@ -81,10 +85,89 @@ watching can drop to a frame every few seconds).
 | `said` | `{id, sub, name, text, at}` | a message, to everyone in the room but the connection that said it (which has it in its reply); `id` only goes up in a room, `at` is Unix ms |
 | `history` | `{messages: [...]}` | on join: the room's last 50 messages, oldest first |
 | `react` | `{from: <sub>, emoji}` | someone's reaction, to everyone else in the room (not stored: a joiner doesn't get old ones) |
+| `call`, `call_cancel`, `call_answer`, `call_join` | | see "Calls" |
 
 Limits: 32 KiB a frame, 70 ms between a member's frames, 64 members a room,
 8 connections a member. Over a limit, the frame is dropped (no error);
 too many members or connections, the join is refused (`{reason}`).
+
+## Calls
+
+A wave that's answered yes becomes a voice call (#318's P7), on LiveKit.
+The relay rings, hears the answer, and hands each party a LiveKit access
+token for one LiveKit room; audio goes between the browsers and LiveKit,
+never through the relay. Audio only for now (video later).
+
+A relay has calls when it has LiveKit's URL and an API key and secret
+(`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`). Without them,
+the join reply says `calls: false`, `call` is refused with "calls aren't
+set up here", and nothing else changes: a page hides its call buttons and
+waves stay waves.
+
+### The flow
+
+1. A asks B to talk: `call {to: B}`. The relay replies `ok {id}` (a new
+   call's id, 16 url-safe characters) and pushes every one of B's
+   connections `call {from: A, id}`.
+2. Any one of B's connections answers: `call_answer {id, yes}` (replies
+   `ok`). B's other connections get `call_cancel {id}`. A's calling
+   connection gets `call_answer {id, from: B, yes}`.
+3. On a yes, the relay pushes A's calling connection and B's answering one
+   each `call_join {id, url, room, token}`: LiveKit's URL, the LiveKit
+   room's name, and a token for that connection alone. Each page joins the
+   LiveKit room with it. Both members' presence metas say `call: id`.
+4. Either leaves with `call_leave {id}` (replies `ok`), or by closing the
+   page; their meta goes back to `call: null`. A page alone in a call (the
+   others left) leaves it too.
+
+A ring nobody answers in 30 s ends: B's connections get `call_cancel {id}`
+and A's gets `call_answer {id, from: B, yes: false, reason: "no answer"}`.
+A gives up a ring before it's answered with `call_leave {id}` (B's get
+`call_cancel`).
+
+**Growing a call.** A connection that's in a call and rings someone rings
+them into that call: the reply carries the call's id, and on a yes only
+the new member gets a `call_join` (the others are already there). A call
+can hold anyone in the room the people in it ring in.
+
+### Client → relay
+
+| event | payload | |
+|---|---|---|
+| `call` | `{to: <sub>}` | ring someone (into your call, if you're in one). Replies `ok` `{id}`, or `error` `{reason: "calls aren't set up here" \| "that's you" \| "not in the room" \| "already in the call" \| "too fast"}`. At most 3 rings per 30 s per connection |
+| `call_answer` | `{id, yes: bool}` | answer a ring this connection was pushed. Replies `ok`, or `error` `{reason: "no such call"}` (never rung here, answered already, or over) |
+| `call_leave` | `{id}` | leave the call, or give up ringing. Replies `ok` |
+| `call_token` | `{id}` | a fresh `{id, url, room, token}` for the call this connection is in (after LiveKit dropped the page), or `error` `{reason: "not in that call"}` |
+
+### Relay → client
+
+| event | payload | |
+|---|---|---|
+| `call` | `{from: <sub>, id}` | someone rings you, to each of your connections |
+| `call_cancel` | `{id}` | a ring you could answer is over: answered on another of your pages, given up, or unanswered |
+| `call_answer` | `{id, from: <sub>, yes, reason?}` | the answer to your ring, to the connection that rang |
+| `call_join` | `{id, url, room, token}` | join this LiveKit room: you're in the call |
+
+### The LiveKit room and token
+
+The LiveKit room is named `<app>:<room>:<call id>`, so two apps (or two
+rooms) never share one. The token is LiveKit's access token
+(docs.livekit.io, "Authentication"): a JWT, HS256, signed with the API
+secret:
+
+| claim | |
+|---|---|
+| `iss` | the API key |
+| `sub` | the member's `sub` (their LiveKit identity) |
+| `name` | the member's name |
+| `nbf`, `exp` | now, and now + 10 minutes. LiveKit checks it on connecting only, and refreshes a connected page's token itself; a page that drops out asks `call_token` |
+| `video` | `{room, roomJoin: true, canPublish: true, canPublishSources: ["microphone"], canPublishData: false, canSubscribe: true}`: this room only, the microphone only |
+
+### Metering
+
+The relay tells each call's life as telemetry events (`[:presence_relay,
+:call, :start | :join | :leave | :stop]`, `:leave` with `duration_ms`),
+all from `PresenceRelay.Calls`; nothing meters them yet.
 
 ## Frames
 

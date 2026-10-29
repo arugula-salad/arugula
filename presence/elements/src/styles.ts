@@ -67,4 +67,16 @@ form.say textarea:focus { outline: none; border-color: var(--accent); }
 form.say .error { font-size: 12px; color: var(--danger); }
 form.say .error:empty { display: none; }
 button.emoji { padding: 4px 7px; font-size: 16px; line-height: 1; background: transparent; }
+button.danger { border-color: color-mix(in srgb, var(--danger) 60%, var(--line)); color: var(--danger); }
+button:disabled { opacity: 0.6; cursor: default; }
+figcaption button.call { padding: 2px 8px; font-size: 12px; }
+.head figcaption button.call { display: none; }
+figcaption button.call[hidden] { display: none; }
+.tile.in-call .tag { color: var(--ok); }
+.tile.speaking { border-color: var(--ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 35%, transparent); }
+.arugula-call { display: grid; gap: 6px; font-size: 13px; }
+.arugula-call[hidden] { display: none; }
+.arugula-call .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.arugula-call .row.in-call { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.arugula-call .what { flex: 1; min-width: 0; }
 `;

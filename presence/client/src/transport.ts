@@ -17,6 +17,17 @@ export interface Member {
   mode: Mode;
   away: boolean;
   watching: boolean;
+  /** The call they're in (PROTOCOL.md "Calls"), if any. */
+  call: string | null;
+}
+
+/** A LiveKit room to join for a call (PROTOCOL.md `call_join`): its URL,
+ * the room's name, and a token for this page alone. */
+export interface CallJoin {
+  id: string;
+  url: string;
+  room: string;
+  token: string;
 }
 
 /** This page's part in its members' meta. */
@@ -55,6 +66,16 @@ export interface TransportEvents {
   said?(m: Message): void;
   /** The room's last messages, on (re)joining. */
   history?(messages: Message[]): void;
+  /** Whether the relay has calls (it has LiveKit keys), on joining. */
+  calls?(on: boolean): void;
+  /** Someone rings you: call `id`. */
+  call?(from: string, id: string): void;
+  /** A ring you could answer is over (answered elsewhere, given up, unanswered). */
+  callCancel?(id: string): void;
+  /** The answer to your ring (`reason` "no answer" when nobody did). */
+  callAnswer?(id: string, from: string, yes: boolean, reason?: string): void;
+  /** Join this LiveKit room: you're in the call. */
+  callJoin?(j: CallJoin): void;
 }
 
 export interface Transport {
@@ -76,4 +97,12 @@ export interface Transport {
   say?(text: string): Promise<Message>;
   /** The messages before `before`, oldest first. */
   history?(before: number): Promise<Message[]>;
+  /** Ring `to` (into your call, if you're in one); resolves with the
+   * call's id, rejects with the reason. */
+  call?(to: string): Promise<{ id: string }>;
+  callAnswer?(id: string, yes: boolean): Promise<void>;
+  /** Leave a call, or give up ringing. */
+  callLeave?(id: string): void;
+  /** A fresh token for the call you're in (after dropping out of it). */
+  callToken?(id: string): Promise<CallJoin>;
 }
