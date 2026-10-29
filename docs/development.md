@@ -437,8 +437,16 @@ systemd with a user manager for the runner (home-cloud's
 `images/gha-runner`, target `systemd`; #735), so the tests that start the
 daemon as a service run as they did on geek. check.yml's `test` and `core`
 set `ARUGULA_REQUIRE_SYSTEMD=1`, which fails those tests instead of
-skipping them if a pod ever comes up without one. Pods ask for 2.5 CPUs and 5 GB and may use 16 GB for the build
-and 8 GB for Docker, and up to eight run at once. Until 2026-10-10 these
+skipping them if a pod ever comes up without one. Pods ask for 2.5 CPUs
+and 3.5 GiB, and up to 24 run at once, on two amd64 nodes with about 85
+GiB between them for runners; a heavy job (a cargo build) uses 5 to 7 GB,
+more than it asks for, so the scheduler doesn't stop in time. On
+2026-10-27 four full runs at once put 23 builds there and the nodes lost
+pods with no logs (#1676). Two full runs is the most that fits, and since
+#1675 main has one at a time (chant's `"build": "newest"`), so it's
+release runs and dispatched branch runs on top of it that can get there.
+`scripts/ci-slot` doesn't help: it counts slots within a pod, not
+across them. Until 2026-10-10 these
 jobs ran on eight host runners on geek, which kept builds warm on its
 disk but held up to 96 GB of a machine that is now also a cluster node.
 
