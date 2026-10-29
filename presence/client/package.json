@@ -16,6 +16,7 @@
   "dependencies": {
     "@arugula/presence-core": "link:../core",
     "@types/phoenix": "1.6.8",
+    "livekit-client": "2.23.0",
     "phoenix": "1.8.16"
   },
   "devDependencies": {

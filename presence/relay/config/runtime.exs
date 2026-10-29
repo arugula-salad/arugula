@@ -39,7 +39,24 @@ if config_env() != :test do
       end
     end)
 
+  # Calls (#318's P7) on LiveKit: LIVEKIT_URL (the wss:// URL pages
+  # connect to), LIVEKIT_API_KEY and LIVEKIT_API_SECRET (what the relay
+  # signs call tokens with). All three, or none: calls off, and the relay
+  # says so to every page.
+  livekit =
+    case Enum.map(~w(LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET), &(System.get_env(&1) || "")) do
+      ["", "", ""] ->
+        nil
+
+      [url, key, secret] when url != "" and key != "" and secret != "" ->
+        %{url: url, key: key, secret: secret}
+
+      _ ->
+        raise "LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET go together: set all three, or none"
+    end
+
   config :presence_relay,
+    livekit: livekit,
     apps: apps,
     demo: System.get_env("DEMO") in ~w(1 true),
     demo_secret: System.get_env("DEMO_SECRET")

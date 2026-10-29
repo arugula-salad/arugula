@@ -1,14 +1,15 @@
 // @arugula/presence-react: arugula.stream for React (../../sdk/API.md).
 // <PresenceRoom> joins a room with connect() and shares it through
 // context; <People>, <CameraControls> and <Avatar> draw into elements of
-// their own with the same code the custom elements use; usePresence()
-// gives the room's members and actions to your components.
+// their own with the same code the custom elements use; <CallControls>
+// is the call bar; usePresence() gives the room's members, calls and
+// actions to your components.
 
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { connect, styled, type ConnectOptions, type Room } from "@arugula/presence-elements/room";
-import { mountCamera, type CameraOptions } from "@arugula/presence-elements/controls";
+import { mountCall, mountCamera, type CameraOptions } from "@arugula/presence-elements/controls";
 import type { AvatarOptions, PeopleOptions } from "@arugula/presence-elements/view";
-import type { Member, Message } from "@arugula/presence";
+import type { Call, Member, Message } from "@arugula/presence";
 import type { ChatOptions } from "@arugula/presence-elements/chat";
 import type { Look } from "@arugula/presence-core/avatar/rig";
 
@@ -81,6 +82,16 @@ export function usePresence() {
     loadEarlier: () => room?.loadEarlier(),
     reactions: room?.client.reactions ?? [],
     answer: (sub: string, yes: boolean) => room?.answer(sub, yes),
+    /** Whether this relay has calls (hide call buttons where not). */
+    calls: room?.calls ?? false,
+    /** Who's ringing you, until answered or over. */
+    rings: room?.rings ?? [],
+    /** Your call (ringing, joining, on; who's in it, muted), or null. */
+    inCall: room?.inCall ?? (null as Call | null),
+    call: (sub: string) => (room ? room.call(sub) : Promise.reject(new Error("not in the room yet"))),
+    answerCall: (id: string, yes: boolean) => room?.answerCall(id, yes),
+    leaveCall: () => room?.leaveCall(),
+    setMuted: (muted: boolean) => room?.setMuted(muted),
     setLook: (look: Look) => room?.setLook(look),
     camera: {
       on: room?.camera.on ?? false,
@@ -99,8 +110,8 @@ function useDrawn(draw: (room: Room, el: HTMLDivElement) => () => void, deps: un
 }
 
 /** A tile per person in the room. */
-export function People({ size, self, className }: PeopleOptions & { className?: string }) {
-  const ref = useDrawn((room, el) => room.mount(el, { size, self }), [size, self]);
+export function People({ size, self, calls, className }: PeopleOptions & { className?: string }) {
+  const ref = useDrawn((room, el) => room.mount(el, { size, self, calls }), [size, self, calls]);
   return <div ref={ref} className={className} />;
 }
 
@@ -117,10 +128,17 @@ export function CameraControls({ controls, className }: CameraOptions & { classN
   return <div ref={ref} className={className} />;
 }
 
+/** The call bar: a ring to answer, who you're calling, mute and leave
+ * (nothing while there's no call). */
+export function CallControls({ className }: { className?: string }) {
+  const ref = useDrawn((room, el) => styled(el, (root) => mountCall(room, root)), []);
+  return <div ref={ref} className={className} />;
+}
+
 /** The room's text: messages, earlier ones a click away, and an input. */
 export function Chat({ placeholder, className, style }: ChatOptions & { className?: string; style?: CSSProperties }) {
   const ref = useDrawn((room, el) => room.chat(el, { placeholder }), [placeholder]);
   return <div ref={ref} className={className} style={{ height: 360, ...style }} />;
 }
 
-export type { Member, Message, Look, Room };
+export type { Member, Message, Look, Room, Call };

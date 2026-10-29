@@ -70,3 +70,27 @@ test("a room's messages: history and said fire message once each, and say sends"
   assert.deepEqual(room.messages.map((m) => m.id), [1, 2, 9]);
   room.leave();
 });
+
+test("a room's calls: whether the relay has them, rings and the call as events, call(sub) rings", async () => {
+  const t = fake();
+  const rung = [];
+  t.call = async (to) => (rung.push(to), { id: "c1" });
+  t.callAnswer = async () => {};
+  t.callLeave = (id) => rung.push(`left ${id}`);
+  const room = new Room({ room: "r", token: token({ sub: "me" }), relay: "wss://relay.example/socket", transport: t });
+  const seen = [];
+  room.on("ring", (from, id) => seen.push(["ring", from, id]));
+  room.on("call", (c) => seen.push(["call", c && c.state]));
+  t.on.live("on");
+  assert.equal(room.calls, false);
+  t.on.calls(true);
+  assert.equal(room.calls, true);
+  t.on.call("b", "c7");
+  t.on.call("b", "c7");
+  assert.equal(await room.call("b"), "c1");
+  assert.deepEqual(rung, ["b"]);
+  room.leaveCall();
+  assert.deepEqual(rung, ["b", "left c1"]);
+  assert.deepEqual(seen, [["ring", "b", "c7"], ["call", "ringing"], ["call", null]]);
+  room.leave();
+});

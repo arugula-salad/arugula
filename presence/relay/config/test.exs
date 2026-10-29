@@ -13,7 +13,11 @@ config :presence_relay,
   meet_index_html: Path.expand("../test/support/meet.html", __DIR__),
   # Quick sweeps so the stale-frame test doesn't wait 10 s.
   sweep_ms: 50,
-  stale_ms: 300
+  stale_ms: 300,
+  # Calls on, against no real LiveKit (tests read the tokens); rings that
+  # give up quickly.
+  livekit: %{url: "wss://livekit.test", key: "test-key", secret: "test-livekit-secret"},
+  ring_ms: 300
 
 config :presence_relay, PresenceRelay.Repo,
   url:
