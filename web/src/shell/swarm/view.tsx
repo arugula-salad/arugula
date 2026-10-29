@@ -24,6 +24,7 @@ import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
 import { diffLine, fleetTarget, openInEditor, wholePath } from "../open-in-editor";
 import { GateWhy } from "../ui/gate-why";
+import { NvimIcon } from "../ui/shell/icons";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { finished, needsYou, NEEDS_YOU } from "../../shared/needs-you";
 import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
@@ -550,6 +551,11 @@ export function SwarmView({
       {peek && (
         <div class="swarm-peek" style={{ left: `${Math.min(peek.x + 16, innerWidth - 700)}px`, top: `${Math.min(peek.y + 16, innerHeight - 160)}px` }}>
           <div class="ph">
+            {(byKey(peek.key)?.info.app === "nvim" || byKey(peek.key)?.info.editor?.app === "nvim") && (
+              <span class="swarm-peek-app" data-swarm-nvim role="img" aria-label="nvim" title="nvim">
+                <NvimIcon size={12} />
+              </span>
+            )}
             <b>{byKey(peek.key) ? `%${byKey(peek.key)!.id}  ${editorAt(byKey(peek.key)!) ?? byKey(peek.key)!.info.current?.text ?? byKey(peek.key)!.info.command ?? ""}` : ""}</b>
             <span>{byKey(peek.key) ? `${byKey(peek.key)!.host} · ${groupOf(byKey(peek.key)!, by)}` : ""}</span>
           </div>

@@ -23,7 +23,9 @@
 //!
 //! The daemon sends `welcome` (the id it got, its release, and the pane
 //! when it's a terminal's editor), `followers`, `resend` (a new
-//! follower needs the whole file again) and `continue` (the debugger).
+//! follower needs the whole file again), `continue` (the debugger) and,
+//! to an nvim editor block's plugin, `theme` (the page's colors, #1734,
+//! `nvim_block.rs`).
 //!
 //! Claude Code's proposed edits (#1732, `ide/nvim.rs`), to an editor in a
 //! terminal whose hello says `diffs: true` (arugula.nvim), when Claude Code
@@ -573,7 +575,11 @@ where
             super::nvim::plugin_attached(p);
             link.in_terminal();
             match app.mux.api(|r| Api::EditorAttach(p, handle.clone(), true, r)).await {
-                Some(Ok(())) => Some(p),
+                Some(Ok(())) => {
+                    // An nvim block's plugin gets the page's colors (#1734).
+                    super::nvim_block::joined(&app.mux, p, &link);
+                    Some(p)
+                }
                 r => {
                     super::nvim::plugin_left(p);
                     debug!(pane = p, error = ?r, "an editor in a terminal joins as itself");
@@ -629,6 +635,7 @@ where
         (None, Some(p)) => {
             app.mux.send(crate::mux::Cmd::Api(Api::EditorDetach(p, handle)));
             super::nvim::plugin_left(p);
+            super::nvim_block::left(p, &link);
         }
         (None, None) => app.mux.send(crate::mux::Cmd::Api(Api::EditorLeave(id))),
     }

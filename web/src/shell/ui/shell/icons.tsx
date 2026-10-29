@@ -129,3 +129,14 @@ export const TabsIcon = ({ size = 12 }: { size?: number }) => (
     <path d="M4 10h16M9 6v4" />
   </Svg>
 );
+
+/** nvim's mark (#1734): two uprights and the diagonal between them, as
+ * a stroke. The pane header draws it for an nvim editor block, and the
+ * swarm's preview beside an nvim's file. */
+export const NVIM_GLYPH = "M6 20V5l12 14V4M6 5l-2 2M18 19l2-2";
+
+export const NvimIcon = ({ size = 14 }: { size?: number }) => (
+  <Svg size={size}>
+    <path d={NVIM_GLYPH} />
+  </Svg>
+);

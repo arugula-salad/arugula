@@ -2715,11 +2715,41 @@ export type NotifySet = { channels?: NotifyLevel, dms?: NotifyLevel, threads?: N
  */
 snooze_until?: number, tz?: string, quiet?: Array<QuietHours>, all_notices?: boolean, };
 
+export type NvimBlockOpened = { pane: number, };
+
+/**
+ * `POST /api/panes/N/nvim-block` (#1734): "New editor block" with nvim,
+ * beside pane N: a terminal typed as an editor, running nvim with
+ * arugula.nvim and the page's colors, in a folder or at a file and line.
+ */
+export type NvimBlockRequest = { 
+/**
+ * The folder it opens in (none: the file's, else pane N's).
+ */
+dir?: string | null, 
+/**
+ * A file to open: whole, or relative to the folder.
+ */
+file?: string | null, 
+/**
+ * Its line, from 1.
+ */
+line?: number | null, 
+/**
+ * On this host even when pane N's tab is a machine's (a VM tab).
+ */
+local?: boolean | null, };
+
 /**
  * `POST /api/panes/N/nvim/help` (#1735): the `:help` tag to open in the
  * pane's nvim, exactly as `:help` takes it (`gv`, `CTRL-O`, `]<Space>`).
  */
 export type NvimHelpRequest = { tag: string, };
+
+/**
+ * One highlight group: colors as `#rrggbb`, or a link to another group.
+ */
+export type NvimHl = { fg?: string | null, bg?: string | null, sp?: string | null, link?: string | null, bold?: boolean | null, italic?: boolean | null, underline?: boolean | null, undercurl?: boolean | null, reverse?: boolean | null, };
 
 /**
  * `POST /api/panes/N/nvim` (#1731): Open in editor, with the Editor
@@ -2792,6 +2822,32 @@ joined: boolean, };
  * it deleted. A copy without Arugula's marker file is never touched.
  */
 export type NvimPluginRemoved = { removed: Array<string>, };
+
+/**
+ * `POST /api/nvim/theme` (#1734): the page's palette as nvim's colors,
+ * for every nvim block on this machine, now and when one starts. The
+ * latest wins, as with an editor block's VS Code colors.
+ */
+export type NvimTheme = { 
+/**
+ * `background` is `light`.
+ */
+light: boolean, 
+/**
+ * Highlight groups by name (`Normal`, `@string`), as `nvim_set_hl`
+ * takes them.
+ */
+groups: { [key in string]: NvimHl }, 
+/**
+ * `g:terminal_color_0` to `_15`.
+ */
+terminal: Array<string>, };
+
+export type NvimThemed = { 
+/**
+ * The nvim blocks it went to now (the rest get it when they start).
+ */
+blocks: number, };
 
 /**
  * Which nvim [`NvimOpened`] went to.
@@ -3030,7 +3086,13 @@ started_by?: StartedBy | null,
  * An editor's own report (M28): an editor block's, or someone's
  * editor elsewhere (VS Code, Cursor, nvim) that joined the swarm.
  */
-editor?: EditorInfo | null, };
+editor?: EditorInfo | null, 
+/**
+ * A terminal that's an editor block (#1734): the editor it was made to
+ * run (`nvim`). It's an editor whatever its foreground is, and keeps
+ * this across restarts.
+ */
+app?: string | null, };
 
 export type PaneOp = { "op": "set_policy", policy: Policy, } | { "op": "purge" } | { "op": "set_integration", on: boolean, } | { "op": "attention", state: Attention, } | { "op": "take_control" } | { "op": "request_control" } | { "op": "give_control", to: string, } | { "op": "release_control" } | { "op": "set_pair", on: boolean, } | { "op": "request_trust" } | { "op": "grant_trust", to: string, minutes: number, } | { "op": "revoke_trust", to: string, } | { "op": "set_private", on: boolean, };
 
@@ -4471,6 +4533,8 @@ export const OPS = {
   "mcp_tokens.list": { method: "GET", path: "/api/mcp/tokens" },
   "notify.get": { method: "GET", path: "/api/notify" },
   "notify.set": { method: "POST", path: "/api/notify" },
+  "nvim_block.open": { method: "POST", path: "/api/panes/{id}/nvim-block" },
+  "nvim_block.theme": { method: "POST", path: "/api/nvim/theme" },
   "nvim_plugin.get": { method: "GET", path: "/api/nvim-plugin" },
   "nvim_plugin.install": { method: "POST", path: "/api/panes/{id}/nvim-plugin" },
   "nvim_plugin.remove": { method: "DELETE", path: "/api/nvim-plugin" },

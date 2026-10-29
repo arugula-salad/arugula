@@ -1,8 +1,10 @@
 //! `pane.nvim_open` (#1731): Open in editor when the Editor preference is
 //! nvim. The file goes to the nvim already running in the pane, else to
 //! one in another pane of its tab (over nvim's own RPC socket, #1730's
-//! `editors::open_in_pane`), else to a new pane beside it running
-//! `nvim +LINE FILE` in the file's directory, on the pane's machine
+//! `editors::open_in_pane`), else to a new nvim editor block beside it
+//! (#1734, `editors::nvim_block`: `nvim +LINE FILE` in the file's
+//! directory, on the pane's machine, with arugula.nvim and the page's
+//! colors). A build without the editor runs plain nvim there instead
 //! (`run --split --join`). HTTP only; the page shows the pane it answers.
 
 use std::path::{Path, PathBuf};
@@ -44,6 +46,21 @@ impl Handle for PaneNvimOpen {
             if found {
                 return Ok(NvimOpened { pane, how });
             }
+        }
+        // None running: an nvim editor block beside it (#1734), with
+        // arugula.nvim and the page's colors. A build without the editor
+        // runs plain nvim there instead.
+        if crate::editors::joinable() {
+            let at = crate::editors::NvimBlockAt {
+                from: id,
+                file: file.as_ref().map(|f| f.to_string_lossy().into_owned()),
+                line: req.line,
+                ..Default::default()
+            };
+            return match crate::editors::nvim_block(mux, at).await {
+                Ok(pane) => Ok(NvimOpened { pane, how: NvimWhere::New }),
+                Err(e) => Err(OpError::Status(StatusCode::BAD_REQUEST, e)),
+            };
         }
         let run = new_pane(me, file.as_deref(), req.line);
         match mux.api(|r| Api::Run(run, r)).await {

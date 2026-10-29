@@ -53,7 +53,8 @@ impl editors::Editors for Editors {
 
     fn routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
         use arugula_proto::op::ops::{
-            IdeGet, IdeMention, IdeSet, NvimPluginGet, NvimPluginInstall, NvimPluginRemove, PaneNvimHelp,
+            IdeGet, IdeMention, IdeSet, NvimBlockOpen, NvimBlockTheme, NvimPluginGet, NvimPluginInstall,
+            NvimPluginRemove, PaneNvimHelp,
         };
         use arugulad_base::ops::OpRoutes;
         r.route("/api/editors/vsix", axum::routing::get(editor::vsix::download))
@@ -64,6 +65,8 @@ impl editors::Editors for Editors {
             .op_of::<NvimPluginGet, Editor>()
             .op_of::<NvimPluginRemove, Editor>()
             .op_of::<PaneNvimHelp, Editor>()
+            .op_of::<NvimBlockOpen, Editor>()
+            .op_of::<NvimBlockTheme, Editor>()
     }
 
     fn local_routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
@@ -75,8 +78,9 @@ impl editors::Editors for Editors {
     }
 
     fn watch(&self, mux: MuxHandle) {
-        editor::nvim::watch(mux);
+        editor::nvim::watch(mux.clone());
         editor::nvim_plugin::refresh_at_start();
+        editor::nvim_block::watch(mux);
     }
 
     fn open_in_pane(
@@ -88,6 +92,12 @@ impl editors::Editors for Editors {
     ) -> BoxFuture<'static, Result<(), String>> {
         let (mux, file) = (mux.clone(), file.to_owned());
         Box::pin(async move { editor::nvim::open_in_pane(&mux, pane, &file, line).await })
+    }
+
+    fn nvim_block(&self, mux: &MuxHandle, at: editors::NvimBlockAt) -> BoxFuture<'static, Result<PaneId, String>> {
+        let mux = mux.clone();
+        let at = editor::nvim_block::At { from: at.from, dir: at.dir, file: at.file, line: at.line, local: at.local };
+        Box::pin(async move { editor::nvim_block::open(&mux, at).await })
     }
 
     fn start_ide(

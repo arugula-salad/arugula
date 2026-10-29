@@ -1156,6 +1156,11 @@ pub struct PaneInfo {
     /// editor elsewhere (VS Code, Cursor, nvim) that joined the swarm.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor: Option<EditorInfo>,
+    /// A terminal that's an editor block (#1734): the editor it was made to
+    /// run (`nvim`). It's an editor whatever its foreground is, and keeps
+    /// this across restarts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
 }
 
 /// What an editor says about itself in summaries (M28, S17's schema):

@@ -286,6 +286,28 @@ impl Daemon {
                     self.touch(pane);
                 }
             }
+            Api::EditorApp(pane, app) => {
+                if self.panes.contains_key(&pane) {
+                    self.meta.entry(pane).or_default().app = Some(app);
+                    self.touch(pane);
+                    self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
+                }
+            }
+            Api::SwapPolicy(pane, was, now, reply) => {
+                let m = self.meta.get_mut(&pane).filter(|m| m.policy == was && self.panes.contains_key(&pane));
+                let swapped = match m {
+                    Some(m) => {
+                        (m.policy, m.policy_set) = (now, true);
+                        true
+                    }
+                    None => false,
+                };
+                if swapped {
+                    self.touch(pane);
+                    self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
+                }
+                let _ = reply.send(swapped);
+            }
             Api::GuestBehind(pane, reply) => {
                 let _ = reply.send(self.guest_behind(pane));
             }

@@ -5,12 +5,16 @@
 // split, the agent dialog, an editor, changes, a port or web page block,
 // or the pull request, issue and conversation openers of *Open beside*);
 // a block opens beside the active pane and, placed below, is moved there.
+// An editor is VS Code or nvim (#1734), the Editor preference's picked
+// first: nvim is a terminal typed as an editor (`nvim_block.open`).
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { paneIds, type Client } from "../../client";
 import { newRemote, openIssue, openPr, remoteHosts } from "../../blocks";
 import { directory } from "../../hosts";
-import type { Node, OpenRequest, PaneId, TabView } from "../../../shared/proto";
+import type { Node, NvimBlockOpened, NvimBlockRequest, OpenRequest, PaneId, TabView } from "../../../shared/proto";
+import { editorPref } from "../../open-in-editor";
+import { OPS, opPath } from "../../ops";
 import { startAgent } from "../agent-dialog";
 import { pickConversation } from "../conversations";
 import { useEscape } from "../keys";
@@ -70,6 +74,8 @@ export function useAddPane(): boolean {
 
 type Kind = "shell" | "agent" | "chat" | "editor" | "changes" | "port" | "pr" | "issue" | "web" | "conversation";
 type Place = "right" | "down";
+/** Which editor an Editor pane is (#1734). */
+type EditorApp = "vscode" | "nvim";
 /** Where it runs: this host, the tab's machine (a VM tab), or another host
  * in the home daemon's list (a shell only). */
 type Where = { kind: "here" } | { kind: "machine"; id: number; name: string } | { kind: "host"; name: string };
@@ -106,6 +112,9 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
 
   const [kind, setKind] = useState<Kind>("shell");
   const [place, setPlace] = useState<Place>("right");
+  // The Editor preference's, for everyone (#1734): VS Code unless it's
+  // nvim, or this page can't show VS Code's site.
+  const [editorApp, setEditorApp] = useState<EditorApp>(() => (editorPref() === "nvim" || !client.showsBlocks() ? "nvim" : "vscode"));
   const [where, setWhere] = useState<Where>(() => (tabMachine ? { kind: "machine", id: tabMachine.id, name: tabMachine.name ?? tabMachine.sprite } : { kind: "here" }));
   const [dir, setDir] = useState(() => (anchor === undefined ? "" : (client.cwd(anchor) ?? "")));
   const [port, setPort] = useState("");
@@ -125,7 +134,8 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
     if (k === "changes" && !owner) return "Changes are the machine owner's";
     if ((k === "pr" || k === "issue") && !owner) return "Pull requests and issues open with the machine owner's login";
     if (k === "conversation" && !owner) return "Conversations are the machine owner's";
-    if ((k === "editor" || k === "port") && !client.showsBlocks()) return "This page can't show block sites";
+    // nvim needs no site of its own, so an editor still opens.
+    if (k === "port" && !client.showsBlocks()) return "This page can't show block sites";
     return null;
   };
   const wheres: Where[] = [
@@ -151,12 +161,19 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   const whereName = (w: Where) => (w.kind === "here" ? here : w.kind === "machine" ? `VM ${w.name}` : w.name);
   const anchorName = anchor === undefined ? "" : `pane ${ordinal(tab, anchor)} (${client.title(anchor) || client.info(anchor)?.command || `%${anchor}`})`;
   const label = KINDS.find((k) => k.kind === kind)!.label;
-  const what = kind === "port" ? `Port ${portMatch ? portMatch[1] : "…"}` : label;
+  const what = kind === "port" ? `Port ${portMatch ? portMatch[1] : "…"}` : kind === "editor" ? (editorApp === "nvim" ? "nvim" : "VS Code") : label;
   const destination = `${what} on ${whereName(chosenWhere)}${NO_DIR.includes(kind) ? "" : ` in ${theDir || "its home directory"}`}, ${place === "right" ? "right of" : "below"} ${anchorName}`;
   const refusal =
     anchor === undefined
       ? "No pane to put it beside"
-      : (kindRefusal(kind) ?? (kind === "port" && !portMatch ? "Type a port number" : kind === "web" && !url.trim() ? "Type an address" : null));
+      : (kindRefusal(kind) ??
+        (kind === "port" && !portMatch
+          ? "Type a port number"
+          : kind === "web" && !url.trim()
+            ? "Type an address"
+            : kind === "editor" && editorApp === "vscode" && !client.showsBlocks()
+              ? "This page can't show block sites: pick nvim"
+              : null));
 
   /** Once the new pane shows in this tab: move it below if it was opened
    * beside, give it the keys, and close. */
@@ -219,6 +236,19 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
       return;
     }
     setBusy(true);
+    if (kind === "editor" && editorApp === "nvim") {
+      // A terminal running nvim, typed as an editor, where the drawer says.
+      const body: NvimBlockRequest = { dir: theDir || null, file: null, line: null, local: tabMachine ? chosenWhere.kind === "here" : null };
+      try {
+        const res = await client.request(OPS["nvim_block.open"].method, opPath("nvim_block.open", { id: anchor }), body);
+        const v = await res.json<Partial<NvimBlockOpened> & { error?: string }>().catch(() => null);
+        if (!res.ok || v?.pane === undefined) return failed(v?.error ?? `couldn't open nvim (${res.status})`);
+      } catch {
+        return failed("couldn't open nvim");
+      }
+      settle(before, place === "down");
+      return;
+    }
     if (kind === "shell") {
       if (chosenWhere.kind === "host") {
         const was = client.error;
@@ -292,6 +322,34 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
           ))}
         </div>
       </div>
+      {kind === "editor" && (
+        <div class="add-pane-row">
+          <span class="add-pane-label" id="add-pane-editor">
+            Editor
+          </span>
+          <div class="add-pane-seg add-pane-editors" role="radiogroup" aria-labelledby="add-pane-editor">
+            {(
+              [
+                ["vscode", "VS Code", "In the browser, on its own site"],
+                ["nvim", "nvim", "In a terminal, with arugula.nvim"],
+              ] as const
+            ).map(([app, name, words]) => (
+              <button
+                key={app}
+                role="radio"
+                aria-checked={editorApp === app}
+                data-editor-app={app}
+                aria-label={name}
+                disabled={app === "vscode" && !client.showsBlocks()}
+                title={app === "vscode" && !client.showsBlocks() ? "This page can't show block sites" : undefined}
+                onClick={() => setEditorApp(app)}
+              >
+                <span><strong>{name}</strong><small>{words}</small></span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {kind === "port" && (
         <label class="add-pane-row">
           <span class="add-pane-label">Port</span>
