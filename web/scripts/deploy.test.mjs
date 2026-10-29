@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { actorOf, approvalBody, checkPlan, eventCanonical, parseOperation, sha256Hex, signApproval } from "../src/shell/e2e/deploy.ts";
 import { platformTap } from "../src/shell/tap.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
+import { deployTitle, waitedText } from "../src/shared/deploys.ts";
 
 const f = JSON.parse(readFileSync(new URL("./deploy.fixture.json", import.meta.url), "utf8"));
 const hexOf = (s) => Uint8Array.from(s.match(/../g).map((b) => parseInt(b, 16)));
@@ -88,4 +89,25 @@ test("a plan's text is shown only when it's the plan signed", async () => {
   assert.equal(await checkPlan(text.replace("acme-web\n", "acme-evil\n"), digest), "its plan's text isn't the plan you'd sign");
   assert.equal(await checkPlan(null, digest), "the platform didn't show its plan");
   assert.equal(await checkPlan("x\n", await sha256Hex("x\n")), "its plan's text can't be read");
+});
+
+// #333: the pages and the push say the same words (crates/platform/src/
+// drivers/titles_tests.rs has the same cases), a release's version is
+// always "expected", and without facts it's today's "Deploy to …".
+test("a deploy is titled by what it deploys, and a release's version is expected", () => {
+  const ref = "b1faaa04c0ffee00b1faaa04c0ffee00b1faaa04";
+  const d = (driver, subject, expected_version) => ({ environment: { name: "production", driver }, source: { ref }, subject, expected_version });
+  assert.equal(deployTitle(d("arugula-release", "Docs: the Arugula look", "0.63.9")), "Release 0.63.9 (expected) · b1faaa04 · Docs: the Arugula look");
+  assert.equal(deployTitle(d("arugula-release", null, "0.63.9")), "Release 0.63.9 (expected) · b1faaa04");
+  assert.equal(deployTitle(d("arugula-release", "Fix", null)), "Deploy b1faaa04 to production · Fix");
+  assert.equal(deployTitle(d("chant-fly", "Fix", "9.9.9")), "Deploy b1faaa04 to production · Fix");
+  assert.equal(deployTitle(d("chant-fly", null, null)), "Deploy to production");
+});
+
+test("how long a deploy has waited", () => {
+  const now = 1_700_000_000_000;
+  assert.deepEqual(
+    [20_000, 12 * 60_000, 3 * 3_600_000 + 5 * 60_000, 2 * 86_400_000].map((ms) => waitedText(now - ms, now)),
+    ["under a minute", "12m", "3h", "2d"],
+  );
 });

@@ -477,7 +477,7 @@ async fn an_agent_on_the_owners_own_machine_never_approves() {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert!(hub.pushes().iter().any(|(to, m, _)| to == "a"
         && m["deploy"] == json!(id)
-        && m["body"].as_str().unwrap().contains("an agent on geek-box")));
+        && m["body"].as_str().unwrap().contains("'s agent on geek-box")));
 
     let good = signed(&a.phone, "a", &id, &op, Decision::Once);
     let approve = format!("/api/deploys/{id}/approve");
@@ -962,7 +962,14 @@ fn recorded_only_over_the_operation_and_never_stale() {
     let plan = |at| {
         let d = db
             .plan_deploy(
-                &NewDeploy { environment: &env.id, source: &source, plan_digest: &digest("p"), roll_back: None },
+                &NewDeploy {
+                    environment: &env.id,
+                    source: &source,
+                    plan_digest: &digest("p"),
+                    roll_back: None,
+                    subject: None,
+                    expected_version: None,
+                },
                 &Actor::person("a"),
                 at,
             )

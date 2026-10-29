@@ -53,6 +53,7 @@ pub mod chant_fly;
 pub mod fake;
 pub mod mint;
 pub mod planter;
+pub mod titles;
 
 use arugula_e2e::drivers::{RollBack, Settings};
 use serde_json::{Map, Value};
@@ -277,3 +278,5 @@ pub fn names() -> Vec<&'static str> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod titles_tests;

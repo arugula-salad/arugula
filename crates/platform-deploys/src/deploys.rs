@@ -190,6 +190,11 @@ fn environment_json(e: &Environment) -> Value {
     })
 }
 
+/// When approval was last asked for (#333): its newest `requested` event.
+fn requested_at(events: &[crate::db::deploys::Event]) -> Option<u64> {
+    events.iter().rev().find(|e| e.kind == EventKind::Requested.as_str()).map(|e| e.at)
+}
+
 /// A deploy as the routes answer it: with its environment, project,
 /// operation (the exact bytes an owner's device signs, and their hash),
 /// approvals and log. `may_approve`: whether the reader is an owner and
@@ -312,8 +317,11 @@ pub(crate) async fn deploy_json(
         "planned_by": d.planned_by,
         "planned_by_name": name(&d.planned_by),
         "agent": agent,
+        "subject": d.subject,
+        "expected_version": d.expected_version,
         "created_at": d.created_at,
         "updated_at": d.updated_at,
+        "requested_at": requested_at(&history),
         "operation": { "body": op.body(), "hash": op.hash() },
         "planned_event": planned_event,
         "stale": stale,
@@ -569,7 +577,18 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
             "that plan isn't the environment's driver's plan for this source: leave it out, and the platform makes it",
         ));
     }
-    let new = NewDeploy { environment: &env.id, source: &source, plan_digest: &plan, roll_back: roll_back.as_ref() };
+    // What the deploy is, in words (#333): read once, best effort, and kept
+    // beside it. Not in the plan: that stays what the commit and the
+    // settings make, or an approval wouldn't check.
+    let facts = crate::drivers::titles::read(app, &env, &source).await;
+    let new = NewDeploy {
+        environment: &env.id,
+        source: &source,
+        plan_digest: &plan,
+        roll_back: roll_back.as_ref(),
+        subject: facts.subject.as_deref(),
+        expected_version: facts.expected_version.as_deref(),
+    };
     let d = app
         .db
         .plan_deploy(&new, by, now_ms())
@@ -626,28 +645,42 @@ async fn push_owners(app: &Platform, by: &Actor, d: &Deploy, env: &Environment, 
         Ok(to) => to,
         Err(e) => return warn!(deploy = %d.id, error = format!("{e:#}"), "deploy: the project's owners"),
     };
+    // Who asked, as the page says it (`plannerText`): the person's name, or
+    // "<owner>'s agent on <machine>" (#333).
+    let owner = match by.account() {
+        Some(a) => crate::chat::name_of(app, a).await.ok().filter(|n| !n.is_empty()),
+        None => None,
+    };
+    let owner = owner.as_deref().unwrap_or("someone");
     let asked = match by {
         // An agent with no machine (M230): its token's name, said as a
         // token's, so it can't read as a machine's, in the page's words
         // (UI audit #192).
-        Actor::Agent { account, machine } if crate::db::projects::subject_kind(machine) == "agent" => {
+        Actor::Agent { machine, .. } if crate::db::projects::subject_kind(machine) == "agent" => {
             let token = app.db.agent_token(machine).ok().flatten().map_or_else(|| machine.clone(), |t| t.name);
-            let owner = crate::chat::name_of(app, account).await.ok().filter(|n| !n.is_empty());
-            crate::grants::agent_label(owner.as_deref().unwrap_or("someone"), machine, &token)
+            crate::grants::agent_label(owner, machine, &token)
         }
         Actor::Agent { machine, .. } => {
             let name = crate::grants::agent_names(app, std::slice::from_ref(machine))
                 .await
                 .ok()
                 .and_then(|mut m| m.remove(machine));
-            format!("an agent on {}", name.map_or_else(|| machine.clone(), |d| d.name))
+            crate::grants::agent_label(owner, machine, &name.map_or_else(|| machine.clone(), |d| d.name))
         }
+        Actor::Person(_) => owner.to_owned(),
         _ => "someone".to_owned(),
     };
     let short = d.source.reference.chars().take(12).collect::<String>();
+    // With no facts read, today's words.
+    let title = if d.subject.is_none() && d.expected_version.is_none() {
+        format!("Approve a deploy to {}?", env.name)
+    } else {
+        let t = crate::drivers::titles::title(env, &d.source, d.subject.as_deref(), d.expected_version.as_deref());
+        format!("Approve {t}?")
+    };
     let msg = json!({
         "deploy": d.id,
-        "title": format!("Approve a deploy to {}?", env.name),
+        "title": title,
         "body": format!("{}: {} {short} from {}, asked by {asked}", p.name, d.source.kind.as_str(), d.source.place),
         "tag": format!("deploy-{}", d.id),
         "control": true,
@@ -720,8 +753,11 @@ fn summary_json(
         "planned_by": d.planned_by,
         "planned_by_name": name(&d.planned_by),
         "agent": d.planned_by_agent.as_ref().map(|m| json!({ "machine": m, "machine_name": machine_name(m) })),
+        "subject": d.subject,
+        "expected_version": d.expected_version,
         "created_at": d.created_at,
         "updated_at": d.updated_at,
+        "requested_at": requested_at(events),
         "planned_at": at(&[K::Planned]),
         "decided_at": at(&[K::Approved, K::Denied]),
         "finished_at": at(&[K::Succeeded, K::Failed, K::Denied, K::Canceled, K::Expired, K::Staled]),

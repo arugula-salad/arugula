@@ -466,6 +466,13 @@ pub struct Deploy {
     pub planned_by: String,
     /// The machine whose agent planned it.
     pub planned_by_agent: Option<String>,
+    /// The commit's first line, read once when it was planned (#333); not
+    /// signed, so only ever shown as the platform's reading. `None` for an
+    /// artifact, or when GitHub didn't answer.
+    pub subject: Option<String>,
+    /// The version an arugula-release run is expected to tag, worked out
+    /// when it was planned (#333); a reading, not a promise.
+    pub expected_version: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -936,11 +943,15 @@ pub struct NewDeploy<'a> {
     /// ran, kept in the `planned` event (so the approval, over that event's
     /// hash, covers it too).
     pub roll_back: Option<&'a arugula_e2e::drivers::RollBack>,
+    /// What the platform read of the source when it planned it (#333),
+    /// kept beside the deploy and in none of its signed bytes.
+    pub subject: Option<&'a str>,
+    pub expected_version: Option<&'a str>,
 }
 
 const ENV_COLS: &str = "id, project_id, name, driver, secret_names, created_at, updated_at, settings";
 pub(super) const DEPLOY_COLS: &str = "id, environment_id, source_kind, source_ref, source_where, plan_digest, state, planned_seq, \
-                           run_id, planned_by, planned_by_agent, created_at, updated_at";
+                           run_id, planned_by, planned_by_agent, subject, expected_version, created_at, updated_at";
 pub(super) const EVENT_COLS: &str = "environment_id, seq, deploy_id, kind, actor, at, detail, prev_hash, hash";
 
 fn environment_row(r: &Row) -> Result<Environment> {
@@ -973,8 +984,10 @@ pub(super) fn deploy_row(r: &Row) -> Result<Deploy> {
         run: r.get(8)?,
         planned_by: r.get(9)?,
         planned_by_agent: r.get(10)?,
-        created_at: r.get(11)?,
-        updated_at: r.get(12)?,
+        subject: r.get(11)?,
+        expected_version: r.get(12)?,
+        created_at: r.get(13)?,
+        updated_at: r.get(14)?,
     })
 }
 
@@ -1496,8 +1509,8 @@ impl Db {
         let d = tx.query_row(
             &format!(
                 "INSERT INTO deploys (id, environment_id, source_kind, source_ref, source_where, plan_digest, state,
-                     planned_seq, planned_by, planned_by_agent, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'planned', ?7, ?8, ?9, ?10, ?10) RETURNING {DEPLOY_COLS}"
+                     planned_seq, planned_by, planned_by_agent, subject, expected_version, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'planned', ?7, ?8, ?9, ?10, ?11, ?12, ?12) RETURNING {DEPLOY_COLS}"
             ),
             params![
                 id,
@@ -1509,6 +1522,8 @@ impl Db {
                 e.seq,
                 account,
                 agent,
+                new.subject,
+                new.expected_version,
                 at
             ],
             deploy_row,

@@ -125,6 +125,10 @@ export interface DeploySummary {
   planned_by: string;
   planned_by_name: string;
   agent: { machine: string; machine_name: string } | null;
+  /** What the platform read when it planned it (#333): null if it didn't. */
+  subject?: string | null;
+  expected_version?: string | null;
+  requested_at?: number | null;
   created_at: number;
   planned_at: number | null;
   /** When it was approved or denied. */
@@ -153,6 +157,14 @@ export function historyPath(project: string, environment?: string, limit?: numbe
 
 /** When a deploy last moved: it ended, it was decided, or it was planned. */
 export const lastMoved = (d: Pick<DeploySummary, "finished_at" | "decided_at" | "created_at">) => d.finished_at ?? d.decided_at ?? d.created_at;
+
+/** What a history row says beside the ref (#333): a release's version,
+ * always as expected (an applied one too: the real tag isn't read), then
+ * the commit's subject. Empty when the platform read neither. */
+export function rowNote(d: Pick<DeploySummary, "environment" | "subject" | "expected_version">): string {
+  const v = d.expected_version && d.environment.driver === "arugula-release" ? `${d.expected_version} (expected)` : "";
+  return [v, d.subject].filter(Boolean).join(" · ");
+}
 
 /** A commit's or an artifact's reference, short (../shared/deploys, which
  * control's deploy prompt shares). */

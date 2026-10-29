@@ -5,7 +5,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { COMMIT, environmentBody, historyPath, holdable, lastMoved, planBody, repoFor, secretNote, shortRef } from "../src/platform/deploys-text.ts";
+import { COMMIT, environmentBody, historyPath, holdable, lastMoved, planBody, repoFor, rowNote, secretNote, shortRef } from "../src/platform/deploys-text.ts";
 import { REPO } from "../src/platform/paths.ts";
 
 // As `GET /api/projects/{project}/drivers` answers (crates/platform's
@@ -88,4 +88,13 @@ test("Deploy… offers the environment's repo: its last deploy's, else the one n
   assert.equal(repoFor("production", linked, null), "arugula-salad/arugula");
   assert.equal(repoFor(undefined, linked), "arugula-salad/arugula");
   assert.equal(repoFor("production", [], null), "");
+});
+
+// #333: a history row's note beside the ref; a release's version is always
+// expected, and nothing read is nothing said.
+test("a history row's note is the expected version and the subject", () => {
+  const row = (driver, subject, expected_version) => ({ environment: { name: "release", driver }, subject, expected_version });
+  assert.equal(rowNote(row("arugula-release", "Docs: the Arugula look", "0.63.10")), "0.63.10 (expected) · Docs: the Arugula look");
+  assert.equal(rowNote(row("chant-fly", "Fix", "9.9.9")), "Fix");
+  assert.equal(rowNote(row("chant-fly", null, null)), "");
 });

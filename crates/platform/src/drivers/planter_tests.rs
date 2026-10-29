@@ -63,6 +63,8 @@ fn deploy(kind: SourceKind, reference: &str, place: &str) -> Deploy {
         run: Some("run_1".into()),
         planned_by: "a".into(),
         planned_by_agent: None,
+        subject: None,
+        expected_version: None,
         created_at: 1,
         updated_at: 1,
     }
