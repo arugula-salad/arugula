@@ -1,4 +1,4 @@
-//! Boards through the platform's routes (live status board, step 1), with
+//! Boards through the platform's routes (boards, step 1), with
 //! the hub of chat's tests: a board made, zones and rows added and
 //! reordered, a stale write refused, and the `boards` flag off answering
 //! 404.

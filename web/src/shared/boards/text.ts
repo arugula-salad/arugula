@@ -1,4 +1,4 @@
-// What a board says (live status board, step 2): a row's glyph, a zone's
+// What a board says (boards, step 2): a row's glyph, a zone's
 // progress, a pointer's label and the id a person typed as a pointer.
 // Plain functions, for the view and its tests (scripts/boards.test.mjs).
 

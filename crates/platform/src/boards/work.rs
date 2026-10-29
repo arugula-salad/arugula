@@ -1,4 +1,4 @@
-//! A project's work items (live status board, the picker and the inbox):
+//! A project's work items (boards, the picker and the inbox):
 //! its native issues, its mirrored GitHub issues and PRs, and its runs, as
 //! pointers a row takes as they are ([`wire::PROJECT_WORK`]). Read by the
 //! members who may read the project, behind the `boards` flag, as boards

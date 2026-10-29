@@ -15,7 +15,7 @@ and acting as its owner through their grants; nothing is kept here.
   `post_thread`, `list` kind `threads`, M198);
 - `src/issues.rs`: writing native issues (`issue_write`) and listing them
   (`forge_read` kind `native_issues`, M200);
-- `src/boards.rs`: status boards (`board_read`, `board_write`);
+- `src/boards.rs`: boards (`board_read`, `board_write`);
 - `src/runs.rs`: runs (`start_run`, `read_run`, `wait` with `run`, M216);
 - `src/deploys.rs`: deploys (`plan_deploy`, `read_deploy`, M252);
 - `src/agent_sessions.rs`: agent sessions (`session_start`,

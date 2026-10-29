@@ -5346,7 +5346,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's status board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -7662,7 +7662,7 @@
         "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": true,
-        "title": "Read a status board"
+        "title": "Read a board"
       },
       "description": "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project): a board is zones (a title and a progress bar of how many rows are done) of rows (a pointer to an issue, PR, run, workspace or agent block, or to nothing; a one-line note; a status). Returns the zones and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
       "inputSchema": {
@@ -7690,7 +7690,7 @@
         "type": "object"
       },
       "name": "board_read",
-      "title": "Read a status board"
+      "title": "Read a board"
     },
     {
       "annotations": {
@@ -7698,7 +7698,7 @@
         "idempotentHint": false,
         "openWorldHint": true,
         "readOnlyHint": false,
-        "title": "Write to a status board"
+        "title": "Write to a board"
       },
       "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. You may make a board (an epic, with a goal and its zones), set its title and goal, close it with a note saying what a person can now do, and open it again; make, rename, move and delete zones (PROOFS too); add rows, set any row's note and status (a PROOFS row's too), move rows, and remove or repoint a row you added. You may not delete a zone that holds a row someone else added, or remove or repoint such a row. A note, a pointer or a zone's title names the rev board_read showed for it; if it has changed since, this says so: board_read again and retry. A status or a move needs no rev. Every kind returns the board as it is now.\n- add_row {board, zone, note?, pointer?, status?}: Add a row last in a zone: a note, a status and what it points at.\n- set {board, row, note?, pointer?, rev?, status?}: Set a row's note or pointer (with its rev) and/or status.\n- move {board, row, before?, rev?, zone?}: Move a row within its zone or to another.\n- remove_row {board, row}: Remove a row you added.\n- create_board {title, goal?, project?, zones?}: Make a board in a project, with a goal (an epic) and its zones in order; returns it.\n- edit_board {board, goal?, title?}: Set a board's title and/or goal.\n- close_board {board, done_note}: Close a board with a note saying what a person can now do.\n- reopen_board {board}: Open a closed board again, keeping its note.\n- add_zone {board, title, proofs?}: Add a zone to a board, before PROOFS (or make the PROOFS zone, last).\n- edit_zone {board, rev, title, zone}: Rename a zone (with its rev).\n- move_zone {board, zone, before?}: Move a zone among a board's zones; PROOFS stays last.\n- delete_zone {board, zone}: Delete a zone that is empty or holds only rows you added, with its rows.",
       "inputSchema": {
@@ -7972,7 +7972,7 @@
         "type": "object"
       },
       "name": "board_write",
-      "title": "Write to a status board"
+      "title": "Write to a board"
     },
     {
       "annotations": {
@@ -13648,7 +13648,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's status board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -15964,7 +15964,7 @@
         "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": true,
-        "title": "Read a status board"
+        "title": "Read a board"
       },
       "description": "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project): a board is zones (a title and a progress bar of how many rows are done) of rows (a pointer to an issue, PR, run, workspace or agent block, or to nothing; a one-line note; a status). Returns the zones and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
       "inputSchema": {
@@ -15992,7 +15992,7 @@
         "type": "object"
       },
       "name": "board_read",
-      "title": "Read a status board"
+      "title": "Read a board"
     },
     {
       "annotations": {
@@ -16000,7 +16000,7 @@
         "idempotentHint": false,
         "openWorldHint": true,
         "readOnlyHint": false,
-        "title": "Write to a status board"
+        "title": "Write to a board"
       },
       "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. You may make a board (an epic, with a goal and its zones), set its title and goal, close it with a note saying what a person can now do, and open it again; make, rename, move and delete zones (PROOFS too); add rows, set any row's note and status (a PROOFS row's too), move rows, and remove or repoint a row you added. You may not delete a zone that holds a row someone else added, or remove or repoint such a row. A note, a pointer or a zone's title names the rev board_read showed for it; if it has changed since, this says so: board_read again and retry. A status or a move needs no rev. Every kind returns the board as it is now.\n- add_row {board, zone, note?, pointer?, status?}: Add a row last in a zone: a note, a status and what it points at.\n- set {board, row, note?, pointer?, rev?, status?}: Set a row's note or pointer (with its rev) and/or status.\n- move {board, row, before?, rev?, zone?}: Move a row within its zone or to another.\n- remove_row {board, row}: Remove a row you added.\n- create_board {title, goal?, project?, zones?}: Make a board in a project, with a goal (an epic) and its zones in order; returns it.\n- edit_board {board, goal?, title?}: Set a board's title and/or goal.\n- close_board {board, done_note}: Close a board with a note saying what a person can now do.\n- reopen_board {board}: Open a closed board again, keeping its note.\n- add_zone {board, title, proofs?}: Add a zone to a board, before PROOFS (or make the PROOFS zone, last).\n- edit_zone {board, rev, title, zone}: Rename a zone (with its rev).\n- move_zone {board, zone, before?}: Move a zone among a board's zones; PROOFS stays last.\n- delete_zone {board, zone}: Delete a zone that is empty or holds only rows you added, with its rows.",
       "inputSchema": {
@@ -16274,7 +16274,7 @@
         "type": "object"
       },
       "name": "board_write",
-      "title": "Write to a status board"
+      "title": "Write to a board"
     },
     {
       "annotations": {
@@ -19861,7 +19861,7 @@
         "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": true,
-        "title": "Read a status board"
+        "title": "Read a board"
       },
       "description": "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project): a board is zones (a title and a progress bar of how many rows are done) of rows (a pointer to an issue, PR, run, workspace or agent block, or to nothing; a one-line note; a status). Returns the zones and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
       "inputSchema": {
@@ -19889,7 +19889,7 @@
         "type": "object"
       },
       "name": "board_read",
-      "title": "Read a status board"
+      "title": "Read a board"
     },
     {
       "annotations": {

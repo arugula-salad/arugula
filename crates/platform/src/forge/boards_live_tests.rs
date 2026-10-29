@@ -1,4 +1,4 @@
-//! A board's rows say what they point at now (live status board, step 2),
+//! A board's rows say what they point at now (boards, step 2),
 //! in M165's world (`viewer_tests::world`): a row on a merged PR reads
 //! `merged`, on an open one `open`, then `checks_running` once a check is
 //! pending; one on a private repo's item is left out for someone who can't

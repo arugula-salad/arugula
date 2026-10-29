@@ -1,5 +1,5 @@
 //! Telling control what this machine's agent blocks are doing, for the
-//! board rows that point at them (live status board, step 4; aru-116's
+//! board rows that point at them (boards, step 4; aru-116's
 //! second ruling).
 //!
 //! What is sent is [`BlockState`] and nothing else: the state word, the

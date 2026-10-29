@@ -1,4 +1,4 @@
-//! A board's thread (live status board, step 1): an object thread, as an
+//! A board's thread (boards, step 1): an object thread, as an
 //! issue's is, with chat on. The board itself is the base's
 //! (`boards_tests`).
 

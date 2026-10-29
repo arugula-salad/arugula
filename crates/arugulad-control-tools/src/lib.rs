@@ -2,7 +2,7 @@
 //! through their grants (#232): Cloud workspaces (`cloud`, `read_cloud`,
 //! #1094), linked repos (`forge_read`, `forge_draft`, `link_repo`, M169),
 //! conversations (`read_thread`, `search_threads`, `post_thread`, M198),
-//! native issues (`issue_write`, M200), status boards (`board_read`,
+//! native issues (`issue_write`, M200), boards (`board_read`,
 //! `board_write`), runs (`start_run`, `read_run`, M216), deploys
 //! (`plan_deploy`, `read_deploy`, M252) and agent sessions
 //! (`session_start`, `session_reply`, aru-121; `read_session`, Fleet 5),
@@ -348,12 +348,12 @@ fn issue_write_def() -> Def {
     }
 }
 
-// Boards, step 3: a project's live status board, through the owner's
+// Boards, step 3: a project's board, through the owner's
 // grants, behind the `boards` flag.
 fn board_read_def() -> Def {
     Def {
         name: boards::READ_TOOL,
-        title: "Read a status board",
+        title: "Read a board",
         description: boards::READ_DESCRIPTION,
         args: Args::One(schema_for_type::<boards::ReadBoardArgs>),
         read_only: true,
@@ -363,7 +363,7 @@ fn board_read_def() -> Def {
         flag: Some(flags::BOARDS),
         output: None,
         human: line(
-            "read your project's status board and keep its rows current",
+            "read your project's board and keep its rows current",
             "Mark the sign-in row done on our board.",
             Needs::Control,
         ),
@@ -373,7 +373,7 @@ fn board_read_def() -> Def {
 fn board_write_def() -> Def {
     Def {
         name: boards::WRITE_TOOL,
-        title: "Write to a status board",
+        title: "Write to a board",
         description: boards::WRITE_DESCRIPTION,
         args: Args::Kinds { kinds: table(boards::WRITE), default: None },
         read_only: false,

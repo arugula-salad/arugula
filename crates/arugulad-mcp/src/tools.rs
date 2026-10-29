@@ -713,7 +713,7 @@ const SHOW: &[Kind] = &[
     },
     Kind {
         name: "board",
-        description: "A project's status board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
+        description: "A project's board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
         schema: schema_for_type::<ShowBoardArgs>,
         flag: Some(flags::BOARDS),
     },

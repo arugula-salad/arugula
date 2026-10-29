@@ -959,7 +959,7 @@ pub enum BlockType {
     /// block, read through Arugula control as the person looking. Config
     /// `{room?, pinned?, view?, q?}`; the daemon keeps no message.
     TeamChat,
-    /// A project's board (live status board), pinned: the platform's rows
+    /// A project's board (boards), pinned: the platform's rows
     /// and zones, read through Arugula control as the person looking, and
     /// drawn only while shown. Config `{board}`; the daemon keeps no row.
     Board,

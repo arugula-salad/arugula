@@ -20,7 +20,7 @@
 //   /p/:project/issues/:issue      an issue (`?msg=N`: at that comment)
 //   /p/:project/triage             its open issues on no board, when the
 //                                  `boards` Labs flag is on (#292)
-//   /p/:project/boards             its boards (live status board), when the
+//   /p/:project/boards             its boards, when the
 //                                  `boards` Labs flag is on
 //   /p/:project/boards/:board      a board (`brd_…`)
 //   /p/:project/docs               its Docs (aru-118)

@@ -1,5 +1,5 @@
 //! An agent block's state goes to control for the board rows that point at
-//! it (live status board, step 4; aru-116): needs input, working, idle (with
+//! it (boards, step 4; aru-116): needs input, working, idle (with
 //! the turn's work, when it left any) and closed, and nothing else about the
 //! block. Against a fake control; a machine that joined it with the
 //! `boards` flag on. Labs' flag, so a build without Labs has none of this.
