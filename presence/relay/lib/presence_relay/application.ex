@@ -23,6 +23,8 @@ defmodule PresenceRelay.Application do
       repo ++
         [
           {Finch, name: PresenceRelay.Finch},
+          # Sign-in providers' keys (JWKS), cached per URL.
+          PresenceRelay.Issuers.Keys,
           # Nodes find each other on Fly (DNS_CLUSTER_QUERY); locally, ignored.
           {DNSCluster,
            query: Application.get_env(:presence_relay, :dns_cluster_query) || :ignore},

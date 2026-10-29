@@ -2,11 +2,13 @@ defmodule PresenceRelayWeb.AppsController do
   @moduledoc """
   `/api/v1/apps` (#318 P3), for the signed-in owner: make and list apps,
   rotate the secret (shown once), allow origins, make and revoke
-  publishable keys. The dashboard (P10) is its first client.
+  publishable keys, and set the sign-in provider whose tokens admit
+  members (P4, `PresenceRelay.Issuers`). The dashboard (P10) is its
+  first client.
   """
   use Phoenix.Controller, formats: [:json]
 
-  alias PresenceRelay.Apps
+  alias PresenceRelay.{Apps, Issuers}
 
   def index(conn, _), do: json(conn, %{apps: Enum.map(Apps.list(conn.assigns.account), &view/1)})
 
@@ -67,6 +69,27 @@ defmodule PresenceRelayWeb.AppsController do
         :ok -> json(conn, %{revoked: key})
         {:error, :not_found} -> conn |> put_status(404) |> json(%{error: "no such key"})
       end
+    end)
+  end
+
+  @doc "The app's issuer (`null` for none)."
+  def issuer(conn, %{"id" => id}),
+    do: with_app(conn, id, &json(conn, %{issuer: Issuers.view(Issuers.get(&1))}))
+
+  @doc "Sets the app's issuer, replacing any: `{provider, issuer?, project?, audience?, name_claim?, room_rule?}`."
+  def put_issuer(conn, %{"id" => id} = params) do
+    with_app(conn, id, fn app ->
+      case Issuers.put(app, Map.delete(params, "id")) do
+        {:ok, issuer} -> json(conn, %{issuer: Issuers.view(issuer)})
+        {:error, msg} -> conn |> put_status(400) |> json(%{error: msg})
+      end
+    end)
+  end
+
+  def delete_issuer(conn, %{"id" => id}) do
+    with_app(conn, id, fn app ->
+      :ok = Issuers.delete(app)
+      json(conn, %{issuer: nil})
     end)
   end
 

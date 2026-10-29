@@ -1,5 +1,6 @@
 // arugula.video's relay as a transport (../../PROTOCOL.md): a Phoenix
-// socket with a room token (or a publishable key and a guest's name), the
+// socket with a room token (or a publishable key, and a guest's name or a
+// signed-in member's own token from the app's auth provider), the
 // room's channel, binary frames both ways
 // (the relay puts the sender's sub in front of each: `len:u8 sub frame`),
 // Phoenix.Presence for who's there, waves and calls. The channel is
@@ -17,6 +18,7 @@ export interface TokenAuth {
   token: string | (() => Promise<string>);
   key?: never;
   guest?: never;
+  auth?: never;
 }
 
 /** Into the room as a guest, with an app's publishable key (PROTOCOL.md,
@@ -29,6 +31,24 @@ export interface KeyAuth {
   /** A look to start with. */
   look?: Look;
   token?: never;
+  auth?: never;
+}
+
+/** Into the room as a member, signed in with the app's own auth provider
+ * (PROTOCOL.md, "Members by sign-in"): a publishable key and the person's
+ * token from Clerk, Auth0, Firebase, Supabase or any OIDC provider, which
+ * the relay checks against the app's issuer. */
+export interface MemberAuth {
+  /** `pk_live_…` or `pk_test_…`. */
+  key: string;
+  /** Their provider token, or a function for a fresh one: called on
+   * every (re)connect (Clerk's last a minute). */
+  auth: string | (() => Promise<string>);
+  /** What to call them if the token has no name. */
+  name?: string;
+  look?: Look;
+  token?: never;
+  guest?: never;
 }
 
 export type PhoenixTransportOptions = {
@@ -37,14 +57,20 @@ export type PhoenixTransportOptions = {
   /** The room, as the token names it. */
   room: string;
   /** Called with your sub whenever the relay lets you in (its join reply):
-   * a guest's sub is the relay's to make, so this is how a page learns it. */
+   * a guest's or a provider-token member's sub is the relay's to make, so
+   * this is how a page learns it. */
   onJoin?: (you: string) => void;
-} & (TokenAuth | KeyAuth);
+} & (TokenAuth | KeyAuth | MemberAuth);
 
-/** The socket's params: the token, or the key, room and guest's name. */
+/** The socket's params: the token; or the key and room, with the guest's
+ * name or the member's provider token (`token` is the newest of either). */
 export function socketParams(o: PhoenixTransportOptions, token: string): Record<string, string> {
   if (o.key === undefined) return { token };
-  const p: Record<string, string> = { key: o.key, room: o.room, name: o.guest };
+  const p: Record<string, string> = { key: o.key, room: o.room };
+  if (o.auth !== undefined) {
+    p.auth = token;
+    if (o.name) p.name = o.name;
+  } else p.name = o.guest;
   if (o.look) p.look = `${o.look.character}:${o.look.colour}`;
   return p;
 }
@@ -82,7 +108,21 @@ export function memberOf(sub: string, metas: Meta[]): Member {
 }
 
 export function phoenixTransport(o: PhoenixTransportOptions): Transport {
-  let token = typeof o.token === "string" ? o.token : "";
+  // A room token or a member's provider token: as given, or fresh from a
+  // function on each join, and again whenever the socket drops, so
+  // Phoenix's own reconnects carry an unexpired one.
+  const cred = o.key === undefined ? o.token : o.auth;
+  const fresh = typeof cred === "function" ? cred : null;
+  let token = typeof cred === "string" ? cred : "";
+  let refreshing = false;
+  const refresh = () => {
+    if (!fresh || refreshing) return;
+    refreshing = true;
+    fresh()
+      .then((t) => void (token = t))
+      .catch(() => {})
+      .finally(() => void (refreshing = false));
+  };
   let socket: Socket | null = null;
   let channel: Channel | null = null;
   let on: TransportEvents | null = null;
@@ -92,10 +132,14 @@ export function phoenixTransport(o: PhoenixTransportOptions): Transport {
 
   const join = async () => {
     if (channel) return;
-    if (typeof o.token === "function") token = await o.token();
+    if (fresh) token = await fresh();
     if (channel || (!listening && !publishing)) return;
-    socket = new Socket(o.url, { params: () => socketParams(o, token), binaryType: "arraybuffer" } as never);
-    socket.connect();
+    const s = new Socket(o.url, { params: () => socketParams(o, token), binaryType: "arraybuffer" } as never);
+    socket = s;
+    s.onClose(() => {
+      if (socket === s) refresh();
+    });
+    s.connect();
     const ch = socket.channel(`room:${o.room}`, {});
     channel = ch;
     on?.live("connecting");

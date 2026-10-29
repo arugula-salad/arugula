@@ -4,9 +4,10 @@
 // live), and mount/avatar/calls to draw people and a call bar into an
 // element. Who's in which room is the
 // token's business: your server signs it (or, to prototype, the relay's
-// demo tokens).
+// demo tokens); or, with no server, the app's publishable key with the
+// person's own sign-in token (`auth`) or a guest's name.
 
-import { PresenceClient, phoenixTransport, type Call, type Member, type Transport, type Message } from "@arugula/presence";
+import { PresenceClient, phoenixTransport, type Call, type Member, type Transport, type Message, type PhoenixTransportOptions } from "@arugula/presence";
 import { setAssetBase } from "@arugula/presence-core/assets";
 import type { Look } from "@arugula/presence-core/avatar/rig";
 import { mountAvatar, mountPeople, type AvatarOptions, type PeopleOptions } from "./view.ts";
@@ -21,7 +22,18 @@ export interface ConnectOptions {
   room: string;
   /** A room token your server signed, or a function for a fresh one
    * (called on every (re)connect). */
-  token: string | (() => Promise<string>);
+  token?: string | (() => Promise<string>);
+  /** Or, with no server of yours: the app's publishable key, with `auth`
+   * (a signed-in member) or `guest` (a name, where the app allows guests). */
+  key?: string;
+  /** The person's token from your auth provider (Clerk, Auth0, Firebase,
+   * Supabase, OIDC), or a function for a fresh one: called on every
+   * (re)connect. */
+  auth?: string | (() => Promise<string>);
+  /** A guest's name. */
+  guest?: string;
+  /** A member's name, if their token has none. */
+  name?: string;
   /** The relay's socket. Default: arugula.stream's. */
   relay?: string;
   /** Starting choices where this browser has none kept. */
@@ -83,16 +95,9 @@ export class Room {
     this.room = o.room;
     const relay = o.relay ?? RELAY;
     setAssetBase(o.assets ?? `${httpOrigin(relay)}/`);
-    const token =
-      typeof o.token === "string"
-        ? ((this.me = subOf(o.token)), o.token)
-        : async () => {
-            const t = await (o.token as () => Promise<string>)();
-            this.me = subOf(t);
-            return t;
-          };
     const storage = o.storage ?? "arugula.stream.";
-    this.client = new PresenceClient({ transport: o.transport ?? phoenixTransport({ url: relay, token, room: o.room }), storage });
+    const auth = this.auth(o, relay);
+    this.client = new PresenceClient({ transport: o.transport ?? phoenixTransport(auth), storage });
     const kept = (k: string) => {
       try {
         return localStorage.getItem(`${storage}${k}`) !== null;
@@ -115,6 +120,30 @@ export class Room {
     };
     this.unsub = this.client.subscribe(() => this.changed());
     this.stop = this.client.watch();
+  }
+
+  // How the socket gets in: a room token (your sub is in it), or a key
+  // with a member's token or a guest's name (your sub comes on joining).
+  private auth(o: ConnectOptions, url: string): PhoenixTransportOptions {
+    const base = { url, room: o.room, onJoin: (you: string) => void (this.me = you) };
+    if (o.key !== undefined)
+      return o.auth !== undefined
+        ? { ...base, key: o.key, auth: o.auth, name: o.name, look: o.look }
+        : { ...base, key: o.key, guest: o.guest ?? "Guest", look: o.look };
+    const tok = o.token;
+    if (tok === undefined) throw new Error("connect() needs a token, or a key");
+    if (typeof tok === "string") {
+      this.me = subOf(tok);
+      return { ...base, token: tok };
+    }
+    return {
+      ...base,
+      token: async () => {
+        const t = await tok();
+        this.me = subOf(t);
+        return t;
+      },
+    };
   }
 
   get members(): Member[] {
@@ -286,7 +315,7 @@ export function connect(o: ConnectOptions): Promise<Room> {
         clearTimeout(t);
         off();
         room.leave();
-        no(new Error("the relay refused the room token"));
+        no(new Error("the relay refused to let you in"));
       }
     });
   });

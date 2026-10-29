@@ -226,8 +226,8 @@ defmodule PresenceRelay.Apps do
   end
 
   @doc """
-  The app a publishable key opens, with its origins, and the key's mode;
-  nil for a key that's unknown or revoked (or no database).
+  The app a publishable key opens, with its origins and issuer, and the
+  key's mode; nil for a key that's unknown or revoked (or no database).
   """
   def by_key(key) when is_binary(key) do
     if database?() and key =~ ~r/\Apk_(live|test)_[A-Za-z0-9_-]{10,64}\z/ do
@@ -235,7 +235,7 @@ defmodule PresenceRelay.Apps do
         from(k in Key,
           join: a in assoc(k, :app),
           where: k.key == ^key and is_nil(k.revoked_at),
-          preload: [app: {a, :origins}]
+          preload: [app: {a, [:origins, :issuer]}]
         )
       )
       |> case do

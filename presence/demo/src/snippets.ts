@@ -113,6 +113,67 @@ end`,
 end`,
 } as const;
 
+/** No server: the app's publishable key and the person's own sign-in
+ * token (PROTOCOL.md, "Members by sign-in"), one tab per provider. Each
+ * comment is the issuer to set for the app. */
+export const providers = {
+  Clerk: `// issuer: { provider: "clerk", issuer: "https://<your Frontend API>" }
+// (Customize session token: "name": "{{user.full_name}}")
+const room = await connect({
+  room: "design-team",
+  key: "pk_live_…",
+  auth: () => window.Clerk.session.getToken(),   // fresh on every reconnect
+});`,
+  Auth0: `// issuer: { provider: "auth0", issuer: "acme.us.auth0.com",
+//          audience: "https://api.acme.com" }
+const auth0 = await createAuth0Client({ domain, clientId,
+  authorizationParams: { audience: "https://api.acme.com" } });
+const room = await connect({
+  room: "design-team",
+  key: "pk_live_…",
+  auth: () => auth0.getTokenSilently(),
+  name: user.name,                // access tokens carry no name
+});`,
+  Firebase: `// issuer: { provider: "firebase", project: "my-project" }
+import { getAuth } from "firebase/auth";
+
+const room = await connect({
+  room: "design-team",
+  key: "pk_live_…",
+  auth: () => getAuth().currentUser.getIdToken(),
+});`,
+  Supabase: `// issuer: { provider: "supabase", issuer: "https://<ref>.supabase.co" }
+// (asymmetric JWT signing keys; legacy HS256 projects aren't supported)
+const room = await connect({
+  room: "design-team",
+  key: "pk_live_…",
+  auth: async () => (await supabase.auth.getSession()).data.session.access_token,
+});`,
+  OIDC: `// issuer: { provider: "oidc", issuer: "https://id.acme.com/realms/acme",
+//          audience: "<client id>" }
+const room = await connect({
+  room: "design-team",
+  key: "pk_live_…",
+  auth: async () => (await userManager.getUser()).id_token,   // oidc-client-ts
+});`,
+  HTML: `<arugula-room room="design-team" key="pk_live_…" auth>
+  <arugula-people></arugula-people>
+</arugula-room>
+<script type="module">
+  // Waits for this: a token, or a function for a fresh one.
+  document.querySelector("arugula-room").auth = () => getToken();
+</script>`,
+  React: `<PresenceRoom room="design-team" publishableKey="pk_live_…" auth={getToken}>
+  <People />
+</PresenceRoom>`,
+} as Record<string, string>;
+
+export const roomRule = `// Members of org "acme" into acme:… rooms only:
+{ "room_rule": { "claim": "org_id", "match": "prefix" } }
+
+// Or the room must be in a list claim:
+{ "room_rule": { "claim": "rooms", "match": "contains" } }`;
+
 export const jsApi = `const room = await connect({ room, token, relay? });
 
 room.members                  // [{ sub, name, look, mode, away, watching, call }]

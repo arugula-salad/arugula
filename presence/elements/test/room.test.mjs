@@ -71,6 +71,15 @@ test("a room's messages: history and said fire message once each, and say sends"
   room.leave();
 });
 
+test("with a key: a member's token or a guest's name; your sub comes on joining; one or the other is needed", () => {
+  const member = new Room({ room: "acme:standup", key: "pk_live_abc", auth: async () => "eyJ.a.b", transport: fake() });
+  assert.equal(member.me, "", "not in a provider token: the relay says it on joining");
+  member.leave();
+  const guest = new Room({ room: "lobby", key: "pk_live_abc", guest: "Ada", transport: fake() });
+  guest.leave();
+  assert.throws(() => new Room({ room: "lobby", transport: fake() }), /needs a token, or a key/);
+});
+
 test("a room's calls: whether the relay has them, rings and the call as events, call(sub) rings", async () => {
   const t = fake();
   const rung = [];
