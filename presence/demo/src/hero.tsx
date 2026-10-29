@@ -164,11 +164,11 @@ const PEOPLE: Person[] = [
   { name: "Theo", kind: "lines", seed: 3, look: { hair: "short", glasses: true } },
   { name: "Ines", kind: "avatar", character: 3, colour: 2, script: "laugher" },
   { name: "Sam", kind: "lines", seed: 7, look: { hair: "curly" } },
-  { name: "Ravi", kind: "avatar", character: 1, colour: 4, script: "typer" },
+  { name: "Nico", kind: "avatar", character: 1, colour: 4, script: "typer" },
   { name: "June", kind: "avatar", character: 2, colour: 3, away: true },
 ];
 
-/** Who the cursor waves at (Ravi, a character, who waves back). */
+/** Who the cursor waves at (Nico, a character, who waves back). */
 const WAVED = 4;
 
 function Face({ p, size, wave = false }: { p: Person; size: "bust" | "head"; wave?: boolean }) {
@@ -246,11 +246,11 @@ export function FakeRoom() {
         <div class="fake-toast">
           {ph === "ask" ? (
             <span>
-              Waving at <b>Ravi</b>…
+              Waving at <b>Nico</b>…
             </span>
           ) : (
             <span>
-              <b>Ravi</b> waved back. Joining the call…
+              <b>Nico</b> waved back. Joining the call…
             </span>
           )}
         </div>

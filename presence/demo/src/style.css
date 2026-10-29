@@ -385,7 +385,7 @@ a.btn.primary {
   color: var(--void);
 }
 
-/* The cursor glides to Ravi's Wave (the fifth tile: row 2, column 2). */
+/* The cursor glides to Nico's Wave (the fifth tile: row 2, column 2). */
 .fake-cursor {
   position: absolute;
   width: 18px;
