@@ -52,9 +52,13 @@ export interface Seen {
 export interface Calib {
   gapL?: number;
   gapR?: number;
+  /** How far above the shoulders the nose usually is: the head's rest. */
+  nose?: number;
 }
 
 const learn = (base: number | undefined, v: number) => (base === undefined ? v : base + (v - base) * (v > base ? 0.3 : 0.003));
+/** A slow average, the same both ways (about 8 s at 12 fps). */
+const settle = (base: number | undefined, v: number) => (base === undefined ? v : base + (v - base) * 0.01);
 
 /** Which way `h` points, wrist to middle knuckle, in bust space (`ax`
  * scales x for the image's aspect). */
@@ -135,10 +139,13 @@ export function solve(s: Seen, calib: Calib = {}): Rig {
     r.shoulderR = [br[0], br[1] - liftR];
     const nose = s.face?.[NOSE];
     if (nose) {
-      // An upright head's nose sits about 0.9 shoulder widths above them;
+      // The head's height is measured from where yours usually sits (necks
+      // and cameras differ), so at rest it's where the character puts it;
       // a shrug brings the shoulders up, not the head down.
+      const gap = (nose.y - my) / unit;
+      const rest = (calib.nose = settle(calib.nose, gap));
       r.x = clamp(((nose.x - mx) * ax) / unit, -0.4, 0.4);
-      r.y = clamp(((nose.y - my) / unit + 0.9) * 0.6 - ((liftL + liftR) / 2) * 0.6, -0.3, 0.3);
+      r.y = clamp((gap - rest) * 0.6 - ((liftL + liftR) / 2) * 0.6, -0.3, 0.3);
     }
   } else if (s.face?.[NOSE]) {
     r.x = clamp((s.face[NOSE].x - 0.5) * 0.6, -0.3, 0.3);

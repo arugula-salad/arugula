@@ -15,7 +15,7 @@ import type { Rig } from "./rig";
 
 /** Where an upright head's middle is, and about how big it is: a big
  * head on a short neck, so the face carries at chat size. */
-export const HEAD_Y = -0.68;
+export const HEAD_Y = -0.76;
 export const HEAD_R = 0.44;
 
 export interface Stage {
