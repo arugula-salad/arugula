@@ -80,6 +80,10 @@ sees = "The operator's Infisical, which materializes secrets into home-cloud's K
 name = "Stripe"
 sees = "Stripe bills, when control has a key for it: it holds the customers and subscriptions control keeps ids for, and gets sandbox minutes."
 
+[parties.arugula_stream]
+name = "arugula.stream"
+sees = "When control has an arugula.stream app (People blocks), arugula.stream's relay gets, for each person with a People block open, their account id, the name their team's roster gives them, and the team's id (the room is `team:<id>`), and for as long as they're there, who else is. With their camera on, their avatar's movements or their outline go through it to the others in the room (lines and numbers made in the browser, never a picture); voice, and video in voice or a call, go through LiveKit Cloud, arugula.stream's media service. Control keeps nothing of it. Off when control has no app."
+
 # ---- the machine plane: accounts, devices, the directory, teams
 
 [[table]]
