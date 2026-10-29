@@ -13,11 +13,20 @@ defmodule PresenceRelayWeb.Socket do
 
   Either way the socket carries the same assigns (app, room, sub, name,
   look, and `meter`, whom usage counts) for the room channel.
+
+  Before either, the client's IP must be under its limit on connects
+  (`PresenceRelay.Limits`' `socket_connect`, #318's P12): over it, the
+  upgrade is answered 429 with `Retry-After` (`handle_error/2`). Any
+  other refusal is a 403, as Phoenix does.
   """
   use Phoenix.Socket
+  require Logger
 
-  alias PresenceRelay.{Apps, Issuers, Token, Usage}
-  alias PresenceRelayWeb.Origin
+  alias PresenceRelay.{Apps, Issuers, Limits, Token, Usage}
+  alias PresenceRelayWeb.{ClientIP, Origin, RateLimit}
+
+  # Refusals that are about a guest, not a credential.
+  @guest_refusals [:no_guests, :bad_name, :no_identity]
 
   channel "room:*", PresenceRelayWeb.RoomChannel
 
@@ -25,12 +34,46 @@ defmodule PresenceRelayWeb.Socket do
   def connect(params, socket, info) do
     # The noted Origin: taken first, whichever way in, so none goes stale.
     origin = Map.get(info, :origin) || Origin.take()
+    ip = ClientIP.take(info)
 
-    case admit(params, origin) do
-      {:ok, a} -> {:ok, assign(socket, a)}
-      {:error, _} -> :error
+    with :ok <- connect_limit(ip),
+         {:ok, a} <- admit(params, origin) do
+      Logger.metadata(app: a.app)
+      connected(:ok, nil)
+      {:ok, assign(socket, a)}
+    else
+      {:error, {:rate_limited, _} = why} ->
+        connected(:refused, :rate)
+        {:error, why}
+
+      {:error, why} ->
+        connected(:refused, refusal(why))
+        :error
     end
   end
+
+  @doc "The upgrade's answer to a refused connect: 429 over the limit, else 403."
+  def handle_error(conn, {:rate_limited, retry}), do: RateLimit.refuse(conn, retry)
+  def handle_error(conn, _), do: Plug.Conn.send_resp(conn, 403, "")
+
+  defp connect_limit(ip) do
+    case Limits.hit(:socket_connect, ip) do
+      :ok -> :ok
+      {:error, retry} -> {:error, {:rate_limited, retry}}
+    end
+  end
+
+  # Metrics (PresenceRelay.Metrics): every connect, and why one was refused.
+  defp connected(result, reason) do
+    :telemetry.execute([:presence_relay, :socket, :connect], %{count: 1}, %{result: result})
+
+    if reason,
+      do: :telemetry.execute([:presence_relay, :join, :refused], %{count: 1}, %{reason: reason})
+  end
+
+  defp refusal(:origin), do: :origin
+  defp refusal(why) when why in @guest_refusals, do: :guest
+  defp refusal(_), do: :token
 
   @impl true
   def id(_), do: nil

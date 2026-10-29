@@ -17,6 +17,7 @@ primary_region = "iad"
 [env]
   PHX_HOST = "arugula-stream-staging.fly.dev"
   PORT = "4000"
+  METRICS_PORT = "9091"
   DEMO = "1"
   # meet (#318 P6) is at /meet here until meet.arugula.stream's DNS: its
   # guests' publishable key works from this origin.
@@ -37,6 +38,14 @@ primary_region = "iad"
     interval = "15s"
     timeout = "5s"
     grace_period = "10s"
+
+# /metrics (#318's P12) on the internal port 9091, which no service
+# exposes: Fly scrapes it into its managed Grafana (fly-metrics.net), with
+# the app, instance and region as labels. presence/ops/README.md has the
+# dashboard and the alerts.
+[metrics]
+  port = 9091
+  path = "/metrics"
 
 [[vm]]
   size = "shared-cpu-1x"

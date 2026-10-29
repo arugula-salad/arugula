@@ -10,6 +10,7 @@ defmodule PresenceRelay.Chat do
   `%{id, sub, name, text, at}`, `at` in Unix milliseconds.
   """
   import Ecto.Query
+  require Logger
 
   alias PresenceRelay.Chat.{Memory, Message}
   alias PresenceRelay.Repo
@@ -72,6 +73,13 @@ defmodule PresenceRelay.Chat do
       {:ok, m} -> {:ok, view(m)}
       {:error, _} -> {:error, :not_kept}
     end
+  rescue
+    # Postgres slow or away (the pool's queue gave up): the message isn't
+    # kept and the sender hears so; the room stays up (#318's P12 found a
+    # busy pool crashing rooms' channels here).
+    e in [DBConnection.ConnectionError, Postgrex.Error] ->
+      Logger.warning("chat: a message wasn't kept: #{Exception.message(e)}")
+      {:error, :not_kept}
   end
 
   defp query(app, room, before) do
@@ -84,6 +92,11 @@ defmodule PresenceRelay.Chat do
 
     q = if is_integer(before), do: where(q, [m], m.id < ^before), else: q
     q |> Repo.all() |> Enum.reverse() |> Enum.map(&view/1)
+  rescue
+    # Likewise: no history this time rather than no room.
+    e in [DBConnection.ConnectionError, Postgrex.Error] ->
+      Logger.warning("chat: no history: #{Exception.message(e)}")
+      []
   end
 
   defp view(%Message{} = m),

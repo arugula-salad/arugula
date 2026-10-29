@@ -16,9 +16,11 @@ defmodule PresenceRelayWeb.Router do
   end
 
   # The dashboard's and meet's JSON, by session cookie (SameSite=Lax; a
-  # write must be JSON, which a cross-site form can't send).
+  # write must be JSON, which a cross-site form can't send). Writes are
+  # limited per client IP (#318's P12).
   pipeline :api_v1 do
     plug :accepts, ["json"]
+    plug PresenceRelayWeb.RateLimit, {:api_write, writes: true}
     plug :fetch_session
     plug :fetch_account
     plug :json_writes

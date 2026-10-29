@@ -18,6 +18,9 @@ defmodule PresenceRelayWeb.MeetController do
 
   # meet keeps its rooms in Postgres: a relay without one has no meet.
   plug :database
+  # Anyone may make a room, a guest too: so many an hour per client IP
+  # (#318's P12).
+  plug PresenceRelayWeb.RateLimit, :meet_room when action == :create
 
   def session(conn, _) do
     account =

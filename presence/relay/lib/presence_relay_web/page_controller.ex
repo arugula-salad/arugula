@@ -1,6 +1,14 @@
 defmodule PresenceRelayWeb.PageController do
   use Phoenix.Controller, formats: [:html, :json]
 
+  # `?deep=1` (#318's P12): every deep check (PresenceRelay.Health) as
+  # JSON, 503 when any fails; for people and the watchdog, not Fly's
+  # machine check.
+  def healthz(conn, %{"deep" => _}) do
+    h = PresenceRelay.Health.deep()
+    conn |> put_status(if(h.ok, do: 200, else: 503)) |> json(h)
+  end
+
   # `?db=1` also asks Postgres (`select 1`): "ok db", or 503 when it doesn't
   # answer; "ok no-db" for a relay without one. The machine check uses the
   # plain form, so a database blip doesn't take the relay out.

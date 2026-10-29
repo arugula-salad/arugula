@@ -25,6 +25,10 @@ defmodule PresenceRelay.Rooms do
     cluster, and a member's camera is off only when their last connection
     anywhere is gone. (`:pg` is eventually consistent: two nodes admitting
     the 65th member at the same instant could both succeed. A soft cap.)
+  - **An app's connections** (#318's P12) are a `:pg` group too,
+    `{:app, app}` (two elements, so it never counts as a member), capped
+    at config `:max_app_connections` (2,000), or the app's own number in
+    `:app_connections`, across the cluster, as softly.
   - **Newest frames** stay in the ETS table of the node the member sent
     them through, and that node alone sweeps them, so a stale frame says
     `off` once. A joiner asks every node for its fresh frames (`fresh/2`);
@@ -50,8 +54,9 @@ defmodule PresenceRelay.Rooms do
 
   @doc """
   Admits `pid` as one of `sub`'s connections to the room, or refuses it:
-  a room holds 64 members, a member 8 connections. The connection counts
-  until its process exits.
+  a room holds 64 members, a member 8 connections, an app 2,000
+  connections (`max_app_connections/1`). The connection counts until its
+  process exits.
   """
   def join(app, room, sub, pid), do: GenServer.call(__MODULE__, {:join, {app, room}, sub, pid})
 
@@ -62,8 +67,10 @@ defmodule PresenceRelay.Rooms do
   """
   def frame(app, room, sub, frame, from \\ self())
 
-  def frame(_app, _room, _sub, frame, _from) when byte_size(frame) > @max_frame or frame == "",
-    do: :drop
+  def frame(_app, _room, _sub, frame, _from) when byte_size(frame) > @max_frame or frame == "" do
+    framed(:too_big, frame)
+    :drop
+  end
 
   def frame(app, room, sub, frame, from) do
     now = System.monotonic_time(:millisecond)
@@ -71,10 +78,12 @@ defmodule PresenceRelay.Rooms do
 
     case :ets.lookup(@table, key) do
       [{^key, at, _}] when now - at < @gap_ms ->
+        framed(:too_soon, frame)
         :drop
 
       _ ->
         :ets.insert(@table, {key, now, frame})
+        framed(:relayed, frame)
 
         PubSub.broadcast_from(
           PresenceRelay.PubSub,
@@ -122,8 +131,12 @@ defmodule PresenceRelay.Rooms do
   end
 
   @doc false
-  # Another node's camera_off: drop this node's copy of the member's frame.
-  def forget(key), do: :ets.delete(@table, key)
+  # Another node's camera_off: drop this node's copy of the member's frame
+  # (none on a node that's stopping, whose table is gone).
+  def forget(key) do
+    if :ets.whereis(@table) != :undefined, do: :ets.delete(@table, key)
+    :ok
+  end
 
   @doc "How many members the room has, and `sub`'s connections, across the cluster."
   def count(app, room, sub) do
@@ -135,10 +148,69 @@ defmodule PresenceRelay.Rooms do
     {members, length(:pg.get_members(@scope, {app, room, sub}))}
   end
 
+  @doc """
+  The app's most connections at once, across the cluster: its own number
+  in config `:app_connections` (app id => n, or nil for none), else
+  `:max_app_connections`.
+  """
+  def max_app_connections(app) do
+    Map.get(
+      Application.get_env(:presence_relay, :app_connections, %{}),
+      app,
+      Application.get_env(:presence_relay, :max_app_connections, 2_000)
+    )
+  end
+
+  @doc "How many connections the app has, across the cluster."
+  def app_connections(app), do: length(:pg.get_members(@scope, {:app, app}))
+
+  @doc """
+  For /metrics (PresenceRelay.Metrics): this node's connections, and the
+  cluster's rooms, members, calls and people in calls (every node sees
+  the same, so a dashboard takes the max of these, and sums `connections`).
+  """
+  def stats do
+    local =
+      for {_, _, _} = g <- :pg.which_local_groups(@scope), reduce: 0 do
+        n -> n + length(:pg.get_local_members(@scope, g))
+      end
+
+    {rooms, members, calls, in_calls} =
+      @scope
+      |> :pg.which_groups()
+      |> Enum.reduce({MapSet.new(), 0, 0, 0}, fn
+        {app, room, _}, {rooms, m, c, p} ->
+          {MapSet.put(rooms, {app, room}), m + 1, c, p}
+
+        {:call, _, _, _} = g, {rooms, m, c, p} ->
+          {rooms, m, c + 1, p + length(:pg.get_members(@scope, g))}
+
+        _, acc ->
+          acc
+      end)
+
+    %{
+      connections: local,
+      rooms: MapSet.size(rooms),
+      members: members,
+      calls: calls,
+      in_calls: in_calls
+    }
+  end
+
   @doc "Whether `sub` has a connection in the room, anywhere in the cluster."
   def here?(app, room, sub), do: :pg.get_members(@scope, {app, room, sub}) != []
 
   defp prefixed(sub, frame), do: <<byte_size(sub)::8, sub::binary, frame::binary>>
+
+  # Every frame in, for /metrics: relayed, or dropped and why.
+  defp framed(result, frame),
+    do:
+      :telemetry.execute(
+        [:presence_relay, :frame],
+        %{count: 1, bytes: byte_size(frame)},
+        %{result: result}
+      )
 
   defp stale_ms, do: Application.get_env(:presence_relay, :stale_ms, 10_000)
   defp sweep_ms, do: Application.get_env(:presence_relay, :sweep_ms, 2_000)
@@ -171,10 +243,21 @@ defmodule PresenceRelay.Rooms do
       n >= max_conns() ->
         {:reply, {:error, "too many connections"}, s}
 
+      over_app?(app) ->
+        {:reply, {:error, "this app has too many connections"}, s}
+
       true ->
         :ok = :pg.join(@scope, {app, r, sub}, pid)
+        :ok = :pg.join(@scope, {:app, app}, pid)
         ref = Process.monitor(pid)
         {:reply, :ok, %{s | refs: Map.put(s.refs, ref, {app, r, sub, pid})}}
+    end
+  end
+
+  defp over_app?(app) do
+    case max_app_connections(app) do
+      max when is_integer(max) -> app_connections(app) >= max
+      _ -> false
     end
   end
 

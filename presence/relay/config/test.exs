@@ -22,6 +22,19 @@ config :presence_relay,
   # Usage is written when a test says (PresenceRelay.Usage.flush/0).
   usage_flush_ms: :manual
 
+# Abuse limits out of the way (the limits' own tests set theirs), and no
+# watchdog.
+config :presence_relay,
+  rate_limits: %{
+    socket_connect: {1_000_000, 60},
+    email_ip: {1_000_000, 60},
+    email_address: {1_000_000, 60},
+    meet_room: {1_000_000, 60},
+    api_write: {1_000_000, 60},
+    demo_token: {1_000_000, 60}
+  },
+  watchdog_ms: :manual
+
 config :presence_relay, PresenceRelay.Repo,
   url:
     System.get_env("TEST_DATABASE_URL") ||
