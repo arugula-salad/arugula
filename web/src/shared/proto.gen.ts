@@ -1451,7 +1451,15 @@ line?: number | null,
  * over its RPC socket, without arugula.nvim to send a follow stream
  * (#1730).
  */
-no_follow?: boolean, };
+no_follow?: boolean, 
+/**
+ * Arugula can add arugula.nvim to this nvim (#1733): the daemon reads
+ * it over its socket and found no copy of the plugin anywhere it
+ * would load from, so nothing (a plugin manager) owns one. The "Add
+ * arugula.nvim" tip (#1735) shows on it and calls
+ * `nvim_plugin.install` for the pane.
+ */
+offer_plugin?: boolean, };
 
 export type Event = { 
 /**
@@ -2712,6 +2720,52 @@ export type NvimOpened = {
  * The pane whose nvim has it.
  */
 pane: number, how: NvimWhere, };
+
+/**
+ * `GET /api/nvim-plugin` (#1733): the copies of arugula.nvim this daemon
+ * installed, and the version it carries now, for Settings > Editor >
+ * nvim.
+ */
+export type NvimPluginCopies = { 
+/**
+ * The version stamp the daemon would install now.
+ */
+version: string, copies: Array<NvimPluginCopy>, };
+
+/**
+ * One copy of arugula.nvim that Arugula installed.
+ */
+export type NvimPluginCopy = { dir: string, 
+/**
+ * The version stamp its marker file says.
+ */
+version: string, };
+
+/**
+ * `POST /api/panes/N/nvim-plugin` (#1733): what installing arugula.nvim
+ * into the nvim a pane runs did.
+ */
+export type NvimPluginInstalled = { 
+/**
+ * Where it is: `stdpath("data")/site/pack/arugula/start/arugula.nvim`
+ * of that nvim, on the pane's machine.
+ */
+dir: string, 
+/**
+ * The copy's version stamp: the daemon's release and its files' hash.
+ */
+version: string, 
+/**
+ * The plugin loaded and joined as the pane within a few seconds. When
+ * it didn't, the copy is still there and nvim loads it next start.
+ */
+joined: boolean, };
+
+/**
+ * `DELETE /api/nvim-plugin` (#1733): the copies Arugula installed that
+ * it deleted. A copy without Arugula's marker file is never touched.
+ */
+export type NvimPluginRemoved = { removed: Array<string>, };
 
 /**
  * Which nvim [`NvimOpened`] went to.
@@ -4370,6 +4424,9 @@ export const OPS = {
   "mcp_tokens.list": { method: "GET", path: "/api/mcp/tokens" },
   "notify.get": { method: "GET", path: "/api/notify" },
   "notify.set": { method: "POST", path: "/api/notify" },
+  "nvim_plugin.get": { method: "GET", path: "/api/nvim-plugin" },
+  "nvim_plugin.install": { method: "POST", path: "/api/panes/{id}/nvim-plugin" },
+  "nvim_plugin.remove": { method: "DELETE", path: "/api/nvim-plugin" },
   "pane.ask": { method: "POST", path: "/api/panes/{id}/ask" },
   "pane.ask_withdraw": { method: "POST", path: "/api/panes/{id}/ask/withdraw" },
   "pane.attention": { method: "POST", path: "/api/panes/{id}/attention" },

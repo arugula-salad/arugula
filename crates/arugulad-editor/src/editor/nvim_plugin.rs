@@ -185,6 +185,10 @@ pub fn write(dir: &Path) -> io::Result<()> {
         }
         std::fs::write(p, bytes)?;
     }
+    let tags = help_tags();
+    if !tags.is_empty() {
+        std::fs::write(new.join("doc/tags"), tags)?;
+    }
     std::fs::write(new.join(MARKER), marker_text())?;
     if std::fs::symlink_metadata(dir).is_ok() {
         let old = parent.join(format!(".{name}.old-{}", std::process::id()));
@@ -196,6 +200,48 @@ pub fn write(dir: &Path) -> io::Result<()> {
         std::fs::rename(&new, dir)?;
     }
     Ok(())
+}
+
+/// `doc/tags` for the help files in `doc/`, as `:helptags` writes it: one
+/// `tag<Tab>file<Tab>/*tag*` line per `*tag*`, sorted. A package's help
+/// is found only through its tags file, and the repo has none.
+fn help_tags() -> String {
+    let mut lines = vec![];
+    for (path, bytes) in FILES {
+        let Some(file) = path.strip_prefix("doc/").filter(|f| f.ends_with(".txt") && !f.contains('/')) else {
+            continue;
+        };
+        for tag in String::from_utf8_lossy(bytes).lines().flat_map(tags_in) {
+            lines.push(format!("{tag}\t{file}\t/*{}*", tag.replace('/', "\\/")));
+        }
+    }
+    lines.sort();
+    lines.dedup();
+    lines.into_iter().map(|l| l + "\n").collect()
+}
+
+/// The `*tag*`s on a help line: between stars, with no space, tab, bar or
+/// star inside, and a space (or the line's edge) on each side, as
+/// `:helptags` reads them.
+fn tags_in(line: &str) -> Vec<String> {
+    let edge = |c: Option<char>| c.is_none_or(|c| c == ' ' || c == '\t');
+    let mut out = vec![];
+    let mut rest = line;
+    let mut before = None;
+    while let Some(a) = rest.find('*') {
+        let lead = rest[..a].chars().next_back().or(before);
+        let after = &rest[a + 1..];
+        let Some(b) = after.find(['*', ' ', '\t', '|']) else { break };
+        if after[b..].starts_with('*') && b > 0 && edge(lead) && edge(after[b + 1..].chars().next()) {
+            out.push(after[..b].to_owned());
+            before = Some('*');
+            rest = &after[b + 1..];
+        } else {
+            before = Some('*');
+            rest = after;
+        }
+    }
+    out
 }
 
 /// Rewrites the copy at `dir` when it's ours and another version. Whether
@@ -480,7 +526,13 @@ mod tests {
     #[test]
     fn the_plugin_is_embedded_whole() {
         let names: Vec<_> = FILES.iter().map(|(p, _)| *p).collect();
-        for want in ["plugin/arugula.lua", "lua/arugula/init.lua", "lua/arugula/health.lua"] {
+        for want in [
+            "plugin/arugula.lua",
+            "lua/arugula/init.lua",
+            "lua/arugula/health.lua",
+            "lua/arugula/diff.lua",
+            "doc/arugula.txt",
+        ] {
             assert!(names.contains(&want), "{want} isn't embedded: {names:?}");
         }
         // Every file under editors/nvim, so a new one can't be left out.
@@ -639,6 +691,9 @@ mod tests {
         let v =
             rpc.lua("return { vim.g.loaded_arugula == true, vim.fn.exists(':ArugulaJoin') }", vec![]).await.unwrap();
         assert_eq!(v, serde_json::json!([true, 2]));
+        // Its help is found (doc/tags).
+        let v = rpc.lua("vim.cmd.help('arugula-diff') return vim.fn.expand('%:t')", vec![]).await.unwrap();
+        assert_eq!(v, "arugula.txt");
         // Nothing written outside the data directory: no init.lua.
         assert_eq!(std::fs::read_dir(&config).unwrap().count(), 0);
         // Installed and loaded: not offered again.
@@ -687,6 +742,33 @@ mod tests {
         assert!(matches!(install_at(&socket, None).await, Err(Refused::Conflict(_))));
         assert!(!data.join("nvim").join(PACK_DIR).exists(), "nothing written");
         quit(child);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The tags file written with a copy is the one nvim's `:helptags`
+    /// writes for the same help.
+    #[test]
+    fn help_tags_are_what_helptags_writes() {
+        if !nvim_here() {
+            return;
+        }
+        let d = temp("tags");
+        std::fs::create_dir_all(d.join("doc")).unwrap();
+        for (path, bytes) in FILES.iter().filter(|(p, _)| p.starts_with("doc/") && p.ends_with(".txt")) {
+            std::fs::write(d.join(path), bytes).unwrap();
+        }
+        let status = std::process::Command::new("nvim")
+            .args(["--headless", "--clean", "-c", &format!("helptags {}", d.join("doc").display()), "-c", "qa!"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let theirs = std::fs::read_to_string(d.join("doc/tags")).unwrap();
+        assert!(theirs.contains("arugula-diff\t"), "{theirs}");
+        assert_eq!(help_tags(), theirs);
+        assert_eq!(tags_in("a *x* b*y* *z*|w **"), vec!["x"]);
         let _ = std::fs::remove_dir_all(&d);
     }
 
