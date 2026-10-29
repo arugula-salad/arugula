@@ -317,7 +317,7 @@ function Room({ info, me, name }: { info: RoomInfo; me: Session; name: string })
     };
   }, []);
   const [copied, setCopied] = useState(false);
-  const mine: Member = client.members.find((m) => m.sub === you.sub) ?? { sub: you.sub || "me", name, look: client.look, mode: "none", away: false, watching: true };
+  const mine: Member = client.members.find((m) => m.sub === you.sub) ?? { sub: you.sub || "me", name, look: client.look, mode: "none", away: false, watching: true, call: null };
   const others = client.members.filter((m) => m.sub !== you.sub);
   // Names of everyone seen here, so a wave from someone who's since left
   // still says who.
