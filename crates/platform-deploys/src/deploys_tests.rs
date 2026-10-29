@@ -558,7 +558,12 @@ async fn a_stale_deploy_is_refused_even_with_a_good_signature() {
     let a = devices(&hub, "a");
     let env = production(&base, &t).await;
     let (first, first_op) = asked(&base, "a", &t, &env, "aaaa1111").await;
-    let (second, second_op) = asked(&base, "a", &t, &env, "bbbb2222").await;
+    // Planned, not asked for: asking would stale the first (#334). The
+    // first's apply stales it all the same.
+    let (st, d) = call(&base, "a", "POST", &format!("/api/projects/{t}/deploys"), plan_body(&env, "bbbb2222")).await;
+    assert_eq!(st, 200, "{d}");
+    let second = d["id"].as_str().unwrap().to_owned();
+    let second_op = d["operation"]["hash"].as_str().unwrap().to_owned();
     let (st, _) = call(
         &base,
         "a",
@@ -591,6 +596,39 @@ async fn a_stale_deploy_is_refused_even_with_a_good_signature() {
     // And the waiting list no longer shows it.
     let (st, w) = call(&base, "a", "GET", "/api/deploys/waiting", None).await;
     assert_eq!((st, w["deploys"].as_array().map(Vec::len)), (200, Some(0)), "{w}");
+}
+
+/// A newer request to the environment supersedes an older pending deploy
+/// (#334): it reads stale with `why: superseded` and the newer deploy, the
+/// owner's signed approval of it is refused, and the inbox lists only the
+/// newer one.
+#[tokio::test]
+async fn a_superseded_deploy_says_why_and_is_not_approved() {
+    let (hub, app, base, t, _) = seeded().await;
+    let a = devices(&hub, "a");
+    let env = production(&base, &t).await;
+    let (old, old_op) = asked(&base, "a", &t, &env, "aaaa1111").await;
+    let (new, _) = asked(&base, "a", &t, &env, "bbbb2222").await;
+
+    let (st, d) = call(&base, "a", "GET", &format!("/api/deploys/{old}"), None).await;
+    assert_eq!(
+        (st, &d["state"], &d["may_approve"], &d["stale"]["deploy"], &d["stale"]["why"]),
+        (200, &json!("stale"), &json!(false), &json!(new), &json!("superseded")),
+        "{d}"
+    );
+    let (st, v) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/deploys/{old}/approve"),
+        Some(signed(&a.phone, "a", &old, &old_op, Decision::Once)),
+    )
+    .await;
+    assert_eq!(st, 409, "{v}");
+    assert!(app.db.deploy_approvals(&old).unwrap().is_empty());
+    let (_, w) = call(&base, "a", "GET", "/api/deploys/waiting", None).await;
+    let ids: Vec<&str> = w["deploys"].as_array().unwrap().iter().filter_map(|d| d["id"].as_str()).collect();
+    assert_eq!(ids, [new.as_str()], "{w}");
 }
 
 /// Every approval and deny carries a passkey's assertion over its bytes,
@@ -975,8 +1013,10 @@ fn recorded_only_over_the_operation_and_never_stale() {
             )
             .unwrap()
             .unwrap();
-        db.record_deploy(&d.id, EventKind::Requested, &Actor::agent("a", "geek"), at, json!({})).unwrap().unwrap();
         d.id
+    };
+    let ask = |id: &str, at| {
+        db.record_deploy(id, EventKind::Requested, &Actor::agent("a", "geek"), at, json!({})).unwrap().unwrap();
     };
     let keys = DeviceKeys::generate();
     let approval = |id: &str, op: &Operation| {
@@ -994,8 +1034,11 @@ fn recorded_only_over_the_operation_and_never_stale() {
         )
     };
 
+    // `two` is planned and not asked for: a request for it would stale `one`
+    // (#334), and an apply stales it all the same.
     let one = plan(1);
     let two = plan(2);
+    ask(&one, 2);
     let (_, op) = db.deploy_operation(&one).unwrap().unwrap();
     let mut other = op.clone();
     other.planned = "00".repeat(32);
@@ -1015,7 +1058,7 @@ fn recorded_only_over_the_operation_and_never_stale() {
         Err(Refusal::Stale { .. })
     ));
     assert!(db.deploy_approvals(&two).unwrap().is_empty());
-    assert_eq!(db.verify_deploy_log(&env.id).unwrap(), Ok(7));
+    assert_eq!(db.verify_deploy_log(&env.id).unwrap(), Ok(6));
 }
 
 /// M222: an apps-platform environment plans only a full commit of one of

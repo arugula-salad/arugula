@@ -16,7 +16,7 @@
 // passkey (#764), the signing key is derived from it again too.
 
 import { useEffect, useState } from "preact/hooks";
-import { deployStateText, deployTitle, plannerText, shortRef } from "../../shared/deploys";
+import { deployStateText, deployTitle, plannerText, shortRef, staleNote } from "../../shared/deploys";
 import { DeployAsked } from "../../shared/ui/deploy-asked";
 import { deployTone } from "../../shared/tones";
 import { Modal } from "../../shared/ui/modal";
@@ -61,7 +61,7 @@ interface Deploy {
   requested_at?: number | null;
   operation: { body: string; hash: string };
   planned_event: DeployEvent | null;
-  stale: { deploy: string; seq: number } | null;
+  stale: { deploy: string; seq: number; why?: string } | null;
   may_approve: boolean;
 }
 
@@ -270,7 +270,13 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
             // Its state as the platform page shows it (UI audit #183).
             <p data-deploy-state={d.state}>
               <StateChip tone={deployTone(d.state)}>{deployStateText(d.state)}</StateChip>{" "}
-              {d.stale ? "Another deploy was applied to the environment after it was planned." : "It isn't waiting for your approval."}
+              {d.stale ? (
+                <>
+                  {staleNote(d.stale, d.environment.name)} <a href={platformHref(`/deploys/${d.stale.deploy}`)}>{d.stale.deploy.slice(0, 12)}</a>
+                </>
+              ) : (
+                "It isn't waiting for your approval."
+              )}
             </p>
           ) : s.passkeys === 0 ? (
             <p data-deploy-no-passkey>

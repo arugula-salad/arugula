@@ -242,21 +242,20 @@ fn the_stale_rule() {
     let db = Db::test();
     let env = production(&db, "prj_a");
     let staging = db.create_environment("prj_a", "staging", "chant-fly", &[], 1).unwrap();
+    // B and C are planned after A and not asked for (asking would stale A,
+    // #334): they're open all the same.
     let a = approved(&db, &env.id, "aaa", 1);
     let b = plan(&db, &env.id, "bbb", &jake(), 2);
-    record(&db, &b.id, EventKind::Requested, &jake(), 2).unwrap();
-    let c = approved(&db, &env.id, "ccc", 3);
+    let c = plan(&db, &env.id, "ccc", &jake(), 3);
     let elsewhere = plan(&db, &staging.id, "sss", &jake(), 3);
     record(&db, &elsewhere.id, EventKind::Requested, &jake(), 3).unwrap();
-    assert_eq!(db.may_approve(&b.id).unwrap(), Ok(()));
-
-    // A starts: B (pending) and C (approved) were planned before it.
+    // A starts: B and C, still open, go stale.
     let started = record(&db, &a.id, EventKind::Started, &Actor::run("run_a"), 4).unwrap();
     assert_eq!(kinds(&started.events), ["started", "staled", "staled"]);
     let at = started.events[0].seq;
     assert_eq!(started.events[1].deploy, b.id);
     assert_eq!(started.events[2].deploy, c.id);
-    assert_eq!(started.events[1].detail_json().unwrap(), json!({ "after": a.id, "seq": at }));
+    assert_eq!(started.events[1].detail_json().unwrap(), json!({ "after": a.id, "seq": at, "why": "applied" }));
     assert_eq!(Actor::parse(&started.events[1].actor), Some(Actor::Platform));
     for d in [&b, &c] {
         assert_eq!(db.deploy(&d.id).unwrap().unwrap().state, State::Stale);
@@ -303,6 +302,52 @@ fn the_stale_rule() {
     assert_eq!(db.deploy(&e.id).unwrap().unwrap().state, State::Succeeded);
     assert_eq!(db.deploys(&env.id, 2).unwrap().iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), [&e.id, &d.id]);
     assert_eq!(db.verify_deploy_log(&env.id).unwrap(), Ok(db.deploy_events(&env.id).unwrap().len() as u64));
+}
+
+/// A newer request stales the older open deploys of its environment, and
+/// only those (#334): not the one asked for, a newer one, another
+/// environment's, or one already running. Why is in the event, and an
+/// owner can't approve the superseded one.
+#[test]
+fn a_newer_request_supersedes_older_open_deploys() {
+    let db = Db::test();
+    let env = production(&db, "prj_a");
+    let staging = db.create_environment("prj_a", "staging", "chant-fly", &[], 1).unwrap();
+    let a = plan(&db, &env.id, "aaa", &jake(), 1);
+    record(&db, &a.id, EventKind::Requested, &jake(), 1).unwrap();
+    // Planned, not asked for yet: open too.
+    let idle = plan(&db, &env.id, "rrr", &jake(), 1);
+    let elsewhere = plan(&db, &staging.id, "sss", &jake(), 2);
+    record(&db, &elsewhere.id, EventKind::Requested, &jake(), 2).unwrap();
+    let b = plan(&db, &env.id, "bbb", &jake(), 3);
+    // D is planned after B and not yet asked for: newer, so not B's to stale.
+    let d = plan(&db, &env.id, "ddd", &jake(), 3);
+
+    let asked = record(&db, &b.id, EventKind::Requested, &jake(), 4).unwrap();
+    assert_eq!(kinds(&asked.events), ["requested", "staled", "staled"]);
+    assert_eq!((asked.events[1].deploy.as_str(), asked.events[2].deploy.as_str()), (a.id.as_str(), idle.id.as_str()));
+    assert_eq!(
+        asked.events[1].detail_json().unwrap(),
+        json!({ "after": b.id, "seq": asked.events[0].seq, "why": "superseded" })
+    );
+    assert_eq!(Actor::parse(&asked.events[1].actor), Some(Actor::Platform));
+    let state = |id: &str| db.deploy(id).unwrap().unwrap().state;
+    assert_eq!((state(&a.id), state(&b.id), state(&d.id)), (State::Stale, State::Pending, State::Planned));
+    assert_eq!(state(&elsewhere.id), State::Pending);
+    // Superseded is refused on its row's state: no apply happened.
+    assert_eq!(db.may_approve(&a.id).unwrap(), Err(Refusal::State(State::Stale)));
+    assert_eq!(approve(&db, &a.id, 5), Err(Refusal::State(State::Stale)));
+    assert_eq!(state(&idle.id), State::Stale);
+    assert!(db.deploy_approvals(&a.id).unwrap().is_empty());
+
+    // One already applying isn't touched by a newer request.
+    let e = approved(&db, &env.id, "eee", 6);
+    // (Asking for E staled B and D; E's own start is next.)
+    record(&db, &e.id, EventKind::Started, &Actor::run("run_e"), 6).unwrap();
+    let f = plan(&db, &env.id, "fff", &jake(), 7);
+    let asked = record(&db, &f.id, EventKind::Requested, &jake(), 7).unwrap();
+    assert!(asked.events.iter().all(|x| x.deploy != e.id), "{:?}", kinds(&asked.events));
+    assert_eq!(state(&e.id), State::Running);
 }
 
 /// The log is a hash chain per environment: it verifies, it can't be
