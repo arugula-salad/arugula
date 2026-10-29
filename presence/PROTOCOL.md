@@ -23,11 +23,14 @@ A Phoenix socket (serializer V2, JSON with binary pushes) at
 | params | who decides who's in the room |
 |---|---|
 | `token=<room token>` | the host app's server, which signed it (below) |
+| `key=<publishable key>&room=<room>&auth=<provider token>[&name=<name>][&look=…]` | the app's sign-in provider: a **member** (below) |
 | `key=<publishable key>&room=<room>&name=<name>[&look=<character>:<colour>]` | nobody: a **guest**, where the app allows guests |
 
-The socket refuses a missing, expired or badly signed token, and a
+The socket refuses a missing, expired or badly signed token, a
 publishable key that's unknown, revoked, or not from one of its app's
-allowed origins. Either way the room channel is the same.
+allowed origins, and a provider token the app's issuer doesn't vouch
+for (a bad `auth` is refused, never let in as a guest). Either way the
+room channel is the same.
 
 ### Publishable keys
 
@@ -44,6 +47,55 @@ publishable keys (`pk_live_…`, `pk_test_…`), safe to put in a page:
 - `room` follows the token's `room` rules; the channel topic must match it.
 - Keys are revoked one at a time; the app's server secret (for room
   tokens) is shown once and rotated on its own.
+
+### Members by sign-in
+
+An app may name one **issuer**, its sign-in provider; then a page with
+its key sends the person's own token from that provider as `auth`, and
+the relay checks it against the provider's published keys. No server of
+the app's is involved.
+
+| provider | settings | the token's `iss` | keys |
+|---|---|---|---|
+| `clerk` | `issuer`: the Frontend API URL | that URL | `<iss>/.well-known/jwks.json` |
+| `auth0` | `issuer`: the tenant's (or custom) domain | `https://<domain>/` | `<iss>.well-known/jwks.json` |
+| `firebase` | `project`: the project id | `https://securetoken.google.com/<project>` | Google's securetoken JWKS |
+| `supabase` | `issuer`: the project URL | `<url>/auth/v1` | `<iss>/.well-known/jwks.json` |
+| `oidc` | `issuer`: exactly the tokens' `iss` | that | its `/.well-known/openid-configuration`'s `jwks_uri` (whose `issuer` must match) |
+
+- **Signature**: RS256 (RSA ≥ 2048 bits), ES256 (P-256) or EdDSA
+  (Ed25519) with the key the header's `kid` names; `none` and HS* are
+  refused. A Supabase project still signing with its legacy HS256 secret
+  isn't supported: it needs asymmetric signing keys.
+- **Claims**: `iss` exactly; `aud` must hold the issuer's `audience`
+  (required for Auth0 and OIDC; Firebase's is the project id;
+  Supabase's `authenticated` by default; Clerk's session tokens carry
+  none, so it's checked only when set); `exp` required, `exp` and `nbf`
+  with 30 s of leeway; `sub` 1–128 printable characters. Clerk: an `azp`
+  must equal the page's `Origin`, and `sts: "pending"` is refused.
+  Firebase: `auth_time` not in the future.
+- **Keys** are cached per URL for the response's `max-age` (held to
+  60 s–24 h, an hour without one). A `kid` the cached set lacks fetches it
+  once more, at most every 30 s per URL. Fetches time out after 5 s and
+  only go to `https://` on public hosts.
+- **Who**: the member's `sub` is `<provider>-<tag>:<their sub>`, the tag
+  the first 8 hex digits of SHA-256 of `iss` (so two issuers' users never
+  share one, and none starts `g_`). Their name is the issuer's
+  `name_claim` (default `name`; Supabase's `user_metadata.full_name`; a
+  dotted name walks into maps when no claim has the whole name), else
+  the socket's `name`, else `Member`; at most 80 characters.
+- **Room rule** (optional, one per issuer): `{"claim": c, "match": m}`.
+  `prefix`: claim `c` (a string) equals the room's id before its first
+  `:` (`org_id` = `acme` admits `acme:standup`, not `globex:standup` or
+  `acme`). `contains`: claim `c` is a list holding the room's id (or a
+  string equal to it). Nothing else is accepted. Guests aren't held to it.
+- The key's origin rules apply as for guests. The token is checked when
+  the socket connects; a reconnect sends a fresh one (the SDK asks for
+  it).
+
+Hosted, the owner sets it with `PUT /api/v1/apps/<id>/issuer`
+(`{provider, issuer?, project?, audience?, name_claim?, room_rule?}`;
+`GET` shows it with the `iss` and key URLs it makes, `DELETE` removes it).
 
 ### Room token
 

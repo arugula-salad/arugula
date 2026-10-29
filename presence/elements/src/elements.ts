@@ -1,10 +1,11 @@
 // The custom elements (../../sdk/API.md): <arugula-room> joins a room (a
-// token from your endpoint, or the relay's demo tokens to prototype) and
+// token from your endpoint; or a publishable key with the person's own
+// sign-in token, or as a guest; or the relay's demo tokens to prototype) and
 // re-dispatches its events; <arugula-camera>, <arugula-people>,
 // <arugula-avatar> and <arugula-chat> inside it draw from it, each in a shadow root styled
 // from --arugula-* custom properties.
 
-import { connect, httpOrigin, RELAY, type Room } from "./room.ts";
+import { connect, httpOrigin, RELAY, type ConnectOptions, type Room } from "./room.ts";
 import { mountPeople, mountAvatar } from "./view.ts";
 import { mountCamera } from "./controls.ts";
 import { mountChat } from "./chat.ts";
@@ -16,6 +17,19 @@ export class ArugulaRoom extends HTMLElement {
   private room: Room | null = null;
   private waiting: ((r: Room) => void)[] = [];
   private failed: Error | null = null;
+  private joining = false;
+  private authValue: ConnectOptions["auth"] | null = null;
+
+  /** With `key`: the person's token from your auth provider, or a function
+   * for a fresh one (called on every (re)connect). Set it before or after
+   * the element is in the page; `<arugula-room key auth>` waits for it. */
+  get auth() {
+    return this.authValue;
+  }
+  set auth(v) {
+    this.authValue = v;
+    if (v && this.isConnected) this.connectedCallback();
+  }
 
   /** The room once joined (children wait on it). */
   whenReady(): Promise<Room> {
@@ -25,13 +39,23 @@ export class ArugulaRoom extends HTMLElement {
   }
 
   connectedCallback() {
-    if (this.room) return;
+    // `el.auth = …` before this element was defined set a plain property:
+    // through the setter instead.
+    if (Object.prototype.hasOwnProperty.call(this, "auth")) {
+      const v = (this as { auth?: ConnectOptions["auth"] }).auth;
+      delete (this as { auth?: unknown }).auth;
+      this.authValue = v ?? null;
+    }
+    if (this.room || this.joining) return;
     const room = this.getAttribute("room");
     if (!room) return console.error("<arugula-room> needs a room attribute");
     const relay = this.getAttribute("relay") || RELAY;
     const tokenUrl = this.getAttribute("token-url");
     const demo = this.hasAttribute("demo");
-    if (!tokenUrl && !demo) return console.error("<arugula-room> needs token-url, or demo to prototype");
+    const key = this.getAttribute("key");
+    const auth = this.getAttribute("auth") || this.authValue;
+    if (key && !auth && this.hasAttribute("auth")) return; // waits for el.auth
+    if (!tokenUrl && !demo && !key) return console.error("<arugula-room> needs token-url, or key, or demo to prototype");
     const token = async () => {
       const r = demo
         ? await fetch(`${httpOrigin(relay)}/api/demo/token`, {
@@ -47,7 +71,10 @@ export class ArugulaRoom extends HTMLElement {
     const character = num("character"), colour = num("colour");
     const look: Look | undefined = character !== undefined || colour !== undefined ? { character: character ?? 2, colour: colour ?? 0 } : undefined;
     const mode = this.getAttribute("mode") === "outline" ? "outline" : "avatar";
-    void connect({ room, token, relay, mode, look })
+    const name = this.getAttribute("name") || undefined;
+    const how: Partial<ConnectOptions> = key ? (auth ? { key, auth, name } : { key, guest: (name || "Guest").slice(0, 80) }) : { token };
+    this.joining = true;
+    void connect({ room, relay, mode, look, ...how })
       .then((r) => {
         this.room = r;
         const fire = (type: string, detail: unknown) => this.dispatchEvent(new CustomEvent(`arugula:${type}`, { detail, bubbles: true, composed: true }));
@@ -61,6 +88,7 @@ export class ArugulaRoom extends HTMLElement {
         for (const ok of this.waiting.splice(0)) ok(r);
       })
       .catch((e: Error) => {
+        this.joining = false;
         this.failed = e;
         console.error(`<arugula-room>: ${e.message}`);
       });
@@ -69,6 +97,7 @@ export class ArugulaRoom extends HTMLElement {
   disconnectedCallback() {
     this.room?.leave();
     this.room = null;
+    this.joining = false;
   }
 }
 

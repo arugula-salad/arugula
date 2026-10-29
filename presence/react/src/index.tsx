@@ -24,7 +24,17 @@ const Presence = createContext<Ctx>({ room: null, members: [], live: "off", erro
 export interface PresenceRoomProps {
   room: string;
   /** A room token your server signed, or a function for a fresh one. */
-  token: ConnectOptions["token"];
+  token?: ConnectOptions["token"];
+  /** Or, with no server: the app's publishable key (connect()'s `key`;
+   * React keeps `key` for itself), with `auth` or `guest`. */
+  publishableKey?: string;
+  /** The person's token from your auth provider, or a function for a
+   * fresh one (called on every (re)connect). */
+  auth?: ConnectOptions["auth"];
+  /** A guest's name (with publishableKey and no auth). */
+  guest?: string;
+  /** A member's name, if their token has none. */
+  name?: string;
   relay?: string;
   mode?: "avatar" | "outline";
   look?: Look;
@@ -32,17 +42,19 @@ export interface PresenceRoomProps {
 }
 
 /** Join `room` while mounted; everything inside draws from it. */
-export function PresenceRoom({ room: id, token, relay, mode, look, children }: PresenceRoomProps) {
+export function PresenceRoom({ room: id, token, publishableKey: key, auth, guest, name, relay, mode, look, children }: PresenceRoomProps) {
   const [state, setState] = useState<Ctx>({ room: null, members: [], live: "connecting", error: null });
-  // The token function may be a fresh closure each render; the room keeps
-  // the first and reads the newest through this.
-  const tokenRef = useRef(token);
-  tokenRef.current = token;
+  // The token (or auth) function may be a fresh closure each render; the
+  // room keeps the first and reads the newest through this.
+  const cred = key ? auth : token;
+  const credRef = useRef(cred);
+  credRef.current = cred;
   useEffect(() => {
     let room: Room | null = null;
     let gone = false;
-    const t = typeof token === "string" ? token : () => (tokenRef.current as () => Promise<string>)();
-    connect({ room: id, token: t, relay, mode, look })
+    const c = typeof cred === "function" ? () => (credRef.current as () => Promise<string>)() : cred;
+    const how: Partial<ConnectOptions> = key ? (c ? { key, auth: c, name } : { key, guest }) : { token: c };
+    connect({ room: id, relay, mode, look, ...how })
       .then((r) => {
         if (gone) return r.leave();
         room = r;
@@ -56,8 +68,8 @@ export function PresenceRoom({ room: id, token, relay, mode, look, children }: P
       gone = true;
       room?.leave();
     };
-    // A different room, relay or token kind is a different connection.
-  }, [id, relay, typeof token === "string" ? token : "fn"]);
+    // A different room, relay, key or credential is a different connection.
+  }, [id, relay, key, guest, typeof cred === "string" ? cred : cred ? "fn" : ""]);
   return <Presence.Provider value={state}>{children}</Presence.Provider>;
 }
 

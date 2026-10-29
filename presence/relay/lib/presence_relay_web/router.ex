@@ -62,6 +62,9 @@ defmodule PresenceRelayWeb.Router do
     delete "/apps/:id/origins", AppsController, :remove_origin
     post "/apps/:id/keys", AppsController, :make_key
     delete "/apps/:id/keys/:key", AppsController, :revoke_key
+    get "/apps/:id/issuer", AppsController, :issuer
+    put "/apps/:id/issuer", AppsController, :put_issuer
+    delete "/apps/:id/issuer", AppsController, :delete_issuer
   end
 
   # Anything else is the demo site's (a single-page app): its index.

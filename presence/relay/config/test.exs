@@ -25,6 +25,11 @@ config :presence_relay, PresenceRelay.Mailer, adapter: Swoosh.Adapters.Test
 config :swoosh, :api_client, false
 config :presence_relay, seed_meet: false
 
+# Sign-in providers: the tests' own issuers are on 127.0.0.1 over http,
+# a refetch for an unknown key id is allowed sooner than in prod, and a
+# slow issuer gives up sooner.
+config :presence_relay, issuer_allow_local: true, jwks_refetch_ms: 300, jwks_timeout_ms: 500
+
 config :presence_relay, PresenceRelay.Accounts.Google,
   client_id: "test-client",
   client_secret: "test-secret",

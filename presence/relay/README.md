@@ -81,6 +81,27 @@ room.join().receive("ok", ({ you }) => { /* … */ });
 room.push("frame", frameBytes.buffer); // an ArrayBuffer
 ```
 
+## Members by sign-in (no server of the app's)
+
+An app can name its sign-in provider (Clerk, Auth0, Firebase, Supabase or
+any OIDC issuer: `PUT /api/v1/apps/<id>/issuer`), and then a page with its
+publishable key joins with the person's own token as `auth`
+(PROTOCOL.md, "Members by sign-in"; `PresenceRelay.Issuers`). The
+providers' keys are fetched and cached per node (`PresenceRelay.Issuers.Keys`).
+
+To check a real provider's token against an issuer, with no database or
+relay running (the token from stdin or `AUTH_TOKEN`, never argv):
+
+```sh
+pbpaste | mise exec -- mix run --no-start scripts/check_provider.exs -- \
+  --provider clerk --issuer https://your-app.clerk.accounts.dev --origin http://localhost:3000
+```
+
+It prints the issuer it built, the token's header and the claims it
+checks, then `admitted` (with the member's sub and name) or `refused` and
+why. `--audience`, `--project`, `--name-claim`, `--room-claim`/`--room-match`
+and `--room` set the rest.
+
 ## Deploying
 
 `relay/Dockerfile` builds the demo, the SDK and the hosted installs, then

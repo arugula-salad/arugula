@@ -133,6 +133,18 @@ test("the socket's params: a room token, or a publishable key with the room and 
   });
 });
 
+test("the socket's params for a member: the key, the room and their provider token (and a fallback name)", () => {
+  const url = "wss://x/socket";
+  assert.deepEqual(socketParams({ url, room: "acme:standup", key: "pk_live_abc", auth: "eyJ.a.b" }, "eyJ.a.b"), { key: "pk_live_abc", room: "acme:standup", auth: "eyJ.a.b" });
+  assert.deepEqual(socketParams({ url, room: "lobby", key: "pk_live_abc", auth: () => Promise.resolve("t"), name: "Ada", look: { character: 1, colour: 0 } }, "t2"), {
+    key: "pk_live_abc",
+    room: "lobby",
+    auth: "t2",
+    name: "Ada",
+    look: "1:0",
+  });
+});
+
 test("messages: history and said merge by id in order, say adds yours, loadEarlier pages back", async () => {
   const t = fake();
   const kept = [];

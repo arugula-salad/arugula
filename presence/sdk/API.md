@@ -19,6 +19,8 @@ this; the site's docs show exactly this. PROTOCOL.md is underneath.
 `<arugula-room>` attributes:
 - `room` (required): the room's id in your app.
 - `token-url`: your endpoint; the element POSTs `{room}` (JSON, with the page's cookies) and expects `{token}` (a room token your server signed). Called on every (re)connect.
+- `key` + `auth`: no server of yours: the app's publishable key, and the person's token from your auth provider (below). `auth="eyJ…"` is a token; a bare `auth` waits for the `auth` property, `el.auth = () => getToken()`, called on every (re)connect.
+- `key` + `name`: a guest by name, where the app allows guests (with `auth`, `name` is only for a token without one).
 - `demo` + `name`: prototype without a server: arugula.stream's public demo tokens (anyone who knows the room's name can join it). Not for production.
 - `relay`: default `wss://arugula.stream/socket`.
 - `mode` (`avatar`|`outline`, default `avatar`), `character`, `colour`: starting choices (the person can change them; kept in their browser).
@@ -34,6 +36,7 @@ Events (bubbling, on the room element): `arugula:members` (`detail.members`), `a
     const room = await connect({
       room: "design-team",
       token: async () => (await fetch("/api/presence-token", { method: "POST", body: JSON.stringify({ room: "design-team" }) })).json().then((r) => r.token),
+      // or, no server: key: "pk_live_…", auth: () => getToken()   (or guest: "Ada")
       // relay: "wss://arugula.stream/socket",
     });
     room.members;                       // [{ sub, name, look, mode, away, watching }]
@@ -53,7 +56,7 @@ Events (bubbling, on the room element): `arugula:members` (`detail.members`), `a
 
 ## React: `@arugula/presence-react`
 
-    <PresenceRoom room="design-team" token={getToken}>
+    <PresenceRoom room="design-team" token={getToken}>   {/* or publishableKey="pk_live_…" auth={getToken} */}
       <CameraControls />
       <People />
       <Avatar user={id} size="head" />
@@ -64,14 +67,44 @@ Events (bubbling, on the room element): `arugula:members` (`detail.members`), `a
 
 On arugula.stream an app also has publishable keys (`pk_live_…` for its
 allowed origins, `pk_test_…` for those and localhost), safe in a page.
-With a key, people join as guests by name; the relay makes their ids:
+The key only works from the origins you list for the app. Keys are
+revocable.
+
+**Signed-in members, with your own auth provider.** Set the app's issuer
+(Clerk, Auth0, Firebase, Supabase or any OIDC provider; PROTOCOL.md,
+"Members by sign-in"), then hand `connect()` the person's token from it.
+`auth` is a token or a function for a fresh one, called on every
+(re)connect; the relay checks it against the provider's keys, and the
+member's id is their provider id, scoped to the issuer:
+
+    connect({ room: "design-team", key: "pk_live_…", auth: () => getToken() })
+
+    <arugula-room room="design-team" key="pk_live_…" auth></arugula-room>
+    <script>document.querySelector("arugula-room").auth = () => getToken()</script>
+
+    <PresenceRoom room="design-team" publishableKey="pk_live_…" auth={getToken}>
+
+Where the token comes from, for each provider (and the issuer to set):
+
+| provider | `auth` | issuer settings |
+|---|---|---|
+| Clerk | `() => Clerk.session.getToken()` | `{provider: "clerk", issuer: "https://<your Frontend API>"}`; add `"name": "{{user.full_name}}"` under Customize session token (or pass `name`) |
+| Auth0 | `() => auth0.getTokenSilently()` (with `authorizationParams.audience`) | `{provider: "auth0", issuer: "<tenant>.auth0.com", audience: "<API identifier>"}` |
+| Firebase | `() => getAuth().currentUser.getIdToken()` | `{provider: "firebase", project: "<project id>"}` |
+| Supabase | `async () => (await supabase.auth.getSession()).data.session.access_token` | `{provider: "supabase", issuer: "https://<ref>.supabase.co"}` (asymmetric signing keys; legacy HS256 projects aren't supported) |
+| OIDC | `async () => (await userManager.getUser()).id_token` | `{provider: "oidc", issuer: "<iss>", audience: "<client id>"}` |
+
+A room rule keeps members to their rooms by a claim: `{"claim":
+"org_id", "match": "prefix"}` admits org `acme`'s members to
+`acme:standup` and no other org's rooms; `"match": "contains"` wants the
+room in a list claim.
+
+**Guests**, where the app allows them, come by name; the relay makes
+their ids:
 
     connect({ room: "design-team", key: "pk_live_…", guest: "Ada" })
 
-The key only works from the origins you list for the app, and only if
-the app allows guests. Keys are revocable; signing in with your own auth
-provider comes next. Where your server decides who's in which room, sign
-room tokens instead:
+Where your server decides who's in which room, sign room tokens instead:
 
 ## Server: sign a room token (every language, same shape)
 

@@ -3,11 +3,12 @@
 
 import { Code, Tabs } from "./code";
 import { Nav, SOURCE } from "./landing";
-import { browser, install, jsApi, prototype, reactHook, server, theming } from "./snippets";
+import { browser, install, jsApi, prototype, providers, reactHook, roomRule, server, theming } from "./snippets";
 
 const SECTIONS = [
   ["quickstart", "Quickstart"],
   ["tokens", "Room tokens"],
+  ["sign-in", "Your sign-in, no server"],
   ["elements", "Elements"],
   ["js", "JS API"],
   ["react", "React"],
@@ -62,6 +63,20 @@ export function Docs() {
             <a href={`${SOURCE}/relay`}>presence/relay</a>, Phoenix) with your own <code>PRESENCE_APPS</code>.
           </p>
 
+          <h2 id="sign-in">Your sign-in, no server</h2>
+          <p>
+            Already signing people in with Clerk, Auth0, Firebase, Supabase or another OpenID Connect provider? Then you need no server for this. Set
+            your app's issuer, and the page joins with its publishable key and the person's own token, which the relay checks against the
+            provider's published keys. <code>auth</code> is a token or a function for a fresh one, called on every (re)connect.
+          </p>
+          <Tabs tabs={providers} label="Join with your sign-in" />
+          <p>
+            Each member's id is their provider id, scoped to the issuer; their name comes from the token's <code>name</code> claim (Supabase:{" "}
+            <code>user_metadata.full_name</code>), else the <code>name</code> you pass. The key still only works from your app's origins, and guests
+            (by name, if you allow them) still can. A room rule keeps members to their rooms by a claim:
+          </p>
+          <Code code={roomRule} label="A room rule" />
+
           <h2 id="elements">Elements</h2>
           <p>
             <code>{"<arugula-room>"}</code> joins a room; the other elements, inside it, show it.
@@ -70,6 +85,8 @@ export function Docs() {
             <tbody>
               <Attr name="room">the room's id in your app (required)</Attr>
               <Attr name="token-url">your endpoint that returns {"{token}"}; called on every (re)connect</Attr>
+              <Attr name="key + auth">no server: your publishable key and the person's sign-in token (or a bare auth, then el.auth = () =&gt; getToken())</Attr>
+              <Attr name="key + name">a guest by name, where your app allows guests</Attr>
               <Attr name="demo + name">a public demo room instead (prototypes only)</Attr>
               <Attr name="relay">default wss://arugula.stream/socket</Attr>
               <Attr name="mode, character, colour">starting choices; each person can change theirs</Attr>

@@ -5,15 +5,16 @@ defmodule PresenceRelayWeb.Socket do
   - `token`: a room token (a host app's server signed it, or the demo's).
   - `key` + `room`: a publishable key (#318 P3), from a page on one of its
     app's allowed origins (a test key also from localhost), and then
-    `name` for a guest, where the app allows guests. (A provider token,
-    verified against the app's issuer, comes with P4.)
+    either `auth`, the end user's own token from the app's sign-in
+    provider (P4: `PresenceRelay.Issuers` checks it), for a member; or
+    `name` for a guest, where the app allows guests.
 
   Either way the socket carries the same assigns (app, room, sub, name,
   look) for the room channel.
   """
   use Phoenix.Socket
 
-  alias PresenceRelay.{Apps, Token}
+  alias PresenceRelay.{Apps, Issuers, Token}
   alias PresenceRelayWeb.Origin
 
   channel "room:*", PresenceRelayWeb.RoomChannel
@@ -44,7 +45,13 @@ defmodule PresenceRelayWeb.Socket do
            Apps.origin_allowed?(Enum.map(app.origins, & &1.origin), mode, origin) ||
              {:error, :origin},
          true <- Token.valid_room?(room) || {:error, :bad_room} do
-      guest(app, room, p)
+      case p do
+        %{"auth" => auth} when is_binary(auth) and auth != "" ->
+          member(app, room, auth, origin, p)
+
+        _ ->
+          guest(app, room, p)
+      end
     end
   end
 
@@ -59,6 +66,16 @@ defmodule PresenceRelayWeb.Socket do
   end
 
   defp guest(_, _, _), do: {:error, :no_identity}
+
+  # A signed-in member: their provider's token, checked against the app's
+  # issuer (and its room rule); `name` only stands in for a token without one.
+  defp member(%{issuer: nil}, _, _, _, _), do: {:error, :no_issuer}
+
+  defp member(app, room, auth, origin, p) do
+    with {:ok, m} <-
+           Issuers.verify(app.issuer, auth, origin: origin, room: room, name: p["name"]),
+         do: {:ok, %{app: app.id, room: room, sub: m.sub, name: m.name, look: look(p)}}
+  end
 
   # `look` as `character:colour`, the query string's way.
   defp look(%{"look" => l}) when is_binary(l) do
