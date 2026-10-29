@@ -126,3 +126,31 @@ pnpm install && pnpm assets && pnpm build`, then `DEMO=1 mix phx.server`.
 address, for a browser on another machine; that browser needs a secure
 context for the camera: https, or Chrome's
 `--unsafely-treat-insecure-origin-as-secure=http://<address>:<port>`).
+
+## A cluster (two or more machines)
+
+The relay clusters (#318's P2): Phoenix.PubSub and Presence span the nodes,
+connections are an OTP `:pg` group per member (so the room and connection
+caps count the whole cluster, and a camera goes `off` when a member's last
+connection anywhere leaves), and each node keeps the newest frames sent
+through it, which a joiner on any node is sent (`PresenceRelay.Rooms`).
+
+On Fly:
+
+1. Give the nodes a shared cookie, once per app:
+   `fly secrets set RELEASE_COOKIE=$(openssl rand -hex 32) -a arugula-stream`
+2. Deploy as usual. `rel/env.sh.eex` names each machine's node after the
+   app and its private IPv6 address and sets
+   `DNS_CLUSTER_QUERY=<app>.internal`; `DNSCluster` finds the others.
+3. Scale out: `fly scale count 2 -a arugula-stream` (or one machine per
+   region: `fly scale count 2 --region iad,ord`). Check from a machine with
+   `fly ssh console -C "/app/bin/presence_relay rpc 'IO.inspect(Node.list())'"`.
+
+Locally, two nodes on one machine:
+
+    DEMO=1 DEMO_SECRET=s PORT=4202 elixir --sname a --cookie c -S mix phx.server
+    DEMO=1 DEMO_SECRET=s PORT=4212 elixir --sname b --cookie c -e 'Node.connect(:"a@HOST")' -S mix phx.server
+
+(The same `DEMO_SECRET` on both, so a token from one node joins on the
+other.) The multi-node tests start a second node with OTP's `:peer`:
+`mix test test/presence_relay/cluster_test.exs`.
