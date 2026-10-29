@@ -1,0 +1,40 @@
+# arugula.stream's staging (#318, P1): the same image as fly.toml, from
+# presence-toolkit and the milestone branches, at
+# https://arugula-stream-staging.fly.dev. `fly deploy -c fly.staging.toml`
+# from presence/. Postgres: the Managed Postgres cluster arugula-stream-db
+# (iad), database and user presence_staging, attached as DATABASE_URL;
+# migrations run before each release. Secrets: SECRET_KEY_BASE,
+# DEMO_SECRET, DATABASE_URL. One machine until the relay clusters (P2).
+app = "arugula-stream-staging"
+primary_region = "iad"
+
+[build]
+  dockerfile = "relay/Dockerfile"
+
+[deploy]
+  release_command = "/app/bin/presence_relay eval PresenceRelay.Release.migrate()"
+
+[env]
+  PHX_HOST = "arugula-stream-staging.fly.dev"
+  PORT = "4000"
+  DEMO = "1"
+  # Fly's private network (and the Managed Postgres host on it) is IPv6.
+  ECTO_IPV6 = "true"
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

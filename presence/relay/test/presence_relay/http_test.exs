@@ -83,4 +83,12 @@ defmodule PresenceRelay.HttpTest do
 
     assert build_conn() |> get("/npm/nothing.tgz") |> Map.get(:status) == 404
   end
+
+  test "healthz?db=1 asks Postgres" do
+    Ecto.Adapters.SQL.Sandbox.checkout(PresenceRelay.Repo)
+    Ecto.Adapters.SQL.Sandbox.mode(PresenceRelay.Repo, {:shared, self()})
+    conn = get(build_conn(), "/healthz?db=1")
+    assert {conn.status, conn.resp_body} == {200, "ok db"}
+    assert get(build_conn(), "/healthz").resp_body == "ok"
+  end
 end
