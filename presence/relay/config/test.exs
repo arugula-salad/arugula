@@ -19,5 +19,14 @@ config :presence_relay, PresenceRelay.Repo,
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 
+config :presence_relay, PresenceRelay.Mailer, adapter: Swoosh.Adapters.Test
+config :swoosh, :api_client, false
+config :presence_relay, seed_meet: false
+
+config :presence_relay, PresenceRelay.Accounts.Google,
+  client_id: "test-client",
+  client_secret: "test-secret",
+  client: PresenceRelay.FakeGoogle
+
 config :logger, level: :warning
 config :phoenix, :plug_init_mode, :runtime

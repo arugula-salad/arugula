@@ -3,6 +3,27 @@ import Config
 # PRESENCE_APPS="id:secret,id2:secret2": each host app's id and the HS256
 # secret its server signs room tokens with. DEMO=1 adds app "demo" (a
 # random secret at boot) and POST /api/demo/token.
+# Sign in with Google: on when both are set. The callback is
+# /auth/google/callback on whichever host the browser is on.
+if config_env() != :test do
+  config :presence_relay, PresenceRelay.Accounts.Google,
+    client_id: System.get_env("GOOGLE_CLIENT_ID"),
+    client_secret: System.get_env("GOOGLE_CLIENT_SECRET")
+
+  if origins = System.get_env("MEET_ORIGINS"),
+    do: config(:presence_relay, meet_origins: String.split(origins, ",", trim: true))
+
+  if from = System.get_env("MAIL_FROM") do
+    from =
+      case Regex.run(~r/\A\s*(.*?)\s*<([^>]+)>\s*\z/, from) do
+        [_, name, address] -> {name, address}
+        _ -> {"arugula.stream", String.trim(from)}
+      end
+
+    config :presence_relay, mail_from: from
+  end
+end
+
 if config_env() != :test do
   apps =
     (System.get_env("PRESENCE_APPS") || "")
@@ -21,6 +42,16 @@ if config_env() != :test do
 end
 
 if config_env() == :prod do
+  # Mail by Resend when RESEND_API_KEY is set; otherwise none (email
+  # sign-in says it isn't set up; guests and Google still work).
+  case System.get_env("RESEND_API_KEY") do
+    key when is_binary(key) and key != "" ->
+      config :presence_relay, PresenceRelay.Mailer, adapter: Swoosh.Adapters.Resend, api_key: key
+
+    _ ->
+      config :presence_relay, PresenceRelay.Mailer, adapter: nil
+  end
+
   # Postgres when DATABASE_URL is set (fly mpg attach sets it); a relay
   # without one still relays.
   case System.get_env("DATABASE_URL") do

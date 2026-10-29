@@ -1,5 +1,6 @@
 // arugula.video's relay as a transport (../../PROTOCOL.md): a Phoenix
-// socket with a room token, the room's channel, binary frames both ways
+// socket with a room token (or a publishable key and a guest's name), the
+// room's channel, binary frames both ways
 // (the relay puts the sender's sub in front of each: `len:u8 sub frame`),
 // Phoenix.Presence for who's there, and waves. The channel is joined while
 // this page listens or publishes, and left when it does neither.
@@ -8,14 +9,40 @@ import { Presence, Socket, type Channel } from "phoenix";
 import type { Look } from "@arugula/presence-core/avatar/rig";
 import type { Member, Mode, State, Transport, TransportEvents } from "./transport.ts";
 
-export interface PhoenixTransportOptions {
-  /** The relay's socket, e.g. `wss://arugula.video/socket`. */
-  url: string;
+/** Into the room with a room token: your server decided who's in it. */
+export interface TokenAuth {
   /** A room token (PROTOCOL.md), or a function for a fresh one: called on
    * every (re)connect. */
   token: string | (() => Promise<string>);
+  key?: never;
+  guest?: never;
+}
+
+/** Into the room as a guest, with an app's publishable key (PROTOCOL.md,
+ * "Publishable keys"): the page must be on one of the app's origins. */
+export interface KeyAuth {
+  /** `pk_live_…` or `pk_test_…`. */
+  key: string;
+  /** The guest's name; the relay makes their sub. */
+  guest: string;
+  /** A look to start with. */
+  look?: Look;
+  token?: never;
+}
+
+export type PhoenixTransportOptions = {
+  /** The relay's socket, e.g. `wss://arugula.video/socket`. */
+  url: string;
   /** The room, as the token names it. */
   room: string;
+} & (TokenAuth | KeyAuth);
+
+/** The socket's params: the token, or the key, room and guest's name. */
+export function socketParams(o: PhoenixTransportOptions, token: string): Record<string, string> {
+  if (o.key === undefined) return { token };
+  const p: Record<string, string> = { key: o.key, room: o.room, name: o.guest };
+  if (o.look) p.look = `${o.look.character}:${o.look.colour}`;
+  return p;
 }
 
 /** A relayed frame's sender and the frame itself. */
@@ -61,7 +88,7 @@ export function phoenixTransport(o: PhoenixTransportOptions): Transport {
     if (channel) return;
     if (typeof o.token === "function") token = await o.token();
     if (channel || (!listening && !publishing)) return;
-    socket = new Socket(o.url, { params: () => ({ token }), binaryType: "arraybuffer" } as never);
+    socket = new Socket(o.url, { params: () => socketParams(o, token), binaryType: "arraybuffer" } as never);
     socket.connect();
     const ch = socket.channel(`room:${o.room}`, {});
     channel = ch;
