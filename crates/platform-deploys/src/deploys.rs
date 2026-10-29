@@ -239,8 +239,16 @@ pub(crate) async fn deploy_json(
         })
     });
     let actors: Vec<Option<Actor>> = history.iter().map(|e| Actor::parse(&e.actor)).collect();
+    // Why it's stale (#334): a newer request or an apply, from the
+    // `staled` event; the stale rule alone (an apply, whatever the row's
+    // state) when the log has none. An old event has no `why`: applied.
+    let staled = history.iter().rev().find(|e| e.kind == EventKind::Staled.as_str()).and_then(|e| {
+        let v = e.detail_json().ok()?;
+        Some(json!({ "deploy": v["after"], "seq": v["seq"], "why": v["why"].as_str().unwrap_or("applied") }))
+    });
     let stale = match app.db.may_approve(&d.id)? {
-        Err(Refusal::Stale { seq, deploy }) => Some(json!({ "seq": seq, "deploy": deploy })),
+        _ if d.state == crate::db::deploys::State::Stale && staled.is_some() => staled,
+        Err(Refusal::Stale { seq, deploy }) => Some(json!({ "seq": seq, "deploy": deploy, "why": "applied" })),
         _ => None,
     };
     let mut ids = vec![d.planned_by.clone()];
@@ -546,6 +554,12 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
     // release): the App must be able to, or the deploy can't run once it's
     // approved.
     if let Some(why) = crate::drivers::mint::plan_refuses(app, &env, &source).await {
+        return Err(err(StatusCode::CONFLICT, &why));
+    }
+    // A release of a commit that's in a release already can't do anything
+    // (#334): refused now, not after an owner approves it. Best effort: the
+    // driver refuses it again when it runs.
+    if let Some(why) = crate::drivers::titles::already_released(app, &env, &source).await {
         return Err(err(StatusCode::CONFLICT, &why));
     }
     // Its settings as its driver takes them (M220): an environment made

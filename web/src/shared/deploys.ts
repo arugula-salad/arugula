@@ -60,6 +60,15 @@ export function deployTitle(d: {
   return d.subject ? `Deploy ${short} to ${d.environment.name}${subject}` : `Deploy to ${d.environment.name}`;
 }
 
+/** Why a deploy is stale (#334): a newer request to its environment, or an
+ * apply (an old event has no `why`: applied). The deploy that overtook it
+ * is linked after this. */
+export function staleNote(stale: { why?: string | null }, environment: string): string {
+  return stale.why === "superseded"
+    ? `A newer deploy to ${environment} was asked for after this, so it won't be applied.`
+    : `Another deploy was applied to ${environment} after this was planned, so it can't be approved. Plan it again.`;
+}
+
 /** How long a deploy has waited since it was asked for: "3h", "12m",
  * "2d". */
 export function waitedText(since: number, now = Date.now()): string {

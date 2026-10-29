@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { actorOf, approvalBody, checkPlan, eventCanonical, parseOperation, sha256Hex, signApproval } from "../src/shell/e2e/deploy.ts";
 import { platformTap } from "../src/shell/tap.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
-import { deployTitle, waitedText } from "../src/shared/deploys.ts";
+import { deployTitle, staleNote, waitedText } from "../src/shared/deploys.ts";
 
 const f = JSON.parse(readFileSync(new URL("./deploy.fixture.json", import.meta.url), "utf8"));
 const hexOf = (s) => Uint8Array.from(s.match(/../g).map((b) => parseInt(b, 16)));
@@ -110,4 +110,15 @@ test("how long a deploy has waited", () => {
     [20_000, 12 * 60_000, 3 * 3_600_000 + 5 * 60_000, 2 * 86_400_000].map((ms) => waitedText(now - ms, now)),
     ["under a minute", "12m", "3h", "2d"],
   );
+});
+
+test("a stale deploy says why, by what overtook it (#334)", () => {
+  assert.equal(
+    staleNote({ why: "superseded" }, "release"),
+    "A newer deploy to release was asked for after this, so it won't be applied.",
+  );
+  const applied = "Another deploy was applied to release after this was planned, so it can't be approved. Plan it again.";
+  assert.equal(staleNote({ why: "applied" }, "release"), applied);
+  // An old event has no why: it was an apply.
+  assert.equal(staleNote({}, "release"), applied);
 });

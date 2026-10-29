@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
-import { deployEventState, deployStateText, deployTitle, plannerText } from "../../shared/deploys";
+import { deployEventState, deployStateText, deployTitle, plannerText, staleNote } from "../../shared/deploys";
 import { DeployAsked } from "../../shared/ui/deploy-asked";
 import { CopyButton } from "../../shared/ui/copy";
 import { PageHeader } from "../../shared/ui/page-header";
@@ -47,7 +47,7 @@ export interface Deploy {
   /** When approval was last asked for, or null. */
   requested_at?: number | null;
   operation: { body: string; hash: string };
-  stale: { deploy: string; seq: number } | null;
+  stale: { deploy: string; seq: number; why?: string } | null;
   may_approve: boolean;
   approvals: {
     id: string;
@@ -156,7 +156,12 @@ export function DeployCard({ d, link, planOpen, headless }: { d: Deploy; link?: 
           Its hash <code class="deploy-digest">{d.operation.hash}</code>
         </p>
       </details>
-      {d.stale ? <p class="deploy-note">Another deploy was applied to {d.environment.name} after this was planned, so it can't be approved. Plan it again.</p> : null}
+      {d.stale ? (
+        <p class="deploy-note" data-deploy-stale={d.stale.why}>
+          {staleNote(d.stale, d.environment.name)}{" "}
+          <a href={`/deploys/${d.stale.deploy}`}>{d.stale.deploy.slice(0, 12)}</a>
+        </p>
+      ) : null}
       {d.may_approve ? (
         <div class="deploy-actions">
           <a class="secondary" href={approveHref(d.id)} data-deploy-deny>

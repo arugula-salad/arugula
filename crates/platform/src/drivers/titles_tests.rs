@@ -79,3 +79,113 @@ fn a_subject_is_the_first_line_cut_short() {
     assert_eq!(long.chars().count(), SUBJECT_MAX);
     assert!(long.ends_with('…'));
 }
+
+mod released {
+    //! A release of a commit that's in a release already is refused when
+    //! it's planned (#334), through a fake GitHub.
+
+    use std::sync::{Arc, Mutex};
+
+    use aws_lc_rs::{encoding::AsDer, rsa::KeySize};
+    use axum::{
+        Json, Router,
+        extract::{Path, State},
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::{get, post},
+    };
+    use serde_json::{Value, json};
+
+    use super::{commit, env};
+    use crate::{Platform, db::Db, drivers::titles::already_released, forge::GithubApp};
+
+    /// What the fake says: the releases, and how the compare of the commit
+    /// with the lane's newest tag came out (`None`: GitHub is down).
+    struct Gh {
+        releases: Vec<&'static str>,
+        compare: Option<&'static str>,
+        compared: Vec<String>,
+    }
+
+    type Shared = Arc<Mutex<Gh>>;
+
+    async fn releases(State(h): State<Shared>) -> Response {
+        if h.lock().unwrap().compare.is_none() {
+            return StatusCode::BAD_GATEWAY.into_response();
+        }
+        let v: Vec<Value> =
+            h.lock().unwrap().releases.iter().map(|t| json!({ "tag_name": t, "draft": false })).collect();
+        Json(v).into_response()
+    }
+
+    async fn compare(State(h): State<Shared>, Path((_, _, spec)): Path<(String, String, String)>) -> Response {
+        let mut h = h.lock().unwrap();
+        h.compared.push(spec);
+        Json(json!({ "status": h.compare })).into_response()
+    }
+
+    async fn platform(gh: Shared) -> Platform {
+        let r = Router::new()
+            .route(
+                "/repos/{o}/{r}/installation",
+                get(async || {
+                    Json(json!({ "id": 9, "account": { "id": 5, "login": "arugula-salad", "type": "Organization" } }))
+                }),
+            )
+            .route(
+                "/app/installations/{id}/access_tokens",
+                post(async || {
+                    Json(json!({
+                        "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z",
+                        "repositories": [{ "id": 1, "full_name": "arugula-salad/arugula" }],
+                    }))
+                }),
+            )
+            .route("/repos/{o}/{r}/releases", get(releases))
+            .route("/repos/{o}/{r}/compare/{spec}", get(compare))
+            .with_state(gh);
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let api = format!("http://{}", l.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(l, r).await.unwrap() });
+        let k = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa2048).unwrap();
+        let der = AsDer::<aws_lc_rs::encoding::Pkcs8V1Der>::as_der(&k).unwrap();
+        let key = aws_lc_rs::rsa::KeyPair::from_pkcs8(der.as_ref()).unwrap();
+        let mut p = Platform::new(
+            crate::Config::default(),
+            Db::test(),
+            Arc::new(crate::chat_tests::TestHub::default()),
+            reqwest::Client::new(),
+            Default::default(),
+        );
+        p.github = Some(GithubApp::new("1".into(), "arugula-test".into(), "whsec-test".into(), &api, key));
+        p
+    }
+
+    #[tokio::test]
+    async fn a_commit_in_the_lanes_newest_release_is_refused_naming_its_tag() {
+        // The newest `v` tag, not the app's newer one; the commit is behind it.
+        let gh: Shared = Arc::new(Mutex::new(Gh {
+            releases: vec!["app-v0.2.0", "v0.63.8", "v0.63.7"],
+            compare: Some("behind"),
+            compared: vec![],
+        }));
+        let app = platform(gh.clone()).await;
+        let (rel, src) = (env("arugula-release"), commit());
+        let said = already_released(&app, &rel, &src).await;
+        assert_eq!(said.as_deref(), Some("b1faaa04 is already in v0.63.8"));
+        assert_eq!(gh.lock().unwrap().compared, [format!("v0.63.8...{}", src.reference)]);
+
+        // Ahead of the tag (not released), and another driver: nothing to say.
+        gh.lock().unwrap().compare = Some("ahead");
+        assert_eq!(already_released(&app, &rel, &src).await, None);
+        gh.lock().unwrap().compare = Some("behind");
+        assert_eq!(already_released(&app, &env("chant-fly"), &src).await, None);
+    }
+
+    #[tokio::test]
+    async fn a_github_failure_lets_the_plan_through() {
+        let gh: Shared = Arc::new(Mutex::new(Gh { releases: vec!["v0.63.8"], compare: None, compared: vec![] }));
+        let app = platform(gh).await;
+        assert_eq!(already_released(&app, &env("arugula-release"), &commit()).await, None);
+    }
+}

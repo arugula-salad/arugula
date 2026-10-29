@@ -10,6 +10,7 @@
 
 use std::time::Duration;
 
+use anyhow::Context as _;
 use arugula_e2e::drivers::arugula_release::{self as ar, BRANCH, BUMP, Lane, REPO};
 use serde_json::Value;
 use tracing::warn;
@@ -17,7 +18,7 @@ use tracing::warn;
 use crate::{
     Platform,
     db::deploys::{Environment, Source, SourceKind},
-    forge::{Caller, Purpose, Repo},
+    forge::{Caller, Purpose, ReadToken, Repo},
 };
 
 /// A subject, at most this many characters.
@@ -54,33 +55,22 @@ pub async fn read(app: &Platform, env: &Environment, source: &Source) -> Facts {
     }
 }
 
-pub(super) async fn fetch(app: &Platform, env: &Environment, source: &Source) -> anyhow::Result<Facts> {
-    use anyhow::Context as _;
-    let sha = source.reference.as_str();
-    // Goes into a URL: a full or abbreviated commit id, nothing else.
-    if !(7..=64).contains(&sha.len()) || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Ok(Facts::default());
-    }
-    let gh = app.github.as_ref().context("this platform has no GitHub App")?;
-    let release = env.driver == ar::DRIVER;
-    // Arugula's own repository is the release driver's alone. Any other is
-    // the planner's to name, so only one the project links is read.
-    let (repo, install, id) = if release {
-        let i = gh.installation(&app.http, REPO).await?.context("the App isn't installed on the repository")?;
-        (REPO.to_owned(), i.id, None)
-    } else {
-        let l = super::mint::source_link(app, &env.project, source)?.context("the repository isn't linked")?;
-        (l.full_name.clone(), l.installation_id, Some(l.repo_id))
-    };
-    let name = repo.as_str();
-    let target = id.map_or(Repo::Name(name), Repo::Id);
-    let token = gh.read_token(&Caller::of(app, "platform"), install, target, Purpose::Read).await?;
-    let api = gh.api.trim_end_matches('/');
-    let get = async |path: String| -> anyhow::Result<Value> {
-        let r = app
+/// A GitHub read of the repository a deploy's source is in, with the App's
+/// read token: what [`fetch`] and [`already_released`] share.
+struct Reader<'a> {
+    app: &'a Platform,
+    name: String,
+    token: ReadToken,
+}
+
+impl Reader<'_> {
+    async fn get(&self, path: &str) -> anyhow::Result<Value> {
+        let api = self.app.github.as_ref().context("this platform has no GitHub App")?.api.trim_end_matches('/');
+        let r = self
+            .app
             .http
-            .get(format!("{api}/repos/{name}/{path}"))
-            .bearer_auth(token.secret())
+            .get(format!("{api}/repos/{}/{path}", self.name))
+            .bearer_auth(self.token.secret())
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
             .header("User-Agent", "arugula-platform")
@@ -88,7 +78,34 @@ pub(super) async fn fetch(app: &Platform, env: &Environment, source: &Source) ->
             .await?
             .error_for_status()?;
         Ok(r.json().await?)
+    }
+}
+
+async fn reader<'a>(app: &'a Platform, env: &Environment, source: &Source) -> anyhow::Result<Reader<'a>> {
+    let gh = app.github.as_ref().context("this platform has no GitHub App")?;
+    // Arugula's own repository is the release driver's alone. Any other is
+    // the planner's to name, so only one the project links is read.
+    let (repo, install, id) = if env.driver == ar::DRIVER {
+        let i = gh.installation(&app.http, REPO).await?.context("the App isn't installed on the repository")?;
+        (REPO.to_owned(), i.id, None)
+    } else {
+        let l = super::mint::source_link(app, &env.project, source)?.context("the repository isn't linked")?;
+        (l.full_name.clone(), l.installation_id, Some(l.repo_id))
     };
+    let target = id.map_or(Repo::Name(repo.as_str()), Repo::Id);
+    let token = gh.read_token(&Caller::of(app, "platform"), install, target, Purpose::Read).await?;
+    Ok(Reader { app, name: repo, token })
+}
+
+pub(super) async fn fetch(app: &Platform, env: &Environment, source: &Source) -> anyhow::Result<Facts> {
+    let sha = source.reference.as_str();
+    // Goes into a URL: a full or abbreviated commit id, nothing else.
+    if !(7..=64).contains(&sha.len()) || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Ok(Facts::default());
+    }
+    let release = env.driver == ar::DRIVER;
+    let rd = reader(app, env, source).await?;
+    let get = async |path: String| rd.get(&path).await;
     let mut facts = Facts::default();
     match get(format!("commits/{sha}")).await {
         Ok(c) => facts.subject = c["commit"]["message"].as_str().and_then(subject_of),
@@ -193,4 +210,54 @@ pub fn title(env: &Environment, source: &Source, subject: Option<&str>, expected
         (_, Some(_)) => with(format!("Deploy {short} to {}", env.name)),
         _ => format!("Deploy to {}", env.name),
     }
+}
+
+/// The newest release tag of `env`'s lane that already holds `source`'s
+/// commit, if GitHub says one does (#334): `Some("b1faaa04 is already in
+/// v0.63.8")`, for a plan to refuse. Only the release driver's. **Best
+/// effort**, as [`read`] is: a failure or a timeout is `None` (the driver
+/// still refuses it when it runs).
+pub async fn already_released(app: &Platform, env: &Environment, source: &Source) -> Option<String> {
+    if env.driver != ar::DRIVER || source.kind != SourceKind::Commit {
+        return None;
+    }
+    match tokio::time::timeout(READ_FOR, released(app, env, source)).await {
+        Ok(Ok(tag)) => {
+            tag.map(|t| format!("{} is already in {t}", source.reference.chars().take(8).collect::<String>()))
+        }
+        Ok(Err(e)) => {
+            warn!(env = %env.id, error = format!("{e:#}"), "deploy: couldn't tell whether the commit is released");
+            None
+        }
+        Err(_) => {
+            warn!(env = %env.id, "deploy: checking whether the commit is released timed out");
+            None
+        }
+    }
+}
+
+async fn released(app: &Platform, env: &Environment, source: &Source) -> anyhow::Result<Option<String>> {
+    let sha = source.reference.as_str();
+    // Goes into a URL, as [`fetch`]'s does.
+    if !(7..=64).contains(&sha.len()) || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Ok(None);
+    }
+    let lane = Lane::of(&env.settings);
+    let rd = reader(app, env, source).await?;
+    // Releases come newest first: the lane's newest holds every commit an
+    // older one does, so one compare answers. Behind or identical: the
+    // commit is in the tag's history.
+    let releases = rd.get("releases?per_page=30").await?;
+    let Some(tag) = releases
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|r| r["draft"] != true)
+        .filter_map(|r| r["tag_name"].as_str())
+        .find(|t| ar::tag_version(lane, t).is_some())
+    else {
+        return Ok(None);
+    };
+    let c = rd.get(&format!("compare/{tag}...{sha}")).await?;
+    Ok(matches!(c["status"].as_str(), Some("behind" | "identical")).then(|| tag.to_owned()))
 }

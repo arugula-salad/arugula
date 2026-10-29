@@ -28,7 +28,12 @@
 //!   `planned` event, read from the log (never the row's copy): an apply
 //!   that failed may still have changed the environment. The same events turn the environment's other open
 //!   deploys (`planned`, `pending`, `approved`) `stale` at once, each with a
-//!   `staled` event; the seq check holds even if a row's state didn't.
+//!   `staled` event; the seq check holds even if a row's state didn't. So
+//!   does a newer **request** (#334: the newest request wins): the
+//!   environment's older open deploys (a lower `planned_seq`) go `stale`,
+//!   each `staled` event saying `why`: `superseded` (`after` is the newer
+//!   deploy, `seq` its `requested` event) or `applied` (absent, in old
+//!   rows). A superseded deploy is refused on its row's state.
 //! - **Who records what** ([`EventKind::allows`]): a person or an agent
 //!   plans, asks, and cancels; only the run that started an apply finishes
 //!   it; only the platform expires one.
@@ -1284,17 +1289,27 @@ fn write(
         deploy_row,
     )?;
     let mut events = vec![own.clone()];
-    if kind.applies() {
+    // An apply stales every other open deploy of the environment; a newer
+    // request stales the older ones (the newest request wins, #334): never
+    // this deploy, a newer one, another environment's or one already
+    // running or done.
+    let why = match kind {
+        EventKind::Requested => Some("superseded"),
+        k if k.applies() => Some("applied"),
+        _ => None,
+    };
+    if let Some(why) = why {
+        let older = if kind == EventKind::Requested { d.planned_seq } else { i64::MAX as u64 };
         let open: Vec<String> = tx.query_map(
             "SELECT id FROM deploys WHERE environment_id = ?1 AND id != ?2
-                 AND state IN ('planned', 'pending', 'approved')
+                 AND state IN ('planned', 'pending', 'approved') AND planned_seq < ?3
              ORDER BY planned_seq",
-            params![environment, deploy],
+            params![environment, deploy, older],
             |r| r.get(0),
         )?;
         for other in open {
-            let why = json!({ "after": deploy, "seq": own.seq });
-            events.push(append(tx, &environment, &other, EventKind::Staled, &Actor::Platform, at, &why)?);
+            let detail = json!({ "after": deploy, "seq": own.seq, "why": why });
+            events.push(append(tx, &environment, &other, EventKind::Staled, &Actor::Platform, at, &detail)?);
             tx.execute("UPDATE deploys SET state = 'stale', updated_at = ?2 WHERE id = ?1", params![other, at])?;
         }
     }
