@@ -33,6 +33,8 @@ defmodule PresenceRelay.Application do
           %{id: :pg, start: {:pg, :start_link, [PresenceRelay.Rooms.scope()]}},
           PresenceRelay.Presence,
           PresenceRelay.Rooms,
+          # Usage (monthly active users, call minutes) and caps, batched.
+          PresenceRelay.Usage,
           PresenceRelay.Chat.Memory,
           PresenceRelayWeb.Endpoint
         ] ++ seed

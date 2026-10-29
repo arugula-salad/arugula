@@ -3,12 +3,13 @@ defmodule PresenceRelayWeb.AppsController do
   `/api/v1/apps` (#318 P3), for the signed-in owner: make and list apps,
   rotate the secret (shown once), allow origins, make and revoke
   publishable keys, and set the sign-in provider whose tokens admit
-  members (P4, `PresenceRelay.Issuers`). The dashboard (P10) is its
-  first client.
+  members (P4, `PresenceRelay.Issuers`), and read usage and set the cap
+  on monthly active users (P9, `PresenceRelay.Usage`). The dashboard
+  (P10) is its first client.
   """
   use Phoenix.Controller, formats: [:json]
 
-  alias PresenceRelay.{Apps, Issuers}
+  alias PresenceRelay.{Apps, Issuers, Usage}
 
   def index(conn, _), do: json(conn, %{apps: Enum.map(Apps.list(conn.assigns.account), &view/1)})
 
@@ -92,6 +93,47 @@ defmodule PresenceRelayWeb.AppsController do
       json(conn, %{issuer: nil})
     end)
   end
+
+  @doc """
+  The app's usage (P9, `PresenceRelay.Usage`): `?months=N` (default 3, at
+  most 24) months and the last 31 days, oldest first, its cap and this
+  month.
+  """
+  def usage(conn, %{"id" => id} = params) do
+    with_app(conn, id, fn app ->
+      case months(params["months"]) do
+        {:ok, n} -> json(conn, Usage.report(app, n))
+        :error -> conn |> put_status(400) |> json(%{error: "months is 1–24"})
+      end
+    end)
+  end
+
+  @doc "Sets the app's cap on monthly active users: `{active_users: n | null}`."
+  def put_cap(conn, %{"id" => id} = params) do
+    with_app(conn, id, fn app ->
+      with {:ok, cap} <- Map.fetch(params, "active_users") |> ok_or_missing(),
+           {:ok, app} <- Usage.put_cap(app, cap) do
+        json(conn, %{cap: %{active_users: Usage.cap(app)}})
+      else
+        {:error, msg} when is_binary(msg) -> conn |> put_status(400) |> json(%{error: msg})
+        {:error, _} -> conn |> put_status(500) |> json(%{error: "couldn't set the cap"})
+      end
+    end)
+  end
+
+  defp months(nil), do: {:ok, 3}
+
+  defp months(s) when is_binary(s) do
+    case Integer.parse(s) do
+      {n, ""} when n in 1..24 -> {:ok, n}
+      _ -> :error
+    end
+  end
+
+  defp months(_), do: :error
+
+  defp ok_or_missing({:ok, v}), do: {:ok, v}
+  defp ok_or_missing(:error), do: {:error, "send active_users: a whole number, or null"}
 
   defp with_app(conn, id, fun) do
     case Apps.get(conn.assigns.account, id) do

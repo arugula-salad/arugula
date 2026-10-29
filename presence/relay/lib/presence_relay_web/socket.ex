@@ -7,14 +7,16 @@ defmodule PresenceRelayWeb.Socket do
     app's allowed origins (a test key also from localhost), and then
     either `auth`, the end user's own token from the app's sign-in
     provider (P4: `PresenceRelay.Issuers` checks it), for a member; or
-    `name` for a guest, where the app allows guests.
+    `name` for a guest, where the app allows guests, and optionally `gid`,
+    the browser's own random id, which metering counts the guest by
+    (P9, `PresenceRelay.Usage`) and nothing else trusts.
 
   Either way the socket carries the same assigns (app, room, sub, name,
-  look) for the room channel.
+  look, and `meter`, whom usage counts) for the room channel.
   """
   use Phoenix.Socket
 
-  alias PresenceRelay.{Apps, Issuers, Token}
+  alias PresenceRelay.{Apps, Issuers, Token, Usage}
   alias PresenceRelayWeb.Origin
 
   channel "room:*", PresenceRelayWeb.RoomChannel
@@ -36,7 +38,9 @@ defmodule PresenceRelayWeb.Socket do
   @doc false
   def admit(%{"token" => token}, _origin) do
     with {:ok, t} <- Token.verify(token),
-         do: {:ok, %{app: t.app, room: t.room, sub: t.sub, name: t.name, look: t.look}}
+         do:
+           {:ok,
+            %{app: t.app, room: t.room, sub: t.sub, name: t.name, look: t.look, meter: t.sub}}
   end
 
   def admit(%{"key" => key, "room" => room} = p, origin) do
@@ -61,11 +65,26 @@ defmodule PresenceRelayWeb.Socket do
     cond do
       not app.guests -> {:error, :no_guests}
       not Token.valid_name?(name) -> {:error, :bad_name}
-      true -> {:ok, %{app: app.id, room: room, sub: "g_" <> rand(), name: name, look: look(p)}}
+      true -> {:ok, guest_assigns(app, room, name, p)}
     end
   end
 
   defp guest(_, _, _), do: {:error, :no_identity}
+
+  # A guest's sub is new for each socket; their `gid`, if sound, is what
+  # metering counts them by (PresenceRelay.Usage), and nothing else.
+  defp guest_assigns(app, room, name, p) do
+    sub = "g_" <> rand()
+
+    %{
+      app: app.id,
+      room: room,
+      sub: sub,
+      name: name,
+      look: look(p),
+      meter: Usage.guest_key(sub, p)
+    }
+  end
 
   # A signed-in member: their provider's token, checked against the app's
   # issuer (and its room rule); `name` only stands in for a token without one.
@@ -74,7 +93,9 @@ defmodule PresenceRelayWeb.Socket do
   defp member(app, room, auth, origin, p) do
     with {:ok, m} <-
            Issuers.verify(app.issuer, auth, origin: origin, room: room, name: p["name"]),
-         do: {:ok, %{app: app.id, room: room, sub: m.sub, name: m.name, look: look(p)}}
+         do:
+           {:ok,
+            %{app: app.id, room: room, sub: m.sub, name: m.name, look: look(p), meter: m.sub}}
   end
 
   # `look` as `character:colour`, the query string's way.

@@ -24,7 +24,7 @@ A Phoenix socket (serializer V2, JSON with binary pushes) at
 |---|---|
 | `token=<room token>` | the host app's server, which signed it (below) |
 | `key=<publishable key>&room=<room>&auth=<provider token>[&name=<name>][&look=…]` | the app's sign-in provider: a **member** (below) |
-| `key=<publishable key>&room=<room>&name=<name>[&look=<character>:<colour>]` | nobody: a **guest**, where the app allows guests |
+| `key=<publishable key>&room=<room>&name=<name>[&look=<character>:<colour>][&gid=<id>]` | nobody: a **guest**, where the app allows guests |
 
 The socket refuses a missing, expired or badly signed token, a
 publishable key that's unknown, revoked, or not from one of its app's
@@ -44,6 +44,11 @@ publishable keys (`pk_live_…`, `pk_test_…`), safe to put in a page:
   key: a key is for browsers.
 - A guest gives only a `name` (rules as the token's `name`); the relay
   makes their `sub`, `g_` and 12 hex digits, new for each socket.
+- A guest may also send `gid`, a random id their browser made once and
+  keeps (`[A-Za-z0-9_-]{8,64}`; the client keeps 22 characters in
+  localStorage as `arugula.gid`). It's for usage metering only, so a
+  guest who reconnects counts once a month ("Usage and caps"): it's
+  unverified, never their identity, and nobody in the room sees it.
 - `room` follows the token's `room` rules; the channel topic must match it.
 - Keys are revoked one at a time; the app's server secret (for room
   tokens) is shown once and rotated on its own.
@@ -166,7 +171,9 @@ connection is in (the relay sets it; a client can't), for tiles.
 
 Limits: 32 KiB a frame, 70 ms between a member's frames, 64 members a room,
 8 connections a member. Over a limit, the frame is dropped (no error);
-too many members or connections, the join is refused (`{reason}`).
+too many members or connections, the join is refused (`{reason}`). A
+hosted app at its cap on monthly active users refuses someone new this
+month with `{reason: "this app is at its monthly limit"}` ("Usage and caps").
 
 ## Calls
 
@@ -244,7 +251,45 @@ secret:
 
 The relay tells each call's life as telemetry events (`[:presence_relay,
 :call, :start | :join | :leave | :stop]`, `:leave` with `duration_ms`),
-all from `PresenceRelay.Calls`; nothing meters them yet.
+all from `PresenceRelay.Calls`; usage counts call minutes from the
+`:leave`s ("Usage and caps").
+
+## Usage and caps
+
+A hosted relay meters each app in its database (#318's P9; static apps
+and the demo aren't metered or capped), by calendar month and day, UTC:
+
+- **Monthly active users**: the distinct people who joined a room that
+  month. A member (room token or provider token) is their `sub`; a guest
+  is their `gid` when the socket sent one, else their per-socket `sub`
+  (so a guest without a `gid` counts again on each connection).
+- **A day's active users**: the same, for the day.
+- **Call minutes**: each person's time in each call rounded up to a
+  whole second, summed per app and day (on the day they left the call),
+  then rounded up to whole minutes per day. A month's minutes are the sum
+  of its days'.
+
+Counts are written in batches every few seconds from each node, exactly
+once per person per month and per day however many nodes saw them; a
+node that crashes loses up to that interval of call time.
+
+**Caps.** An owner may cap an app's monthly active users. Once the month
+has reached the cap, someone not yet counted this month is refused at
+join (`{reason: "this app is at its monthly limit"}`); anyone already
+counted keeps getting in. Each node checks against cached counts, so a
+cluster may let in a few over the cap: at most the new people the other
+nodes let in during the last few seconds.
+
+Hosted, the owner reads and sets them (session JSON, like the issuer):
+
+- `GET /api/v1/apps/<id>/usage?months=N` (default 3, 1–24):
+  `{months: [{month: "2026-10", active_users, call_minutes}],
+  days: [{day: "2026-10-29", active_users, call_minutes}],
+  cap: {active_users: n | null}, this_month: {active_users, call_minutes}}`.
+  `months` is the last N months and `days` the last 31 days, both oldest
+  first and ending with today's; up to a few seconds behind.
+- `PUT /api/v1/apps/<id>/cap` with `{active_users: n | null}` (a whole
+  number, or null for no cap) → `{cap: {active_users}}`.
 
 ## Frames
 

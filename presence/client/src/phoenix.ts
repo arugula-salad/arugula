@@ -30,6 +30,11 @@ export interface KeyAuth {
   guest: string;
   /** A look to start with. */
   look?: Look;
+  /** This browser's guest id, for the relay's usage metering only
+   * (PROTOCOL.md, "Usage"): by default made once and kept in localStorage
+   * (`guestId()`), so a guest counts once a month however often they
+   * reconnect. Never identity: nobody in the room sees it. */
+  gid?: string;
   token?: never;
   auth?: never;
 }
@@ -63,16 +68,43 @@ export type PhoenixTransportOptions = {
 } & (TokenAuth | KeyAuth | MemberAuth);
 
 /** The socket's params: the token; or the key and room, with the guest's
- * name or the member's provider token (`token` is the newest of either). */
+ * name (and gid) or the member's provider token (`token` is the newest of
+ * either). */
 export function socketParams(o: PhoenixTransportOptions, token: string): Record<string, string> {
   if (o.key === undefined) return { token };
   const p: Record<string, string> = { key: o.key, room: o.room };
   if (o.auth !== undefined) {
     p.auth = token;
     if (o.name) p.name = o.name;
-  } else p.name = o.guest;
+  } else {
+    p.name = o.guest;
+    if (o.gid) p.gid = o.gid;
+  }
   if (o.look) p.look = `${o.look.character}:${o.look.colour}`;
   return p;
+}
+
+const GID_KEY = "arugula.gid";
+let pageGid: string | undefined;
+
+/** This browser's guest id: 22 random url-safe characters, made once and
+ * kept in localStorage (or, where storage is off, for this page). The
+ * relay counts a guest by it for usage, and for nothing else. */
+export function guestId(): string {
+  try {
+    const kept = localStorage.getItem(GID_KEY);
+    if (kept && /^[A-Za-z0-9_-]{8,64}$/.test(kept)) return kept;
+    const made = randomId();
+    localStorage.setItem(GID_KEY, made);
+    return made;
+  } catch {
+    return (pageGid ??= randomId());
+  }
+}
+
+function randomId(): string {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 /** A relayed frame's sender and the frame itself. */
@@ -108,6 +140,8 @@ export function memberOf(sub: string, metas: Meta[]): Member {
 }
 
 export function phoenixTransport(o: PhoenixTransportOptions): Transport {
+  // A guest's id for metering, unless the page gave one.
+  if (o.key !== undefined && o.auth === undefined && o.gid === undefined) o = { ...o, gid: guestId() };
   // A room token or a member's provider token: as given, or fresh from a
   // function on each join, and again whenever the socket drops, so
   // Phoenix's own reconnects carry an unexpired one.
