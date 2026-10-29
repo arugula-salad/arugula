@@ -58,6 +58,8 @@ mod chat_people_tests;
 #[cfg(test)]
 mod chat_pins_tests;
 #[cfg(test)]
+mod chat_presence_room_tests;
+#[cfg(test)]
 mod chat_previews_tests;
 #[cfg(test)]
 mod chat_reactions_tests;
@@ -115,6 +117,7 @@ impl features::Feature for Feature {
             .route("/api/chat/live/open", post(chat::open))
             .route("/api/chat/search", get(chat::search))
             .route("/api/chat/presence", post(chat::people::beat))
+            .route("/api/chat/presence/token", post(chat::presence_room::token))
             .route("/api/chat/avatar/{account}", get(chat::people::avatar))
             .route("/api/chat/sidebar", get(chat::sidebar::get).put(chat::sidebar::put))
             .route("/api/chat/targets", post(chat::open_target))

@@ -1,0 +1,29 @@
+/* A People block (people.tsx): arugula.stream's elements, in our colours. */
+.people-block {
+  --arugula-accent: var(--accent);
+  --arugula-bg: var(--bg);
+  --arugula-fg: var(--fg);
+  --arugula-dim: var(--dim);
+  --arugula-radius: var(--radius, 6px);
+  height: 100%;
+  overflow: auto;
+  padding: 12px;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.people-head {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.people-none {
+  margin: 0;
+  max-width: 40em;
+}
+
+.people-room arugula-camera {
+  display: block;
+  margin-bottom: 12px;
+}

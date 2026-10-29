@@ -76,6 +76,17 @@ struct Args {
     #[arg(long, default_value_t = 10_000, env = "ARUGULA_RELAY_FREE_MB")]
     relay_free_mb: u64,
 
+    /// The arugula.stream app People blocks' rooms are in (its `app_…` id)
+    /// and its server secret, which signs their room tokens: People blocks
+    /// say they're off without both.
+    #[arg(long, env = "ARUGULA_PRESENCE_APP")]
+    presence_app: Option<String>,
+    #[arg(long, env = "ARUGULA_PRESENCE_SECRET", hide_env_values = true)]
+    presence_secret: Option<String>,
+    /// The arugula.stream relay's socket.
+    #[arg(long, default_value = "wss://arugula.stream/socket", env = "ARUGULA_PRESENCE_RELAY")]
+    presence_relay: String,
+
     /// Hold background work at start (the job worker, hosted workspaces'
     /// worker, billing's usage reports, the projects and grants feed
     /// follower): for a window that copies the platform's tables (M141,
@@ -207,7 +218,9 @@ async fn run() -> anyhow::Result<()> {
         .chain(a.also_url.iter().filter(|u| !u.is_empty()).map(|u| u.trim_end_matches('/').to_owned()))
         .chain(Some(page_url.clone()).filter(|u| !u.is_empty()))
         .collect();
-    let cfg = Config { public_url, sites, page_url, relay_free_bytes: a.relay_free_mb * 1_000_000 };
+    let presence =
+        arugula_platform::Presence::from_args(a.presence_app.clone(), a.presence_secret.clone(), &a.presence_relay);
+    let cfg = Config { public_url, sites, page_url, relay_free_bytes: a.relay_free_mb * 1_000_000, presence };
     let http = arugula_control_common::roots::client(std::time::Duration::from_secs(15))?;
     let analytics = match a.posthog_api_key.clone().filter(|k| !k.is_empty()) {
         Some(k) => Analytics::start(k, &a.posthog_host, http.clone()),

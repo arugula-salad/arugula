@@ -8,9 +8,9 @@ import { paneIds, type Client } from "../client";
 import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from "../../shared/proto";
 import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { openSandboxes, pickApp } from "../labs-load";
-import { driveItems, shareSession } from "./people";
+import { driveItems, getControlSession, shareSession } from "./people";
 import { hasChat } from "./places";
-import { newRemote, openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat, remoteHosts } from "../blocks";
+import { newRemote, openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, openPeople, pinBoard, pinChatRoom, openTeamChat, remoteHosts } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { openPicker } from "./picker";
@@ -131,6 +131,9 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
           { label: "Pin a chat room…", run: () => void pinChatRoom(client, { from: id }) } as MenuItem,
         ]
       : []),
+    // Who's around in a team, live, on arugula.stream (the block says so
+    // when control has no arugula.stream app, or chat is off).
+    ...(!client.state?.roles && getControlSession()?.phase === "ready" ? [{ label: "People", run: () => void openPeople(client, { from: id }) } as MenuItem] : []),
     // A project's board beside it, with the boards flag.
     ...(!client.state?.roles && client.flag("boards") ? [{ label: "Pin a board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
     // M33: Claude Code conversations from terminals and the desktop app.

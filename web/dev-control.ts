@@ -82,6 +82,12 @@
 //                      master key to keep projects' keys, against an
 //                      Anthropic nobody answers: its screens (the consent
 //                      switches, spend) with calls written by hand.
+//   DEV_CONTROL_PRESENCE=APP:SECRET
+//                      People blocks: an arugula.stream app's id and its
+//                      server secret (an app of your own: the
+//                      arugula-presence MCP's create_app), whose room
+//                      tokens control signs; the relay is arugula.stream's
+//                      (DEV_CONTROL_PRESENCE_RELAY for another).
 //
 // A machine named NAME@TEAM (`ci@Acme`) joins into that team, which is
 // made (you its owner) if you have none by that name.
@@ -252,6 +258,14 @@ async function startControl() {
     await new Promise((r) => e2b!.once("listening", r));
     e2bUrl = `http://127.0.0.1:${(e2b.address() as { port: number }).port}`;
   }
+  const [presenceApp, presenceSecret] = (process.env.DEV_CONTROL_PRESENCE ?? "").split(":");
+  const presence = presenceApp && presenceSecret
+    ? {
+        ARUGULA_PRESENCE_APP: presenceApp,
+        ARUGULA_PRESENCE_SECRET: presenceSecret,
+        ...(process.env.DEV_CONTROL_PRESENCE_RELAY ? { ARUGULA_PRESENCE_RELAY: process.env.DEV_CONTROL_PRESENCE_RELAY } : {}),
+      }
+    : {};
   const control = spawn(
     `${bin}/arugula-control`,
     [
@@ -269,7 +283,7 @@ async function startControl() {
     {
       stdio: ["ignore", "ignore", "inherit"],
       detached: true,
-      env: { ...process.env, ...(cloud.length ? { ARUGULA_HOSTED_TEMPLATE: "dev", ARUGULA_HOSTED_ENROLL: "ticket" } : {}) },
+      env: { ...process.env, ...presence, ...(cloud.length ? { ARUGULA_HOSTED_TEMPLATE: "dev", ARUGULA_HOSTED_ENROLL: "ticket" } : {}) },
     },
   );
   procs.push(control);

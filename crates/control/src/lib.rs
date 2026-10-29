@@ -222,6 +222,18 @@ struct Args {
     #[arg(long, default_value_t = 10_000, env = "ARUGULA_RELAY_FREE_MB")]
     relay_free_mb: u64,
 
+    /// The arugula.stream app People blocks' rooms are in (its `app_…` id)
+    /// and its server secret, which signs their room tokens: People blocks
+    /// say they're off without both. In process, the
+    /// platform's; out of process, the platform takes its own.
+    #[arg(long, env = "ARUGULA_PRESENCE_APP")]
+    presence_app: Option<String>,
+    #[arg(long, env = "ARUGULA_PRESENCE_SECRET", hide_env_values = true)]
+    presence_secret: Option<String>,
+    /// The arugula.stream relay's socket.
+    #[arg(long, default_value = "wss://arugula.stream/socket", env = "ARUGULA_PRESENCE_RELAY")]
+    presence_relay: String,
+
     /// Relay limits per account (#174), 0 for none: client sockets at
     /// once, machines dialed in at once, and (while billing is off) MB a
     /// day before its relayed traffic slows down.
@@ -322,6 +334,10 @@ pub struct Config {
     pub also_redirect: bool,
     /// Blocks' origins are `b-<key>.<this>` (M50, `blocks.rs`).
     pub block_domain: Option<String>,
+    /// The arugula.stream relay's origin, when People blocks are on
+    /// (`--presence-app`): the page loads its elements, and their trackers'
+    /// WebAssembly, from it.
+    pub presence_origin: Option<String>,
     /// Public previews are `<id>.<this>` (M187, `previews.rs`).
     pub preview_domain: Option<String>,
     /// The platform page's host (M151, `platform_host.rs`), and where its
@@ -474,6 +490,7 @@ impl App {
             sites: vec![public_url.into()],
             page_url: String::new(),
             relay_free_bytes: 0,
+            presence: None,
         };
         let hub_port = in_process_hub();
         let platform: Arc<dyn arugula_platform_api::in_process::InProcess> = Arc::new(arugula_platform::Platform::new(
@@ -494,6 +511,7 @@ impl App {
                 sites: vec![Site::new(public_url).unwrap()],
                 also_redirect: false,
                 block_domain: None,
+                presence_origin: None,
                 preview_domain: None,
                 platform_host: None,
                 platform_page: Default::default(),
@@ -796,11 +814,17 @@ async fn control_json(
 /// shows: a block is a frame on its own site (a daemon's block domain, or a
 /// web page a browser block opened), so frames may come from any https site,
 /// and from control's own block origins (M50) on whatever scheme control's
-/// page is on (http only for a local control).
+/// page is on (http only for a local control). With People blocks on,
+/// scripts also come from the arugula.stream relay, and may compile
+/// WebAssembly (`'wasm-unsafe-eval'`, not JS `eval`): its trackers do.
 async fn headers(axum::extract::State(app): axum::extract::State<Arc<App>>, mut res: Response) -> Response {
+    let scripts = match &app.cfg.presence_origin {
+        Some(o) => format!(" script-src 'self' {o} 'wasm-unsafe-eval';"),
+        None => String::new(),
+    };
     let csp = |frames: &str| {
         format!(
-            "default-src 'self'; connect-src 'self' wss: ws: https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; frame-src 'self' https:{frames}; frame-ancestors 'none'"
+            "default-src 'self';{scripts} connect-src 'self' wss: ws: https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; frame-src 'self' https:{frames}; frame-ancestors 'none'"
         )
     };
     let csp = match &app.cfg.block_domain {
@@ -1076,6 +1100,11 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
             sites: sites.iter().map(|s| s.url.clone()).chain(platform_host.iter().map(|p| p.origin.clone())).collect(),
             page_url: platform_host.as_ref().map(|p| p.origin.clone()).unwrap_or_default(),
             relay_free_bytes: a.relay_free_mb * 1_000_000,
+            presence: arugula_platform_api::Presence::from_args(
+                a.presence_app.clone(),
+                a.presence_secret.clone(),
+                &a.presence_relay,
+            ),
         };
         info!("the platform runs in process");
         let hub = in_process_hub();
@@ -1128,6 +1157,12 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
             sites,
             also_redirect: a.also_redirect,
             block_domain,
+            presence_origin: match a.presence_app.as_deref().filter(|s| !s.is_empty()) {
+                Some(_) => {
+                    Some(origin_of(&a.presence_relay.replacen("ws", "http", 1)).context("ARUGULA_PRESENCE_RELAY")?)
+                }
+                None => None,
+            },
             preview_domain,
             platform_host,
             platform_page: arugula_platform_api::page::Page::new(a.platform_static_dir),
