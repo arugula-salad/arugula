@@ -7,19 +7,25 @@
 //! git's smart HTTP protocol (v0, `gitprotocol-http` and `gitprotocol-pack`)
 //! that clients need, and builds the repository in memory:
 //!
-//! - The folders are an allowlist in build.rs (`GIT_FOLDERS`), embedded
-//!   with their files as arugulad-editor's build.rs embeds editors/nvim.
-//! - Each becomes blobs, trees and one parentless commit by the fixed
-//!   author `Arugula <noreply@arugula.io>` at a fixed time (build.rs'
-//!   `EPOCH`: the release tag's date if git could say), so the ids are the
-//!   same on every instance and every build of the same tree.
-//! - Refs: `HEAD` (a symref to `refs/heads/main`), `refs/heads/main` and
-//!   `refs/tags/v<version>`, the current release only.
-//! - A fetch always gets the full closure of what it wants, as one pack of
-//!   undeltified objects. `have` lines only decide the acknowledgements
-//!   (git stops asking when it hears one `ready`), and `deepen` only
-//!   answers with an empty shallow list, as the one commit has no parents.
-//!   The `filter` capability isn't offered, so a client drops its filter.
+//! - The folders are an allowlist in build.rs (`GIT_FOLDERS`). For each,
+//!   build.rs reads the folder's tree at every release tag `v*` (up to the
+//!   workspace version) with git and embeds the files of each tree that
+//!   changed from the release before it.
+//! - Each of those trees becomes blobs, trees and one commit by the fixed
+//!   author `Arugula <noreply@arugula.io>` at the date of the first tag with
+//!   that tree, with the previous commit as its parent. So the ids are the
+//!   same on every instance built from the same tags, history is a chain
+//!   that fast-forwards (`git pull`, vim-plug), and an old commit stays in
+//!   the chain (a lockfile's pin, a `tag =`).
+//! - Refs: `HEAD` (a symref to `refs/heads/main`), `refs/heads/main` at the
+//!   newest commit, and a `refs/tags/v<version>` for every release, each at
+//!   the commit that last changed the folder.
+//! - A fetch gets the objects of what it wants as one pack of undeltified
+//!   objects: the commits to the `deepen` depth (or all of them, less what
+//!   is behind a commit the client says is `shallow`), each with its whole
+//!   tree. `have` lines only decide the acknowledgements (git stops asking
+//!   when it hears one `ready`). The `filter` capability isn't offered, so
+//!   a client drops its filter.
 //! - Pushing is refused: only `git-upload-pack` is a service.
 //!
 //! Protocol v2 isn't offered; a client that asks for it falls back to v0.
@@ -41,6 +47,17 @@ use axum::{
 use sha1::{Digest, Sha1};
 
 use crate::{App, limit};
+
+/// A file of a release: its path from the folder, bytes, whether executable.
+pub type File<'a> = (&'a str, &'a [u8], bool);
+
+/// A commit of the chain: the release tags whose folder is `files` (the
+/// first is the release that changed it), and that first tag's date.
+pub struct Release<'a> {
+    pub tags: &'a [&'a str],
+    pub epoch: i64,
+    pub files: &'a [File<'a>],
+}
 
 include!(concat!(env!("OUT_DIR"), "/git_folders.rs"));
 
@@ -92,6 +109,27 @@ fn parse_id(s: &str) -> Option<Id> {
     ::hex::decode(s).ok()?.try_into().ok()
 }
 
+/// What a fetch is sent, from `Repo::select`.
+struct Selection {
+    objects: Vec<Id>,
+    shallow: Vec<Id>,
+    unshallow: Vec<Id>,
+}
+
+/// A commit's tree and parents.
+fn commit_links(data: &[u8]) -> (Option<Id>, Vec<Id>) {
+    let (mut tree, mut parents) = (None, vec![]);
+    for line in data.split(|b| *b == b'\n').take_while(|l| !l.is_empty()) {
+        let line = String::from_utf8_lossy(line);
+        if let Some(h) = line.strip_prefix("tree ") {
+            tree = parse_id(h);
+        } else if let Some(h) = line.strip_prefix("parent ") {
+            parents.extend(parse_id(h));
+        }
+    }
+    (tree, parents)
+}
+
 /// One folder's repository, in memory.
 pub struct Repo {
     objects: BTreeMap<Id, (Kind, Vec<u8>)>,
@@ -100,20 +138,27 @@ pub struct Repo {
 }
 
 impl Repo {
-    /// `files` are (path with `/`, bytes, executable); `tag` is `v<version>`.
-    pub fn build(files: &[(&str, &[u8], bool)], subject: &str, tag: &str, epoch: i64) -> Repo {
+    /// The chain of `releases`, oldest first, for the folder `name`.
+    pub fn build(name: &str, releases: &[Release]) -> Repo {
         let mut objects = BTreeMap::new();
-        let tree = build_tree(files, &mut objects);
-        let who = format!("Arugula <noreply@arugula.io> {epoch} +0000");
-        let commit = format!("tree {}\nauthor {who}\ncommitter {who}\n\n{subject}\n", hex(&tree)).into_bytes();
-        let commit_id = object_id(Kind::Commit, &commit);
-        objects.insert(commit_id, (Kind::Commit, commit));
-        let mut refs = vec![
-            ("HEAD".to_owned(), commit_id),
-            ("refs/heads/main".to_owned(), commit_id),
-            (format!("refs/tags/{tag}"), commit_id),
-        ];
-        refs[1..].sort();
+        let mut tags = vec![];
+        let mut parent: Option<Id> = None;
+        for r in releases {
+            let tree = build_tree(r.files, &mut objects);
+            let who = format!("Arugula <noreply@arugula.io> {} +0000", r.epoch);
+            let parent_line = parent.map(|p| format!("parent {}\n", hex(&p))).unwrap_or_default();
+            let subject = format!("arugula {name} {}", r.tags.first().copied().unwrap_or("release"));
+            let commit =
+                format!("tree {}\n{parent_line}author {who}\ncommitter {who}\n\n{subject}\n", hex(&tree)).into_bytes();
+            let id = object_id(Kind::Commit, &commit);
+            objects.insert(id, (Kind::Commit, commit));
+            tags.extend(r.tags.iter().map(|t| (format!("refs/tags/{t}"), id)));
+            parent = Some(id);
+        }
+        let head = parent.expect("a folder has at least one release");
+        tags.sort();
+        let mut refs = vec![("HEAD".to_owned(), head), ("refs/heads/main".to_owned(), head)];
+        refs.extend(tags);
         Repo { objects, refs }
     }
 
@@ -129,32 +174,63 @@ impl Repo {
         out
     }
 
-    /// Ids of `want` and everything it reaches, commits first.
-    fn closure(&self, want: &Id) -> Vec<Id> {
+    /// What a fetch is sent. From the wanted commits, the commits within
+    /// `depth` (all, if none), counting a want as 1: the commits at the
+    /// limit are `shallow`. Without a depth, the walk stops at a commit the
+    /// client says is shallow, and with one, the client's shallow commits
+    /// it now has the parents of are `unshallow`. Then each commit's tree,
+    /// and anything else wanted whole: commits first, then trees, then
+    /// blobs.
+    fn select(&self, wants: &[Id], depth: Option<u32>, client_shallow: &[Id]) -> Selection {
         let mut seen = std::collections::BTreeSet::new();
-        let mut order = vec![];
-        let mut stack = vec![*want];
-        while let Some(id) = stack.pop() {
+        let mut commits = vec![];
+        let (mut shallow, mut unshallow) = (vec![], vec![]);
+        let mut queue: std::collections::VecDeque<(Id, u32)> = wants.iter().map(|w| (*w, 1)).collect();
+        let mut rest = vec![];
+        while let Some((id, d)) = queue.pop_front() {
+            let Some((kind, data)) = self.objects.get(&id) else { continue };
+            if *kind != Kind::Commit {
+                rest.push(id);
+                continue;
+            }
             if !seen.insert(id) {
                 continue;
             }
-            let Some((kind, data)) = self.objects.get(&id) else { continue };
-            order.push(id);
-            match kind {
-                Kind::Commit => {
-                    for line in data.split(|b| *b == b'\n').take_while(|l| !l.is_empty()) {
-                        let line = String::from_utf8_lossy(line);
-                        if let Some(h) = line.strip_prefix("tree ").or_else(|| line.strip_prefix("parent ")) {
-                            stack.extend(parse_id(h));
-                        }
-                    }
+            commits.push(id);
+            let (_, parents) = commit_links(data);
+            if depth.is_some_and(|n| d >= n.max(1)) {
+                shallow.push(id);
+            } else if depth.is_none() && client_shallow.contains(&id) {
+                // The client has it without its parents, and wants it so.
+            } else {
+                if client_shallow.contains(&id) {
+                    unshallow.push(id);
                 }
-                Kind::Tree => stack.extend(tree_entries(data)),
-                Kind::Blob => {}
+                queue.extend(parents.into_iter().map(|p| (p, d + 1)));
             }
         }
-        order.sort_by_key(|id| self.objects[id].0 as u8);
-        order
+        let mut objects = commits.clone();
+        let mut stack: Vec<Id> = commits.iter().filter_map(|c| commit_links(&self.objects[c].1).0).collect();
+        stack.extend(rest);
+        let mut have: std::collections::BTreeSet<Id> = objects.iter().copied().collect();
+        let (mut trees, mut blobs) = (vec![], vec![]);
+        while let Some(id) = stack.pop() {
+            let Some((kind, data)) = self.objects.get(&id) else { continue };
+            if !have.insert(id) {
+                continue;
+            }
+            match kind {
+                Kind::Tree => {
+                    trees.push(id);
+                    stack.extend(tree_entries(data));
+                }
+                Kind::Blob => blobs.push(id),
+                Kind::Commit => objects.push(id),
+            }
+        }
+        objects.extend(trees);
+        objects.extend(blobs);
+        Selection { objects, shallow, unshallow }
     }
 
     /// The response to a fetch request body.
@@ -168,21 +244,18 @@ impl Repo {
                 return Err(format!("upload-pack: not our ref {}", hex(w)));
             }
         }
+        let sel = self.select(&req.wants, req.deepen, &req.shallows);
         let mut out = vec![];
-        if let Some(depth) = req.deepen {
+        if req.deepen.is_some() {
             // Every round of a depth-limited fetch starts with the shallow
-            // list, as upload-pack sends it: the commit at the limit, here
-            // the one commit when the depth is 1 (git marks it though it
-            // has no parents; these lines have no newline), and a commit the client had cut short that
-            // is whole now.
-            if depth == 1 {
-                for w in req.wants.iter().filter(|w| self.objects[*w].0 == Kind::Commit) {
-                    pkt(&mut out, format!("shallow {}", hex(w)).as_bytes());
-                }
-            } else {
-                for s in req.shallows.iter().filter(|s| self.objects.contains_key(*s)) {
-                    pkt(&mut out, format!("unshallow {}", hex(s)).as_bytes());
-                }
+            // list, as upload-pack sends it (these lines have no newline):
+            // the commits at the limit, even a root commit, and the
+            // client's shallow commits that are whole now.
+            for s in &sel.shallow {
+                pkt(&mut out, format!("shallow {}", hex(s)).as_bytes());
+            }
+            for s in &sel.unshallow {
+                pkt(&mut out, format!("unshallow {}", hex(s)).as_bytes());
             }
             out.extend_from_slice(b"0000");
             if req.haves.is_empty() && !req.done {
@@ -216,15 +289,7 @@ impl Repo {
             pkt(&mut out, b"NAK\n");
             return Ok(out);
         }
-        let mut ids: Vec<Id> = vec![];
-        for w in &req.wants {
-            for id in self.closure(w) {
-                if !ids.contains(&id) {
-                    ids.push(id);
-                }
-            }
-        }
-        let pack = self.pack(&ids);
+        let pack = self.pack(&sel.objects);
         for chunk in pack.chunks(65515) {
             let mut c = vec![1u8];
             c.extend_from_slice(chunk);
@@ -389,16 +454,8 @@ impl Request {
 }
 
 /// Every allowlisted folder's repository, built once.
-static REPOS: LazyLock<HashMap<&'static str, Repo>> = LazyLock::new(|| {
-    let tag = format!("v{}", env!("CARGO_PKG_VERSION"));
-    FOLDERS
-        .iter()
-        .map(|(name, files)| {
-            let subject = format!("arugula {name} {tag}");
-            (*name, Repo::build(files, &subject, &tag, EPOCH))
-        })
-        .collect()
-});
+static REPOS: LazyLock<HashMap<&'static str, Repo>> =
+    LazyLock::new(|| FOLDERS.iter().map(|(name, releases)| (*name, Repo::build(name, releases))).collect());
 
 /// `nvim.git` and `nvim` are the same folder.
 fn repo(folder: &str) -> Option<&'static Repo> {
@@ -494,10 +551,35 @@ mod tests {
     ];
     const TREE: &str = "ad9d8ae6c6b6acac3de2d606b17092a56826e345";
     const SUBTREE: &str = "f1b17637203119fb37607aeb2ce9fee81acd415a";
-    const COMMIT: &str = "71ecefb92b7ecbee6b5e9ca9ec0e6497bd791b06";
+    const COMMIT: &str = "102e4bcaa6169eb8bb796d0846d60e57d60cd72a";
+    // The same folder with a.txt "dot2\n", a release later, its commit's parent COMMIT.
+    const FILES2: &[(&str, &[u8], bool)] = &[
+        ("run.sh", b"#!/bin/sh\n", true),
+        ("a/z", b"zed\n", false),
+        ("a.txt", b"dot2\n", false),
+        ("a-b", b"dash\n", false),
+    ];
+    const TREE2: &str = "09d608ca663b67fb1e2d6dc8c7d11c52129fb0b6";
+    const COMMIT2: &str = "03121371a2156a3db69460373c76c10b01ec9168";
+
+    fn one(files: &'static [File<'static>], tag: &'static str) -> Repo {
+        let tags: &'static [&'static str] = Box::leak(Box::new([tag]));
+        Repo::build("nvim", &[Release { tags, epoch: 0, files }])
+    }
+
+    /// COMMIT (v1.2.3, and v1.2.4 which changed nothing), then COMMIT2 (v1.3.0).
+    fn chain() -> Repo {
+        Repo::build(
+            "nvim",
+            &[
+                Release { tags: &["v1.2.3", "v1.2.4"], epoch: 1_700_000_000, files: FILES },
+                Release { tags: &["v1.3.0"], epoch: 1_700_100_000, files: FILES2 },
+            ],
+        )
+    }
 
     fn repo() -> Repo {
-        Repo::build(FILES, "arugula.nvim v1.2.3", "v1.2.3", 1_700_000_000)
+        Repo::build("nvim", &[Release { tags: &["v1.2.3"], epoch: 1_700_000_000, files: FILES }])
     }
 
     #[test]
@@ -522,7 +604,7 @@ mod tests {
 
     #[test]
     fn empty_blob_and_same_content_are_one_object() {
-        let r = Repo::build(&[("x", b"same", false), ("y", b"same", false)], "s", "v1", 0);
+        let r = one(&[("x", b"same", false), ("y", b"same", false)], "v1");
         // blob, tree, commit
         assert_eq!(r.objects.len(), 3);
     }
@@ -654,7 +736,9 @@ mod tests {
                 (x >> 32) as u8
             })
             .collect();
-        let r = Repo::build(&[("big", &big, false)], "s", "v1", 0);
+        let big: &'static [u8] = Box::leak(big.into_boxed_slice());
+        let files: &'static [File<'static>] = Box::leak(Box::new([("big", big, false)]));
+        let r = one(files, "v1");
         let want = hex(&r.refs[0].1);
         let reply = r.upload_pack(&request(&[&format!("want {want}"), "", "done"])).unwrap();
         let objs = unpack(&pack_of(&reply));
@@ -697,10 +781,81 @@ mod tests {
         assert!(r.upload_pack(b"zz").is_err());
     }
 
+    fn count(objs: &[(u8, Vec<u8>)], kind: u8) -> usize {
+        objs.iter().filter(|o| o.0 == kind).count()
+    }
+
+    #[test]
+    fn releases_chain_with_the_previous_commit_as_parent() {
+        let r = chain();
+        let at = |name: &str| hex(&r.refs.iter().find(|(n, _)| n == name).unwrap().1);
+        // The ids are `git commit-tree`'s, made with the same parent, author and dates.
+        assert_eq!(at("HEAD"), COMMIT2);
+        assert_eq!(at("refs/heads/main"), COMMIT2);
+        assert_eq!(at("refs/tags/v1.3.0"), COMMIT2);
+        assert_eq!(at("refs/tags/v1.2.3"), COMMIT);
+        assert_eq!(at("refs/tags/v1.2.4"), COMMIT, "a release that changed nothing shares the commit");
+        assert_eq!(r.refs.len(), 5);
+        let c2 = String::from_utf8_lossy(&r.objects[&parse_id(COMMIT2).unwrap()].1).into_owned();
+        assert!(c2.starts_with(&format!(
+            "tree {TREE2}\nparent {COMMIT}\nauthor Arugula <noreply@arugula.io> 1700100000 +0000\n"
+        )));
+        let adv = String::from_utf8(r.advertisement()).unwrap();
+        assert!(
+            adv.contains(&format!("{COMMIT} refs/tags/v1.2.4\n"))
+                && adv.contains(&format!("{COMMIT2} refs/heads/main\n"))
+        );
+    }
+
+    #[test]
+    fn a_full_fetch_of_the_chain_sends_every_commit_and_tree() {
+        let r = chain();
+        let reply = r.upload_pack(&request(&[&format!("want {COMMIT2}"), "", "done"])).unwrap();
+        let objs = unpack(&pack_of(&reply));
+        assert_eq!((count(&objs, 1), count(&objs, 2), count(&objs, 3)), (2, 3, 5));
+        assert_eq!(objs[0].0, 1);
+    }
+
+    #[test]
+    fn a_depth_cuts_the_chain_and_names_the_shallow_commit() {
+        let r = chain();
+        let want = format!("want {COMMIT2} multi_ack_detailed no-done side-band-64k");
+        let reply = r.upload_pack(&request(&[&want, "deepen 1", "", "done"])).unwrap();
+        assert!(reply.starts_with(format!("0034shallow {COMMIT2}00000008NAK\n").as_bytes()));
+        let objs = unpack(&pack_of(&reply));
+        assert_eq!((count(&objs, 1), count(&objs, 2), count(&objs, 3)), (1, 2, 4));
+        // Depth 2 reaches the root commit, which is the limit.
+        let reply = r.upload_pack(&request(&[&want, "deepen 2", ""])).unwrap();
+        assert_eq!(reply, format!("0034shallow {COMMIT}0000").into_bytes());
+        // Deeper than the chain: nothing is shallow.
+        let reply = r.upload_pack(&request(&[&want, "deepen 3", ""])).unwrap();
+        assert_eq!(reply, b"0000");
+    }
+
+    #[test]
+    fn a_shallow_client_is_not_sent_what_is_behind_its_shallow_commit() {
+        let r = chain();
+        let (want, shallow) = (format!("want {COMMIT2}"), format!("shallow {COMMIT2}"));
+        let reply = r.upload_pack(&request(&[&want, &shallow, "", "done"])).unwrap();
+        assert_eq!(count(&unpack(&pack_of(&reply)), 1), 1);
+        // Deepening it: the commit gets its parent, so it is no longer shallow; the parent is the new limit.
+        let reply = r.upload_pack(&request(&[&want, &shallow, "deepen 2", ""])).unwrap();
+        assert_eq!(reply, format!("0034shallow {COMMIT}0036unshallow {COMMIT2}0000").into_bytes());
+    }
+
     #[test]
     fn the_embedded_folder_is_a_repository() {
         let r = repo_for("nvim");
-        assert!(r.refs.iter().any(|(n, _)| n == &format!("refs/tags/v{}", env!("CARGO_PKG_VERSION"))));
+        let name = |n: &str| r.refs.iter().any(|(r, _)| r == n);
+        assert!(name("HEAD") && name("refs/heads/main"));
+        assert!(r.refs.iter().any(|(n, _)| n.starts_with("refs/tags/v")));
+        // Every ref names a commit we have, and the history is whole.
+        for (_, id) in &r.refs {
+            assert_eq!(r.objects[id].0, Kind::Commit);
+            let sel = r.select(&[*id], None, &[]);
+            assert!(sel.shallow.is_empty() && r.pack(&sel.objects).len() > 32);
+        }
+        assert!(CHECKOUT_NVIM.iter().any(|f| f.0 == "README.md"));
         assert!(repo_for_none("nvim.git") && repo_for_none("nvim") && !repo_for_none("../x") && !repo_for_none("web"));
     }
 
