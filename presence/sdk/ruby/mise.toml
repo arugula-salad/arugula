@@ -1,0 +1,3 @@
+# Ruby for this SDK only (a precompiled build; nothing system-wide).
+[tools]
+ruby = "3.4.12"

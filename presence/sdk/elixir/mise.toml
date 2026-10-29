@@ -1,0 +1,5 @@
+# The relay's toolchain: an Erlang with public_key's headers (Phoenix
+# needs them to build; the system Erlang has none without erlang-dev).
+[tools]
+erlang = "28.3"
+elixir = "1.19.2-otp-28"

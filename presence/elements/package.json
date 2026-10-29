@@ -1,0 +1,25 @@
+{
+  "name": "@arugula/presence-elements",
+  "version": "0.0.0",
+  "private": true,
+  "description": "arugula.stream in a page: connect() and the <arugula-room>, <arugula-camera>, <arugula-people> and <arugula-avatar> elements. Also built as one script, served at https://arugula.stream/sdk/v0/presence.js.",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "build": "vite build",
+    "test": "node --experimental-strip-types --no-warnings --test --test-reporter=dot test/*.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arugula/presence": "link:../client",
+    "@arugula/presence-core": "link:../core"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "8.3.4"
+  }
+}

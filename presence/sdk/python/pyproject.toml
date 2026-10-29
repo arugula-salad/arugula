@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arugula-presence"
+version = "0.1.0"
+description = "Sign arugula.stream room tokens on your server (HS256, standard library only)."
+license = { text = "MIT OR Apache-2.0" }
+requires-python = ">=3.9"
+
+[tool.setuptools]
+packages = ["arugula_presence"]

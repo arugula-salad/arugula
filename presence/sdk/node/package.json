@@ -1,0 +1,11 @@
+{
+  "name": "@arugula/presence-server",
+  "version": "0.1.0",
+  "description": "Sign arugula.stream room tokens on your server (HS256, node:crypto, no dependencies).",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "exports": { ".": { "types": "./index.d.ts", "default": "./index.js" } },
+  "files": ["index.js", "index.d.ts"],
+  "engines": { "node": ">=18" },
+  "scripts": { "test": "node --test test/token.test.js" }
+}

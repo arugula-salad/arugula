@@ -5,7 +5,11 @@ defmodule PresenceRelayWeb.Endpoint do
   # the origin, is what admits a socket.
   socket "/socket", PresenceRelayWeb.Socket, websocket: [check_origin: false], longpoll: false
 
-  # The demo site (step 3 builds it into priv/static).
+  # The SDK, its models and demo tokens, for pages on other origins.
+  plug PresenceRelayWeb.Cors
+
+  # The demo site (step 3 builds it into priv/static) and the SDK bundle
+  # (priv/static/sdk/v0).
   plug Plug.Static, at: "/", from: :presence_relay, gzip: false
 
   plug Plug.RequestId

@@ -4,3 +4,6 @@ relay/deps
 relay/priv/static
 demo/public/mediapipe
 demo/public/depth
+sdk/elixir/_build
+sdk/elixir/deps
+react/pack/dist

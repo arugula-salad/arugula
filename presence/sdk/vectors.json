@@ -1,0 +1,186 @@
+{
+  "about": "arugula.stream room-token test vectors (presence/sdk/API.md): every server SDK must make exactly `token` from `input` (ttl null = the default 3600; look null = none) and refuse every `invalid` input. Secret is the relay's test app secret, so presence/relay's tests verify these too.",
+  "valid": [
+    {
+      "name": "basic",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "lobby",
+        "user_id": "u_123",
+        "user_name": "Ada",
+        "look": null,
+        "ttl": 3600,
+        "now": 1800000000
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJhY21lIiwicm9vbSI6ImxvYmJ5Iiwic3ViIjoidV8xMjMiLCJuYW1lIjoiQWRhIiwiZXhwIjoxODAwMDAzNjAwfQ.aZUrFkhovb9WpzgZChQMpHVLpgVM66K6YvMSeQ3-IWc"
+    },
+    {
+      "name": "look",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "design-team",
+        "user_id": "jake@example.com",
+        "user_name": "Jake",
+        "look": {
+          "character": 2,
+          "colour": 5
+        },
+        "ttl": 600,
+        "now": 1800000000
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJhY21lIiwicm9vbSI6ImRlc2lnbi10ZWFtIiwic3ViIjoiamFrZUBleGFtcGxlLmNvbSIsIm5hbWUiOiJKYWtlIiwiZXhwIjoxODAwMDAwNjAwLCJsb29rIjp7ImNoYXJhY3RlciI6MiwiY29sb3VyIjo1fX0.VitGrC8FjOVP8IQiBOxujBNm2AkXxDdqP8iSruuB4z4"
+    },
+    {
+      "name": "unicode and quotes",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "team:42.a_b-c",
+        "user_id": "u.1:2",
+        "user_name": "Zoë \"the\" \\ 🌱",
+        "look": null,
+        "ttl": 86400,
+        "now": 1800000000
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJhY21lIiwicm9vbSI6InRlYW06NDIuYV9iLWMiLCJzdWIiOiJ1LjE6MiIsIm5hbWUiOiJab8OrIFwidGhlXCIgXFwg8J-MsSIsImV4cCI6MTgwMDA4NjQwMH0.jRk6WaeLlCRTvUdQ4CXwMfswqMeWYZMuuS9COJQKrcY"
+    },
+    {
+      "name": "default ttl",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "r",
+        "user_id": "x",
+        "user_name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "look": null,
+        "ttl": null,
+        "now": 1800000000
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJhY21lIiwicm9vbSI6InIiLCJzdWIiOiJ4IiwibmFtZSI6Inh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4IiwiZXhwIjoxODAwMDAzNjAwfQ.us-Nr1kHJyf-Ds9PL1zupjPcsFFpmjtfYlws1GuKkk8"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "room with a space",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "a b",
+        "user_id": "u",
+        "user_name": "A",
+        "look": null,
+        "ttl": null,
+        "now": 1800000000
+      }
+    },
+    {
+      "name": "room too long",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "user_id": "u",
+        "user_name": "A",
+        "look": null,
+        "ttl": null,
+        "now": 1800000000
+      }
+    },
+    {
+      "name": "user id with a slash",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "r",
+        "user_id": "a/b",
+        "user_name": "A",
+        "look": null,
+        "ttl": null,
+        "now": 1800000000
+      }
+    },
+    {
+      "name": "empty name",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "r",
+        "user_id": "u",
+        "user_name": "",
+        "look": null,
+        "ttl": null,
+        "now": 1800000000
+      }
+    },
+    {
+      "name": "name over 80",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "r",
+        "user_id": "u",
+        "user_name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "look": null,
+        "ttl": null,
+        "now": 1800000000
+      }
+    },
+    {
+      "name": "name with a newline",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "r",
+        "user_id": "u",
+        "user_name": "a\nb",
+        "look": null,
+        "ttl": null,
+        "now": 1800000000
+      }
+    },
+    {
+      "name": "ttl over a day",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "r",
+        "user_id": "u",
+        "user_name": "A",
+        "look": null,
+        "ttl": 86401,
+        "now": 1800000000
+      }
+    },
+    {
+      "name": "ttl zero",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "r",
+        "user_id": "u",
+        "user_name": "A",
+        "look": null,
+        "ttl": 0,
+        "now": 1800000000
+      }
+    },
+    {
+      "name": "look out of range",
+      "input": {
+        "app": "acme",
+        "secret": "acme-test-secret",
+        "room": "r",
+        "user_id": "u",
+        "user_name": "A",
+        "look": {
+          "character": 256,
+          "colour": 0
+        },
+        "ttl": null,
+        "now": 1800000000
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- arugula.stream with nothing but the script tag, in demo mode: open
+     this page in two browsers and you see each other. For your app, swap
+     `demo name="…"` for `token-url="/api/presence-token"` (your server signs
+     room tokens: presence/sdk). -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>arugula.stream example</title>
+    <script type="module" src="https://arugula.stream/sdk/v0/presence.js"></script>
+    <style>
+      body { margin: 0; padding: 24px; background: #06080d; color: #e6e9ef; font: 15px system-ui, sans-serif; }
+      arugula-camera { margin-bottom: 16px; }
+    </style>
+  </head>
+  <body>
+    <h1>Who's here</h1>
+    <arugula-room room="example-room" demo name="Guest">
+      <arugula-camera></arugula-camera>
+      <arugula-people></arugula-people>
+    </arugula-room>
+  </body>
+</html>
