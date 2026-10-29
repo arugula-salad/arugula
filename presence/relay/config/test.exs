@@ -10,7 +10,9 @@ config :presence_relay,
   demo: true,
   # Quick sweeps so the stale-frame test doesn't wait 10 s.
   sweep_ms: 50,
-  stale_ms: 300
+  stale_ms: 300,
+  # The demo's index is a build product; tests use this stand-in.
+  index_path: Path.expand("../test/support/index.html", __DIR__)
 
 config :presence_relay, PresenceRelay.Repo,
   url:

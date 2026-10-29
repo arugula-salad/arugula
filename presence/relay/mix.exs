@@ -27,7 +27,8 @@ defmodule PresenceRelay.MixProject do
       {:bandit, "~> 1.6"},
       {:jason, "~> 1.4"},
       {:ecto_sql, "~> 3.12"},
-      {:postgrex, "~> 0.19"}
+      {:postgrex, "~> 0.19"},
+      {:dns_cluster, "~> 0.2"}
     ]
   end
 

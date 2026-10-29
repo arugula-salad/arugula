@@ -23,7 +23,10 @@ defmodule PresenceRelayWeb.PageController do
   end
 
   def index(conn, _) do
-    path = Application.app_dir(:presence_relay, "priv/static/index.html")
+    # The demo's build (priv/static, git-ignored); tests point at a fixture.
+    path =
+      Application.get_env(:presence_relay, :index_path) ||
+        Application.app_dir(:presence_relay, "priv/static/index.html")
 
     if File.exists?(path) do
       conn |> put_resp_content_type("text/html") |> send_file(200, path)
