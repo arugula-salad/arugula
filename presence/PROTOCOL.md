@@ -18,13 +18,38 @@ and S44 (rigged avatars) spikes; tracker Arugula #315.
 ## Connecting
 
 A Phoenix socket (serializer V2, JSON with binary pushes) at
-`/socket/websocket?vsn=2.0.0&token=<room token>`. The socket refuses a
-missing, expired or badly signed token.
+`/socket/websocket?vsn=2.0.0&<params>`, where the params are one of:
+
+| params | who decides who's in the room |
+|---|---|
+| `token=<room token>` | the host app's server, which signed it (below) |
+| `key=<publishable key>&room=<room>&name=<name>[&look=<character>:<colour>]` | nobody: a **guest**, where the app allows guests |
+
+The socket refuses a missing, expired or badly signed token, and a
+publishable key that's unknown, revoked, or not from one of its app's
+allowed origins. Either way the room channel is the same.
+
+### Publishable keys
+
+A hosted relay (arugula.stream) keeps apps in its database, each with
+publishable keys (`pk_live_…`, `pk_test_…`), safe to put in a page:
+
+- The socket's `Origin` header must match one of the app's allowed
+  origins (`scheme://host[:port]`; `https://*.example.com` matches its
+  subdomains, not the bare domain). A `pk_test_` key is also accepted
+  from `localhost`, `127.0.0.1` and `[::1]` on any port. No `Origin`, no
+  key: a key is for browsers.
+- A guest gives only a `name` (rules as the token's `name`); the relay
+  makes their `sub`, `g_` and 12 hex digits, new for each socket.
+- `room` follows the token's `room` rules; the channel topic must match it.
+- Keys are revoked one at a time; the app's server secret (for room
+  tokens) is shown once and rotated on its own.
 
 ### Room token
 
 A JWT, HS256, signed with the app's secret (the relay has each app's
-secret by its `app` id; a demo relay has one app, `demo`):
+secret by its `app` id, from its config or, hosted, its database; a demo
+relay has one app, `demo`):
 
 | claim | |
 |---|---|
@@ -41,8 +66,8 @@ by its name, and `sub` is random.
 
 ## The room channel
 
-Topic `room:<room>` (the app comes from the token; a token for another
-room is refused). Join payload: `{}`. The reply is `{you: <sub>}`.
+Topic `room:<room>` (the app comes from the token or the key; a socket
+for another room is refused). Join payload: `{}`. The reply is `{you: <sub>}`.
 
 ### Presence
 

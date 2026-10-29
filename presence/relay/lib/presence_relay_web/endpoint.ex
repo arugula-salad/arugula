@@ -1,9 +1,14 @@
 defmodule PresenceRelayWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :presence_relay
 
-  # Host apps embed the client on their own origins: the room token, not
-  # the origin, is what admits a socket.
-  socket "/socket", PresenceRelayWeb.Socket, websocket: [check_origin: false], longpoll: false
+  @session Application.compile_env(:presence_relay, :session)
+
+  # Host apps embed the client on their own origins: a room token admits a
+  # socket from anywhere; a publishable key only from its app's origins,
+  # which the socket checks with the origin PresenceRelayWeb.Origin notes.
+  socket "/socket", PresenceRelayWeb.Socket,
+    websocket: [check_origin: {PresenceRelayWeb.Origin, :note, []}],
+    longpoll: false
 
   # The SDK, its models and demo tokens, for pages on other origins.
   plug PresenceRelayWeb.Cors
@@ -14,5 +19,6 @@ defmodule PresenceRelayWeb.Endpoint do
 
   plug Plug.RequestId
   plug Plug.Parsers, parsers: [:json], pass: ["*/*"], json_decoder: Jason
+  plug Plug.Session, @session
   plug PresenceRelayWeb.Router
 end

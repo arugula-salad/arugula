@@ -28,6 +28,8 @@ defmodule PresenceRelay.MixProject do
       {:jason, "~> 1.4"},
       {:ecto_sql, "~> 3.12"},
       {:postgrex, "~> 0.19"},
+      {:swoosh, "~> 1.17"},
+      {:finch, "~> 0.19"},
       {:dns_cluster, "~> 0.2"}
     ]
   end

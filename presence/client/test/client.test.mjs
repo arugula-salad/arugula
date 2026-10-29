@@ -6,7 +6,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PresenceClient, memberOf, unprefix } from "../src/index.ts";
+import { PresenceClient, memberOf, socketParams, unprefix } from "../src/index.ts";
 import { neutral, packRig } from "@arugula/presence-core/avatar/rig";
 import { encodeFrame } from "@arugula/presence-core/outline/frame";
 
@@ -119,6 +119,18 @@ test("the relay's frames say who sent them; a member is on camera if any page is
     { name: "Jake", mode: "avatar", look: { character: 2, colour: 0 }, away: false, watching: true },
   ]);
   assert.deepEqual(m, { sub: "jake", name: "Jake", look: { character: 2, colour: 0 }, mode: "avatar", away: false, watching: true });
+});
+
+test("the socket's params: a room token, or a publishable key with the room and a guest's name", () => {
+  const url = "wss://arugula.stream/socket";
+  assert.deepEqual(socketParams({ url, room: "lobby", token: () => Promise.resolve("t") }, "t1"), { token: "t1" });
+  assert.deepEqual(socketParams({ url, room: "lobby", key: "pk_live_abc", guest: "Ada" }, ""), { key: "pk_live_abc", room: "lobby", name: "Ada" });
+  assert.deepEqual(socketParams({ url, room: "lobby", key: "pk_test_abc", guest: "Ada", look: { character: 2, colour: 3 } }, ""), {
+    key: "pk_test_abc",
+    room: "lobby",
+    name: "Ada",
+    look: "2:3",
+  });
 });
 
 test("messages: history and said merge by id in order, say adds yours, loadEarlier pages back", async () => {
