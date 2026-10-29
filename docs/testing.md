@@ -125,9 +125,14 @@ commits may have a job named like a required one. `npx
 @intentius/chant@0.108.0 ci last-green` (after `git fetch --tags`) prints
 the newest green commit.
 
-`.github/workflows/ci-red.yml` runs `scripts/ci-red` every hour, so a red
-main gets heard: when main has gone 6 hours (`ARUGULA_RED_HOURS`) without a
-green commit, or a commit gets a `ci/revoked` tag, it opens an issue titled
+`.github/workflows/ci-red.yml` runs `scripts/ci-red` every hour and after
+each `chant-ci-green` run, so a red main gets heard: when main has gone 6
+hours (`ARUGULA_RED_HOURS`) without a green commit, when a commit gets a
+`ci/revoked` tag, or at once when chant's record for main's newest decided
+commit says red after its one retry (`chant ci list`, pinned like
+chant-ci-green.yml's; the comment names the failed phase, job and run, and a
+later one names the bisect's culprit; if chant can't be read the script logs
+it and uses the tags alone), it opens an issue titled
 "main is red", or comments on the open one, once per red stretch or
 revocation; GitHub notifies the repo's watchers and anyone the
 `ARUGULA_RED_MENTION` variable names. It closes the issue once main has a
