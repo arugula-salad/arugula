@@ -54,12 +54,15 @@ use std::{
 use arugula_proto::PaneId;
 use rmpv::Value as Mp;
 use serde_json::{Value, json};
+#[cfg(not(unix))]
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+#[cfg(unix)]
+use tokio::net::{
+    UnixStream,
+    unix::{OwnedReadHalf, OwnedWriteHalf},
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{
-        UnixStream,
-        unix::{OwnedReadHalf, OwnedWriteHalf},
-    },
     sync::{mpsc, oneshot},
 };
 use tracing::{debug, info};
@@ -191,9 +194,21 @@ type Waiting = Arc<Mutex<HashMap<u32, Answer>>>;
 /// A notification from nvim: its method and its (first) argument, as JSON.
 pub type Note = (String, Value);
 
+/// nvim's server socket, read and written apart.
+#[cfg(unix)]
+async fn split(path: &Path) -> io::Result<(OwnedReadHalf, OwnedWriteHalf)> {
+    Ok(UnixStream::connect(path).await?.into_split())
+}
+
+/// nvim's server is a named pipe on Windows, which this doesn't speak.
+#[cfg(not(unix))]
+async fn split(_path: &Path) -> io::Result<(OwnedReadHalf, OwnedWriteHalf)> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, "nvim's server is read over a Unix socket"))
+}
+
 impl Rpc {
     pub async fn connect(path: &Path) -> io::Result<(Self, mpsc::UnboundedReceiver<Note>)> {
-        let (r, w) = UnixStream::connect(path).await?.into_split();
+        let (r, w) = split(path).await?;
         let waiting: Waiting = Default::default();
         let (tx, rx) = mpsc::unbounded_channel();
         crate::task::spawn(read(r, waiting.clone(), tx));
@@ -385,11 +400,14 @@ impl Places {
 }
 
 fn sockets_in(dir: &Path, out: &mut Vec<(PathBuf, u32)>) {
-    use std::os::unix::fs::FileTypeExt;
+    #[cfg(unix)]
+    let is_socket = |t: std::fs::FileType| std::os::unix::fs::FileTypeExt::is_socket(&t);
+    #[cfg(not(unix))]
+    let is_socket = |_: std::fs::FileType| false;
     let Ok(rd) = std::fs::read_dir(dir) else { return };
     for e in rd.flatten() {
         let Some(pid) = server_pid(&e.file_name().to_string_lossy()) else { continue };
-        if e.file_type().is_ok_and(|t| t.is_socket()) {
+        if e.file_type().is_ok_and(is_socket) {
             out.push((e.path(), pid));
         }
     }
