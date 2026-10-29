@@ -8,11 +8,17 @@
      .command scripts (run in a new tab), as an alternate handler, so it
      never takes them from Terminal unless someone picks it.
      NSMicrophoneUsageDescription: a lent device's record_audio (S33,
-     web/src/shell/hand.ts): an agent asks, the person allows it, the page records. -->
+     web/src/shell/hand.ts): an agent asks, the person allows it, the page
+     records; and a People block's voice and calls (#1792).
+     NSCameraUsageDescription: a People block's camera (its avatar or
+     outline, and video in voice or a call, #1792). Without it macOS
+     refuses the camera to the app's webviews. -->
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Arugula uses the microphone when an agent asks this device to record audio and you allow it.</string>
+  <string>Arugula uses the microphone when you talk in a People block's voice or a call, or when an agent asks this device to record audio and you allow it.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Arugula uses the camera when you turn it on in a People block: your avatar or outline, and your video in voice or a call.</string>
   <key>NSServices</key>
   <array>
     <dict>

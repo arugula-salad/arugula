@@ -663,14 +663,19 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         .title("Arugula")
         .inner_size(1280.0, 820.0)
         .initialization_script(cloud::init_script(cloud::control().is_some_and(|c| cloud::signed_in(app, &c))))
-        // The microphone for the client's own pages (a lent device's
-        // record_audio, S33; macOS still asks, once, for the app); nobody
+        // The microphone and camera for the client's own pages (a lent
+        // device's record_audio, S33; a People block's camera, voice and
+        // calls, #1792; macOS still asks, once each, for the app); nobody
         // else's.
         .on_permission_request(|w, kind| match kind {
-            tauri::webview::PermissionKind::Microphone if w.url().is_ok_and(|u| ours(&u)) => {
+            tauri::webview::PermissionKind::Microphone | tauri::webview::PermissionKind::Camera
+                if w.url().is_ok_and(|u| ours(&u)) =>
+            {
                 tauri::webview::PermissionResponse::Allow
             }
-            tauri::webview::PermissionKind::Microphone => tauri::webview::PermissionResponse::Deny,
+            tauri::webview::PermissionKind::Microphone | tauri::webview::PermissionKind::Camera => {
+                tauri::webview::PermissionResponse::Deny
+            }
             _ => tauri::webview::PermissionResponse::Default,
         })
         // Files dropped on a pane are the page's (M70: uploaded to the
